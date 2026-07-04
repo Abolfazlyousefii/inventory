@@ -543,6 +543,7 @@ document.addEventListener('DOMContentLoaded', function () {
             'invoice_item_id' => $item->invoice_item_id,
             'product_id' => $item->product_id,
             'variant_id' => $item->product_variant_id,
+            'product_variant_id' => $item->product_variant_id,
             'quantity' => $item->quantity,
             'unit_price' => $item->unit_price,
             'category_id' => $item->product?->category_id,
@@ -590,6 +591,17 @@ document.addEventListener('DOMContentLoaded', function () {
             .replace(/[٠-٩]/g, function (d) { return String(arabic.indexOf(d)); });
     }
 
+    function toSafeNumber(value, fallback = 0) {
+        if (value === null || value === undefined || value === '') return fallback;
+
+        const normalized = normalizeDigits(String(value))
+            .replace(/[٬,،\s]/g, '')
+            .replace(/[^0-9.-]/g, '');
+        const number = Number(normalized);
+
+        return Number.isFinite(number) ? number : fallback;
+    }
+
     function escapeHtml(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -600,7 +612,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function toMoney(value) {
-        const number = Number(value || 0);
+        const number = toSafeNumber(value, 0);
         return number.toLocaleString('fa-IR');
     }
 
@@ -790,23 +802,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const raw = payload.products || payload.items || payload.variants || [];
 
         return raw.map(function (item) {
-            const qty = Number(item.qty || item.quantity || item.invoice_qty || 0);
-            const returned = Number(item.already_returned_qty || item.returned_qty || 0);
-            const remaining = Number(item.remaining_qty !== undefined ? item.remaining_qty : Math.max(qty - returned, 0));
+            const qty = toSafeNumber(item.qty ?? item.quantity ?? item.invoice_qty, 0);
+            const returned = toSafeNumber(item.already_returned_qty ?? item.returned_qty, 0);
+            const remaining = toSafeNumber(item.remaining_qty, Math.max(qty - returned, 0));
 
             return {
-                invoice_item_id: Number(item.invoice_item_id || 0),
-                product_id: Number(item.product_id || 0),
-                variant_id: Number(item.variant_id || item.product_variant_id || 0),
+                invoice_item_id: toSafeNumber(item.invoice_item_id, 0),
+                product_id: toSafeNumber(item.product_id, 0),
+                variant_id: toSafeNumber(item.variant_id ?? item.product_variant_id, 0),
                 name: String(item.name || item.product_name || 'بدون نام'),
                 product_code: String(item.product_code || item.code || ''),
                 variant_name: String(item.variant_name || 'بدون تنوع'),
                 variant_code: String(item.variant_code || ''),
-                variant_stock: Number(item.variant_stock || item.stock || 0),
+                variant_stock: toSafeNumber(item.variant_stock ?? item.stock, 0),
                 qty: qty,
                 already_returned_qty: returned,
                 remaining_qty: remaining,
-                unit_price: Number(item.unit_price || item.price || 0),
+                unit_price: toSafeNumber(item.unit_price ?? item.price, 0),
                 unit: String(item.unit || item.product_unit || 'عدد'),
             };
         }).filter(function (item) {
@@ -815,22 +827,29 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
 
+    function returnItemQuantity(row) {
+        if (!row || typeof row !== 'object') return 0;
+
+        const value = row.quantity ?? row.qty ?? row.return_quantity ?? row.returned_quantity ?? 0;
+        return toSafeNumber(value, 0);
+    }
+
     function existingItemAsInvoiceRow(row) {
-        const qty = Number(row.quantity || 0);
+        const qty = returnItemQuantity(row);
 
         return {
-            invoice_item_id: Number(row.invoice_item_id || 0),
-            product_id: Number(row.product_id || 0),
-            variant_id: Number(row.variant_id || row.product_variant_id || 0),
+            invoice_item_id: toSafeNumber(row.invoice_item_id, 0),
+            product_id: toSafeNumber(row.product_id, 0),
+            variant_id: toSafeNumber(row.variant_id ?? row.product_variant_id, 0),
             name: String(row.product_name || row.name || 'کالای ثبت‌شده'),
             product_code: String(row.product_code || row.code || ''),
             variant_name: String(row.variant_name || '—'),
             variant_code: String(row.variant_code || ''),
             variant_stock: 0,
-            qty: Number(row.invoice_qty || qty),
-            already_returned_qty: Number(row.already_returned_qty || 0),
-            remaining_qty: Math.max(Number(row.remaining_qty || 0), qty, 1),
-            unit_price: Number(row.unit_price || row.price || 0),
+            qty: toSafeNumber(row.invoice_qty, qty),
+            already_returned_qty: toSafeNumber(row.already_returned_qty, 0),
+            remaining_qty: Math.max(toSafeNumber(row.remaining_qty ?? row.returnable_quantity, 0), qty, 1),
+            unit_price: toSafeNumber(row.unit_price ?? row.price, 0),
             unit: String(row.unit || 'عدد'),
             _fromExistingVoucher: true,
         };
@@ -844,8 +863,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const exists = merged.some(function (item) {
                 if (row.invoice_item_id && item.invoice_item_id && String(row.invoice_item_id) === String(item.invoice_item_id)) return true;
 
+                const rowVariantId = row.variant_id ?? row.product_variant_id ?? '';
+
                 return String(row.product_id || '') === String(item.product_id || '') &&
-                       String(row.variant_id || '') === String(item.variant_id || '');
+                       String(rowVariantId) === String(item.variant_id || item.product_variant_id || '');
             });
 
             if (!exists) {
@@ -862,19 +883,22 @@ document.addEventListener('DOMContentLoaded', function () {
         const found = oldItems.find(function (row) {
             if (row.invoice_item_id && String(row.invoice_item_id) === String(invoiceItemId)) return true;
 
+            const rowVariantId = row.variant_id ?? row.product_variant_id ?? '';
+
             return String(row.product_id || '') === String(productId) &&
-                   String(row.variant_id || '') === String(variantId);
+                   String(rowVariantId) === String(variantId);
         });
 
         if (!found) return null;
-        const qty = Number(found.quantity || 0);
+        const qty = returnItemQuantity(found);
         return qty > 0 ? qty : null;
     }
 
     function itemRowTemplate(item, index, useOldQuantity) {
-        const remaining = Number(item.remaining_qty || 0);
+        const rawRemaining = toSafeNumber(item.remaining_qty, 0);
         const defaultQtyFromOld = useOldQuantity ? oldQuantityFor(item.invoice_item_id, item.product_id, item.variant_id) : null;
-        const defaultQty = defaultQtyFromOld !== null ? Math.min(defaultQtyFromOld, remaining) : remaining;
+        const remaining = defaultQtyFromOld !== null ? Math.max(rawRemaining, defaultQtyFromOld) : rawRemaining;
+        const defaultQty = defaultQtyFromOld !== null ? defaultQtyFromOld : remaining;
 
         return `
             <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}">
@@ -921,8 +945,8 @@ document.addEventListener('DOMContentLoaded', function () {
         let amountTotal = 0;
 
         tbody.querySelectorAll('tr').forEach(function (tr) {
-            const qty = Number(tr.querySelector('.qty-input')?.value || 0);
-            const unitPrice = Number(tr.dataset.unitPrice || 0);
+            const qty = toSafeNumber(tr.querySelector('.qty-input')?.value, 0);
+            const unitPrice = toSafeNumber(tr.dataset.unitPrice, 0);
             const lineTotal = Math.max(qty, 0) * Math.max(unitPrice, 0);
             const lineTotalEl = tr.querySelector('.internal-line-total');
 
@@ -951,8 +975,8 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             qtyInput.addEventListener('input', function () {
-                const max = Number(qtyInput.max || 0);
-                let value = Number(qtyInput.value || 0);
+                const max = toSafeNumber(qtyInput.max, 0);
+                let value = toSafeNumber(qtyInput.value, 0);
 
                 if (max > 0 && value > max) {
                     qtyInput.value = String(max);
@@ -1244,7 +1268,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function recalcManualTotals() {
         let total = 0;
         manualTbody.querySelectorAll('tr').forEach(function (tr) {
-            const qty = Number(tr.querySelector('.manual-qty')?.value || 0);
+            const qty = toSafeNumber(tr.querySelector('.manual-qty')?.value, 0);
             const price = syncMoneyRaw(tr);
             const line = Math.max(qty, 0) * Math.max(price, 0);
             tr.querySelector('.manual-line-total').textContent = toMoney(line) + ' ریال';
@@ -1256,14 +1280,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function addManualRow(rowData = {}) {
         const index = Date.now() + manualTbody.children.length;
-        const unitPrice = Number(rowData.unit_price || 0);
+        const unitPrice = toSafeNumber(rowData.unit_price, 0);
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><select class="form-select manual-category">${categoryOptions(rowData.category_id)}</select></td>
             <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
-            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(rowData.quantity || 1)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(returnItemQuantity(rowData) || 1)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
             <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
@@ -1473,9 +1497,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const productId = row.querySelector('[name$="[product_id]"]')?.value || '';
             const variantId = row.querySelector('[name$="[variant_id]"]')?.value || (productId === '__new__' ? '__new__' : '');
             const qtyInput = row.querySelector(isManualReturn() ? '.manual-qty' : '.qty-input');
-            const qty = Number(qtyInput?.value || 0);
-            const maxQty = isManualReturn() ? 0 : Number(qtyInput?.max || 0);
-            const unitPrice = isManualReturn() ? Number(row.querySelector('.manual-price')?.value || -1) : 0;
+            const qty = toSafeNumber(qtyInput?.value, 0);
+            const maxQty = isManualReturn() ? 0 : toSafeNumber(qtyInput?.max, 0);
+            const unitPrice = isManualReturn() ? toSafeNumber(row.querySelector('.manual-price')?.value, -1) : 0;
             const dupKey = productId + ':' + variantId;
 
             if (!productId || !variantId || qty <= 0 || (isManualReturn() && unitPrice < 0)) {
