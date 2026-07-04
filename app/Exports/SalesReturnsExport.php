@@ -44,7 +44,7 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
     {
         return [
             'شماره سند برگشت از فروش', 'تاریخ سند', 'نام مشتری', 'کد مشتری', 'کد کالا', 'نام کالا', 'دسته‌بندی کالا',
-            'زیر‌دسته‌بندی کالا', 'تنوع کالا / Variant', 'تعداد برگشتی', 'علت برگشت', 'توضیحات', 'کاربر ثبت‌کننده', 'تاریخ ثبت', 'تاریخ ویرایش',
+            'زیر‌دسته‌بندی کالا', 'تنوع کالا / Variant', 'تعداد برگشتی', 'واحد کالا', 'علت برگشت', 'توضیحات', 'کاربر ثبت‌کننده', 'تاریخ ثبت', 'تاریخ ویرایش',
         ];
     }
 
@@ -74,6 +74,7 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
             $subcategory?->name ?: '—',
             implode(' / ', array_unique($variantParts)) ?: '—',
             (int) $item->quantity,
+            $item->product?->unit ?: 'عدد',
             WarehouseTransfer::returnReasonOptions()[$transfer?->return_reason] ?? '—',
             $transfer?->note,
             $transfer?->user?->name,
@@ -91,7 +92,7 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
                 $sheet->getStyle($sheet->calculateWorksheetDimension())->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_RIGHT)
                     ->setVertical(Alignment::VERTICAL_CENTER);
-                $sheet->getStyle('A1:O1')->getFont()->setBold(true);
+                $sheet->getStyle('A1:P1')->getFont()->setBold(true);
                 $sheet->setAutoFilter($sheet->calculateWorksheetDimension());
                 $sheet->freezePane('A2');
             },

@@ -47,13 +47,15 @@
             $product = $item->product?->name ?? ('#' . $item->product_id);
             $variant = $variantLabel($item);
             $code = $item->variant?->variant_code ?: ($item->variant_code ?: null);
+            $unit = $item->product?->unit ?: 'عدد';
 
             return [
                 'product' => $product,
                 'variant' => $variant,
                 'code' => $code,
                 'quantity' => (int) $item->quantity,
-                'summary' => trim($product . ' / ' . $variant . ($code ? ' (' . $code . ')' : '') . ' × ' . number_format((int) $item->quantity)),
+                'unit' => $unit,
+                'summary' => trim($product . ' / ' . $variant . ($code ? ' (' . $code . ')' : '') . ' - تعداد: ' . number_format((int) $item->quantity) . ' ' . $unit),
             ];
         })->filter(fn ($row) => filled($row['summary']))->values();
     };
@@ -497,7 +499,7 @@
                                         <span class="return-item-meta">
                                             @if($itemRow['variant'] !== '—')<span class="mini-badge">{{ $itemRow['variant'] }}</span>@endif
                                             @if($itemRow['code'])<span class="mini-badge" dir="ltr">{{ $itemRow['code'] }}</span>@endif
-                                            <span>× {{ number_format($itemRow['quantity']) }}</span>
+                                            <span>تعداد: {{ number_format($itemRow['quantity']) }} {{ $itemRow['unit'] }}</span>
                                         </span>
                                     </span>
                                 @empty
@@ -507,7 +509,7 @@
                                     <span class="more-items" title="{{ $itemSummary }}">+ {{ number_format($hiddenItemsCount) }} قلم دیگر</span>
                                 @endif
                             </td>
-                            <td class="cell-strong">{{ number_format($totalQuantity) }}</td>
+                            <td class="cell-strong">{{ number_format($totalQuantity) }} عدد</td>
                             <td><span class="reason-pill">{{ \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—' }}</span></td>
                             <td>{{ \App\Models\WarehouseTransfer::returnSourceLabel($voucher->return_type ?? null) }}</td>
                             <td>{{ $voucher->user?->name ?: '—' }}</td>
