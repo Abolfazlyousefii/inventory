@@ -451,7 +451,7 @@ class VoucherController extends Controller
         $products = Product::query()
             ->with(['variants' => fn ($q) => $q->orderBy('variant_name')])
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'sku', 'barcode', 'category_id', 'price']);
+            ->get(['id', 'name', 'code', 'sku', 'barcode', 'category_id', 'price', 'unit']);
 
         $returnReasons = WarehouseTransfer::returnReasonOptions();
         $categories = Category::query()->orderBy('name')->get(['id', 'name', 'code']);
@@ -601,7 +601,7 @@ class VoucherController extends Controller
         $products = Product::query()
             ->with(['variants' => fn ($q) => $q->orderBy('variant_name')])
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'sku', 'barcode', 'short_barcode', 'category_id', 'price', 'sale_retail', 'sale_wholesale']);
+            ->get(['id', 'name', 'code', 'sku', 'barcode', 'short_barcode', 'category_id', 'price', 'sale_retail', 'sale_wholesale', 'unit']);
         $returnReasons = WarehouseTransfer::returnReasonOptions();
         $categories = Category::query()->orderBy('name')->get(['id', 'name', 'code']);
 
@@ -1402,6 +1402,7 @@ class VoucherController extends Controller
                     'variant_name' => (string) ($item->variant?->variant_name ?? ''),
                     'variant_code' => (string) ($item->variant?->variant_code ?? ''),
                     'variant_stock' => (int) ($item->variant?->stock ?? 0),
+                    'unit' => (string) ($item->product?->unit ?: 'عدد'),
                     'qty' => $invoicedQty,
                     'already_returned_qty' => $returnedQty,
                     'remaining_qty' => $remainingQty,
