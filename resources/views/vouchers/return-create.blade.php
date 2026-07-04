@@ -1319,11 +1319,37 @@ document.addEventListener('DOMContentLoaded', function () {
         return manualItemIndex;
     }
 
+    function ensureManualQuantityUsable(tr, focus = false) {
+        if (!tr) return;
+
+        const qtyInput = tr.querySelector('.manual-qty');
+
+        if (!qtyInput) return;
+
+        qtyInput.disabled = false;
+        qtyInput.readOnly = false;
+        qtyInput.required = true;
+        qtyInput.min = '1';
+
+        if (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0) {
+            qtyInput.value = String(toSafeNumber(qtyInput.dataset.defaultQuantity, 1));
+        }
+
+        if (focus) {
+            window.setTimeout(function () {
+                qtyInput.disabled = false;
+                qtyInput.readOnly = false;
+                qtyInput.focus({ preventScroll: true });
+            }, 0);
+        }
+    }
+
     function addManualRow(rowData = {}) {
         const index = nextManualItemIndex();
         const unitPrice = toSafeNumber(rowData.unit_price, 0);
         const defaultQty = Math.max(returnItemQuantity(rowData), 1);
         const tr = document.createElement('tr');
+        tr.dataset.itemIndex = String(index);
         tr.innerHTML = `
             <td><select class="form-select manual-category">${categoryOptions(rowData.category_id)}</select></td>
             <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
@@ -1349,11 +1375,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const unitLabelEl = tr.querySelector('.manual-unit-label');
         const unitCellEl = tr.querySelector('.manual-unit-cell');
 
-        function refreshVariantMeta(applySuggestedPrice) {
-            if (manualQtyInput) {
-                manualQtyInput.disabled = false;
-                manualQtyInput.readOnly = false;
-            }
+        function refreshVariantMeta(applySuggestedPrice, focusQuantity = false) {
+            ensureManualQuantityUsable(tr, focusQuantity);
             const isNewProduct = productSelect.value === '__new__';
             const quickFields = tr.querySelector('.quick-new-product');
             quickFields?.classList.toggle('d-none', !isNewProduct);
@@ -1384,11 +1407,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function onProductChanged() {
             if (productSelect.value !== '__new__') fillVariantSelect(tr, productSelect.value);
-            refreshVariantMeta(true);
+            refreshVariantMeta(true, true);
         }
 
         function onVariantChanged() {
-            refreshVariantMeta(true);
+            refreshVariantMeta(true, true);
         }
 
         if (window.jQuery && jQuery.fn) {
@@ -1400,9 +1423,7 @@ document.addEventListener('DOMContentLoaded', function () {
             productSelect.addEventListener('change', onProductChanged);
             variantSelect.addEventListener('change', onVariantChanged);
         }
-        if (manualQtyInput && (!manualQtyInput.value || toSafeNumber(manualQtyInput.value, 0) <= 0)) {
-            manualQtyInput.value = String(toSafeNumber(manualQtyInput.dataset.defaultQuantity, 1));
-        }
+        ensureManualQuantityUsable(tr);
         tr.querySelectorAll('.quick-money').forEach(function (input) { input.addEventListener('input', function () { const raw = parseMoney(input.value); input.value = input.value.trim() === '' ? '' : raw.toLocaleString('en-US'); }); });
         priceDisplayInput.addEventListener('input', function () {
             const raw = parseMoney(priceDisplayInput.value);
@@ -1419,7 +1440,7 @@ document.addEventListener('DOMContentLoaded', function () {
             recalcManualTotals();
         });
         fillVariantSelect(tr, productSelect.value, rowData.variant_id || '');
-        initManualSelects(tr);
+        initManualSelect(productSelect);
         refreshVariantMeta(false);
     }
 
@@ -1460,8 +1481,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     manualTbody.addEventListener('input', function (event) {
         if (event.target && event.target.classList.contains('return-quantity-input')) {
-            event.target.disabled = false;
-            event.target.readOnly = false;
+            ensureManualQuantityUsable(event.target.closest('tr'));
             recalcManualTotals();
         }
     });
