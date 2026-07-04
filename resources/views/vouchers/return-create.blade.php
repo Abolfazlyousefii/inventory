@@ -542,10 +542,10 @@ document.addEventListener('DOMContentLoaded', function () {
         $returnOldItems = old('items', isset($voucher) ? $voucher->items->map(fn ($item) => [
             'invoice_item_id' => $item->invoice_item_id,
             'product_id' => $item->product_id,
-            'variant_id' => $item->product_variant_id,
-            'product_variant_id' => $item->product_variant_id,
-            'quantity' => $item->quantity,
-            'unit_price' => $item->unit_price,
+            'variant_id' => $item->product_variant_id ?: $item->variant_id,
+            'product_variant_id' => $item->product_variant_id ?: $item->variant_id,
+            'quantity' => (int) $item->quantity,
+            'unit_price' => (int) $item->unit_price,
             'category_id' => $item->product?->category_id,
             'unit' => $item->product?->unit,
             'product_name' => $item->product?->name,
@@ -571,7 +571,8 @@ document.addEventListener('DOMContentLoaded', function () {
     @endphp
 
     const oldRelatedInvoiceUuid = @json($returnOldRelatedInvoiceUuid);
-    const oldItems = @json($returnOldItems);
+    const rawOldItems = @json($returnOldItems);
+    const oldItems = Array.isArray(rawOldItems) ? rawOldItems : Object.values(rawOldItems || {});
     const editingVoucherId = @json($returnEditingVoucherId);
     const existingInvoice = @json($returnExistingInvoice);
     const products = @json($manualReturnProducts);
