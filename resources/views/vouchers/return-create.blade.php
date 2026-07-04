@@ -539,7 +539,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     @php
-        $returnOldItems = old('items', isset($voucher) ? $voucher->items->map(fn ($item) => [
+        $persistedReturnItems = isset($voucher) ? $voucher->items->map(fn ($item) => [
             'invoice_item_id' => $item->invoice_item_id,
             'product_id' => $item->product_id,
             'variant_id' => $item->product_variant_id ?: $item->variant_id,
@@ -552,7 +552,22 @@ document.addEventListener('DOMContentLoaded', function () {
             'product_code' => $item->product?->code ?: ($item->product?->sku ?: ''),
             'variant_name' => $item->variant?->variant_name ?: ($item->variant_name ?: '—'),
             'variant_code' => $item->variant?->variant_code ?: ($item->variant_code ?: ''),
-        ])->values()->all() : []);
+        ])->values()->all() : [];
+
+        $oldInputItems = old('items');
+        $returnOldItems = is_array($oldInputItems)
+            ? collect($oldInputItems)->values()->map(function ($row, $index) use ($persistedReturnItems) {
+                $persisted = $persistedReturnItems[$index] ?? [];
+                $row = is_array($row) ? $row : [];
+                $quantity = (int) ($row['quantity'] ?? 0);
+
+                if ($quantity <= 0) {
+                    $quantity = (int) ($persisted['quantity'] ?? 1);
+                }
+
+                return array_replace($persisted, $row, ['quantity' => max($quantity, 1)]);
+            })->all()
+            : $persistedReturnItems;
 
         $returnExistingInvoice = isset($voucher) && $voucher->relatedInvoice ? [
             'uuid' => $voucher->relatedInvoice->uuid,
