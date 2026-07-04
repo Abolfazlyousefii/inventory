@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
-use App\Models\CustomerLedger;
 use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -92,9 +91,6 @@ class SalesHavalehService
                 }
                 if ($newQty > 0) {
                     $this->salePriceGuard->assertInvoiceUnitPrice($newPrice, 'items');
-                    if ($item->variant) {
-                        $this->salePriceGuard->assertVariantHasSalePrice($item->variant, 'items');
-                    }
                 }
 
                 $oldQty = (int) $item->quantity;
@@ -223,15 +219,11 @@ class SalesHavalehService
 
                 if ($newVariantId !== (int) $item->variant_id || $newProductId !== (int) $item->product_id) {
                     $variant = ProductVariant::query()->with('product')->whereKey($newVariantId)->where('product_id', $newProductId)->lockForUpdate()->firstOrFail();
-                    $this->salePriceGuard->assertVariantHasSalePrice($variant, 'items');
                     $this->centralInventoryService->assertVariantAvailable($newVariantId, $newQty);
                     $this->adjustSaleItemStock($invoice, $item, (int) $item->quantity, StockMovement::REASON_RETURN, 'برگشت موجودی کالای قبلی بابت تغییر تنوع توسط مالی', 'finance_correction', $editReason);
                     $item->forceFill(['product_id' => (int) $variant->product_id, 'variant_id' => $newVariantId]);
                     $this->adjustSaleItemStock($invoice, $item, -$newQty, StockMovement::REASON_SALE, 'کسر موجودی کالای جدید بابت تغییر تنوع توسط مالی', 'finance_correction', $editReason);
                 } else {
-                    if ($newQty > 0 && $item->variant) {
-                        $this->salePriceGuard->assertVariantHasSalePrice($item->variant, 'items');
-                    }
                     $delta = $newQty - (int) $item->quantity;
                     if ($delta > 0) {
                         $this->centralInventoryService->assertVariantAvailable((int) $item->variant_id, $delta);
@@ -352,11 +344,7 @@ class SalesHavalehService
             'items_updated_by' => $userId,
         ]);
 
-        CustomerLedger::query()
-            ->where('reference_type', Invoice::class)
-            ->where('reference_id', $invoice->id)
-            ->where('type', 'debit')
-            ->delete();
+        $this->ledgerService->syncInvoiceDebit($invoice->fresh());
 
         $this->historyService->log($invoice, 'sent_to_finance_reapproval', 'status', null, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'ویرایش اقلام توسط انبار ثبت شد و سند با همان شماره برای تایید مالی مجدد ارسال شد.', $userId);
         ActivityLogger::log('invoice_warehouse_edit_finance_reapproval', $invoice->fresh(), 'فاکتور توسط انبار ویرایش و برای تایید مالی مجدد ارسال شد.', [
@@ -500,7 +488,6 @@ class SalesHavalehService
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
         $this->salePriceGuard->assertInvoiceUnitPrice($price, 'items');
-        $this->salePriceGuard->assertVariantHasSalePrice($variant, 'items');
         if (! $variant->is_active) {
             abort(422, 'تنوع کالای انتخاب‌شده فعال نیست.');
         }
