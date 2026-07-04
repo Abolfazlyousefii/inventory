@@ -135,6 +135,7 @@ Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVouch
 Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
 Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.update');
 Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
+Route::post('/vouchers/sales/{uuid}/transfer-to-warehouse', [InvoiceController::class, 'transferCollectionToWarehouse'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.transfer-to-warehouse');
 Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
 Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('finance.cheques.registered');
 Route::middleware('role:admin|Admin|finance|Accountant|Manager')->prefix('finance/reports')->name('finance.reports.')->group(function () {

@@ -774,6 +774,52 @@ class SalesHavalehService
         });
     }
 
+
+    public function completeCollectionAndTransferToWarehouse(Invoice $invoice, ?int $userId = null): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $userId) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            if ((string) $invoice->collection_status === Invoice::COLLECTION_STATUS_COMPLETED) {
+                return $invoice->fresh();
+            }
+
+            if (! in_array((string) $invoice->status, [
+                SalesHavalehStatusService::COLLECTING,
+                SalesHavalehStatusService::CHECKING_DISCREPANCY,
+                SalesHavalehStatusService::FINAL_CHECK,
+            ], true)) {
+                abort(422, 'این فاکتور در وضعیت قابل انتقال از صف جمع‌آوری نیست.');
+            }
+
+            $oldStatus = (string) $invoice->status;
+            $now = now();
+
+            $invoice->update([
+                'collection_status' => Invoice::COLLECTION_STATUS_COMPLETED,
+                'collection_completed_at' => $now,
+                'collection_completed_by' => $userId,
+                'collection_transferred_to_warehouse_at' => $now,
+                'collection_transferred_to_warehouse_by' => $userId,
+                'status' => SalesHavalehStatusService::PACKING,
+                'status_changed_at' => $now,
+                'status_changed_by' => $userId,
+            ]);
+
+            $this->historyService->log(
+                $invoice,
+                'collection_transferred_to_warehouse',
+                'status',
+                $oldStatus,
+                SalesHavalehStatusService::PACKING,
+                'فاکتور جمع‌آوری و چک شد و به مرحله بسته‌بندی/انبار منتقل شد.',
+                $userId
+            );
+
+            return $invoice->fresh();
+        });
+    }
+
     public function changeStatus(Invoice $invoice, string $newStatus, ?string $note = null, ?int $userId = null): Invoice
     {
         return DB::transaction(function () use ($invoice, $newStatus, $note, $userId) {
