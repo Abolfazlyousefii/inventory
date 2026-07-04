@@ -16,7 +16,7 @@
 
     $pageItems = method_exists($vouchers, 'getCollection') ? $vouchers->getCollection() : collect($vouchers);
     $pageCount = $pageItems->count();
-    $pageTotalAmount = (int) $pageItems->sum('total_amount');
+    $pageTotalAmount = (int) $pageItems->sum(fn ($voucher) => $voucher->returned_items_total_amount ?? $voucher->total_amount ?? 0);
 
     $returnerName = function ($voucher): string {
         $customerFullName = trim(implode(' ', array_filter([
@@ -279,7 +279,7 @@
         line-height:1.65;
     }
 
-    .return-col-row{width:52px}.return-col-ref{width:118px}.return-col-date{width:132px}.return-col-customer{width:150px}.return-col-items{width:24%}.return-col-qty{width:74px}.return-col-reason{width:118px}.return-col-status{width:104px}.return-col-user{width:118px}.return-col-actions{width:116px}
+    .return-col-row{width:48px}.return-col-ref{width:110px}.return-col-date{width:124px}.return-col-customer{width:140px}.return-col-items{width:22%}.return-col-item-count{width:96px}.return-col-amount{width:122px}.return-col-reason{width:112px}.return-col-status{width:100px}.return-col-user{width:110px}.return-col-actions{width:110px}
 
     .cell-muted{color:var(--muted);font-size:12px}.cell-strong{font-weight:900;color:var(--text)}
     .return-items-cell{max-width:100%}
@@ -292,7 +292,7 @@
     .return-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch}.return-actions .btn{width:100%;font-size:12px;font-weight:800;padding:.32rem .5rem}
 
     @media (max-width: 1199.98px){
-        .return-table-wrap{overflow-x:auto}.return-table{min-width:980px}
+        .return-table-wrap{overflow-x:auto}.return-table{min-width:1120px}
     }
 
     .mobile-cards{
@@ -457,7 +457,7 @@
             <div class="return-table-wrap">
                 <table class="table table-hover align-middle mb-0 return-table">
                     <colgroup>
-                        <col class="return-col-row"><col class="return-col-ref"><col class="return-col-date"><col class="return-col-customer"><col class="return-col-items"><col class="return-col-qty"><col class="return-col-reason"><col class="return-col-status"><col class="return-col-user"><col class="return-col-actions">
+                        <col class="return-col-row"><col class="return-col-ref"><col class="return-col-date"><col class="return-col-customer"><col class="return-col-items"><col class="return-col-item-count"><col class="return-col-amount"><col class="return-col-reason"><col class="return-col-status"><col class="return-col-user"><col class="return-col-actions">
                     </colgroup>
                     <thead>
                     <tr>
@@ -466,7 +466,8 @@
                         <th>تاریخ شمسی</th>
                         <th>مشتری</th>
                         <th>کالا / تنوع</th>
-                        <th>تعداد</th>
+                        <th>تعداد آیتم برگشتی</th>
+                        <th>مبلغ کل برگشتی</th>
                         <th>علت برگشت</th>
                         <th>وضعیت</th>
                         <th>ثبت‌کننده</th>
@@ -480,7 +481,8 @@
                             $visibleItems = $itemRows->take(2);
                             $hiddenItemsCount = max($itemRows->count() - $visibleItems->count(), 0);
                             $itemSummary = $returnedItemsSummary($voucher);
-                            $totalQuantity = (int) $voucher->items->sum('quantity');
+                            $returnedItemsCount = (int) ($voucher->returned_items_count ?? $voucher->items->count());
+                            $returnedTotalAmount = (int) ($voucher->returned_items_total_amount ?? $voucher->total_amount ?? $voucher->items->sum('line_total'));
                         @endphp
                         <tr>
                             <td class="cell-muted">{{ $vouchers->firstItem() ? $vouchers->firstItem() + $loop->index : $loop->iteration }}</td>
@@ -509,7 +511,8 @@
                                     <span class="more-items" title="{{ $itemSummary }}">+ {{ number_format($hiddenItemsCount) }} قلم دیگر</span>
                                 @endif
                             </td>
-                            <td class="cell-strong">{{ number_format($totalQuantity) }} عدد</td>
+                            <td class="cell-strong">{{ number_format($returnedItemsCount) }} آیتم</td>
+                            <td class="cell-strong">{{ $toRial($returnedTotalAmount) }}</td>
                             <td><span class="reason-pill">{{ \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—' }}</span></td>
                             <td>{{ \App\Models\WarehouseTransfer::returnSourceLabel($voucher->return_type ?? null) }}</td>
                             <td>{{ $voucher->user?->name ?: '—' }}</td>
@@ -526,7 +529,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="10" class="text-center py-4 text-muted">موردی ثبت نشده است.</td>
+                            <td colspan="11" class="text-center py-4 text-muted">موردی ثبت نشده است.</td>
                         </tr>
                     @endforelse
                     </tbody>
