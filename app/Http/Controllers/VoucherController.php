@@ -513,6 +513,9 @@ class VoucherController extends Controller
 
         $data = $request->validate($rules);
         $returnsWarehouse = $this->returnsWarehouse();
+        if (($data['return_reason'] ?? null) === WarehouseTransfer::RETURN_REASON_GOODS_HEALTHY) {
+            $data['to_warehouse_id'] = WarehouseStockService::centralWarehouseId();
+        }
         $destinationWarehouse = Warehouse::query()
             ->whereKey((int) $data['to_warehouse_id'])
             ->where('is_active', true)
@@ -1810,6 +1813,8 @@ class VoucherController extends Controller
 
             StockMovement::create([
                 'product_id' => $product->id,
+                'product_variant_id' => $variant->id,
+                'warehouse_id' => $voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN ? (int) $data['to_warehouse_id'] : (int) $data['from_warehouse_id'],
                 'user_id' => auth()->id(),
                 'type' => $movementType,
                 'reason' => $movementReason,
@@ -1817,6 +1822,8 @@ class VoucherController extends Controller
                 'stock_before' => $stockBefore,
                 'stock_after' => $stockAfter,
                 'reference' => $transfer->reference ?: ('TR-' . $transfer->id),
+                'reference_type' => WarehouseTransfer::class,
+                'reference_id' => $transfer->id,
                 'note' => $movementNote,
             ]);
         }
