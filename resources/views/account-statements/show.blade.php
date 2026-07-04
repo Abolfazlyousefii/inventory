@@ -224,7 +224,8 @@
                     @php
                         $invoice = $ledger->reference_type === \App\Models\Invoice::class ? ($invoices[$ledger->reference_id] ?? null) : null;
                         $payment = $ledger->reference_type === \App\Models\InvoicePayment::class ? ($payments[$ledger->reference_id] ?? null) : null;
-                        $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? ($transfers[$ledger->reference_id] ?? null) : null;
+                        $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? (($transfers[$ledger->reference_id] ?? null) ?: ($legacyReturnTransfers[$ledger->id] ?? null)) : ($legacyReturnTransfers[$ledger->id] ?? null);
+                        $purchase = $ledger->reference_type === \App\Models\Purchase::class ? ($purchases[$ledger->reference_id] ?? null) : null;
                         $description = $ledger->note ?: '—';
                         $viewUrl = null;
 
@@ -256,11 +257,19 @@
                         if ($transfer) {
                             $transferRef = $transfer->reference ?: ('TR-' . $transfer->id);
                             $transferTypeLabel = \App\Models\WarehouseTransfer::typeOptions()[$transfer->voucher_type] ?? $transfer->voucher_type;
-                            $description = "سند {$transferRef} | نوع: {$transferTypeLabel} | مبلغ " . \App\Support\Currency::formatRial($ledger->amount);
+                            $amount = $transfer->total_amount ?: $ledger->amount;
+                            $description = "سند {$transferRef} | نوع: {$transferTypeLabel} | مبلغ " . \App\Support\Currency::formatRial($amount);
 
                             if ($transfer->voucher_type === \App\Models\WarehouseTransfer::TYPE_CUSTOMER_RETURN) {
                                 $viewUrl = route('account-statements.documents.returns.show', $transfer->id);
                             }
+                        }
+
+                        if ($purchase) {
+                            $purchaseDate = $purchase->purchased_at ? Jalalian::fromDateTime($purchase->purchased_at)->format('Y/m/d') : '—';
+                            $supplierName = $purchase->supplier?->name ?: '—';
+                            $description = "خرید کالا PUR-{$purchase->id} | فروشنده: {$supplierName} | تاریخ خرید: {$purchaseDate} | مبلغ " . \App\Support\Currency::formatRial($purchase->total_amount);
+                            $viewUrl = route('purchases.show', $purchase->id);
                         }
                     @endphp
                     <tr>
