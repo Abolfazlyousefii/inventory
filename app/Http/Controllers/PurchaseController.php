@@ -201,7 +201,7 @@ class PurchaseController extends Controller
         DB::transaction(function () use ($data) {
             $centralWarehouseId = WarehouseStockService::centralWarehouseId();
 
-            $purchase = Purchase::create([
+            $purchase = Purchase::create($this->purchaseTablePayload([
                 'supplier_id' => $data['supplier_id'],
                 'warehouse_id' => $centralWarehouseId,
                 'user_id' => auth()->id(),
@@ -212,11 +212,10 @@ class PurchaseController extends Controller
                 'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
                 'total_discount' => 0,
                 'total_amount' => 0,
-            ]);
+            ]));
 
             $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
-            $purchase->update($summary);
-            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
+            $purchase->update($this->purchaseTablePayload($summary));
         });
 
         return redirect()->route('purchases.index')->with('success', 'خرید کالا با موفقیت ثبت شد.');
@@ -235,7 +234,7 @@ class PurchaseController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $purchase->update([
+            $purchase->update($this->purchaseTablePayload([
                 'supplier_id' => $data['supplier_id'],
                 'warehouse_id' => (int) $data['warehouse_id'],
                 'purchased_at' => $data['purchased_at'] ?? $purchase->purchased_at,
@@ -243,11 +242,10 @@ class PurchaseController extends Controller
                 'user_id' => auth()->id(),
                 'discount_type' => $data['invoice_discount_type'] ?? null,
                 'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
-            ]);
+            ]));
 
             $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
-            $purchase->update($summary);
-            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
+            $purchase->update($this->purchaseTablePayload($summary));
         });
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت ویرایش شد.');
@@ -262,6 +260,25 @@ class PurchaseController extends Controller
         });
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت حذف شد.');
+    }
+
+
+    private function purchaseTablePayload(array $payload): array
+    {
+        return collect($payload)
+            ->filter(fn ($value, string $column) => $this->purchaseHasColumn($column))
+            ->all();
+    }
+
+    private function purchaseHasColumn(string $column): bool
+    {
+        static $columns = [];
+
+        if (! array_key_exists($column, $columns)) {
+            $columns[$column] = Schema::hasColumn('purchases', $column);
+        }
+
+        return $columns[$column];
     }
 
 
