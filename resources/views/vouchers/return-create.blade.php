@@ -542,10 +542,10 @@ document.addEventListener('DOMContentLoaded', function () {
         $returnOldItems = old('items', isset($voucher) ? $voucher->items->map(fn ($item) => [
             'invoice_item_id' => $item->invoice_item_id,
             'product_id' => $item->product_id,
-            'variant_id' => $item->product_variant_id,
-            'product_variant_id' => $item->product_variant_id,
-            'quantity' => $item->quantity,
-            'unit_price' => $item->unit_price,
+            'variant_id' => $item->product_variant_id ?: $item->variant_id,
+            'product_variant_id' => $item->product_variant_id ?: $item->variant_id,
+            'quantity' => (int) $item->quantity,
+            'unit_price' => (int) $item->unit_price,
             'category_id' => $item->product?->category_id,
             'unit' => $item->product?->unit,
             'product_name' => $item->product?->name,
@@ -571,7 +571,20 @@ document.addEventListener('DOMContentLoaded', function () {
     @endphp
 
     const oldRelatedInvoiceUuid = @json($returnOldRelatedInvoiceUuid);
-    const oldItems = @json($returnOldItems);
+    const rawOldItems = @json($returnOldItems);
+    const oldItems = (Array.isArray(rawOldItems) ? rawOldItems : Object.values(rawOldItems || {})).map(function (row) {
+        const quantity = returnItemQuantity(row);
+        const variantId = row?.variant_id ?? row?.product_variant_id ?? row?.variety_id ?? '';
+
+        return {
+            ...row,
+            invoice_item_id: row?.invoice_item_id ?? row?.invoiceItemId ?? '',
+            product_id: row?.product_id ?? row?.productId ?? '',
+            variant_id: variantId,
+            product_variant_id: row?.product_variant_id ?? variantId,
+            quantity: quantity > 0 ? quantity : row?.quantity,
+        };
+    });
     const editingVoucherId = @json($returnEditingVoucherId);
     const existingInvoice = @json($returnExistingInvoice);
     const products = @json($manualReturnProducts);
@@ -897,11 +910,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function itemRowTemplate(item, index, useOldQuantity) {
         const rawRemaining = toSafeNumber(item.remaining_qty, 0);
         const defaultQtyFromOld = useOldQuantity ? oldQuantityFor(item.invoice_item_id, item.product_id, item.variant_id) : null;
-        const remaining = defaultQtyFromOld !== null ? Math.max(rawRemaining, defaultQtyFromOld) : rawRemaining;
-        const defaultQty = defaultQtyFromOld !== null ? defaultQtyFromOld : remaining;
+        const remaining = Math.max(defaultQtyFromOld !== null ? Math.max(rawRemaining, defaultQtyFromOld) : rawRemaining, 1);
+        const defaultQty = Math.max(defaultQtyFromOld !== null ? defaultQtyFromOld : remaining, 1);
 
         return `
-            <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}">
+            <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}" data-default-quantity="${escapeHtml(defaultQty)}">
                 <td>
                     <input type="hidden" name="items[${index}][invoice_item_id]" value="${escapeHtml(item.invoice_item_id)}">
                     <input type="hidden" name="items[${index}][product_id]" value="${escapeHtml(item.product_id)}">
@@ -973,6 +986,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 refreshItemsStateAfterDelete();
                 recalcInternalReturnSummary();
             });
+
+            if (qtyInput && (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0)) {
+                qtyInput.value = String(toSafeNumber(tr.dataset.defaultQuantity, 1));
+            }
 
             qtyInput.addEventListener('input', function () {
                 const max = toSafeNumber(qtyInput.max, 0);
@@ -1281,13 +1298,14 @@ document.addEventListener('DOMContentLoaded', function () {
     function addManualRow(rowData = {}) {
         const index = Date.now() + manualTbody.children.length;
         const unitPrice = toSafeNumber(rowData.unit_price, 0);
+        const defaultQty = Math.max(returnItemQuantity(rowData), 1);
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><select class="form-select manual-category">${categoryOptions(rowData.category_id)}</select></td>
             <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
-            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(returnItemQuantity(rowData) || 1)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(defaultQty)}" data-default-quantity="${escapeHtml(defaultQty)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
             <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
@@ -1353,7 +1371,11 @@ document.addEventListener('DOMContentLoaded', function () {
             productSelect.addEventListener('change', onProductChanged);
             variantSelect.addEventListener('change', onVariantChanged);
         }
-        tr.querySelector('.manual-qty').addEventListener('input', recalcManualTotals);
+        const manualQtyInput = tr.querySelector('.manual-qty');
+        if (manualQtyInput && (!manualQtyInput.value || toSafeNumber(manualQtyInput.value, 0) <= 0)) {
+            manualQtyInput.value = String(toSafeNumber(manualQtyInput.dataset.defaultQuantity, 1));
+        }
+        manualQtyInput.addEventListener('input', recalcManualTotals);
         tr.querySelectorAll('.quick-money').forEach(function (input) { input.addEventListener('input', function () { const raw = parseMoney(input.value); input.value = input.value.trim() === '' ? '' : raw.toLocaleString('en-US'); }); });
         priceDisplayInput.addEventListener('input', function () {
             const raw = parseMoney(priceDisplayInput.value);
