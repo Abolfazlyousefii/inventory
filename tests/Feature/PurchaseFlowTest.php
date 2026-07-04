@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Purchase;
@@ -246,6 +247,34 @@ class PurchaseFlowTest extends TestCase
 
         $this->assertSame(0, $purchase->refresh()->items()->count());
         $this->assertSame(0, (int) $variants[0]->refresh()->stock);
+    }
+
+    public function test_purchase_from_customer_is_added_to_customer_account_statement(): void
+    {
+        [$user, $_supplier, $product, $variants] = $this->purchaseFixture(1);
+
+        $customer = Customer::create([
+            'first_name' => 'علی',
+            'last_name' => 'حسابی',
+            'mobile' => '09123456789',
+        ]);
+
+        $this->actingAs($user)->post(route('purchases.store'), [
+            'supplier_id' => 'customer:' . $customer->id,
+            'items' => [
+                ['product_id' => $product->id, 'variant_id' => $variants[0]->id, 'quantity' => 2, 'buy_price' => 100000, 'sell_price' => 150000],
+            ],
+        ])->assertRedirect(route('purchases.index'));
+
+        $purchase = Purchase::query()->firstOrFail();
+
+        $this->assertDatabaseHas('customer_ledgers', [
+            'customer_id' => $customer->id,
+            'type' => 'credit',
+            'amount' => 200000,
+            'reference_type' => Purchase::class,
+            'reference_id' => $purchase->id,
+        ]);
     }
 
     private function purchaseFixture(int $variantCount): array
