@@ -160,13 +160,12 @@ class AccountStatementController extends Controller
 
         $legacyReturnTransfersByInvoiceNumber = WarehouseTransfer::query()
             ->where('voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
-            ->where('customer_id', $customer->id)
-            ->whereNotNull('external_invoice_number')
             ->latest('id')
-            ->get(['id', 'reference', 'voucher_type', 'external_invoice_number', 'total_amount'])
-            ->filter(fn (WarehouseTransfer $transfer) => $legacyReturnInvoiceNumbers->contains($this->normalizeSearchTerm((string) $transfer->external_invoice_number)))
-            ->unique(fn (WarehouseTransfer $transfer) => $this->normalizeSearchTerm((string) $transfer->external_invoice_number))
-            ->keyBy(fn (WarehouseTransfer $transfer) => $this->normalizeSearchTerm((string) $transfer->external_invoice_number));
+            ->get(['id', 'reference', 'voucher_type', 'customer_id', 'external_invoice_number', 'total_amount', 'note'])
+            ->filter(fn (WarehouseTransfer $transfer) => $legacyReturnInvoiceNumbers->contains($this->legacyReturnMatchKey($transfer, $legacyReturnInvoiceNumbers)))
+            ->sortByDesc(fn (WarehouseTransfer $transfer) => (int) $transfer->customer_id === (int) $customer->id)
+            ->unique(fn (WarehouseTransfer $transfer) => $this->legacyReturnMatchKey($transfer, $legacyReturnInvoiceNumbers))
+            ->keyBy(fn (WarehouseTransfer $transfer) => $this->legacyReturnMatchKey($transfer, $legacyReturnInvoiceNumbers));
 
         $legacyReturnTransfers = $legacyReturnInvoiceNumbersByLedger
             ->mapWithKeys(fn (string $invoiceNumber, int $ledgerId) => [
@@ -220,6 +219,27 @@ class AccountStatementController extends Controller
         ));
     }
 
+
+    private function legacyReturnMatchKey(WarehouseTransfer $transfer, $invoiceNumbers): ?string
+    {
+        $candidates = [
+            $transfer->external_invoice_number,
+            $transfer->reference,
+            $transfer->note,
+        ];
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeSearchTerm((string) $candidate);
+
+            foreach ($invoiceNumbers as $invoiceNumber) {
+                if ($invoiceNumber !== '' && str_contains($normalized, (string) $invoiceNumber)) {
+                    return (string) $invoiceNumber;
+                }
+            }
+        }
+
+        return null;
+    }
 
     public function storeManualAdjustment(Request $request, Customer $customer)
     {

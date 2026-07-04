@@ -271,6 +271,10 @@
                             $description = "خرید کالا PUR-{$purchase->id} | فروشنده: {$supplierName} | تاریخ خرید: {$purchaseDate} | مبلغ " . \App\Support\Currency::formatRial($purchase->total_amount);
                             $viewUrl = route('purchases.show', $purchase->id);
                         }
+
+                        if (! $viewUrl && str_contains((string) $ledger->note, 'برگشت از فروش')) {
+                            $viewUrl = route('vouchers.section.index', ['type' => 'return-from-sale', 'customer_id' => $customer->id]);
+                        }
                     @endphp
                     <tr>
                         <td class="text-nowrap">{{ $ledger->created_at ? Jalalian::fromDateTime($ledger->created_at)->format('Y/m/d H:i') : '—' }}</td>
