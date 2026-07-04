@@ -121,6 +121,13 @@
         max-width:130px;
     }
 
+    /* Bootstrap input-group gives form controls width: 1%; keep return quantities visible/editable in create and edit forms. */
+    .input-group > .return-quantity-input.form-control{
+        width:auto;
+        min-width:110px;
+        flex:0 0 130px;
+    }
+
     .select2-container{
         width:100% !important;
         direction:rtl;
