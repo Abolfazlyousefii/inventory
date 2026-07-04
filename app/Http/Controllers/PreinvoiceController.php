@@ -820,6 +820,7 @@ class PreinvoiceController extends Controller
         }
 
         return $order->items()
+            ->reorder()
             ->selectRaw('variant_id, SUM(quantity) as qty')
             ->whereNotNull('variant_id')
             ->groupBy('variant_id')
