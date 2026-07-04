@@ -13,6 +13,7 @@ use App\Models\WarehouseStock;
 use App\Support\DocumentCodeGenerator;
 use App\Support\ActivityLogger;
 use App\Support\SalesDocumentTotals;
+use App\Services\Sales\SalePriceGuard;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,7 @@ class SalesHavalehService
         private readonly SalesHavalehHistoryService $historyService,
         private readonly CentralInventoryService $centralInventoryService,
         private readonly SalesDocumentAccessService $accessService,
+        private readonly SalePriceGuard $salePriceGuard,
     ) {}
 
     public function updateItemsForInvoice(
@@ -87,6 +89,12 @@ class SalesHavalehService
                 $item = $itemsById->get($itemId);
                 if (!$item) {
                     continue;
+                }
+                if ($newQty > 0) {
+                    $this->salePriceGuard->assertInvoiceUnitPrice($newPrice, 'items');
+                    if ($item->variant) {
+                        $this->salePriceGuard->assertVariantHasSalePrice($item->variant, 'items');
+                    }
                 }
 
                 $oldQty = (int) $item->quantity;
@@ -203,6 +211,10 @@ class SalesHavalehService
                 $newVariantId = (int) ($row['variant_id'] ?? $item->variant_id);
                 $newProductId = (int) ($row['product_id'] ?? $item->product_id);
 
+                if ($newQty > 0) {
+                    $this->salePriceGuard->assertInvoiceUnitPrice($newPrice, 'items');
+                }
+
                 if ($newQty <= 0) {
                     $this->adjustSaleItemStock($invoice, $item, (int) $item->quantity, StockMovement::REASON_RETURN, 'برگشت موجودی بابت حذف ردیف توسط مالی', 'finance_correction', $editReason);
                     $item->delete();
@@ -211,11 +223,15 @@ class SalesHavalehService
 
                 if ($newVariantId !== (int) $item->variant_id || $newProductId !== (int) $item->product_id) {
                     $variant = ProductVariant::query()->with('product')->whereKey($newVariantId)->where('product_id', $newProductId)->lockForUpdate()->firstOrFail();
+                    $this->salePriceGuard->assertVariantHasSalePrice($variant, 'items');
                     $this->centralInventoryService->assertVariantAvailable($newVariantId, $newQty);
                     $this->adjustSaleItemStock($invoice, $item, (int) $item->quantity, StockMovement::REASON_RETURN, 'برگشت موجودی کالای قبلی بابت تغییر تنوع توسط مالی', 'finance_correction', $editReason);
                     $item->forceFill(['product_id' => (int) $variant->product_id, 'variant_id' => $newVariantId]);
                     $this->adjustSaleItemStock($invoice, $item, -$newQty, StockMovement::REASON_SALE, 'کسر موجودی کالای جدید بابت تغییر تنوع توسط مالی', 'finance_correction', $editReason);
                 } else {
+                    if ($newQty > 0 && $item->variant) {
+                        $this->salePriceGuard->assertVariantHasSalePrice($item->variant, 'items');
+                    }
                     $delta = $newQty - (int) $item->quantity;
                     if ($delta > 0) {
                         $this->centralInventoryService->assertVariantAvailable((int) $item->variant_id, $delta);
@@ -483,6 +499,8 @@ class SalesHavalehService
         }
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
+        $this->salePriceGuard->assertInvoiceUnitPrice($price, 'items');
+        $this->salePriceGuard->assertVariantHasSalePrice($variant, 'items');
         if (! $variant->is_active) {
             abort(422, 'تنوع کالای انتخاب‌شده فعال نیست.');
         }

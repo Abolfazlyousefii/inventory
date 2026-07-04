@@ -200,7 +200,7 @@ class PurchaseController extends Controller
         DB::transaction(function () use ($data) {
             $centralWarehouseId = WarehouseStockService::centralWarehouseId();
 
-            $purchase = Purchase::create([
+            $purchase = Purchase::create($this->purchaseTablePayload([
                 'supplier_id' => $data['supplier_id'],
                 'warehouse_id' => $centralWarehouseId,
                 'user_id' => auth()->id(),
@@ -211,10 +211,10 @@ class PurchaseController extends Controller
                 'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
                 'total_discount' => 0,
                 'total_amount' => 0,
-            ]);
+            ]));
 
             $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
-            $purchase->update($summary);
+            $purchase->update($this->purchaseTablePayload($summary));
         });
 
         return redirect()->route('purchases.index')->with('success', 'خرید کالا با موفقیت ثبت شد.');
@@ -233,7 +233,7 @@ class PurchaseController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $purchase->update([
+            $purchase->update($this->purchaseTablePayload([
                 'supplier_id' => $data['supplier_id'],
                 'warehouse_id' => (int) $data['warehouse_id'],
                 'purchased_at' => $data['purchased_at'] ?? $purchase->purchased_at,
@@ -241,10 +241,10 @@ class PurchaseController extends Controller
                 'user_id' => auth()->id(),
                 'discount_type' => $data['invoice_discount_type'] ?? null,
                 'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
-            ]);
+            ]));
 
             $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
-            $purchase->update($summary);
+            $purchase->update($this->purchaseTablePayload($summary));
         });
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت ویرایش شد.');
@@ -258,6 +258,25 @@ class PurchaseController extends Controller
         });
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت حذف شد.');
+    }
+
+
+    private function purchaseTablePayload(array $payload): array
+    {
+        return collect($payload)
+            ->filter(fn ($value, string $column) => $this->purchaseHasColumn($column))
+            ->all();
+    }
+
+    private function purchaseHasColumn(string $column): bool
+    {
+        static $columns = [];
+
+        if (! array_key_exists($column, $columns)) {
+            $columns[$column] = Schema::hasColumn('purchases', $column);
+        }
+
+        return $columns[$column];
     }
 
 
@@ -875,66 +894,70 @@ class PurchaseController extends Controller
             ->sort()
             ->values();
 
-        $variants = ProductVariant::query()
-            ->whereIn('id', $variantIds)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get()
-            ->keyBy('id');
-
-        $productIds = $variants->pluck('product_id')
-            ->merge($requestItems->pluck('product_id'))
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->unique()
-            ->sort()
-            ->values();
-
-        $products = Product::query()
-            ->whereIn('id', $productIds)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get()
-            ->keyBy('id');
+        $variants = ProductVariant::query()->whereIn('id', $variantIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        $productIds = $variants->pluck('product_id')->merge($requestItems->pluck('product_id'))->map(fn ($id) => (int) $id)->filter()->unique()->sort()->values();
+        $products = Product::query()->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
         $affectedProductIds = [];
         $handledOldItemIds = [];
 
         foreach ($requestItems as $newItem) {
-            $variant = $variants->get($newItem['variant_id']);
-            if (!$variant) {
-                abort(422, 'تنوع انتخاب‌شده معتبر نیست.');
-            }
+            $newVariant = $variants->get($newItem['variant_id']);
+            if (!$newVariant) abort(422, 'تنوع انتخاب‌شده معتبر نیست.');
 
             $oldItem = $newItem['id'] ? $oldItemsById->get($newItem['id']) : null;
-            if ($oldItem && (int) $oldItem->purchase_id !== (int) $purchase->id) {
-                abort(422, 'ردیف خرید انتخاب‌شده متعلق به این سند نیست.');
-            }
-            if (!$oldItem) {
-                $oldItem = $oldItemsByVariant->get($newItem['variant_id']);
-            }
-
-            if ($oldItem) {
-                $handledOldItemIds[] = (int) $oldItem->id;
-            }
+            if ($oldItem && (int) $oldItem->purchase_id !== (int) $purchase->id) abort(422, 'ردیف خرید انتخاب‌شده متعلق به این سند نیست.');
+            if (!$oldItem) $oldItem = $oldItemsByVariant->get($newItem['variant_id']);
+            if ($oldItem) $handledOldItemIds[] = (int) $oldItem->id;
 
             $oldQty = $oldItem ? (int) $oldItem->quantity : 0;
             $newQty = (int) $newItem['quantity'];
-            $delta = $newQty - $oldQty;
-
-            if (!$oldItem && $newQty <= 0) {
-                continue;
-            }
-
-            if ($delta < 0 && (int) $variant->stock < abs($delta)) {
-                throw ValidationException::withMessages([
-                    'items' => 'امکان کاهش یا حذف این آیتم وجود ندارد، چون موجودی فعلی برای برگشت مقدار خرید کافی نیست.',
-                ]);
-            }
+            if (!$oldItem && $newQty <= 0) continue;
 
             $product = $products->get($newItem['product_id']);
-            if (!$product || (int) $variant->product_id !== (int) $product->id) {
-                abort(422, 'کالای انتخاب‌شده برای تنوع معتبر نیست.');
+            if (!$product || (int) $newVariant->product_id !== (int) $product->id) abort(422, 'کالای انتخاب‌شده برای تنوع معتبر نیست.');
+
+            $oldVariantId = $oldItem ? (int) $oldItem->product_variant_id : 0;
+            $newVariantId = (int) $newVariant->id;
+            $variantChanged = $oldItem && $oldVariantId !== $newVariantId;
+
+            if ($variantChanged && $oldQty > 0) {
+                $oldVariant = $variants->get($oldVariantId) ?: ProductVariant::whereKey($oldVariantId)->lockForUpdate()->first();
+                if ($oldVariant && (int) $oldVariant->stock < $oldQty) {
+                    throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
+                }
+                if ($oldVariant) {
+                    $oldProduct = $products->get((int) $oldVariant->product_id) ?: Product::whereKey((int) $oldVariant->product_id)->lockForUpdate()->first();
+                    $before = (int) $oldVariant->stock;
+                    $after = $before - $oldQty;
+                    $oldVariant->update(['stock' => $after]);
+                    if ($oldProduct) {
+                        $this->recordPurchaseAdjustmentMovement($purchase, $oldProduct, $oldVariant, $warehouseId, -$oldQty, $before, $after, StockMovement::REASON_PURCHASE_ITEM_CHANGED);
+                        WarehouseStockService::change($warehouseId, $oldProduct->id, -$oldQty, (int) $oldVariant->id);
+                        $affectedProductIds[] = $oldProduct->id;
+                    }
+                }
+
+                if ($newQty > 0) {
+                    $before = (int) $newVariant->stock;
+                    $after = $before + $newQty;
+                    $newVariant->update(['stock' => $after]);
+                    $this->recordPurchaseAdjustmentMovement($purchase, $product, $newVariant, $warehouseId, $newQty, $before, $after, StockMovement::REASON_PURCHASE_ITEM_CHANGED);
+                    WarehouseStockService::change($warehouseId, $product->id, $newQty, (int) $newVariant->id);
+                }
+            } else {
+                $delta = $newQty - $oldQty;
+                if ($delta < 0 && (int) $newVariant->stock < abs($delta)) {
+                    throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
+                }
+                if ($delta !== 0) {
+                    $before = (int) $newVariant->stock;
+                    $after = $before + $delta;
+                    $newVariant->update(['stock' => $after]);
+                    $reason = $oldItem ? StockMovement::REASON_PURCHASE_ITEM_CHANGED : StockMovement::REASON_PURCHASE_ITEM_ADDED;
+                    $this->recordPurchaseAdjustmentMovement($purchase, $product, $newVariant, $warehouseId, $delta, $before, $after, $reason);
+                    WarehouseStockService::change($warehouseId, $product->id, $delta, (int) $newVariant->id);
+                }
             }
 
             $buyPrice = (int) $newItem['buy_price'];
@@ -945,63 +968,24 @@ class PurchaseController extends Controller
             $itemDiscountAmount = $this->calculateDiscount($lineSubtotal, $itemDiscountType, $itemDiscountValue);
             $lineTotal = max(0, $lineSubtotal - $itemDiscountAmount);
 
-            if ($delta !== 0) {
-                $before = (int) $variant->stock;
-                $after = $before + $delta;
-                $variant->update(['stock' => $after]);
+            if ($newQty <= 0) { if ($oldItem) $oldItem->delete(); $affectedProductIds[] = $product->id; continue; }
 
-                $reason = $oldItem
-                    ? StockMovement::REASON_PURCHASE_ITEM_CHANGED
-                    : StockMovement::REASON_PURCHASE_ITEM_ADDED;
-
-                $this->recordPurchaseAdjustmentMovement($purchase, $product, $variant, $warehouseId, $delta, $before, $after, $reason);
-
-                WarehouseStockService::change($warehouseId, $product->id, $delta, (int) $variant->id);
-            }
-
-            if ($newQty <= 0) {
-                if ($oldItem) {
-                    $oldItem->delete();
-                    $affectedProductIds[] = $product->id;
-                }
-                continue;
-            }
-
-            if ($this->purchaseCanRefreshVariantPrice($purchase, (int) $variant->id)) {
+            if ($this->purchaseCanRefreshVariantPrice($purchase, (int) $newVariant->id)) {
                 $priceUpdates = [];
-                if ($buyPrice > 0) {
-                    $priceUpdates['buy_price'] = $buyPrice;
-                }
-                if ($sellPrice > 0) {
-                    $priceUpdates['sell_price'] = $sellPrice;
-                }
-                if ($priceUpdates !== []) {
-                    $variant->update($priceUpdates);
-                }
+                if ($buyPrice > 0) $priceUpdates['buy_price'] = $buyPrice;
+                if ($sellPrice > 0) $priceUpdates['sell_price'] = $sellPrice;
+                if ($priceUpdates !== []) $newVariant->update($priceUpdates);
             }
 
             $payload = [
-                'product_id' => $product->id,
-                'product_variant_id' => $variant->id,
-                'product_name' => $product->name,
-                'product_code' => $product->code,
-                'variant_name' => $variant->variant_name,
-                'quantity' => $newQty,
-                'buy_price' => $buyPrice,
-                'sell_price' => $sellPrice,
-                'line_subtotal' => $lineSubtotal,
-                'discount_type' => $itemDiscountType,
-                'discount_value' => $itemDiscountValue,
-                'discount_amount' => $itemDiscountAmount,
-                'line_total' => $lineTotal,
+                'product_id' => $product->id, 'product_variant_id' => $newVariant->id, 'product_name' => $product->name,
+                'product_code' => $product->code, 'variant_name' => $newVariant->variant_name, 'quantity' => $newQty,
+                'buy_price' => $buyPrice, 'sell_price' => $sellPrice, 'line_subtotal' => $lineSubtotal,
+                'discount_type' => $itemDiscountType, 'discount_value' => $itemDiscountValue,
+                'discount_amount' => $itemDiscountAmount, 'line_total' => $lineTotal,
             ];
 
-            if ($oldItem) {
-                $oldItem->update($payload);
-            } else {
-                $purchase->items()->create($payload);
-            }
-
+            $oldItem ? $oldItem->update($payload) : $purchase->items()->create($payload);
             $affectedProductIds[] = $product->id;
         }
 
@@ -1009,45 +993,20 @@ class PurchaseController extends Controller
 
         foreach ($removedItems as $removedItem) {
             $variantId = (int) $removedItem->product_variant_id;
-            if ($variantId <= 0) {
-                $removedItem->delete();
-                continue;
-            }
-
+            if ($variantId <= 0) { $removedItem->delete(); continue; }
             $variant = $variants->get($variantId) ?: ProductVariant::whereKey($variantId)->lockForUpdate()->first();
-            if (!$variant) {
-                $removedItem->delete();
-                continue;
-            }
-
+            if (!$variant) { $removedItem->delete(); continue; }
             $quantity = (int) $removedItem->quantity;
             if ($quantity > 0 && (int) $variant->stock < $quantity) {
-                throw ValidationException::withMessages([
-                    'items' => 'امکان کاهش یا حذف این آیتم وجود ندارد، چون موجودی فعلی برای برگشت مقدار خرید کافی نیست.',
-                ]);
+                throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
             }
-
             $product = $products->get((int) $variant->product_id) ?: Product::whereKey((int) $variant->product_id)->lockForUpdate()->first();
             if ($product && $quantity > 0) {
-                $before = (int) $variant->stock;
-                $after = $before - $quantity;
-                $variant->update(['stock' => $after]);
-
-                $this->recordPurchaseAdjustmentMovement(
-                    $purchase,
-                    $product,
-                    $variant,
-                    $warehouseId,
-                    -$quantity,
-                    $before,
-                    $after,
-                    StockMovement::REASON_PURCHASE_ITEM_REMOVED
-                );
-
+                $before = (int) $variant->stock; $after = $before - $quantity; $variant->update(['stock' => $after]);
+                $this->recordPurchaseAdjustmentMovement($purchase, $product, $variant, $warehouseId, -$quantity, $before, $after, StockMovement::REASON_PURCHASE_ITEM_REMOVED);
                 WarehouseStockService::change($warehouseId, $product->id, -$quantity, (int) $variant->id);
                 $affectedProductIds[] = $product->id;
             }
-
             $removedItem->delete();
         }
 
@@ -1058,7 +1017,6 @@ class PurchaseController extends Controller
 
         return $this->purchaseSummaryFromItems($purchase, $data);
     }
-
 
     private function recordPurchaseAdjustmentMovement(
         Purchase $purchase,

@@ -19,6 +19,7 @@ use App\Support\DocumentCodeGenerator;
 use App\Support\ActivityLogger;
 use App\Services\WarehouseReviewAuditService;
 use App\Services\WarehousePendingRefreshService;
+use App\Services\Sales\SalePriceGuard;
 use App\Services\WarehouseStockService;
 use App\Services\CentralInventoryService;
 use App\Services\SalesDocumentAccessService;
@@ -896,6 +897,14 @@ class PreinvoiceController extends Controller
         ]);
 
         foreach (($validated['items'] ?? []) as $index => $row) {
+            $price = (int) ($row['price'] ?? 0);
+            app(SalePriceGuard::class)->assertInvoiceUnitPrice($price, "items.{$index}.price");
+
+            $variantForPrice = ProductVariant::query()->whereKey((int) $row['variant_id'])->first(['id', 'sell_price']);
+            if ($variantForPrice) {
+                app(SalePriceGuard::class)->assertVariantHasSalePrice($variantForPrice, "items.{$index}.price");
+            }
+
             $itemId = (int) ($row['item_id'] ?? $row['id'] ?? 0);
             $existing = $order && $itemId > 0
                 ? $order->items->firstWhere('id', $itemId)
@@ -1083,12 +1092,15 @@ class PreinvoiceController extends Controller
             $variant = ProductVariant::query()
                 ->whereKey((int) $row['variant_id'])
                 ->where('product_id', (int) $row['product_id'])
-                ->firstOrFail(['sell_price']);
+                ->firstOrFail(['id', 'sell_price']);
+            app(SalePriceGuard::class)->assertVariantHasSalePrice($variant, "items.{$index}.price");
+            $price = (int) ($row['price'] ?? $variant->sell_price ?? 0);
+            app(SalePriceGuard::class)->assertInvoiceUnitPrice($price, "items.{$index}.price");
             $attrs = [
                 'product_id' => (int) $row['product_id'],
                 'variant_id' => (int) $row['variant_id'],
                 'quantity' => (int) $row['quantity'],
-                'price' => (int) ($row['price'] ?? $variant->sell_price ?? 0),
+                'price' => $price,
                 'sort_order' => $index + 1,
             ];
             $key = $attrs['product_id'] . ':' . $attrs['variant_id'];
