@@ -547,6 +547,10 @@ document.addEventListener('DOMContentLoaded', function () {
             'unit_price' => $item->unit_price,
             'category_id' => $item->product?->category_id,
             'unit' => $item->product?->unit,
+            'product_name' => $item->product?->name,
+            'product_code' => $item->product?->code ?: ($item->product?->sku ?: ''),
+            'variant_name' => $item->variant?->variant_name ?: ($item->variant_name ?: '—'),
+            'variant_code' => $item->variant?->variant_code ?: ($item->variant_code ?: ''),
         ])->values()->all() : []);
 
         $returnExistingInvoice = isset($voucher) && $voucher->relatedInvoice ? [
@@ -810,6 +814,48 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+
+    function existingItemAsInvoiceRow(row) {
+        const qty = Number(row.quantity || 0);
+
+        return {
+            invoice_item_id: Number(row.invoice_item_id || 0),
+            product_id: Number(row.product_id || 0),
+            variant_id: Number(row.variant_id || row.product_variant_id || 0),
+            name: String(row.product_name || row.name || 'کالای ثبت‌شده'),
+            product_code: String(row.product_code || row.code || ''),
+            variant_name: String(row.variant_name || '—'),
+            variant_code: String(row.variant_code || ''),
+            variant_stock: 0,
+            qty: Number(row.invoice_qty || qty),
+            already_returned_qty: Number(row.already_returned_qty || 0),
+            remaining_qty: Math.max(Number(row.remaining_qty || 0), qty, 1),
+            unit_price: Number(row.unit_price || row.price || 0),
+            unit: String(row.unit || 'عدد'),
+            _fromExistingVoucher: true,
+        };
+    }
+
+    function mergeExistingItemsForEdit(items) {
+        if (!editingVoucherId || !Array.isArray(oldItems) || !oldItems.length) return items;
+
+        const merged = items.slice();
+        oldItems.forEach(function (row) {
+            const exists = merged.some(function (item) {
+                if (row.invoice_item_id && item.invoice_item_id && String(row.invoice_item_id) === String(item.invoice_item_id)) return true;
+
+                return String(row.product_id || '') === String(item.product_id || '') &&
+                       String(row.variant_id || '') === String(item.variant_id || '');
+            });
+
+            if (!exists) {
+                merged.push(existingItemAsInvoiceRow(row));
+            }
+        });
+
+        return merged;
+    }
+
     function oldQuantityFor(invoiceItemId, productId, variantId) {
         if (!Array.isArray(oldItems)) return null;
 
@@ -931,13 +977,14 @@ document.addEventListener('DOMContentLoaded', function () {
         recalcInternalReturnSummary();
         showItemsWarning('');
 
-        const returnableItems = invoiceItems.filter(function (item) {
+        const sourceItems = useOldQuantity ? mergeExistingItemsForEdit(invoiceItems) : invoiceItems;
+        const returnableItems = sourceItems.filter(function (item) {
             return Number(item.remaining_qty || 0) > 0;
         });
 
         itemsSection.classList.remove('d-none');
 
-        if (!invoiceItems.length) {
+        if (!sourceItems.length) {
             itemsEmptyState.classList.remove('d-none');
             showItemsWarning('هیچ آیتمی از API فاکتور دریافت نشد. خروجی متد invoiceProducts را بررسی کن.');
             return;
@@ -984,6 +1031,13 @@ document.addEventListener('DOMContentLoaded', function () {
             invoiceItems = normalizeInvoiceProductsPayload(payload);
             renderInvoiceItems(useOldQuantity);
         } catch (error) {
+            if (useOldQuantity && Array.isArray(oldItems) && oldItems.length) {
+                invoiceItems = oldItems.map(existingItemAsInvoiceRow);
+                renderInvoiceItems(true);
+                showItemsWarning('ارتباط با سرور برای دریافت کالاهای فاکتور برقرار نشد؛ اقلام ذخیره‌شده همین سند نمایش داده شد.');
+                return;
+            }
+
             invoiceItems = [];
             itemsEmptyState.classList.remove('d-none');
             showItemsWarning('ارتباط با سرور برای دریافت کالاهای فاکتور برقرار نشد.');
@@ -1462,6 +1516,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (oldRelatedInvoiceUuid && !isManualReturn()) {
+        if (Array.isArray(oldItems) && oldItems.length) {
+            invoiceItems = oldItems.map(existingItemAsInvoiceRow);
+            renderInvoiceItems(true);
+        }
+
         applySelectedInvoice(existingInvoice || {
             uuid: oldRelatedInvoiceUuid,
             invoice_date: '—',
