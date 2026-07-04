@@ -232,6 +232,8 @@ class InvoiceController extends Controller
                 'edit_url' => route('vouchers.sales.edit', $invoice->uuid),
                 'print_url' => route('vouchers.sales.print', $invoice->uuid),
                 'history_url' => route('vouchers.sales.history', $invoice->uuid),
+                'transfer_url' => route('vouchers.sales.transfer-to-warehouse', $invoice->uuid),
+                'csrf' => csrf_token(),
             ])->values(),
         ]);
     }
@@ -240,7 +242,16 @@ class InvoiceController extends Controller
     {
         return Invoice::query()
             ->with(['items.product', 'items.variant', 'preinvoiceOrder.creator:id,name'])
-            ->when($shipped, fn ($query) => $query->where('status', SalesHavalehStatusService::SHIPPED), fn ($query) => $query->whereIn('status', $this->queueStatuses()));
+            ->when(
+                $shipped,
+                fn ($query) => $query->where('status', SalesHavalehStatusService::SHIPPED),
+                fn ($query) => $query
+                    ->whereIn('status', $this->queueStatuses())
+                    ->where(function ($query) {
+                        $query->whereNull('collection_status')
+                            ->orWhere('collection_status', '!=', Invoice::COLLECTION_STATUS_COMPLETED);
+                    })
+            );
     }
 
     private function queueStatuses(): array
@@ -251,6 +262,36 @@ class InvoiceController extends Controller
             SalesHavalehStatusService::FINAL_CHECK,
             SalesHavalehStatusService::PACKING,
         ];
+    }
+
+
+    public function transferCollectionToWarehouse(string $uuid, Request $request)
+    {
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+
+        if ((string) $invoice->collection_status === Invoice::COLLECTION_STATUS_COMPLETED) {
+            return redirect()->route('vouchers.sales.queue')
+                ->with('warning', 'این فاکتور قبلاً از صف جمع‌آوری خارج شده است.');
+        }
+
+        $updatedInvoice = $this->salesHavalehService->completeCollectionAndTransferToWarehouse($invoice, auth()->id());
+
+        $this->notificationService->notifyRoles(
+            ['warehouse', 'Warehouse', 'StorageManager'],
+            'invoice_collection_completed',
+            'فاکتور آماده مرحله بعد است',
+            "فاکتور شماره {$updatedInvoice->uuid} جمع‌آوری و چک شد و آماده بررسی مرحله بعد است.",
+            route('vouchers.sales.edit', $updatedInvoice->uuid),
+            [
+                'level' => 'success',
+                'notifiable_type' => Invoice::class,
+                'notifiable_id' => $updatedInvoice->id,
+                'unique_key' => "invoice_collection_completed:{$updatedInvoice->id}",
+            ]
+        );
+
+        return redirect()->route('vouchers.sales.queue')
+            ->with('success', '✅ فاکتور جمع‌آوری و چک شد و به انبار منتقل شد.');
     }
 
     public function salesVoucherShow(string $uuid)

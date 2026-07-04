@@ -15,6 +15,7 @@ class Invoice extends Model
     public const STATUS_NOT_SHIPPED = 'not_shipped';
     public const STATUS_PENDING_FINANCE_REAPPROVAL = 'pending_finance_reapproval';
     public const STATUS_FINANCE_APPROVED = 'finance_approved';
+    public const COLLECTION_STATUS_COMPLETED = 'completed';
 
     protected $fillable = [
         'uuid','customer_id','preinvoice_order_id','document_date',
@@ -22,14 +23,18 @@ class Invoice extends Model
         'province_id','city_id','shipping_id','shipping_price',
         'discount_amount','discount_breakdown','invoice_discount_type','invoice_discount_value',
         'invoice_discount_amount','product_discount_amount','discount_allocation_mode',
-        'subtotal','total','status','status_changed_at','status_changed_by'
-        ,'external_order_id', 'items_updated_at', 'items_updated_by'
+        'subtotal','total','status','status_changed_at','status_changed_by',
+        'collection_status','collection_completed_at','collection_completed_by',
+        'collection_transferred_to_warehouse_at','collection_transferred_to_warehouse_by',
+        'external_order_id', 'items_updated_at', 'items_updated_by'
     ];
 
     protected $casts = [
         'document_date' => 'datetime',
         'status_changed_at' => 'datetime',
         'items_updated_at' => 'datetime',
+        'collection_completed_at' => 'datetime',
+        'collection_transferred_to_warehouse_at' => 'datetime',
         'discount_breakdown' => 'array',
         'invoice_discount_value' => 'integer',
         'invoice_discount_amount' => 'integer',
