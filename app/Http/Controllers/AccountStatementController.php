@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use App\Models\InvoicePayment;
+use App\Models\Purchase;
 use App\Models\WarehouseTransfer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -121,6 +122,13 @@ class AccountStatementController extends Controller
             ->unique()
             ->values();
 
+        $purchaseIds = $ledgers->getCollection()
+            ->where('reference_type', Purchase::class)
+            ->pluck('reference_id')
+            ->filter()
+            ->unique()
+            ->values();
+
         $payments = InvoicePayment::query()
             ->with([
                 'cheque',
@@ -134,6 +142,12 @@ class AccountStatementController extends Controller
         $transfers = WarehouseTransfer::query()
             ->whereIn('id', $transferIds)
             ->get(['id', 'reference', 'voucher_type'])
+            ->keyBy('id');
+
+        $purchases = Purchase::query()
+            ->with('supplier:id,name,phone')
+            ->whereIn('id', $purchaseIds)
+            ->get(['id', 'supplier_id', 'total_amount', 'purchased_at'])
             ->keyBy('id');
 
         $relatedInvoiceIds = $invoiceIds
@@ -169,6 +183,7 @@ class AccountStatementController extends Controller
             'invoices',
             'payments',
             'transfers',
+            'purchases',
             'netBalance',
             'customerInvoices'
         ));
