@@ -177,6 +177,12 @@ class AccountStatementController extends Controller
             ->get(['id', 'supplier_id', 'total_amount', 'purchased_at'])
             ->keyBy('id');
 
+        $purchases = Purchase::query()
+            ->with('supplier:id,name,phone')
+            ->whereIn('id', $purchaseIds)
+            ->get(['id', 'supplier_id', 'total_amount', 'purchased_at'])
+            ->keyBy('id');
+
         $relatedInvoiceIds = $invoiceIds
             ->merge($payments->pluck('invoice_id')->filter()->unique()->values())
             ->unique()
