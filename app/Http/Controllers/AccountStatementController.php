@@ -130,7 +130,7 @@ class AccountStatementController extends Controller
             ->values();
 
         $legacyReturnInvoiceNumbersByLedger = $ledgers->getCollection()
-            ->filter(fn (CustomerLedger $ledger) => blank($ledger->reference_type) && str_contains((string) $ledger->note, 'برگشت از فروش'))
+            ->filter(fn (CustomerLedger $ledger) => (blank($ledger->reference_type) || blank($ledger->reference_id)) && str_contains((string) $ledger->note, 'برگشت از فروش'))
             ->mapWithKeys(function (CustomerLedger $ledger) {
                 if (! preg_match('/شماره\s+([^\s\-|]+)/u', (string) $ledger->note, $matches)) {
                     return [];
@@ -156,26 +156,23 @@ class AccountStatementController extends Controller
             ->get(['id', 'reference', 'voucher_type', 'external_invoice_number', 'total_amount'])
             ->keyBy('id');
 
+        $legacyReturnInvoiceNumbers = $legacyReturnInvoiceNumbersByLedger->values();
+
         $legacyReturnTransfersByInvoiceNumber = WarehouseTransfer::query()
             ->where('voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
             ->where('customer_id', $customer->id)
-            ->whereIn('external_invoice_number', $legacyReturnInvoiceNumbersByLedger->values())
+            ->whereNotNull('external_invoice_number')
             ->latest('id')
             ->get(['id', 'reference', 'voucher_type', 'external_invoice_number', 'total_amount'])
-            ->unique('external_invoice_number')
-            ->keyBy('external_invoice_number');
+            ->filter(fn (WarehouseTransfer $transfer) => $legacyReturnInvoiceNumbers->contains($this->normalizeSearchTerm((string) $transfer->external_invoice_number)))
+            ->unique(fn (WarehouseTransfer $transfer) => $this->normalizeSearchTerm((string) $transfer->external_invoice_number))
+            ->keyBy(fn (WarehouseTransfer $transfer) => $this->normalizeSearchTerm((string) $transfer->external_invoice_number));
 
         $legacyReturnTransfers = $legacyReturnInvoiceNumbersByLedger
             ->mapWithKeys(fn (string $invoiceNumber, int $ledgerId) => [
                 $ledgerId => $legacyReturnTransfersByInvoiceNumber->get($invoiceNumber),
             ])
             ->filter();
-
-        $purchases = Purchase::query()
-            ->with('supplier:id,name,phone')
-            ->whereIn('id', $purchaseIds)
-            ->get(['id', 'supplier_id', 'total_amount', 'purchased_at'])
-            ->keyBy('id');
 
         $purchases = Purchase::query()
             ->with('supplier:id,name,phone')

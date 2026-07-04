@@ -224,7 +224,7 @@
                     @php
                         $invoice = $ledger->reference_type === \App\Models\Invoice::class ? ($invoices[$ledger->reference_id] ?? null) : null;
                         $payment = $ledger->reference_type === \App\Models\InvoicePayment::class ? ($payments[$ledger->reference_id] ?? null) : null;
-                        $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? ($transfers[$ledger->reference_id] ?? null) : ($legacyReturnTransfers[$ledger->id] ?? null);
+                        $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? (($transfers[$ledger->reference_id] ?? null) ?: ($legacyReturnTransfers[$ledger->id] ?? null)) : ($legacyReturnTransfers[$ledger->id] ?? null);
                         $purchase = $ledger->reference_type === \App\Models\Purchase::class ? ($purchases[$ledger->reference_id] ?? null) : null;
                         $description = $ledger->note ?: '—';
                         $viewUrl = null;
