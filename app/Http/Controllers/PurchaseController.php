@@ -13,6 +13,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Services\ProductVariantStructureService;
+use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -215,6 +216,7 @@ class PurchaseController extends Controller
 
             $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
             $purchase->update($summary);
+            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
         });
 
         return redirect()->route('purchases.index')->with('success', 'خرید کالا با موفقیت ثبت شد.');
@@ -245,6 +247,7 @@ class PurchaseController extends Controller
 
             $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
             $purchase->update($summary);
+            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
         });
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت ویرایش شد.');
@@ -253,6 +256,7 @@ class PurchaseController extends Controller
     public function destroy(Purchase $purchase)
     {
         DB::transaction(function () use ($purchase) {
+            app(SupplierLedgerService::class)->voidPurchaseCredit($purchase);
             $this->rollbackPurchase($purchase);
             $purchase->delete();
         });

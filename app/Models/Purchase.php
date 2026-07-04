@@ -8,6 +8,7 @@ class Purchase extends Model
 {
     protected $fillable = [
         'supplier_id',
+        'warehouse_id',
         'user_id',
         'total_amount',
         'subtotal_amount',
