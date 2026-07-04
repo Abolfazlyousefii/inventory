@@ -121,6 +121,13 @@
         max-width:130px;
     }
 
+    /* Bootstrap input-group gives form controls width: 1%; keep return quantities visible/editable in create and edit forms. */
+    .input-group > .return-quantity-input.form-control{
+        width:auto;
+        min-width:110px;
+        flex:0 0 130px;
+    }
+
     .select2-container{
         width:100% !important;
         direction:rtl;
@@ -609,6 +616,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let selectedInvoice = null;
     let invoiceItems = [];
     let manualBackdrop = null;
+    let manualItemIndex = 0;
 
     function normalizeDigits(value) {
         const persian = '۰۱۲۳۴۵۶۷۸۹';
@@ -952,7 +960,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         min="1"
                         max="${escapeHtml(remaining)}"
                         name="items[${index}][quantity]"
-                        class="form-control qty-input"
+                        class="form-control qty-input return-quantity-input"
                         value="${escapeHtml(defaultQty)}"
                         required
                     >
@@ -1312,17 +1320,49 @@ document.addEventListener('DOMContentLoaded', function () {
         manualItemsEmptyState.classList.toggle('d-none', manualTbody.querySelectorAll('tr').length > 0);
     }
 
+    function nextManualItemIndex() {
+        manualItemIndex += 1;
+
+        return manualItemIndex;
+    }
+
+    function ensureManualQuantityUsable(tr, focus = false) {
+        if (!tr) return;
+
+        const qtyInput = tr.querySelector('.manual-qty');
+
+        if (!qtyInput) return;
+
+        qtyInput.disabled = false;
+        qtyInput.readOnly = false;
+        qtyInput.required = true;
+        qtyInput.min = '1';
+
+        if (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0) {
+            qtyInput.value = String(toSafeNumber(qtyInput.dataset.defaultQuantity, 1));
+        }
+
+        if (focus) {
+            window.setTimeout(function () {
+                qtyInput.disabled = false;
+                qtyInput.readOnly = false;
+                qtyInput.focus({ preventScroll: true });
+            }, 0);
+        }
+    }
+
     function addManualRow(rowData = {}) {
-        const index = Date.now() + manualTbody.children.length;
+        const index = nextManualItemIndex();
         const unitPrice = toSafeNumber(rowData.unit_price, 0);
         const defaultQty = Math.max(returnItemQuantity(rowData), 1);
         const tr = document.createElement('tr');
+        tr.dataset.itemIndex = String(index);
         tr.innerHTML = `
             <td><select class="form-select manual-category">${categoryOptions(rowData.category_id)}</select></td>
             <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
-            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(defaultQty)}" data-default-quantity="${escapeHtml(defaultQty)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty return-quantity-input" value="${escapeHtml(defaultQty)}" data-default-quantity="${escapeHtml(defaultQty)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
             <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
@@ -1337,11 +1377,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const productSelect = tr.querySelector('.manual-product');
         const variantSelect = tr.querySelector('.manual-variant');
         const priceDisplayInput = tr.querySelector('.manual-price-display');
+        const manualQtyInput = tr.querySelector('.manual-qty');
         const codeEl = tr.querySelector('.manual-code');
         const unitLabelEl = tr.querySelector('.manual-unit-label');
         const unitCellEl = tr.querySelector('.manual-unit-cell');
 
-        function refreshVariantMeta(applySuggestedPrice) {
+        function refreshVariantMeta(applySuggestedPrice, focusQuantity = false) {
+            ensureManualQuantityUsable(tr, focusQuantity);
             const isNewProduct = productSelect.value === '__new__';
             const quickFields = tr.querySelector('.quick-new-product');
             quickFields?.classList.toggle('d-none', !isNewProduct);
@@ -1372,11 +1414,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function onProductChanged() {
             if (productSelect.value !== '__new__') fillVariantSelect(tr, productSelect.value);
-            refreshVariantMeta(true);
+            refreshVariantMeta(true, true);
         }
 
         function onVariantChanged() {
-            refreshVariantMeta(true);
+            refreshVariantMeta(true, true);
         }
 
         if (window.jQuery && jQuery.fn) {
@@ -1388,13 +1430,7 @@ document.addEventListener('DOMContentLoaded', function () {
             productSelect.addEventListener('change', onProductChanged);
             variantSelect.addEventListener('change', onVariantChanged);
         }
-        const manualQtyInput = tr.querySelector('.manual-qty');
-        if (manualQtyInput && (!manualQtyInput.value || toSafeNumber(manualQtyInput.value, 0) <= 0)) {
-            manualQtyInput.value = String(toSafeNumber(manualQtyInput.dataset.defaultQuantity, 1));
-        }
-        if (manualQtyInput) {
-            manualQtyInput.addEventListener('input', recalcManualTotals);
-        }
+        ensureManualQuantityUsable(tr);
         tr.querySelectorAll('.quick-money').forEach(function (input) { input.addEventListener('input', function () { const raw = parseMoney(input.value); input.value = input.value.trim() === '' ? '' : raw.toLocaleString('en-US'); }); });
         priceDisplayInput.addEventListener('input', function () {
             const raw = parseMoney(priceDisplayInput.value);
@@ -1411,7 +1447,7 @@ document.addEventListener('DOMContentLoaded', function () {
             recalcManualTotals();
         });
         fillVariantSelect(tr, productSelect.value, rowData.variant_id || '');
-        initManualSelects(tr);
+        initManualSelect(productSelect);
         refreshVariantMeta(false);
     }
 
@@ -1449,6 +1485,13 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     addManualItemBtn.addEventListener('click', function () { addManualRow(); });
+
+    manualTbody.addEventListener('input', function (event) {
+        if (event.target && event.target.classList.contains('return-quantity-input')) {
+            ensureManualQuantityUsable(event.target.closest('tr'));
+            recalcManualTotals();
+        }
+    });
 
     openInvoiceModalBtn.addEventListener('click', function () {
         if (!customerSelect.value) {
