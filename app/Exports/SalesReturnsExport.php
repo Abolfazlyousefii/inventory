@@ -25,7 +25,15 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
         return WarehouseTransferItem::query()
             ->select('warehouse_transfer_items.*')
             ->join('warehouse_transfers', 'warehouse_transfers.id', '=', 'warehouse_transfer_items.warehouse_transfer_id')
-            ->with(['transfer.customer', 'transfer.user', 'product.category.parent', 'variant.modelList', 'variant.color'])
+            ->with([
+                'transfer' => fn ($query) => $query
+                    ->with(['customer', 'user'])
+                    ->withCount('items as returned_items_count')
+                    ->withSum('items as returned_items_total_amount', 'line_total'),
+                'product.category.parent',
+                'variant.modelList',
+                'variant.color',
+            ])
             ->where('warehouse_transfers.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
             ->when(($this->filters['product_id'] ?? 0) > 0, fn ($q) => $q->where('warehouse_transfer_items.product_id', (int) $this->filters['product_id']))
             ->when(($this->filters['variant_id'] ?? 0) > 0, fn ($q) => $q->where('warehouse_transfer_items.product_variant_id', (int) $this->filters['variant_id']))
@@ -44,7 +52,7 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
     {
         return [
             'شماره سند برگشت از فروش', 'تاریخ سند', 'نام مشتری', 'کد مشتری', 'کد کالا', 'نام کالا', 'دسته‌بندی کالا',
-            'زیر‌دسته‌بندی کالا', 'تنوع کالا / Variant', 'تعداد برگشتی', 'واحد کالا', 'علت برگشت', 'توضیحات', 'کاربر ثبت‌کننده', 'تاریخ ثبت', 'تاریخ ویرایش',
+            'زیر‌دسته‌بندی کالا', 'تنوع کالا / Variant', 'تعداد آیتم برگشتی سند', 'مبلغ کل برگشتی سند', 'تعداد برگشتی ردیف', 'واحد کالا', 'مبلغ برگشتی ردیف', 'علت برگشت', 'توضیحات', 'کاربر ثبت‌کننده', 'تاریخ ثبت', 'تاریخ ویرایش',
         ];
     }
 
@@ -73,8 +81,11 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
             $rootCategory?->name,
             $subcategory?->name ?: '—',
             implode(' / ', array_unique($variantParts)) ?: '—',
+            (int) ($transfer?->returned_items_count ?? 0),
+            (int) ($transfer?->returned_items_total_amount ?? $transfer?->total_amount ?? 0),
             (int) $item->quantity,
             $item->product?->unit ?: 'عدد',
+            (int) ($item->line_total ?? ((int) $item->unit_price * (int) $item->quantity)),
             WarehouseTransfer::returnReasonOptions()[$transfer?->return_reason] ?? '—',
             $transfer?->note,
             $transfer?->user?->name,
@@ -92,7 +103,7 @@ class SalesReturnsExport implements FromQuery, ShouldAutoSize, WithEvents, WithH
                 $sheet->getStyle($sheet->calculateWorksheetDimension())->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_RIGHT)
                     ->setVertical(Alignment::VERTICAL_CENTER);
-                $sheet->getStyle('A1:P1')->getFont()->setBold(true);
+                $sheet->getStyle('A1:S1')->getFont()->setBold(true);
                 $sheet->setAutoFilter($sheet->calculateWorksheetDimension());
                 $sheet->freezePane('A2');
             },

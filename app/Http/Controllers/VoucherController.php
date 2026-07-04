@@ -188,7 +188,7 @@ class VoucherController extends Controller
                 ->get(['id', 'name']);
         }
 
-        $vouchers = WarehouseTransfer::query()
+        $vouchersQuery = WarehouseTransfer::query()
             ->with([
                 'fromWarehouse',
                 'toWarehouse',
@@ -199,7 +199,15 @@ class VoucherController extends Controller
                 'items.product',
                 'items.variant.modelList',
                 'items.variant.color',
-            ])
+            ]);
+
+        if ($voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN) {
+            $vouchersQuery
+                ->withCount('items as returned_items_count')
+                ->withSum('items as returned_items_total_amount', 'line_total');
+        }
+
+        $vouchers = $vouchersQuery
             ->where('voucher_type', $voucherType)
             ->when(
                 $voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN && $customerId > 0,
