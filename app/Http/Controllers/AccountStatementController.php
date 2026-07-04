@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use App\Models\InvoicePayment;
+use App\Models\Purchase;
 use App\Models\WarehouseTransfer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -121,6 +122,25 @@ class AccountStatementController extends Controller
             ->unique()
             ->values();
 
+        $purchaseIds = $ledgers->getCollection()
+            ->where('reference_type', Purchase::class)
+            ->pluck('reference_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $legacyReturnInvoiceNumbersByLedger = $ledgers->getCollection()
+            ->filter(fn (CustomerLedger $ledger) => blank($ledger->reference_type) && str_contains((string) $ledger->note, 'برگشت از فروش'))
+            ->mapWithKeys(function (CustomerLedger $ledger) {
+                if (! preg_match('/شماره\s+([^\s\-|]+)/u', (string) $ledger->note, $matches)) {
+                    return [];
+                }
+
+                return [$ledger->id => $this->normalizeSearchTerm($matches[1])];
+            })
+            ->filter()
+            ->unique();
+
         $payments = InvoicePayment::query()
             ->with([
                 'cheque',
@@ -133,7 +153,28 @@ class AccountStatementController extends Controller
 
         $transfers = WarehouseTransfer::query()
             ->whereIn('id', $transferIds)
-            ->get(['id', 'reference', 'voucher_type'])
+            ->get(['id', 'reference', 'voucher_type', 'external_invoice_number', 'total_amount'])
+            ->keyBy('id');
+
+        $legacyReturnTransfersByInvoiceNumber = WarehouseTransfer::query()
+            ->where('voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
+            ->where('customer_id', $customer->id)
+            ->whereIn('external_invoice_number', $legacyReturnInvoiceNumbersByLedger->values())
+            ->latest('id')
+            ->get(['id', 'reference', 'voucher_type', 'external_invoice_number', 'total_amount'])
+            ->unique('external_invoice_number')
+            ->keyBy('external_invoice_number');
+
+        $legacyReturnTransfers = $legacyReturnInvoiceNumbersByLedger
+            ->mapWithKeys(fn (string $invoiceNumber, int $ledgerId) => [
+                $ledgerId => $legacyReturnTransfersByInvoiceNumber->get($invoiceNumber),
+            ])
+            ->filter();
+
+        $purchases = Purchase::query()
+            ->with('supplier:id,name,phone')
+            ->whereIn('id', $purchaseIds)
+            ->get(['id', 'supplier_id', 'total_amount', 'purchased_at'])
             ->keyBy('id');
 
         $relatedInvoiceIds = $invoiceIds
@@ -169,6 +210,8 @@ class AccountStatementController extends Controller
             'invoices',
             'payments',
             'transfers',
+            'legacyReturnTransfers',
+            'purchases',
             'netBalance',
             'customerInvoices'
         ));
