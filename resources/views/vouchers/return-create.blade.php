@@ -543,6 +543,7 @@ document.addEventListener('DOMContentLoaded', function () {
             'invoice_item_id' => $item->invoice_item_id,
             'product_id' => $item->product_id,
             'variant_id' => $item->product_variant_id,
+            'product_variant_id' => $item->product_variant_id,
             'quantity' => $item->quantity,
             'unit_price' => $item->unit_price,
             'category_id' => $item->product?->category_id,
@@ -815,8 +816,15 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
 
+    function returnItemQuantity(row) {
+        if (!row || typeof row !== 'object') return 0;
+
+        const value = row.quantity ?? row.qty ?? row.return_quantity ?? row.returned_quantity ?? 0;
+        return Number(normalizeDigits(String(value)) || 0);
+    }
+
     function existingItemAsInvoiceRow(row) {
-        const qty = Number(row.quantity || 0);
+        const qty = returnItemQuantity(row);
 
         return {
             invoice_item_id: Number(row.invoice_item_id || 0),
@@ -829,7 +837,7 @@ document.addEventListener('DOMContentLoaded', function () {
             variant_stock: 0,
             qty: Number(row.invoice_qty || qty),
             already_returned_qty: Number(row.already_returned_qty || 0),
-            remaining_qty: Math.max(Number(row.remaining_qty || 0), qty, 1),
+            remaining_qty: Math.max(Number(row.remaining_qty || row.returnable_quantity || 0), qty, 1),
             unit_price: Number(row.unit_price || row.price || 0),
             unit: String(row.unit || 'عدد'),
             _fromExistingVoucher: true,
@@ -867,14 +875,15 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         if (!found) return null;
-        const qty = Number(found.quantity || 0);
+        const qty = returnItemQuantity(found);
         return qty > 0 ? qty : null;
     }
 
     function itemRowTemplate(item, index, useOldQuantity) {
-        const remaining = Number(item.remaining_qty || 0);
+        const rawRemaining = Number(item.remaining_qty || 0);
         const defaultQtyFromOld = useOldQuantity ? oldQuantityFor(item.invoice_item_id, item.product_id, item.variant_id) : null;
-        const defaultQty = defaultQtyFromOld !== null ? Math.min(defaultQtyFromOld, remaining) : remaining;
+        const remaining = defaultQtyFromOld !== null ? Math.max(rawRemaining, defaultQtyFromOld) : rawRemaining;
+        const defaultQty = defaultQtyFromOld !== null ? defaultQtyFromOld : remaining;
 
         return `
             <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}">
@@ -1263,7 +1272,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
-            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(rowData.quantity || 1)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(returnItemQuantity(rowData) || 1)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
             <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
