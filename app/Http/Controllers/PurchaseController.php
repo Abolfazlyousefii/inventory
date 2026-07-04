@@ -216,6 +216,8 @@ class PurchaseController extends Controller
 
             $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
             $purchase->update($this->purchaseTablePayload($summary));
+
+            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
         });
 
         return redirect()->route('purchases.index')->with('success', 'خرید کالا با موفقیت ثبت شد.');
@@ -246,6 +248,8 @@ class PurchaseController extends Controller
 
             $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
             $purchase->update($this->purchaseTablePayload($summary));
+
+            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
         });
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت ویرایش شد.');

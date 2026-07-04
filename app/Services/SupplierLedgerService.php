@@ -13,6 +13,13 @@ class SupplierLedgerService
             return;
         }
 
+        SupplierLedger::query()
+            ->where('reference_type', Purchase::class)
+            ->where('reference_id', (int) $purchase->id)
+            ->where('type', 'credit')
+            ->where('supplier_id', '!=', (int) $purchase->supplier_id)
+            ->delete();
+
         SupplierLedger::query()->updateOrCreate(
             [
                 'supplier_id' => (int) $purchase->supplier_id,
