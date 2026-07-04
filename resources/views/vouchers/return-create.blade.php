@@ -349,7 +349,8 @@
                                                 <th>قبلاً برگشتی</th>
                                                 <th>قابل برگشت</th>
                                                 <th>قیمت واحد طبق فاکتور</th>
-                                                <th style="width:150px;">تعداد برگشتی</th>
+                                                <th style="width:170px;">تعداد برگشتی</th>
+                                                <th>واحد</th>
                                                 <th>مبلغ برگشتی</th>
                                                 <th style="width:80px;"></th>
                                             </tr>
@@ -386,7 +387,7 @@
                                     <table class="table table-striped line-table" id="manualItemsTable">
                                         <thead>
                                             <tr>
-                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
+                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد برگشتی</th><th>واحد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -466,6 +467,7 @@
             'category_id' => (int) ($product->category_id ?? 0),
             'sale_price' => (int) ($product->price ?? $product->sale_retail ?? $product->sale_wholesale ?? 0),
             'price' => (int) ($product->price ?? $product->sale_retail ?? $product->sale_wholesale ?? 0),
+            'unit' => (string) ($product->unit ?? ''),
             'variants' => $variants->map(function ($variant) {
                 $variantName = $variant->variant_name
                     ?: ($variant->variety_name
@@ -544,6 +546,7 @@ document.addEventListener('DOMContentLoaded', function () {
             'quantity' => $item->quantity,
             'unit_price' => $item->unit_price,
             'category_id' => $item->product?->category_id,
+            'unit' => $item->product?->unit,
         ])->values()->all() : []);
 
         $returnExistingInvoice = isset($voucher) && $voucher->relatedInvoice ? [
@@ -800,6 +803,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 already_returned_qty: returned,
                 remaining_qty: remaining,
                 unit_price: Number(item.unit_price || item.price || 0),
+                unit: String(item.unit || item.product_unit || 'عدد'),
             };
         }).filter(function (item) {
             return item.invoice_item_id > 0 && item.product_id > 0 && item.variant_id > 0;
@@ -844,7 +848,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td><span class="badge text-bg-primary">${toMoney(remaining)}</span></td>
                 <td><span class="badge text-bg-light">${toMoney(item.unit_price || 0)} ریال</span></td>
                 <td>
-                    <input
+                    <div class="input-group input-group-sm">
+                        <input
                         type="number"
                         min="1"
                         max="${escapeHtml(remaining)}"
@@ -853,7 +858,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         value="${escapeHtml(defaultQty)}"
                         required
                     >
+                        <span class="input-group-text">${escapeHtml(item.unit || 'عدد')}</span>
+                    </div>
                 </td>
+                <td><span class="badge text-bg-light">${escapeHtml(item.unit || 'عدد')}</span></td>
                 <td><span class="internal-line-total">۰ ریال</span></td>
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn">حذف</button>
@@ -1201,7 +1209,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
-            <td><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(rowData.quantity || 1)}" required></td>
+            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(rowData.quantity || 1)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
                 <input type="hidden" name="items[${index}][unit_price]" class="manual-price" value="${escapeHtml(unitPrice)}">
@@ -1216,6 +1225,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const variantSelect = tr.querySelector('.manual-variant');
         const priceDisplayInput = tr.querySelector('.manual-price-display');
         const codeEl = tr.querySelector('.manual-code');
+        const unitLabelEl = tr.querySelector('.manual-unit-label');
+        const unitCellEl = tr.querySelector('.manual-unit-cell');
 
         function refreshVariantMeta(applySuggestedPrice) {
             const isNewProduct = productSelect.value === '__new__';
@@ -1224,10 +1235,13 @@ document.addEventListener('DOMContentLoaded', function () {
             tr.querySelectorAll('.new-product-required').forEach(function (el) { el.required = isNewProduct; });
             variantSelect.required = !isNewProduct;
             variantSelect.disabled = isNewProduct;
-            if (isNewProduct) { codeEl.textContent = 'بعد از ثبت ساخته می‌شود'; recalcManualTotals(); return; }
+            if (isNewProduct) { codeEl.textContent = 'بعد از ثبت ساخته می‌شود'; unitLabelEl.textContent = 'عدد'; unitCellEl.textContent = 'عدد'; recalcManualTotals(); return; }
             const product = products.find(function (p) { return String(p.id) === String(productSelect.value); });
             const option = variantSelect.selectedOptions[0];
             codeEl.textContent = option?.dataset?.code || product?.code || product?.barcode || '—';
+            const unit = product?.unit || 'عدد';
+            unitLabelEl.textContent = unit;
+            unitCellEl.textContent = unit;
             if (applySuggestedPrice && option?.dataset?.price !== undefined) {
                 const suggested = Number(option.dataset.price || product?.price || 0);
                 priceDisplayInput.value = suggested.toLocaleString('en-US');

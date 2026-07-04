@@ -3,13 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\ModelList;
 use App\Models\Warehouse;
 use App\Services\ProductExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use Mpdf\Config\ConfigVariables;
-use Mpdf\Config\FontVariables;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
 use RuntimeException;
@@ -17,6 +16,9 @@ use Throwable;
 
 class ProductExportController extends Controller
 {
+    private const MAX_PDF_PRODUCTS = 300;
+    private const MAX_PDF_VARIANTS = 1500;
+
     public function __construct(
         private readonly ProductExportService $service
     ) {
@@ -34,11 +36,14 @@ class ProductExportController extends Controller
             ->orderBy('name')
             ->get();
 
+        $modelListsByBrand = $this->modelListsByBrand($filters);
+
         $rows = collect($this->service->rows($filters));
 
         return view('product-exports.index', compact(
             'categories',
             'warehouses',
+            'modelListsByBrand',
             'filters',
             'rows'
         ));
@@ -58,6 +63,18 @@ class ProductExportController extends Controller
         $filters = $this->validatedFilters($request, true);
 
         try {
+            $stats = $this->service->exportStats(
+                $filters,
+                self::MAX_PDF_PRODUCTS,
+                self::MAX_PDF_VARIANTS
+            );
+
+            if ($this->pdfExportIsTooLarge($stats)) {
+                return redirect()
+                    ->route('admin.product-exports.index', $this->redirectFilters($filters))
+                    ->with('error', $this->largeExportMessage($stats));
+            }
+
             $this->preparePdfEnvironment();
             $this->prepareLongRunningExport();
 
@@ -146,19 +163,52 @@ class ProductExportController extends Controller
                 ])
                 ->deleteFileAfterSend(true);
         } catch (Throwable $exception) {
-            Log::error('Product PDF export failed.', [
+            $context = [
+                'filters' => $request->all(),
+                'normalized_filters' => $filters,
+                'user_id' => auth()->id(),
                 'message' => $exception->getMessage(),
+                'exception' => get_class($exception),
                 'file' => $exception->getFile(),
                 'line' => $exception->getLine(),
-                'filters' => $filters,
-                'trace' => $exception->getTraceAsString(),
-            ]);
+            ];
 
-            return back()->with(
-                'error',
-                'خطا در ساخت PDF: ' . $exception->getMessage()
-            );
+            if (app()->environment('local')) {
+                $context['trace'] = $exception->getTraceAsString();
+            }
+
+            Log::error('Product export PDF failed', $context);
+
+            return redirect()
+                ->route('admin.product-exports.index', $this->redirectFilters($filters))
+                ->with(
+                    'error',
+                    'خطا در ساخت PDF رخ داد. لطفاً چند لحظه بعد دوباره تلاش کنید یا فیلترها را محدودتر کنید.'
+                );
         }
+    }
+
+    private function pdfExportIsTooLarge(array $stats): bool
+    {
+        return ($stats['products_count'] ?? 0) > self::MAX_PDF_PRODUCTS
+            || ($stats['variants_count'] ?? 0) > self::MAX_PDF_VARIANTS;
+    }
+
+    private function largeExportMessage(array $stats): string
+    {
+        return sprintf(
+            'تعداد نتایج برای ساخت PDF زیاد است: %s محصول و %s تنوع. لطفاً فیلترها را محدودتر کنید.',
+            number_format((int) ($stats['products_count'] ?? 0)),
+            number_format((int) ($stats['variants_count'] ?? 0))
+        );
+    }
+
+    private function redirectFilters(array $filters): array
+    {
+        return collect($filters)
+            ->except('format')
+            ->reject(fn ($value) => $value === null || $value === '' || $value === [])
+            ->all();
     }
 
     private function prepareLongRunningExport(): void
@@ -174,45 +224,22 @@ class ProductExportController extends Controller
 
     private function createMpdf(): Mpdf
     {
-        $defaultConfig = (new ConfigVariables())->getDefaults();
-        $defaultFonts = (new FontVariables())->getDefaults();
-
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
-
             'format' => 'A4-L',
-
+            'directionality' => 'rtl',
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+            'useSubstitutions' => true,
+            'default_font' => 'dejavusans',
+            'default_font_size' => 9,
             'margin_left' => 8,
             'margin_right' => 8,
             'margin_top' => 10,
             'margin_bottom' => 14,
             'margin_header' => 0,
             'margin_footer' => 6,
-
             'tempDir' => storage_path('app/mpdf-temp'),
-
-            'fontDir' => array_merge(
-                $defaultConfig['fontDir'],
-                [storage_path('fonts')]
-            ),
-
-            'fontdata' => $defaultFonts['fontdata'] + [
-                'vazirmatn' => [
-                    'R' => 'Vazirmatn-Regular.ttf',
-                    'B' => 'Vazirmatn-Bold.ttf',
-                    'useOTL' => 0xFF,
-                    'useKashida' => 75,
-                ],
-            ],
-
-            'default_font' => 'vazirmatn',
-            'default_font_size' => 9,
-
-            'autoScriptToLang' => true,
-            'autoLangToFont' => true,
-            'useSubstitutions' => true,
-
-            'use_kwt' => false,
             'simpleTables' => true,
             'packTableData' => true,
             'shrink_tables_to_fit' => 1,
@@ -231,46 +258,9 @@ class ProductExportController extends Controller
 
     private function preparePdfEnvironment(): void
     {
-        $directories = [
-            storage_path('fonts'),
-            storage_path('app/mpdf-temp'),
-        ];
+        $directory = storage_path('app/mpdf-temp');
 
-        foreach ($directories as $directory) {
-            if (! File::isDirectory($directory)) {
-                File::makeDirectory(
-                    $directory,
-                    0775,
-                    true,
-                    true
-                );
-            }
-        }
-
-        $fonts = [
-            storage_path('fonts/Vazirmatn-Regular.ttf'),
-            storage_path('fonts/Vazirmatn-Bold.ttf'),
-        ];
-
-        foreach ($fonts as $font) {
-            if (! File::isFile($font)) {
-                throw new RuntimeException(
-                    'فایل فونت وجود ندارد: ' . $font
-                );
-            }
-
-            if (! File::isReadable($font)) {
-                throw new RuntimeException(
-                    'فایل فونت قابل خواندن نیست: ' . $font
-                );
-            }
-
-            if (File::size($font) < 10000) {
-                throw new RuntimeException(
-                    'فایل فونت معتبر نیست یا ناقص دانلود شده: ' . $font
-                );
-            }
-        }
+        File::ensureDirectoryExists($directory, 0775, true);
     }
 
     private function pdfFooter(array $meta): string
@@ -522,6 +512,24 @@ class ProductExportController extends Controller
         CSS;
     }
 
+    private function modelListsByBrand(array $filters)
+    {
+        $categoryId = ! empty($filters['category_id'])
+            ? (int) $filters['category_id']
+            : null;
+
+        return ModelList::query()
+            ->when($categoryId !== null, function ($query) use ($categoryId) {
+                $query->whereHas('productVariants.product', function ($productQuery) use ($categoryId) {
+                    $productQuery->where('category_id', $categoryId);
+                });
+            })
+            ->orderBy('brand')
+            ->orderBy('model_name')
+            ->get(['id', 'brand', 'model_name', 'code'])
+            ->groupBy(fn (ModelList $modelList) => $modelList->brand ?: 'سایر');
+    }
+
     private function validatedFilters(
         Request $request,
         bool $requireFormat = false
@@ -546,6 +554,14 @@ class ProductExportController extends Controller
                 'string',
                 'max:255',
             ],
+            'model_list_ids' => [
+                'nullable',
+                'array',
+            ],
+            'model_list_ids.*' => [
+                'integer',
+                'exists:model_lists,id',
+            ],
             'format' => [
                 $requireFormat ? 'required' : 'nullable',
                 'in:pdf',
@@ -557,6 +573,12 @@ class ProductExportController extends Controller
             'warehouse_id' => $validated['warehouse_id'] ?? null,
             'stock_status' => $validated['stock_status'] ?? 'all',
             'search' => trim((string) ($validated['search'] ?? '')),
+            'model_list_ids' => collect($validated['model_list_ids'] ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
             'format' => 'pdf',
         ];
     }

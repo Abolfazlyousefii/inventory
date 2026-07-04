@@ -14,4 +14,9 @@ class ModelList extends Model
         'model_name',
         'code',
     ];
+
+    public function productVariants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
 }

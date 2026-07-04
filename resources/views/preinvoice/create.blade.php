@@ -32,6 +32,15 @@ $isEdit = (bool) ($isEdit ?? false);
 $oldCustomerTitle = trim((string) old('customer_name', $order->customer_name ?? ''));
 $oldCustomerMobile = trim((string) old('customer_mobile', $order->customer_mobile ?? ''));
 $oldPreinvoiceDescription = old('description', $order->description ?? '');
+$initialDiscountBreakdown = old('discount_breakdown');
+if (!$initialDiscountBreakdown && $order && $order->discount_breakdown) {
+    $initialDiscountBreakdown = $order->discount_breakdown;
+}
+if (is_string($initialDiscountBreakdown)) {
+    $decodedInitialDiscountBreakdown = json_decode($initialDiscountBreakdown, true);
+    $initialDiscountBreakdown = is_array($decodedInitialDiscountBreakdown) ? $decodedInitialDiscountBreakdown : null;
+}
+$hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) ($order->discount_amount ?? 0) > 0;
 @endphp
 
 <link rel="stylesheet" href="{{ asset('lib/select2.min.css') }}">
@@ -1096,6 +1105,9 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     @if(session('error'))
     <div class="alert alert-danger border-0 shadow-sm rounded-4 fw-bold py-2" style="white-space:pre-wrap">{!! session('error') !!}</div>
     @endif
+    @if($hasLegacyDiscount)
+    <div class="alert alert-warning border-0 shadow-sm rounded-4 py-2">این سند با ساختار قدیمی تخفیف ثبت شده است؛ تخفیف فعلی به عنوان تخفیف کلی مبلغی نمایش داده می‌شود.</div>
+    @endif
     @if($errors->any())
     <div class="alert alert-danger border-0 shadow-sm rounded-4 py-2">
         <div class="fw-bold mb-1">⚠️ خطا:</div>
@@ -1348,6 +1360,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         oldCityId: @json(old('city_id', $order->city_id ?? '')),
         oldShippingId: @json(old('shipping_id', $order->shipping_id ?? '')),
         oldDiscountAmount: @json(old('discount_amount', $order->discount_amount ?? 0)),
+        initialDiscountBreakdown: @json($initialDiscountBreakdown),
+        hasLegacyDiscount: @json($hasLegacyDiscount),
         isEdit: @json($isEdit),
         orderUuid: @json($order->uuid ?? null)
     };
@@ -1363,6 +1377,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     const OLD_CITY_ID = window.PREINVOICE_BOOT.oldCityId;
     const OLD_SHIPPING_ID = window.PREINVOICE_BOOT.oldShippingId;
     const OLD_DISCOUNT_AMOUNT = window.PREINVOICE_BOOT.oldDiscountAmount;
+    const INITIAL_DISCOUNT_BREAKDOWN = window.PREINVOICE_BOOT.initialDiscountBreakdown || null;
+    const HAS_LEGACY_DISCOUNT = !!window.PREINVOICE_BOOT.hasLegacyDiscount;
     const IS_EDIT = !!window.PREINVOICE_BOOT.isEdit;
     const EDIT_ORDER_UUID = window.PREINVOICE_BOOT.orderUuid || null;
 
@@ -2666,8 +2682,31 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         scheduleLocalDraftSave();
     }
 
+
+    function initialProductDiscount(productId) {
+        const products = INITIAL_DISCOUNT_BREAKDOWN?.products || {};
+        const raw = products[String(productId)] || products[Number(productId)] || null;
+        if (!raw) return { type: 'amount', value: 0 };
+        return {
+            type: raw.discount_type || raw.type || 'amount',
+            value: Number(raw.discount_value ?? raw.value ?? 0)
+        };
+    }
+
+    function hydrateInitialInvoiceDiscount() {
+        const invoice = INITIAL_DISCOUNT_BREAKDOWN?.invoice || null;
+        if (invoice) {
+            document.getElementById('orderDiscountType').value = invoice.discount_type || invoice.type || 'amount';
+            document.getElementById('orderDiscountValue').value = Number(invoice.discount_value ?? invoice.value ?? 0);
+        } else if (HAS_LEGACY_DISCOUNT) {
+            document.getElementById('orderDiscountType').value = 'amount';
+            document.getElementById('orderDiscountValue').value = Number(OLD_DISCOUNT_AMOUNT || 0);
+        }
+    }
+
     async function hydrateInitialGroups() {
         if (!INIT_ROWS || !INIT_ROWS.length) {
+            hydrateInitialInvoiceDiscount();
             renderGroupSummary();
             updateTotal();
             return;
@@ -2691,8 +2730,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                     title: productTitle(product) || rows[0]?.product_name || ('محصول #' + productId),
                     code: productCode(product) || rows[0]?.product_code || ''
                 },
-                discount_type: 'amount',
-                discount_value: 0,
+                discount_type: initialProductDiscount(productId).type,
+                discount_value: initialProductDiscount(productId).value,
                 items: rows.map(row => {
                     const vid = Number(row.variety_id || row.variant_id || 0);
                     const v = varieties.find(item => variantId(item) === vid);
@@ -2709,6 +2748,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                 }).filter(item => item.variant_id && item.quantity > 0)
             };
         }
+        hydrateInitialInvoiceDiscount();
         renderGroupSummary();
         updateTotal();
     }

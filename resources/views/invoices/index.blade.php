@@ -11,9 +11,7 @@
   $statusFa = fn($s) => ($statusLabels[$s] ?? ($s ?: '—'));
   $statusBadge = fn($s) => match($s){
     'pending_warehouse_approval' => 'text-bg-info',
-    'pending_collection', 'warehouse_received', 'collecting', 'checking_discrepancy', 'final_check', 'packing' => 'text-bg-primary',
-    'pending_finance_reapproval' => 'text-bg-warning text-dark',
-    'ready_to_ship' => 'text-bg-info',
+    'collecting', 'checking_discrepancy', 'final_check', 'packing' => 'text-bg-primary',
     'shipped' => 'text-bg-success',
     'not_shipped' => 'text-bg-danger',
     default => 'text-bg-secondary',

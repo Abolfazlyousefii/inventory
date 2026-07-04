@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    @php($totals = \App\Support\SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price))
+    @php($totals = \App\Support\SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]))
     <title>چاپ فاکتور {{ $invoice->uuid }}</title>
     <style>
         :root { --print-font: 11px; --print-border: #1f2937; --print-muted: #4b5563; --print-soft: #f8fafc; }

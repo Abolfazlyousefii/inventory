@@ -44,6 +44,16 @@
               <td>{{ \App\Support\JalaliDate::dateTime($inv->updated_at) }}</td>
               <td>{{ $inv->preinvoiceOrder?->creator?->name ?? '—' }}</td>
               <td class="text-end">
+                @unless($isShippedPage)
+                  @if($inv->collection_status === \App\Models\Invoice::COLLECTION_STATUS_COMPLETED)
+                    <span class="badge bg-success">منتقل شده</span>
+                  @else
+                    <form method="POST" action="{{ route('vouchers.sales.transfer-to-warehouse', $inv->uuid) }}" class="d-inline" onsubmit="return confirm('آیا از انتقال این فاکتور به انبار مطمئن هستید؟')">
+                      @csrf
+                      <button class="btn btn-sm btn-primary" type="submit">انتقال به انبار</button>
+                    </form>
+                  @endif
+                @endunless
                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.sales.show', $inv->uuid) }}">مشاهده</a>
                 @unless($isShippedPage)
                   <a class="btn btn-sm btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">ویرایش</a>
@@ -77,7 +87,7 @@ setInterval(async () => {
         <td>${row.items_count}</td><td>${Number(row.total).toLocaleString()}</td>
         <td><span class="badge bg-light text-dark border">${row.status_label}</span></td>
         <td>${row.created_at ?? ''}</td><td>${row.updated_at ?? ''}</td><td>${row.seller ?? '—'}</td>
-        <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="${row.show_url}">مشاهده</a> <a class="btn btn-sm btn-outline-primary" href="${row.edit_url}">ویرایش</a> <a class="btn btn-sm btn-outline-success" target="_blank" href="${row.print_url}">چاپ</a> <a class="btn btn-sm btn-outline-dark" href="${row.history_url}">تاریخچه</a></td>
+        <td class="text-end"><form method="POST" action="${row.transfer_url}" class="d-inline" onsubmit="return confirm('آیا از انتقال این فاکتور به انبار مطمئن هستید؟')"><input type="hidden" name="_token" value="${row.csrf}"><button class="btn btn-sm btn-primary" type="submit">انتقال به انبار</button></form> <a class="btn btn-sm btn-outline-secondary" href="${row.show_url}">مشاهده</a> <a class="btn btn-sm btn-outline-primary" href="${row.edit_url}">ویرایش</a> <a class="btn btn-sm btn-outline-success" target="_blank" href="${row.print_url}">چاپ</a> <a class="btn btn-sm btn-outline-dark" href="${row.history_url}">تاریخچه</a></td>
       </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-3">موردی نیست</td></tr>';
   } catch (e) {}
 }, 30000);

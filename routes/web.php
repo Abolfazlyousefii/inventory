@@ -126,8 +126,6 @@ Route::get('/vouchers/sales', [InvoiceController::class, 'salesVouchers'])->name
 Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue');
 Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.data');
 Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.shipped');
-Route::get('/warehouse/shipping', [InvoiceController::class, 'shippingIndex'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('warehouse.shipping.index');
-Route::post('/warehouse/shipping/{uuid}/mark-shipped', [InvoiceController::class, 'markShipped'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('warehouse.shipping.mark-shipped');
 Route::get('/vouchers/sales/ajax/categories', [InvoiceController::class, 'salesVoucherAjaxCategories'])->name('vouchers.sales.ajax.categories');
 Route::get('/vouchers/sales/ajax/subcategories', [InvoiceController::class, 'salesVoucherAjaxSubcategories'])->name('vouchers.sales.ajax.subcategories');
 Route::get('/vouchers/sales/ajax/products', [InvoiceController::class, 'salesVoucherAjaxProducts'])->name('vouchers.sales.ajax.products');
@@ -137,6 +135,7 @@ Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVouch
 Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
 Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.update');
 Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
+Route::post('/vouchers/sales/{uuid}/transfer-to-warehouse', [InvoiceController::class, 'transferCollectionToWarehouse'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.transfer-to-warehouse');
 Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
 Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('finance.cheques.registered');
 Route::middleware('role:admin|Admin|finance|Accountant|Manager')->prefix('finance/reports')->name('finance.reports.')->group(function () {
@@ -290,7 +289,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/{preinvoiceOrder:uuid}/print', [WarehouseReviewController::class, 'print'])->name('print');
     });
 
-    Route::get('/preinvoice/warehouse', fn () => redirect()->route('preinvoice.draft.index')->with('info', 'مرحله تایید انبار از روند جدید حذف شده است. پیش‌فاکتورها مستقیم در صف مالی بررسی می‌شوند.'))->name('preinvoice.warehouse.index');
+    Route::get('/preinvoice/warehouse', [PreinvoiceController::class, 'warehouseQueue'])->name('preinvoice.warehouse.index');
     Route::get('/preinvoice/warehouse/{uuid}', [PreinvoiceController::class, 'warehouseReview'])->name('preinvoice.warehouse.review');
     Route::put('/preinvoice/warehouse/{uuid}', [PreinvoiceController::class, 'warehouseSave'])->name('preinvoice.warehouse.save');
     Route::post('/preinvoice/warehouse/{uuid}/approve', [PreinvoiceController::class, 'warehouseApprove'])->name('preinvoice.warehouse.approve');

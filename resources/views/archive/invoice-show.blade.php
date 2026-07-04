@@ -36,7 +36,7 @@
   };
 
   $itemsCount = $invoice->items?->sum('quantity') ?? 0;
-  $totals = \App\Support\SalesDocumentTotals::calculate($invoice->items ?? collect(), (int) $invoice->discount_amount, (int) $invoice->shipping_price);
+  $totals = \App\Support\SalesDocumentTotals::calculate($invoice->items ?? collect(), (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
   $paymentsTotal = $invoice->payments?->sum('amount') ?? 0;
   $logLabels = ['attributes' => 'مقادیر ثبت‌شده', 'changes' => 'مقادیر جدید', 'old' => 'مقادیر قبلی', 'original' => 'مقادیر قبلی'];
 @endphp

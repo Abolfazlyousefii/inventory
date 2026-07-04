@@ -1,6 +1,9 @@
 @php
     $storeName = $meta['store_name'] ?? config('app.name', 'سامانه انبارداری');
     $exportedAt = $meta['exported_at'] ?? now()->format('Y/m/d H:i');
+    $modelLists = collect($meta['model_lists'] ?? []);
+    $visibleModelLists = $modelLists->take(5);
+    $remainingModelListsCount = max(0, $modelLists->count() - $visibleModelLists->count());
 @endphp
 
 <!DOCTYPE html>
@@ -43,6 +46,24 @@
         <td>
             <div class="meta-label">جستجو</div>
             <div class="meta-value">{{ filled($meta['search'] ?? '') ? $meta['search'] : 'بدون جستجو' }}</div>
+        </td>
+    </tr>
+</table>
+
+<table class="meta-table">
+    <tr>
+        <td>
+            <div class="meta-label">مدل‌لیست‌ها</div>
+            <div class="meta-value">
+                @if($modelLists->isNotEmpty())
+                    {{ $visibleModelLists->implode('، ') }}
+                    @if($remainingModelListsCount > 0)
+                        و {{ number_format($remainingModelListsCount) }} مورد دیگر
+                    @endif
+                @else
+                    همه مدل‌لیست‌ها
+                @endif
+            </div>
         </td>
     </tr>
 </table>

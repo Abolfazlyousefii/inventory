@@ -7,7 +7,7 @@
     $productsActive = $isRoute('products.*', 'admin.product-exports.*', 'product-deactivation-documents.*', 'categories.*', 'model-lists.*')
         && !$isRoute('products.create');
 
-    $warehouseActive = $isRoute('purchases.*', 'vouchers.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse.shipping.*', 'warehouse.reviews.*', 'products.create', 'warehouse-map.*', 'warehouse.reservations.*');
+    $warehouseActive = $isRoute('purchases.*', 'vouchers.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'preinvoice.warehouse.*', 'warehouse.reviews.*', 'products.create', 'warehouse-map.*', 'warehouse.reservations.*');
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
@@ -261,6 +261,9 @@
                     @canPermission('stock_in.create')
                     <a class="sidebar-sublink {{ $is('purchases.create') }}" href="{{ route('purchases.create') }}">ثبت خرید کالا</a>
                     @endcanPermission
+                    @canPermission('preinvoices.warehouse.view')
+                    <a class="sidebar-sublink {{ $is('preinvoice.warehouse.*') }}" href="{{ route('preinvoice.warehouse.index') }}">در انتظار تایید انبار</a>
+                    @endcanPermission
                     @canPermission('preinvoices.warehouse.reviews.view')
                     <a class="sidebar-sublink {{ $is('warehouse.reviews.*') }}" href="{{ route('warehouse.reviews.index') }}">سوابق تأیید انبار</a>
                     @endcanPermission
@@ -268,13 +271,10 @@
                     <a class="sidebar-sublink {{ $is('warehouse.reservations.*') }}" href="{{ route('warehouse.reservations.index') }}">ردیابی رزروها</a>
                     @endcanPermission
                     @canPermission('stock_out.view')
-                    <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.shipped') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری انبار</a>
-                    @endcanPermission
-                    @canPermission('stock_out.view')
-                    <a class="sidebar-sublink {{ $is('warehouse.shipping.*') }}" href="{{ route('warehouse.shipping.index') }}">در انتظار ارسال بار</a>
+                    <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.shipped') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری و ارسال انبار</a>
                     @endcanPermission
                     @canPermission('issues.view')
-                    <a class="sidebar-sublink {{ $isRoute('vouchers.sales.queue', 'vouchers.sales.shipped', 'warehouse.shipping.*') ? '' : $is('vouchers.*') }}" href="{{ route('vouchers.index') }}">حواله‌های انبار</a>
+                    <a class="sidebar-sublink {{ $isRoute('vouchers.sales.queue', 'vouchers.sales.shipped') ? '' : $is('vouchers.*') }}" href="{{ route('vouchers.index') }}">حواله‌های انبار</a>
                     @endcanPermission
                     @canPermission('inventory.count.view')
                     <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>

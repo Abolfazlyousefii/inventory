@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Category;
+use App\Models\ModelList;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Warehouse;
@@ -24,6 +25,7 @@ class ProductExportService
         $warehouseId = ! empty($filters['warehouse_id'])
             ? (int) $filters['warehouse_id']
             : null;
+        $modelListIds = $this->modelListIds($filters);
 
         return Product::query()
             ->with('category')
@@ -57,6 +59,16 @@ class ProductExportService
                 fn (Builder $query) => $query->where(
                     'category_id',
                     (int) $filters['category_id']
+                )
+            )
+            ->when(
+                ! empty($modelListIds),
+                fn (Builder $query) => $query->whereHas(
+                    'variants',
+                    fn (Builder $variantQuery) => $variantQuery->whereIn(
+                        'model_list_id',
+                        $modelListIds
+                    )
                 )
             )
             ->when(
@@ -110,18 +122,54 @@ class ProductExportService
                     $warehouseFilterActive
                 );
 
-                return match ($stockStatus) {
-                    'in_stock' => $stock > 0,
-
-                    'out_of_stock' => $stock <= 0,
-
-                    'low_stock' => $stock > 0
-                        && $stock <= self::LOW_STOCK_THRESHOLD,
-
-                    default => true,
-                };
+                return $this->matchesStockStatus($stock, $stockStatus);
             })
             ->values();
+    }
+
+    public function exportStats(array $filters, ?int $stopAfterProducts = null, ?int $stopAfterVariants = null): array
+    {
+        $warehouseFilterActive = ! empty($filters['warehouse_id']);
+        $stockStatus = $filters['stock_status'] ?? 'all';
+        $productsCount = 0;
+        $variantsCount = 0;
+
+        $this->query($filters)
+            ->reorder('products.id')
+            ->chunkById(100, function (Collection $products) use (
+                $filters,
+                $stockStatus,
+                $warehouseFilterActive,
+                $stopAfterProducts,
+                $stopAfterVariants,
+                &$productsCount,
+                &$variantsCount
+            ) {
+                foreach ($products as $product) {
+                    $stock = $this->stock($product, $warehouseFilterActive);
+
+                    if (! $this->matchesStockStatus($stock, $stockStatus)) {
+                        continue;
+                    }
+
+                    $productsCount++;
+                    $variantsCount += $this->displayVariants($product, $filters)->count();
+
+                    if (
+                        ($stopAfterProducts !== null && $productsCount > $stopAfterProducts)
+                        || ($stopAfterVariants !== null && $variantsCount > $stopAfterVariants)
+                    ) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }, 'products.id', 'id');
+
+        return [
+            'products_count' => $productsCount,
+            'variants_count' => $variantsCount,
+        ];
     }
 
     /**
@@ -151,12 +199,7 @@ class ProductExportService
                 foreach ($products as $product) {
                     $stock = $this->stock($product, $warehouseFilterActive);
 
-                    $matchesStockStatus = match ($stockStatus) {
-                        'in_stock' => $stock > 0,
-                        'out_of_stock' => $stock <= 0,
-                        'low_stock' => $stock > 0 && $stock <= self::LOW_STOCK_THRESHOLD,
-                        default => true,
-                    };
+                    $matchesStockStatus = $this->matchesStockStatus($stock, $stockStatus);
 
                     if (! $matchesStockStatus) {
                         continue;
@@ -169,6 +212,16 @@ class ProductExportService
             }, 'products.id', 'id');
 
         return $index;
+    }
+
+    private function matchesStockStatus(int $stock, string $stockStatus): bool
+    {
+        return match ($stockStatus) {
+            'in_stock' => $stock > 0,
+            'out_of_stock' => $stock <= 0,
+            'low_stock' => $stock > 0 && $stock <= self::LOW_STOCK_THRESHOLD,
+            default => true,
+        };
     }
 
     /**
@@ -249,7 +302,7 @@ class ProductExportService
 
             'is_sellable' => (bool) ($product->is_sellable ?? true),
 
-            'variants' => $product->variants
+            'variants' => $this->displayVariants($product, $filters)
                 ->map(
                     fn (ProductVariant $variant) => $this->variantRow(
                         $variant,
@@ -260,6 +313,63 @@ class ProductExportService
                 ->values()
                 ->all(),
         ];
+    }
+
+    private function displayVariants(Product $product, array $filters): Collection
+    {
+        $variants = $product->relationLoaded('variants')
+            ? $product->variants
+            : collect();
+
+        $modelListIds = $this->modelListIds($filters);
+
+        if (empty($modelListIds)) {
+            return $variants->values();
+        }
+
+        return $variants
+            ->filter(fn (ProductVariant $variant) => in_array(
+                (int) ($variant->model_list_id ?? 0),
+                $modelListIds,
+                true
+            ))
+            ->values();
+    }
+
+    private function modelListIds(array $filters): array
+    {
+        return collect($filters['model_list_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function modelListLabels(array $filters): array
+    {
+        $modelListIds = $this->modelListIds($filters);
+
+        if (empty($modelListIds)) {
+            return [];
+        }
+
+        return ModelList::query()
+            ->whereIn('id', $modelListIds)
+            ->orderBy('brand')
+            ->orderBy('model_name')
+            ->get(['brand', 'model_name'])
+            ->map(function (ModelList $modelList) {
+                return $this->cleanText(
+                    trim(implode(' ', array_filter([
+                        $modelList->brand,
+                        $modelList->model_name,
+                    ]))),
+                    'مدل بدون نام'
+                );
+            })
+            ->values()
+            ->all();
     }
 
     /**
@@ -309,6 +419,8 @@ class ProductExportService
             'search' => trim(
                 (string) ($filters['search'] ?? '')
             ),
+
+            'model_lists' => $this->modelListLabels($filters),
 
             'exported_at' => now()->format('Y/m/d H:i'),
 
@@ -578,7 +690,7 @@ public function hasPdfImage(Product $product): bool
             $variant->variant_name
                 ?: $variant->variety_name
                 ?: $variant->color?->name
-                ?: $variant->modelList?->name,
+                ?: $variant->modelList?->model_name,
             'تنوع بدون نام'
         );
     }

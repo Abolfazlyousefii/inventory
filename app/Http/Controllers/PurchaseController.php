@@ -13,6 +13,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Services\ProductVariantStructureService;
+use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -253,6 +254,7 @@ class PurchaseController extends Controller
     public function destroy(Purchase $purchase)
     {
         DB::transaction(function () use ($purchase) {
+            app(SupplierLedgerService::class)->voidPurchaseCredit($purchase);
             $this->rollbackPurchase($purchase);
             $purchase->delete();
         });

@@ -35,7 +35,7 @@ class PreinvoiceLifecycleAuditCommand extends Command
 
         $order = PreinvoiceOrder::query()->with(['items', 'invoice.items'])->findOrFail($orderId);
         $invoice = Invoice::query()->with('items')->where('preinvoice_order_id', $order->id)->first();
-        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price);
+        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
         $itemsQty = (int) $order->items->sum('quantity');
         $itemsTotal = (int) $order->items->sum(fn ($item) => max(((int) $item->price * (int) $item->quantity) - (int) ($item->line_discount_amount ?? 0), 0));
 
@@ -81,7 +81,7 @@ class PreinvoiceLifecycleAuditCommand extends Command
             $backups = $this->createBackups($lockedOrder->id);
             $this->info('Backup tables created: ' . implode(', ', $backups));
 
-            $totals = SalesDocumentTotals::calculate($lockedOrder->items, (int) $lockedOrder->discount_amount, (int) $lockedOrder->shipping_price);
+            $totals = SalesDocumentTotals::calculate($lockedOrder->items, (int) $lockedOrder->discount_amount, (int) $lockedOrder->shipping_price, ['discount_allocation_mode' => $lockedOrder->discount_allocation_mode]);
             $invoice = Invoice::query()->create([
                 'uuid' => $this->officialCodeForPreinvoiceConversion($lockedOrder),
                 'preinvoice_order_id' => $lockedOrder->id,

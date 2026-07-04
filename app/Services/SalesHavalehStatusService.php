@@ -8,8 +8,6 @@ use App\Models\User;
 class SalesHavalehStatusService
 {
     public const PENDING_WAREHOUSE_APPROVAL = 'pending_warehouse_approval';
-    public const PENDING_COLLECTION = 'pending_collection';
-    public const WAREHOUSE_RECEIVED = 'warehouse_received';
     public const COLLECTING = 'collecting';
     public const CHECKING_DISCREPANCY = 'checking_discrepancy';
     public const FINAL_CHECK = 'final_check';
@@ -21,34 +19,27 @@ class SalesHavalehStatusService
     {
         return array_values(array_unique(array_merge($this->manualStatuses(), [
             self::PENDING_WAREHOUSE_APPROVAL,
-            self::PENDING_COLLECTION,
-            self::WAREHOUSE_RECEIVED,
             self::FINAL_CHECK,
             self::PACKING,
             self::NOT_SHIPPED,
             Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
             Invoice::STATUS_FINANCE_APPROVED,
-            Invoice::STATUS_READY_TO_SHIP,
         ])));
     }
 
     public function manualStatuses(): array
     {
         return [
-            self::PENDING_COLLECTION,
-            self::WAREHOUSE_RECEIVED,
+            self::CHECKING_DISCREPANCY,
             self::COLLECTING,
-            Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
-            Invoice::STATUS_READY_TO_SHIP,
+            self::SHIPPED,
         ];
     }
 
     public function labels(): array
     {
         return [
-            self::PENDING_WAREHOUSE_APPROVAL => 'در انتظار تایید انبار (قدیمی)',
-            self::PENDING_COLLECTION => 'در صف جمع‌آوری',
-            self::WAREHOUSE_RECEIVED => 'دریافت‌شده توسط انبار',
+            self::PENDING_WAREHOUSE_APPROVAL => 'در انتظار تایید انبار',
             self::COLLECTING => 'در حال جمع‌آوری',
             self::CHECKING_DISCREPANCY => 'در حال بررسی',
             self::FINAL_CHECK => 'در حال چک نهایی',
@@ -57,7 +48,6 @@ class SalesHavalehStatusService
             self::NOT_SHIPPED => 'کنسل شده',
             Invoice::STATUS_PENDING_FINANCE_REAPPROVAL => 'در انتظار تایید مالی مجدد',
             Invoice::STATUS_FINANCE_APPROVED => 'تایید مالی شده',
-            Invoice::STATUS_READY_TO_SHIP => 'آماده ارسال',
         ];
     }
 
@@ -108,9 +98,7 @@ class SalesHavalehStatusService
 
         $allowedNext = [
             self::PENDING_WAREHOUSE_APPROVAL => [self::COLLECTING, self::CHECKING_DISCREPANCY],
-            self::PENDING_COLLECTION => [self::WAREHOUSE_RECEIVED, self::COLLECTING, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP],
-            self::WAREHOUSE_RECEIVED => [self::COLLECTING, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP],
-            self::COLLECTING => [Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP],
+            self::COLLECTING => [self::CHECKING_DISCREPANCY, self::SHIPPED],
             self::CHECKING_DISCREPANCY => [self::COLLECTING, self::SHIPPED],
             self::FINAL_CHECK => [self::COLLECTING, self::CHECKING_DISCREPANCY, self::SHIPPED],
             self::PACKING => [self::COLLECTING, self::CHECKING_DISCREPANCY, self::SHIPPED],

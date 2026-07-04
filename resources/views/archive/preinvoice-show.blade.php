@@ -46,7 +46,7 @@
   };
 
   $itemsCount = $order->items->sum('quantity');
-  $printTotals = \App\Support\SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price);
+  $printTotals = \App\Support\SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
   $itemsTotal = $printTotals['subtotal_before_discount'];
   $printSubtotal = $itemsTotal;
   $printShippingName = $order->shippingMethod?->name ?? ($order->shipping_id ? ('روش ارسال #' . $order->shipping_id) : '---');

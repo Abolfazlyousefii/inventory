@@ -4,7 +4,7 @@
 @php
   use Morilog\Jalali\Jalalian;
 
-  $totals = \App\Support\SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price);
+  $totals = \App\Support\SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
 
   $methodFa = fn($m) => match($m){
     'cash' => 'نقدی',

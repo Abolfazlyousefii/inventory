@@ -3,9 +3,11 @@
 @php
   use Morilog\Jalali\Jalalian;
 
-  $totals = \App\Support\SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price);
+  $totals = \App\Support\SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
   $subtotal = $totals['subtotal_before_discount'];
   $shipping = $totals['shipping'];
+  $productDiscount = (int) ($order->product_discount_amount ?? 0);
+  $invoiceDiscount = (int) ($order->invoice_discount_amount ?? 0);
   $discount = $totals['total_discount'];
   $grandTotal = $totals['grand_total'];
   $rial = fn ($value) => \App\Support\Currency::formatRial($value);
@@ -150,8 +152,18 @@
                 <span class="text-muted">هزینه ارسال</span>
                 <strong>{{ $rial($shipping) }}</strong>
               </div>
+              @if(($order->discount_allocation_mode ?? null) === 'allocated_lines')
               <div class="d-flex justify-content-between mb-2">
-                <span class="text-muted">تخفیف لحاظ شده</span>
+                <span class="text-muted">تخفیف کالاها</span>
+                <strong class="text-danger">- {{ $rial($productDiscount) }}</strong>
+              </div>
+              <div class="d-flex justify-content-between mb-2">
+                <span class="text-muted">تخفیف کلی فاکتور</span>
+                <strong class="text-danger">- {{ $rial($invoiceDiscount) }}</strong>
+              </div>
+              @endif
+              <div class="d-flex justify-content-between mb-2">
+                <span class="text-muted">جمع تخفیف لحاظ شده</span>
                 <strong class="text-danger">- {{ $rial($discount) }}</strong>
               </div>
               <hr>

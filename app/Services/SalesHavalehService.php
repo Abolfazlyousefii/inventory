@@ -135,7 +135,7 @@ class SalesHavalehService
             }
 
             $invoice->refresh()->load(['items', 'preinvoiceOrder']);
-            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price);
+            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
             $subtotal = $totals['subtotal_before_discount'];
             $newTotal = $totals['grand_total'];
             $oldTotal = (int) $invoice->total;
@@ -252,7 +252,7 @@ class SalesHavalehService
             }
 
             $invoice->refresh()->load(['items', 'preinvoiceOrder.items']);
-            $totals = SalesDocumentTotals::calculate($invoice->items, (int) ($header['discount_amount'] ?? $invoice->discount_amount), (int) ($header['shipping_price'] ?? $invoice->shipping_price));
+            $totals = SalesDocumentTotals::calculate($invoice->items, (int) ($header['discount_amount'] ?? $invoice->discount_amount), (int) ($header['shipping_price'] ?? $invoice->shipping_price), ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
             $invoice->update([
                 'discount_amount' => (int) ($header['discount_amount'] ?? 0),
                 'shipping_price' => (int) ($header['shipping_price'] ?? 0),
@@ -724,7 +724,7 @@ class SalesHavalehService
                 return $existing;
             }
 
-            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price);
+            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
 
@@ -741,6 +741,12 @@ class SalesHavalehService
                 'shipping_id' => $order->shipping_id,
                 'shipping_price' => (int) $order->shipping_price,
                 'discount_amount' => (int) $order->discount_amount,
+                'discount_breakdown' => $order->discount_breakdown,
+                'invoice_discount_type' => $order->invoice_discount_type,
+                'invoice_discount_value' => (int) $order->invoice_discount_value,
+                'invoice_discount_amount' => (int) $order->invoice_discount_amount,
+                'product_discount_amount' => (int) $order->product_discount_amount,
+                'discount_allocation_mode' => $order->discount_allocation_mode,
                 'subtotal' => $subtotal,
                 'total' => $total,
                 'status' => SalesHavalehStatusService::COLLECTING,
@@ -765,6 +771,52 @@ class SalesHavalehService
             $this->historyService->log($invoice, 'created', null, null, null, 'ایجاد حواله فروش از رکورد مالی', $userId);
 
             return $invoice;
+        });
+    }
+
+
+    public function completeCollectionAndTransferToWarehouse(Invoice $invoice, ?int $userId = null): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $userId) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            if ((string) $invoice->collection_status === Invoice::COLLECTION_STATUS_COMPLETED) {
+                return $invoice->fresh();
+            }
+
+            if (! in_array((string) $invoice->status, [
+                SalesHavalehStatusService::COLLECTING,
+                SalesHavalehStatusService::CHECKING_DISCREPANCY,
+                SalesHavalehStatusService::FINAL_CHECK,
+            ], true)) {
+                abort(422, 'این فاکتور در وضعیت قابل انتقال از صف جمع‌آوری نیست.');
+            }
+
+            $oldStatus = (string) $invoice->status;
+            $now = now();
+
+            $invoice->update([
+                'collection_status' => Invoice::COLLECTION_STATUS_COMPLETED,
+                'collection_completed_at' => $now,
+                'collection_completed_by' => $userId,
+                'collection_transferred_to_warehouse_at' => $now,
+                'collection_transferred_to_warehouse_by' => $userId,
+                'status' => SalesHavalehStatusService::PACKING,
+                'status_changed_at' => $now,
+                'status_changed_by' => $userId,
+            ]);
+
+            $this->historyService->log(
+                $invoice,
+                'collection_transferred_to_warehouse',
+                'status',
+                $oldStatus,
+                SalesHavalehStatusService::PACKING,
+                'فاکتور جمع‌آوری و چک شد و به مرحله بسته‌بندی/انبار منتقل شد.',
+                $userId
+            );
+
+            return $invoice->fresh();
         });
     }
 

@@ -13,21 +13,30 @@ class SalesDocumentTotals
      * the discount amount for the whole row, not for each unit. The document
      * `discount_amount` remains a separate invoice-level discount.
      */
-    public static function calculate(iterable $items, int $documentDiscount = 0, int $shipping = 0): array
+    public static function calculate(iterable $items, int $documentDiscount = 0, int $shipping = 0, array $options = []): array
     {
         $rows = $items instanceof Collection ? $items : collect($items);
 
         $subtotalBeforeDiscount = (int) $rows->sum(fn ($item) => self::lineSubtotal($item));
         $itemsDiscount = (int) $rows->sum(fn ($item) => self::lineDiscount($item));
         $invoiceDiscount = max((int) $documentDiscount, 0);
-        $totalDiscount = min($subtotalBeforeDiscount, $itemsDiscount + $invoiceDiscount);
+        $mode = (string) ($options['discount_allocation_mode'] ?? '');
+
+        if ($mode === 'allocated_lines') {
+            $totalDiscount = min($subtotalBeforeDiscount, $itemsDiscount);
+            $invoiceDiscountForDisplay = $invoiceDiscount;
+        } else {
+            $totalDiscount = min($subtotalBeforeDiscount, $itemsDiscount + $invoiceDiscount);
+            $invoiceDiscountForDisplay = $invoiceDiscount;
+        }
+
         $subtotalAfterDiscount = max($subtotalBeforeDiscount - $totalDiscount, 0);
         $shipping = max((int) $shipping, 0);
 
         return [
             'subtotal_before_discount' => $subtotalBeforeDiscount,
             'items_discount' => $itemsDiscount,
-            'invoice_discount' => $invoiceDiscount,
+            'invoice_discount' => $invoiceDiscountForDisplay,
             'total_discount' => $totalDiscount,
             'subtotal_after_discount' => $subtotalAfterDiscount,
             'total_tax' => 0,

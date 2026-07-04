@@ -157,7 +157,7 @@ class VoucherController extends Controller
             }
 
             $invoice->loadMissing('items');
-            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price);
+            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
             $invoice->update([
@@ -513,6 +513,9 @@ class VoucherController extends Controller
 
         $data = $request->validate($rules);
         $returnsWarehouse = $this->returnsWarehouse();
+        if (($data['return_reason'] ?? null) === WarehouseTransfer::RETURN_REASON_GOODS_HEALTHY) {
+            $data['to_warehouse_id'] = WarehouseStockService::centralWarehouseId();
+        }
         $destinationWarehouse = Warehouse::query()
             ->whereKey((int) $data['to_warehouse_id'])
             ->where('is_active', true)
@@ -1007,7 +1010,7 @@ class VoucherController extends Controller
             }
 
             $invoice->loadMissing('items');
-            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price);
+            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
 
@@ -1399,6 +1402,7 @@ class VoucherController extends Controller
                     'variant_name' => (string) ($item->variant?->variant_name ?? ''),
                     'variant_code' => (string) ($item->variant?->variant_code ?? ''),
                     'variant_stock' => (int) ($item->variant?->stock ?? 0),
+                    'unit' => (string) ($item->product?->unit ?: 'عدد'),
                     'qty' => $invoicedQty,
                     'already_returned_qty' => $returnedQty,
                     'remaining_qty' => $remainingQty,
@@ -1810,6 +1814,8 @@ class VoucherController extends Controller
 
             StockMovement::create([
                 'product_id' => $product->id,
+                'product_variant_id' => $variant->id,
+                'warehouse_id' => $voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN ? (int) $data['to_warehouse_id'] : (int) $data['from_warehouse_id'],
                 'user_id' => auth()->id(),
                 'type' => $movementType,
                 'reason' => $movementReason,
@@ -1817,6 +1823,8 @@ class VoucherController extends Controller
                 'stock_before' => $stockBefore,
                 'stock_after' => $stockAfter,
                 'reference' => $transfer->reference ?: ('TR-' . $transfer->id),
+                'reference_type' => WarehouseTransfer::class,
+                'reference_id' => $transfer->id,
                 'note' => $movementNote,
             ]);
         }

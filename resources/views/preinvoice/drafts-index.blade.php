@@ -74,16 +74,5 @@
   <div class="mt-3">
     {{ $orders->links() }}
   </div>
-
-  @if(($reapprovalInvoices ?? collect())->count())
-    <div class="card shadow-sm border-0 mt-4">
-      <div class="card-header bg-white"><strong>فاکتورهای اصلاح‌شده در انتظار تایید مجدد مالی</strong></div>
-      <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>فاکتور</th><th>مشتری</th><th>مبلغ</th><th>فروشنده</th><th class="text-end">عملیات</th></tr></thead><tbody>
-      @foreach($reapprovalInvoices as $invoice)
-        <tr><td>{{ $invoice->uuid }}</td><td>{{ $invoice->customer_name }}</td><td>{{ number_format((int) $invoice->total) }}</td><td>{{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</td><td class="text-end"><a class="btn btn-sm btn-success" href="{{ $invoice->preinvoiceOrder ? route('preinvoice.draft.finance', $invoice->preinvoiceOrder->uuid) : route('invoices.show', $invoice->uuid) }}">بررسی تایید مجدد</a></td></tr>
-      @endforeach
-      </tbody></table></div>
-    </div>
-  @endif
 </div>
 @endsection
