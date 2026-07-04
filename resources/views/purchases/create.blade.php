@@ -152,6 +152,21 @@
         color: #9a3412;
         padding: 10px;
     }
+    .purchase-fast-page .current-sale-price {
+        border: 1px solid #dbeafe;
+        background: #eff6ff;
+        color: #1e40af;
+        border-radius: 10px;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .purchase-fast-page .current-sale-price.missing {
+        border-color: #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+    }
 </style>
 
 <div class="purchase-page-wrap purchase-fast-page">
@@ -388,6 +403,15 @@
         return Number(value || 0).toLocaleString('fa-IR');
     }
 
+    function formatMoney(value) {
+        return `${formatFa(value)} ریال`;
+    }
+
+    function currentSalePriceMessage(value) {
+        const price = Number(value || 0);
+        return price > 0 ? `قیمت فروش فعلی: ${formatMoney(price)}` : 'قیمت فروش فعلی موجود نیست';
+    }
+
     function calculateDiscount(base, type, value) {
         const v = Number(value || 0);
         if (!type || v <= 0 || base <= 0) return 0;
@@ -420,6 +444,8 @@
             stock: Number(variant.central_stock ?? variant.stock ?? 0),
             reserved: Number(variant.reserved || 0),
             barcode: variant.barcode || '',
+            buy_price: Number(variant.buy_price || 0),
+            sell_price: Number(variant.sell_price || variant.price || 0),
             color_name: variant.color_name || variant.color?.name || '',
             color_code: variant.color_code || variant.color?.code || '',
         };
@@ -617,12 +643,13 @@
                 <td><input type="number" min="0" class="form-control form-control-sm qty-input" data-qty value=""></td>
                 <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-buy value=""></td>
                 <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-sell value=""></td>
+                <td><span class="current-sale-price ${Number(variant.sell_price || 0) > 0 ? '' : 'missing'}" data-current-sale-price data-sale-price="${Number(variant.sell_price || 0)}">${escapeHtml(currentSalePriceMessage(variant.sell_price))}</span></td>
                 <td><span class="badge text-bg-warning d-none" data-price-badge>قیمت اختصاصی</span></td>
                 <td><button type="button" class="btn btn-sm btn-outline-secondary" data-clear-row>خالی</button></td>
             </tr>
         `).join('') : `
             <tr>
-                <td colspan="8" class="text-center text-muted py-3">برای این محصول تنوعی ثبت نشده است؛ ابتدا برای محصول یک تنوع عمومی تعریف کنید.</td>
+                <td colspan="9" class="text-center text-muted py-3">برای این محصول تنوعی ثبت نشده است؛ ابتدا برای محصول یک تنوع عمومی تعریف کنید.</td>
             </tr>
         `;
 
@@ -687,7 +714,8 @@
                                     <th>موجودی فعلی</th>
                                     <th>تعداد خرید</th>
                                     <th>قیمت خرید</th>
-                                    <th>قیمت فروش</th>
+                                    <th>قیمت فروش خرید</th>
+                                    <th>قیمت فروش فعلی سیستم</th>
                                     <th>وضعیت قیمت</th>
                                     <th>عملیات</th>
                                 </tr>

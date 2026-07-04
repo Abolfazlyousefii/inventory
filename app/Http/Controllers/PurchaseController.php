@@ -400,6 +400,13 @@ class PurchaseController extends Controller
             'reserved' => (int) ($variant->reserved ?? 0),
             'buy_price' => \App\Support\Currency::toRial($variant->buy_price ?? 0),
             'sell_price' => \App\Support\Currency::toRial($variant->sell_price ?? 0),
+            'sale_price' => \App\Support\Currency::toRial($variant->sell_price ?? 0),
+            'formatted_sale_price' => (int) ($variant->sell_price ?? 0) > 0
+                ? \App\Support\Currency::formatRial($variant->sell_price)
+                : null,
+            'sale_price_message' => (int) ($variant->sell_price ?? 0) > 0
+                ? null
+                : 'قیمت فروش فعلی موجود نیست',
             'is_active' => (bool) ($variant->is_active ?? true),
         ];
     }
