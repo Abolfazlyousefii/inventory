@@ -573,17 +573,17 @@ document.addEventListener('DOMContentLoaded', function () {
     const oldRelatedInvoiceUuid = @json($returnOldRelatedInvoiceUuid);
     const rawOldItems = @json($returnOldItems);
     const oldItems = (Array.isArray(rawOldItems) ? rawOldItems : Object.values(rawOldItems || {})).map(function (row) {
+        row = row || {};
         const quantity = returnItemQuantity(row);
-        const variantId = row?.variant_id ?? row?.product_variant_id ?? row?.variety_id ?? '';
+        const variantId = row.variant_id || row.product_variant_id || row.variety_id || '';
 
-        return {
-            ...row,
-            invoice_item_id: row?.invoice_item_id ?? row?.invoiceItemId ?? '',
-            product_id: row?.product_id ?? row?.productId ?? '',
+        return Object.assign({}, row, {
+            invoice_item_id: row.invoice_item_id || row.invoiceItemId || '',
+            product_id: row.product_id || row.productId || '',
             variant_id: variantId,
-            product_variant_id: row?.product_variant_id ?? variantId,
-            quantity: quantity > 0 ? quantity : row?.quantity,
-        };
+            product_variant_id: row.product_variant_id || variantId,
+            quantity: quantity > 0 ? quantity : row.quantity,
+        });
     });
     const editingVoucherId = @json($returnEditingVoucherId);
     const existingInvoice = @json($returnExistingInvoice);
@@ -991,6 +991,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 qtyInput.value = String(toSafeNumber(tr.dataset.defaultQuantity, 1));
             }
 
+            if (!qtyInput) return;
+
             qtyInput.addEventListener('input', function () {
                 const max = toSafeNumber(qtyInput.max, 0);
                 let value = toSafeNumber(qtyInput.value, 0);
@@ -1375,7 +1377,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (manualQtyInput && (!manualQtyInput.value || toSafeNumber(manualQtyInput.value, 0) <= 0)) {
             manualQtyInput.value = String(toSafeNumber(manualQtyInput.dataset.defaultQuantity, 1));
         }
-        manualQtyInput.addEventListener('input', recalcManualTotals);
+        if (manualQtyInput) {
+            manualQtyInput.addEventListener('input', recalcManualTotals);
+        }
         tr.querySelectorAll('.quick-money').forEach(function (input) { input.addEventListener('input', function () { const raw = parseMoney(input.value); input.value = input.value.trim() === '' ? '' : raw.toLocaleString('en-US'); }); });
         priceDisplayInput.addEventListener('input', function () {
             const raw = parseMoney(priceDisplayInput.value);
