@@ -7,7 +7,7 @@ use Illuminate\Validation\ValidationException;
 
 class SalePriceGuard
 {
-    public const MESSAGE = 'برای این کالا قیمت فروش ثبت نشده است. ابتدا قیمت فروش را تکمیل کنید.';
+    public const MESSAGE = 'قیمت فروش این کالا ثبت نشده است. لطفاً قیمت ردیف را وارد کنید یا ابتدا قیمت فروش کالا را تکمیل کنید.';
 
     public function assertVariantHasSalePrice(ProductVariant $variant, ?string $field = 'items'): void
     {

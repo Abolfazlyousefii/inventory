@@ -2,19 +2,21 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Invoice;
+use App\Services\CustomerLedgerService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 class AuditMissingSalePricesCommand extends Command
 {
-    protected $signature = 'products:audit-missing-sale-prices {--dry-run : فقط گزارش بگیر و تغییری اعمال نکن} {--fix : فعلاً فقط گزارش می‌دهد؛ قیمت فروش حدسی اصلاح نمی‌شود} {--invoice= : شماره فاکتور/پیش‌فاکتور مثل 00246}';
+    protected $signature = 'invoices:audit-zero-price-items {--dry-run : فقط گزارش بگیر و تغییری اعمال نکن} {--fix : فقط مواردی را اصلاح می‌کند که قیمت معتبر از تنوع کالا قابل تشخیص باشد} {--invoice= : شماره فاکتور/پیش‌فاکتور مثل 00246}';
 
-    protected $description = 'Audit variants/products with missing sale prices, zero-price invoice rows, and positive stock without purchases.';
+    protected $description = 'Audit zero/null invoice item prices and missing variant sale prices.';
 
     public function handle(): int
     {
         if ($this->option('fix')) {
-            $this->warn('اصلاح خودکار قیمت فروش انجام نمی‌شود؛ قیمت واقعی نباید حدسی ثبت شود. این اجرا فقط گزارش است.');
+            $this->warn('اصلاح خودکار فقط برای ردیف‌هایی انجام می‌شود که product_variants.sell_price معتبر دارند؛ قیمت حدسی ثبت نمی‌شود.');
         }
 
         $this->info('منبع قیمت فروش عملیاتی: product_variants.sell_price. products.price فقط خلاصه/کمترین قیمت تنوع‌هاست.');
@@ -63,6 +65,10 @@ class AuditMissingSalePricesCommand extends Command
             $this->reportInvoice($uuid);
         }
 
+        if ($this->option('fix')) {
+            $this->fixZeroPriceItems();
+        }
+
         return self::SUCCESS;
     }
 
@@ -79,6 +85,49 @@ class AuditMissingSalePricesCommand extends Command
                 ->where(fn($q)=>$q->where('i.uuid',$uuid)->orWhere('i.uuid',ltrim($uuid,'0')))
                 ->get(['i.uuid as invoice_uuid','ii.id as item_id','p.name as product_name','pv.variant_name','ii.quantity','ii.price as invoice_price','ii.line_total','pv.sell_price as variant_sell_price','pv.stock as variant_stock',DB::raw('COALESCE(pi.purchase_qty,0) as purchase_qty'),'sm.last_movement_reason'])->map(fn($r)=>(array)$r)->all()
         );
+    }
+
+    private function fixZeroPriceItems(): void
+    {
+        $rows = DB::table('invoice_items as ii')
+            ->join('product_variants as pv', 'pv.id', '=', 'ii.variant_id')
+            ->where(fn ($q) => $q->whereNull('ii.price')->orWhere('ii.price', '<=', 0))
+            ->where('pv.sell_price', '>', 0)
+            ->get(['ii.id', 'ii.invoice_id', 'ii.quantity', 'ii.line_discount_amount', 'pv.sell_price']);
+
+        if ($this->option('dry-run')) {
+            $this->warn("dry-run فعال است؛ {$rows->count()} ردیف قابل اصلاح پیدا شد ولی تغییری اعمال نشد.");
+            return;
+        }
+
+        $invoiceIds = $rows->pluck('invoice_id')->unique()->values();
+
+        DB::transaction(function () use ($rows, $invoiceIds) {
+            foreach ($rows as $row) {
+                $price = (int) $row->sell_price;
+                $quantity = max((int) $row->quantity, 0);
+                $discount = min(max((int) ($row->line_discount_amount ?? 0), 0), $quantity * $price);
+
+                DB::table('invoice_items')->where('id', $row->id)->update([
+                    'price' => $price,
+                    'line_discount_amount' => $discount,
+                    'line_total' => max(($quantity * $price) - $discount, 0),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            Invoice::query()->whereIn('id', $invoiceIds)->lockForUpdate()->with('items')->get()->each(function (Invoice $invoice) {
+                $subtotal = (int) $invoice->items->sum(fn ($item) => max((int) $item->quantity, 0) * max((int) $item->price, 0));
+                $itemsDiscount = (int) $invoice->items->sum(fn ($item) => min(max((int) ($item->line_discount_amount ?? 0), 0), max((int) $item->quantity, 0) * max((int) $item->price, 0)));
+                $discount = min($subtotal, $itemsDiscount + max((int) $invoice->discount_amount, 0));
+                $total = max($subtotal - $discount, 0) + max((int) $invoice->shipping_price, 0);
+
+                $invoice->update(['subtotal' => $subtotal, 'total' => $total]);
+                app(CustomerLedgerService::class)->syncInvoiceDebit($invoice->fresh());
+            });
+        });
+
+        $this->info("{$rows->count()} ردیف با قیمت معتبر تنوع کالا اصلاح شد و جمع فاکتور/گردش حساب {$invoiceIds->count()} فاکتور دوباره محاسبه شد.");
     }
 
     private function tableRows(string $title, array $headers, array $rows): void
