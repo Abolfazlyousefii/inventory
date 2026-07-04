@@ -78,8 +78,8 @@
               <td dir="ltr" class="text-nowrap">{{ $productCode }}</td>
               <td dir="ltr" class="text-nowrap">{{ $warehouseLocation }}</td>
               <td>{{ $item->variant_name ?: ($item->variant?->variant_name ?? '—') }}{{ $item->personnel_asset_code ? ' | کد اموال: '.$item->personnel_asset_code : '' }}</td>
-              <td>{{ number_format((int) $item->quantity) }}</td>
-              <td>عدد</td>
+              <td>{{ number_format((int) $item->quantity) }} {{ $item->product?->unit ?: 'عدد' }}</td>
+              <td>{{ $item->product?->unit ?: 'عدد' }}</td>
               <td>{{ $item->line_total ? 'مبلغ ردیف: '.number_format((int)$item->line_total) : '—' }}</td>
             </tr>
           @empty

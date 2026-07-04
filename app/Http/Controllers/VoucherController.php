@@ -1402,6 +1402,7 @@ class VoucherController extends Controller
                     'variant_name' => (string) ($item->variant?->variant_name ?? ''),
                     'variant_code' => (string) ($item->variant?->variant_code ?? ''),
                     'variant_stock' => (int) ($item->variant?->stock ?? 0),
+                    'unit' => (string) ($item->product?->unit ?: 'عدد'),
                     'qty' => $invoicedQty,
                     'already_returned_qty' => $returnedQty,
                     'remaining_qty' => $remainingQty,

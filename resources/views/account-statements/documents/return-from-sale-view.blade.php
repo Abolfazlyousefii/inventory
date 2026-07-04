@@ -26,6 +26,8 @@
 
     $variantCode = fn ($item): string => $item->variant?->variant_code
         ?: ($item->variant_code ?: '—');
+    $returnReasonLabel = \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—';
+    $itemStatusLabel = fn (): string => $voucher->return_reason === \App\Models\WarehouseTransfer::RETURN_REASON_GOODS_HEALTHY ? 'سالم' : ($voucher->return_reason ? 'نیازمند بررسی / معیوب' : '—');
 @endphp
 
 @section('content')
@@ -68,6 +70,9 @@
                     <th>نوع / تنوع دقیق کالا</th>
                     <th>کد تنوع</th>
                     <th>تعداد برگشتی</th>
+                    <th>واحد</th>
+                    <th>علت برگشت</th>
+                    <th>وضعیت کالا</th>
                     <th>قیمت واحد</th>
                     <th>جمع</th>
                 </tr>
@@ -79,12 +84,15 @@
                     <td>{{ $item->product?->name ?? ('#' . $item->product_id) }}</td>
                     <td>{{ $variantLabel($item) }}</td>
                     <td dir="ltr">{{ $variantCode($item) }}</td>
-                    <td>{{ number_format((int) $item->quantity) }}</td>
+                    <td>{{ number_format((int) $item->quantity) }} {{ $item->product?->unit ?: 'عدد' }}</td>
+                    <td>{{ $item->product?->unit ?: 'عدد' }}</td>
+                    <td>{{ $returnReasonLabel }}</td>
+                    <td>{{ $itemStatusLabel() }}</td>
                     <td>{{ number_format((int) $item->unit_price) }}</td>
                     <td>{{ number_format((int) $item->line_total) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7" class="text-center text-muted py-4">آیتمی ثبت نشده است.</td></tr>
+                <tr><td colspan="10" class="text-center text-muted py-4">آیتمی ثبت نشده است.</td></tr>
             @endforelse
             </tbody>
         </table>
