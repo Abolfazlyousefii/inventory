@@ -22,12 +22,14 @@ class Customer extends Model
         'province_id',
         'city_id',
         'opening_balance',
+        'reservation_tier',
     ];
 
     protected $casts = [
         'province_id' => 'integer',
         'city_id' => 'integer',
         'opening_balance' => 'integer',
+        'reservation_tier' => 'string',
         'synced_at' => 'datetime',
         'crm_updated_at' => 'datetime',
         'last_crm_payload' => 'array',
