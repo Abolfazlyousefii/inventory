@@ -24,6 +24,7 @@ use App\Services\SalesDocumentAccessService;
 use App\Services\SalesPrintDocumentService;
 use App\Services\PaymentRegistrationService;
 use App\Services\NotificationService;
+use App\Services\PreinvoiceDraftReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -39,6 +40,7 @@ class PreinvoiceController extends Controller
         private readonly SalesDocumentAccessService $accessService,
         private readonly WarehouseReviewAuditService $warehouseReviewAuditService,
         private readonly WarehousePendingRefreshService $warehousePendingRefreshService,
+        private readonly PreinvoiceDraftReservationService $draftReservationService,
     ) {}
 
     public function create()
@@ -361,6 +363,17 @@ class PreinvoiceController extends Controller
     public function saveDraft(Request $request)
     {
         abort_unless(auth()->check(), 403);
+
+        $intent = (string) $request->input('intent', 'submit');
+        if ($intent === 'draft') {
+            return $this->saveTrueDraftFromRequest($request);
+        }
+
+        return $this->submitPreinvoiceFromRequest($request);
+    }
+
+    private function submitPreinvoiceFromRequest(Request $request)
+    {
         $validated = $this->validateDraftPayload($request);
 
         DB::transaction(function () use ($validated) {
@@ -410,6 +423,65 @@ class PreinvoiceController extends Controller
 
         return redirect()->route('preinvoice.create')
             ->with('success', '✅ پیش‌فاکتور ثبت و برای تایید انبار ارسال شد.');
+    }
+
+    private function saveTrueDraftFromRequest(Request $request)
+    {
+        $validated = $this->validateDraftPayload($request, false);
+
+        $order = DB::transaction(function () use ($validated) {
+            $customer = $this->resolveCustomer($validated);
+            $shippingId = (int) $validated['shipping_id'];
+
+            $order = PreinvoiceOrder::create([
+                'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
+                'created_by' => auth()->id(),
+                'status' => PreinvoiceOrder::STATUS_DRAFT,
+
+                'customer_id' => $customer?->id,
+                'customer_name' => $this->orderCustomerName($validated, $customer),
+                'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
+                'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
+                'description' => $this->orderDescription($validated),
+                'province_id' => $this->orderProvinceId($validated, $customer, $shippingId),
+                'city_id' => $this->orderCityId($validated, $customer, $shippingId),
+
+                'shipping_id' => $shippingId,
+                'shipping_price' => (int) $this->resolveShippingPrice($shippingId),
+                'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
+                'total_price' => 0,
+                'stock_frozen_until' => null,
+                'stock_released_at' => null,
+            ]);
+
+            $this->syncItems($order, $validated['products']);
+            $order->update([
+                'total_price' => $this->calculateOrderTotal($order),
+                'stock_frozen_until' => null,
+                'stock_released_at' => null,
+            ]);
+
+            if (! empty($validated['reservation_token'])) {
+                $this->draftReservationService->releaseTokenReservations(
+                    (string) $validated['reservation_token'],
+                    (int) auth()->id(),
+                    'save_as_draft',
+                    'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت آزاد شد.'
+                );
+            }
+
+            ActivityLogger::log('preinvoice_draft_saved', $order->fresh(), 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.', [
+                'user_id' => auth()->id(),
+                'preinvoice_id' => $order->id,
+                'preinvoice_uuid' => $order->uuid,
+                'status' => PreinvoiceOrder::STATUS_DRAFT,
+            ]);
+
+            return $order;
+        });
+
+        return redirect()->route('preinvoice.draft.edit', $order->uuid)
+            ->with('success', '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی رزرو نشد.');
     }
 
     public function editDraft(string $uuid)

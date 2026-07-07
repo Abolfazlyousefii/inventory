@@ -1112,6 +1112,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         <input type="hidden" name="customer_mobile" id="customer_mobile" value="{{ old('customer_mobile', $order->customer_mobile ?? '') }}">
         <input type="hidden" name="payment_status" value="pending">
         <input type="hidden" name="reservation_token" id="reservation_token" value="{{ old('reservation_token') }}">
+        <input type="hidden" name="intent" id="submit_intent" value="submit">
         <input type="hidden" name="discount_breakdown" id="discount_breakdown" value="">
 
         <div class="soft-card compact-card mb-3">
@@ -1254,7 +1255,16 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                     <input type="text" name="total_price" id="total_price" class="form-control form-control-sm total-view" readonly value="0">
                 </div>
                 <div>
-                    <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" disabled>{{ $isEdit ? 'ذخیره و ارسال مجدد برای تایید' : 'ثبت پیش‌فاکتور' }}</button>
+                    @if($isEdit)
+                    <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ذخیره و ارسال مجدد برای تایید</button>
+                    @else
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-outline-primary px-4 py-2 rounded-3 fw-bold" id="saveDraftBtn" name="intent" value="draft" disabled>ذخیره پیش‌نویس</button>
+                        <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ثبت نهایی</button>
+                    </div>
+                    <div class="hint mt-2">ذخیره پیش‌نویس موجودی را رزرو نمی‌کند و وارد صف مالی نمی‌شود.</div>
+                    <div class="hint">ثبت نهایی موجودی را بررسی/رزرو می‌کند و وارد روند تایید می‌شود.</div>
+                    @endif
                     <div class="submit-disabled-hint" id="submitHint">برای ثبت، مشتری و حداقل یک کالا لازم است.</div>
                 </div>
             </div>
@@ -2658,13 +2668,15 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
 
     function updateSubmitState() {
         const btn = document.getElementById('submitOrderBtn');
+        const draftBtn = document.getElementById('saveDraftBtn');
         const hint = document.getElementById('submitHint');
         const customerName = normalize(document.getElementById('customer_name')?.value);
         const customerMobile = normalize(document.getElementById('customer_mobile')?.value);
         const hasProducts = document.querySelectorAll('#groupProductsInputs input[name$="[quantity]"]').length > 0;
         const shippingId = normalize(document.getElementById('shipping_id')?.value);
         const ok = !!customerName && !!customerMobile && hasProducts && !!shippingId;
-        btn.disabled = !ok;
+        if (btn) btn.disabled = !ok;
+        if (draftBtn) draftBtn.disabled = !ok;
         if (ok) {
             hint.textContent = 'آماده ثبت.';
             hint.style.color = '#178c63';
@@ -2713,6 +2725,10 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     async function submitGuard(e) {
         if (isSubmittingProgrammatically) return true;
         e.preventDefault();
+        const submitter = e.submitter || document.activeElement;
+        const intent = submitter?.value === 'draft' ? 'draft' : 'submit';
+        const intentInput = document.getElementById('submit_intent');
+        if (intentInput) intentInput.value = intent;
         const customerName = normalize(document.getElementById('customer_name').value);
         const customerMobile = normalize(document.getElementById('customer_mobile').value);
         const productInputs = document.querySelectorAll('#groupProductsInputs input[name$="[quantity]"]');
@@ -2728,9 +2744,22 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             alert('حداقل یک کالا باید اضافه شود.');
             return false;
         }
-        const btn = document.getElementById('submitOrderBtn');
+        const btn = intent === 'draft' ? document.getElementById('saveDraftBtn') : document.getElementById('submitOrderBtn');
         const oldText = btn.textContent;
         btn.disabled = true;
+        if (intent === 'draft') {
+            normalizeBeforeSubmit();
+            btn.textContent = 'در حال ذخیره پیش‌نویس...';
+            isSubmittingProgrammatically = true;
+            if (!IS_EDIT) {
+                localStorage.removeItem(LOCAL_DRAFT_KEY);
+                localStorage.removeItem(RESERVATION_TOKEN_KEY);
+            }
+            hideLocalDraftBanner();
+            document.getElementById('orderForm').submit();
+            return true;
+        }
+
         btn.textContent = 'فریز نهایی موجودی...';
         try {
             await syncDraftReservation(groupedSelections);

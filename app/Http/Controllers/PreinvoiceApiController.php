@@ -9,6 +9,7 @@ use App\Models\ProductVariant;
 use App\Models\ShippingMethod;
 use App\Models\WarehouseStock;
 use App\Services\WarehouseStockService;
+use App\Services\PreinvoiceDraftReservationService;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,10 @@ use Illuminate\Validation\ValidationException;
 
 class PreinvoiceApiController extends Controller
 {
+    public function __construct(
+        private readonly PreinvoiceDraftReservationService $draftReservationService,
+    ) {}
+
     public function products(Request $request)
     {
         $q = trim((string) $request->query('q', ''));
@@ -224,7 +229,7 @@ class PreinvoiceApiController extends Controller
             'items.*.quantity' => ['required_with:items', 'integer', 'min:0'],
         ]);
 
-        $payload = $this->syncReservationRows(
+        $payload = $this->draftReservationService->syncReservationRows(
             (string) $data['reservation_token'],
             (int) auth()->id(),
             $data['items'] ?? []
@@ -244,7 +249,12 @@ class PreinvoiceApiController extends Controller
             'reservation_token' => ['required', 'uuid'],
         ]);
 
-        $payload = $this->syncReservationRows((string) $data['reservation_token'], (int) auth()->id(), []);
+        $payload = $this->draftReservationService->releaseTokenReservations(
+            (string) $data['reservation_token'],
+            (int) auth()->id(),
+            'manual_release',
+            null
+        );
 
         return response()->json([
             'ok' => true,
