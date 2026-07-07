@@ -21,8 +21,10 @@
   $effectiveStatusLabel = fn($order) => (($order->invoice?->status ?? null) === \App\Models\Invoice::STATUS_NOT_SHIPPED && ! in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE], true))
       ? 'لغوشده به دلیل کنسلی فاکتور مرتبط'
       : ($statusLabels[$order->status] ?? $order->status_label ?? $order->status);
+  $documentKindFor = fn($order, $isCancelled) => $isCancelled ? 'کنسل شده' : ($order->status === \App\Models\PreinvoiceOrder::STATUS_DRAFT ? 'پیش‌نویس' : ($order->invoice ? 'فاکتور شده' : 'پیش‌فاکتور'));
 
   $statusBadge = fn($status) => match($status) {
+      \App\Models\PreinvoiceOrder::STATUS_DRAFT => 'text-bg-secondary',
       \App\Models\PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE => 'text-bg-success',
       \App\Models\PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE,
       \App\Models\PreinvoiceOrder::STATUS_WAREHOUSE_REVIEWING => 'text-bg-info',
@@ -96,7 +98,7 @@
               $statusLabel = $effectiveStatusLabel($order);
               $invoiceUuid = $order->invoice?->uuid;
               $isCancelled = $isCancelledStatus($order);
-              $documentKind = $isCancelled ? 'کنسل شده' : ($order->invoice ? 'فاکتور شده' : 'پیش‌فاکتور');
+              $documentKind = $documentKindFor($order, $isCancelled);
               $badgeStatus = $effectiveStatus($order);
             @endphp
             <tr>
@@ -122,6 +124,9 @@
                 <div class="action-stack">
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
                   <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+                  @if($order->status === \App\Models\PreinvoiceOrder::STATUS_DRAFT)
+                    <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
+                  @endif
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
                 </div>
               </td>
@@ -140,7 +145,7 @@
         $statusLabel = $effectiveStatusLabel($order);
         $invoiceUuid = $order->invoice?->uuid;
         $isCancelled = $isCancelledStatus($order);
-        $documentKind = $isCancelled ? 'کنسل شده' : ($order->invoice ? 'فاکتور شده' : 'پیش‌فاکتور');
+        $documentKind = $documentKindFor($order, $isCancelled);
         $badgeStatus = $effectiveStatus($order);
       @endphp
       <div class="preinvoice-mobile-card">
@@ -161,6 +166,9 @@
         <div class="action-stack mt-3 justify-content-start">
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
           <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+          @if($order->status === \App\Models\PreinvoiceOrder::STATUS_DRAFT)
+            <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
+          @endif
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
         </div>
       </div>
