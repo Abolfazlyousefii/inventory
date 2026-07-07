@@ -30,6 +30,8 @@
       \App\Models\PreinvoiceOrder::STATUS_WAREHOUSE_REVIEWING => 'text-bg-info',
       \App\Models\PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
       \App\Models\PreinvoiceOrder::STATUS_FINANCE_REVIEWING => 'text-bg-warning',
+      \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE => 'text-bg-warning',
+      \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'text-bg-danger',
       \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
       \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE => 'text-bg-danger',
       default => 'text-bg-secondary',
@@ -100,6 +102,7 @@
               $isCancelled = $isCancelledStatus($order);
               $documentKind = $documentKindFor($order, $isCancelled);
               $badgeStatus = $effectiveStatus($order);
+              $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
             @endphp
             <tr>
               <td><span class="code-cell fw-bold" title="{{ $order->uuid }}">{{ Str::limit($order->uuid, 10, '…') }}</span></td>
@@ -109,8 +112,11 @@
               <td>{{ number_format($order->items_count) }}</td>
               <td class="text-nowrap">{{ \App\Support\Currency::formatRial($order->total_price) }}</td>
               <td>
-                <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $documentKind }}</span>
+                <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $isReservationExpired ? 'رزرو منقضی‌شده' : $documentKind }}</span>
                 <div class="small text-muted mt-1">{{ $statusLabel }}</div>
+                @if($isReservationExpired)
+                  <div class="small text-danger mt-1">رزرو موجودی این پیش‌فاکتور منقضی شده است. برای ارسال مجدد به مالی، موجودی باید دوباره بررسی و ثبت نهایی شود.</div>
+                @endif
               </td>
               <td>
                 @if($invoiceUuid)
@@ -124,7 +130,7 @@
                 <div class="action-stack">
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
                   <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
-                  @if($order->status === \App\Models\PreinvoiceOrder::STATUS_DRAFT)
+                  @if(in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
                     <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
                   @endif
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
@@ -147,6 +153,7 @@
         $isCancelled = $isCancelledStatus($order);
         $documentKind = $documentKindFor($order, $isCancelled);
         $badgeStatus = $effectiveStatus($order);
+        $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
       @endphp
       <div class="preinvoice-mobile-card">
         <div class="d-flex justify-content-between gap-2 mb-2">
@@ -155,9 +162,12 @@
         </div>
         <div class="small text-muted mb-2">{{ $order->customer_mobile ?: '—' }}</div>
         <div class="d-flex flex-wrap gap-2 mb-2">
-          <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $documentKind }}</span>
+          <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $isReservationExpired ? 'رزرو منقضی‌شده' : $documentKind }}</span>
           <span class="badge text-bg-light border">{{ $statusLabel }}</span>
         </div>
+        @if($isReservationExpired)
+          <div class="small text-danger mb-2">رزرو موجودی این پیش‌فاکتور منقضی شده است. برای ارسال مجدد به مالی، موجودی باید دوباره بررسی و ثبت نهایی شود.</div>
+        @endif
         <div class="small text-muted mb-2">{{ $order->description ? Str::limit($order->description, 120) : 'بدون توضیحات' }}</div>
         <div class="small d-flex justify-content-between"><span>مبلغ</span><strong>{{ \App\Support\Currency::formatRial($order->total_price) }}</strong></div>
         @if($invoiceUuid)
@@ -166,7 +176,7 @@
         <div class="action-stack mt-3 justify-content-start">
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
           <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
-          @if($order->status === \App\Models\PreinvoiceOrder::STATUS_DRAFT)
+          @if(in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
             <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
           @endif
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
