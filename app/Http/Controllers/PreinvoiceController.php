@@ -26,6 +26,7 @@ use App\Services\SalesPrintDocumentService;
 use App\Services\PaymentRegistrationService;
 use App\Services\NotificationService;
 use App\Services\PreinvoiceDraftReservationService;
+use App\Services\PreinvoiceReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -42,6 +43,7 @@ class PreinvoiceController extends Controller
         private readonly WarehouseReviewAuditService $warehouseReviewAuditService,
         private readonly WarehousePendingRefreshService $warehousePendingRefreshService,
         private readonly PreinvoiceDraftReservationService $draftReservationService,
+        private readonly PreinvoiceReservationService $reservationService,
     ) {}
 
     public function create()
@@ -1681,6 +1683,8 @@ class PreinvoiceController extends Controller
         abort_unless($this->canHandleFinanceActions(), 403);
 
         $order = PreinvoiceOrder::with(['items', 'invoice'])->where('uuid', $uuid)->firstOrFail();
+        $this->reservationService->assertFinanceApprovable($order, auth()->user());
+
         if ($order->invoice || $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
             if ($order->invoice) {
                 return redirect()->route('invoices.show', $order->invoice->uuid)->with('success', 'این پیش‌فاکتور قبلاً به فاکتور تبدیل شده است.');
@@ -1739,6 +1743,8 @@ class PreinvoiceController extends Controller
 
                 abort(409, 'این پیش‌فاکتور قبلاً تبدیل شده است، اما فاکتور مرتبط پیدا نشد.');
             }
+
+            $this->reservationService->assertFinanceApprovable($order, auth()->user());
 
             if (! in_array($order->status, [
                 PreinvoiceOrder::STATUS_PENDING_FINANCE,
