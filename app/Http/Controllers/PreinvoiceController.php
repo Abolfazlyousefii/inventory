@@ -879,7 +879,10 @@ class PreinvoiceController extends Controller
 
     private function calculateOrderTotal(PreinvoiceOrder $order): int
     {
-        $subtotal = (int) $order->items()->selectRaw('COALESCE(SUM(quantity * price),0) as total')->value('total');
+        $subtotal = (int) $order->items()
+            ->reorder()
+            ->selectRaw('COALESCE(SUM(quantity * price), 0) as total')
+            ->value('total');
 
         return max($subtotal + (int) $order->shipping_price - (int) $order->discount_amount, 0);
     }
