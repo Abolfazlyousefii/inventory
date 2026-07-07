@@ -1580,10 +1580,26 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         return Number(v?.sell_price ?? v?.price ?? product?.sell_price ?? product?.price ?? 0);
     }
 
+    function variantAvailability(v) {
+        const freeStock = Math.max(0, Number(v?.free_stock ?? v?.stock ?? v?.quantity ?? 0) || 0);
+        const currentTokenReserved = Math.max(0, Number(v?.current_token_reserved ?? 0) || 0);
+        const maxSelectable = Math.max(0, Number(v?.max_selectable_for_current_form ?? v?.sellable_stock ?? (freeStock + currentTokenReserved)) || 0);
+        const totalReserved = Math.max(0, Number(v?.total_reserved_including_current ?? v?.reserved ?? 0) || 0);
+        const reservedByOthers = Math.max(0, Number(v?.reserved_by_others ?? Math.max(0, totalReserved - currentTokenReserved)) || 0);
+        const totalStock = Math.max(0, Number(v?.total_stock ?? (freeStock + totalReserved)) || 0);
+
+        return {
+            freeStock,
+            currentTokenReserved,
+            maxSelectable,
+            reservedByOthers,
+            totalReserved,
+            totalStock,
+        };
+    }
+
     function variantStock(v) {
-        if (v?.sellable_stock !== undefined && v?.sellable_stock !== null) return Number(v.sellable_stock) || 0;
-        const stock = Number(v?.stock ?? v?.quantity ?? 0) || 0;
-        return Math.max(0, stock);
+        return variantAvailability(v).maxSelectable;
     }
 
     function buildVariantTitle(v) {
@@ -2323,9 +2339,11 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         }
         wrap.innerHTML = rows.map(v => {
             const id = variantId(v);
-            const stock = variantStock(v);
-            const reserved = Number(v?.reserved ?? 0) || 0;
-            const totalStock = Number(v?.stock ?? v?.quantity ?? 0) || 0;
+            const availability = variantAvailability(v);
+            const stock = availability.maxSelectable;
+            const freeStock = availability.freeStock;
+            const currentTokenReserved = availability.currentTokenReserved;
+            const reservedByOthers = availability.reservedByOthers;
             const max = modalMaxQty(v);
             const qty = Number(modalQuantities.get(id) || 0);
             const price = variantPrice(v, activeProduct);
@@ -2337,14 +2355,15 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             <div>
                 <div class="variant-title">${esc(buildVariantTitle(v))}</div>
                 <div class="variant-meta">
-                    <span class="badge-soft ${stock > 0 ? 'badge-stock' : 'badge-no-stock'}">
-                        موجودی قابل فروش: ${stock > 0 ? formatNum(stock) : 'ناموجود'}
+                    <span class="badge-soft ${freeStock > 0 ? 'badge-stock' : 'badge-no-stock'}">
+                        آزاد: ${freeStock > 0 ? formatNum(freeStock) : 'ناموجود'}
                     </span>
-                    <span class="badge-soft">پیش‌فاکتور شده: ${formatNum(reserved)}</span>
-                    <span class="badge-soft">کل موجودی: ${formatNum(totalStock)}</span>
+                    <span class="badge-soft badge-brand">انتخاب شما: ${formatNum(currentTokenReserved)}</span>
+                    <span class="badge-soft">سقف انتخاب: ${formatNum(stock)}</span>
+                    <span class="badge-soft">رزرو دیگران: ${formatNum(reservedByOthers)}</span>
                     <span class="badge-soft">قیمت: ${formatMoney(price)}</span>
                     ${v?.is_current_preinvoice_item ? `<span class="badge-soft badge-brand">در پیش‌فاکتور موجود است${stock <= 0 ? ' / موجودی فعلی ناکافی است' : ''}</span>` : ''}
-                    ${qty > 0 ? `<span class="badge-soft badge-brand">انتخاب: ${formatNum(qty)}</span>` : ''}
+                    ${qty > 0 && qty !== currentTokenReserved ? `<span class="badge-soft badge-brand">تعداد انتخابی: ${formatNum(qty)}</span>` : ''}
                 </div>
             </div>
             <div class="qty-control">

@@ -186,28 +186,48 @@ class PreinvoiceApiController extends Controller
             'price' => (int) ($product->price ?? 0),
             'quantity' => $centralStock,
 
-            'varieties' => $product->variants->map(fn ($v) => [
-                'id' => $v->id,
-                'price' => (int) ($v->sell_price ?? 0),
-                'quantity' => (int) ($v->stock ?? 0),
-                'reserved' => (int) ($v->reserved ?? 0),
-                'sellable_stock' => max(0, (int) ($v->stock ?? 0) + (int) ($reservedByVariant[(int) $v->id] ?? 0)),
-                'is_current_preinvoice_item' => in_array((int) $v->id, $currentPreinvoiceItemVariantIds, true),
-                'is_active' => (bool) ($v->is_active ?? false),
-                'variant_name' => (string) ($v->variant_name ?? ''),
-                'variety_name' => (string) ($v->variety_name ?? ''),
-                'variety_code' => (string) ($v->variety_code ?? ''),
-                'model_list_name' => (string) ($v->modelList?->model_name ?? ''),
+            'varieties' => $product->variants->map(function ($v) use ($reservedByVariant, $currentPreinvoiceItemVariantIds) {
+                $freeStock = max(0, (int) ($v->stock ?? 0));
+                $totalReservedIncludingCurrent = max(0, (int) ($v->reserved ?? 0));
+                $currentTokenReserved = max(0, (int) ($reservedByVariant[(int) $v->id] ?? 0));
+                $reservedByOthers = max(0, $totalReservedIncludingCurrent - $currentTokenReserved);
+                $maxSelectableForCurrentForm = $freeStock + $currentTokenReserved;
+                $totalStock = $freeStock + $totalReservedIncludingCurrent;
 
-                // ✅ بارکد 11 رقمی تنوع (برای اسکن/نمایش آینده)
-                'barcode' => $v->variant_code,
+                return [
+                    'id' => $v->id,
+                    'price' => (int) ($v->sell_price ?? 0),
 
-                // سازگار با JS قبلی
-                'attributes' => [
-                    ['pivot' => ['value' => $v->variant_name]],
-                ],
-                'unique_attributes_key' => (string) $v->variant_name,
-            ])->values(),
+                    // Backward-compatible fields used by existing JS.
+                    'quantity' => $freeStock,
+                    'reserved' => $totalReservedIncludingCurrent,
+                    'sellable_stock' => $maxSelectableForCurrentForm,
+
+                    // Explicit availability fields for reservation-aware UI labels.
+                    'free_stock' => $freeStock,
+                    'reserved_by_others' => $reservedByOthers,
+                    'current_token_reserved' => $currentTokenReserved,
+                    'max_selectable_for_current_form' => $maxSelectableForCurrentForm,
+                    'total_reserved_including_current' => $totalReservedIncludingCurrent,
+                    'total_stock' => $totalStock,
+
+                    'is_current_preinvoice_item' => in_array((int) $v->id, $currentPreinvoiceItemVariantIds, true),
+                    'is_active' => (bool) ($v->is_active ?? false),
+                    'variant_name' => (string) ($v->variant_name ?? ''),
+                    'variety_name' => (string) ($v->variety_name ?? ''),
+                    'variety_code' => (string) ($v->variety_code ?? ''),
+                    'model_list_name' => (string) ($v->modelList?->model_name ?? ''),
+
+                    // ✅ بارکد 11 رقمی تنوع (برای اسکن/نمایش آینده)
+                    'barcode' => $v->variant_code,
+
+                    // سازگار با JS قبلی
+                    'attributes' => [
+                        ['pivot' => ['value' => $v->variant_name]],
+                    ],
+                    'unique_attributes_key' => (string) $v->variant_name,
+                ];
+            })->values(),
         ];
 
         return response()->json(['data' => ['product' => $payload]]);
