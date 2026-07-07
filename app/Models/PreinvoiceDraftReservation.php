@@ -15,6 +15,12 @@ class PreinvoiceDraftReservation extends Model
         'quantity',
         'expires_at',
         'converted_at',
+        'released_at',
+        'released_by',
+        'release_reason',
+        'release_note',
+        'reservation_scope',
+        'reservation_tier',
     ];
 
     protected $casts = [
@@ -25,6 +31,12 @@ class PreinvoiceDraftReservation extends Model
         'quantity' => 'integer',
         'expires_at' => 'datetime',
         'converted_at' => 'datetime',
+        'released_at' => 'datetime',
+        'released_by' => 'integer',
+        'release_reason' => 'string',
+        'release_note' => 'string',
+        'reservation_scope' => 'string',
+        'reservation_tier' => 'string',
     ];
 
     public function order()
@@ -40,5 +52,10 @@ class PreinvoiceDraftReservation extends Model
     public function variant()
     {
         return $this->belongsTo(ProductVariant::class, 'variant_id');
+    }
+
+    public function releasedBy()
+    {
+        return $this->belongsTo(User::class, 'released_by');
     }
 }
