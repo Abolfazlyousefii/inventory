@@ -530,7 +530,17 @@ class PreinvoiceController extends Controller
                 ->firstOrFail();
             if (! $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user())) {
                 throw ValidationException::withMessages([
-                    'preinvoice' => 'این پیش‌فاکتور به فاکتور تبدیل شده است و فقط واحد مالی مجاز به ویرایش آن است.',
+                    'preinvoice' => 'این پیش‌فاکتور در وضعیت قابل ویرایش یا ثبت نهایی مجدد نیست.',
+                ]);
+            }
+
+            if ($isSubmit && ! in_array($order->status, [
+                PreinvoiceOrder::STATUS_DRAFT,
+                PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+                PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
+            ], true)) {
+                throw ValidationException::withMessages([
+                    'preinvoice' => 'ثبت نهایی فقط برای پیش‌نویس، ارجاع‌شده به فروشنده یا رزرو منقضی‌شده مجاز است.',
                 ]);
             }
 
@@ -920,6 +930,7 @@ class PreinvoiceController extends Controller
         $reservedByVariant = PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
             ->whereNotNull('converted_at')
+            ->whereNull('released_at')
             ->whereIn('variant_id', $requiredByVariant->keys())
             ->lockForUpdate()
             ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
@@ -1029,7 +1040,7 @@ class PreinvoiceController extends Controller
             'discount_amount' => (int) $order->discount_amount,
             'subtotal' => $subtotal,
             'total' => $total,
-            'status' => Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
+            'status' => Invoice::STATUS_PENDING_COLLECTION,
             'status_changed_at' => now(),
             'status_changed_by' => auth()->id(),
             'items_updated_at' => now(),
@@ -1038,7 +1049,7 @@ class PreinvoiceController extends Controller
 
         ActivityLogger::log('invoice_items_reapproval', $invoice->fresh(), 'اقلام فاکتور تغییر کرد و فاکتور به وضعیت نیازمند تایید انبار برگشت.', [
             'old_status' => $oldStatus,
-            'new_status' => Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
+            'new_status' => Invoice::STATUS_PENDING_COLLECTION,
             'preinvoice_order_id' => $order->id,
         ]);
 
@@ -1315,6 +1326,7 @@ class PreinvoiceController extends Controller
         $rows = PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
             ->whereNotNull('converted_at')
+            ->whereNull('released_at')
             ->lockForUpdate()
             ->get()
             ->keyBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
@@ -1837,7 +1849,7 @@ class PreinvoiceController extends Controller
                     'discount_amount' => (int) $order->discount_amount,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
-                    'status' => Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
+                    'status' => Invoice::STATUS_PENDING_COLLECTION,
                     'status_changed_at' => now(),
                     'status_changed_by' => auth()->id(),
                 ]);
@@ -1858,7 +1870,7 @@ class PreinvoiceController extends Controller
                     'discount_amount' => (int) $order->discount_amount,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
-                    'status' => Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
+                    'status' => Invoice::STATUS_PENDING_COLLECTION,
                 ]);
             }
 
@@ -1940,6 +1952,8 @@ class PreinvoiceController extends Controller
                 );
             }
 
+            $this->reservationService->consumeOfficialReservationsForOrder($order, auth()->user());
+
             $order->update([
                 'status' => PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
                 'total_price' => (int) $total,
@@ -1973,41 +1987,94 @@ class PreinvoiceController extends Controller
             ->with('success', '✅ تایید مالی انجام شد و پیش‌فاکتور به فاکتور/حواله انبار تبدیل شد.');
     }
 
-    public function financeCancel(string $uuid, Request $request)
+    public function financeReturn(string $uuid, Request $request)
     {
         abort_unless($this->canHandleFinanceActions(), 403);
-
-        $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
-        abort_if(! in_array($order->status, [
-            PreinvoiceOrder::STATUS_PENDING_FINANCE,
-            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-        ], true), 403);
 
         $data = $request->validate([
             'reason' => 'required|string|max:2000',
         ]);
 
-        DB::transaction(function () use ($order, $data) {
+        DB::transaction(function () use ($uuid, $data) {
+            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+            abort_if(! in_array($order->status, [
+                PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+            ], true), 403);
+
             $oldStatus = (string) $order->status;
+            $release = $this->reservationService->releaseOfficialReservationsForOrder($order, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, $data['reason'], auth()->user());
             $order->update([
-                'status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
+                'status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
                 'warehouse_reject_reason' => $data['reason'],
+                'stock_released_at' => now(),
+                'stock_frozen_until' => null,
             ]);
-            $this->releaseReservedStock($order);
             $order->reviews()->create([
                 'user_id' => auth()->id(),
-                'action' => 'finance_rejected',
+                'action' => 'finance_returned_preinvoice',
                 'reason' => $data['reason'],
                 'before_items' => $this->snapshotItems($order),
                 'after_items' => $this->snapshotItems($order),
             ]);
-            ActivityLogger::log('finance_rejected', $order->fresh(), 'پیش‌فاکتور توسط مالی رد شد.', [
+            ActivityLogger::log('finance_returned_preinvoice', $order->fresh(), 'پیش‌فاکتور توسط مالی جهت اصلاح برگشت داده شد.', [
+                'old_status' => $oldStatus,
+                'new_status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+                'reason' => $data['reason'],
+                'released_reservations' => $release['released_reservations'] ?? 0,
+                'released_quantity' => $release['released_quantity'] ?? 0,
+            ]);
+            if (!empty($order->created_by)) {
+                $this->notificationService->notifyUser((int) $order->created_by, 'preinvoice_finance_returned', 'پیش‌فاکتور شما توسط مالی جهت اصلاح برگشت داده شد', 'علت: ' . $data['reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'warning', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_finance_returned:{$order->id}:{$order->created_by}"]);
+            }
+        });
+
+        return redirect()->route('preinvoice.draft.index')->with('success', '✅ پیش‌فاکتور به فروشنده ارجاع شد.');
+    }
+
+    public function financeCancel(string $uuid, Request $request)
+    {
+        abort_unless($this->canHandleFinanceActions(), 403);
+
+        $data = $request->validate([
+            'reason' => 'required|string|max:2000',
+        ]);
+
+        DB::transaction(function () use ($uuid, $data) {
+            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+            abort_if(! in_array($order->status, [
+                PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+            ], true), 403);
+
+            $oldStatus = (string) $order->status;
+            $release = $this->reservationService->releaseOfficialReservationsForOrder($order, PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE, $data['reason'], auth()->user());
+            $order->update([
+                'status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
+                'warehouse_reject_reason' => $data['reason'],
+                'stock_released_at' => now(),
+                'stock_frozen_until' => null,
+            ]);
+            $order->reviews()->create([
+                'user_id' => auth()->id(),
+                'action' => 'finance_cancelled_preinvoice',
+                'reason' => $data['reason'],
+                'before_items' => $this->snapshotItems($order),
+                'after_items' => $this->snapshotItems($order),
+            ]);
+            ActivityLogger::log('finance_cancelled_preinvoice', $order->fresh(), 'پیش‌فاکتور توسط مالی کنسل شد.', [
                 'old_status' => $oldStatus,
                 'new_status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
                 'reason' => $data['reason'],
+                'released_reservations' => $release['released_reservations'] ?? 0,
+                'released_quantity' => $release['released_quantity'] ?? 0,
             ]);
+            if (!empty($order->created_by)) {
+                $this->notificationService->notifyUser((int) $order->created_by, 'preinvoice_finance_cancelled', 'پیش‌فاکتور شما توسط مالی کنسل شد', 'علت: ' . $data['reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'danger', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_finance_cancelled:{$order->id}:{$order->created_by}"]);
+            }
         });
 
         return redirect()->route('preinvoice.draft.index')->with('success', '✅ پیش‌فاکتور با دلیل کنسل شد.');
     }
+
 }

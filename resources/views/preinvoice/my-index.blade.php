@@ -103,6 +103,9 @@
               $documentKind = $documentKindFor($order, $isCancelled);
               $badgeStatus = $effectiveStatus($order);
               $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
+        $canEdit = in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true);
+        $canSubmit = $canEdit;
+        $isPendingFinance = $order->status === \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE;
             @endphp
             <tr>
               <td><span class="code-cell fw-bold" title="{{ $order->uuid }}">{{ Str::limit($order->uuid, 10, '…') }}</span></td>
@@ -116,6 +119,10 @@
                 <div class="small text-muted mt-1">{{ $statusLabel }}</div>
                 @if($isReservationExpired)
                   <div class="small text-danger mt-1">رزرو موجودی این پیش‌فاکتور منقضی شده است. برای ارسال مجدد به مالی، موجودی باید دوباره بررسی و ثبت نهایی شود.</div>
+                @elseif($isPendingFinance && $order->stock_frozen_until)
+                  <div class="small text-muted mt-1">اعتبار رزرو تا: {{ $toJalali($order->stock_frozen_until) }}</div>
+                @elseif($order->status === \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES && $order->warehouse_reject_reason)
+                  <div class="small text-warning mt-1">دلیل ارجاع: {{ $order->warehouse_reject_reason }}</div>
                 @endif
               </td>
               <td>
@@ -129,8 +136,10 @@
               <td>
                 <div class="action-stack">
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-                  <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
-                  @if(in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
+                  @if($canEdit)
+                    <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+                  @endif
+                  @if($canSubmit)
                     <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
                   @endif
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
@@ -154,6 +163,9 @@
         $documentKind = $documentKindFor($order, $isCancelled);
         $badgeStatus = $effectiveStatus($order);
         $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
+        $canEdit = in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true);
+        $canSubmit = $canEdit;
+        $isPendingFinance = $order->status === \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE;
       @endphp
       <div class="preinvoice-mobile-card">
         <div class="d-flex justify-content-between gap-2 mb-2">
@@ -167,6 +179,10 @@
         </div>
         @if($isReservationExpired)
           <div class="small text-danger mb-2">رزرو موجودی این پیش‌فاکتور منقضی شده است. برای ارسال مجدد به مالی، موجودی باید دوباره بررسی و ثبت نهایی شود.</div>
+        @elseif($isPendingFinance && $order->stock_frozen_until)
+          <div class="small text-muted mb-2">اعتبار رزرو تا: {{ $toJalali($order->stock_frozen_until) }}</div>
+        @elseif($order->status === \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES && $order->warehouse_reject_reason)
+          <div class="small text-warning mb-2">دلیل ارجاع: {{ $order->warehouse_reject_reason }}</div>
         @endif
         <div class="small text-muted mb-2">{{ $order->description ? Str::limit($order->description, 120) : 'بدون توضیحات' }}</div>
         <div class="small d-flex justify-content-between"><span>مبلغ</span><strong>{{ \App\Support\Currency::formatRial($order->total_price) }}</strong></div>
@@ -175,8 +191,10 @@
         @endif
         <div class="action-stack mt-3 justify-content-start">
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-          <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
-          @if(in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
+          @if($canEdit)
+            <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+          @endif
+          @if($canSubmit)
             <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
           @endif
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>

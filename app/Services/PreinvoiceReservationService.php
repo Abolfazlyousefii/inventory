@@ -227,14 +227,94 @@ class PreinvoiceReservationService
         });
     }
 
-    public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null): void
+
+    public function releaseOfficialReservationsForOrder(PreinvoiceOrder $order, string $reason, ?string $note = null, ?User $actor = null): array
     {
-        if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED) {
-            throw ValidationException::withMessages(['preinvoice' => $this->expiredMessage()]);
+        return DB::transaction(function () use ($order, $reason, $note, $actor) {
+            $lockedOrder = PreinvoiceOrder::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedOrder->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE || $lockedOrder->invoice()->exists()) {
+                return ['released_reservations' => 0, 'released_quantity' => 0];
+            }
+
+            $reservations = PreinvoiceDraftReservation::query()
+                ->where('preinvoice_order_id', $lockedOrder->id)
+                ->where('reservation_scope', 'official')
+                ->whereNull('released_at')
+                ->where('quantity', '>', 0)
+                ->lockForUpdate()
+                ->get();
+
+            $releasedReservations = 0;
+            $releasedQuantity = 0;
+
+            foreach ($reservations as $reservation) {
+                $result = $this->releaseReservation($reservation, $actor, $reason, $note);
+                if (($result['released'] ?? false) === true) {
+                    $releasedReservations++;
+                    $releasedQuantity += (int) ($result['quantity'] ?? 0);
+                }
+            }
+
+            return ['released_reservations' => $releasedReservations, 'released_quantity' => $releasedQuantity];
+        });
+    }
+
+    public function consumeOfficialReservationsForOrder(PreinvoiceOrder $order, ?User $actor = null): array
+    {
+        return DB::transaction(function () use ($order, $actor) {
+            $lockedOrder = PreinvoiceOrder::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            $reservations = PreinvoiceDraftReservation::query()
+                ->where('preinvoice_order_id', $lockedOrder->id)
+                ->where('reservation_scope', 'official')
+                ->whereNull('released_at')
+                ->where('quantity', '>', 0)
+                ->lockForUpdate()
+                ->get();
+
+            if ($reservations->isEmpty()) {
+                throw ValidationException::withMessages(['preinvoice' => 'رزرو فعال برای این پیش‌فاکتور وجود ندارد.']);
+            }
+
+            foreach ($reservations as $reservation) {
+                $reservation->forceFill([
+                    'converted_at' => $reservation->converted_at ?? now(),
+                    'released_by' => $actor?->id,
+                    'release_reason' => null,
+                    'release_note' => null,
+                ])->save();
+            }
+
+            return ['consumed_reservations' => $reservations->count(), 'consumed_quantity' => (int) $reservations->sum('quantity')];
+        });
+    }
+
+    public function expireOrderIfFrozenUntilPassed(PreinvoiceOrder $order): bool
+    {
+        if ($order->stock_frozen_until === null || $order->stock_frozen_until->isFuture()) {
+            return false;
         }
 
-        if ($order->status !== PreinvoiceOrder::STATUS_PENDING_FINANCE) {
-            return;
+        return (bool) ($this->expirePreinvoiceReservations($order, null)['expired'] ?? false);
+    }
+
+    public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null): void
+    {
+        if (in_array($order->status, [
+            PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
+            PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
+            PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
+            PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+            PreinvoiceOrder::STATUS_DRAFT,
+        ], true)) {
+            throw ValidationException::withMessages(['preinvoice' => $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED ? $this->expiredMessage() : 'این پیش‌فاکتور در وضعیت مجاز برای تایید مالی نیست.']);
+        }
+
+        if (! in_array($order->status, [
+            PreinvoiceOrder::STATUS_PENDING_FINANCE,
+            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+        ], true)) {
+            throw ValidationException::withMessages(['preinvoice' => 'این پیش‌فاکتور در صف مالی نیست.']);
         }
 
         $activeReservations = PreinvoiceDraftReservation::query()
@@ -242,13 +322,15 @@ class PreinvoiceReservationService
             ->where('reservation_scope', 'official')
             ->whereNull('released_at')
             ->where('quantity', '>', 0)
+            ->lockForUpdate()
             ->get();
 
         if ($activeReservations->isEmpty()) {
             throw ValidationException::withMessages(['preinvoice' => 'رزرو فعال برای این پیش‌فاکتور وجود ندارد.']);
         }
 
-        $expired = $activeReservations
+        $isVip = $activeReservations->contains(fn (PreinvoiceDraftReservation $reservation) => $reservation->reservation_tier === 'vip');
+        $expired = ! $isVip && $activeReservations
             ->filter(fn (PreinvoiceDraftReservation $reservation) => $reservation->expires_at !== null && $reservation->expires_at->lte(now()))
             ->isNotEmpty();
 
