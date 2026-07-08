@@ -1940,14 +1940,18 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => now(),
             ]);
 
-            $this->notificationService->notifyRole(
-                'warehouse',
-                'invoice_ready_for_sales_voucher',
-                'فاکتور جدید آماده حواله فروش است',
-                "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} صادر شد و آماده جمع‌آوری/چاپ حواله فروش است.",
-                route('vouchers.sales.print', $invoice->uuid),
-                ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
-            );
+            try {
+                $this->notificationService->notifyRole(
+                    'warehouse',
+                    'invoice_ready_for_collection_queue',
+                    'فاکتور جدید آماده جمع‌آوری است',
+                    "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} تایید مالی شد و وارد صف جمع‌آوری شد.",
+                    route('vouchers.sales.queue'),
+                    ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
             if (!empty($order->created_by)) {
                 $this->notificationService->notifyUser(
                     (int)$order->created_by,
