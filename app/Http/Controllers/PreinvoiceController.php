@@ -392,6 +392,7 @@ class PreinvoiceController extends Controller
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
                 'description' => $this->orderDescription($validated),
+                'payment_terms_note' => $this->orderPaymentTermsNote($validated),
                 'province_id' => $this->orderProvinceId($validated, $customer, $shippingId),
                 'city_id' => $this->orderCityId($validated, $customer, $shippingId),
 
@@ -446,6 +447,7 @@ class PreinvoiceController extends Controller
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
                 'description' => $this->orderDescription($validated),
+                'payment_terms_note' => $this->orderPaymentTermsNote($validated),
                 'province_id' => $this->orderProvinceId($validated, $customer, $shippingId),
                 'city_id' => $this->orderCityId($validated, $customer, $shippingId),
 
@@ -554,6 +556,7 @@ class PreinvoiceController extends Controller
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
                 'description' => $this->orderDescription($validated),
+                'payment_terms_note' => $this->orderPaymentTermsNote($validated),
                 'province_id' => $this->orderProvinceId($validated, $customer, $shippingId),
                 'city_id' => $this->orderCityId($validated, $customer, $shippingId),
 
@@ -631,6 +634,7 @@ class PreinvoiceController extends Controller
             'customer_mobile' => 'required|string|max:20',
             'customer_address' => 'nullable|string|max:1000',
             'description' => 'nullable|string|max:2000',
+            'payment_terms_note' => 'nullable|string|max:2000',
             'province_id' => 'nullable|integer',
             'city_id' => 'nullable|integer',
 
@@ -1079,6 +1083,13 @@ class PreinvoiceController extends Controller
         $description = trim((string) ($validated['description'] ?? ''));
 
         return $description !== '' ? $description : null;
+    }
+
+    private function orderPaymentTermsNote(array $validated): ?string
+    {
+        $paymentTermsNote = trim((string) ($validated['payment_terms_note'] ?? ''));
+
+        return $paymentTermsNote !== '' ? $paymentTermsNote : null;
     }
 
     private function orderCustomerAddress(array $validated, ?Customer $customer, ?int $shippingId): string

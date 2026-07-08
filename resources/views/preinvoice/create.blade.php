@@ -32,6 +32,7 @@ $isEdit = (bool) ($isEdit ?? false);
 $oldCustomerTitle = trim((string) old('customer_name', $order->customer_name ?? ''));
 $oldCustomerMobile = trim((string) old('customer_mobile', $order->customer_mobile ?? ''));
 $oldPreinvoiceDescription = old('description', $order->description ?? '');
+$oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '');
 @endphp
 
 <link rel="stylesheet" href="{{ asset('lib/select2.min.css') }}">
@@ -1146,8 +1147,9 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         </div>
 
         <div class="soft-card compact-card mb-3">
-            <h2 class="section-title mb-2">توضیحات پیش‌فاکتور</h2>
-            <textarea id="preinvoice_description" name="description" class="form-control form-control-sm" rows="2" placeholder="توضیح داخلی فروش، نکته مشتری یا هماهنگی لازم...">{{ $oldPreinvoiceDescription }}</textarea>
+            <h2 class="section-title mb-1">شرایط پرداخت پیشنهادی</h2>
+            <div class="hint mb-2">مثلاً: ۲۰٪ نقدی، ۸۰٪ چک سه‌ماهه در سه فقره</div>
+            <textarea id="payment_terms_note" name="payment_terms_note" class="form-control form-control-sm" rows="2" placeholder="مثلاً ۲۰٪ نقدی، ۸۰٪ چک سه‌ماهه در سه فقره...">{{ $oldPaymentTermsNote }}</textarea>
         </div>
 
         <div class="soft-card-lg product-focus mb-3">
@@ -1195,6 +1197,11 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                 <div id="groupSummaryList"></div>
                 <div id="groupProductsInputs"></div>
             </div>
+        </div>
+
+        <div class="soft-card compact-card mb-3">
+            <h2 class="section-title mb-2">توضیحات داخلی پیش‌فاکتور</h2>
+            <textarea id="preinvoice_description" name="description" class="form-control form-control-sm" rows="2" placeholder="توضیح داخلی فروش، نکته مشتری یا هماهنگی لازم...">{{ $oldPreinvoiceDescription }}</textarea>
         </div>
 
         <div class="soft-card final-card">
@@ -1316,6 +1323,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         oldCustomerName: @json(old('customer_name', $order->customer_name ?? '')),
         oldCustomerMobile: @json(old('customer_mobile', $order->customer_mobile ?? '')),
         oldDescription: @json($oldPreinvoiceDescription),
+        oldPaymentTermsNote: @json($oldPaymentTermsNote),
         oldDiscountAmount: @json(old('discount_amount', $order->discount_amount ?? 0)),
         isEdit: @json($isEdit),
         orderUuid: @json($order->uuid ?? null)
@@ -1585,6 +1593,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             normalize(document.getElementById('customer_id')?.value) ||
             normalize(document.getElementById('customer_name')?.value) ||
             normalize(document.getElementById('customer_mobile')?.value) ||
+            normalize(document.getElementById('payment_terms_note')?.value) ||
             normalize(document.getElementById('preinvoice_description')?.value) ||
             Object.keys(groupedSelections || {}).length ||
             toInt(document.getElementById('orderDiscountValue')?.value || 0) > 0
@@ -1663,6 +1672,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                 balance_hint: document.getElementById('customer_balance_hint')?.textContent || '',
                 reservation_hint: document.getElementById('customer_reservation_hint')?.textContent || ''
             },
+            payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
             description: document.getElementById('preinvoice_description')?.value || '',
             discount: {
                 type: document.getElementById('orderDiscountType')?.value || 'amount',
@@ -1713,6 +1723,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         document.getElementById('customer_id').value = '';
         document.getElementById('customer_name').value = '';
         document.getElementById('customer_mobile').value = '';
+        const paymentTermsEl = document.getElementById('payment_terms_note');
+        if (paymentTermsEl) paymentTermsEl.value = '';
         const noteEl = document.getElementById('preinvoice_description');
         if (noteEl) noteEl.value = '';
         document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
@@ -1755,6 +1767,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             selectEl.add(new Option(optionText, draft.customer.id, true, true));
             $('#customer_search_select').trigger('change');
         }
+        const paymentTermsEl = document.getElementById('payment_terms_note');
+        if (paymentTermsEl) paymentTermsEl.value = draft.payment_terms_note || '';
         const noteEl = document.getElementById('preinvoice_description');
         if (noteEl) noteEl.value = draft.description || '';
         document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
@@ -1813,7 +1827,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             await removeLocalDraft(true, false);
         });
 
-        ['preinvoice_description', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
+        ['payment_terms_note', 'preinvoice_description', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('change', scheduleLocalDraftSave);
