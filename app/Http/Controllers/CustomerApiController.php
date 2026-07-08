@@ -61,6 +61,9 @@ class CustomerApiController extends Controller
                 'debt' => (int)$c->debt,
                 'credit' => (int)$c->credit,
                 'balance' => (int)$c->balance,
+                'reservation_tier' => $c->reservation_tier,
+                'reservation_tier_label' => $this->reservationTierLabel($c->reservation_tier),
+                'reservation_duration_label' => $this->reservationDurationLabel($c->reservation_tier),
             ])
             ->values();
 
@@ -93,6 +96,26 @@ class CustomerApiController extends Controller
         ]);
     }
 
+
+    private function reservationTierLabel(?string $tier): string
+    {
+        return match ($tier) {
+            'vip' => 'VIP',
+            'normal' => 'معمولی',
+            'new_or_low_purchase' => 'جدید / کم‌خرید',
+            default => 'معمولی پیش‌فرض',
+        };
+    }
+
+    private function reservationDurationLabel(?string $tier): string
+    {
+        return match ($tier) {
+            'vip' => 'رزرو بدون محدودیت زمانی',
+            'new_or_low_purchase' => 'رزرو ۱ ساعته',
+            default => 'رزرو ۳ ساعته',
+        };
+    }
+
     public function show(Customer $customer)
     {
         $customer->loadSum(['ledgers as debit_sum' => fn($q)=>$q->where('type','debit')],'amount')
@@ -114,6 +137,9 @@ class CustomerApiController extends Controller
                     'debt' => (int)$customer->debt,
                     'credit' => (int)$customer->credit,
                     'balance' => (int)$customer->balance,
+                    'reservation_tier' => $customer->reservation_tier,
+                    'reservation_tier_label' => $this->reservationTierLabel($customer->reservation_tier),
+                    'reservation_duration_label' => $this->reservationDurationLabel($customer->reservation_tier),
                 ]
             ]
         ]);
