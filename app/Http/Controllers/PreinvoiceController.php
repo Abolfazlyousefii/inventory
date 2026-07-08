@@ -1116,10 +1116,10 @@ class PreinvoiceController extends Controller
         return $paymentTermsNote !== '' ? $paymentTermsNote : null;
     }
 
-    private function orderCustomerAddress(array $validated, ?Customer $customer, ?int $shippingId): string
+    private function orderCustomerAddress(array $validated, ?Customer $customer, ?int $shippingId): ?string
     {
         if ($shippingId === null || $this->isInPersonShippingId($shippingId)) {
-            return '';
+            return null;
         }
 
         $address = trim((string) ($validated['customer_address'] ?? ''));
@@ -1129,7 +1129,7 @@ class PreinvoiceController extends Controller
             return (string) $customer->address;
         }
 
-        return '';
+        return null;
     }
 
     private function orderProvinceId(array $validated, ?Customer $customer, ?int $shippingId): ?int
