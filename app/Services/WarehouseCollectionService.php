@@ -1,0 +1,178 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\ProductVariant;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class WarehouseCollectionService
+{
+    public function __construct(private readonly SalesHavalehHistoryService $historyService) {}
+
+    public function receiveInvoice(Invoice $invoice, User $user): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $user) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL]);
+            return $this->mark($invoice, Invoice::STATUS_WAREHOUSE_RECEIVED, [
+                'warehouse_received_at' => now(),
+                'warehouse_received_by' => $user->id,
+            ], 'warehouse_received', $user->id, 'فاکتور توسط انبار دریافت شد.');
+        });
+    }
+
+    public function startCollection(Invoice $invoice, User $user): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $user) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED]);
+            return $this->mark($invoice, Invoice::STATUS_COLLECTING, [
+                'collection_started_at' => now(),
+                'collection_started_by' => $user->id,
+            ], 'collection_started', $user->id, 'جمع‌آوری فاکتور شروع شد.');
+        });
+    }
+
+    public function completeCollection(Invoice $invoice, User $user, ?string $note = null): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $user, $note) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
+            return $this->mark($invoice, Invoice::STATUS_READY_TO_SHIP, [
+                'collected_at' => now(),
+                'collected_by' => $user->id,
+                'collection_note' => $note,
+            ], 'collection_completed', $user->id, $note ?: 'جمع‌آوری بدون تغییر تکمیل شد.');
+        });
+    }
+
+    public function updateCollectedItems(Invoice $invoice, array $items, User $user, ?string $note = null): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $items, $user, $note) {
+            $invoice = Invoice::query()->with('items')->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
+
+            $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
+            $existingById = $invoice->items->keyBy('id');
+            $normalized = [];
+
+            foreach ($items as $row) {
+                $qty = (int) $row['quantity'];
+                $itemId = (int) ($row['invoice_item_id'] ?? $row['id'] ?? 0);
+                $existing = $itemId > 0 ? $existingById->get($itemId) : null;
+
+                if ($itemId > 0 && ! $existing) {
+                    throw ValidationException::withMessages(['items' => 'آیتم انتخاب‌شده متعلق به این فاکتور نیست.']);
+                }
+
+                if (! $existing && $qty <= 0 && empty($row['variant_id'])) {
+                    continue;
+                }
+
+                $variantId = $existing ? (int) $existing->variant_id : (int) $row['variant_id'];
+                $productId = $existing ? (int) $existing->product_id : (int) $row['product_id'];
+                $variant = ProductVariant::query()->whereKey($variantId)->where('product_id', $productId)->lockForUpdate()->first();
+                if (! $variant) {
+                    throw ValidationException::withMessages(['items' => 'تنوع انتخاب‌شده برای محصول معتبر نیست.']);
+                }
+                if (! $existing && ! $variant->is_active) {
+                    throw ValidationException::withMessages(['items' => 'تنوع کالای انتخاب‌شده فعال نیست.']);
+                }
+
+                $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty');
+            }
+
+            if (collect($normalized)->sum('qty') <= 0) {
+                throw ValidationException::withMessages(['items' => 'فاکتور باید حداقل یک قلم کالا داشته باشد.']);
+            }
+
+            $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
+            foreach ($oldByVariant->keys()->merge($newByVariant->keys())->unique() as $variantId) {
+                $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
+                if ($delta === 0) {
+                    continue;
+                }
+                $variant = ProductVariant::query()->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
+                WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
+            }
+
+            $seen = [];
+            foreach ($normalized as $row) {
+                /** @var InvoiceItem|null $existing */
+                $existing = $row['existing'];
+                $qty = (int) $row['qty'];
+                if ($existing && $qty <= 0) {
+                    $existing->delete();
+                    continue;
+                }
+                if ($existing) {
+                    $seen[] = (int) $existing->id;
+                    $existing->update([
+                        'quantity' => $qty,
+                        'line_total' => max($qty * (int) $existing->price - (int) ($existing->line_discount_amount ?? 0), 0),
+                    ]);
+                    continue;
+                }
+                if ($qty <= 0) {
+                    continue;
+                }
+                $created = InvoiceItem::query()->create([
+                    'invoice_id' => $invoice->id,
+                    'product_id' => $row['productId'],
+                    'variant_id' => $row['variantId'],
+                    'quantity' => $qty,
+                    'price' => (int) $row['variant']->sell_price,
+                    'line_discount_amount' => 0,
+                    'line_total' => $qty * (int) $row['variant']->sell_price,
+                ]);
+                $seen[] = (int) $created->id;
+            }
+
+            foreach ($invoice->items as $item) {
+                if (! in_array((int) $item->id, $seen, true) && ! collect($normalized)->pluck('itemId')->contains((int) $item->id)) {
+                    $item->delete();
+                }
+            }
+
+            $invoice->refresh()->load('items');
+            $subtotal = (int) $invoice->items->sum('line_total');
+            $oldStatus = (string) $invoice->status;
+            $invoice->update([
+                'subtotal' => $subtotal,
+                'total' => max($subtotal + (int) $invoice->shipping_price - (int) $invoice->discount_amount, 0),
+                'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+                'status_changed_at' => now(),
+                'status_changed_by' => $user->id,
+                'items_updated_at' => now(),
+                'items_updated_by' => $user->id,
+                'collection_note' => $note,
+            ]);
+            $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
+
+            return $invoice->fresh(['items.product', 'items.variant']);
+        });
+    }
+
+    private function assertStatus(Invoice $invoice, array $allowed): void
+    {
+        if (! in_array((string) $invoice->status, $allowed, true)) {
+            throw ValidationException::withMessages(['status' => 'وضعیت فعلی فاکتور برای این عملیات مجاز نیست.']);
+        }
+    }
+
+    private function mark(Invoice $invoice, string $status, array $extra, string $action, int $userId, string $description): Invoice
+    {
+        $oldStatus = (string) $invoice->status;
+        $invoice->update(array_merge($extra, [
+            'status' => $status,
+            'status_changed_at' => now(),
+            'status_changed_by' => $userId,
+        ]));
+        $this->historyService->log($invoice, $action, 'status', $oldStatus, $status, $description, $userId);
+        return $invoice->fresh();
+    }
+}
