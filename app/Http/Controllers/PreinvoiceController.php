@@ -11,7 +11,6 @@ use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ShippingMethod;
-use App\Models\StockMovement;
 use App\Models\WarehouseStock;
 use App\Support\Currency;
 use App\Support\IranLocations;
@@ -1795,7 +1794,7 @@ class PreinvoiceController extends Controller
                 abort(403);
             }
 
-            $shouldDeductOnFinalize = true;
+            $shouldConsumeReservedOnFinalize = true;
             $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
             foreach ($order->items as $it) {
@@ -1886,31 +1885,11 @@ class PreinvoiceController extends Controller
                     'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
                 ]);
 
-                if ($shouldDeductOnFinalize) {
+                if ($shouldConsumeReservedOnFinalize) {
                     $product = Product::query()->whereKey((int) $it->product_id)->lockForUpdate()->first();
-                    $before = (int) ($product?->stock ?? 0);
-
-                    if (! $centralStockMovedToReserve) {
-                        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $it->product_id, -((int) $it->quantity), (int) $it->variant_id);
-                        $product = Product::query()->whereKey((int) $it->product_id)->lockForUpdate()->first();
-                    }
-
                     if ($product) {
-                        $after = (int) $product->stock;
                         $product->update([
                             'reserved' => max(0, (int) $product->reserved - (int) $it->quantity),
-                        ]);
-
-                        StockMovement::create([
-                            'product_id' => $product->id,
-                            'user_id' => auth()->id(),
-                            'type' => 'out',
-                            'reason' => 'sale',
-                            'quantity' => (int) $it->quantity,
-                            'stock_before' => $before,
-                            'stock_after' => $after,
-                            'reference' => $invoice->uuid,
-                            'note' => $centralStockMovedToReserve ? 'مصرف موجودی رزروشده بابت حواله فروش' : 'خروج از انبار مرکزی و مصرف رزرو بابت حواله فروش',
                         ]);
                     }
 
@@ -1961,14 +1940,18 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => now(),
             ]);
 
-            $this->notificationService->notifyRole(
-                'warehouse',
-                'invoice_ready_for_sales_voucher',
-                'فاکتور جدید آماده حواله فروش است',
-                "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} صادر شد و آماده جمع‌آوری/چاپ حواله فروش است.",
-                route('vouchers.sales.print', $invoice->uuid),
-                ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
-            );
+            try {
+                $this->notificationService->notifyRole(
+                    'warehouse',
+                    'invoice_ready_for_collection_queue',
+                    'فاکتور جدید آماده جمع‌آوری است',
+                    "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} تایید مالی شد و وارد صف جمع‌آوری شد.",
+                    route('vouchers.sales.queue'),
+                    ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
             if (!empty($order->created_by)) {
                 $this->notificationService->notifyUser(
                     (int)$order->created_by,
