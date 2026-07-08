@@ -24,7 +24,9 @@ class Invoice extends Model
         'province_id','city_id','shipping_id','shipping_price',
         'discount_amount','subtotal','total','status','status_changed_at','status_changed_by'
         ,'shipping_status','shipped_at','shipped_by','shipping_note',
-        'external_order_id', 'items_updated_at', 'items_updated_by'
+        'external_order_id', 'items_updated_at', 'items_updated_by',
+        'warehouse_received_at', 'warehouse_received_by', 'collection_started_at',
+        'collection_started_by', 'collected_at', 'collected_by', 'collection_note'
     ];
 
     protected $casts = [
@@ -32,6 +34,15 @@ class Invoice extends Model
         'shipped_at' => 'datetime',
         'shipped_by' => 'integer',
         'shipping_note' => 'string',
+        'warehouse_received_at' => 'datetime',
+        'warehouse_received_by' => 'integer',
+        'collection_started_at' => 'datetime',
+        'collection_started_by' => 'integer',
+        'collected_at' => 'datetime',
+        'collected_by' => 'integer',
+        'collection_note' => 'string',
+        'items_updated_at' => 'datetime',
+        'items_updated_by' => 'integer',
     ];
 
     public function items() { return $this->hasMany(InvoiceItem::class)->orderBy('sort_order')->orderBy('id'); }
@@ -43,6 +54,9 @@ class Invoice extends Model
     public function shippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_id'); }
     public function statusChangedByUser() { return $this->belongsTo(User::class, 'status_changed_by'); }
     public function shippedBy() { return $this->belongsTo(User::class, 'shipped_by'); }
+    public function warehouseReceivedBy() { return $this->belongsTo(User::class, 'warehouse_received_by'); }
+    public function collectionStartedBy() { return $this->belongsTo(User::class, 'collection_started_by'); }
+    public function collectedBy() { return $this->belongsTo(User::class, 'collected_by'); }
     public function histories() { return $this->hasMany(SalesHavalehHistory::class)->latest('done_at'); }
     public function activityLogs() { return $this->morphMany(ActivityLog::class, 'subject')->latest('occurred_at'); }
 

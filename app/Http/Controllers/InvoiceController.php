@@ -8,6 +8,7 @@ use App\Services\SalesHavalehService;
 use App\Services\SalesDocumentAccessService;
 use App\Services\SalesPrintDocumentService;
 use App\Services\WarehousePendingRefreshService;
+use App\Services\WarehouseCollectionService;
 use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class InvoiceController extends Controller
         private readonly SalesHavalehService $salesHavalehService,
         private readonly SalesDocumentAccessService $accessService,
         private readonly WarehousePendingRefreshService $warehousePendingRefreshService,
+        private readonly WarehouseCollectionService $warehouseCollectionService,
     ) {}
 
     public function index(Request $request)
@@ -212,12 +214,10 @@ class InvoiceController extends Controller
     private function queueStatuses(): array
     {
         return [
-            SalesHavalehStatusService::PENDING_WAREHOUSE_APPROVAL,
-            SalesHavalehStatusService::COLLECTING,
-            SalesHavalehStatusService::CHECKING_DISCREPANCY,
-            SalesHavalehStatusService::FINAL_CHECK,
-            SalesHavalehStatusService::PACKING,
-            SalesHavalehStatusService::NOT_SHIPPED,
+            Invoice::STATUS_PENDING_COLLECTION,
+            Invoice::STATUS_WAREHOUSE_RECEIVED,
+            Invoice::STATUS_COLLECTING,
+            Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
         ];
     }
 
@@ -248,23 +248,65 @@ class InvoiceController extends Controller
 
     public function salesVoucherUpdate(string $uuid, Request $request)
     {
-        $invoice = Invoice::query()->with('items')->where('uuid', $uuid)->firstOrFail();
-
         $data = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'nullable|exists:invoice_items,id',
+            'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.variant_id' => 'nullable|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:0',
-            'items.*.price' => 'required|integer|min:0',
-            'change_reason' => ['required', 'string', 'max:100', Rule::in(['physical_shortage', 'customer_cancelled', 'wrong_item', 'warehouse_correction', 'finance_correction', 'replacement', 'other'])],
             'change_note' => 'nullable|string|max:2000',
+            'collection_note' => 'nullable|string|max:2000',
         ]);
 
-        $this->salesHavalehService->updateItems($invoice, $data['items'], (int) auth()->id(), $data['change_reason'], $data['change_note'] ?? null);
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null);
 
         return redirect()->route('vouchers.sales.edit', $invoice->uuid)
-            ->with('success', '✅ آیتم‌های حواله فروش با موفقیت بروزرسانی شد.');
+            ->with('success', '✅ اقلام فاکتور ثبت شد و برای تایید مجدد مالی ارسال شد.');
+    }
+
+    public function receiveSalesQueueInvoice(string $uuid)
+    {
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $this->warehouseCollectionService->receiveInvoice($invoice, auth()->user());
+
+        return redirect()->route('vouchers.sales.queue')->with('success', 'فاکتور توسط انبار دریافت شد.');
+    }
+
+    public function startSalesQueueCollection(string $uuid)
+    {
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $this->warehouseCollectionService->startCollection($invoice, auth()->user());
+
+        return redirect()->route('vouchers.sales.queue')->with('success', 'جمع‌آوری فاکتور شروع شد.');
+    }
+
+    public function completeSalesQueueCollection(string $uuid, Request $request)
+    {
+        $data = $request->validate(['collection_note' => 'nullable|string|max:2000']);
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $this->warehouseCollectionService->completeCollection($invoice, auth()->user(), $data['collection_note'] ?? null);
+
+        return redirect()->route('vouchers.sales.queue')->with('success', 'جمع‌آوری فاکتور بدون تغییر تکمیل شد.');
+    }
+
+    public function updateSalesQueueItems(string $uuid, Request $request)
+    {
+        $data = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
+            'items.*.id' => 'nullable|exists:invoice_items,id',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.variant_id' => 'required|exists:product_variants,id',
+            'items.*.quantity' => 'required|integer|min:0',
+            'collection_note' => 'nullable|string|max:2000',
+        ]);
+
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? null);
+
+        return redirect()->route('vouchers.sales.queue')->with('success', 'اقلام فاکتور ثبت شد و برای تایید مجدد مالی ارسال شد.');
     }
 
     public function salesVoucherHistory(string $uuid)
