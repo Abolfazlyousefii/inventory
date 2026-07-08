@@ -13,6 +13,7 @@ class SalesHavalehStatusService
     public const COLLECTING = 'collecting';
     public const PENDING_FINANCE_REAPPROVAL = 'pending_finance_reapproval';
     public const READY_TO_SHIP = 'ready_to_ship';
+    public const RETURNED_TO_SALES_AFTER_COLLECTION = 'returned_to_sales_after_collection';
     public const CHECKING_DISCREPANCY = 'checking_discrepancy';
     public const FINAL_CHECK = 'final_check';
     public const PACKING = 'packing';
@@ -28,6 +29,7 @@ class SalesHavalehStatusService
             self::COLLECTING,
             self::PENDING_FINANCE_REAPPROVAL,
             self::READY_TO_SHIP,
+            self::RETURNED_TO_SALES_AFTER_COLLECTION,
             self::CHECKING_DISCREPANCY,
             self::FINAL_CHECK,
             self::PACKING,
@@ -45,6 +47,7 @@ class SalesHavalehStatusService
             self::COLLECTING => 'در حال جمع‌آوری',
             self::PENDING_FINANCE_REAPPROVAL => 'در انتظار تایید مجدد مالی',
             self::READY_TO_SHIP => 'آماده ارسال',
+            self::RETURNED_TO_SALES_AFTER_COLLECTION => 'ارجاع‌شده به اپراتور پس از اصلاح انبار',
             self::CHECKING_DISCREPANCY => 'در حال مغایرت و بررسی',
             self::FINAL_CHECK => 'در حال چک نهایی',
             self::PACKING => 'در حال بسته‌بندی',
@@ -105,6 +108,7 @@ class SalesHavalehStatusService
             self::COLLECTING => [self::READY_TO_SHIP, self::FINAL_CHECK, self::CHECKING_DISCREPANCY, self::NOT_SHIPPED],
             self::PENDING_FINANCE_REAPPROVAL => [],
             self::READY_TO_SHIP => [],
+            self::RETURNED_TO_SALES_AFTER_COLLECTION => [],
             self::CHECKING_DISCREPANCY => [self::COLLECTING, self::FINAL_CHECK, self::NOT_SHIPPED],
             self::FINAL_CHECK => [self::PACKING, self::CHECKING_DISCREPANCY, self::NOT_SHIPPED],
             self::PACKING => [self::SHIPPED, self::CHECKING_DISCREPANCY, self::NOT_SHIPPED],
