@@ -50,7 +50,10 @@ return [
         'api_token' => env('CRM_API_TOKEN'),
         'sync_enabled' => env('CRM_SYNC_ENABLED', true),
         'timeout' => env('CRM_SYNC_TIMEOUT', 30),
+        'connect_timeout' => env('CRM_CONNECT_TIMEOUT', 10),
         'verify_ssl' => env('CRM_SYNC_VERIFY_SSL', true),
+        'client_token_url' => env('CRM_CLIENT_TOKEN_URL', 'https://crm.ariyajanebi.ir/api/token-for-client'),
+        'client_secret' => env('CRM_CLIENT_SECRET'),
     ],
 'ariya_crm' => [
     'base_url'            => env('ARIYA_CRM_BASE_URL', 'https://api.ariyajanebi.ir'),
