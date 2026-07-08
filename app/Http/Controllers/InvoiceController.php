@@ -9,6 +9,8 @@ use App\Services\SalesDocumentAccessService;
 use App\Services\SalesPrintDocumentService;
 use App\Services\WarehousePendingRefreshService;
 use App\Services\WarehouseCollectionService;
+use App\Services\CustomerLedgerService;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
@@ -24,6 +26,8 @@ class InvoiceController extends Controller
         private readonly SalesDocumentAccessService $accessService,
         private readonly WarehousePendingRefreshService $warehousePendingRefreshService,
         private readonly WarehouseCollectionService $warehouseCollectionService,
+        private readonly CustomerLedgerService $customerLedgerService,
+        private readonly NotificationService $notificationService,
     ) {}
 
     public function index(Request $request)
@@ -195,14 +199,18 @@ class InvoiceController extends Controller
                 'total' => (int) $invoice->total,
                 'status' => $invoice->status,
                 'status_label' => $this->statusService->labels()[$invoice->status] ?? $invoice->status,
-                'created_at' => optional($invoice->created_at)->format('Y-m-d H:i'),
-                'updated_at' => optional($invoice->updated_at)->format('Y-m-d H:i'),
+                'created_at' => $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : null,
+                'updated_at' => $invoice->updated_at ? Jalalian::fromDateTime($invoice->updated_at)->format('Y/m/d H:i') : null,
+                'warehouse_received_at' => $invoice->warehouse_received_at ? Jalalian::fromDateTime($invoice->warehouse_received_at)->format('Y/m/d H:i') : null,
+                'collection_started_at' => $invoice->collection_started_at ? Jalalian::fromDateTime($invoice->collection_started_at)->format('Y/m/d H:i') : null,
+                'collected_at' => $invoice->collected_at ? Jalalian::fromDateTime($invoice->collected_at)->format('Y/m/d H:i') : null,
                 'seller' => $invoice->preinvoiceOrder?->creator?->name,
                 'show_url' => route('vouchers.sales.show', $invoice->uuid),
                 'print_url' => route('vouchers.sales.print', $invoice->uuid),
+                'edit_items_url' => $invoice->status === Invoice::STATUS_COLLECTING ? route('vouchers.sales.edit', $invoice->uuid) : null,
                 'history_url' => route('vouchers.sales.history', $invoice->uuid),
-                'receive_url' => in_array((string) $invoice->status, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL], true) ? route('vouchers.sales.queue.receive', $invoice->uuid) : null,
-                'start_collection_url' => in_array((string) $invoice->status, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED], true) ? route('vouchers.sales.queue.start-collection', $invoice->uuid) : null,
+                'receive_url' => $invoice->status === Invoice::STATUS_PENDING_COLLECTION ? route('vouchers.sales.queue.receive', $invoice->uuid) : null,
+                'start_collection_url' => $invoice->status === Invoice::STATUS_WAREHOUSE_RECEIVED ? route('vouchers.sales.queue.start-collection', $invoice->uuid) : null,
                 'complete_collection_url' => in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true) ? route('vouchers.sales.queue.complete-collection', $invoice->uuid) : null,
             ])->values(),
         ]);
@@ -221,7 +229,6 @@ class InvoiceController extends Controller
             Invoice::STATUS_PENDING_COLLECTION,
             Invoice::STATUS_WAREHOUSE_RECEIVED,
             Invoice::STATUS_COLLECTING,
-            Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
         ];
     }
 
@@ -245,7 +252,7 @@ class InvoiceController extends Controller
             ->firstOrFail();
 
         $statusLabels = $this->statusService->labels();
-        $canEditItems = $this->statusService->isEditable($invoice, auth()->user());
+        $canEditItems = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
 
         return view('vouchers.sales.edit', compact('invoice', 'statusLabels', 'canEditItems'));
     }
@@ -266,8 +273,10 @@ class InvoiceController extends Controller
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null);
 
-        return redirect()->route('vouchers.sales.edit', $invoice->uuid)
-            ->with('success', '✅ اقلام فاکتور ثبت شد و برای تایید مجدد مالی ارسال شد.');
+        $this->notifyFinanceReapproval($invoice);
+
+        return redirect()->route('vouchers.sales.queue')
+            ->with('success', 'تغییرات اقلام ثبت شد و فاکتور برای تایید مجدد به مالی ارجاع شد.');
     }
 
     public function receiveSalesQueueInvoice(string $uuid)
@@ -292,7 +301,7 @@ class InvoiceController extends Controller
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         $this->warehouseCollectionService->completeWithoutChanges($invoice, auth()->user(), $data['collection_note'] ?? null);
 
-        return redirect()->route('vouchers.sales.queue')->with('success', 'جمع‌آوری بدون تغییر نهایی شد و فاکتور آماده ارسال است.');
+        return redirect()->route('vouchers.sales.queue')->with('success', 'جمع‌آوری فاکتور نهایی شد و به صف ارسال بار منتقل شد.');
     }
 
     public function updateSalesQueueItems(string $uuid, Request $request)
@@ -310,7 +319,52 @@ class InvoiceController extends Controller
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? null);
 
-        return redirect()->route('vouchers.sales.queue')->with('success', 'اقلام فاکتور ثبت شد و برای تایید مجدد مالی ارسال شد.');
+        $this->notifyFinanceReapproval($invoice);
+
+        return redirect()->route('vouchers.sales.queue')->with('success', 'تغییرات اقلام ثبت شد و فاکتور برای تایید مجدد به مالی ارجاع شد.');
+    }
+
+    public function financeReapproveInvoice(string $uuid)
+    {
+        $invoice = DB::transaction(function () use ($uuid) {
+            $invoice = Invoice::query()->with('items')->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+            abort_unless($invoice->status === Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 422, 'وضعیت فاکتور برای تایید مجدد مالی مجاز نیست.');
+            abort_if($invoice->items->sum('quantity') <= 0, 422, 'فاکتور باید حداقل یک قلم کالا داشته باشد.');
+            $this->customerLedgerService->syncInvoiceDebit($invoice);
+            $invoice->update(['status' => Invoice::STATUS_READY_TO_SHIP, 'status_changed_at' => now(), 'status_changed_by' => auth()->id()]);
+            $this->warehouseCollectionServiceHistory($invoice, 'finance_reapproved', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP, 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
+            return $invoice;
+        });
+
+        $this->notificationService->notifyRole('warehouse', 'invoice_ready_to_ship', 'فاکتور آماده ارسال بار است', 'فاکتور شماره ' . $invoice->uuid . ' تایید مجدد مالی شد و آماده ارسال بار است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_ready_to_ship:' . $invoice->id]);
+        return redirect()->route('preinvoice.draft.index')->with('success', 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
+    }
+
+    public function financeReturnInvoiceToSales(string $uuid, Request $request)
+    {
+        $data = $request->validate(['reason' => 'required|string|max:2000']);
+        $invoice = DB::transaction(function () use ($uuid, $data) {
+            $invoice = Invoice::query()->with('preinvoiceOrder')->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+            abort_unless($invoice->status === Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 422, 'وضعیت فاکتور برای ارجاع مجاز نیست.');
+            $invoice->update(['status' => Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, 'status_changed_at' => now(), 'status_changed_by' => auth()->id(), 'collection_note' => $data['reason']]);
+            $this->warehouseCollectionServiceHistory($invoice, 'finance_returned_to_sales', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, $data['reason']);
+            return $invoice;
+        });
+        if ($invoice->preinvoiceOrder?->created_by) {
+            $this->notificationService->notifyUser((int) $invoice->preinvoiceOrder->created_by, 'invoice_returned_to_sales_after_collection', 'فاکتور برای بررسی به شما ارجاع شد', 'فاکتور پس از حذف و اضافه انبار توسط مالی برای بررسی به شما ارجاع شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_returned_to_sales:' . $invoice->id]);
+        }
+        return redirect()->route('preinvoice.draft.index')->with('success', 'فاکتور برای بررسی به اپراتور ارجاع شد.');
+    }
+
+    private function notifyFinanceReapproval(Invoice $invoice): void
+    {
+        $invoice = $invoice->fresh();
+        $this->notificationService->notifyRole('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'اقلام فاکتور شماره ' . $invoice->uuid . ' توسط انبار تغییر کرد و نیازمند تایید مالی است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id]);
+    }
+
+    private function warehouseCollectionServiceHistory(Invoice $invoice, string $action, string $old, string $new, string $description): void
+    {
+        app(\App\Services\SalesHavalehHistoryService::class)->log($invoice, $action, 'status', $old, $new, $description, auth()->id());
     }
 
     public function salesVoucherHistory(string $uuid)
