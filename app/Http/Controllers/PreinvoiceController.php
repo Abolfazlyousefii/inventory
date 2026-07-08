@@ -388,6 +388,7 @@ class PreinvoiceController extends Controller
                 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
 
                 'customer_id' => $customer?->id,
+                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -443,6 +444,7 @@ class PreinvoiceController extends Controller
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
 
                 'customer_id' => $customer?->id,
+                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -552,6 +554,7 @@ class PreinvoiceController extends Controller
 
             $order->update([
                 'customer_id' => $customer?->id,
+                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -567,6 +570,15 @@ class PreinvoiceController extends Controller
             ]);
 
             $this->syncItems($order, $validated['products'], true);
+
+            if (! $isSubmit && ! empty($validated['reservation_token'])) {
+                $this->draftReservationService->releaseTokenReservations(
+                    (string) $validated['reservation_token'],
+                    (int) auth()->id(),
+                    'save_as_draft',
+                    'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت آزاد شد.'
+                );
+            }
 
             if ($isSubmit && ! $stockLocked) {
                 $this->finalizeDraftReservations($order->fresh('items'), $validated['reservation_token'] ?? null, $validated['products'], $reservationMeta);
@@ -630,6 +642,7 @@ class PreinvoiceController extends Controller
         $validated = $request->validate([
             'reservation_token' => 'nullable|uuid',
             'customer_id' => 'nullable|integer|exists:customers,id',
+            'is_in_person' => 'nullable|boolean',
             'customer_name' => 'required|string|max:255',
             'customer_mobile' => 'required|string|max:20',
             'customer_address' => 'nullable|string|max:1000',
@@ -1228,6 +1241,9 @@ class PreinvoiceController extends Controller
                 ->where('token', $reservationToken)
                 ->where('user_id', auth()->id())
                 ->whereNull('converted_at')
+                ->whereNull('preinvoice_order_id')
+                ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
+                ->whereNull('released_at')
                 ->where(function ($query) {
                     $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
                 })
@@ -1360,6 +1376,9 @@ class PreinvoiceController extends Controller
             ->where('token', $reservationToken)
             ->where('user_id', auth()->id())
             ->whereNull('converted_at')
+            ->whereNull('preinvoice_order_id')
+            ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
+            ->whereNull('released_at')
             ->where(function ($query) {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })

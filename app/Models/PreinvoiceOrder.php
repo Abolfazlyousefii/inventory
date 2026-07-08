@@ -29,6 +29,7 @@ class PreinvoiceOrder extends Model
         'created_by',
         'status',
         'customer_id', // <-- این فیلد اضافه شد تا باگ ذخیره نشدن مشتری رفع شود
+        'is_in_person',
         'customer_name',
         'customer_mobile',
         'customer_address',
@@ -52,6 +53,7 @@ class PreinvoiceOrder extends Model
 
     protected $casts = [
         'customer_id' => 'integer',
+        'is_in_person' => 'boolean',
         'external_order_id' => 'integer',
         'province_id' => 'integer',
         'city_id' => 'integer',

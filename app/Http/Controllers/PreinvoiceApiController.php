@@ -247,12 +247,14 @@ class PreinvoiceApiController extends Controller
                 Rule::exists('product_variants', 'id')->where(fn ($query) => $query->where('is_active', true)),
             ],
             'items.*.quantity' => ['required_with:items', 'integer', 'min:0'],
+            'is_in_person' => ['nullable', 'boolean'],
         ]);
 
         $payload = $this->draftReservationService->syncReservationRows(
             (string) $data['reservation_token'],
             (int) auth()->id(),
-            $data['items'] ?? []
+            $data['items'] ?? [],
+            (bool) ($data['is_in_person'] ?? false)
         );
 
         return response()->json([
