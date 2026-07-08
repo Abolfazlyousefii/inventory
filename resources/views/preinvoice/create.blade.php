@@ -31,7 +31,6 @@ if (!$initRows) { $initRows = []; }
 $isEdit = (bool) ($isEdit ?? false);
 $oldCustomerTitle = trim((string) old('customer_name', $order->customer_name ?? ''));
 $oldCustomerMobile = trim((string) old('customer_mobile', $order->customer_mobile ?? ''));
-$oldPreinvoiceDescription = old('description', $order->description ?? '');
 $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '');
 @endphp
 
@@ -983,32 +982,51 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
 
         .modal-body {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            min-height: 0;
-        }
-
-        .variant-list {
-            flex: 1 1 auto;
-            min-height: 0;
-            max-height: none;
+            display: block;
             overflow-y: auto;
+            max-height: calc(100dvh - 118px);
+            min-height: 0;
+            padding: 9px 9px 76px;
             -webkit-overflow-scrolling: touch;
         }
 
-        .modal-discount-box,
-        .modal-summary-bar {
-            flex: 0 0 auto;
+        .variant-list {
+            min-height: 0;
+            max-height: none;
+            overflow: visible;
+            padding: 5px;
+        }
+
+        .modal-discount-box {
+            margin-top: 12px;
+            padding: 8px 9px;
+            position: static;
+        }
+
+        .modal-discount-box .discount-control {
+            gap: 6px;
+        }
+
+        .modal-discount-box .discount-line {
+            margin-top: 4px;
+            font-size: .74rem;
         }
 
         .modal-summary-bar {
-            padding: 8px 10px;
+            margin-top: 10px !important;
+            padding: 8px 9px;
+            position: static;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 7px 10px;
         }
 
         .modal-footer {
             flex: 0 0 auto;
-            position: static;
+            position: sticky;
+            bottom: 0;
+            z-index: 20;
+            background: linear-gradient(180deg, #f9f6ee, #f3eee5) !important;
             padding-bottom: calc(10px + env(safe-area-inset-bottom));
             display: grid;
             grid-template-columns: 1fr 1fr 1.25fr;
@@ -1036,6 +1054,18 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         .badge-soft {
             font-size: .68rem;
             padding: 3px 7px;
+        }
+
+        .modal-summary-bar .summary-stat {
+            width: auto;
+        }
+
+        .modal-summary-bar .summary-stat .s-label {
+            font-size: .68rem;
+        }
+
+        .modal-summary-bar .summary-stat .s-val {
+            font-size: .84rem;
         }
 
         .qty-control {
@@ -1229,11 +1259,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             </div>
         </div>
 
-        <div class="soft-card compact-card mb-3">
-            <h2 class="section-title mb-2">توضیحات داخلی پیش‌فاکتور</h2>
-            <textarea id="preinvoice_description" name="description" class="form-control form-control-sm" rows="2" placeholder="توضیح داخلی فروش، نکته مشتری یا هماهنگی لازم...">{{ $oldPreinvoiceDescription }}</textarea>
-        </div>
-
         <div class="soft-card final-card">
             <input type="hidden" name="discount_amount" id="discount" value="{{ \App\Support\Currency::toRial(old('discount_amount', $order->discount_amount ?? 0)) }}">
             <div class="final-grid">
@@ -1297,7 +1322,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 </div>
 
                 <div class="modal-discount-box">
-                    <label class="label-sm">تخفیف این محصول</label>
+                    <label class="label-sm">تخفیف محصول</label>
                     <div class="discount-control">
                         <select id="modalGroupDiscountType" class="form-select form-select-sm">
                             <option value="amount">ریال</option>
@@ -1305,7 +1330,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                         </select>
                         <input type="number" id="modalGroupDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="0" placeholder="مقدار تخفیف">
                     </div>
-                    <div class="discount-line">مبلغ تخفیف: <strong id="modalGroupDiscountPreview">0 ریال</strong></div>
+                    <div class="discount-line">تخفیف: <strong id="modalGroupDiscountPreview">0 ریال</strong></div>
                 </div>
 
                 <div class="modal-summary-bar mt-2">
@@ -1352,7 +1377,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         oldCustomerId: @json(old('customer_id', $order->customer_id ?? '')),
         oldCustomerName: @json(old('customer_name', $order->customer_name ?? '')),
         oldCustomerMobile: @json(old('customer_mobile', $order->customer_mobile ?? '')),
-        oldDescription: @json($oldPreinvoiceDescription),
         oldPaymentTermsNote: @json($oldPaymentTermsNote),
         oldDiscountAmount: @json(old('discount_amount', $order->discount_amount ?? 0)),
         isEdit: @json($isEdit),
@@ -1644,7 +1668,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             normalize(document.getElementById('customer_name')?.value) ||
             normalize(document.getElementById('customer_mobile')?.value) ||
             normalize(document.getElementById('payment_terms_note')?.value) ||
-            normalize(document.getElementById('preinvoice_description')?.value) ||
             Object.keys(groupedSelections || {}).length ||
             toInt(document.getElementById('orderDiscountValue')?.value || 0) > 0
         );
@@ -1724,7 +1747,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 reservation_hint: document.getElementById('customer_reservation_hint')?.textContent || ''
             },
             payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
-            description: document.getElementById('preinvoice_description')?.value || '',
             discount: {
                 type: document.getElementById('orderDiscountType')?.value || 'amount',
                 value: document.getElementById('orderDiscountValue')?.value || 0
@@ -1776,8 +1798,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('customer_mobile').value = '';
         const paymentTermsEl = document.getElementById('payment_terms_note');
         if (paymentTermsEl) paymentTermsEl.value = '';
-        const noteEl = document.getElementById('preinvoice_description');
-        if (noteEl) noteEl.value = '';
         document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
         document.getElementById('customer_balance_hint').textContent = '';
         document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
@@ -1821,8 +1841,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
         const paymentTermsEl = document.getElementById('payment_terms_note');
         if (paymentTermsEl) paymentTermsEl.value = draft.payment_terms_note || '';
-        const noteEl = document.getElementById('preinvoice_description');
-        if (noteEl) noteEl.value = draft.description || '';
         document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
         document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
         setReservationMode(Boolean(draft.is_in_person));
@@ -1893,7 +1911,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             });
         });
 
-        ['payment_terms_note', 'preinvoice_description', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
+        ['payment_terms_note', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('change', scheduleLocalDraftSave);
