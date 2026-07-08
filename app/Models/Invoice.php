@@ -23,6 +23,7 @@ class Invoice extends Model
         'uuid','customer_id','preinvoice_order_id',
         'customer_name','customer_mobile','customer_address',
         'province_id','city_id','shipping_id','shipping_price',
+        'shipping_method_id','shipping_cost',
         'discount_amount','subtotal','total','status','status_changed_at','status_changed_by'
         ,'shipping_status','shipped_at','shipped_by','shipping_note',
         'external_order_id', 'items_updated_at', 'items_updated_by',
@@ -32,6 +33,7 @@ class Invoice extends Model
 
     protected $casts = [
         'shipping_status' => 'string',
+        'shipping_cost' => 'integer',
         'shipped_at' => 'datetime',
         'shipped_by' => 'integer',
         'shipping_note' => 'string',
@@ -53,6 +55,7 @@ class Invoice extends Model
     public function preinvoiceOrder() { return $this->belongsTo(PreinvoiceOrder::class); }
     public function customer() { return $this->belongsTo(Customer::class); }
     public function shippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_id'); }
+    public function dispatchShippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_method_id'); }
     public function statusChangedByUser() { return $this->belongsTo(User::class, 'status_changed_by'); }
     public function shippedBy() { return $this->belongsTo(User::class, 'shipped_by'); }
     public function warehouseReceivedBy() { return $this->belongsTo(User::class, 'warehouse_received_by'); }
