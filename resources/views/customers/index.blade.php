@@ -91,6 +91,56 @@
     width: 132px;
   }
 
+  .customer-balance-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: .76rem;
+    font-weight: 900;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .customer-balance-badge.is-debit {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
+  }
+
+  .customer-balance-badge.is-credit {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+  }
+
+  .customer-balance-badge.is-settled {
+    background: #f3f4f6;
+    color: #4b5563;
+    border-color: #e5e7eb;
+  }
+
+  .customer-balance-amount {
+    font-weight: 900;
+    direction: ltr;
+    white-space: nowrap;
+  }
+
+  .customer-balance-amount.is-debit {
+    color: #b91c1c;
+  }
+
+  .customer-balance-amount.is-credit {
+    color: #15803d;
+  }
+
+  .customer-balance-amount.is-settled {
+    color: #6b7280;
+  }
+
+
   .soft-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -164,7 +214,7 @@
 
   .balance-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
     margin-top: 12px;
   }
@@ -397,10 +447,6 @@
           <a class="btn btn-outline-secondary" href="{{ route('customers.index') }}">پاک کردن</a>
         </form>
 
-        <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#importCustomerModal">
-          📥 ایمپورت اشخاص
-        </button>
-
         <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createCustomerModal">
           ➕ ساخت مشتری
         </button>
@@ -452,9 +498,8 @@
             <th>موبایل</th>
             <th>سطح رزرو</th>
             <th>اطلاعات تکمیلی</th>
-            <th class="text-nowrap">بدهکار</th>
-            <th class="text-nowrap">بستانکار</th>
-            <th class="text-nowrap">مانده</th>
+            <th class="text-nowrap">ماهیت</th>
+            <th class="text-nowrap">مانده حساب</th>
             <th class="text-nowrap">عملیات</th>
           </tr>
         </thead>
@@ -474,6 +519,10 @@
                 'reservation_tier' => $c->reservation_tier,
                 'update_url' => route('customers.update', $c),
               ];
+              $customerBalance = (int) ($c->balance ?? 0);
+              $balanceState = $customerBalance > 0 ? 'debit' : ($customerBalance < 0 ? 'credit' : 'settled');
+              $balanceLabel = ['debit' => 'بدهکار', 'credit' => 'بستانکار', 'settled' => 'تسویه'][$balanceState];
+              $balanceAmount = abs($customerBalance);
             @endphp
 
             <tr>
@@ -509,9 +558,10 @@
                 @endif
               </td>
 
-              <td class="text-nowrap">{{ number_format((int)($c->debt ?? 0)) }}</td>
-              <td class="text-nowrap">{{ number_format((int)($c->credit ?? 0)) }}</td>
-              <td class="text-nowrap fw-bold">{{ number_format((int)($c->balance ?? 0)) }}</td>
+              <td class="text-nowrap">
+                <span class="customer-balance-badge is-{{ $balanceState }}">{{ $balanceLabel }}</span>
+              </td>
+              <td class="text-nowrap customer-balance-amount is-{{ $balanceState }}">{{ number_format($balanceAmount) }}</td>
 
               <td class="text-nowrap operations-cell">
                 <button
@@ -557,6 +607,10 @@
           'reservation_tier' => $c->reservation_tier,
           'update_url' => route('customers.update', $c),
         ];
+        $customerBalance = (int) ($c->balance ?? 0);
+        $balanceState = $customerBalance > 0 ? 'debit' : ($customerBalance < 0 ? 'credit' : 'settled');
+        $balanceLabel = ['debit' => 'بدهکار', 'credit' => 'بستانکار', 'settled' => 'تسویه'][$balanceState];
+        $balanceAmount = abs($customerBalance);
       @endphp
 
       <div class="customer-card">
@@ -596,18 +650,13 @@
 
         <div class="balance-grid">
           <div class="balance-box">
-            <div class="small-label">بدهکار</div>
-            <div class="value">{{ number_format((int)($c->debt ?? 0)) }}</div>
+            <div class="small-label">ماهیت حساب</div>
+            <div><span class="customer-balance-badge is-{{ $balanceState }}">{{ $balanceLabel }}</span></div>
           </div>
 
           <div class="balance-box">
-            <div class="small-label">بستانکار</div>
-            <div class="value">{{ number_format((int)($c->credit ?? 0)) }}</div>
-          </div>
-
-          <div class="balance-box">
-            <div class="small-label">مانده</div>
-            <div class="value">{{ number_format((int)($c->balance ?? 0)) }}</div>
+            <div class="small-label">مانده حساب</div>
+            <div class="value customer-balance-amount is-{{ $balanceState }}">{{ number_format($balanceAmount) }}</div>
           </div>
         </div>
 
@@ -641,32 +690,6 @@
     {{ $customers->links() }}
   </div>
 
-</div>
-
-<div class="modal fade" id="importCustomerModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
-    <form class="modal-content" method="POST" action="{{ route('customers.import') }}" enctype="multipart/form-data">
-      @csrf
-
-      <div class="modal-header">
-        <div class="fw-bold">📥 ایمپورت اشخاص از اکسل</div>
-        <button type="button" class="btn-close ms-0" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body">
-        <label class="form-label">فایل اکسل</label>
-        <input type="file" name="file" accept=".xlsx,.xls" class="form-control" required>
-
-        <div class="form-text mt-2">
-          ردیف‌های بدون موبایل رد می‌شوند و شماره‌های تکراری داخل دیتابیس آپدیت می‌شوند.
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn btn-success">شروع ایمپورت</button>
-      </div>
-    </form>
-  </div>
 </div>
 
 <div class="modal fade" id="editCustomerModal" tabindex="-1" aria-hidden="true">
