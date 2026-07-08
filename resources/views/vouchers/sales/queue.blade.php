@@ -1,5 +1,10 @@
 @extends('layouts.app')
 
+@php
+  use Morilog\Jalali\Jalalian;
+  $toJalali = fn($date) => $date ? Jalalian::fromDateTime($date)->format('Y/m/d H:i') : '—';
+@endphp
+
 @section('content')
 <div class="container py-4">
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
@@ -27,6 +32,9 @@
             <th>وضعیت فعلی</th>
             <th>تاریخ تایید/ایجاد</th>
             <th>آخرین بروزرسانی</th>
+            <th>دریافت انبار</th>
+            <th>شروع جمع‌آوری</th>
+            <th>اتمام جمع‌آوری</th>
             <th>فروشنده</th>
             <th class="text-end">دکمه‌ها</th>
           </tr>
@@ -40,28 +48,31 @@
               <td>{{ (int) $inv->items->sum('quantity') }}</td>
               <td>{{ number_format((int) $inv->total) }}</td>
               <td><span class="badge bg-light text-dark border">{{ $statusLabels[$inv->status] ?? $inv->status }}</span></td>
-              <td>{{ optional($inv->created_at)->format('Y-m-d H:i') }}</td>
-              <td>{{ optional($inv->updated_at)->format('Y-m-d H:i') }}</td>
+              <td>{{ $toJalali($inv->created_at) }}</td>
+              <td>{{ $toJalali($inv->updated_at) }}</td>
+              <td>{{ $toJalali($inv->warehouse_received_at) }}</td>
+              <td>{{ $toJalali($inv->collection_started_at) }}</td>
+              <td>{{ $toJalali($inv->collected_at) }}</td>
               <td>{{ $inv->preinvoiceOrder?->creator?->name ?? '—' }}</td>
               <td class="text-end">
                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.sales.show', $inv->uuid) }}">مشاهده</a>
                 @unless($isShippedPage)
-                  @if(in_array($inv->status, [\App\Models\Invoice::STATUS_PENDING_COLLECTION, \App\Models\Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL], true))
+                  @if($inv->status === \App\Models\Invoice::STATUS_PENDING_COLLECTION)
                     <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.receive', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-info">دریافت شد</button></form>
                   @endif
-                  @if(in_array($inv->status, [\App\Models\Invoice::STATUS_PENDING_COLLECTION, \App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED], true))
+                  @if($inv->status === \App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED)
                     <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.start-collection', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-warning">شروع جمع‌آوری</button></form>
                   @endif
                   @if(in_array($inv->status, [\App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED, \App\Models\Invoice::STATUS_COLLECTING], true))
-                    <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.complete-collection', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-success">اتمام بدون تغییر</button></form>
+                    <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.complete-collection', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-success">اتمام و ارسال</button></form>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">حذف و اضافه</a>
                   @endif
                 @endunless
                 <a class="btn btn-sm btn-outline-success" target="_blank" href="{{ route('vouchers.sales.print', $inv->uuid) }}">چاپ</a>
-                <a class="btn btn-sm btn-outline-dark" href="{{ route('vouchers.sales.history', $inv->uuid) }}">تاریخچه</a>
               </td>
             </tr>
           @empty
-            <tr><td colspan="10" class="text-center text-muted py-3">موردی نیست</td></tr>
+            <tr><td colspan="13" class="text-center text-muted py-3">موردی نیست</td></tr>
           @endforelse
         </tbody>
       </table>
@@ -84,16 +95,16 @@ setInterval(async () => {
         <td>${row.uuid}</td><td>${row.customer_name ?? ''}</td><td>${row.customer_mobile ?? ''}</td>
         <td>${row.items_count}</td><td>${Number(row.total).toLocaleString()}</td>
         <td><span class="badge bg-light text-dark border">${row.status_label}</span></td>
-        <td>${row.created_at ?? ''}</td><td>${row.updated_at ?? ''}</td><td>${row.seller ?? '—'}</td>
+        <td>${row.created_at ?? ''}</td><td>${row.updated_at ?? ''}</td><td>${row.warehouse_received_at ?? ''}</td><td>${row.collection_started_at ?? ''}</td><td>${row.collected_at ?? ''}</td><td>${row.seller ?? '—'}</td>
         <td class="text-end">
           <a class="btn btn-sm btn-outline-secondary" href="${row.show_url}">مشاهده</a>
           ${row.receive_url ? `<form class="d-inline" method="POST" action="${row.receive_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-info">دریافت شد</button></form>` : ''}
           ${row.start_collection_url ? `<form class="d-inline" method="POST" action="${row.start_collection_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-warning">شروع جمع‌آوری</button></form>` : ''}
-          ${row.complete_collection_url ? `<form class="d-inline" method="POST" action="${row.complete_collection_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success">اتمام بدون تغییر</button></form>` : ''}
+          ${row.complete_collection_url ? `<form class="d-inline" method="POST" action="${row.complete_collection_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success">اتمام و ارسال</button></form>` : ''}
+          ${row.edit_items_url ? `<a class="btn btn-sm btn-outline-primary" href="${row.edit_items_url}">حذف و اضافه</a>` : ''}
           <a class="btn btn-sm btn-outline-success" target="_blank" href="${row.print_url}">چاپ</a>
-          <a class="btn btn-sm btn-outline-dark" href="${row.history_url}">تاریخچه</a>
         </td>
-      </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-3">موردی نیست</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="13" class="text-center text-muted py-3">موردی نیست</td></tr>';
   } catch (e) {}
 }, 30000);
 </script>

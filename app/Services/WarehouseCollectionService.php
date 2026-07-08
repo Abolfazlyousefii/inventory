@@ -46,7 +46,7 @@ class WarehouseCollectionService
                 'collected_at' => now(),
                 'collected_by' => $user->id,
                 'collection_note' => $note,
-            ], 'collection_completed_without_changes', $user->id, $note ?: 'جمع‌آوری بدون تغییر تکمیل شد.');
+            ], 'collection_completed_without_changes', $user->id, $note ?: 'جمع‌آوری فاکتور نهایی شد و به صف ارسال بار منتقل شد.');
         });
     }
 
@@ -59,7 +59,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $items, $user, $note) {
             $invoice = Invoice::query()->with('items')->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
-            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
+            $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
 
             $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
             $existingById = $invoice->items->keyBy('id');

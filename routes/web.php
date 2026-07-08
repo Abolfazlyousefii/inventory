@@ -135,6 +135,8 @@ Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVo
 Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.update');
 Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
 Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
+Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.reapprove');
+Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.return-to-sales');
 Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('finance.cheques.registered');
 
 Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');

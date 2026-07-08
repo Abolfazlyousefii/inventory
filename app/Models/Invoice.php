@@ -17,6 +17,7 @@ class Invoice extends Model
     public const STATUS_WAREHOUSE_RECEIVED = 'warehouse_received';
     public const STATUS_PENDING_FINANCE_REAPPROVAL = 'pending_finance_reapproval';
     public const STATUS_READY_TO_SHIP = 'ready_to_ship';
+    public const STATUS_RETURNED_TO_SALES_AFTER_COLLECTION = 'returned_to_sales_after_collection';
 
     protected $fillable = [
         'uuid','customer_id','preinvoice_order_id',
@@ -74,6 +75,7 @@ class Invoice extends Model
             self::STATUS_WAREHOUSE_RECEIVED => 'دریافت‌شده توسط انبار',
             self::STATUS_PENDING_FINANCE_REAPPROVAL => 'در انتظار تایید مجدد مالی',
             self::STATUS_READY_TO_SHIP => 'آماده ارسال',
+            self::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION => 'ارجاع‌شده به اپراتور پس از اصلاح انبار',
         ];
     }
 
