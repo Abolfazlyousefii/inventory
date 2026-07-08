@@ -292,7 +292,7 @@ class PreinvoiceController extends Controller
                 PreinvoiceOrder::STATUS_PENDING_FINANCE,
                 PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
             ])
-            ->with(['creator:id,name'])
+            ->with(['creator:id,name', 'customer:id,reservation_tier'])
             ->orderByDesc('id')
             ->paginate(20);
 
