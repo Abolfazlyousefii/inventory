@@ -1,3 +1,4 @@
+
 @echo off
 
 set PROJECT=C:\laragon\www\inventory
