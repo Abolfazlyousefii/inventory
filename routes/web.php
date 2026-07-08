@@ -1,6 +1,11 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AccountStatementController;
@@ -388,11 +393,6 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
     ->middleware(['auth', 'route.permission'])
     ->name('vouchers.invoice.products');
 
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Http;
-
-use Illuminate\Http\Request;
-
 Route::get('/auto-login', function (Request $request) {
     $phone = $request->query('phone'); // شماره تماس واقعی کاربر
 
@@ -400,18 +400,35 @@ Route::get('/auto-login', function (Request $request) {
         abort(400, 'Phone required');
     }
 
-    // POST به CRM بدون SSL verify
-    $response = Http::withOptions(['verify' => false])
-        ->post('https://crm.ariyajanebi.ir/api/token-for-client', [
+    $tokenUrl = rtrim(config('services.crm.client_token_url'), '/');
+
+    try {
+        $response = Http::withOptions(['verify' => config('services.crm.verify_ssl')])
+            ->connectTimeout(config('services.crm.connect_timeout'))
+            ->timeout(config('services.crm.timeout'))
+            ->post($tokenUrl, [
+                'phone' => $phone,
+                'secret' => config('services.crm.client_secret'),
+            ]);
+    } catch (ConnectionException $exception) {
+        Log::warning('CRM auto-login token request failed.', [
+            'url' => $tokenUrl,
             'phone' => $phone,
-            'secret' => env('CRM_CLIENT_SECRET')
+            'exception' => $exception->getMessage(),
         ]);
+
+        abort(503, 'CRM service is unavailable. Please try again later.');
+    }
 
     if ($response->failed()) {
         abort(401, 'Unauthorized');
     }
 
-    $data = json_decode(base64_decode($response['token']), true);
+    $data = json_decode(base64_decode($response['token'] ?? ''), true);
+
+    if (!is_array($data) || empty($data['phone']) || empty($data['name'])) {
+        abort(401, 'Unauthorized');
+    }
 
     // لاگین در Laravel
     $user = \App\Models\User::updateOrCreate(
