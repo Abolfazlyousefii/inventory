@@ -29,7 +29,6 @@ use App\Services\PaymentRegistrationService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -125,7 +124,6 @@ class PreinvoiceController extends Controller
         $order = PreinvoiceOrder::query()->with('items')->where('uuid', $uuid)->firstOrFail();
         abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
 
-        $this->logWarehouseReviewRequestItems($order, $request);
         $data = $this->validateWarehouseReviewPayload($request, false, $order);
 
         DB::transaction(function () use ($order, $data) {
@@ -186,7 +184,6 @@ class PreinvoiceController extends Controller
         $order = PreinvoiceOrder::query()->with('items')->where('uuid', $uuid)->firstOrFail();
         abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
 
-        $this->logWarehouseReviewRequestItems($order, $request);
         $data = $this->validateWarehouseReviewPayload($request, true, $order);
 
         DB::transaction(function () use ($order, $data) {
@@ -739,18 +736,6 @@ class PreinvoiceController extends Controller
 
         $draftReservations = $this->activeDraftReservationQuantities($reservationToken);
         $existingDocumentQuantities = $this->existingPreinvoiceItemQuantities($existingOrder);
-        $centralAvailableByVariant = $variants->mapWithKeys(fn (ProductVariant $variant, int|string $id) => [
-            (int) $id => $this->centralAvailableQty($variant),
-        ])->all();
-        Log::debug('PREINVOICE_STORE_STOCK_CHECK', [
-            'user_id' => auth()->id(),
-            'draft_token' => $reservationToken,
-            'requested_by_variant' => $qtyByVariant,
-            'draft_reserved_by_variant' => $draftReservations,
-            'existing_document_qty_by_variant' => $existingDocumentQuantities,
-            'central_available_by_variant' => $centralAvailableByVariant,
-        ]);
-
         foreach ($qtyByVariant as $variantId => $requiredQty) {
             $variant = $variants->get((int) $variantId);
             if ((int) ($variant->sell_price ?? 0) <= 0) {
@@ -785,33 +770,6 @@ class PreinvoiceController extends Controller
             ->keyBy('id');
         $draftReservations = $this->activeDraftReservationQuantities($reservationToken);
         $existingDocumentQuantities = $this->existingPreinvoiceItemQuantities($existingOrder);
-        $requestedByVariant = collect($products)
-            ->groupBy(fn (array $row) => (int) ($row['variety_id'] ?? 0))
-            ->map(fn ($rows) => (int) collect($rows)->sum(fn (array $row) => (int) ($row['quantity'] ?? 0)))
-            ->all();
-        $variantStock = $variants->mapWithKeys(fn (ProductVariant $variant, int|string $id) => [
-            (int) $id => (int) ($variant->stock ?? 0),
-        ])->all();
-        $variantReserved = $variants->mapWithKeys(fn (ProductVariant $variant, int|string $id) => [
-            (int) $id => (int) ($variant->reserved ?? 0),
-        ])->all();
-        $availableForThisSubmit = $variants->mapWithKeys(fn (ProductVariant $variant, int|string $id) => [
-            (int) $id => $this->centralAvailableQty($variant)
-                + (int) ($draftReservations[(int) $id] ?? 0)
-                + (int) ($existingDocumentQuantities[(int) $id] ?? 0),
-        ])->all();
-
-        Log::debug('PREINVOICE_FINAL_STOCK_CHECK', [
-            'user_id' => auth()->id(),
-            'reservation_token' => $reservationToken,
-            'requested_by_variant' => $requestedByVariant,
-            'draft_reserved_by_variant' => $draftReservations,
-            'existing_document_qty_by_variant' => $existingDocumentQuantities,
-            'variant_stock' => $variantStock,
-            'variant_reserved' => $variantReserved,
-            'available_for_this_submit' => $availableForThisSubmit,
-        ]);
-
         return collect($products)->map(function (array $row, int $index) use ($variants, $draftReservations, $existingDocumentQuantities) {
             $productId = (int) ($row['id'] ?? 0);
             $variantId = (int) ($row['variety_id'] ?? 0);
@@ -879,32 +837,9 @@ class PreinvoiceController extends Controller
 
         return $parts ? implode(' - ', $parts) : 'انتخابی';
     }
-
-    private function logWarehouseReviewRequestItems(PreinvoiceOrder $order, Request $request): void
-    {
-        $rawItems = $request->input('items', []);
-
-        Log::debug('warehouse approval request items', [
-            'order_id' => $order->id ?? null,
-            'uuid' => $order->uuid ?? null,
-            'items_keys' => is_array($rawItems) ? array_keys($rawItems) : [],
-            'item_70' => data_get($rawItems, '70'),
-            'item_166' => data_get($rawItems, '166'),
-            'items_count' => is_array($rawItems) ? count($rawItems) : 0,
-        ]);
-    }
-
     private function validateWarehouseReviewPayload(Request $request, bool $forApprove = false, ?PreinvoiceOrder $order = null): array
     {
         $items = $this->normalizeWarehouseReviewItems($request->input('items', []), $order, $request->input('removed_items', []));
-
-        Log::debug('warehouse approval validation debug', [
-            'order_id' => $order->id ?? null,
-            'uuid' => $order->uuid ?? null,
-            'raw_items_keys' => is_array($request->input('items', [])) ? array_keys($request->input('items', [])) : [],
-            'raw_item_70' => data_get($request->input('items', []), '70'),
-            'normalized_items' => $items,
-        ]);
 
         $request->merge([
             'items' => $items,

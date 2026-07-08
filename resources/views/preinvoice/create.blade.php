@@ -1495,7 +1495,7 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
     }
 
     function releaseDraftReservationBeacon() {
-        if (IS_EDIT || isSubmittingProgrammatically) return;
+        if (IS_EDIT || isSubmittingProgrammatically || hasAnyFormData() || localDraftExists()) return;
         const token = normalize(document.getElementById('reservation_token')?.value) || normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
         if (!token || !API.reservationsRelease) return;
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
