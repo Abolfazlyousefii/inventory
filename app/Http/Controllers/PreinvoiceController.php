@@ -572,6 +572,8 @@ class PreinvoiceController extends Controller
 
     private function validateDraftPayload(Request $request, bool $checkCurrentStock = true, ?PreinvoiceOrder $editingOrder = null): array
     {
+        $request->merge(['products' => $this->normalizeDraftProductRows($request->input('products', []))]);
+
         $shippingId = (int) $request->input('shipping_id');
         $isInPerson = $this->isInPersonShippingId($shippingId);
 
@@ -665,6 +667,38 @@ class PreinvoiceController extends Controller
         }
 
         return $validated;
+    }
+
+    private function normalizeDraftProductRows(mixed $products): array
+    {
+        if (! is_array($products)) {
+            return [];
+        }
+
+        return collect($products)
+            ->filter(function ($row) {
+                if (! is_array($row)) {
+                    return false;
+                }
+
+                return trim((string) ($row['id'] ?? '')) !== ''
+                    || trim((string) ($row['variety_id'] ?? $row['variant_id'] ?? '')) !== ''
+                    || trim((string) ($row['quantity'] ?? '')) !== '';
+            })
+            ->map(function (array $row) {
+                if (empty($row['variety_id']) && ! empty($row['variant_id'])) {
+                    $row['variety_id'] = $row['variant_id'];
+                }
+
+                return $row;
+            })
+            ->filter(function (array $row) {
+                return (int) ($row['id'] ?? 0) > 0
+                    && (int) ($row['variety_id'] ?? 0) > 0
+                    && (int) ($row['quantity'] ?? 0) > 0;
+            })
+            ->values()
+            ->all();
     }
 
     private function validateDraftItemsBusinessRules(array $products, ?string $reservationToken = null, ?PreinvoiceOrder $existingOrder = null): void
