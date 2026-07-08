@@ -165,11 +165,16 @@
     </div>
 
     <div class="card-footer d-flex justify-content-end gap-2 flex-wrap">
-      <input name="reason" form="cancelPreinvoiceForm" class="form-control" style="max-width: 320px;" placeholder="دلیل کنسلی" required>
+      <input name="reason" form="returnPreinvoiceForm" class="form-control" style="max-width: 260px;" placeholder="دلیل ارجاع" required>
+      <button class="btn btn-outline-warning" form="returnPreinvoiceForm">ارجاع به فروشنده</button>
+      <input name="reason" form="cancelPreinvoiceForm" class="form-control" style="max-width: 260px;" placeholder="دلیل کنسلی" required>
       <button class="btn btn-outline-danger" form="cancelPreinvoiceForm">کنسل پیش‌فاکتور</button>
-      <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-outline-secondary">ویرایش فاکتور</a>
       <button id="finalizePreinvoiceBtn" class="btn btn-success" onclick="return confirm('تاییدیه نهایی مالی ثبت شود؟ با این کار، پیش‌فاکتور به فاکتور تبدیل می‌شود و در صف حواله فروش انبار قرار می‌گیرد.')">تاییدیه نهایی پیش‌فاکتور از سمت مالی</button>
     </div>
+  </form>
+
+  <form id="returnPreinvoiceForm" method="POST" action="{{ route('preinvoice.draft.return', $order->uuid) }}" onsubmit="return confirm('پیش‌فاکتور به فروشنده ارجاع شود؟')" class="d-none">
+    @csrf
   </form>
 
   <form id="cancelPreinvoiceForm" method="POST" action="{{ route('preinvoice.draft.cancel', $order->uuid) }}" onsubmit="return confirm('پیش‌فاکتور کنسل شود؟')" class="d-none">
