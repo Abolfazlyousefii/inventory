@@ -5,7 +5,7 @@
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
     <div>
       <h4 class="mb-1">📦 {{ $title }}</h4>
-      <div class="text-muted small">{{ $isShippedPage ? 'فقط حواله‌های ارسال‌شده نمایش داده می‌شود.' : 'فقط حواله‌های ارسال‌نشده و باقی‌مانده در صف جمع‌آوری نمایش داده می‌شود.' }}</div>
+      <div class="text-muted small">{{ $subtitle ?? ($isShippedPage ? 'فقط حواله‌های ارسال‌شده نمایش داده می‌شود.' : 'فاکتورهای تاییدشده مالی که باید توسط انبار جمع‌آوری شوند.') }}</div>
     </div>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-primary" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری</a>
@@ -55,7 +55,6 @@
                   @if(in_array($inv->status, [\App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED, \App\Models\Invoice::STATUS_COLLECTING], true))
                     <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.complete-collection', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-success">اتمام بدون تغییر</button></form>
                   @endif
-                  <a class="btn btn-sm btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">ویرایش</a>
                 @endunless
                 <a class="btn btn-sm btn-outline-success" target="_blank" href="{{ route('vouchers.sales.print', $inv->uuid) }}">چاپ</a>
                 <a class="btn btn-sm btn-outline-dark" href="{{ route('vouchers.sales.history', $inv->uuid) }}">تاریخچه</a>
@@ -86,7 +85,14 @@ setInterval(async () => {
         <td>${row.items_count}</td><td>${Number(row.total).toLocaleString()}</td>
         <td><span class="badge bg-light text-dark border">${row.status_label}</span></td>
         <td>${row.created_at ?? ''}</td><td>${row.updated_at ?? ''}</td><td>${row.seller ?? '—'}</td>
-        <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="${row.show_url}">مشاهده</a> <a class="btn btn-sm btn-outline-primary" href="${row.edit_url}">ویرایش</a> <a class="btn btn-sm btn-outline-success" target="_blank" href="${row.print_url}">چاپ</a> <a class="btn btn-sm btn-outline-dark" href="${row.history_url}">تاریخچه</a></td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-secondary" href="${row.show_url}">مشاهده</a>
+          ${row.receive_url ? `<form class="d-inline" method="POST" action="${row.receive_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-info">دریافت شد</button></form>` : ''}
+          ${row.start_collection_url ? `<form class="d-inline" method="POST" action="${row.start_collection_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-warning">شروع جمع‌آوری</button></form>` : ''}
+          ${row.complete_collection_url ? `<form class="d-inline" method="POST" action="${row.complete_collection_url}"><input type="hidden" name="_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success">اتمام بدون تغییر</button></form>` : ''}
+          <a class="btn btn-sm btn-outline-success" target="_blank" href="${row.print_url}">چاپ</a>
+          <a class="btn btn-sm btn-outline-dark" href="${row.history_url}">تاریخچه</a>
+        </td>
       </tr>`).join('') || '<tr><td colspan="10" class="text-center text-muted py-3">موردی نیست</td></tr>';
   } catch (e) {}
 }, 30000);

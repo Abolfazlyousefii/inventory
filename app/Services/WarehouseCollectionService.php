@@ -37,7 +37,7 @@ class WarehouseCollectionService
         });
     }
 
-    public function completeCollection(Invoice $invoice, User $user, ?string $note = null): Invoice
+    public function completeWithoutChanges(Invoice $invoice, User $user, ?string $note = null): Invoice
     {
         return DB::transaction(function () use ($invoice, $user, $note) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
@@ -46,8 +46,13 @@ class WarehouseCollectionService
                 'collected_at' => now(),
                 'collected_by' => $user->id,
                 'collection_note' => $note,
-            ], 'collection_completed', $user->id, $note ?: 'جمع‌آوری بدون تغییر تکمیل شد.');
+            ], 'collection_completed_without_changes', $user->id, $note ?: 'جمع‌آوری بدون تغییر تکمیل شد.');
         });
+    }
+
+    public function completeCollection(Invoice $invoice, User $user, ?string $note = null): Invoice
+    {
+        return $this->completeWithoutChanges($invoice, $user, $note);
     }
 
     public function updateCollectedItems(Invoice $invoice, array $items, User $user, ?string $note = null): Invoice

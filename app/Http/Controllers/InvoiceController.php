@@ -158,7 +158,8 @@ class InvoiceController extends Controller
             'invoices' => $invoices,
             'statusLabels' => $this->statusService->labels(),
             'queueStatuses' => $this->queueStatuses(),
-            'title' => 'حواله‌های آماده جمع‌آوری',
+            'title' => 'صف جمع‌آوری فاکتورها',
+            'subtitle' => 'فاکتورهای تاییدشده مالی که باید توسط انبار جمع‌آوری شوند.',
             'isShippedPage' => false,
         ]);
     }
@@ -176,6 +177,7 @@ class InvoiceController extends Controller
             'statusLabels' => $this->statusService->labels(),
             'queueStatuses' => [SalesHavalehStatusService::SHIPPED],
             'title' => 'حواله‌های ارسال‌شده',
+            'subtitle' => 'فقط حواله‌های ارسال‌شده نمایش داده می‌شود.',
             'isShippedPage' => true,
         ]);
     }
@@ -197,9 +199,11 @@ class InvoiceController extends Controller
                 'updated_at' => optional($invoice->updated_at)->format('Y-m-d H:i'),
                 'seller' => $invoice->preinvoiceOrder?->creator?->name,
                 'show_url' => route('vouchers.sales.show', $invoice->uuid),
-                'edit_url' => route('vouchers.sales.edit', $invoice->uuid),
                 'print_url' => route('vouchers.sales.print', $invoice->uuid),
                 'history_url' => route('vouchers.sales.history', $invoice->uuid),
+                'receive_url' => in_array((string) $invoice->status, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL], true) ? route('vouchers.sales.queue.receive', $invoice->uuid) : null,
+                'start_collection_url' => in_array((string) $invoice->status, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED], true) ? route('vouchers.sales.queue.start-collection', $invoice->uuid) : null,
+                'complete_collection_url' => in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true) ? route('vouchers.sales.queue.complete-collection', $invoice->uuid) : null,
             ])->values(),
         ]);
     }
@@ -286,9 +290,9 @@ class InvoiceController extends Controller
     {
         $data = $request->validate(['collection_note' => 'nullable|string|max:2000']);
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
-        $this->warehouseCollectionService->completeCollection($invoice, auth()->user(), $data['collection_note'] ?? null);
+        $this->warehouseCollectionService->completeWithoutChanges($invoice, auth()->user(), $data['collection_note'] ?? null);
 
-        return redirect()->route('vouchers.sales.queue')->with('success', 'جمع‌آوری فاکتور بدون تغییر تکمیل شد.');
+        return redirect()->route('vouchers.sales.queue')->with('success', 'جمع‌آوری بدون تغییر نهایی شد و فاکتور آماده ارسال است.');
     }
 
     public function updateSalesQueueItems(string $uuid, Request $request)
