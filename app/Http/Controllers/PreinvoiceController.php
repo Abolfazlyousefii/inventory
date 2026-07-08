@@ -295,9 +295,16 @@ class PreinvoiceController extends Controller
             ->orderByDesc('id')
             ->paginate(20);
 
+        $financeReapprovalInvoices = Invoice::query()
+            ->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
+            ->with(['preinvoiceOrder.creator:id,name'])
+            ->orderByDesc('items_updated_at')
+            ->orderByDesc('id')
+            ->get();
+
         $canFinanceApprove = $this->canHandleFinanceActions();
 
-        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove'));
+        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove', 'financeReapprovalInvoices'));
     }
 
     public function allIndex(Request $request)

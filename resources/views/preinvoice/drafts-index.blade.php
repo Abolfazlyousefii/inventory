@@ -59,6 +59,46 @@
     <div class="alert alert-success">{{ session('success') }}</div>
   @endif
 
+
+  <div class="card shadow-sm border-0 finance-queue-card mb-4">
+    <div class="card-header bg-white py-3">
+      <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center">
+        <div>
+          <h6 class="mb-1">فاکتورهای نیازمند تایید مجدد مالی</h6>
+          <small class="text-muted">فاکتورهایی که اقلام آن‌ها توسط انبار حذف و اضافه شده‌اند.</small>
+        </div>
+        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">{{ number_format($financeReapprovalInvoices->count()) }} مورد</span>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light"><tr><th>شماره فاکتور</th><th>مشتری</th><th>مبلغ جدید</th><th>فروشنده/اپراتور</th><th>توضیح انبار</th><th>تاریخ تغییر</th><th class="text-end">عملیات</th></tr></thead>
+        <tbody>
+          @forelse($financeReapprovalInvoices as $invoice)
+            <tr>
+              <td>{{ $invoice->uuid }}</td>
+              <td>{{ $invoice->customer_name ?: '—' }}</td>
+              <td>{{ number_format((int) $invoice->total) }}</td>
+              <td>{{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</td>
+              <td>{{ $invoice->collection_note ?: '—' }}</td>
+              <td>{{ $invoice->items_updated_at ? Jalalian::fromDateTime($invoice->items_updated_at)->format('Y/m/d H:i') : '—' }}</td>
+              <td class="text-end">
+                <form class="d-inline" method="POST" action="{{ route('finance.invoices.reapprove', $invoice->uuid) }}">@csrf<button class="btn btn-sm btn-success">تایید و ارسال بار</button></form>
+                <form class="d-inline-flex gap-1" method="POST" action="{{ route('finance.invoices.return-to-sales', $invoice->uuid) }}">
+                  @csrf
+                  <input name="reason" class="form-control form-control-sm" placeholder="علت ارجاع" required>
+                  <button class="btn btn-sm btn-outline-warning text-nowrap">ارجاع به اپراتور</button>
+                </form>
+              </td>
+            </tr>
+          @empty
+            <tr><td colspan="7" class="text-center py-4 text-muted">فاکتور نیازمند تایید مجدد مالی وجود ندارد.</td></tr>
+          @endforelse
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="card shadow-sm border-0 finance-queue-card">
     <div class="card-header bg-white py-3">
       <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center">
