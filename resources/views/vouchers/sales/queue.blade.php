@@ -46,6 +46,15 @@
               <td class="text-end">
                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.sales.show', $inv->uuid) }}">مشاهده</a>
                 @unless($isShippedPage)
+                  @if(in_array($inv->status, [\App\Models\Invoice::STATUS_PENDING_COLLECTION, \App\Models\Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL], true))
+                    <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.receive', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-info">دریافت شد</button></form>
+                  @endif
+                  @if(in_array($inv->status, [\App\Models\Invoice::STATUS_PENDING_COLLECTION, \App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED], true))
+                    <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.start-collection', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-warning">شروع جمع‌آوری</button></form>
+                  @endif
+                  @if(in_array($inv->status, [\App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED, \App\Models\Invoice::STATUS_COLLECTING], true))
+                    <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.complete-collection', $inv->uuid) }}">@csrf<button class="btn btn-sm btn-outline-success">اتمام بدون تغییر</button></form>
+                  @endif
                   <a class="btn btn-sm btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">ویرایش</a>
                 @endunless
                 <a class="btn btn-sm btn-outline-success" target="_blank" href="{{ route('vouchers.sales.print', $inv->uuid) }}">چاپ</a>
