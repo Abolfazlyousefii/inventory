@@ -46,19 +46,49 @@
 
   .toolbar {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 8px;
     flex-wrap: wrap;
+    width: 100%;
   }
 
   .search-form {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(280px, 1.7fr) minmax(170px, .8fr) minmax(150px, .7fr) auto auto;
     gap: 8px;
-    min-width: 360px;
+    flex: 1 1 760px;
   }
 
-  .search-form .form-control {
-    min-width: 260px;
+  .search-form .form-control,
+  .search-form .form-select {
+    min-width: 0;
+  }
+
+  .filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #eef2ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: .78rem;
+    font-weight: 800;
+  }
+
+  .customer-tier-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: .76rem;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  .operations-cell {
+    width: 132px;
   }
 
   .soft-card {
@@ -228,7 +258,7 @@
     .toolbar {
       width: 100%;
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 8px;
       margin-top: 12px;
     }
@@ -238,7 +268,7 @@
       min-width: 0;
       width: 100%;
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr;
       gap: 8px;
     }
 
@@ -319,13 +349,28 @@
   }
 </style>
 
+@php
+  $tierFilterLabels = [
+    'vip' => 'VIP',
+    'normal' => 'معمولی',
+    'new_or_low_purchase' => 'جدید / کم‌خرید',
+    'unset' => 'بدون سطح / معمولی پیش‌فرض',
+  ];
+  $balanceFilterLabels = [
+    'debt' => 'بدهکار',
+    'credit' => 'بستانکار',
+    'settled' => 'تسویه / صفر',
+  ];
+  $hasActiveFilters = filled($q ?? '') || filled($reservationTier ?? '') || filled($balanceStatus ?? '');
+@endphp
+
 <div class="container customers-page py-3">
 
   <div class="page-head">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
       <div class="page-head-main">
         <h1 class="page-title">👥 مشتریان</h1>
-        <div class="page-subtitle">لیست مشتری‌ها + مانده حساب + ایمپورت اکسل</div>
+        <div class="page-subtitle">سطح رزرو مشتری برای تعیین مدت فیریز پیش‌فاکتور استفاده می‌شود. مانده حساب از بخش گردش حساب اشخاص مدیریت می‌شود.</div>
       </div>
 
       <div class="toolbar">
@@ -334,8 +379,22 @@
             class="form-control"
             name="q"
             value="{{ $q ?? '' }}"
-            placeholder="جستجو نام / موبایل / آدرس / توضیحات">
+            placeholder="جستجوی نام، موبایل، کد مشتری، آدرس یا توضیحات">
+          <select class="form-select" name="reservation_tier" aria-label="فیلتر سطح مشتری">
+            <option value="">همه سطح‌ها</option>
+            <option value="vip" @selected(($reservationTier ?? '') === 'vip')>VIP</option>
+            <option value="normal" @selected(($reservationTier ?? '') === 'normal')>معمولی</option>
+            <option value="new_or_low_purchase" @selected(($reservationTier ?? '') === 'new_or_low_purchase')>جدید / کم‌خرید</option>
+            <option value="unset" @selected(($reservationTier ?? '') === 'unset')>بدون سطح / معمولی پیش‌فرض</option>
+          </select>
+          <select class="form-select" name="balance_status" aria-label="فیلتر وضعیت مانده">
+            <option value="">همه مانده‌ها</option>
+            <option value="debt" @selected(($balanceStatus ?? '') === 'debt')>بدهکار</option>
+            <option value="credit" @selected(($balanceStatus ?? '') === 'credit')>بستانکار</option>
+            <option value="settled" @selected(($balanceStatus ?? '') === 'settled')>تسویه / صفر</option>
+          </select>
           <button class="btn btn-primary">جستجو</button>
+          <a class="btn btn-outline-secondary" href="{{ route('customers.index') }}">پاک کردن</a>
         </form>
 
         <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#importCustomerModal">
@@ -367,6 +426,22 @@
     </div>
   @endif
 
+
+  @if($hasActiveFilters)
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      @if(filled($q ?? ''))
+        <span class="filter-chip">جستجو: {{ $q }}</span>
+      @endif
+      @if(filled($reservationTier ?? ''))
+        <span class="filter-chip">سطح: {{ $tierFilterLabels[$reservationTier] ?? $reservationTier }}</span>
+      @endif
+      @if(filled($balanceStatus ?? ''))
+        <span class="filter-chip">مانده: {{ $balanceFilterLabels[$balanceStatus] ?? $balanceStatus }}</span>
+      @endif
+      <a class="filter-chip text-decoration-none" href="{{ route('customers.index') }}">پاک کردن همه</a>
+    </div>
+  @endif
+
   <div class="soft-card desktop-customers">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0 desktop-table">
@@ -375,6 +450,7 @@
             <th>#</th>
             <th>نام مشتری</th>
             <th>موبایل</th>
+            <th>سطح رزرو</th>
             <th>اطلاعات تکمیلی</th>
             <th class="text-nowrap">بدهکار</th>
             <th class="text-nowrap">بستانکار</th>
@@ -395,7 +471,7 @@
                 'extra_description' => $c->extra_description,
                 'province_id' => $c->province_id,
                 'city_id' => $c->city_id,
-                'opening_balance' => $c->opening_balance,
+                'reservation_tier' => $c->reservation_tier,
                 'update_url' => route('customers.update', $c),
               ];
             @endphp
@@ -414,6 +490,8 @@
               </td>
 
               <td class="text-nowrap">{{ $c->mobile ?: '—' }}</td>
+
+              <td><span class="customer-tier-badge {{ $c->reservationTierBadgeClass() }}">{{ $c->reservationTierLabel() }}</span></td>
 
               <td style="max-width: 360px">
                 <div>{{ $c->address ?: '—' }}</div>
@@ -435,7 +513,7 @@
               <td class="text-nowrap">{{ number_format((int)($c->credit ?? 0)) }}</td>
               <td class="text-nowrap fw-bold">{{ number_format((int)($c->balance ?? 0)) }}</td>
 
-              <td class="text-nowrap">
+              <td class="text-nowrap operations-cell">
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-warning"
@@ -456,7 +534,7 @@
             </tr>
           @empty
             <tr>
-              <td colspan="8" class="text-center text-muted py-4">مشتری یافت نشد</td>
+              <td colspan="9" class="text-center text-muted py-4">مشتری یافت نشد</td>
             </tr>
           @endforelse
         </tbody>
@@ -476,7 +554,7 @@
           'extra_description' => $c->extra_description,
           'province_id' => $c->province_id,
           'city_id' => $c->city_id,
-          'opening_balance' => $c->opening_balance,
+          'reservation_tier' => $c->reservation_tier,
           'update_url' => route('customers.update', $c),
         ];
       @endphp
@@ -486,11 +564,7 @@
           <div>
             <div class="customer-name">{{ $c->display_name ?: '—' }}</div>
 
-            @if((int)$c->opening_balance !== 0)
-              <div class="small text-muted">
-                مانده اولیه: {{ number_format((int)$c->opening_balance) }}
-              </div>
-            @endif
+            <div class="mt-1"><span class="customer-tier-badge {{ $c->reservationTierBadgeClass() }}">{{ $c->reservationTierLabel() }}</span></div>
           </div>
 
           <div class="customer-id-badge">#{{ $c->id }}</div>
@@ -619,8 +693,14 @@
           </div>
 
           <div class="col-12">
-            <label class="form-label">مانده اولیه</label>
-            <input class="form-control" type="number" name="opening_balance" id="edit_opening_balance" value="0">
+            <label class="form-label">سطح رزرو مشتری</label>
+            <select class="form-select" name="reservation_tier" id="edit_reservation_tier">
+              <option value="">معمولی پیش‌فرض</option>
+              <option value="vip">VIP - رزرو بدون محدودیت</option>
+              <option value="normal">معمولی - رزرو ۳ ساعته</option>
+              <option value="new_or_low_purchase">جدید / کم‌خرید - رزرو ۱ ساعته</option>
+            </select>
+            <div class="form-text">در صورت عدم انتخاب، مشتری معمولی در نظر گرفته می‌شود. مانده حساب از بخش گردش حساب اشخاص مدیریت می‌شود.</div>
           </div>
 
           <div class="col-md-6">
@@ -684,8 +764,14 @@
           </div>
 
           <div class="col-12">
-            <label class="form-label">مانده اولیه</label>
-            <input class="form-control" type="number" name="opening_balance" value="{{ old('opening_balance', 0) }}">
+            <label class="form-label">سطح رزرو مشتری</label>
+            <select class="form-select" name="reservation_tier">
+              <option value="" @selected(old('reservation_tier') === null || old('reservation_tier') === '')>معمولی پیش‌فرض</option>
+              <option value="vip" @selected(old('reservation_tier') === 'vip')>VIP - رزرو بدون محدودیت</option>
+              <option value="normal" @selected(old('reservation_tier') === 'normal')>معمولی - رزرو ۳ ساعته</option>
+              <option value="new_or_low_purchase" @selected(old('reservation_tier') === 'new_or_low_purchase')>جدید / کم‌خرید - رزرو ۱ ساعته</option>
+            </select>
+            <div class="form-text">در صورت عدم انتخاب، مشتری معمولی در نظر گرفته می‌شود. مانده حساب از بخش گردش حساب اشخاص مدیریت می‌شود.</div>
           </div>
 
           <div class="col-md-6">
@@ -906,7 +992,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('editCustomerTitle').textContent = `✏️ ویرایش مشتری #${customer.id ?? ''}`;
     document.getElementById('edit_customer_name').value = customer.name ?? '';
     document.getElementById('edit_mobile').value = customer.mobile ?? '';
-    document.getElementById('edit_opening_balance').value = customer.opening_balance ?? 0;
+    const tierSelect = document.getElementById('edit_reservation_tier');
+    if (tierSelect) {
+      tierSelect.value = customer.reservation_tier ?? '';
+      if (window.jQuery) {
+        $(tierSelect).trigger('change.select2');
+      }
+    }
     document.getElementById('edit_address').value = customer.address ?? '';
     document.getElementById('edit_postal_code').value = customer.postal_code ?? '';
     document.getElementById('edit_extra_description').value = customer.extra_description ?? '';

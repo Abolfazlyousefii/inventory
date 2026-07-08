@@ -14,24 +14,49 @@ class CustomerController extends Controller
 {
     public function index(Request $request)
     {
-        $q = trim((string) $request->get('q'));
+        $q = trim($this->toEnglishDigits((string) $request->get('q')));
+        $reservationTier = (string) $request->get('reservation_tier', '');
+        $balanceStatus = (string) $request->get('balance_status', '');
 
-        $customers = Customer::query()
+        $customersQuery = Customer::query()
             ->withBalance()
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->where('first_name', 'like', "%{$q}%")
                         ->orWhere('last_name', 'like', "%{$q}%")
+                        ->orWhereRaw("CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?", ["%{$q}%"])
                         ->orWhere('mobile', 'like', "%{$q}%")
                         ->orWhere('address', 'like', "%{$q}%")
                         ->orWhere('extra_description', 'like', "%{$q}%");
+
+                    if (ctype_digit($q)) {
+                        $sub->orWhere('id', (int) $q);
+                    }
                 });
             })
+            ->when(in_array($reservationTier, ['vip', 'normal', 'new_or_low_purchase'], true), function ($query) use ($reservationTier) {
+                $query->where('reservation_tier', $reservationTier);
+            })
+            ->when($reservationTier === 'unset', function ($query) {
+                $query->whereNull('reservation_tier');
+            });
+
+        if (in_array($balanceStatus, ['debt', 'credit', 'settled'], true)) {
+            $balanceExpression = '(COALESCE(opening_balance, 0) + COALESCE(debit_sum, 0) - COALESCE(credit_sum, 0))';
+
+            match ($balanceStatus) {
+                'debt' => $customersQuery->havingRaw("{$balanceExpression} > 0"),
+                'credit' => $customersQuery->havingRaw("{$balanceExpression} < 0"),
+                'settled' => $customersQuery->havingRaw("{$balanceExpression} = 0"),
+            };
+        }
+
+        $customers = $customersQuery
             ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
 
-        return view('customers.index', compact('customers', 'q'));
+        return view('customers.index', compact('customers', 'q', 'reservationTier', 'balanceStatus'));
     }
 
     public function store(Request $request)
@@ -253,7 +278,7 @@ private function parseAmount($value): ?int
             'extra_description' => ['nullable', 'string', 'max:2000'],
             'province_id' => ['nullable', 'integer'],
             'city_id' => ['nullable', 'integer'],
-            'opening_balance' => ['nullable', 'numeric'],
+            'reservation_tier' => ['nullable', 'in:vip,normal,new_or_low_purchase'],
         ]);
 
         $mobile = $this->normalizeMobile($data['mobile'] ?? null);
@@ -291,7 +316,7 @@ private function parseAmount($value): ?int
             ]);
         }
 
-        return [
+        $payload = [
             'first_name' => $this->cleanCell($data['customer_name'] ?? null),
             'last_name' => null,
             'mobile' => $mobile,
@@ -300,8 +325,14 @@ private function parseAmount($value): ?int
             'extra_description' => $this->cleanCell($data['extra_description'] ?? null),
             'province_id' => $provinceId,
             'city_id' => $cityId,
-            'opening_balance' => (int) ($data['opening_balance'] ?? 0),
+            'reservation_tier' => ($data['reservation_tier'] ?? null) ?: null,
         ];
+
+        if (!$customer) {
+            $payload['opening_balance'] = 0;
+        }
+
+        return $payload;
     }
 
     private function cleanCell($value): ?string
