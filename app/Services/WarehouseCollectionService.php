@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ProductVariant;
+use App\Models\WarehouseStock;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -101,12 +102,35 @@ class WarehouseCollectionService
                 if ($delta === 0) {
                     continue;
                 }
-                $variant = ProductVariant::query()->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
+                $variant = ProductVariant::query()->with('product')->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
+                if ($delta > 0) {
+                    $available = $this->centralAvailableStockForUpdate((int) $variant->product_id, (int) $variant->id);
+                    if ($available < $delta) {
+                        $name = trim(($variant->product?->name ?? 'کالا') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
+                        throw ValidationException::withMessages([
+                            'items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد درخواستی: {$delta}",
+                        ]);
+                    }
+                }
                 WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
             }
 
+            $aggregated = collect($normalized)
+                ->groupBy('variantId')
+                ->map(function ($rows) {
+                    $first = $rows->first();
+                    $existing = $rows->firstWhere('existing', '!=', null)['existing'] ?? null;
+                    return array_merge($first, [
+                        'existing' => $existing,
+                        'itemId' => $existing ? (int) $existing->id : 0,
+                        'qty' => (int) $rows->sum('qty'),
+                    ]);
+                })
+                ->values()
+                ->all();
+
             $seen = [];
-            foreach ($normalized as $row) {
+            foreach ($aggregated as $row) {
                 /** @var InvoiceItem|null $existing */
                 $existing = $row['existing'];
                 $qty = (int) $row['qty'];
@@ -138,7 +162,7 @@ class WarehouseCollectionService
             }
 
             foreach ($invoice->items as $item) {
-                if (! in_array((int) $item->id, $seen, true) && ! collect($normalized)->pluck('itemId')->contains((int) $item->id)) {
+                if (! in_array((int) $item->id, $seen, true)) {
                     $item->delete();
                 }
             }
@@ -160,6 +184,18 @@ class WarehouseCollectionService
 
             return $invoice->fresh(['items.product', 'items.variant']);
         });
+    }
+
+    private function centralAvailableStockForUpdate(int $productId, int $variantId): int
+    {
+        $stock = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->lockForUpdate()
+            ->first();
+
+        return max(0, (int) ($stock?->quantity ?? 0));
     }
 
     private function assertStatus(Invoice $invoice, array $allowed): void
