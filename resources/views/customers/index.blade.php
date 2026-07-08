@@ -584,7 +584,7 @@
             </tr>
           @empty
             <tr>
-              <td colspan="8" class="text-center text-muted py-4">مشتری یافت نشد</td>
+              <td colspan="9" class="text-center text-muted py-4">مشتری یافت نشد</td>
             </tr>
           @endforelse
         </tbody>
