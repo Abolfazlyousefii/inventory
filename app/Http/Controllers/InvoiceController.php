@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\Invoice;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Services\SalesHavalehStatusService;
 use App\Services\SalesHavalehService;
 use App\Services\SalesDocumentAccessService;
 use App\Services\SalesPrintDocumentService;
 use App\Services\WarehousePendingRefreshService;
 use App\Services\WarehouseCollectionService;
+use App\Services\WarehouseStockService;
 use App\Services\CustomerLedgerService;
 use App\Services\NotificationService;
 use Carbon\Carbon;
@@ -255,6 +259,88 @@ class InvoiceController extends Controller
         $canEditItems = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
 
         return view('vouchers.sales.edit', compact('invoice', 'statusLabels', 'canEditItems'));
+    }
+
+
+    public function salesProductCategories()
+    {
+        $categories = Category::query()
+            ->with(['children:id,name,code,parent_id'])
+            ->whereNull('parent_id')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'parent_id'])
+            ->map(fn (Category $category) => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'code' => $category->code,
+                'children' => $category->children->map(fn (Category $child) => [
+                    'id' => $child->id,
+                    'name' => $child->name,
+                    'code' => $child->code,
+                ])->values(),
+            ]);
+
+        return response()->json(['categories' => $categories]);
+    }
+
+    public function salesProductsByCategory(Request $request)
+    {
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'q' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $categoryIds = Category::selfAndDescendantIds((int) $data['category_id']);
+        $query = Product::query()
+            ->withCount(['variants as active_variants_count' => fn ($q) => $q->where('is_active', true)])
+            ->whereIn('category_id', $categoryIds)
+            ->whereHas('variants', fn ($q) => $q->where('is_active', true))
+            ->orderBy('name')
+            ->limit(50);
+
+        if (! empty($data['q'])) {
+            $term = trim((string) $data['q']);
+            $query->where(function ($q) use ($term) {
+                $q->where('name', 'like', "%{$term}%")
+                    ->orWhere('sku', 'like', "%{$term}%")
+                    ->orWhere('code', 'like', "%{$term}%")
+                    ->orWhere('barcode', 'like', "%{$term}%");
+            });
+        }
+
+        return response()->json([
+            'products' => $query->get(['id', 'name', 'sku', 'code'])->map(fn (Product $product) => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'sku' => $product->sku ?: $product->code,
+                'active_variants_count' => (int) $product->active_variants_count,
+            ]),
+        ]);
+    }
+
+    public function salesProductVariants(Product $product)
+    {
+        $variants = $product->variants()
+            ->where('is_active', true)
+            ->orderBy('variant_name')
+            ->get()
+            ->map(function (ProductVariant $variant) use ($product) {
+                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), (int) $product->id, (int) $variant->id);
+
+                return [
+                    'id' => $variant->id,
+                    'product_id' => $product->id,
+                    'title' => $variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id),
+                    'sku' => $variant->variant_code ?: $variant->variety_code,
+                    'sell_price' => (int) $variant->sell_price,
+                    'available_stock' => $available,
+                    'is_active' => (bool) $variant->is_active,
+                ];
+            })
+            ->filter(fn (array $variant) => $variant['available_stock'] > 0)
+            ->values();
+
+        return response()->json(['variants' => $variants]);
     }
 
     public function salesVoucherUpdate(string $uuid, Request $request)
