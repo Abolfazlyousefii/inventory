@@ -1115,6 +1115,36 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         <input type="hidden" name="intent" id="submit_intent" value="submit">
         <input type="hidden" name="discount_breakdown" id="discount_breakdown" value="">
 
+
+        <div class="soft-card compact-card mb-3">
+            <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
+                <div>
+                    <h2 class="section-title mb-1">نوع ثبت</h2>
+                    <div class="hint" id="reservationModeHint">رزرو موقت کالاها ۱ ساعت اعتبار دارد. بعد از ثبت نهایی، زمان رزرو طبق سطح مشتری شروع می‌شود.</div>
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="border rounded-4 p-3 d-flex gap-2 h-100" style="cursor:pointer">
+                        <input class="form-check-input mt-1" type="radio" name="is_in_person" value="0" @checked(! (bool) old('is_in_person', $order->is_in_person ?? false))>
+                        <span>
+                            <span class="fw-bold d-block">آنلاین / غیرحضوری</span>
+                            <span class="hint">رزرو موقت هنگام انتخاب کالا تا ۱ ساعت فعال است.</span>
+                        </span>
+                    </label>
+                </div>
+                <div class="col-md-6">
+                    <label class="border rounded-4 p-3 d-flex gap-2 h-100" style="cursor:pointer">
+                        <input class="form-check-input mt-1" type="radio" name="is_in_person" value="1" @checked((bool) old('is_in_person', $order->is_in_person ?? false))>
+                        <span>
+                            <span class="fw-bold d-block">حضوری</span>
+                            <span class="hint">رزرو موقت تا زمان ثبت نهایی فعال می‌ماند.</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
         <div class="soft-card compact-card mb-3">
             <div class="row g-2 align-items-end">
                 <div class="col-lg-5">
@@ -1416,6 +1446,25 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         return json;
     }
 
+    function currentIsInPerson() {
+        return document.querySelector('input[name="is_in_person"]:checked')?.value === '1';
+    }
+
+    function setReservationMode(isInPerson) {
+        const value = isInPerson ? '1' : '0';
+        const input = document.querySelector(`input[name="is_in_person"][value="${value}"]`);
+        if (input) input.checked = true;
+        updateReservationModeHint();
+    }
+
+    function updateReservationModeHint() {
+        const hint = document.getElementById('reservationModeHint');
+        if (!hint) return;
+        hint.textContent = currentIsInPerson()
+            ? 'برای فروش حضوری، رزرو موقت تا ثبت نهایی فعال می‌ماند. بعد از ثبت نهایی، زمان رزرو طبق سطح مشتری شروع می‌شود.'
+            : 'رزرو موقت کالاها ۱ ساعت اعتبار دارد. بعد از ثبت نهایی، زمان رزرو طبق سطح مشتری شروع می‌شود.';
+    }
+
     async function syncDraftReservation(sourceGroups = groupedSelections) {
         if (IS_EDIT) return { ok: true };
         const token = ensureReservationToken();
@@ -1423,6 +1472,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         try {
             const response = await postReservation(API.reservationsSync, {
                 reservation_token: token,
+                is_in_person: currentIsInPerson(),
                 items: reservationItemsFromGroups(sourceGroups)
             });
             productCache.clear();
@@ -1664,6 +1714,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             version: LOCAL_DRAFT_VERSION,
             saved_at: new Date().toISOString(),
             reservation_token: ensureReservationToken(),
+            is_in_person: currentIsInPerson(),
             customer: {
                 id: document.getElementById('customer_id')?.value || '',
                 name: document.getElementById('customer_name')?.value || '',
@@ -1731,6 +1782,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('customer_balance_hint').textContent = '';
         document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
         document.getElementById('customerSummaryBox').classList.remove('is-selected');
+        setReservationMode(false);
         if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
 
 
@@ -1773,6 +1825,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         if (noteEl) noteEl.value = draft.description || '';
         document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
         document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
+        setReservationMode(Boolean(draft.is_in_person));
         groupedSelections = draft.groupedSelections || {};
 
         if (draft.reservation_token) {
@@ -1827,6 +1880,19 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             await removeLocalDraft(true, false);
         });
 
+        document.querySelectorAll('input[name="is_in_person"]').forEach(input => {
+            input.addEventListener('change', async function() {
+                updateReservationModeHint();
+                scheduleLocalDraftSave();
+                if (!Object.keys(groupedSelections || {}).length) return;
+                try {
+                    await syncDraftReservation(groupedSelections);
+                } catch (e) {
+                    alert(e.message || 'رزرو موقت این فرم منقضی شده است. موجودی دوباره بررسی شد؛ لطفاً انتخاب کالا را تایید کنید.');
+                }
+            });
+        });
+
         ['payment_terms_note', 'preinvoice_description', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
@@ -1838,6 +1904,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             saveLocalDraftNow();
         });
     }
+
+    updateReservationModeHint();
 
     async function getProductDetails(productId, fresh = false) {
         const id = String(productId || '');
@@ -1987,6 +2055,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('customer_balance_hint').textContent = '';
         document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
         document.getElementById('customerSummaryBox').classList.remove('is-selected');
+        setReservationMode(false);
         if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
         updateSubmitState();
         scheduleLocalDraftSave();

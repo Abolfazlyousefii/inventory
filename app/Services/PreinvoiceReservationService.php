@@ -17,6 +17,8 @@ class PreinvoiceReservationService
 {
     public function expireOverdueReservations(): array
     {
+        $temporaryResult = $this->expireTemporaryOnlineReservations();
+
         $orderIds = PreinvoiceDraftReservation::query()
             ->whereNotNull('preinvoice_order_id')
             ->where('reservation_scope', 'official')
@@ -50,9 +52,53 @@ class PreinvoiceReservationService
 
         return [
             'expired_orders' => $expiredOrders,
-            'released_reservations' => $releasedReservations,
-            'released_quantity' => $releasedQuantity,
+            'released_reservations' => $releasedReservations + (int) $temporaryResult['released_reservations'],
+            'released_quantity' => $releasedQuantity + (int) $temporaryResult['released_quantity'],
+            'released_temporary_reservations' => (int) $temporaryResult['released_reservations'],
         ];
+    }
+
+
+    public function expireTemporaryOnlineReservations(): array
+    {
+        return DB::transaction(function () {
+            $reservations = PreinvoiceDraftReservation::query()
+                ->whereNull('preinvoice_order_id')
+                ->whereNull('converted_at')
+                ->where('reservation_scope', 'temporary_online')
+                ->whereNotNull('expires_at')
+                ->where('expires_at', '<=', now())
+                ->whereNull('released_at')
+                ->where('quantity', '>', 0)
+                ->lockForUpdate()
+                ->get();
+
+            $releasedReservations = 0;
+            $releasedQuantity = 0;
+
+            foreach ($reservations as $reservation) {
+                if ($reservation->released_at !== null) {
+                    continue;
+                }
+
+                $quantity = (int) $reservation->quantity;
+                $this->releaseStockForReservation((int) $reservation->product_id, (int) $reservation->variant_id, $quantity);
+                $reservation->forceFill([
+                    'released_at' => now(),
+                    'released_by' => null,
+                    'release_reason' => 'temporary_online_expired',
+                    'release_note' => 'رزرو موقت آنلاین منقضی شد.',
+                ])->save();
+
+                $releasedReservations++;
+                $releasedQuantity += $quantity;
+            }
+
+            return [
+                'released_reservations' => $releasedReservations,
+                'released_quantity' => $releasedQuantity,
+            ];
+        });
     }
 
     public function expirePreinvoiceReservations(PreinvoiceOrder $order, ?User $actor = null, string $reason = 'expired'): array

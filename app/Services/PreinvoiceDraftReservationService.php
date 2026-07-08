@@ -11,12 +11,12 @@ use Illuminate\Validation\ValidationException;
 
 class PreinvoiceDraftReservationService
 {
-    public function syncReservationRows(string $token, int $userId, array $items): array
+    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false): array
     {
         $desired = $this->normalizeReservationItems($items);
 
-        return DB::transaction(function () use ($token, $userId, $desired) {
-            $this->releaseExpiredDraftReservations();
+        return DB::transaction(function () use ($token, $userId, $desired, $isInPerson) {
+            $this->releaseExpiredDraftReservations($token, $userId);
 
             $existingRows = $this->activeRowsQuery($token, $userId)
                 ->lockForUpdate()
@@ -28,7 +28,8 @@ class PreinvoiceDraftReservationService
             }
 
             $allKeys = array_unique(array_merge(array_keys($existing), array_keys($desired)));
-            $expiresAt = now()->addHours(4);
+            $expiresAt = $isInPerson ? null : now()->addHour();
+            $reservationScope = $isInPerson ? 'temporary_in_person' : 'temporary_online';
 
             foreach ($allKeys as $key) {
                 [$productId, $variantId] = array_map('intval', explode(':', $key));
@@ -63,6 +64,8 @@ class PreinvoiceDraftReservationService
                         'expires_at' => $expiresAt,
                         'converted_at' => null,
                         'preinvoice_order_id' => null,
+                        'reservation_scope' => $reservationScope,
+                        'reservation_tier' => null,
                     ];
 
                     if (Schema::hasColumn('preinvoice_draft_reservations', 'released_at')) {
@@ -89,7 +92,8 @@ class PreinvoiceDraftReservationService
 
             return [
                 'reserved' => array_values($desired),
-                'expires_at' => $expiresAt->toIso8601String(),
+                'expires_at' => $expiresAt?->toIso8601String(),
+                'reservation_scope' => $reservationScope,
             ];
         });
     }
@@ -117,11 +121,16 @@ class PreinvoiceDraftReservationService
         });
     }
 
-    public function releaseExpiredDraftReservations(): void
+    public function releaseExpiredDraftReservations(?string $token = null, ?int $userId = null): void
     {
-        DB::transaction(function () {
+        DB::transaction(function () use ($token, $userId) {
             $expiredRows = PreinvoiceDraftReservation::query()
                 ->whereNull('converted_at')
+                ->whereNull('preinvoice_order_id')
+                ->where('reservation_scope', 'temporary_online')
+                ->when($token, fn ($query) => $query->where('token', $token))
+                ->when($userId, fn ($query) => $query->where('user_id', $userId))
+                ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
                 ->whereNotNull('expires_at')
                 ->where('expires_at', '<=', now())
                 ->lockForUpdate()
@@ -129,7 +138,7 @@ class PreinvoiceDraftReservationService
 
             foreach ($expiredRows as $row) {
                 $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity);
-                $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'expired', 'رزرو موقت منقضی شد.');
+                $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_online_expired', 'رزرو موقت آنلاین منقضی شد.');
             }
         });
     }
