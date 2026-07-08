@@ -1153,7 +1153,7 @@ class PreinvoiceController extends Controller
                 continue;
             }
             if (! isset($availableProductSet[$productId])) {
-                throw ValidationException::withMessages(['discount_breakdown' => 'برای کالایی که در سند وجود ندارد تخفیف ثبت شده است.']);
+                continue;
             }
             $type = (string) ($group['type'] ?? $group['discount_type'] ?? 'amount');
             $value = $group['value'] ?? $group['discount_value'] ?? 0;

@@ -2639,8 +2639,16 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
         updateSubmitState();
     }
 
+    function activeDiscountGroups() {
+        return Object.values(groupedSelections || {}).filter(group => {
+            const productId = Number(group?.product?.id || 0);
+            const items = Array.isArray(group?.items) ? group.items : [];
+            return productId > 0 && items.some(item => Number(item?.variant_id || 0) > 0 && Number(item?.quantity || 0) > 0);
+        });
+    }
+
     function buildDiscountBreakdown(subtotal, groupDiscounts, orderDiscount, totalDiscount) {
-        const groups = Object.values(groupedSelections).map(group => ({
+        const groups = activeDiscountGroups().map(group => ({
             product_id: Number(group.product.id),
             product_title: group.product.title,
             discount_type: group.discount_type || 'amount',
@@ -2664,7 +2672,7 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
         const shipping = toInt(document.getElementById('shipping_price')?.value || 0);
         let subtotal = 0,
             groupDiscounts = 0;
-        Object.values(groupedSelections).forEach(group => {
+        activeDiscountGroups().forEach(group => {
             subtotal += groupRawSubtotal(group);
             groupDiscounts += groupDiscountTotal(group);
         });
