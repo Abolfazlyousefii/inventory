@@ -78,4 +78,24 @@ class Customer extends Model
             $this->last_name,
         ])));
     }
+
+    public function reservationTierLabel(): string
+    {
+        return match ($this->reservation_tier) {
+            'vip' => 'VIP',
+            'normal' => 'معمولی',
+            'new_or_low_purchase' => 'جدید / کم‌خرید',
+            default => 'معمولی پیش‌فرض',
+        };
+    }
+
+    public function reservationTierBadgeClass(): string
+    {
+        return match ($this->reservation_tier) {
+            'vip' => 'bg-warning-subtle text-warning-emphasis border border-warning-subtle',
+            'normal' => 'bg-primary-subtle text-primary-emphasis border border-primary-subtle',
+            'new_or_low_purchase' => 'bg-danger-subtle text-danger-emphasis border border-danger-subtle',
+            default => 'bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle',
+        };
+    }
 }
