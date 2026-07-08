@@ -48,12 +48,7 @@ class PreinvoiceController extends Controller
 
     public function create()
     {
-        $shippingMethods = ShippingMethod::query()
-            ->select(['id', 'name', 'price'])
-            ->orderBy('name')
-            ->get();
-
-        return view('preinvoice.create', compact('shippingMethods'));
+        return view('preinvoice.create');
     }
 
     public function warehouseQueue()
@@ -384,7 +379,7 @@ class PreinvoiceController extends Controller
 
         $reservationMeta = DB::transaction(function () use ($validated) {
             $customer = $this->resolveCustomer($validated);
-            $shippingId = (int) $validated['shipping_id'];
+            $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
 
             $order = PreinvoiceOrder::create([
@@ -401,7 +396,7 @@ class PreinvoiceController extends Controller
                 'city_id' => $this->orderCityId($validated, $customer, $shippingId),
 
                 'shipping_id' => $shippingId,
-                'shipping_price' => (int) $this->resolveShippingPrice($shippingId),
+                'shipping_price' => $shippingId ? (int) $this->resolveShippingPrice($shippingId) : 0,
                 'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
                 'total_price' => 0,
                 'stock_frozen_until' => null,
@@ -439,7 +434,7 @@ class PreinvoiceController extends Controller
 
         $order = DB::transaction(function () use ($validated) {
             $customer = $this->resolveCustomer($validated);
-            $shippingId = (int) $validated['shipping_id'];
+            $shippingId = $this->validatedShippingId($validated);
 
             $order = PreinvoiceOrder::create([
                 'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
@@ -455,7 +450,7 @@ class PreinvoiceController extends Controller
                 'city_id' => $this->orderCityId($validated, $customer, $shippingId),
 
                 'shipping_id' => $shippingId,
-                'shipping_price' => (int) $this->resolveShippingPrice($shippingId),
+                'shipping_price' => $shippingId ? (int) $this->resolveShippingPrice($shippingId) : 0,
                 'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
                 'total_price' => 0,
                 'stock_frozen_until' => null,
@@ -536,7 +531,9 @@ class PreinvoiceController extends Controller
             }
 
             $customer = $this->resolveCustomer($validated);
-            $shippingId = (int) $validated['shipping_id'];
+            $shippingId = array_key_exists('shipping_id', $validated)
+                ? $this->validatedShippingId($validated)
+                : (! empty($order->shipping_id) ? (int) $order->shipping_id : null);
             $before = $this->snapshotItems($order);
             $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id, 'quantity' => (int) $it->quantity])->all();
             $newItems = collect($validated['products'])->map(fn($p) => [
@@ -561,7 +558,7 @@ class PreinvoiceController extends Controller
                 'city_id' => $this->orderCityId($validated, $customer, $shippingId),
 
                 'shipping_id' => $shippingId,
-                'shipping_price' => (int) $this->resolveShippingPrice($shippingId),
+                'shipping_price' => $shippingId ? (int) $this->resolveShippingPrice($shippingId) : 0,
                 'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
                 'total_price' => 0,
             ]);
@@ -627,20 +624,17 @@ class PreinvoiceController extends Controller
 
     private function validateDraftPayload(Request $request, bool $checkCurrentStock = true, ?PreinvoiceOrder $editingOrder = null): array
     {
-        $shippingId = (int) $request->input('shipping_id');
-        $isInPerson = $this->isInPersonShippingId($shippingId);
-
         $validated = $request->validate([
             'reservation_token' => 'nullable|uuid',
             'customer_id' => 'nullable|integer|exists:customers,id',
             'customer_name' => 'required|string|max:255',
             'customer_mobile' => 'required|string|max:20',
-            'customer_address' => $isInPerson ? 'nullable|string|max:1000' : 'required|string|max:1000',
+            'customer_address' => 'nullable|string|max:1000',
             'description' => 'nullable|string|max:2000',
-            'province_id' => $isInPerson ? 'nullable|integer' : 'required|integer',
+            'province_id' => 'nullable|integer',
             'city_id' => 'nullable|integer',
 
-            'shipping_id' => 'required|integer|exists:shipping_methods,id',
+            'shipping_id' => 'nullable|integer|exists:shipping_methods,id',
             'shipping_price' => 'nullable|integer|min:0',
 
             'discount_amount' => 'nullable|integer|min:0',
@@ -656,8 +650,6 @@ class PreinvoiceController extends Controller
         ], [
             'customer_name.required' => 'نام مشتری الزامی است.',
             'customer_mobile.required' => 'شماره موبایل مشتری الزامی است.',
-            'customer_address.required' => 'برای روش‌های ارسال غیرحضوری، آدرس الزامی است.',
-            'province_id.required' => 'برای روش‌های ارسال غیرحضوری، استان الزامی است.',
             'products.required' => 'حداقل یک محصول باید ثبت شود.',
             'products.min' => 'حداقل یک محصول باید ثبت شود.',
         ]);
@@ -897,7 +889,7 @@ class PreinvoiceController extends Controller
             ->selectRaw('COALESCE(SUM(quantity * price), 0) as total')
             ->value('total');
 
-        return max($subtotal + (int) $order->shipping_price - (int) $order->discount_amount, 0);
+        return max($subtotal - (int) $order->discount_amount, 0);
     }
 
     private function assertOrderHasStock(PreinvoiceOrder $order): void
@@ -1089,9 +1081,9 @@ class PreinvoiceController extends Controller
         return $description !== '' ? $description : null;
     }
 
-    private function orderCustomerAddress(array $validated, ?Customer $customer, int $shippingId): string
+    private function orderCustomerAddress(array $validated, ?Customer $customer, ?int $shippingId): string
     {
-        if ($this->isInPersonShippingId($shippingId)) {
+        if ($shippingId === null || $this->isInPersonShippingId($shippingId)) {
             return '';
         }
 
@@ -1105,10 +1097,10 @@ class PreinvoiceController extends Controller
         return '';
     }
 
-    private function orderProvinceId(array $validated, ?Customer $customer, int $shippingId): int
+    private function orderProvinceId(array $validated, ?Customer $customer, ?int $shippingId): ?int
     {
-        if ($this->isInPersonShippingId($shippingId)) {
-            return 0;
+        if ($shippingId === null || $this->isInPersonShippingId($shippingId)) {
+            return null;
         }
 
         if (!empty($validated['province_id'])) {
@@ -1119,12 +1111,12 @@ class PreinvoiceController extends Controller
             return (int) $customer->province_id;
         }
 
-        return 0;
+        return null;
     }
 
-    private function orderCityId(array $validated, ?Customer $customer, int $shippingId): ?int
+    private function orderCityId(array $validated, ?Customer $customer, ?int $shippingId): ?int
     {
-        if ($this->isInPersonShippingId($shippingId)) {
+        if ($shippingId === null || $this->isInPersonShippingId($shippingId)) {
             return null;
         }
 
@@ -1137,6 +1129,14 @@ class PreinvoiceController extends Controller
         }
 
         return null;
+    }
+
+
+    private function validatedShippingId(array $validated): ?int
+    {
+        $shippingId = (int) ($validated['shipping_id'] ?? 0);
+
+        return $shippingId > 0 ? $shippingId : null;
     }
 
     private function resolveShippingPrice(int $shippingId): int

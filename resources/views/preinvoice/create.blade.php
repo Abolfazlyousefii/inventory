@@ -67,7 +67,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     }
 
     body {
-        background: linear-gradient(180deg, #f8f5ee 0%, #f5efe6 100%);
+        background: #f5f6f8;
         font-size: 14px;
         color: var(--text);
     }
@@ -93,11 +93,11 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         inset: 0 auto auto 0;
         width: 100%;
         height: 3px;
-        background: linear-gradient(90deg, var(--brand-dark), var(--brand), var(--accent));
+        background: var(--brand-dark);
     }
 
     .soft-card-lg {
-        background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(253, 250, 245, .98));
+        background: var(--card);
         border-color: rgba(51, 199, 192, .2);
         box-shadow: var(--shadow-md);
     }
@@ -113,7 +113,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     .final-card {
         padding: 15px;
         margin-bottom: 24px;
-        background: linear-gradient(180deg, #fffefb, #fbf7ef);
+        background: var(--card);
     }
 
     .page-title {
@@ -145,7 +145,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     }
 
     .customer-box {
-        background: linear-gradient(180deg, #faf7f1, #f7f1e7);
+        background: #f8fafc;
         border: 1px solid var(--border);
         border-radius: 12px;
         padding: 10px 13px;
@@ -153,12 +153,12 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     }
 
     .customer-box.is-selected {
-        background: linear-gradient(180deg, rgba(51, 199, 192, .10), rgba(51, 199, 192, .05));
+        background: #eef8f7;
         border-color: rgba(51, 199, 192, .35);
     }
 
     .quick-area {
-        background: linear-gradient(180deg, #fffefb, #fbf6ee);
+        background: #f8fafc;
         border: 1px solid rgba(12, 83, 103, .12);
         border-radius: 14px;
         padding: 12px;
@@ -189,7 +189,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         border-radius: 12px;
         font-weight: 900;
         font-size: .88rem;
-        background: linear-gradient(135deg, var(--brand), #26b8c3);
+        background: var(--brand-dark);
         border: none;
         color: #fff;
         padding: 0 18px;
@@ -197,7 +197,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     }
 
     .find-btn:hover {
-        background: linear-gradient(135deg, #26bac7, var(--brand-dark));
+        background: var(--brand-darker);
     }
 
     .badge-soft {
@@ -439,7 +439,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
 
     .btn-primary:hover,
     .btn-primary:focus {
-        background: linear-gradient(135deg, #26bac7, var(--brand-dark));
+        background: var(--brand-darker);
         border-color: var(--brand-dark);
         color: #fff;
     }
@@ -1060,7 +1060,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
 
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
-            <h1 class="page-title">{{ $isEdit ? '📝 ویرایش پیش‌فاکتور' : '🧾 ثبت پیش‌فاکتور' }}</h1>
+            <h1 class="page-title">{{ $isEdit ? 'ویرایش پیش‌فاکتور' : 'ثبت پیش‌فاکتور' }}</h1>
             <div class="hint mt-1">{{ $isEdit ? 'کد سند: ' . $order->uuid . ' | وضعیت: ' . $order->status_label : 'ثبت سریع کالا با کد ۴ رقمی محصول مادر' }}</div>
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -1073,7 +1073,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             <span class="autosave-pill">فاکتور: {{ $order->invoice->uuid }}</span>
             @endif
             @endunless
-            <a class="btn btn-sm btn-outline-secondary rounded-3" href="{{ route('preinvoice.warehouse.index') }}">صف تایید انبار</a>
         </div>
     </div>
 
@@ -1120,10 +1119,10 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                 <div class="col-lg-5">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <div>
-                            <h2 class="section-title">👤 مشتری</h2>
+                            <h2 class="section-title">مشتری</h2>
                             <div class="hint">جستجو با نام یا موبایل</div>
                         </div>
-                        <a href="{{ $customersPageUrl }}" class="btn btn-sm btn-outline-success rounded-3">➕ افزودن</a>
+                        <a href="{{ $customersPageUrl }}" class="btn btn-sm btn-outline-success rounded-3">افزودن</a>
                     </div>
                     <select id="customer_search_select" class="form-select"></select>
                 </div>
@@ -1137,6 +1136,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                                     @else هنوز مشتری انتخاب نشده است @endif
                                 </div>
                                 <div class="hint mt-1" id="customer_balance_hint"></div>
+                                <div class="hint mt-1" id="customer_reservation_hint">سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.</div>
                             </div>
                             <button type="button" id="clearCustomerBtn" class="btn btn-sm btn-light border rounded-3">تغییر</button>
                         </div>
@@ -1146,48 +1146,17 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         </div>
 
         <div class="soft-card compact-card mb-3">
-            <div class="row g-2 align-items-end">
-                <div class="col-lg-4">
-                    <h2 class="section-title mb-2">🚚 ارسال</h2>
-                    <label class="label-sm">شیوه ارسال</label>
-                    <select id="shipping_id" name="shipping_id" class="form-select form-select-sm" required>
-                        <option value="">انتخاب روش ارسال...</option>
-                    </select>
-                    <input type="hidden" id="shipping_price" name="shipping_price" value="{{ old('shipping_price', $order->shipping_price ?? 0) }}">
-                </div>
-                <div class="col-lg-4" id="provinceBox">
-                    <label class="label-sm">استان</label>
-                    <select id="province_id" name="province_id" class="form-select form-select-sm">
-                        <option value=""></option>
-                    </select>
-                </div>
-                <div class="col-lg-4" id="cityBox">
-                    <label class="label-sm">شهر</label>
-                    <select id="city_id" name="city_id" class="form-select form-select-sm">
-                        <option value=""></option>
-                    </select>
-                </div>
-            </div>
-            <div class="mt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="hint" id="shipping_mode_hint">روش ارسال را انتخاب کنید.</div>
-                <button class="btn btn-sm btn-light border rounded-3" type="button" data-bs-toggle="collapse" data-bs-target="#addressCollapse">آدرس ارسال</button>
-            </div>
-            <div id="addressCollapse" class="collapse mt-2 {{ old('customer_address', $order->customer_address ?? '') ? 'show' : '' }}">
-                <textarea id="customer_address" name="customer_address" class="form-control form-control-sm" rows="2" placeholder="آدرس ارسال...">{{ old('customer_address', $order->customer_address ?? '') }}</textarea>
-            </div>
-            <div class="preinvoice-note-box mt-2">
-                <label class="label-sm">توضیحات پیش‌فاکتور</label>
-                <textarea id="preinvoice_description" name="description" class="form-control form-control-sm" rows="2" placeholder="توضیحات داخلی، نکته فروش، هماهنگی با انبار یا توضیح مخصوص این پیش‌فاکتور...">{{ $oldPreinvoiceDescription }}</textarea>
-            </div>
+            <h2 class="section-title mb-2">توضیحات پیش‌فاکتور</h2>
+            <textarea id="preinvoice_description" name="description" class="form-control form-control-sm" rows="2" placeholder="توضیح داخلی فروش، نکته مشتری یا هماهنگی لازم...">{{ $oldPreinvoiceDescription }}</textarea>
         </div>
 
         <div class="soft-card-lg product-focus mb-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <div>
-                    <h2 class="section-title">🧩 ثبت سریع کالا</h2>
+                    <h2 class="section-title">کالاها</h2>
                     <div class="hint mt-1">کد ۴ رقمی محصول مادر را وارد کنید</div>
                 </div>
-                <span class="badge-soft badge-brand">فروش سالن آریا</span>
+
             </div>
 
             <div class="quick-area mb-3">
@@ -1243,10 +1212,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                     <div class="discount-line" id="orderDiscountPreview">تخفیف کلی: 0 ریال</div>
                 </div>
                 <div>
-                    <label class="label-sm">هزینه ارسال</label>
-                    <input type="text" id="shipping_price_view" class="form-control form-control-sm bg-light" readonly value="0 ریال">
-                </div>
-                <div>
                     <label class="label-sm">مجموع تخفیف</label>
                     <input type="text" id="totalDiscountView" class="form-control form-control-sm bg-light" readonly value="0 ریال">
                 </div>
@@ -1262,8 +1227,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                         <button class="btn btn-outline-primary px-4 py-2 rounded-3 fw-bold" id="saveDraftBtn" name="intent" value="draft" disabled>ذخیره پیش‌نویس</button>
                         <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ثبت نهایی</button>
                     </div>
-                    <div class="hint mt-2">ذخیره پیش‌نویس موجودی را رزرو نمی‌کند و وارد صف مالی نمی‌شود.</div>
-                    <div class="hint">ثبت نهایی موجودی را بررسی/رزرو می‌کند و وارد روند تایید می‌شود.</div>
+                    <div class="hint mt-2">بدون رزرو موجودی و بدون ارسال به مالی</div>
+                    <div class="hint">بررسی موجودی، رزرو رسمی و ارسال به مالی</div>
                     @endif
                     <div class="submit-disabled-hint" id="submitHint">برای ثبت، مشتری و حداقل یک کالا لازم است.</div>
                 </div>
@@ -1347,15 +1312,10 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             customer: @json(url('/preinvoice/api/customers'))
         },
         initRows: @json($initRows),
-        shippings: @json($shippingMethods ?? []),
         oldCustomerId: @json(old('customer_id', $order->customer_id ?? '')),
         oldCustomerName: @json(old('customer_name', $order->customer_name ?? '')),
         oldCustomerMobile: @json(old('customer_mobile', $order->customer_mobile ?? '')),
-        oldCustomerAddress: @json(old('customer_address', $order->customer_address ?? '')),
         oldDescription: @json($oldPreinvoiceDescription),
-        oldProvinceId: @json(old('province_id', $order->province_id ?? '')),
-        oldCityId: @json(old('city_id', $order->city_id ?? '')),
-        oldShippingId: @json(old('shipping_id', $order->shipping_id ?? '')),
         oldDiscountAmount: @json(old('discount_amount', $order->discount_amount ?? 0)),
         isEdit: @json($isEdit),
         orderUuid: @json($order->uuid ?? null)
@@ -1363,20 +1323,13 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
 
     const API = window.PREINVOICE_BOOT.api;
     const INIT_ROWS = window.PREINVOICE_BOOT.initRows || [];
-    const INITIAL_SHIPPINGS = window.PREINVOICE_BOOT.shippings || [];
     const OLD_CUSTOMER_ID = window.PREINVOICE_BOOT.oldCustomerId;
     const OLD_CUSTOMER_NAME = window.PREINVOICE_BOOT.oldCustomerName;
     const OLD_CUSTOMER_MOBILE = window.PREINVOICE_BOOT.oldCustomerMobile;
-    const OLD_CUSTOMER_ADDRESS = window.PREINVOICE_BOOT.oldCustomerAddress;
-    const OLD_PROVINCE_ID = window.PREINVOICE_BOOT.oldProvinceId;
-    const OLD_CITY_ID = window.PREINVOICE_BOOT.oldCityId;
-    const OLD_SHIPPING_ID = window.PREINVOICE_BOOT.oldShippingId;
     const OLD_DISCOUNT_AMOUNT = window.PREINVOICE_BOOT.oldDiscountAmount;
     const IS_EDIT = !!window.PREINVOICE_BOOT.isEdit;
     const EDIT_ORDER_UUID = window.PREINVOICE_BOOT.orderUuid || null;
 
-    let shippings = INITIAL_SHIPPINGS || [];
-    let areaProvinces = [];
     const productCache = new Map();
 
     let selectedMotherProduct = null;
@@ -1632,9 +1585,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             normalize(document.getElementById('customer_id')?.value) ||
             normalize(document.getElementById('customer_name')?.value) ||
             normalize(document.getElementById('customer_mobile')?.value) ||
-            normalize(document.getElementById('customer_address')?.value) ||
             normalize(document.getElementById('preinvoice_description')?.value) ||
-            normalize(document.getElementById('shipping_id')?.value) ||
             Object.keys(groupedSelections || {}).length ||
             toInt(document.getElementById('orderDiscountValue')?.value || 0) > 0
         );
@@ -1709,14 +1660,8 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                 name: document.getElementById('customer_name')?.value || '',
                 mobile: document.getElementById('customer_mobile')?.value || '',
                 title: document.getElementById('selectedCustomerTitle')?.textContent || '',
-                balance_hint: document.getElementById('customer_balance_hint')?.textContent || ''
-            },
-            shipping: {
-                shipping_id: document.getElementById('shipping_id')?.value || '',
-                shipping_price: toInt(document.getElementById('shipping_price')?.value || 0),
-                province_id: document.getElementById('province_id')?.value || '',
-                city_id: document.getElementById('city_id')?.value || '',
-                address: document.getElementById('customer_address')?.value || ''
+                balance_hint: document.getElementById('customer_balance_hint')?.textContent || '',
+                reservation_hint: document.getElementById('customer_reservation_hint')?.textContent || ''
             },
             description: document.getElementById('preinvoice_description')?.value || '',
             discount: {
@@ -1768,21 +1713,14 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         document.getElementById('customer_id').value = '';
         document.getElementById('customer_name').value = '';
         document.getElementById('customer_mobile').value = '';
-        document.getElementById('customer_address').value = '';
         const noteEl = document.getElementById('preinvoice_description');
         if (noteEl) noteEl.value = '';
         document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
         document.getElementById('customer_balance_hint').textContent = '';
+        document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
         document.getElementById('customerSummaryBox').classList.remove('is-selected');
         if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
 
-        document.getElementById('shipping_id').value = '';
-        document.getElementById('province_id').value = '';
-        document.getElementById('city_id').value = '';
-        if (window.jQuery) {
-            $('#province_id').trigger('change.select2');
-            $('#city_id').trigger('change.select2');
-        }
 
         document.getElementById('orderDiscountType').value = 'amount';
         document.getElementById('orderDiscountValue').value = 0;
@@ -1809,6 +1747,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             document.getElementById('customerSummaryBox').classList.add('is-selected');
         }
         document.getElementById('customer_balance_hint').textContent = draft.customer?.balance_hint || '';
+        document.getElementById('customer_reservation_hint').textContent = draft.customer?.reservation_hint || 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 
         if (draft.customer?.id && window.jQuery) {
             const optionText = displayTitle || draft.customer.id;
@@ -1816,28 +1755,12 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             selectEl.add(new Option(optionText, draft.customer.id, true, true));
             $('#customer_search_select').trigger('change');
         }
-
-        document.getElementById('shipping_id').value = draft.shipping?.shipping_id || '';
-        document.getElementById('customer_address').value = draft.shipping?.address || '';
         const noteEl = document.getElementById('preinvoice_description');
         if (noteEl) noteEl.value = draft.description || '';
         document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
         document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
-
-        updateShippingMode();
-
-        if (draft.shipping?.province_id) {
-            document.getElementById('province_id').value = String(draft.shipping.province_id);
-            if (window.jQuery) $('#province_id').trigger('change.select2');
-            fillCitiesByProvinceId(draft.shipping.province_id);
-        }
-
-        if (draft.shipping?.city_id) {
-            document.getElementById('city_id').value = String(draft.shipping.city_id);
-            if (window.jQuery) $('#city_id').trigger('change.select2');
-        }
-
         groupedSelections = draft.groupedSelections || {};
+
         if (draft.reservation_token) {
             document.getElementById('reservation_token').value = draft.reservation_token;
             localStorage.setItem(RESERVATION_TOKEN_KEY, draft.reservation_token);
@@ -1884,14 +1807,13 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
                 alert(e.message || 'خطا در آزادسازی موجودی فریز شده.');
             }
             renderGroupSummary();
-            updateShippingMode();
             updateTotal();
             updateSubmitState();
             isHydratingLocalDraft = false;
             await removeLocalDraft(true, false);
         });
 
-        ['customer_address', 'preinvoice_description', 'shipping_id', 'province_id', 'city_id', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
+        ['preinvoice_description', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('change', scheduleLocalDraftSave);
@@ -1996,15 +1918,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         });
     }
 
-    function shippingById(id) {
-        return shippings.find(s => Number(s.id) === Number(id)) || null;
-    }
-
-    function isInPersonShipping(ship) {
-        const name = normalize(ship?.name);
-        return name.includes('حضوری') || name.includes('مراجعه');
-    }
-
     function initSelect2Basic(selectEl, placeholder) {
         if (!window.jQuery || !window.jQuery.fn?.select2 || !selectEl) return;
         const $el = $(selectEl);
@@ -2025,89 +1938,16 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         });
     }
 
-    async function loadArea() {
-        try {
-            const res = await fetch(API.area, {
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-            const data = await res.json();
-            areaProvinces = data?.data?.provinces || [];
-        } catch (e) {
-            areaProvinces = [];
-        }
+
+    function reservationTierLabel(c) {
+        return normalize(c?.reservation_tier_label) || 'معمولی پیش‌فرض';
     }
 
-    function fillProvincesSelect() {
-        const s = document.getElementById('province_id');
-        s.innerHTML = '<option value=""></option>';
-        areaProvinces.forEach(p => {
-            const o = document.createElement('option');
-            o.value = p.id;
-            o.textContent = normalize(p.name);
-            s.appendChild(o);
-        });
-        initSelect2Basic(s, 'انتخاب استان...');
-    }
-
-    function fillCitiesByProvinceId(provinceId) {
-        const s = document.getElementById('city_id');
-        s.innerHTML = '<option value=""></option>';
-        const province = areaProvinces.find(p => Number(p.id) === Number(provinceId));
-        const cities = province?.cities || [];
-        cities.forEach(c => {
-            const o = document.createElement('option');
-            o.value = c.id;
-            o.textContent = normalize(c.name);
-            s.appendChild(o);
-        });
-        s.disabled = cities.length === 0;
-        initSelect2Basic(s, 'انتخاب شهر...');
-    }
-
-    function fillShippingSelect() {
-        const s = document.getElementById('shipping_id');
-        s.innerHTML = '<option value="">انتخاب روش ارسال...</option>';
-        shippings.forEach(sh => {
-            const o = document.createElement('option');
-            o.value = sh.id;
-            o.textContent = sh.name;
-            s.appendChild(o);
-        });
-    }
-
-    function updateShippingMode() {
-        const shippingSelect = document.getElementById('shipping_id');
-        const ship = shippingById(shippingSelect.value);
-        const inPerson = isInPersonShipping(ship);
-        const price = ship ? Number(ship.price || 0) : 0;
-        document.getElementById('shipping_price').value = String(price);
-        document.getElementById('shipping_price_view').value = formatMoney(price);
-        const provinceBox = document.getElementById('provinceBox');
-        const cityBox = document.getElementById('cityBox');
-        const provinceEl = document.getElementById('province_id');
-        const cityEl = document.getElementById('city_id');
-        const addressEl = document.getElementById('customer_address');
-        const hintEl = document.getElementById('shipping_mode_hint');
-        if (inPerson) {
-            provinceBox.style.display = 'none';
-            cityBox.style.display = 'none';
-            provinceEl.value = '';
-            cityEl.value = '';
-            addressEl.value = '';
-            provinceEl.disabled = true;
-            cityEl.disabled = true;
-            hintEl.textContent = 'مراجعه حضوری؛ آدرس لازم نیست.';
-        } else {
-            provinceBox.style.display = '';
-            cityBox.style.display = '';
-            provinceEl.disabled = false;
-            cityEl.disabled = false;
-            hintEl.textContent = price > 0 ? 'هزینه ارسال: ' + formatMoney(price) : 'مقصد و آدرس را تکمیل کنید.';
-        }
-        updateTotal();
-        scheduleLocalDraftSave();
+    function reservationDurationShort(c) {
+        const full = normalize(c?.reservation_duration_label) || 'رزرو ۳ ساعته';
+        if (full.includes('بدون محدودیت')) return 'بدون محدودیت زمانی';
+        if (full.includes('۱') || full.includes('1')) return '۱ ساعت';
+        return '۳ ساعت';
     }
 
     function applyCustomerToForm(c) {
@@ -2117,19 +1957,10 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         document.getElementById('customer_id').value = c.id || '';
         document.getElementById('customer_name').value = name;
         document.getElementById('customer_mobile').value = mobile;
-        document.getElementById('customer_address').value = c.address || '';
         document.getElementById('selectedCustomerTitle').textContent = name + (mobile ? ' - ' + mobile : '');
         document.getElementById('customer_balance_hint').textContent = 'مانده حساب: ' + formatMoney(c.balance || 0);
+        document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو: ' + reservationTierLabel(c) + ' | مدت رزرو پس از ثبت نهایی: ' + reservationDurationShort(c);
         document.getElementById('customerSummaryBox').classList.add('is-selected');
-        if (c.province_id) {
-            document.getElementById('province_id').value = String(c.province_id);
-            if (window.jQuery) $('#province_id').trigger('change.select2');
-            fillCitiesByProvinceId(c.province_id);
-        }
-        if (c.city_id) {
-            document.getElementById('city_id').value = String(c.city_id);
-            if (window.jQuery) $('#city_id').trigger('change.select2');
-        }
         updateSubmitState();
         scheduleLocalDraftSave();
     }
@@ -2140,6 +1971,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         document.getElementById('customer_mobile').value = '';
         document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
         document.getElementById('customer_balance_hint').textContent = '';
+        document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
         document.getElementById('customerSummaryBox').classList.remove('is-selected');
         if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
         updateSubmitState();
@@ -2615,7 +2447,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     }
 
     function updateTotal() {
-        const shipping = toInt(document.getElementById('shipping_price')?.value || 0);
         let subtotal = 0,
             groupDiscounts = 0;
         Object.values(groupedSelections).forEach(group => {
@@ -2627,7 +2458,7 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         const orderValue = normalizeDiscountInput(orderType, document.getElementById('orderDiscountValue')?.value || 0);
         const orderDiscount = calcDiscount(afterGroupDiscount, orderType, orderValue);
         const totalDiscount = Math.min(subtotal, groupDiscounts + orderDiscount);
-        const total = Math.max(0, subtotal + shipping - totalDiscount);
+        const total = Math.max(0, subtotal - totalDiscount);
         document.getElementById('discount').value = String(totalDiscount);
         document.getElementById('totalDiscountView').value = formatMoney(totalDiscount);
         document.getElementById('total_price').value = formatMoney(total);
@@ -2692,15 +2523,14 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         const customerName = normalize(document.getElementById('customer_name')?.value);
         const customerMobile = normalize(document.getElementById('customer_mobile')?.value);
         const hasProducts = document.querySelectorAll('#groupProductsInputs input[name$="[quantity]"]').length > 0;
-        const shippingId = normalize(document.getElementById('shipping_id')?.value);
-        const ok = !!customerName && !!customerMobile && hasProducts && !!shippingId;
+        const ok = !!customerName && !!customerMobile && hasProducts;
         if (btn) btn.disabled = !ok;
         if (draftBtn) draftBtn.disabled = !ok;
         if (ok) {
-            hint.textContent = 'آماده ثبت.';
+            hint.textContent = 'آماده ذخیره یا ثبت نهایی.';
             hint.style.color = '#178c63';
         } else {
-            hint.textContent = 'مشتری، روش ارسال و حداقل یک کالا لازم است.';
+            hint.textContent = 'انتخاب مشتری و حداقل یک کالا لازم است.';
             hint.style.color = '';
         }
     }
@@ -2732,8 +2562,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
     function normalizeBeforeSubmit() {
         const totalEl = document.getElementById('total_price');
         if (totalEl) totalEl.value = String(toInt(totalEl.value));
-        const shipEl = document.getElementById('shipping_price');
-        if (shipEl) shipEl.value = String(toInt(shipEl.value));
         const discEl = document.getElementById('discount');
         if (discEl) discEl.value = String(toInt(discEl.value));
         document.querySelectorAll('#groupProductsInputs input').forEach(input => {
@@ -2753,10 +2581,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         const productInputs = document.querySelectorAll('#groupProductsInputs input[name$="[quantity]"]');
         if (!customerName || !customerMobile) {
             alert('لطفا مشتری را انتخاب کنید.');
-            return false;
-        }
-        if (!document.getElementById('shipping_id').value) {
-            alert('روش ارسال را انتخاب کنید.');
             return false;
         }
         if (!productInputs.length) {
@@ -2813,36 +2637,12 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
             bindLocalDraftEvents();
         }
 
-        initSelect2Basic(document.getElementById('province_id'), 'انتخاب استان...');
-        initSelect2Basic(document.getElementById('city_id'), 'انتخاب شهر...');
-
-        await loadArea();
-        fillProvincesSelect();
-
-        if (OLD_PROVINCE_ID) {
-            document.getElementById('province_id').value = String(OLD_PROVINCE_ID);
-            if (window.jQuery) $('#province_id').trigger('change.select2');
-            fillCitiesByProvinceId(OLD_PROVINCE_ID);
-        }
-        if (OLD_CITY_ID) {
-            document.getElementById('city_id').value = String(OLD_CITY_ID);
-            if (window.jQuery) $('#city_id').trigger('change.select2');
-        }
-
-        fillShippingSelect();
-        if (OLD_SHIPPING_ID) document.getElementById('shipping_id').value = String(OLD_SHIPPING_ID);
-
         initCustomerSearch();
         initMotherAjaxSearch();
         await loadOldCustomer();
         renderRecentProducts();
 
         document.getElementById('clearCustomerBtn')?.addEventListener('click', clearCustomer);
-        document.getElementById('province_id')?.addEventListener('change', function() {
-            fillCitiesByProvinceId(this.value);
-            scheduleLocalDraftSave();
-        });
-        document.getElementById('shipping_id')?.addEventListener('change', updateShippingMode);
         document.getElementById('orderDiscountType')?.addEventListener('change', updateTotal);
         document.getElementById('orderDiscountValue')?.addEventListener('input', updateTotal);
         document.getElementById('modalGroupDiscountType')?.addEventListener('change', updateModalSummary);
@@ -2907,7 +2707,6 @@ $oldPreinvoiceDescription = old('description', $order->description ?? '');
         });
 
         await hydrateInitialGroups();
-        updateShippingMode();
         updateSubmitState();
 
         isBootingPage = false;
