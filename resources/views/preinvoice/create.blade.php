@@ -1363,7 +1363,8 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
         initialDiscountBreakdown: @json($initialDiscountBreakdown),
         hasLegacyDiscount: @json($hasLegacyDiscount),
         isEdit: @json($isEdit),
-        orderUuid: @json($order->uuid ?? null)
+        orderUuid: @json($order->uuid ?? null),
+        submitSucceeded: @json((bool) session('success'))
     };
 
     const API = window.PREINVOICE_BOOT.api;
@@ -1381,6 +1382,7 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
     const HAS_LEGACY_DISCOUNT = !!window.PREINVOICE_BOOT.hasLegacyDiscount;
     const IS_EDIT = !!window.PREINVOICE_BOOT.isEdit;
     const EDIT_ORDER_UUID = window.PREINVOICE_BOOT.orderUuid || null;
+    const SUBMIT_SUCCEEDED = !!window.PREINVOICE_BOOT.submitSucceeded;
 
     let shippings = INITIAL_SHIPPINGS || [];
     let areaProvinces = [];
@@ -1493,7 +1495,7 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
     }
 
     function releaseDraftReservationBeacon() {
-        if (IS_EDIT || isSubmittingProgrammatically) return;
+        if (IS_EDIT || isSubmittingProgrammatically || hasAnyFormData() || localDraftExists()) return;
         const token = normalize(document.getElementById('reservation_token')?.value) || normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
         if (!token || !API.reservationsRelease) return;
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -2846,18 +2848,20 @@ $hasLegacyDiscount = $order && empty($order->discount_allocation_mode) && (int) 
             return false;
         }
         normalizeBeforeSubmit();
+        saveLocalDraftNow();
         btn.textContent = 'در حال ثبت...';
         isSubmittingProgrammatically = true;
-        if (!IS_EDIT) {
-            localStorage.removeItem(LOCAL_DRAFT_KEY);
-            localStorage.removeItem(RESERVATION_TOKEN_KEY);
-        }
         hideLocalDraftBanner();
         document.getElementById('orderForm').submit();
         return true;
     }
 
     document.addEventListener('DOMContentLoaded', async function() {
+        if (!IS_EDIT && SUBMIT_SUCCEEDED) {
+            localStorage.removeItem(LOCAL_DRAFT_KEY);
+            localStorage.removeItem(RESERVATION_TOKEN_KEY);
+        }
+
         if (!IS_EDIT) {
             ensureReservationToken();
             bindLocalDraftEvents();
