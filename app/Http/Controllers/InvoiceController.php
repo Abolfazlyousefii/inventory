@@ -243,6 +243,8 @@ class InvoiceController extends Controller
             ->where('uuid', $uuid)
             ->firstOrFail();
 
+        abort_unless($this->accessService->canViewInvoiceReadonly($invoice, auth()->user()), 403);
+
         $statusLabels = $this->statusService->labels();
 
         return view('vouchers.sales.show', compact('invoice', 'statusLabels'));
@@ -556,6 +558,8 @@ class InvoiceController extends Controller
             ])
             ->where('uuid', $uuid)
             ->firstOrFail();
+
+        abort_unless($this->accessService->canViewInvoiceReadonly($invoice, auth()->user()), 403);
 
         $printData = $printService->invoiceData($invoice, (string) $request->query('mode', $request->query('print', 'warehouse')));
 
