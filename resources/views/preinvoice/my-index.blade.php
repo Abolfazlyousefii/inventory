@@ -1,11 +1,12 @@
 @extends('layouts.app')
 
-@section('title', 'پیش‌فاکتورها و فاکتورهای من')
+@section('title', 'پیش‌فاکتورهای من')
 @section('content_class', 'app-content-wide')
 
 @section('content')
 @php
   use Illuminate\Support\Str;
+
   $toJalali = function ($date) {
       if (!$date) return '—';
       if (class_exists(\Morilog\Jalali\Jalalian::class)) {
@@ -13,195 +14,147 @@
       }
       return optional($date)->format('Y/m/d H:i') ?? '—';
   };
-  $isCancelledStatus = fn($order) => in_array($order->status, [
-      \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
-      \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
-  ], true) || (($order->invoice?->status ?? null) === \App\Models\Invoice::STATUS_NOT_SHIPPED);
-  $effectiveStatus = fn($order) => $isCancelledStatus($order) ? \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE : $order->status;
-  $effectiveStatusLabel = fn($order) => (($order->invoice?->status ?? null) === \App\Models\Invoice::STATUS_NOT_SHIPPED && ! in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE], true))
-      ? 'لغوشده به دلیل کنسلی فاکتور مرتبط'
-      : ($statusLabels[$order->status] ?? $order->status_label ?? $order->status);
-  $documentKindFor = fn($order, $isCancelled) => $isCancelled ? 'کنسل شده' : ($order->status === \App\Models\PreinvoiceOrder::STATUS_DRAFT ? 'پیش‌نویس' : ($order->invoice ? 'فاکتور شده' : 'پیش‌فاکتور'));
 
-  $statusBadge = fn($status) => match($status) {
+  $statusBadge = fn($summary) => match($summary['status_key']) {
       \App\Models\PreinvoiceOrder::STATUS_DRAFT => 'text-bg-secondary',
-      \App\Models\PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE => 'text-bg-success',
-      \App\Models\PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE,
-      \App\Models\PreinvoiceOrder::STATUS_WAREHOUSE_REVIEWING => 'text-bg-info',
-      \App\Models\PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-      \App\Models\PreinvoiceOrder::STATUS_FINANCE_REVIEWING => 'text-bg-warning',
-      \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE => 'text-bg-warning',
-      \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'text-bg-danger',
-      \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
+      \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE,
+      \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL => 'text-bg-warning',
+      \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+      \App\Models\Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION => 'text-bg-danger',
+      \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
       \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE => 'text-bg-danger',
-      default => 'text-bg-secondary',
+      \App\Models\Invoice::STATUS_READY_TO_SHIP,
+      \App\Models\Invoice::STATUS_SHIPPED => 'text-bg-success',
+      default => $summary['has_invoice'] ? 'text-bg-info' : 'text-bg-light border text-dark',
+  };
+
+  $timelineSteps = [
+      'finance' => 'مالی',
+      'collection' => 'جمع‌آوری',
+      'reapproval' => 'تایید مجدد',
+      'shipping' => 'ارسال',
+  ];
+
+  $activeTimeline = function ($summary) {
+      return match($summary['status_key']) {
+          \App\Models\Invoice::STATUS_PENDING_COLLECTION => ['finance'],
+          \App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED,
+          \App\Models\Invoice::STATUS_COLLECTING => ['finance', 'collection'],
+          \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL => ['finance', 'collection', 'reapproval'],
+          \App\Models\Invoice::STATUS_READY_TO_SHIP => ['finance', 'collection', 'reapproval', 'shipping'],
+          \App\Models\Invoice::STATUS_SHIPPED => ['finance', 'collection', 'reapproval', 'shipping'],
+          default => [],
+      };
   };
 @endphp
 
 <style>
-  .my-sales-page{max-width:100%; overflow-x:hidden;}
-  .my-sales-head,.my-sales-card{border:0; border-radius:18px; box-shadow:0 10px 28px rgba(15,23,42,.06);}
-  .my-sales-head{background:linear-gradient(135deg,#fff,#f8fafc); padding:18px;}
-  .my-sales-table{table-layout:fixed; width:100%;}
-  .my-sales-table th{font-size:.78rem; color:#64748b; white-space:nowrap;}
-  .my-sales-table td{font-size:.88rem; vertical-align:middle;}
-  .code-cell{direction:ltr; unicode-bidi:plaintext; display:inline-block; max-width:112px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .desc-cell{max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#64748b;}
-  .customer-cell{max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .action-stack{display:flex; gap:.35rem; justify-content:flex-end; flex-wrap:wrap;}
-  .action-stack .btn{padding:.22rem .45rem; font-size:.76rem;}
-  .preinvoice-mobile-card{border:1px solid #e5e7eb; border-radius:16px; padding:14px; background:#fff; box-shadow:0 6px 18px rgba(15,23,42,.04);}
-  @media (min-width: 992px){.preinvoice-table-wrap{overflow-x:visible!important;}}
+  .my-sales-head,.my-sales-card{border:0;border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.06)}
+  .my-sales-head{background:linear-gradient(135deg,#fff,#f8fafc);padding:18px}
+  .document-card{border:1px solid #e5e7eb;border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.05);padding:16px;height:100%}
+  .document-code{direction:ltr;unicode-bidi:plaintext;display:inline-block;font-weight:700}
+  .meta-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .meta-box{background:#f8fafc;border:1px solid #eef2f7;border-radius:14px;padding:10px}
+  .meta-box .label{font-size:.75rem;color:#64748b;margin-bottom:4px}.meta-box .value{font-weight:700}
+  .timeline{display:flex;gap:8px;flex-wrap:wrap}.timeline .step{border:1px solid #e5e7eb;border-radius:999px;padding:.2rem .55rem;font-size:.76rem;color:#64748b;background:#fff}.timeline .step.active{background:#e0f2fe;border-color:#38bdf8;color:#075985;font-weight:700}
+  @media(max-width:991px){.meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:575px){.meta-grid{grid-template-columns:1fr}.document-card{padding:13px}}
 </style>
 
-<div class="my-sales-page py-2">
+<div class="py-2">
   <div class="my-sales-head mb-3 d-flex justify-content-between align-items-start gap-3 flex-wrap">
     <div>
-      <h4 class="fw-bold mb-1">پیش‌فاکتورها و فاکتورهای من</h4>
-      <div class="text-muted small">تاریخچه کامل فعالیت فروش شما، شامل پیش‌فاکتورهای باز و موارد فاکتور شده</div>
+      <h4 class="fw-bold mb-1">پیش‌فاکتورهای من</h4>
+      <div class="text-muted small">آخرین وضعیت سند فروش شما؛ چه هنوز پیش‌فاکتور باشد، چه به فاکتور تبدیل شده باشد.</div>
     </div>
     <a href="{{ route('preinvoice.create') }}" class="btn btn-primary">➕ ثبت پیش‌فاکتور جدید</a>
   </div>
 
-  <div class="card my-sales-card mb-3">
-    <div class="card-body">
-      <form class="row g-2 align-items-end" method="GET" action="{{ route('preinvoice.my.index') }}">
-        <div class="col-md-4 col-xl-3">
-          <label class="form-label fw-bold text-muted small">وضعیت</label>
-          <select name="status" class="form-select">
-            <option value="">همه وضعیت‌ها</option>
-            @foreach($statusLabels as $key => $label)
-              <option value="{{ $key }}" @selected($status === $key)>{{ $label }}</option>
-            @endforeach
-          </select>
-        </div>
-        <div class="col-md-auto d-flex gap-2">
-          <button class="btn btn-primary">اعمال فیلتر</button>
-          <a href="{{ route('preinvoice.my.index') }}" class="btn btn-outline-secondary">حذف فیلتر</a>
-        </div>
-      </form>
-    </div>
-  </div>
+  <div class="card my-sales-card mb-3"><div class="card-body">
+    <form class="row g-2 align-items-end" method="GET" action="{{ route('preinvoice.my.index') }}">
+      <div class="col-md-4 col-xl-3">
+        <label class="form-label fw-bold text-muted small">وضعیت</label>
+        <select name="status" class="form-select">
+          <option value="">همه وضعیت‌ها</option>
+          @foreach($statusLabels as $key => $label)
+            <option value="{{ $key }}" @selected($status === $key)>{{ $label }}</option>
+          @endforeach
+        </select>
+      </div>
+      <div class="col-md-auto d-flex gap-2"><button class="btn btn-primary">اعمال فیلتر</button><a href="{{ route('preinvoice.my.index') }}" class="btn btn-outline-secondary">حذف فیلتر</a></div>
+    </form>
+  </div></div>
 
-  <div class="card my-sales-card d-none d-lg-block">
-    <div class="table-responsive preinvoice-table-wrap">
-      <table class="table table-hover align-middle mb-0 my-sales-table">
-        <colgroup>
-          <col style="width:8%"><col style="width:13%"><col style="width:9%"><col style="width:15%"><col style="width:6%"><col style="width:10%"><col style="width:12%"><col style="width:8%"><col style="width:8%"><col style="width:11%">
-        </colgroup>
-        <thead class="table-light">
-          <tr>
-            <th>کد</th><th>مشتری</th><th>موبایل</th><th>توضیحات</th><th>اقلام</th><th>مبلغ</th><th>وضعیت</th><th>فاکتور</th><th>تاریخ</th><th class="text-end">عملیات</th>
-          </tr>
-        </thead>
-        <tbody>
-          @forelse($orders as $order)
-            @php
-              $statusLabel = $effectiveStatusLabel($order);
-              $invoiceUuid = $order->invoice?->uuid;
-              $isCancelled = $isCancelledStatus($order);
-              $documentKind = $documentKindFor($order, $isCancelled);
-              $badgeStatus = $effectiveStatus($order);
-              $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
-        $canEdit = in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true);
-        $canSubmit = $canEdit;
-        $isPendingFinance = $order->status === \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE;
-            @endphp
-            <tr>
-              <td><span class="code-cell fw-bold" title="{{ $order->uuid }}">{{ Str::limit($order->uuid, 10, '…') }}</span></td>
-              <td><span class="customer-cell" title="{{ $order->customer_name }}">{{ $order->customer_name }}</span></td>
-              <td class="text-nowrap">{{ $order->customer_mobile ?: '—' }}</td>
-              <td><span class="desc-cell" title="{{ $order->description ?: '' }}">{{ $order->description ?: '—' }}</span></td>
-              <td>{{ number_format($order->items_count) }}</td>
-              <td class="text-nowrap">{{ \App\Support\Currency::formatRial($order->total_price) }}</td>
-              <td>
-                <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $isReservationExpired ? 'رزرو منقضی‌شده' : $documentKind }}</span>
-                <div class="small text-muted mt-1">{{ $statusLabel }}</div>
-                @if($isReservationExpired)
-                  <div class="small text-danger mt-1">رزرو موجودی این پیش‌فاکتور منقضی شده است. برای ارسال مجدد به مالی، موجودی باید دوباره بررسی و ثبت نهایی شود.</div>
-                @elseif($isPendingFinance && $order->stock_frozen_until)
-                  <div class="small text-muted mt-1">اعتبار رزرو تا: {{ $toJalali($order->stock_frozen_until) }}</div>
-                @elseif($order->status === \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES && $order->warehouse_reject_reason)
-                  <div class="small text-warning mt-1">دلیل ارجاع: {{ $order->warehouse_reject_reason }}</div>
-                @endif
-              </td>
-              <td>
-                @if($invoiceUuid)
-                  <a class="code-cell" href="{{ route('invoices.show', $invoiceUuid) }}" title="{{ $invoiceUuid }}">{{ Str::limit($invoiceUuid, 10, '…') }}</a>
-                @else
-                  —
-                @endif
-              </td>
-              <td class="text-nowrap">{{ $toJalali($order->created_at) }}</td>
-              <td>
-                <div class="action-stack">
-                  <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-                  @if($canEdit)
-                    <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
-                  @endif
-                  @if($canSubmit)
-                    <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
-                  @endif
-                  <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
-                </div>
-              </td>
-            </tr>
-          @empty
-            <tr><td colspan="10" class="text-center text-muted py-4">پیش‌فاکتوری توسط شما ثبت نشده است.</td></tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="d-lg-none vstack gap-2">
+  <div class="row g-3">
     @forelse($orders as $order)
       @php
-        $statusLabel = $effectiveStatusLabel($order);
-        $invoiceUuid = $order->invoice?->uuid;
-        $isCancelled = $isCancelledStatus($order);
-        $documentKind = $documentKindFor($order, $isCancelled);
-        $badgeStatus = $effectiveStatus($order);
-        $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
-        $canEdit = in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_DRAFT, \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES, \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true);
-        $canSubmit = $canEdit;
-        $isPendingFinance = $order->status === \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE;
+        $summary = $order->current_document;
+        $activeSteps = $activeTimeline($summary);
       @endphp
-      <div class="preinvoice-mobile-card">
-        <div class="d-flex justify-content-between gap-2 mb-2">
-          <strong>{{ $order->customer_name }}</strong>
-          <span class="code-cell" title="{{ $order->uuid }}">{{ Str::limit($order->uuid, 12, '…') }}</span>
-        </div>
-        <div class="small text-muted mb-2">{{ $order->customer_mobile ?: '—' }}</div>
-        <div class="d-flex flex-wrap gap-2 mb-2">
-          <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $isReservationExpired ? 'رزرو منقضی‌شده' : $documentKind }}</span>
-          <span class="badge text-bg-light border">{{ $statusLabel }}</span>
-        </div>
-        @if($isReservationExpired)
-          <div class="small text-danger mb-2">رزرو موجودی این پیش‌فاکتور منقضی شده است. برای ارسال مجدد به مالی، موجودی باید دوباره بررسی و ثبت نهایی شود.</div>
-        @elseif($isPendingFinance && $order->stock_frozen_until)
-          <div class="small text-muted mb-2">اعتبار رزرو تا: {{ $toJalali($order->stock_frozen_until) }}</div>
-        @elseif($order->status === \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES && $order->warehouse_reject_reason)
-          <div class="small text-warning mb-2">دلیل ارجاع: {{ $order->warehouse_reject_reason }}</div>
-        @endif
-        <div class="small text-muted mb-2">{{ $order->description ? Str::limit($order->description, 120) : 'بدون توضیحات' }}</div>
-        <div class="small d-flex justify-content-between"><span>مبلغ</span><strong>{{ \App\Support\Currency::formatRial($order->total_price) }}</strong></div>
-        @if($invoiceUuid)
-          <div class="small d-flex justify-content-between"><span>فاکتور</span><a class="code-cell" href="{{ route('invoices.show', $invoiceUuid) }}">{{ Str::limit($invoiceUuid, 12, '…') }}</a></div>
-        @endif
-        <div class="action-stack mt-3 justify-content-start">
-          <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-          @if($canEdit)
-            <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+      <div class="col-12">
+        <div class="document-card">
+          <div class="d-flex justify-content-between gap-3 flex-wrap mb-3">
+            <div>
+              <div class="text-muted small mb-1">پیش‌فاکتور مشتری «{{ $summary['customer_name'] ?: '—' }}»</div>
+              <div class="d-flex gap-2 align-items-center flex-wrap">
+                <span class="document-code">{{ Str::limit($summary['preinvoice_uuid'], 18, '…') }}</span>
+                <span class="badge {{ $statusBadge($summary) }}">{{ $summary['status_label'] }}</span>
+                @if($summary['has_invoice'])
+                  <span class="badge text-bg-success">تبدیل‌شده به فاکتور شماره {{ Str::limit($summary['invoice_number'], 18, '…') }}</span>
+                @endif
+              </div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap align-items-start">
+              <a href="{{ $summary['view_url'] }}" class="btn btn-sm btn-outline-primary">{{ $summary['has_invoice'] ? 'مشاهده فاکتور فقط‌خواندنی' : 'مشاهده' }}</a>
+              @if($summary['edit_url'])
+                <a href="{{ $summary['edit_url'] }}" class="btn btn-sm btn-outline-warning">{{ $summary['status_key'] === \App\Models\PreinvoiceOrder::STATUS_DRAFT ? 'ویرایش' : 'ویرایش و ارسال مجدد' }}</a>
+                <a href="{{ $summary['edit_url'] }}" class="btn btn-sm btn-outline-success">{{ $summary['status_key'] === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED ? 'ثبت مجدد' : 'ثبت نهایی' }}</a>
+              @endif
+              <a href="{{ $summary['print_url'] }}" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
+            </div>
+          </div>
+
+          <div class="meta-grid mb-3">
+            <div class="meta-box"><div class="label">مشتری</div><div class="value">{{ $summary['customer_name'] ?: '—' }}</div></div>
+            <div class="meta-box"><div class="label">موبایل</div><div class="value">{{ $summary['customer_mobile'] ?: '—' }}</div></div>
+            <div class="meta-box"><div class="label">مبلغ فعلی</div><div class="value">{{ \App\Support\Currency::formatRial($summary['total_amount']) }}</div></div>
+            <div class="meta-box"><div class="label">اقلام فعلی</div><div class="value">{{ number_format($summary['items_count']) }} قلم</div></div>
+            <div class="meta-box"><div class="label">وضعیت فعلی سند</div><div class="value">{{ $summary['status_label'] }}</div></div>
+            <div class="meta-box"><div class="label">آخرین بروزرسانی</div><div class="value">{{ $toJalali($summary['last_changed_at']) }}</div></div>
+            <div class="meta-box"><div class="label">اقدام بعدی</div><div class="value">{{ $summary['next_action_label'] }}</div></div>
+            <div class="meta-box"><div class="label">مبلغ اولیه پیش‌فاکتور</div><div class="value">{{ \App\Support\Currency::formatRial($summary['original_total_amount']) }}</div></div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            @if($summary['has_total_changed'])
+              <span class="badge text-bg-warning">مبلغ فاکتور نسبت به پیش‌فاکتور تغییر کرده است.</span>
+            @endif
+            @if($summary['has_items_changed'])
+              <span class="badge text-bg-warning">اقلام اصلاح شده</span>
+              <span class="badge text-bg-light border text-dark">اقلام فاکتور توسط انبار اصلاح شده است.</span>
+            @endif
+            @if($summary['status_key'] === \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
+              <span class="badge text-bg-danger">در انتظار تایید مجدد مالی پس از اصلاح انبار</span>
+            @elseif($summary['status_key'] === \App\Models\Invoice::STATUS_READY_TO_SHIP)
+              <span class="badge text-bg-success">آماده ارسال بار</span>
+            @elseif($summary['status_key'] === \App\Models\Invoice::STATUS_SHIPPED)
+              <span class="badge text-bg-success">ارسال‌شده</span>
+            @elseif($summary['status_key'] === \App\Models\Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION)
+              <span class="badge text-bg-danger">برگشت‌خورده پس از جمع‌آوری؛ در این نسخه فقط مشاهده و پیگیری فعال است.</span>
+            @endif
+          </div>
+
+          @if($summary['has_invoice'])
+            <div class="timeline">
+              @foreach($timelineSteps as $key => $label)
+                <span class="step {{ in_array($key, $activeSteps, true) ? 'active' : '' }}">{{ $label }}</span>
+              @endforeach
+            </div>
           @endif
-          @if($canSubmit)
-            <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-success">ثبت نهایی</a>
-          @endif
-          <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
         </div>
       </div>
     @empty
-      <div class="preinvoice-mobile-card text-center text-muted">پیش‌فاکتوری توسط شما ثبت نشده است.</div>
+      <div class="col-12"><div class="document-card text-center text-muted">پیش‌فاکتوری توسط شما ثبت نشده است.</div></div>
     @endforelse
   </div>
 
