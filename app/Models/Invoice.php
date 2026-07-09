@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class Invoice extends Model
 {
@@ -47,6 +49,57 @@ class Invoice extends Model
         'items_updated_at' => 'datetime',
         'items_updated_by' => 'integer',
     ];
+
+
+    protected static function booted(): void
+    {
+        static::updating(function (Invoice $invoice): void {
+            if ($invoice->exists && $invoice->isDirty('uuid')) {
+                Log::warning('Blocked attempt to change immutable invoice number.', [
+                    'invoice_id' => $invoice->id,
+                    'original_uuid' => $invoice->getOriginal('uuid'),
+                    'attempted_uuid' => $invoice->uuid,
+                ]);
+
+                throw ValidationException::withMessages([
+                    'uuid' => 'شماره فاکتور پس از صدور قابل تغییر نیست.',
+                ]);
+            }
+        });
+    }
+
+    public function recalculateSnapshotTotals(): void
+    {
+        $this->loadMissing('items');
+
+        foreach ($this->items as $item) {
+            $item->assertValidSnapshotPrice();
+        }
+
+        $subtotal = (int) $this->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
+        $discount = (int) $this->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0));
+        $discount = max($discount, (int) ($this->discount_amount ?? 0));
+
+        $this->forceFill([
+            'subtotal' => $subtotal,
+            'discount_amount' => $discount,
+            'total' => max($subtotal - $discount, 0),
+        ])->save();
+    }
+
+    public function hasZeroPriceItems(): bool
+    {
+        return $this->items->contains(fn (InvoiceItem $item) => (int) $item->quantity > 0 && (int) $item->price <= 0);
+    }
+
+    public function hasTotalMismatch(): bool
+    {
+        $this->loadMissing('items');
+        $subtotal = (int) $this->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
+        $discount = max((int) ($this->discount_amount ?? 0), (int) $this->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0)));
+
+        return (int) $this->subtotal !== $subtotal || (int) $this->total !== max($subtotal - $discount, 0);
+    }
 
     public function items() { return $this->hasMany(InvoiceItem::class)->orderBy('sort_order')->orderBy('id'); }
     public function payments() { return $this->hasMany(InvoicePayment::class); }

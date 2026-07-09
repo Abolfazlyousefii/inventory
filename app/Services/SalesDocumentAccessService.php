@@ -74,6 +74,14 @@ class SalesDocumentAccessService
         return (bool) $order->invoice || (string) $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE;
     }
 
+    public function canViewInvoiceReadonly(Invoice $invoice, ?User $user): bool
+    {
+        return $this->isManager($user)
+            || $this->isFinance($user)
+            || $this->isWarehouse($user)
+            || $this->isInvoiceOwner($invoice, $user);
+    }
+
     public function canSellerEditInvoiceItems(Invoice $invoice, ?User $user): bool
     {
         return $this->isFinance($user) || $this->isManager($user);
