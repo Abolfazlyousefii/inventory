@@ -2128,13 +2128,29 @@ class PreinvoiceController extends Controller
             $shouldDeductOnFinalize = false;
             $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
+            $existingPricesByItemKey = $existingInvoice
+                ? $existingInvoice->items()->lockForUpdate()->get()->mapWithKeys(function (InvoiceItem $item) {
+                    return [$this->salesDocumentItemKey((int) $item->product_id, (int) $item->variant_id, (int) ($item->sort_order ?: 0)) => (int) $item->price];
+                })
+                : collect();
+
             foreach ($order->items as $it) {
-                $variant = ProductVariant::query()->whereKey((int) $it->variant_id)->lockForUpdate()->first();
-                if ($variant) {
-                    $it->price = (int) ($variant->sell_price ?? 0);
-                    $variant->save();
+                $currentPrice = (int) ($it->price ?? 0);
+                if ($currentPrice > 0) {
+                    continue;
                 }
+
+                $previousPrice = (int) ($existingPricesByItemKey[$this->salesDocumentItemKey((int) $it->product_id, (int) $it->variant_id, (int) ($it->sort_order ?: 0))] ?? 0);
+                if ($previousPrice > 0) {
+                    $it->price = $previousPrice;
+                    continue;
+                }
+
+                throw ValidationException::withMessages([
+                    'items' => 'قیمت یکی از ردیف‌های فاکتور صفر یا نامشخص است. لطفاً قیمت ردیف را قبل از تایید مالی اصلاح کنید.',
+                ]);
             }
+
             $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
@@ -2187,7 +2203,10 @@ class PreinvoiceController extends Controller
                     'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
-                    'status' => Invoice::STATUS_COLLECTING,
+                    'status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
+                    'collection_status' => $isFinanceReapproval ? Invoice::COLLECTION_STATUS_COMPLETED : $invoice->collection_status,
+                    'collection_completed_at' => $isFinanceReapproval ? ($invoice->collection_completed_at ?? now()) : $invoice->collection_completed_at,
+                    'collection_completed_by' => $isFinanceReapproval ? ($invoice->collection_completed_by ?? auth()->id()) : $invoice->collection_completed_by,
                     'status_changed_at' => now(),
                     'status_changed_by' => auth()->id(),
                 ]);
@@ -2296,11 +2315,11 @@ class PreinvoiceController extends Controller
                 );
             }
 
-            ActivityLogger::log($isFinanceReapproval ? 'finance_reapproved' : 'finance_approved', $invoice->fresh(), $isFinanceReapproval ? 'فاکتور ویرایش‌شده توسط انبار مجدداً تایید مالی شد و به صف جمع‌آوری برگشت.' : 'پیش‌فاکتور توسط مالی تایید و به فاکتور/حواله در حال جمع‌آوری تبدیل شد.', [
+            ActivityLogger::log($isFinanceReapproval ? 'finance_reapproved' : 'finance_approved', $invoice->fresh(), $isFinanceReapproval ? 'فاکتور ویرایش‌شده توسط انبار مجدداً تایید مالی شد و بدون برگشت به صف جمع‌آوری نهایی شد.' : 'پیش‌فاکتور توسط مالی تایید و به فاکتور/حواله در حال جمع‌آوری تبدیل شد.', [
                 'preinvoice_order_id' => $order->id,
                 'invoice_uuid' => $invoice->uuid,
                 'old_status' => $oldInvoiceStatus,
-                'new_status' => Invoice::STATUS_COLLECTING,
+                'new_status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
                 'old_total' => $oldInvoiceTotal,
                 'new_total' => (int) $invoice->total,
                 'total_changed' => $oldInvoiceTotal !== null && $oldInvoiceTotal !== (int) $invoice->total,
@@ -2351,7 +2370,13 @@ class PreinvoiceController extends Controller
         return redirect()->route('invoices.show', $invoice->uuid)
             ->with('success', $invoice->wasRecentlyCreated
                 ? '✅ تایید مالی انجام شد و فاکتور وارد بخش در حال جمع‌آوری شد.'
-                : '✅ تایید مالی مجدد انجام شد و فاکتور به بخش در حال جمع‌آوری برگشت.');
+                : '✅ تایید مالی مجدد انجام شد و فاکتور بدون برگشت به صف جمع‌آوری نهایی شد.');
+    }
+
+
+    private function salesDocumentItemKey(int $productId, int $variantId, int $sortOrder): string
+    {
+        return $productId . ':' . $variantId . ':' . $sortOrder;
     }
 
     public function financeCancel(string $uuid, Request $request)
