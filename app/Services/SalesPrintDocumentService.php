@@ -91,7 +91,7 @@ class SalesPrintDocumentService
             'company' => config('company'),
             'logo' => asset('logo.png'),
             'mode' => $mode === 'customer' ? 'customer' : 'warehouse',
-            'backUrl' => route('archive.preinvoices.show', $order->uuid),
+            'backUrl' => route('preinvoice.my.show', $order->uuid),
         ];
     }
 
