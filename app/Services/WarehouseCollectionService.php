@@ -12,7 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class WarehouseCollectionService
 {
-    public function __construct(private readonly SalesHavalehHistoryService $historyService) {}
+    public function __construct(
+        private readonly SalesHavalehHistoryService $historyService,
+        private readonly CustomerLedgerService $customerLedgerService,
+    ) {}
 
     public function receiveInvoice(Invoice $invoice, User $user): Invoice
     {
@@ -197,10 +200,14 @@ class WarehouseCollectionService
         });
     }
 
-    public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, ?string $reason = null, ?string $note = null): Invoice
+    public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, bool $canEditPrices = false, ?string $reason = null, ?string $note = null): Invoice
     {
-        return DB::transaction(function () use ($invoice, $items, $user, $reason, $note) {
-            $invoice = Invoice::query()->with('items')->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($invoice, $items, $user, $canEditPrices, $reason, $note) {
+            $invoice = Invoice::query()->with(['items', 'payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            if ((string) $invoice->status === Invoice::STATUS_SHIPPED) {
+                throw ValidationException::withMessages(['status' => 'فاکتور ارسال‌شده قابل تغییر اقلام نیست.']);
+            }
 
             $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
             $existingById = $invoice->items->keyBy('id');
@@ -233,7 +240,32 @@ class WarehouseCollectionService
                     throw ValidationException::withMessages(['price' => "قیمت کالا/تنوع {$name} صفر است و امکان ثبت فاکتور وجود ندارد."]);
                 }
 
-                $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty');
+                $requestedPrice = array_key_exists('price', $row) ? (int) $row['price'] : null;
+                $requestedDiscount = array_key_exists('line_discount_amount', $row) ? (int) $row['line_discount_amount'] : null;
+
+                if (! $canEditPrices && (($existing && ($requestedPrice !== null && $requestedPrice !== (int) $existing->price)) || ($existing && ($requestedDiscount !== null && $requestedDiscount !== (int) ($existing->line_discount_amount ?? 0))))) {
+                    throw ValidationException::withMessages(['price' => 'شما مجاز به تغییر قیمت یا تخفیف فاکتور نیستید.']);
+                }
+
+                $price = $canEditPrices && $requestedPrice !== null ? $requestedPrice : ($existing ? (int) $existing->price : (int) $variant->sell_price);
+                $discount = $canEditPrices && $requestedDiscount !== null ? $requestedDiscount : ($existing ? (int) ($existing->line_discount_amount ?? 0) : 0);
+
+                if ($qty > 0 && $price <= 0) {
+                    throw ValidationException::withMessages(['price' => 'قیمت واحد باید بزرگ‌تر از صفر باشد.']);
+                }
+                if ($discount < 0) {
+                    throw ValidationException::withMessages(['line_discount_amount' => 'تخفیف ردیف نمی‌تواند منفی باشد.']);
+                }
+                if ($discount > ($qty * $price)) {
+                    throw ValidationException::withMessages(['line_discount_amount' => 'تخفیف ردیف نباید بیشتر از جمع ردیف باشد.']);
+                }
+
+                $priceChanged = $existing && ((int) $existing->price !== $price || (int) ($existing->line_discount_amount ?? 0) !== $discount);
+                if ($priceChanged && trim((string) ($reason ?: $note)) === '') {
+                    throw ValidationException::withMessages(['change_note' => 'برای تغییر قیمت یا تخفیف، توضیح تغییر الزامی است.']);
+                }
+
+                $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty', 'price', 'discount', 'priceChanged');
             }
 
             if (collect($normalized)->sum('qty') <= 0) {
@@ -260,7 +292,11 @@ class WarehouseCollectionService
             $aggregated = collect($normalized)->groupBy('variantId')->map(function ($rows) {
                 $first = $rows->first();
                 $existing = $rows->firstWhere('existing', '!=', null)['existing'] ?? null;
-                return array_merge($first, ['existing' => $existing, 'itemId' => $existing ? (int) $existing->id : 0, 'qty' => (int) $rows->sum('qty')]);
+                $qty = (int) $rows->sum('qty');
+                $subtotal = (int) $rows->sum(fn ($row) => (int) $row['qty'] * (int) $row['price']);
+                $discount = (int) $rows->sum('discount');
+                $price = $qty > 0 ? intdiv($subtotal, $qty) : (int) $first['price'];
+                return array_merge($first, ['existing' => $existing, 'itemId' => $existing ? (int) $existing->id : 0, 'qty' => $qty, 'price' => $price, 'discount' => min($discount, max($qty * $price, 0))]);
             })->values()->all();
 
             $seen = [];
@@ -270,11 +306,17 @@ class WarehouseCollectionService
                 if ($existing && $qty <= 0) { $existing->delete(); continue; }
                 if ($existing) {
                     $seen[] = (int) $existing->id;
-                    $existing->update(['quantity' => $qty, 'line_total' => max($qty * (int) $existing->price - (int) ($existing->line_discount_amount ?? 0), 0)]);
+                    if (((int) $existing->price !== (int) $row['price'] || (int) ($existing->line_discount_amount ?? 0) !== (int) $row['discount']) && trim((string) ($reason ?: $note)) === '') {
+                        throw ValidationException::withMessages(['change_note' => 'برای تغییر قیمت یا تخفیف، توضیح تغییر الزامی است.']);
+                    }
+                    if ((int) $row['discount'] > $qty * (int) $row['price']) {
+                        throw ValidationException::withMessages(['line_discount_amount' => 'تخفیف ردیف نباید بیشتر از جمع ردیف باشد.']);
+                    }
+                    $existing->update(['quantity' => $qty, 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0)]);
                     continue;
                 }
                 if ($qty <= 0) { continue; }
-                $created = InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $row['productId'], 'variant_id' => $row['variantId'], 'quantity' => $qty, 'price' => (int) $row['variant']->sell_price, 'line_discount_amount' => 0, 'line_total' => $qty * (int) $row['variant']->sell_price]);
+                $created = InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $row['productId'], 'variant_id' => $row['variantId'], 'quantity' => $qty, 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0)]);
                 $seen[] = (int) $created->id;
             }
 
@@ -284,8 +326,13 @@ class WarehouseCollectionService
 
             $invoice->refresh()->load('items');
             $subtotal = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
-            $discount = max((int) $invoice->discount_amount, (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0)));
-            $invoice->update(['subtotal' => $subtotal, 'discount_amount' => $discount, 'total' => max($subtotal - $discount, 0), 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
+            $discount = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0));
+            $total = max($subtotal - $discount, 0);
+            if ($total < (int) $invoice->payments->sum('amount')) {
+                throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است. ابتدا پرداخت‌ها را اصلاح کنید یا مبلغ فاکتور را بررسی کنید.']);
+            }
+            $invoice->update(['subtotal' => $subtotal, 'discount_amount' => $discount, 'total' => $total, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
+            $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
             $description = trim(($reason ? 'دلیل: ' . $reason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
             $this->historyService->log($invoice, 'invoice_items_updated', 'items', null, null, $description, $user->id);
 
