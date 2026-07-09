@@ -93,6 +93,10 @@ class WarehouseCollectionService
                 if (! $existing && ! $variant->is_active) {
                     throw ValidationException::withMessages(['items' => 'تنوع کالای انتخاب‌شده فعال نیست.']);
                 }
+                if (! $existing && $qty > 0 && (int) $variant->sell_price <= 0) {
+                    $name = trim(($variant->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
+                    throw ValidationException::withMessages(['price' => "قیمت کالا/تنوع {$name} صفر است و امکان ثبت فاکتور وجود ندارد."]);
+                }
 
                 $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty');
             }
@@ -173,11 +177,13 @@ class WarehouseCollectionService
             }
 
             $invoice->refresh()->load('items');
-            $subtotal = (int) $invoice->items->sum('line_total');
+            $subtotal = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
+            $discount = max((int) $invoice->discount_amount, (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0)));
             $oldStatus = (string) $invoice->status;
             $invoice->update([
                 'subtotal' => $subtotal,
-                'total' => max($subtotal + (int) $invoice->shipping_price - (int) $invoice->discount_amount, 0),
+                'discount_amount' => $discount,
+                'total' => max($subtotal - $discount, 0),
                 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
                 'status_changed_at' => now(),
                 'status_changed_by' => $user->id,
