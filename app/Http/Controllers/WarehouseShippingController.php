@@ -132,10 +132,10 @@ class WarehouseShippingController extends Controller
             $this->notificationService->notifyUserAfterCommit(
                 (int) $sellerId,
                 'invoice_shipped',
-                'فاکتور ارسال شد',
-                'فاکتور شماره ' . $invoice->uuid . ' برای مشتری ' . ($invoice->customer_name ?: '---') . ' با روش ارسال ' . $shippingMethod->name . ' ارسال شد.',
+                'فاکتور مشتری شما ارسال شد',
+                'فاکتور شماره «' . $invoice->uuid . '» برای مشتری «' . ($invoice->customer_name ?: '---') . '» ارسال شد. روش ارسال: ' . $shippingMethod->name . '. هزینه ارسال: ' . number_format((int) $invoice->shipping_cost) . ' ریال.',
                 route('vouchers.sales.show', $invoice->uuid),
-                ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_shipped:' . $invoice->id]
+                ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور', 'shipping_method' => $shippingMethod->name, 'shipping_cost' => (int) $invoice->shipping_cost], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_shipped:' . $invoice->id]
             );
         } catch (\Throwable $e) {
             Log::warning('Shipping notification failed', [
