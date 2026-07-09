@@ -239,7 +239,7 @@ class InvoiceController extends Controller
     public function salesVoucherShow(string $uuid)
     {
         $invoice = Invoice::query()
-            ->with(['items.product', 'items.variant', 'histories.actor', 'notes'])
+            ->with(['items.product', 'items.variant', 'notes', 'preinvoiceOrder.creator:id,name', 'shippingMethod:id,name,price', 'dispatchShippingMethod:id,name,price', 'shippedBy:id,name'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
