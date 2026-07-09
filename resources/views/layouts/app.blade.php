@@ -170,14 +170,15 @@
                 🔔
                 <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
             </button>
-            <div class="dropdown-menu dropdown-menu-end p-2 app-notif-menu" style="min-width: min(320px, calc(100vw - 1.5rem))">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <strong>اعلان‌ها</strong>
+            <div class="dropdown-menu dropdown-menu-end p-2 app-notif-menu shadow" style="width: min(390px, calc(100vw - 1rem)); max-width: calc(100vw - 1rem); max-height: min(75vh, 560px); overflow:auto;">
+                <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+                    <div><strong>اعلان‌ها</strong> <span id="notifUnreadText" class="badge bg-primary-subtle text-primary-emphasis">۰ خوانده‌نشده</span></div>
                     <button class="btn btn-sm btn-link p-0" id="notifReadAllBtn">خواندن همه</button>
                 </div>
+                <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" id="notifSoundBtn">فعال‌سازی صدای اعلان</button>
                 <div id="notifList" class="small text-muted">در حال بارگذاری...</div>
-                <div class="mt-2 text-center">
-                    <a href="{{ route('notifications.index') }}" class="small">مشاهده همه آلارم‌ها</a>
+                <div class="mt-2 pt-2 border-top text-center">
+                    <a href="{{ route('notifications.index') }}" class="small fw-bold">مشاهده همه آلارم‌ها</a>
                 </div>
             </div>
         </div>
@@ -234,6 +235,7 @@
 
             @yield('content')
         </main>
+    <div id="notifToastStack" class="position-fixed top-0 end-0 p-3" style="z-index:1080; max-width:min(360px, calc(100vw - 1rem));"></div>
     </div>
 
 </div>
@@ -255,6 +257,49 @@
     });
   });
 
+  const notifState = {
+    timer: null,
+    initialized: false,
+    latestIds: new Set(),
+  };
+  const notifSeenKey = 'notificationsSeenIds';
+  const notifSoundKey = 'notificationsSoundEnabled';
+
+  function notifSeenIds(){
+    try { return new Set(JSON.parse(localStorage.getItem(notifSeenKey) || '[]')); } catch(e) { return new Set(); }
+  }
+  function saveNotifSeenIds(ids){ localStorage.setItem(notifSeenKey, JSON.stringify(Array.from(ids).slice(0, 80))); }
+  function escapeHtml(value){
+    return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
+  }
+  function notifTypeLabel(type){
+    if ((type || '').startsWith('preinvoice')) return 'پیش‌فاکتور';
+    if ((type || '').includes('ship')) return 'ارسال';
+    if ((type || '').includes('collection') || (type || '').includes('warehouse')) return 'انبار';
+    if ((type || '').includes('finance')) return 'مالی';
+    if ((type || '').startsWith('invoice')) return 'فاکتور';
+    return 'اعلان';
+  }
+  function playNotificationBeep(){
+    if (localStorage.getItem(notifSoundKey) !== '1') return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.value = 660; gain.gain.value = 0.035;
+    osc.connect(gain); gain.connect(ctx.destination); osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, 120);
+  }
+  function showNotificationToast(n){
+    const stack = document.getElementById('notifToastStack'); if (!stack) return;
+    while (stack.children.length >= 3) stack.firstElementChild.remove();
+    const el = document.createElement('div');
+    el.className = 'toast show border-0 shadow mb-2';
+    el.innerHTML = `<div class="toast-header bg-primary text-white"><strong class="me-auto">${escapeHtml(n.title)}</strong><button type="button" class="btn-close btn-close-white ms-2" aria-label="Close"></button></div><div class="toast-body bg-white"><div class="small text-muted mb-2">${escapeHtml(n.message || '').slice(0,140)}</div><a class="btn btn-sm btn-primary" href="${escapeHtml(n.open_url || ('/notifications/'+n.id+'/open'))}">مشاهده</a></div>`;
+    el.querySelector('.btn-close')?.addEventListener('click', () => el.remove());
+    stack.appendChild(el); setTimeout(() => el.remove(), 6500);
+  }
   async function loadNotifications(){
     const [cRes,lRes] = await Promise.all([
       fetch('{{ route('notifications.unread-count') }}'),
@@ -264,22 +309,52 @@
     const badge = document.getElementById('notifBadge');
     badge.textContent = count;
     badge.classList.toggle('d-none', count <= 0);
+    const unreadText = document.getElementById('notifUnreadText');
+    if (unreadText) unreadText.textContent = `${count} خوانده‌نشده`;
 
     const list = await lRes.json();
+    const seen = notifSeenIds();
+    const newOnes = list.filter(n => !n.read_at && !seen.has(String(n.id)));
+    if (notifState.initialized && newOnes.length) {
+      newOnes.slice(0,3).forEach(showNotificationToast);
+      playNotificationBeep();
+    }
+    list.forEach(n => seen.add(String(n.id)));
+    saveNotifSeenIds(seen);
+    notifState.initialized = true;
+
     const wrap = document.getElementById('notifList');
-    if (!list.length) { wrap.innerHTML = '<div class=\"text-muted\">اعلانی وجود ندارد.</div>'; return; }
-    wrap.innerHTML = list.map(n => `<a class="d-block text-decoration-none p-2 mb-1 rounded ${n.read_at ? 'bg-light' : 'bg-info bg-opacity-10'}" href="/notifications/${n.id}/open">
-      <div class="fw-bold text-dark">${n.title}</div>
-      <div class="text-muted small">${n.message ?? ''}</div>
-    </a>`).join('');
+    if (!list.length) { wrap.innerHTML = '<div class="text-muted p-3 text-center">اعلانی وجود ندارد.</div>'; return; }
+    wrap.innerHTML = list.map(n => {
+      const priority = n.priority || 'normal';
+      const tone = priority === 'urgent' ? 'danger' : (priority === 'important' ? 'primary' : 'secondary');
+      const bg = n.read_at ? 'bg-light' : 'bg-info bg-opacity-10 border-info-subtle';
+      return `<a class="d-block text-decoration-none p-2 mb-2 rounded border ${bg}" href="${escapeHtml(n.open_url || ('/notifications/'+n.id+'/open'))}">
+        <div class="d-flex gap-2 align-items-start"><span class="badge rounded-pill bg-${tone}">&nbsp;</span><div class="flex-grow-1 min-w-0">
+        <div class="d-flex justify-content-between gap-2"><div class="fw-bold text-dark text-truncate">${escapeHtml(n.title)}</div><span class="badge bg-${tone}-subtle text-${tone}-emphasis">${notifTypeLabel(n.type)}</span></div>
+        <div class="text-muted small" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(n.message || '')}</div>
+        <div class="text-muted mt-1" style="font-size:.72rem">${escapeHtml(n.created_at_human || '')}</div></div></div>
+      </a>`;
+    }).join('');
+  }
+  function scheduleNotifications(){
+    clearTimeout(notifState.timer);
+    notifState.timer = setTimeout(async () => { await loadNotifications(); scheduleNotifications(); }, document.hidden ? 60000 : 30000);
   }
   document.addEventListener('DOMContentLoaded', function(){
-    loadNotifications();
-    setInterval(loadNotifications, 45000);
+    loadNotifications().finally(scheduleNotifications);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadNotifications(); scheduleNotifications(); });
     document.getElementById('notifReadAllBtn')?.addEventListener('click', async function(){
       await fetch('{{ route('notifications.read-all') }}', {method:'POST', headers:{'X-CSRF-TOKEN':'{{ csrf_token() }}'}});
+      const seen = notifSeenIds(); document.querySelectorAll('#notifList a[href*="/notifications/"]').forEach(a => { const m = a.href.match(/notifications\/(\d+)\/open/); if (m) seen.add(m[1]); }); saveNotifSeenIds(seen);
       loadNotifications();
     });
+    const soundBtn = document.getElementById('notifSoundBtn');
+    if (soundBtn) {
+      const refreshSoundLabel = () => soundBtn.textContent = localStorage.getItem(notifSoundKey) === '1' ? 'صدای اعلان فعال است (کلیک برای غیرفعال‌سازی)' : 'فعال‌سازی صدای اعلان';
+      refreshSoundLabel();
+      soundBtn.addEventListener('click', () => { const enabled = localStorage.getItem(notifSoundKey) === '1'; localStorage.setItem(notifSoundKey, enabled ? '0' : '1'); refreshSoundLabel(); if (!enabled) playNotificationBeep(); });
+    }
   });
 
   function formatMoneyInput(el){

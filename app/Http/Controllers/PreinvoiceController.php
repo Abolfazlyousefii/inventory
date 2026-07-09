@@ -159,7 +159,7 @@ class PreinvoiceController extends Controller
                     'پیش‌فاکتور شما توسط انبار اصلاح شد',
                     "آیتم‌های پیش‌فاکتور مشتری {$order->customer_name} توسط انبار اصلاح شد.",
                     route('preinvoice.my.show', $order->uuid),
-                    ['level' => 'warning', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_warehouse_changed:{$order->id}:{$order->created_by}"]
+                    ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'پیش‌فاکتور', 'reason' => $data['warehouse_review_note'] ?? null], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_warehouse_changed:{$order->id}:{$order->created_by}"]
                 );
             }
         });
@@ -218,11 +218,11 @@ class PreinvoiceController extends Controller
             $this->warehouseReviewAuditService->log($order->fresh(), \App\Models\WarehouseReviewLog::ACTION_APPROVED_TO_FINANCE, auth()->id(), PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE, $data['warehouse_review_note'] ?? null);
             $this->notificationService->notifyRoleAfterCommit(
                 'finance',
-                'preinvoice_submitted_to_finance',
+                'preinvoice_submitted',
                 'پیش‌فاکتور جدید در انتظار تایید مالی',
                 "پیش‌فاکتور مشتری {$order->customer_name} توسط انبار تایید شد و آماده بررسی مالی است.",
                 route('preinvoice.draft.finance', $order->uuid),
-                ['level' => 'info', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "finance_preinvoice_ready:{$order->id}"]
+                ['level' => 'info', 'priority' => 'important', 'data' => ['document_type' => 'پیش‌فاکتور'], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "finance_preinvoice_ready:{$order->id}"]
             );
             if (!empty($order->created_by)) {
                 $this->notificationService->notifyUserAfterCommit(
@@ -277,7 +277,7 @@ class PreinvoiceController extends Controller
             $this->warehouseReviewAuditService->createAfterSnapshot($order->fresh(['items.product', 'items.variant', 'creator', 'customer']), auth()->id(), $data['warehouse_reject_reason']);
             $this->warehouseReviewAuditService->log($order->fresh(), \App\Models\WarehouseReviewLog::ACTION_REJECTED_TO_CREATOR, auth()->id(), PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, $data['warehouse_reject_reason']);
             if (!empty($order->created_by)) {
-                $this->notificationService->notifyUserAfterCommit((int)$order->created_by, 'preinvoice_warehouse_rejected', 'پیش‌فاکتور شما توسط انبار برگشت خورد', 'علت: ' . $data['warehouse_reject_reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'danger', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_warehouse_rejected:{$order->id}:{$order->created_by}"]);
+                $this->notificationService->notifyUserAfterCommit((int)$order->created_by, 'preinvoice_warehouse_rejected', 'پیش‌فاکتور شما توسط انبار برگشت خورد', 'علت: ' . $data['warehouse_reject_reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'danger', 'priority' => 'urgent', 'data' => ['document_type' => 'پیش‌فاکتور', 'reason' => $data['warehouse_reject_reason']], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_warehouse_rejected:{$order->id}:{$order->created_by}"]);
             }
         });
 
@@ -419,11 +419,11 @@ class PreinvoiceController extends Controller
 
             $this->notificationService->notifyRoleAfterCommit(
                 'finance',
-                'preinvoice_submitted_to_finance',
+                'preinvoice_submitted',
                 'پیش‌فاکتور جدید در انتظار تایید مالی',
                 "پیش‌فاکتور مشتری {$order->customer_name} با مبلغ " . Currency::formatRialNumber($order->total_price) . " ریال ثبت نهایی شد و آماده بررسی مالی است.",
                 route('preinvoice.draft.finance', $order->uuid),
-                ['level' => 'info', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "finance_preinvoice_ready:{$order->id}"]
+                ['level' => 'info', 'priority' => 'important', 'data' => ['document_type' => 'پیش‌فاکتور'], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "finance_preinvoice_ready:{$order->id}"]
             );
 
             return $reservationMeta;
@@ -620,11 +620,11 @@ class PreinvoiceController extends Controller
             if ($isSubmit) {
                 $this->notificationService->notifyRoleAfterCommit(
                     'finance',
-                    'preinvoice_submitted_to_finance',
+                    'preinvoice_submitted',
                     'پیش‌فاکتور جدید در انتظار تایید مالی',
                     "پیش‌فاکتور مشتری {$order->customer_name} ثبت نهایی شد و آماده بررسی مالی است.",
                     route('preinvoice.draft.finance', $order->uuid),
-                    ['level' => 'info', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "finance_preinvoice_ready:{$order->id}"]
+                    ['level' => 'info', 'priority' => 'important', 'data' => ['document_type' => 'پیش‌فاکتور'], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "finance_preinvoice_ready:{$order->id}"]
                 );
             }
 
@@ -638,7 +638,7 @@ class PreinvoiceController extends Controller
                 'after_items' => $this->snapshotItems($order->fresh('items.product', 'items.variant')),
             ]);
 
-            ActivityLogger::log($isSubmit ? 'preinvoice_submitted_to_finance' : 'preinvoice_draft_updated', $order->fresh(), $isSubmit ? 'پیش‌فاکتور ثبت نهایی شد و به صف تایید مالی ارسال شد.' : 'پیش‌فاکتور به صورت پیش‌نویس بروزرسانی شد.', [
+            ActivityLogger::log($isSubmit ? 'preinvoice_submitted' : 'preinvoice_draft_updated', $order->fresh(), $isSubmit ? 'پیش‌فاکتور ثبت نهایی شد و به صف تایید مالی ارسال شد.' : 'پیش‌فاکتور به صورت پیش‌نویس بروزرسانی شد.', [
                 'old_status' => $oldStatus,
                 'new_status' => $isSubmit ? PreinvoiceOrder::STATUS_PENDING_FINANCE : PreinvoiceOrder::STATUS_DRAFT,
                 'user_id' => auth()->id(),
@@ -1954,11 +1954,11 @@ class PreinvoiceController extends Controller
             try {
                 $this->notificationService->notifyRoleAfterCommit(
                     'warehouse',
-                    'invoice_ready_for_collection_queue',
+                    'invoice_created_for_collection',
                     'فاکتور جدید آماده جمع‌آوری است',
-                    "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} تایید مالی شد و وارد صف جمع‌آوری شد.",
+                    "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} تایید مالی شد و وارد صف جمع‌آوری انبار شد.",
                     route('vouchers.sales.queue'),
-                    ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
+                    ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
                 );
             } catch (\Throwable $exception) {
                 report($exception);
@@ -1968,9 +1968,9 @@ class PreinvoiceController extends Controller
                     (int)$order->created_by,
                     'preinvoice_finance_approved',
                     'پیش‌فاکتور شما تایید مالی شد',
-                    "پیش‌فاکتور مشتری {$order->customer_name} به فاکتور شماره {$invoice->uuid} تبدیل شد.",
-                    route('invoices.show', $invoice->uuid),
-                    ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "operator_finance_approved:{$order->id}:{$order->created_by}"]
+                    "پیش‌فاکتور مشتری «{$order->customer_name}» تایید مالی شد و به فاکتور شماره «{$invoice->uuid}» تبدیل شد. وضعیت فعلی: در صف جمع‌آوری انبار.",
+                    route('vouchers.sales.show', $invoice->uuid),
+                    ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "operator_finance_approved:{$order->id}:{$order->created_by}"]
                 );
             }
 
@@ -2019,7 +2019,7 @@ class PreinvoiceController extends Controller
                 'released_quantity' => $release['released_quantity'] ?? 0,
             ]);
             if (!empty($order->created_by)) {
-                $this->notificationService->notifyUserAfterCommit((int) $order->created_by, 'preinvoice_finance_returned', 'پیش‌فاکتور شما توسط مالی جهت اصلاح برگشت داده شد', 'علت: ' . $data['reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'warning', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_finance_returned:{$order->id}:{$order->created_by}"]);
+                $this->notificationService->notifyUserAfterCommit((int) $order->created_by, 'preinvoice_returned_to_sales', 'پیش‌فاکتور برای اصلاح برگشت خورد', 'پیش‌فاکتور مشتری «' . $order->customer_name . '» توسط مالی برگشت داده شد. علت: ' . $data['reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'پیش‌فاکتور', 'reason' => $data['reason']], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_finance_returned:{$order->id}:{$order->created_by}"]);
             }
         });
 
@@ -2064,7 +2064,7 @@ class PreinvoiceController extends Controller
                 'released_quantity' => $release['released_quantity'] ?? 0,
             ]);
             if (!empty($order->created_by)) {
-                $this->notificationService->notifyUserAfterCommit((int) $order->created_by, 'preinvoice_finance_cancelled', 'پیش‌فاکتور شما توسط مالی کنسل شد', 'علت: ' . $data['reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'danger', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_finance_cancelled:{$order->id}:{$order->created_by}"]);
+                $this->notificationService->notifyUserAfterCommit((int) $order->created_by, 'preinvoice_cancelled_by_finance', 'پیش‌فاکتور توسط مالی کنسل شد', 'پیش‌فاکتور مشتری «' . $order->customer_name . '» توسط مالی کنسل شد. علت: ' . $data['reason'], route('preinvoice.my.show', $order->uuid), ['level' => 'danger', 'priority' => 'urgent', 'data' => ['document_type' => 'پیش‌فاکتور', 'reason' => $data['reason']], 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id, 'unique_key' => "operator_finance_cancelled:{$order->id}:{$order->created_by}"]);
             }
         });
 
