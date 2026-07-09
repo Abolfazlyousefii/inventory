@@ -9,6 +9,7 @@ use App\Services\NotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class WarehouseShippingController extends Controller
@@ -137,7 +138,10 @@ class WarehouseShippingController extends Controller
                 ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_shipped:' . $invoice->id]
             );
         } catch (\Throwable $e) {
-            report($e);
+            Log::warning('Shipping notification failed', [
+                'invoice_id' => $invoice->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

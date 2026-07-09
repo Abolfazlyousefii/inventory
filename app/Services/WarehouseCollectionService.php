@@ -18,7 +18,12 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
-            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL]);
+
+            if ($invoice->status === Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL) {
+                throw ValidationException::withMessages(['status' => 'این فاکتور مربوط به روند قدیمی است و از صف جمع‌آوری جدید قابل دریافت نیست.']);
+            }
+
+            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION]);
             return $this->mark($invoice, Invoice::STATUS_WAREHOUSE_RECEIVED, [
                 'warehouse_received_at' => now(),
                 'warehouse_received_by' => $user->id,
