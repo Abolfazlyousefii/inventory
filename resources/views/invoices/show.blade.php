@@ -23,9 +23,7 @@
     <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-secondary" href="{{ route('invoices.index') }}">بازگشت</a>
       <a class="btn btn-outline-dark" href="{{ route('invoices.print', $invoice->uuid) }}" target="_blank">چاپ فاکتور</a>
-      <a class="btn btn-outline-primary" href="{{ route('invoices.history', $invoice->uuid) }}">تاریخچه فاکتور</a>
-      @if($canManageInvoice)<a class="btn btn-primary" href="{{ route('invoices.edit', $invoice->uuid) }}">مدیریت فاکتور</a>@endif
-      @if($canRegisterPayments)<a class="btn btn-success" href="{{ route('invoices.edit', $invoice->uuid) }}#payments">افزودن پرداخت</a>@endif
+      @if($canManageInvoice)<a class="btn btn-primary" href="{{ route('invoices.edit', $invoice->uuid) }}">ویرایش فاکتور</a>@endif
     </div>
   </div>
 
