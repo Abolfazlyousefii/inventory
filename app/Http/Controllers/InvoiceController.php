@@ -36,8 +36,10 @@ class InvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $allowedPaymentStatuses = ['paid', 'partial', 'unpaid'];
-        $allowedStatuses = $this->statusService->all();
+        $allowedPaymentStatuses = ['paid', 'partial', 'unpaid', 'overpaid'];
+        $newWorkflowStatuses = $this->invoiceNewWorkflowStatuses();
+        $legacyStatuses = $this->invoiceLegacyStatuses();
+        $allowedStatuses = array_values(array_unique(array_merge($newWorkflowStatuses, $legacyStatuses, $this->statusService->all())));
 
         $filters = [
             'date_from' => trim((string) $request->query('date_from', $request->query('date', ''))),
@@ -53,6 +55,10 @@ class InvoiceController extends Controller
             'only_remaining' => $request->boolean('only_remaining') ? '1' : '',
             'only_paid' => $request->boolean('only_paid') ? '1' : '',
             'has_cheque' => $request->boolean('has_cheque') ? '1' : '',
+            'has_warnings' => $request->boolean('has_warnings') ? '1' : '',
+            'overpaid_only' => $request->boolean('overpaid_only') ? '1' : '',
+            'legacy_only' => $request->boolean('legacy_only') ? '1' : '',
+            'shipping_method' => trim((string) $request->query('shipping_method', '')),
             'min_amount' => $this->normalizeDigits(trim((string) $request->query('min_amount', ''))),
             'max_amount' => $this->normalizeDigits(trim((string) $request->query('max_amount', ''))),
         ];
@@ -96,13 +102,13 @@ class InvoiceController extends Controller
 
         if ($request->input('export') === 'csv' || $request->input('export') === 'excel' || $request->input('export') === 'daily_csv') {
             abort_unless($this->canHandleFinanceActions(), 403);
-            return $this->exportInvoiceAccountingCsv((clone $baseQuery)->with(['customer:id,crm_customer_id,first_name,last_name,mobile', 'preinvoiceOrder.creator:id,name'])->orderByDesc('id')->get(), $filters, $request->input('export') === 'excel');
+            return $this->exportInvoiceAccountingCsv((clone $baseQuery)->with(['customer:id,crm_customer_id,first_name,last_name,mobile', 'preinvoiceOrder:id,uuid,created_by', 'preinvoiceOrder.creator:id,name'])->orderByDesc('id')->get(), $filters, $request->input('export') === 'excel');
         }
 
         $summary = $this->invoiceReportSummary(clone $baseQuery);
 
         $invoices = (clone $baseQuery)
-            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'preinvoiceOrder.creator:id,name'])
+            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'preinvoiceOrder:id,uuid,created_by', 'preinvoiceOrder.creator:id,name'])
             ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
@@ -121,7 +127,7 @@ class InvoiceController extends Controller
         $reportDateInput = $filters['date_from'];
         $canRegisterPayments = $this->canHandleFinanceActions();
 
-        return view('invoices.index', compact('invoices', 'q', 'statusLabels', 'dateInput', 'filters', 'reportDateInput', 'canRegisterPayments', 'summary', 'pageTotals', 'filterErrors', 'allowedStatuses'));
+        return view('invoices.index', compact('invoices', 'q', 'statusLabels', 'dateInput', 'filters', 'reportDateInput', 'canRegisterPayments', 'summary', 'pageTotals', 'filterErrors', 'allowedStatuses', 'newWorkflowStatuses', 'legacyStatuses'));
     }
 
     public function salesVouchers(Request $request)
@@ -649,6 +655,9 @@ class InvoiceController extends Controller
         $query = Invoice::query()
             ->select('invoices.*')
             ->selectSub('select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id', 'paid_total')
+            ->selectSub('select count(*) from invoice_items where invoice_items.invoice_id = invoices.id and invoice_items.quantity > 0 and invoice_items.price <= 0', 'zero_price_items_count')
+            ->selectSub('select coalesce(sum(greatest((quantity * price) - coalesce(line_discount_amount, 0), 0)), 0) from invoice_items where invoice_items.invoice_id = invoices.id', 'snapshot_items_total')
+            ->selectSub("select count(*) from customer_ledgers where customer_ledgers.reference_type = 'App\\Models\\Invoice' and customer_ledgers.reference_id = invoices.id and customer_ledgers.type = 'debit'", 'ledger_debit_count')
             ->when($filters['invoice_number'] !== '', fn ($q) => $q->where('uuid', 'like', '%' . $filters['invoice_number'] . '%'))
             ->when($filters['customer_name'] !== '', function ($query) use ($filters) {
                 $name = $filters['customer_name'];
@@ -682,6 +691,10 @@ class InvoiceController extends Controller
             ->when($filters['status'] !== '', fn ($q) => $q->where('status', $filters['status']))
             ->when($filters['seller'] !== '', fn ($q) => $q->whereHas('preinvoiceOrder.creator', fn ($userQ) => $userQ->where('name', 'like', '%' . $filters['seller'] . '%')))
             ->when($filters['has_cheque'] === '1', fn ($q) => $q->whereHas('payments.cheque'))
+            ->when($filters['shipping_method'] !== '', fn ($q) => $q->where(function ($qq) use ($filters) {
+                $qq->where('shipping_id', $filters['shipping_method'])->orWhere('shipping_method_id', $filters['shipping_method']);
+            }))
+            ->when($filters['legacy_only'] === '1', fn ($q) => $q->whereIn('status', $this->invoiceLegacyStatuses()))
             ->when($filters['min_amount'] !== '', fn ($q) => $q->where('total', '>=', (int) $filters['min_amount']))
             ->when($filters['max_amount'] !== '', fn ($q) => $q->where('total', '<=', (int) $filters['max_amount']));
 
@@ -699,8 +712,24 @@ class InvoiceController extends Controller
         if ($filters['only_paid'] === '1') {
             $query->whereRaw("(invoices.total - {$paidExpr}) <= 0");
         }
+        if ($filters['overpaid_only'] === '1') {
+            $query->whereRaw("{$paidExpr} > invoices.total");
+        }
+        if ($filters['has_warnings'] === '1') {
+            $legacyList = implode(',', array_fill(0, count($this->invoiceLegacyStatuses()), '?'));
+            $query->where(function ($warningQuery) use ($paidExpr, $legacyList) {
+                $warningQuery->whereExists(fn ($itemQ) => $itemQ->selectRaw('1')->from('invoice_items')->whereColumn('invoice_items.invoice_id', 'invoices.id')->where('quantity', '>', 0)->where('price', '<=', 0))
+                    ->orWhereRaw("abs(invoices.total - (select coalesce(sum(greatest((quantity * price) - coalesce(line_discount_amount, 0), 0)), 0) from invoice_items where invoice_items.invoice_id = invoices.id)) > 1")
+                    ->orWhereRaw("{$paidExpr} > invoices.total")
+                    ->orWhereNull('uuid')
+                    ->orWhere('uuid', '')
+                    ->orWhereIn('status', $this->invoiceLegacyStatuses())
+                    ->orWhereRaw("(select count(*) from customer_ledgers where customer_ledgers.reference_type = 'App\\Models\\Invoice' and customer_ledgers.reference_id = invoices.id and customer_ledgers.type = 'debit') > 1");
+            });
+        }
         match ($filters['payment_status']) {
-            'paid' => $query->whereRaw("(invoices.total - {$paidExpr}) <= 0"),
+            'paid' => $query->whereRaw("{$paidExpr} = invoices.total"),
+            'overpaid' => $query->whereRaw("{$paidExpr} > invoices.total"),
             'partial' => $query->whereRaw("{$paidExpr} > 0 and (invoices.total - {$paidExpr}) > 0"),
             'unpaid' => $query->whereRaw("{$paidExpr} = 0 and invoices.total > 0"),
             default => null,
@@ -711,15 +740,19 @@ class InvoiceController extends Controller
 
     private function invoiceReportSummary($query): array
     {
-        $rows = DB::query()->fromSub($query->toBase(), 'invoice_report')->selectRaw('
+        $rows = DB::query()->fromSub($query->toBase(), 'invoice_report')->selectRaw(<<<'SQL'
             count(*) as invoice_count,
             coalesce(sum(total), 0) as total_sales,
             coalesce(sum(paid_total), 0) as paid_amount,
             coalesce(sum(greatest(total - paid_total, 0)), 0) as remaining_amount,
-            coalesce(sum(case when (total - paid_total) <= 0 then 1 else 0 end), 0) as paid_count,
-            coalesce(sum(case when paid_total > 0 and (total - paid_total) > 0 then 1 else 0 end), 0) as partial_count,
-            coalesce(sum(case when paid_total = 0 and total > 0 then 1 else 0 end), 0) as unpaid_count
-        ')->first();
+            coalesce(sum(case when paid_total = total then 1 else 0 end), 0) as paid_count,
+            coalesce(sum(case when paid_total > 0 and paid_total < total then 1 else 0 end), 0) as partial_count,
+            coalesce(sum(case when paid_total <= 0 then 1 else 0 end), 0) as unpaid_count,
+            coalesce(sum(case when paid_total > total then 1 else 0 end), 0) as overpaid_count,
+            coalesce(sum(case when status = 'ready_to_ship' then 1 else 0 end), 0) as ready_to_ship_count,
+            coalesce(sum(case when status = 'shipped' then 1 else 0 end), 0) as shipped_count,
+            coalesce(sum(case when status = 'pending_finance_reapproval' then 1 else 0 end), 0) as pending_finance_reapproval_count
+SQL)->first();
 
         return [
             'invoice_count' => (int) ($rows->invoice_count ?? 0),
@@ -729,6 +762,10 @@ class InvoiceController extends Controller
             'paid_count' => (int) ($rows->paid_count ?? 0),
             'partial_count' => (int) ($rows->partial_count ?? 0),
             'unpaid_count' => (int) ($rows->unpaid_count ?? 0),
+            'overpaid_count' => (int) ($rows->overpaid_count ?? 0),
+            'ready_to_ship_count' => (int) ($rows->ready_to_ship_count ?? 0),
+            'shipped_count' => (int) ($rows->shipped_count ?? 0),
+            'pending_finance_reapproval_count' => (int) ($rows->pending_finance_reapproval_count ?? 0),
         ];
     }
 
@@ -805,7 +842,7 @@ class InvoiceController extends Controller
 
             fputcsv($handle, [
                 'invoice_number', 'invoice_date', 'customer_name', 'customer_code', 'customer_mobile',
-                'invoice_total', 'paid_amount', 'remaining_amount', 'payment_status', 'invoice_status', 'seller',
+                'invoice_total', 'paid_amount', 'remaining_amount', 'payment_status', 'operational_status', 'seller', 'warnings', 'created_at_jalali',
             ]);
 
             foreach ($invoices as $invoice) {
@@ -823,6 +860,8 @@ class InvoiceController extends Controller
                     $this->paymentStatusLabel($paid, (int) $invoice->total),
                     $this->statusService->labels()[$invoice->status] ?? ($invoice->status ?: ''),
                     $invoice->preinvoiceOrder?->creator?->name ?? '',
+                    implode(' | ', $this->invoiceWarningLabels($invoice)),
+                    $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '',
                 ]);
             }
 
@@ -832,12 +871,42 @@ class InvoiceController extends Controller
 
     private function paymentStatusLabel(int $paid, int $total): string
     {
-        $remaining = max($total - $paid, 0);
-        if ($remaining <= 0) {
-            return 'تسویه‌شده';
+        if ($paid <= 0) {
+            return 'پرداخت‌نشده';
+        }
+        if ($paid < $total) {
+            return 'پرداخت ناقص';
+        }
+        if ($paid > $total) {
+            return 'تسویه‌شده با هشدار پرداخت اضافه';
         }
 
-        return $paid > 0 ? 'پرداخت ناقص' : 'پرداخت‌نشده';
+        return 'تسویه‌شده';
+    }
+
+    private function invoiceNewWorkflowStatuses(): array
+    {
+        return [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP, Invoice::STATUS_SHIPPED, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION];
+    }
+
+    private function invoiceLegacyStatuses(): array
+    {
+        return [Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL, 'finance_approved', Invoice::STATUS_CHECKING_DISCREPANCY, Invoice::STATUS_FINAL_CHECK, Invoice::STATUS_PACKING, Invoice::STATUS_NOT_SHIPPED];
+    }
+
+    private function invoiceWarningLabels(Invoice $invoice): array
+    {
+        $paid = (int) ($invoice->paid_total ?? 0);
+        $total = (int) $invoice->total;
+        $snapshotTotal = (int) ($invoice->snapshot_items_total ?? $total);
+        $warnings = [];
+        if ((int) ($invoice->zero_price_items_count ?? 0) > 0) { $warnings[] = 'قیمت صفر'; }
+        if (abs($total - $snapshotTotal) > 1) { $warnings[] = 'مغایرت مبلغ'; }
+        if ($paid > $total) { $warnings[] = 'پرداخت اضافه'; }
+        if (blank($invoice->uuid)) { $warnings[] = 'شماره نامعتبر'; }
+        if (in_array((string) $invoice->status, $this->invoiceLegacyStatuses(), true)) { $warnings[] = 'وضعیت قدیمی'; }
+        if ((int) ($invoice->ledger_debit_count ?? 0) > 1) { $warnings[] = 'ledger مشکوک'; }
+        return $warnings;
     }
 
     private function exportDailyCustomerFinanceCsv($invoices, Carbon $reportDate): StreamedResponse
