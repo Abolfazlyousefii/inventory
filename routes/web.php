@@ -68,6 +68,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
         Route::get('/', [PriceChangeDocumentController::class, 'index'])->name('index');
         Route::get('/create', [PriceChangeDocumentController::class, 'create'])->name('create');
+        Route::get('/products/search', [PriceChangeDocumentController::class, 'productSearch'])->name('products.search');
+        Route::get('/variants/search', [PriceChangeDocumentController::class, 'variantSearch'])->name('variants.search');
+        Route::get('/categories/tree', [PriceChangeDocumentController::class, 'categoriesTree'])->name('categories.tree');
         Route::post('/preview', [PriceChangeDocumentController::class, 'preview'])->name('preview');
         Route::post('/', [PriceChangeDocumentController::class, 'store'])->name('store');
         Route::get('/{document}', [PriceChangeDocumentController::class, 'show'])->name('show');
