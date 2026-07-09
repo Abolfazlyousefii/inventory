@@ -197,6 +197,102 @@ class WarehouseCollectionService
         });
     }
 
+    public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, ?string $reason = null, ?string $note = null): Invoice
+    {
+        return DB::transaction(function () use ($invoice, $items, $user, $reason, $note) {
+            $invoice = Invoice::query()->with('items')->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
+            $existingById = $invoice->items->keyBy('id');
+            $normalized = [];
+
+            foreach ($items as $row) {
+                $qty = (int) $row['quantity'];
+                $itemId = (int) ($row['invoice_item_id'] ?? $row['id'] ?? 0);
+                $existing = $itemId > 0 ? $existingById->get($itemId) : null;
+
+                if ($itemId > 0 && ! $existing) {
+                    throw ValidationException::withMessages(['items' => 'آیتم انتخاب‌شده متعلق به این فاکتور نیست.']);
+                }
+
+                if (! $existing && $qty <= 0 && empty($row['variant_id'])) {
+                    continue;
+                }
+
+                $variantId = $existing ? (int) $existing->variant_id : (int) $row['variant_id'];
+                $productId = $existing ? (int) $existing->product_id : (int) $row['product_id'];
+                $variant = ProductVariant::query()->whereKey($variantId)->where('product_id', $productId)->lockForUpdate()->first();
+                if (! $variant) {
+                    throw ValidationException::withMessages(['items' => 'تنوع انتخاب‌شده برای محصول معتبر نیست.']);
+                }
+                if (! $existing && ! $variant->is_active) {
+                    throw ValidationException::withMessages(['items' => 'تنوع کالای انتخاب‌شده فعال نیست.']);
+                }
+                if (! $existing && $qty > 0 && (int) $variant->sell_price <= 0) {
+                    $name = trim(($variant->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
+                    throw ValidationException::withMessages(['price' => "قیمت کالا/تنوع {$name} صفر است و امکان ثبت فاکتور وجود ندارد."]);
+                }
+
+                $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty');
+            }
+
+            if (collect($normalized)->sum('qty') <= 0) {
+                throw ValidationException::withMessages(['items' => 'فاکتور باید حداقل یک قلم کالا داشته باشد.']);
+            }
+
+            $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
+            foreach ($oldByVariant->keys()->merge($newByVariant->keys())->unique() as $variantId) {
+                $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
+                if ($delta === 0) {
+                    continue;
+                }
+                $variant = ProductVariant::query()->with('product')->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
+                if ($delta > 0) {
+                    $available = $this->centralAvailableStockForUpdate((int) $variant->product_id, (int) $variant->id);
+                    if ($available < $delta) {
+                        $name = trim(($variant->product?->name ?? 'کالا') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
+                        throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد درخواستی: {$delta}"]);
+                    }
+                }
+                WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
+            }
+
+            $aggregated = collect($normalized)->groupBy('variantId')->map(function ($rows) {
+                $first = $rows->first();
+                $existing = $rows->firstWhere('existing', '!=', null)['existing'] ?? null;
+                return array_merge($first, ['existing' => $existing, 'itemId' => $existing ? (int) $existing->id : 0, 'qty' => (int) $rows->sum('qty')]);
+            })->values()->all();
+
+            $seen = [];
+            foreach ($aggregated as $row) {
+                $existing = $row['existing'];
+                $qty = (int) $row['qty'];
+                if ($existing && $qty <= 0) { $existing->delete(); continue; }
+                if ($existing) {
+                    $seen[] = (int) $existing->id;
+                    $existing->update(['quantity' => $qty, 'line_total' => max($qty * (int) $existing->price - (int) ($existing->line_discount_amount ?? 0), 0)]);
+                    continue;
+                }
+                if ($qty <= 0) { continue; }
+                $created = InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $row['productId'], 'variant_id' => $row['variantId'], 'quantity' => $qty, 'price' => (int) $row['variant']->sell_price, 'line_discount_amount' => 0, 'line_total' => $qty * (int) $row['variant']->sell_price]);
+                $seen[] = (int) $created->id;
+            }
+
+            foreach ($invoice->items as $item) {
+                if (! in_array((int) $item->id, $seen, true)) { $item->delete(); }
+            }
+
+            $invoice->refresh()->load('items');
+            $subtotal = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
+            $discount = max((int) $invoice->discount_amount, (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0)));
+            $invoice->update(['subtotal' => $subtotal, 'discount_amount' => $discount, 'total' => max($subtotal - $discount, 0), 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
+            $description = trim(($reason ? 'دلیل: ' . $reason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
+            $this->historyService->log($invoice, 'invoice_items_updated', 'items', null, null, $description, $user->id);
+
+            return $invoice->fresh(['items.product', 'items.variant']);
+        });
+    }
+
     private function centralAvailableStockForUpdate(int $productId, int $variantId): int
     {
         $stock = WarehouseStock::query()

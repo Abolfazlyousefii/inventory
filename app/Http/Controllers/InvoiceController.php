@@ -266,7 +266,7 @@ class InvoiceController extends Controller
         $statusLabels = $this->statusService->labels();
         $canEditItems = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
 
-        return view('vouchers.sales.edit', compact('invoice', 'statusLabels', 'canEditItems'));
+        return redirect()->route('invoices.edit', $invoice->uuid);
     }
 
 
@@ -524,11 +524,30 @@ class InvoiceController extends Controller
 
     public function update(string $uuid, Request $request)
     {
+        $data = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
+            'items.*.id' => 'nullable|exists:invoice_items,id',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.variant_id' => 'required|exists:product_variants,id',
+            'items.*.quantity' => 'required|integer|min:0',
+            'change_reason' => 'nullable|string|max:255',
+            'change_note' => 'nullable|string|max:2000',
+        ]);
+
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         abort_unless($this->canManageInvoice($invoice), 403);
 
+        $this->warehouseCollectionService->updateInvoiceItemsInPlace(
+            $invoice,
+            $data['items'],
+            auth()->user(),
+            $data['change_reason'] ?? null,
+            $data['change_note'] ?? null
+        );
+
         return redirect()->route('invoices.edit', $invoice->uuid)
-            ->with('error', 'ویرایش مستقیم فاکتور در نسخه جدید غیرفعال است. حذف و اضافه اقلام فقط از مسیر delta-safe جمع‌آوری و تغییر قیمت فقط با workflow کنترل‌شده و لاگ‌دار انجام می‌شود.');
+            ->with('success', 'تغییرات اقلام فاکتور ذخیره شد.');
     }
 
     private function canManageInvoice(Invoice $invoice): bool
