@@ -37,7 +37,6 @@ class DashboardController extends Controller
         $quickActions = collect([
             ['title' => 'ثبت پیش‌فاکتور', 'description' => 'ثبت سفارش جدید مشتری', 'route_name' => 'preinvoice.create', 'icon' => 'receipt-cutoff', 'roles' => null],
             ['title' => 'پیش‌فاکتورهای من', 'description' => 'پیگیری سفارش‌های ثبت‌شده', 'route_name' => 'preinvoice.my.index', 'icon' => 'person-check', 'roles' => null],
-            ['title' => 'در انتظار تایید انبار', 'description' => 'بررسی موجودی و آماده‌سازی', 'route_name' => 'preinvoice.warehouse.index', 'icon' => 'clipboard-check', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
             ['title' => 'حواله‌های انبار', 'description' => 'جمع‌آوری و ارسال کالا', 'route_name' => 'vouchers.index', 'icon' => 'boxes', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
             ['title' => 'ثبت خرید کالا', 'description' => 'ورود موجودی جدید به انبار', 'route_name' => 'purchases.create', 'icon' => 'cart-plus', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
             ['title' => 'فاکتورها', 'description' => 'مشاهده و پیگیری فاکتورهای فروش', 'route_name' => 'invoices.index', 'icon' => 'file-earmark-text', 'roles' => null],
@@ -50,7 +49,7 @@ class DashboardController extends Controller
         $kpis = [
             'todayPreinvoices' => PreinvoiceOrder::query()->whereDate('created_at', $today)->count(),
             'todayInvoices' => Invoice::query()->whereDate('created_at', $today)->count(),
-            'financeQueue' => PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE)->count(),
+            'financeQueue' => PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)->count(),
             'warehousePending' => Invoice::query()->where('status', Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL)->count(),
             'lowStock' => Product::query()->where('stock', '>', 0)->where('stock', '<=', $lowStockThreshold)->count(),
             'todayReceipts' => Currency::toRial((int) InvoicePayment::query()->whereDate('paid_at', $today)->sum('amount')),
@@ -69,7 +68,6 @@ class DashboardController extends Controller
 
         $actionItems = collect([
             ['title' => 'در انتظار تایید مالی', 'count' => $kpis['financeQueue'], 'route_name' => 'preinvoice.draft.index', 'roles' => ['admin', 'Admin', 'finance', 'Accountant', 'Manager']],
-            ['title' => 'در انتظار تایید انبار', 'count' => PreinvoiceOrder::query()->whereIn('status', [PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, PreinvoiceOrder::STATUS_WAREHOUSE_REVIEWING])->count(), 'route_name' => 'preinvoice.warehouse.index', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
             ['title' => 'حواله‌های منتظر تایید انبار', 'count' => $kpis['warehousePending'], 'route_name' => 'vouchers.index', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
             ['title' => 'حواله‌های در حال جمع‌آوری', 'count' => $collectingVoucherCount, 'route_name' => 'vouchers.sale-delivery.index', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
             ['title' => 'چک‌های نزدیک سررسید', 'count' => $this->safeCount(fn () => Cheque::query()->where('status', 'pending')->whereBetween('due_date', [now()->toDateString(), now()->addDays(7)->toDateString()])->count()), 'route_name' => 'finance.cheques.registered', 'roles' => ['admin', 'Admin', 'finance', 'Accountant']],

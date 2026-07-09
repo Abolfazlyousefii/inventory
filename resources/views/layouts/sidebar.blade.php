@@ -261,9 +261,6 @@
                     @canPermission('stock_in.create')
                     <a class="sidebar-sublink {{ $is('purchases.create') }}" href="{{ route('purchases.create') }}">ثبت خرید کالا</a>
                     @endcanPermission
-                    @canPermission('preinvoices.warehouse.view')
-                    <a class="sidebar-sublink {{ $is('preinvoice.warehouse.*') }}" href="{{ route('preinvoice.warehouse.index') }}">در انتظار تایید انبار</a>
-                    @endcanPermission
                     @canPermission('preinvoices.warehouse.reviews.view')
                     <a class="sidebar-sublink {{ $is('warehouse.reviews.*') }}" href="{{ route('warehouse.reviews.index') }}">سوابق تأیید انبار</a>
                     @endcanPermission
