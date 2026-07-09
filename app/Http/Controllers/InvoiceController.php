@@ -471,86 +471,71 @@ class InvoiceController extends Controller
     {
         $invoice = Invoice::query()->with('histories.actor')->where('uuid', $uuid)->firstOrFail();
 
-        return response()->json([
-            'invoice_uuid' => $invoice->uuid,
-            'history' => $invoice->histories->map(fn ($h) => [
-                'action_type' => $h->action_type,
-                'field_name' => $h->field_name,
-                'old_value' => $h->old_value,
-                'new_value' => $h->new_value,
-                'description' => $h->description,
-                'done_by' => $h->actor?->name,
-                'done_at' => optional($h->done_at)->toDateTimeString(),
-            ])->values(),
-        ]);
+        if (request()->expectsJson()) {
+            return response()->json([
+                'invoice_uuid' => $invoice->uuid,
+                'history' => $invoice->histories->map(fn ($h) => [
+                    'action_type' => $h->action_type,
+                    'field_name' => $h->field_name,
+                    'old_value' => $h->old_value,
+                    'new_value' => $h->new_value,
+                    'description' => $h->description,
+                    'done_by' => $h->actor?->name,
+                    'done_at' => optional($h->done_at)->toDateTimeString(),
+                ])->values(),
+            ]);
+        }
+
+        $statusLabels = $this->statusService->labels();
+        return view('invoices.history', compact('invoice', 'statusLabels'));
+    }
+
+    public function history(string $uuid)
+    {
+        $invoice = Invoice::query()
+            ->with(['histories.actor', 'payments.creator', 'notes.user', 'preinvoiceOrder.creator:id,name'])
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+
+        abort_unless($this->accessService->canViewInvoiceReadonly($invoice, auth()->user()), 403);
+
+        $statusLabels = $this->statusService->labels();
+        return view('invoices.history', compact('invoice', 'statusLabels'));
     }
 
     public function edit(string $uuid)
     {
         $invoice = Invoice::query()
-            ->with(['items.product', 'items.variant'])
+            ->with(['items.product', 'items.variant', 'payments.cheque', 'notes.user', 'preinvoiceOrder.creator:id,name'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        if (! $this->accessService->canSellerEditInvoiceItems($invoice, auth()->user())) {
-            return redirect()->back()->with('error', 'این فاکتور قابل ویرایش توسط اپراتور نیست و ویرایش آن باید توسط واحد مالی انجام شود.');
-        }
+        abort_unless($this->canManageInvoice($invoice), 403);
 
-        return view('invoices.edit', compact('invoice'));
+        $paidTotal = (int) $invoice->payments->sum('amount');
+        $remainingAmount = max((int) $invoice->total - $paidTotal, 0);
+        $canRegisterPayments = $this->canHandleFinanceActions();
+        $canEditPrices = $this->canHandleFinanceActions();
+        $canEditItemsWithCollectionFlow = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
+        $statusLabels = $this->statusService->labels();
+
+        return view('invoices.edit', compact('invoice', 'paidTotal', 'remainingAmount', 'canRegisterPayments', 'canEditPrices', 'canEditItemsWithCollectionFlow', 'statusLabels'));
     }
 
     public function update(string $uuid, Request $request)
     {
-        $invoice = Invoice::query()->with(['items', 'preinvoiceOrder:id,created_by'])->where('uuid', $uuid)->firstOrFail();
-        if (! $this->accessService->canSellerEditInvoiceItems($invoice, auth()->user())) {
-            return redirect()->back()->with('error', 'این فاکتور قابل ویرایش توسط اپراتور نیست و ویرایش آن باید توسط واحد مالی انجام شود.');
-        }
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        abort_unless($this->canManageInvoice($invoice), 403);
 
-        $data = $request->validate([
-            'customer_name' => 'required|string|max:255',
-            'customer_mobile' => 'required|string|max:50',
-            'customer_address' => 'nullable|string|max:2000',
-            'items' => 'required|array|min:1',
-            'items.*.id' => 'required|exists:invoice_items,id',
-            'items.*.quantity' => 'required|integer|min:0',
-            'items.*.price' => 'required|integer|min:0',
-            'edit_reason' => 'required|string|max:2000',
-        ]);
+        return redirect()->route('invoices.edit', $invoice->uuid)
+            ->with('error', 'ویرایش مستقیم فاکتور در نسخه جدید غیرفعال است. حذف و اضافه اقلام فقط از مسیر delta-safe جمع‌آوری و تغییر قیمت فقط با workflow کنترل‌شده و لاگ‌دار انجام می‌شود.');
+    }
 
-        DB::transaction(function () use ($invoice, $data) {
-            $invoice = Invoice::query()->with(['items', 'preinvoiceOrder'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
-            if (! $this->accessService->canSellerEditInvoiceItems($invoice, auth()->user())) {
-                abort(403, 'این فاکتور قابل ویرایش توسط اپراتور نیست و ویرایش آن باید توسط واحد مالی انجام شود.');
-            }
-            $beforeAudit = [
-                'invoice' => $invoice->only(['customer_name', 'customer_mobile', 'customer_address', 'subtotal', 'discount_amount', 'total', 'status']),
-                'items' => $invoice->items->map->only(['id', 'product_id', 'variant_id', 'quantity', 'price', 'line_total'])->values()->all(),
-            ];
+    private function canManageInvoice(Invoice $invoice): bool
+    {
+        $user = auth()->user();
 
-            $invoice->update([
-                'customer_name' => $data['customer_name'],
-                'customer_mobile' => $data['customer_mobile'],
-                'customer_address' => $data['customer_address'] ?? '',
-            ]);
-
-            $this->salesHavalehService->updateItems($invoice, $data['items'], (int) auth()->id(), $data['edit_reason'], $data['edit_reason']);
-            $fresh = $invoice->fresh(['items.product', 'items.variant', 'preinvoiceOrder.items']);
-            DB::table('invoice_edit_audits')->insert([
-                'invoice_id' => $invoice->id,
-                'user_id' => auth()->id(),
-                'reason' => $data['edit_reason'],
-                'changes_before' => json_encode($beforeAudit, JSON_UNESCAPED_UNICODE),
-                'changes_after' => json_encode([
-                    'invoice' => $fresh->only(['customer_name', 'customer_mobile', 'customer_address', 'subtotal', 'discount_amount', 'total', 'status']),
-                    'items' => $fresh->items->map->only(['id', 'product_id', 'variant_id', 'quantity', 'price', 'line_total'])->values()->all(),
-                ], JSON_UNESCAPED_UNICODE),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $this->warehousePendingRefreshService->refreshActiveWarehousePendingForDocument($fresh, 'invoice', auth()->id());
-        });
-
-        return redirect()->route('invoices.show', $invoice->uuid)->with('success', '✅ اقلام سند تغییر کرد و برای بررسی مجدد به انبار و مالی ارسال شد.');
+        return $user && $user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant', 'warehouse', 'Warehouse']);
     }
 
     public function print(string $uuid, Request $request, SalesPrintDocumentService $printService)
@@ -586,10 +571,15 @@ class InvoiceController extends Controller
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        $canFinanceApprove = $this->canHandleFinanceActions();
+        abort_unless($this->accessService->canViewInvoiceReadonly($invoice, auth()->user()), 403);
+
+        $paidTotal = (int) $invoice->payments->sum('amount');
+        $remainingAmount = max((int) $invoice->total - $paidTotal, 0);
+        $canManageInvoice = $this->canManageInvoice($invoice);
+        $canRegisterPayments = $this->canHandleFinanceActions() && $remainingAmount > 0;
         $statusLabels = $this->statusService->labels();
 
-        return view('invoices.show', compact('invoice', 'canFinanceApprove', 'statusLabels'));
+        return view('invoices.show', compact('invoice', 'paidTotal', 'remainingAmount', 'canManageInvoice', 'canRegisterPayments', 'statusLabels'));
     }
 
     private function canHandleFinanceActions(): bool
@@ -601,29 +591,9 @@ class InvoiceController extends Controller
 
     public function updateStatus(string $uuid, Request $request)
     {
-        $invoice = Invoice::where('uuid', $uuid)->firstOrFail();
+        Invoice::where('uuid', $uuid)->firstOrFail();
 
-        $data = $request->validate([
-            'status' => ['required', 'string', Rule::in($this->statusService->all())],
-            'note' => [
-                Rule::requiredIf($request->input('status') === Invoice::STATUS_SHIPPED),
-                'nullable',
-                'string',
-                'max:1000',
-            ],
-        ], [
-            'note.required' => 'برای ثبت وضعیت ارسال‌شده، وارد کردن یادداشت نهایی الزامی است.',
-        ]);
-
-        $updatedInvoice = $this->salesHavalehService->changeStatus($invoice, $data['status'], $data['note'] ?? null, auth()->id());
-
-        if ((string) $updatedInvoice->status === Invoice::STATUS_SHIPPED) {
-            return redirect()->route('vouchers.sales.queue')
-                ->with('success', '✅ حواله ارسال شد و از صف جمع‌آوری خارج شد.');
-        }
-
-        return redirect()->route('vouchers.sales.edit', $updatedInvoice->uuid)
-            ->with('success', '✅ وضعیت حواله بروزرسانی شد.');
+        return back()->with('error', 'تغییر وضعیت دستی در نسخه جدید غیرفعال است. وضعیت‌ها فقط از مسیرهای رسمی تغییر می‌کنند.');
     }
 
     public function cancel(string $uuid, Request $request)

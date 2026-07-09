@@ -332,6 +332,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/{uuid}/print', [InvoiceController::class, 'print'])->name('invoices.print');
         Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->name('invoices.edit');
         Route::put('/{uuid}', [InvoiceController::class, 'update'])->name('invoices.update');
+        Route::get('/{uuid}/history', [InvoiceController::class, 'history'])->name('invoices.history');
         Route::get('/{uuid}', [InvoiceController::class, 'show'])->name('invoices.show');
         Route::post('/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.status');
         Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
