@@ -40,7 +40,7 @@
                         <td>{{ number_format((int) $order->changes_count) }}</td>
                         <td>{{ $order->created_at ? Jalalian::fromDateTime($order->created_at)->format('Y/m/d H:i') : '—' }}</td>
                         <td>{{ $order->last_review_action_at ? Jalalian::fromDateTime($order->last_review_action_at)->format('Y/m/d H:i') : '—' }}</td>
-                        <td class="text-end"><div class="d-flex gap-1 justify-content-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('warehouse.reviews.show', $order->uuid) }}">مشاهده پرونده</a><a class="btn btn-sm btn-outline-dark" target="_blank" href="{{ route('warehouse.reviews.print', $order->uuid) }}">چاپ</a><a class="btn btn-sm btn-outline-secondary" href="{{ route('archive.preinvoices.show', $order->uuid) }}">پیش‌فاکتور</a></div></td>
+                        <td class="text-end"><div class="d-flex gap-1 justify-content-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('warehouse.reviews.show', $order->uuid) }}">مشاهده پرونده</a><a class="btn btn-sm btn-outline-dark" target="_blank" href="{{ route('warehouse.reviews.print', $order->uuid) }}">چاپ</a><a class="btn btn-sm btn-outline-secondary" href="{{ route('preinvoice.my.show', $order->uuid) }}">پیش‌فاکتور</a></div></td>
                     </tr>
                 @empty
                     <tr><td colspan="10" class="text-center py-4 text-muted">پرونده‌ای برای نمایش وجود ندارد.</td></tr>

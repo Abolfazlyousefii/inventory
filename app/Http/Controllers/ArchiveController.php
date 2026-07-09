@@ -26,13 +26,21 @@ class ArchiveController extends Controller
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        if ($request->has('print') || $request->has('mode')) {
+        if ($request->routeIs('preinvoice.print') || $request->has('print') || $request->has('mode')) {
             $printData = $printService->preinvoiceData($order, (string) $request->query('mode', $request->query('print', 'warehouse')));
 
             return view('prints.invoice', compact('printData'));
         }
 
-        return view('archive.preinvoice-show', compact('order'));
+        if ($order->invoice?->uuid) {
+            return redirect()
+                ->route('invoices.show', $order->invoice->uuid)
+                ->with('warning', 'صفحه آرشیو پیش‌فاکتور در نسخه جدید حذف شده است. اطلاعات این سند از صفحه فاکتور قابل مشاهده است.');
+        }
+
+        return redirect()
+            ->route('preinvoice.my.index')
+            ->with('warning', 'صفحه آرشیو پیش‌فاکتور در نسخه جدید غیرفعال است.');
     }
 
     public function showInvoice(string $uuid, Request $request, SalesPrintDocumentService $printService)

@@ -482,7 +482,7 @@
                 </span>
               </td>
               <td class="text-end">
-                <a href="{{ route('archive.preinvoices.show', $o->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
+                <a href="{{ route('preinvoice.print', $o->uuid) }}" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
               </td>
             </tr>
           @empty
