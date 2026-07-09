@@ -243,6 +243,8 @@ class InvoiceController extends Controller
             ->where('uuid', $uuid)
             ->firstOrFail();
 
+        abort_unless($this->accessService->canViewInvoiceReadonly($invoice, auth()->user()), 403);
+
         $statusLabels = $this->statusService->labels();
 
         return view('vouchers.sales.show', compact('invoice', 'statusLabels'));
@@ -416,6 +418,8 @@ class InvoiceController extends Controller
             $invoice = Invoice::query()->with('items')->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
             abort_unless($invoice->status === Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 422, 'وضعیت فاکتور برای تایید مجدد مالی مجاز نیست.');
             abort_if($invoice->items->sum('quantity') <= 0, 422, 'فاکتور باید حداقل یک قلم کالا داشته باشد.');
+            $invoice->recalculateSnapshotTotals();
+            $invoice->refresh();
             $this->customerLedgerService->syncInvoiceDebit($invoice);
             $invoice->update(['status' => Invoice::STATUS_READY_TO_SHIP, 'status_changed_at' => now(), 'status_changed_by' => auth()->id()]);
             $this->warehouseCollectionServiceHistory($invoice, 'finance_reapproved', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP, 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
@@ -554,6 +558,8 @@ class InvoiceController extends Controller
             ])
             ->where('uuid', $uuid)
             ->firstOrFail();
+
+        abort_unless($this->accessService->canViewInvoiceReadonly($invoice, auth()->user()), 403);
 
         $printData = $printService->invoiceData($invoice, (string) $request->query('mode', $request->query('print', 'warehouse')));
 
