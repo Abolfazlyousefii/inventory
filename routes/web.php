@@ -23,6 +23,7 @@ use App\Http\Controllers\ProductExportController;
 use App\Http\Controllers\ProductSalesLedgerController;
 use App\Http\Controllers\ProductPurchaseLedgerController;
 use App\Http\Controllers\ProductDeactivationDocumentController;
+use App\Http\Controllers\PriceChangeDocumentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\StockMovementController;
@@ -64,14 +65,24 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products', [ProductController::class, 'index'])->middleware('permission:products.view')->name('products.index');
     Route::get('/products/create', [ProductController::class, 'create'])->middleware('permission:products.create')->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->middleware('permission:products.create')->name('products.store');
-    Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->middleware('permission:products.edit')->name('products.edit');
-    Route::put('/products/{product}', [ProductController::class, 'update'])->middleware('permission:products.edit')->name('products.update');
-    Route::patch('/products/{product}', [ProductController::class, 'update'])->middleware('permission:products.edit')->name('products.update');
-    Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->name('products.warehouse-stock');
-    Route::get('/products/{product}/image', [ProductController::class, 'image'])->name('products.image');
-    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->middleware('permission:products.delete')->name('products.destroy');
-    Route::get('/products/{product}/sales-ledger', [ProductSalesLedgerController::class, 'index'])->name('products.sales-ledger');
-    Route::get('/products/{product}/purchase-ledger', [ProductPurchaseLedgerController::class, 'purchaseLedger'])->name('products.purchase-ledger');
+    Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
+        Route::get('/', [PriceChangeDocumentController::class, 'index'])->name('index');
+        Route::get('/create', [PriceChangeDocumentController::class, 'create'])->name('create');
+        Route::post('/preview', [PriceChangeDocumentController::class, 'preview'])->name('preview');
+        Route::post('/', [PriceChangeDocumentController::class, 'store'])->name('store');
+        Route::get('/{document}', [PriceChangeDocumentController::class, 'show'])->name('show');
+        Route::post('/{document}/apply', [PriceChangeDocumentController::class, 'apply'])->name('apply');
+        Route::post('/{document}/cancel', [PriceChangeDocumentController::class, 'cancel'])->name('cancel');
+    });
+
+    Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->middleware('permission:products.edit')->name('products.edit');
+    Route::put('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
+    Route::patch('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
+    Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->name('products.warehouse-stock');
+    Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
+    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->middleware('permission:products.delete')->name('products.destroy');
+    Route::get('/products/{product}/sales-ledger', [ProductSalesLedgerController::class, 'index'])->whereNumber('product')->name('products.sales-ledger');
+    Route::get('/products/{product}/purchase-ledger', [ProductPurchaseLedgerController::class, 'purchaseLedger'])->whereNumber('product')->name('products.purchase-ledger');
     Route::resource('categories', CategoryController::class)->except(['show', 'destroy']);
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
     Route::post('/categories/fix-codes', [CategoryController::class, 'fixCodes'])->name('categories.fixCodes');
@@ -115,8 +126,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::put('/inventory-webhooks', [InventoryWebhookController::class, 'update'])->middleware('role:admin|Admin')->name('inventory-webhooks.update');
 
     // Stock movements
-    Route::get('/products/{product}/movements/create', [StockMovementController::class, 'create'])->name('movements.create');
-    Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->name('movements.store');
+    Route::get('/products/{product}/movements/create', [StockMovementController::class, 'create'])->whereNumber('product')->name('movements.create');
+    Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->whereNumber('product')->name('movements.store');
     Route::get('/movements', [StockMovementReportController::class, 'index'])->middleware('permission:reports.stock_movement')->name('movements.index');
 
     // Vouchers
