@@ -325,17 +325,116 @@ class PreinvoiceController extends Controller
         $status = (string) $request->query('status', '');
         $query = PreinvoiceOrder::query()
             ->where('created_by', auth()->id())
-            ->with(['invoice:id,uuid,preinvoice_order_id,status,created_at'])
-            ->withCount('items');
+            ->with([
+                'customer:id,first_name,last_name,mobile',
+                'items:id,preinvoice_order_id,quantity,total_price,sort_order',
+                'invoice:id,uuid,preinvoice_order_id,status,total,items_updated_at,status_changed_at,status_changed_by,created_at,updated_at,customer_name,customer_mobile',
+                'invoice.items:id,invoice_id,quantity,total_price,sort_order',
+                'invoice.shippingMethod:id,name',
+                'invoice.statusChangedByUser:id,name',
+            ]);
 
         if ($status !== '') {
-            $query->where('status', $status);
+            $query->where(function ($query) use ($status) {
+                $query->where('status', $status)
+                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('status', $status));
+            });
         }
 
         $orders = $query->orderByDesc('id')->paginate(20)->withQueryString();
-        $statusLabels = PreinvoiceOrder::statusLabels();
+        $orders->getCollection()->transform(function (PreinvoiceOrder $order) {
+            $order->setAttribute('current_document', $this->buildMyPreinvoiceSummary($order));
+
+            return $order;
+        });
+        $statusLabels = array_merge($this->myPreinvoiceStatusLabels(), $this->myInvoiceStatusLabels());
 
         return view('preinvoice.my-index', compact('orders', 'status', 'statusLabels'));
+    }
+
+    private function buildMyPreinvoiceSummary(PreinvoiceOrder $order): array
+    {
+        $invoice = $order->invoice;
+        $hasInvoice = $invoice !== null;
+        $statusKey = $hasInvoice ? (string) $invoice->status : (string) $order->status;
+        $totalAmount = $hasInvoice ? (int) ($invoice->total ?? 0) : (int) ($order->total_price ?? 0);
+        $originalTotalAmount = (int) ($order->total_price ?? 0);
+        $itemsCount = $hasInvoice
+            ? (int) $invoice->items->sum(fn ($item) => (int) ($item->quantity ?? 0))
+            : (int) $order->items->sum(fn ($item) => (int) ($item->quantity ?? 0));
+        $hasItemsChanged = $hasInvoice && (
+            !empty($invoice->items_updated_at)
+            || in_array($invoice->status, [
+                Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+                Invoice::STATUS_READY_TO_SHIP,
+                Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION,
+            ], true)
+        );
+
+        return [
+            'source' => $hasInvoice ? 'invoice' : 'preinvoice',
+            'preinvoice_uuid' => $order->uuid,
+            'invoice_uuid' => $invoice?->uuid,
+            'invoice_number' => $invoice?->uuid,
+            'status_key' => $statusKey,
+            'status_label' => $hasInvoice
+                ? ($this->myInvoiceStatusLabels()[$statusKey] ?? $invoice->statusLabels()[$statusKey] ?? $statusKey)
+                : ($this->myPreinvoiceStatusLabels()[$statusKey] ?? $order->status_label),
+            'status_group' => $hasInvoice ? 'invoice' : 'preinvoice',
+            'customer_name' => $invoice?->customer_name ?: $order->customer?->display_name ?: $order->customer_name,
+            'customer_mobile' => $invoice?->customer_mobile ?: $order->customer?->mobile ?: $order->customer_mobile,
+            'items_count' => $itemsCount,
+            'total_amount' => $totalAmount,
+            'original_total_amount' => $originalTotalAmount,
+            'has_invoice' => $hasInvoice,
+            'has_items_changed' => $hasItemsChanged,
+            'has_total_changed' => $hasInvoice && $totalAmount !== $originalTotalAmount,
+            'last_changed_at' => $invoice?->items_updated_at ?: $invoice?->status_changed_at ?: $invoice?->updated_at ?: $order->updated_at,
+            'next_action_label' => $this->myPreinvoiceNextActionLabel($hasInvoice, $statusKey),
+            'view_url' => $hasInvoice ? route('vouchers.sales.show', $invoice->uuid) : route('preinvoice.my.show', $order->uuid),
+            'edit_url' => (!$hasInvoice && in_array($order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
+                ? route('preinvoice.draft.edit', $order->uuid)
+                : null,
+            'print_url' => $hasInvoice ? route('vouchers.sales.print', $invoice->uuid) : route('preinvoice.my.show', $order->uuid) . '?print=1',
+        ];
+    }
+
+    private function myPreinvoiceStatusLabels(): array
+    {
+        return [
+            PreinvoiceOrder::STATUS_DRAFT => 'پیش‌نویس',
+            PreinvoiceOrder::STATUS_PENDING_FINANCE => 'در انتظار تایید مالی',
+            PreinvoiceOrder::STATUS_RETURNED_TO_SALES => 'برگشت‌خورده از مالی',
+            PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'رزرو منقضی‌شده',
+            PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE => 'کنسل‌شده توسط مالی',
+        ];
+    }
+
+    private function myInvoiceStatusLabels(): array
+    {
+        return [
+            Invoice::STATUS_PENDING_COLLECTION => 'در صف جمع‌آوری انبار',
+            Invoice::STATUS_WAREHOUSE_RECEIVED => 'دریافت‌شده توسط انبار',
+            Invoice::STATUS_COLLECTING => 'در حال جمع‌آوری',
+            Invoice::STATUS_PENDING_FINANCE_REAPPROVAL => 'در انتظار تایید مجدد مالی',
+            Invoice::STATUS_READY_TO_SHIP => 'آماده ارسال بار',
+            Invoice::STATUS_SHIPPED => 'ارسال‌شده',
+            Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION => 'برگشت‌خورده پس از جمع‌آوری',
+        ];
+    }
+
+    private function myPreinvoiceNextActionLabel(bool $hasInvoice, string $status): string
+    {
+        if ($hasInvoice) {
+            return $status === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION ? 'مشاهده و پیگیری ارجاع' : 'مشاهده فاکتور فقط‌خواندنی';
+        }
+
+        return match ($status) {
+            PreinvoiceOrder::STATUS_DRAFT => 'ویرایش / ثبت نهایی',
+            PreinvoiceOrder::STATUS_RETURNED_TO_SALES => 'ویرایش و ارسال مجدد',
+            PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'ویرایش و ثبت مجدد',
+            default => 'مشاهده',
+        };
     }
 
     public function myShow(string $uuid, Request $request, SalesPrintDocumentService $printService)
