@@ -3,17 +3,19 @@
 
     $isRoute = static fn(string ...$patterns): bool => Str::is($patterns, $currentRouteName);
     $is = static fn(string ...$patterns): string => $isRoute(...$patterns) ? 'active' : '';
+    $isPath = static fn(string ...$patterns): bool => request()->is(...$patterns);
+    $pathActive = static fn(string ...$patterns): string => $isPath(...$patterns) ? 'active' : '';
 
-    $productsActive = $isRoute('products.*', 'admin.product-exports.*', 'product-deactivation-documents.*', 'categories.*', 'model-lists.*')
-        && !$isRoute('products.create');
+    $productsActive = $isRoute('products.create', 'products.price-changes.*', 'purchases.*', 'admin.product-exports.*', 'product-deactivation-documents.*')
+        || $isPath('products/create', 'products/price-changes', 'products/price-changes/*', 'purchases', 'purchases/*', 'admin/product-exports', 'admin/product-exports/*', 'product-deactivation-documents', 'product-deactivation-documents/*');
 
-    $warehouseActive = $isRoute('purchases.*', 'vouchers.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'preinvoice.warehouse.*', 'warehouse.reviews.*', 'products.create', 'warehouse-map.*');
+    $warehouseActive = !$productsActive && $isRoute('purchases.*', 'vouchers.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'preinvoice.warehouse.*', 'warehouse.reviews.*', 'products.create', 'warehouse-map.*');
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*');
 
-    $configActive = $isRoute('shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
+    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
 
     $initialOpenSection = match (true) {
         $productsActive => 'products',
@@ -203,34 +205,33 @@
 
 
         {{-- Products --}}
-        @canAnyPermission(['products.view','products.create','products.export','products.change_status','categories.view','model_lists.view'])
+        @canAnyPermission(['products.create','stock_in.view','products.price_changes.view','products.export','products.change_status'])
         <div class="sidebar-accordion-item {{ $productsActive ? 'is-open' : '' }}" data-accordion-section="products">
             <button type="button"
                     class="sidebar-section-title sidebar-accordion-trigger {{ $productsActive ? 'is-active' : '' }}"
                     data-accordion-trigger
                     aria-expanded="{{ $productsActive ? 'true' : 'false' }}">
-                <span>کالاها</span>
+                <span>کالاهای آریا</span>
                 <svg class="sidebar-accordion-trigger-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
             </button>
             <div class="sidebar-accordion-panel" data-accordion-panel>
                 <div class="sidebar-submenu">
-                    @canPermission('products.view')
-                    <a class="sidebar-sublink {{ $is('products.index') }}" href="{{ route('products.index') }}">نمایش کالاها</a>
+                    @canPermission('products.create')
+                    <a class="sidebar-sublink {{ $is('products.create') }}" href="{{ route('products.create') }}">تعریف کالا</a>
                     @endcanPermission
-                
-                    @canPermission('categories.view')
-                    <a class="sidebar-sublink {{ $is('categories.*') }}" href="{{ route('categories.index') }}">دسته‌بندی محصولات</a>
+                    @canPermission('stock_in.view')
+                    <a class="sidebar-sublink {{ $is('purchases.*') }}" href="{{ route('purchases.index') }}">خرید کالا</a>
+                    @endcanPermission
+                    @canPermission('products.price_changes.view')
+                    <a class="sidebar-sublink {{ $is('products.price-changes.*') ?: $pathActive('products/price-changes', 'products/price-changes/*') }}" href="{{ url('/products/price-changes') }}">تغییر قیمت کالا</a>
                     @endcanPermission
                     @canPermission('products.export')
-                    <a class="sidebar-sublink {{ $is('admin.product-exports.*') }}" href="{{ route('admin.product-exports.index') }}">خروجی محصولات</a>
-                    @endcanPermission
-                    @canPermission('model_lists.view')
-                    <a class="sidebar-sublink {{ $is('model-lists.*') }}" href="{{ route('model-lists.index') }}">مدل لیست</a>
+                    <a class="sidebar-sublink {{ $is('admin.product-exports.*') }}" href="{{ route('admin.product-exports.index') }}">خروجی کالا</a>
                     @endcanPermission
                     @canPermission('products.change_status')
-                    <a class="sidebar-sublink {{ $is('product-deactivation-documents.*') }}" href="{{ route('product-deactivation-documents.index') }}">غیرفعال‌سازی کالا</a>
+                    <a class="sidebar-sublink {{ $is('product-deactivation-documents.*') }}" href="{{ route('product-deactivation-documents.index') }}">غیرفعال کردن کالا</a>
                     @endcanPermission
                 </div>
             </div>
@@ -346,7 +347,7 @@
         </div>
 @endcanAnyPermission
 
-@canAnyPermission(['shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view'])
+@canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view'])
 
         {{-- Configuration --}}
         <div class="sidebar-accordion-item {{ $configActive ? 'is-open' : '' }}" data-accordion-section="config">
@@ -361,6 +362,12 @@
             </button>
             <div class="sidebar-accordion-panel" data-accordion-panel>
                 <div class="sidebar-submenu">
+                    @canPermission('categories.view')
+                    <a class="sidebar-sublink {{ $is('categories.*') }}" href="{{ route('categories.index') }}">دسته‌بندی کالاها</a>
+                    @endcanPermission
+                    @canPermission('model_lists.view')
+                    <a class="sidebar-sublink {{ $is('model-lists.*') }}" href="{{ route('model-lists.index') }}">مدل لیست کالا</a>
+                    @endcanPermission
                     @canPermission('shipping_methods.view')
                     <a class="sidebar-sublink {{ $is('shipping-methods.*') }}" href="{{ route('shipping-methods.index') }}">روش‌های ارسال بار</a>
                     @endcanPermission
