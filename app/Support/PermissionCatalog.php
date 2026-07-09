@@ -292,15 +292,13 @@ class PermissionCatalog
                 ['permission' => 'stock_in.print', 'label' => 'چاپ خرید کالا'],
                 ['permission' => 'stock_in.export', 'label' => 'خروجی خرید کالا'],
             ],
-            'انبارداری' => [
-                ['permission' => 'products.create', 'label' => 'افزودن کالا'],
-                ['permission' => 'preinvoices.warehouse.view', 'label' => 'در انتظار تایید انبار'],
-                ['permission' => 'preinvoices.warehouse.reviews.view', 'label' => 'سوابق تأیید انبار'],
-                ['permission' => 'stock_out.view', 'label' => 'صف جمع‌آوری و ارسال انبار'],
+            'انبارداری شرکت آریا' => [
                 ['permission' => 'issues.view', 'label' => 'حواله‌های انبار'],
-                ['permission' => 'inventory.count.view', 'label' => 'انبارگردانی'],
+                ['permission' => 'stock_out.view', 'label' => 'صف جمع‌آوری فاکتور'],
+                ['permission' => 'stock_out.view', 'label' => 'صف ارسال فاکتور'],
                 ['permission' => 'assets.view', 'label' => 'امین اموال'],
                 ['permission' => 'warehouse_map.view', 'label' => 'نقشه انبار'],
+                ['permission' => 'inventory.count.view', 'label' => 'انبارگردانی'],
             ],
             'بازرگانی و فروش' => [
                 ['permission' => 'preinvoices.create', 'label' => 'ثبت پیش‌فاکتور'],

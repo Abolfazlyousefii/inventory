@@ -9,7 +9,8 @@
     $productsActive = $isRoute('products.create', 'products.price-changes.*', 'purchases.*', 'admin.product-exports.*', 'product-deactivation-documents.*')
         || $isPath('products/create', 'products/price-changes', 'products/price-changes/*', 'purchases', 'purchases/*', 'admin/product-exports', 'admin/product-exports/*', 'product-deactivation-documents', 'product-deactivation-documents/*');
 
-    $warehouseActive = !$productsActive && $isRoute('purchases.*', 'vouchers.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'preinvoice.warehouse.*', 'warehouse.reviews.*', 'products.create', 'warehouse-map.*');
+    $warehouseActive = $isRoute('vouchers.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
+        || $isPath('vouchers', 'vouchers/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*');
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
@@ -240,48 +241,36 @@
 
 
         {{-- Warehouse --}}
-        @canAnyPermission(['products.create','stock_in.view','stock_in.create','stock_out.view','issues.view','inventory.count.view','assets.view','warehouse_map.view','preinvoices.warehouse.view','preinvoices.warehouse.reviews.view'])
+        @canAnyPermission(['issues.view','stock_out.view','inventory.count.view','assets.view','warehouse_map.view'])
         <div class="sidebar-accordion-item {{ $warehouseActive ? 'is-open' : '' }}" data-accordion-section="warehouse">
             <button type="button"
                     class="sidebar-section-title sidebar-accordion-trigger {{ $warehouseActive ? 'is-active' : '' }}"
                     data-accordion-trigger
                     aria-expanded="{{ $warehouseActive ? 'true' : 'false' }}">
-                <span>انبارداری</span>
+                <span>انبارداری شرکت آریا</span>
                 <svg class="sidebar-accordion-trigger-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
             </button>
             <div class="sidebar-accordion-panel" data-accordion-panel>
                 <div class="sidebar-submenu">
-                    @canPermission('products.create')
-                    <a class="sidebar-sublink {{ $is('products.create') }}" href="{{ route('products.create') }}">افزودن کالا</a>
-                    @endcanPermission
-                    @canPermission('stock_in.view')
-                    <a class="sidebar-sublink {{ $is('purchases.index', 'purchases.show', 'purchases.edit') }}" href="{{ route('purchases.index') }}">لیست خرید کالاها</a>
-                    @endcanPermission
-                    @canPermission('stock_in.create')
-                    <a class="sidebar-sublink {{ $is('purchases.create') }}" href="{{ route('purchases.create') }}">ثبت خرید کالا</a>
-                    @endcanPermission
-                    @canPermission('preinvoices.warehouse.reviews.view')
-                    <a class="sidebar-sublink {{ $is('warehouse.reviews.*') }}" href="{{ route('warehouse.reviews.index') }}">سوابق تأیید انبار</a>
-                    @endcanPermission
-                    @canPermission('stock_out.view')
-                    <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.shipped') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری و ارسال انبار</a>
-                    @endcanPermission
-                    @canPermission('stock_out.view')
-                    <a class="sidebar-sublink {{ $is('warehouse.shipping.*') }}" href="{{ route('warehouse.shipping.index') }}">صف ارسال بار</a>
-                    @endcanPermission
                     @canPermission('issues.view')
-                    <a class="sidebar-sublink {{ $isRoute('vouchers.sales.queue', 'vouchers.sales.shipped') ? '' : $is('vouchers.*') }}" href="{{ route('vouchers.index') }}">حواله‌های انبار</a>
+                    <a class="sidebar-sublink {{ $isRoute('vouchers.sales.queue', 'vouchers.sales.queue.*') || $isPath('vouchers/sales/queue', 'vouchers/sales/queue/*') ? '' : ($is('vouchers.*') ?: $pathActive('vouchers', 'vouchers/*')) }}" href="{{ route('vouchers.index') }}">حواله‌های انبار</a>
                     @endcanPermission
-                    @canPermission('inventory.count.view')
-                    <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>
+                    @canPermission('stock_out.view')
+                    <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.queue.*') ?: $pathActive('vouchers/sales/queue', 'vouchers/sales/queue/*') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری فاکتور</a>
+                    @endcanPermission
+                    @canPermission('stock_out.view')
+                    <a class="sidebar-sublink {{ $is('warehouse.shipping.*') ?: $pathActive('warehouse/shipping', 'warehouse/shipping/*') }}" href="{{ route('warehouse.shipping.index') }}">صف ارسال فاکتور</a>
                     @endcanPermission
                     @canPermission('assets.view')
-                    <a class="sidebar-sublink {{ $is('asset.*') }}" href="{{ route('asset.hub') }}">امین اموال</a>
+                    <a class="sidebar-sublink {{ $is('asset.*') ?: $pathActive('warehouse/asset-trustee', 'warehouse/asset-trustee/*') }}" href="{{ route('asset.hub') }}">امین اموال</a>
                     @endcanPermission
                     @canPermission('warehouse_map.view')
-                    <a class="sidebar-sublink {{ $is('warehouse-map.*') }}" href="{{ route('warehouse-map.index') }}">نقشه انبار</a>
+                    <a class="sidebar-sublink {{ $is('warehouse-map.*') ?: $pathActive('warehouse-map', 'warehouse-map/*') }}" href="{{ route('warehouse-map.index') }}">نقشه انبار</a>
+                    @endcanPermission
+                    @canPermission('inventory.count.view')
+                    <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') ?: $pathActive('stocktake', 'stocktake/*') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>
                     @endcanPermission
                 </div>
             </div>
