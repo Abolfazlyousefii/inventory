@@ -1085,6 +1085,211 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             font-size: 1rem;
         }
     }
+
+    /* Wholesale variant picker: one-scroll compact modal */
+    .variant-modal-dialog {
+        max-width: 900px;
+    }
+
+    .variant-modal-content {
+        max-height: calc(100vh - 48px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .variant-modal__header,
+    .variant-modal__search,
+    .variant-modal__footer,
+    .variant-modal__footer-extra {
+        flex: 0 0 auto;
+    }
+
+    .variant-modal__search {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 14px;
+        background: #fffdf9;
+        border-bottom: 1px solid rgba(12, 83, 103, .08);
+    }
+
+    .variant-modal__body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 10px 12px;
+        background: linear-gradient(180deg, #fffefc, #faf6ef);
+    }
+
+    .variant-modal__footer-extra {
+        padding: 8px 12px;
+        background: #fffdf9;
+        border-top: 1px solid rgba(12, 83, 103, .08);
+    }
+
+    .variant-modal__footer {
+        gap: 8px;
+    }
+
+    .picker-search-wrap {
+        position: relative;
+        min-width: 0;
+    }
+
+    .picker-search-wrap .picker-search {
+        padding-left: 34px;
+    }
+
+    .picker-search-clear {
+        position: absolute;
+        left: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 24px;
+        height: 24px;
+        border: 0;
+        border-radius: 999px;
+        background: #eef2f7;
+        color: #64748b;
+        font-weight: 900;
+        line-height: 1;
+    }
+
+    .stock-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        white-space: nowrap;
+        font-size: .78rem;
+        font-weight: 800;
+        color: var(--text-soft);
+    }
+
+    .variant-list {
+        max-height: none;
+        overflow: visible;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+    }
+
+    .variant-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 150px;
+        gap: 12px;
+        align-items: center;
+        padding: 9px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #fff;
+        margin-bottom: 7px;
+    }
+
+    .variant-row__title {
+        font-size: .84rem;
+        font-weight: 900;
+        color: #083344;
+        line-height: 1.8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .variant-row__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+        font-size: .70rem;
+        color: #64748b;
+    }
+
+    .variant-pill {
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        white-space: nowrap;
+        font-weight: 800;
+    }
+
+    .variant-pill--stock { background: #ecfdf5; color: #047857; border-color: #bbf7d0; }
+    .variant-pill--selected { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .variant-pill--muted { opacity: .66; }
+
+    .variant-row__qty {
+        display: grid;
+        grid-template-columns: 36px 1fr 36px;
+        gap: 6px;
+        align-items: center;
+        direction: ltr;
+    }
+
+    .variant-row__qty button,
+    .variant-row__qty input {
+        width: 100%;
+        height: 36px;
+        border-radius: 10px;
+    }
+
+    .qty-btn:disabled,
+    .qty-input:disabled {
+        opacity: .45;
+        cursor: not-allowed;
+    }
+
+    @media (max-width: 575.98px) {
+        .variant-modal-dialog {
+            margin: 0;
+            max-width: none;
+            width: 100%;
+            height: 100dvh;
+        }
+
+        .variant-modal-content {
+            height: 100dvh;
+            max-height: 100dvh;
+            border-radius: 0;
+        }
+
+        .variant-modal__search {
+            grid-template-columns: 1fr;
+            gap: 7px;
+            padding: 8px 10px;
+        }
+
+        .variant-modal__body {
+            padding: 8px 9px;
+            max-height: none;
+        }
+
+        .variant-row {
+            display: block;
+            padding: 10px;
+        }
+
+        .variant-row__title {
+            white-space: normal;
+            font-size: .82rem;
+            line-height: 1.8;
+        }
+
+        .variant-row__meta {
+            gap: 5px;
+            margin-top: 6px;
+        }
+
+        .variant-row__qty {
+            margin-top: 8px;
+            grid-template-columns: 42px 1fr 42px;
+        }
+    }
+
 </style>
 
 <div class="container page-shell py-3">
@@ -1300,9 +1505,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 </div>
 
 <div class="modal fade" id="groupPickerModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header picker-head">
+    <div class="modal-dialog modal-xl variant-modal-dialog">
+        <div class="modal-content variant-modal-content">
+            <div class="modal-header picker-head variant-modal__header">
                 <div>
                     <h5 class="modal-title fw-bold" id="pickerModalTitle">انتخاب تنوع</h5>
                     <div class="hint mt-1" id="pickerModalSubTitle">—</div>
@@ -1310,17 +1515,26 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 <button type="button" class="btn-close m-0" data-bs-dismiss="modal"></button>
             </div>
 
-            <div class="modal-body">
-                <div class="mb-2">
+            <div class="variant-modal__search">
+                <div class="picker-search-wrap">
                     <input type="text" id="pickerSearchInput" class="picker-search" placeholder="جستجو در تنوع‌ها...">
+                    <button type="button" id="clearPickerSearchBtn" class="picker-search-clear" aria-label="پاک کردن جستجو">×</button>
                 </div>
+                <label class="stock-toggle" id="onlyInStockWrap">
+                    <input type="checkbox" id="onlyInStockToggle">
+                    <span>فقط موجودها</span>
+                </label>
+            </div>
 
+            <div class="modal-body variant-modal__body">
                 <div id="pickerLoading" class="empty-state d-none">در حال دریافت کالاها...</div>
 
                 <div class="variant-list" id="pickerTableWrap">
                     <div id="groupPickerRows"></div>
                 </div>
+            </div>
 
+            <div class="variant-modal__footer-extra">
                 <div class="modal-discount-box">
                     <label class="label-sm">تخفیف محصول</label>
                     <div class="discount-control">
@@ -1353,7 +1567,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 </div>
             </div>
 
-            <div class="modal-footer" style="background:linear-gradient(180deg,#f9f6ee,#f3eee5);border-top:1px solid rgba(12,83,103,.08);">
+            <div class="modal-footer variant-modal__footer" style="background:linear-gradient(180deg,#f9f6ee,#f3eee5);border-top:1px solid rgba(12,83,103,.08);">
                 <button type="button" class="btn btn-light border rounded-3" id="clearPickerQtyBtn">پاک کردن</button>
                 <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">لغو</button>
                 <button type="button" id="saveGroupSelectionBtn" class="btn btn-primary rounded-3 fw-bold px-4">افزودن به سبد</button>
@@ -1401,6 +1615,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     let modalQuantities = new Map();
     let modalGroupDiscountType = 'amount';
     let modalGroupDiscountValue = 0;
+    let modalOnlyInStock = false;
 
     let groupedSelections = {};
     let motherAutoTimer = null;
@@ -2217,6 +2432,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('pickerTableWrap').classList.add('d-none');
         document.getElementById('groupPickerRows').innerHTML = '';
         document.getElementById('pickerSearchInput').value = '';
+        document.getElementById('onlyInStockToggle').checked = false;
+        modalOnlyInStock = false;
         modal.show();
         try {
             const product = await getProductDetails(activeProductId);
@@ -2251,8 +2468,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     function filteredModalItems() {
         const q = normalize(document.getElementById('pickerSearchInput').value).toLowerCase();
         return activeModalItems.filter(v => {
+            const availability = variantAvailability(v);
+            if (modalOnlyInStock && availability.maxSelectable <= 0 && Number(modalQuantities.get(variantId(v)) || 0) <= 0) return false;
             if (!q) return true;
-            const haystack = [variantModel(v), variantDesign(v), variantName(v)].join(' ').toLowerCase();
+            const haystack = [variantModel(v), variantDesign(v), variantName(v), v?.sku, v?.code, v?.variant_code, v?.barcode].join(' ').toLowerCase();
             return haystack.includes(q);
         });
     }
@@ -2266,8 +2485,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     function renderPickerRows() {
         const wrap = document.getElementById('groupPickerRows');
         const rows = filteredModalItems();
+        const q = normalize(document.getElementById('pickerSearchInput')?.value || '');
         if (!rows.length) {
-            wrap.innerHTML = `<div class="empty-state">موردی برای نمایش وجود ندارد.</div>`;
+            wrap.innerHTML = `<div class="empty-state">${q ? 'تنوعی با این جستجو پیدا نشد.' : 'موردی برای نمایش وجود ندارد.'}</div>`;
             return;
         }
         wrap.innerHTML = rows.map(v => {
@@ -2283,26 +2503,27 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             const selectedClass = qty > 0 ? 'row-selected' : '';
             const noStockClass = stock <= 0 && qty <= 0 ? 'row-empty-stock' : '';
             const disabled = stock <= 0 && qty <= 0 ? 'disabled' : '';
+            const minusDisabled = qty <= 0 || disabled ? 'disabled' : '';
+            const plusDisabled = qty >= max || disabled ? 'disabled' : '';
+            const title = buildVariantTitle(v);
             return `
         <div class="variant-row ${selectedClass} ${noStockClass}" data-row-variant="${id}">
-            <div>
-                <div class="variant-title">${esc(buildVariantTitle(v))}</div>
-                <div class="variant-meta">
-                    <span class="badge-soft ${freeStock > 0 ? 'badge-stock' : 'badge-no-stock'}">
-                        آزاد: ${freeStock > 0 ? formatNum(freeStock) : 'ناموجود'}
-                    </span>
-                    <span class="badge-soft badge-brand">انتخاب شما: ${formatNum(currentTokenReserved)}</span>
-                    <span class="badge-soft">سقف انتخاب: ${formatNum(stock)}</span>
-                    <span class="badge-soft">رزرو دیگران: ${formatNum(reservedByOthers)}</span>
-                    <span class="badge-soft">قیمت: ${formatMoney(price)}</span>
-                    ${v?.is_current_preinvoice_item ? `<span class="badge-soft badge-brand">در پیش‌فاکتور موجود است${stock <= 0 ? ' / موجودی فعلی ناکافی است' : ''}</span>` : ''}
-                    ${qty > 0 && qty !== currentTokenReserved ? `<span class="badge-soft badge-brand">تعداد انتخابی: ${formatNum(qty)}</span>` : ''}
+            <div class="variant-row__info">
+                <div class="variant-row__title" title="${esc(title)}">${esc(title)}</div>
+                <div class="variant-row__meta">
+                    <span class="variant-pill variant-pill--stock">آزاد: ${freeStock > 0 ? formatNum(freeStock) : 'ناموجود'}</span>
+                    ${reservedByOthers > 0 ? `<span class="variant-pill">رزرو: ${formatNum(reservedByOthers)}</span>` : ''}
+                    <span class="variant-pill ${stock === freeStock ? 'variant-pill--muted' : ''}" title="سقف قابل انتخاب">سقف: ${formatNum(stock)}</span>
+                    <span class="variant-pill">قیمت: ${formatMoney(price)}</span>
+                    ${v?.is_current_preinvoice_item ? `<span class="variant-pill variant-pill--selected">در پیش‌فاکتور موجود است${stock <= 0 ? ' / موجودی فعلی ناکافی است' : ''}</span>` : ''}
+                    ${qty > 0 ? `<span class="variant-pill variant-pill--selected" data-selected-pill="${id}">انتخاب شما: ${formatNum(qty)}</span>` : ''}
+                    ${currentTokenReserved > 0 && qty <= 0 ? `<span class="variant-pill variant-pill--selected">رزرو شما: ${formatNum(currentTokenReserved)}</span>` : ''}
                 </div>
             </div>
-            <div class="qty-control">
-                <button type="button" class="qty-btn picker-minus" data-id="${id}" ${disabled}>−</button>
+            <div class="variant-row__qty qty-control">
+                <button type="button" class="qty-btn picker-minus" data-id="${id}" ${minusDisabled}>−</button>
                 <input type="tel" class="qty-input picker-qty" data-id="${id}" data-price="${price}" min="0" max="${max}" value="${qty}" inputmode="numeric" pattern="[0-9]*" autocomplete="off" ${disabled}>
-                <button type="button" class="qty-btn picker-plus" data-id="${id}" data-step="1" ${disabled}>+</button>
+                <button type="button" class="qty-btn picker-plus" data-id="${id}" data-step="1" ${plusDisabled}>+</button>
             </div>
         </div>`;
         }).join('');
@@ -2328,7 +2549,17 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
 
         const row = document.querySelector(`[data-row-variant="${id}"]`);
-        if (row) row.classList.toggle('row-selected', qty > 0);
+        if (row) {
+            row.classList.toggle('row-selected', qty > 0);
+            const qtyInput = row.querySelector('.picker-qty');
+            if (qtyInput) qtyInput.value = qty;
+            row.querySelector('.picker-minus').disabled = qty <= 0;
+            row.querySelector('.picker-plus').disabled = qty >= max;
+            const meta = row.querySelector('.variant-row__meta');
+            const oldPill = row.querySelector(`[data-selected-pill="${id}"]`);
+            if (oldPill) oldPill.remove();
+            if (qty > 0 && meta) meta.insertAdjacentHTML('beforeend', `<span class="variant-pill variant-pill--selected" data-selected-pill="${id}">انتخاب شما: ${formatNum(qty)}</span>`);
+        }
     }
 
     function changeModalQty(id, delta) {
@@ -2359,6 +2590,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('modalTotalAmount').textContent = formatMoney(Math.max(0, totalAmount - discount));
         const preview = document.getElementById('modalGroupDiscountPreview');
         if (preview) preview.textContent = formatMoney(discount);
+        const saveBtn = document.getElementById('saveGroupSelectionBtn');
+        if (saveBtn) {
+            saveBtn.disabled = selectedRows === 0;
+            saveBtn.textContent = selectedRows > 0 ? `افزودن ${formatNum(selectedRows)} قلم به سبد` : 'افزودن به سبد';
+        }
     }
 
     function clearPickerQuantities() {
@@ -2771,6 +3007,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         });
         document.getElementById('openGroupPickerBtn')?.addEventListener('click', () => openGroupPicker());
         document.getElementById('pickerSearchInput')?.addEventListener('input', renderPickerRows);
+        document.getElementById('clearPickerSearchBtn')?.addEventListener('click', function() {
+            const input = document.getElementById('pickerSearchInput');
+            input.value = '';
+            renderPickerRows();
+            input.focus();
+        });
+        document.getElementById('onlyInStockToggle')?.addEventListener('change', function() {
+            modalOnlyInStock = this.checked;
+            renderPickerRows();
+        });
 
         document.getElementById('clearPickerQtyBtn')?.addEventListener('click', clearPickerQuantities);
         document.getElementById('saveGroupSelectionBtn')?.addEventListener('click', saveGroupSelection);
@@ -2798,6 +3044,18 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             if (e.target.classList.contains('picker-qty')) {
                 e.target.value = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
                 setModalQty(e.target.dataset.id, e.target.value, false);
+            }
+        });
+        document.getElementById('groupPickerRows')?.addEventListener('keydown', function(e) {
+            if (!e.target.classList.contains('picker-qty')) return;
+            if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+            e.preventDefault();
+            const inputs = Array.from(document.querySelectorAll('#groupPickerRows .picker-qty:not(:disabled)'));
+            const index = inputs.indexOf(e.target);
+            const next = e.key === 'ArrowUp' ? inputs[index - 1] : inputs[index + 1];
+            if (next) {
+                next.focus();
+                next.select();
             }
         });
         document.getElementById('groupPickerRows')?.addEventListener('focusout', function(e) {
