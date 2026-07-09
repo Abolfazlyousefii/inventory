@@ -41,6 +41,12 @@
             <div class="meta-value">{{ $meta['stock_status'] ?? 'همه محصولات' }}</div>
         </td>
         <td>
+            <div class="meta-label">مدل لیست</div>
+            <div class="meta-value">{{ $meta['model_list'] ?? 'همه مدل‌ها' }}</div>
+        </td>
+    </tr>
+    <tr>
+        <td colspan="4">
             <div class="meta-label">جستجو</div>
             <div class="meta-value">{{ filled($meta['search'] ?? '') ? $meta['search'] : 'بدون جستجو' }}</div>
         </td>
@@ -61,7 +67,8 @@
             <th width="7%">تصویر</th>
             <th width="22%">نام محصول</th>
             <th width="13%">کد کالا</th>
-            <th width="13%">دسته‌بندی</th>
+            <th width="12%">دسته‌بندی</th>
+            <th width="12%">مدل لیست</th>
             <th width="9%">موجودی</th>
             <th width="17%">قیمت</th>
             <th width="9%">وضعیت</th>
