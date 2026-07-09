@@ -52,19 +52,13 @@ class PreinvoiceController extends Controller
 
     public function warehouseQueue()
     {
-
-        $orders = PreinvoiceOrder::query()
-            ->where('status', PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE)
-            ->with(['creator:id,name'])
-            ->withCount('items')
-            ->orderByDesc('id')
-            ->paginate(20);
-
-        return view('preinvoice.warehouse-index', compact('orders'));
+        return $this->redirectLegacyWarehouseFlow();
     }
 
     public function warehouseReview(string $uuid)
     {
+        return $this->redirectLegacyWarehouseFlow();
+
         abort_unless($this->canHandleWarehouseActions(), 403);
 
         $order = PreinvoiceOrder::query()
@@ -113,6 +107,8 @@ class PreinvoiceController extends Controller
 
     public function warehouseSave(string $uuid, Request $request)
     {
+        return $this->redirectLegacyWarehouseFlow();
+
         abort_unless($this->canHandleWarehouseActions(), 403);
 
         $order = PreinvoiceOrder::query()->with('items')->where('uuid', $uuid)->firstOrFail();
@@ -173,6 +169,8 @@ class PreinvoiceController extends Controller
 
     public function warehouseApprove(string $uuid, Request $request)
     {
+        return $this->redirectLegacyWarehouseFlow();
+
         abort_unless($this->canHandleWarehouseActions(), 403);
 
         $order = PreinvoiceOrder::query()->with('items')->where('uuid', $uuid)->firstOrFail();
@@ -244,6 +242,8 @@ class PreinvoiceController extends Controller
 
     public function warehouseReject(string $uuid, Request $request)
     {
+        return $this->redirectLegacyWarehouseFlow();
+
         abort_unless($this->canHandleWarehouseActions(), 403);
         $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
         abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
@@ -287,10 +287,7 @@ class PreinvoiceController extends Controller
     public function draftIndex()
     {
         $orders = PreinvoiceOrder::query()
-            ->whereIn('status', [
-                PreinvoiceOrder::STATUS_PENDING_FINANCE,
-                PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-            ])
+            ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
             ->with(['creator:id,name', 'customer:id,reservation_tier'])
             ->orderByDesc('id')
             ->paginate(20);
@@ -1671,6 +1668,13 @@ class PreinvoiceController extends Controller
         $order->update(['uuid' => $code]);
 
         return $code;
+    }
+
+
+    private function redirectLegacyWarehouseFlow(): \Illuminate\Http\RedirectResponse
+    {
+        return redirect()->route('preinvoice.draft.index')
+            ->with('warning', 'روند تایید انبار قدیمی غیرفعال شده است. پیش‌فاکتورها اکنون مستقیم در صف مالی بررسی می‌شوند.');
     }
 
     private function canHandleFinanceActions(): bool
