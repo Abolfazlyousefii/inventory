@@ -10,11 +10,11 @@ class SystemNotification extends Model
     protected $table = 'notifications';
 
     protected $fillable = [
-        'user_id','role','type','level','title','message','link',
+        'user_id','role','type','level','priority','title','message','link','data',
         'notifiable_type','notifiable_id','unique_key','read_at',
     ];
 
-    protected $casts = ['read_at' => 'datetime'];
+    protected $casts = ['read_at' => 'datetime', 'data' => 'array'];
 
     public function scopeUnread(Builder $query): Builder
     {
