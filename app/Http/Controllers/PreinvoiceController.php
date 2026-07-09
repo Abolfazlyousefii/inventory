@@ -809,7 +809,12 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            $row['price'] = (int) $variant->sell_price;
+            $price = (int) ($row['price'] ?? 0);
+            if ($price <= 0) {
+                $price = (int) $variant->sell_price;
+            }
+            app(SalePriceGuard::class)->assertInvoiceUnitPrice($price, "products.{$index}.price");
+            $row['price'] = $price;
 
             return $row;
         })->all();
