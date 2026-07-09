@@ -10,6 +10,7 @@ use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Morilog\Jalali\Jalalian;
 
 class InvoicePaymentController extends Controller
 {
@@ -57,22 +58,30 @@ class InvoicePaymentController extends Controller
             ],
             'method' => 'required|in:cash,cheque',
             'amount' => 'required|integer|min:1',
-            'paid_at' => 'required|date',
-            'bank_name' => 'required_if:method,cash|nullable|string|max:255',
+            'payment_date' => 'required_without:paid_at|string|max:20',
+            'paid_at' => 'nullable|date',
+            'bank_name' => 'nullable|string|max:255',
+            'tracking_number' => 'nullable|string|max:190',
             'payment_identifier' => 'nullable|string|max:190',
+            'description' => 'nullable|string|max:2000',
             'note' => 'nullable|string|max:2000',
-            'receipt_image' => 'nullable|image|max:4096',
+            'receipt_image' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:4096',
             'cheque_bank_name' => 'nullable|string|max:255',
+            'branch_name' => 'nullable|string|max:255',
             'cheque_branch_name' => 'nullable|string|max:255',
             'cheque_number' => 'required_if:method,cheque|nullable|string|max:255',
             'cheque_amount' => 'nullable|integer|min:1',
-            'cheque_due_date' => 'required_if:method,cheque|nullable|date',
-            'cheque_received_at' => 'required_if:method,cheque|nullable|date',
+            'due_date' => 'required_if:method,cheque|nullable|string|max:20',
+            'cheque_due_date' => 'nullable|date',
+            'received_date' => 'nullable|string|max:20',
+            'cheque_received_at' => 'nullable|date',
+            'cheque_owner_name' => 'nullable|string|max:255',
             'cheque_customer_name' => 'nullable|string|max:255',
+            'customer_code' => 'nullable|string|max:255',
             'cheque_customer_code' => 'nullable|string|max:255',
             'cheque_account_number' => 'nullable|string|max:255',
             'cheque_account_holder' => 'nullable|string|max:255',
-            'cheque_status' => 'nullable|in:pending,cleared,bounced,registered,unregistered',
+            'cheque_status' => 'nullable|in:pending,passed,bounced,cancelled,cleared,registered,unregistered',
             'cheque_image' => 'nullable|image|max:4096',
         ]);
 
@@ -81,6 +90,7 @@ class InvoicePaymentController extends Controller
         [$payment, $remainingBefore, $remainingAfter] = DB::transaction(function () use ($invoice, $data, $request, $customer) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $remainingBefore = $this->remainingAmount($invoice);
+            $data = $this->normalizeEditPaymentPayload($data, $invoice);
             $this->assertPaymentDoesNotExceedRemaining((int) $data['amount'], $remainingBefore);
             $payment = $this->persistPayment($invoice, $data, $request, $customer->id);
 
@@ -106,30 +116,69 @@ class InvoicePaymentController extends Controller
         $data = $request->validate([
             'method' => 'required|in:cash,cheque',
             'amount' => 'required|integer|min:1',
-            'paid_at' => 'required|date',
-            'bank_name' => 'required_if:method,cash|nullable|string|max:255',
+            'payment_date' => 'required_without:paid_at|string|max:20',
+            'paid_at' => 'nullable|date',
+            'bank_name' => 'nullable|string|max:255',
+            'tracking_number' => 'nullable|string|max:190',
             'payment_identifier' => 'nullable|string|max:190',
+            'description' => 'nullable|string|max:2000',
             'note' => 'nullable|string|max:2000',
-            'receipt_image' => 'nullable|image|max:4096',
+            'receipt_image' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:4096',
             'cheque_bank_name' => 'nullable|string|max:255',
+            'branch_name' => 'nullable|string|max:255',
             'cheque_branch_name' => 'nullable|string|max:255',
             'cheque_number' => 'required_if:method,cheque|nullable|string|max:255',
             'cheque_amount' => 'nullable|integer|min:1',
-            'cheque_due_date' => 'required_if:method,cheque|nullable|date',
-            'cheque_received_at' => 'required_if:method,cheque|nullable|date',
+            'due_date' => 'required_if:method,cheque|nullable|string|max:20',
+            'cheque_due_date' => 'nullable|date',
+            'received_date' => 'nullable|string|max:20',
+            'cheque_received_at' => 'nullable|date',
+            'cheque_owner_name' => 'nullable|string|max:255',
             'cheque_customer_name' => 'nullable|string|max:255',
+            'customer_code' => 'nullable|string|max:255',
             'cheque_customer_code' => 'nullable|string|max:255',
             'cheque_account_number' => 'nullable|string|max:255',
             'cheque_account_holder' => 'nullable|string|max:255',
-            'cheque_status' => 'nullable|in:pending,cleared,bounced,registered,unregistered',
+            'cheque_status' => 'nullable|in:pending,passed,bounced,cancelled,cleared,registered,unregistered',
             'cheque_image' => 'nullable|image|max:4096',
         ]);
+
+        $data = $this->normalizeEditPaymentPayload($data, $invoice);
 
         $this->assertPaymentDoesNotExceedRemaining((int) $data['amount'], $remainingBefore ?? $this->remainingAmount($invoice));
 
         return $this->persistPayment($invoice, $data, $request, $fallbackCustomerId);
     }
 
+    private function normalizeEditPaymentPayload(array $data, Invoice $invoice): array
+    {
+        $data['paid_at'] = $data['paid_at'] ?? $this->normalizeDate($data['payment_date'] ?? null) ?? now()->toDateString();
+        $data['payment_identifier'] = $data['payment_identifier'] ?? $data['tracking_number'] ?? null;
+        $data['note'] = $data['note'] ?? $data['description'] ?? null;
+        $data['cheque_bank_name'] = $data['cheque_bank_name'] ?? $data['bank_name'] ?? null;
+        $data['cheque_branch_name'] = $data['cheque_branch_name'] ?? $data['branch_name'] ?? null;
+        $data['cheque_due_date'] = $data['cheque_due_date'] ?? $this->normalizeDate($data['due_date'] ?? null) ?? null;
+        $data['cheque_received_at'] = $data['cheque_received_at'] ?? $this->normalizeDate($data['received_date'] ?? null) ?? null;
+        $data['cheque_customer_name'] = $data['cheque_customer_name'] ?? $data['cheque_owner_name'] ?? $invoice->customer_name ?? $invoice->customer?->display_name ?? null;
+        $data['cheque_customer_code'] = $data['cheque_customer_code'] ?? $data['customer_code'] ?? $invoice->customer?->crm_customer_id ?? $invoice->customer_id ?? null;
+        $data['cheque_amount'] = $data['cheque_amount'] ?? $data['amount'];
+
+        return $data;
+    }
+
+    private function normalizeDate(?string $value): ?string
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        $normalized = str_replace(['-', '.'], '/', $value);
+        if (preg_match('/^1[34]\d{2}\/\d{1,2}\/\d{1,2}$/', $normalized)) {
+            return Jalalian::fromFormat('Y/m/d', $normalized)->toCarbon()->toDateString();
+        }
+
+        return $value;
+    }
 
     private function remainingAmount(Invoice $invoice): int
     {
@@ -141,7 +190,7 @@ class InvoicePaymentController extends Controller
     private function assertPaymentDoesNotExceedRemaining(int $amount, int $remaining): void
     {
         if ($amount > $remaining) {
-            abort(422, 'مبلغ پرداختی نمی‌تواند بیشتر از مانده فاکتور باشد.');
+            abort(422, 'مبلغ پرداخت نمی‌تواند بیشتر از مانده فاکتور باشد.');
         }
     }
 

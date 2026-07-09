@@ -11,8 +11,12 @@ class InvoiceNoteController extends Controller
         $invoice = \App\Models\Invoice::where('uuid',$uuid)->firstOrFail();
 
         $data = $request->validate([
-            'body' => 'required|string|max:5000',
+            'body' => 'nullable|string|max:5000',
         ]);
+
+        if (blank($data['body'] ?? null)) {
+            return back()->with('info','یادداشت خالی ثبت نشد.');
+        }
 
         $invoice->notes()->create([
             'user_id' => auth()->id(),
