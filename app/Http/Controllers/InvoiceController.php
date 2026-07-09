@@ -531,7 +531,7 @@ class InvoiceController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.variant_id' => 'required|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:0',
-            'items.*.price' => 'nullable|integer|min:0',
+            'items.*.price' => 'nullable|integer|min:1',
             'items.*.line_discount_amount' => 'nullable|integer|min:0',
             'change_reason' => 'nullable|string|max:255',
             'change_note' => 'nullable|string|max:2000',
