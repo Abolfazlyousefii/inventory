@@ -140,7 +140,7 @@ Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVouch
 Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
 Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.update');
 Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
-Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
+Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager|finance|Accountant')->name('vouchers.sales.print');
 Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.reapprove');
 Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.return-to-sales');
 Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('finance.cheques.registered');
