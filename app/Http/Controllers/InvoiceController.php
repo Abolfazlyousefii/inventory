@@ -422,7 +422,7 @@ class InvoiceController extends Controller
             return $invoice;
         });
 
-        $this->notificationService->notifyRole('warehouse', 'invoice_ready_to_ship', 'فاکتور آماده ارسال بار است', 'فاکتور شماره ' . $invoice->uuid . ' تایید مجدد مالی شد و آماده ارسال بار است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_ready_to_ship:' . $invoice->id]);
+        $this->notificationService->notifyRoleAfterCommit('warehouse', 'invoice_ready_to_ship', 'فاکتور آماده ارسال بار است', 'فاکتور شماره ' . $invoice->uuid . ' تایید مجدد مالی شد و آماده ارسال بار است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'success', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_ready_to_ship:' . $invoice->id]);
         return redirect()->route('preinvoice.draft.index')->with('success', 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
     }
 
@@ -437,7 +437,7 @@ class InvoiceController extends Controller
             return $invoice;
         });
         if ($invoice->preinvoiceOrder?->created_by) {
-            $this->notificationService->notifyUser((int) $invoice->preinvoiceOrder->created_by, 'invoice_returned_to_sales_after_collection', 'فاکتور برای بررسی به شما ارجاع شد', 'فاکتور پس از حذف و اضافه انبار توسط مالی برای بررسی به شما ارجاع شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_returned_to_sales:' . $invoice->id]);
+            $this->notificationService->notifyUserAfterCommit((int) $invoice->preinvoiceOrder->created_by, 'invoice_returned_to_sales_after_collection', 'فاکتور برای بررسی به شما ارجاع شد', 'فاکتور پس از حذف و اضافه انبار توسط مالی برای بررسی به شما ارجاع شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_returned_to_sales:' . $invoice->id]);
         }
         return redirect()->route('preinvoice.draft.index')->with('success', 'فاکتور برای بررسی به اپراتور ارجاع شد.');
     }
@@ -445,7 +445,7 @@ class InvoiceController extends Controller
     private function notifyFinanceReapproval(Invoice $invoice): void
     {
         $invoice = $invoice->fresh();
-        $this->notificationService->notifyRole('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'اقلام فاکتور شماره ' . $invoice->uuid . ' توسط انبار تغییر کرد و نیازمند تایید مالی است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id]);
+        $this->notificationService->notifyRoleAfterCommit('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'اقلام فاکتور شماره ' . $invoice->uuid . ' توسط انبار تغییر کرد و نیازمند تایید مالی است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id]);
     }
 
     private function warehouseCollectionServiceHistory(Invoice $invoice, string $action, string $old, string $new, string $description): void
