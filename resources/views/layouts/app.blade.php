@@ -56,9 +56,87 @@
   .app-topbar__actions{
     flex: 0 0 auto;
   }
-  .app-notif-menu{
-    max-width: calc(100vw - 1.5rem);
+  .notif-panel,
+  .notif-panel *{
+    box-sizing: border-box;
   }
+  .notif-overlay{
+    position: fixed;
+    inset: 0;
+    z-index: 1990;
+    background: rgba(15, 23, 42, .08);
+    display: none;
+  }
+  .notif-overlay.is-open{ display: block; }
+  .notif-panel{
+    position: fixed;
+    top: 56px;
+    left: 18px;
+    width: min(420px, calc(100vw - 24px));
+    max-height: calc(100vh - 78px);
+    z-index: 2000;
+    background: #ffffff;
+    border: 1px solid rgba(37, 99, 235, .16);
+    border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .18);
+    overflow: hidden;
+    display: none;
+    direction: rtl;
+  }
+  .notif-panel.is-open{
+    display: flex;
+    flex-direction: column;
+  }
+  .notif-panel__head{
+    padding: 14px 16px;
+    background: linear-gradient(180deg, #eff6ff, #ffffff);
+    border-bottom: 1px solid #dbeafe;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .notif-panel__head h3{ margin:0; font-size:1rem; font-weight:900; color:#0f172a; }
+  .notif-panel__head p{ margin:4px 0 0; font-size:.76rem; color:#64748b; line-height:1.7; }
+  .notif-panel__close{
+    width: 32px; height: 32px; border: 0; border-radius: 11px;
+    background: rgba(37,99,235,.08); color:#1d4ed8; font-size: 1.25rem;
+    line-height: 1; display:inline-flex; align-items:center; justify-content:center;
+  }
+  .notif-panel__close:hover{ background: rgba(37,99,235,.14); }
+  .notif-panel__tools{
+    display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid #eef2f7; background: #fff;
+  }
+  .notif-tool-btn{
+    height:34px; border-radius:12px; border:1px solid #bfdbfe; background:#eff6ff;
+    color:#1d4ed8; font-size:.74rem; font-weight:800; padding:0 11px;
+  }
+  .notif-tool-btn:hover{ background:#dbeafe; }
+  .notif-list{
+    overflow-y: auto; overflow-x: hidden; padding: 10px; min-height: 0;
+  }
+  .notif-card{
+    position: relative; display: flex; gap: 10px; padding: 11px 12px; margin-bottom: 8px;
+    text-decoration: none; color: #0f172a; background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 15px; transition: all .16s ease; max-width: 100%; overflow: hidden;
+  }
+  .notif-card:hover{ transform: translateY(-1px); border-color: rgba(37, 99, 235, .34); box-shadow: 0 12px 24px rgba(15, 23, 42, .08); }
+  .notif-card--unread{ background: #eff6ff; border-color: #bfdbfe; }
+  .notif-card--urgent{ border-color: rgba(239, 68, 68, .25); }
+  .notif-card--important{ border-color: rgba(37, 99, 235, .22); }
+  .notif-card__dot{ width: 10px; height: 10px; border-radius: 999px; background: #cbd5e1; flex: 0 0 auto; margin-top: 6px; }
+  .notif-card--unread .notif-card__dot{ background: #2563eb; }
+  .notif-card__body{ min-width: 0; flex: 1; }
+  .notif-card__top{ display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .notif-card__title{ font-size: .82rem; font-weight: 900; color: #0f172a; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+  .notif-card__message{ margin: 5px 0 0; font-size: .75rem; line-height: 1.8; color: #475569; overflow-wrap: anywhere; word-break: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .notif-card__meta{ margin-top: 7px; display: flex; justify-content: space-between; gap: 8px; color: #64748b; font-size: .7rem; }
+  .notif-card__badge{ flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: .68rem; font-weight: 800; }
+  .notif-empty{ padding:24px 12px; text-align:center; color:#64748b; font-size:.82rem; }
+  .notif-empty__dot{ display:block; width:12px; height:12px; border-radius:999px; background:#2563eb; margin:0 auto 10px; box-shadow:0 0 0 6px #dbeafe; }
+  .notif-panel__foot{ padding: 10px 14px; border-top: 1px solid #eef2f7; text-align:center; background:#fff; }
+  .notif-panel__foot a{ color:#1d4ed8; font-size:.8rem; font-weight:900; text-decoration:none; }
+  .notif-toast-stack{ z-index: 2100; max-width:min(360px, calc(100vw - 1rem)); overflow-x:hidden; }
   @media (min-width: 992px){
     .app-topbar{ position: static; }
   }
@@ -123,6 +201,16 @@
     .app-content{
       padding-inline: .75rem !important;
     }
+    .notif-panel{
+      top: 58px;
+      left: 10px;
+      right: 10px;
+      width: auto;
+      max-height: calc(100vh - 76px);
+      border-radius: 16px;
+    }
+    .notif-panel__tools{ flex-direction: column; }
+    .notif-card__top{ align-items: flex-start; }
     .app-back-btn{
       width:36px;
       min-width:36px;
@@ -165,23 +253,10 @@
     </div>
 
     <div class="app-topbar__actions d-flex align-items-center gap-2">
-        <div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary position-relative" data-bs-toggle="dropdown" id="notifBell">
-                🔔
-                <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
-            </button>
-            <div class="dropdown-menu dropdown-menu-end p-2 app-notif-menu shadow" style="width: min(390px, calc(100vw - 1rem)); max-width: calc(100vw - 1rem); max-height: min(75vh, 560px); overflow:auto;">
-                <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
-                    <div><strong>اعلان‌ها</strong> <span id="notifUnreadText" class="badge bg-primary-subtle text-primary-emphasis">۰ خوانده‌نشده</span></div>
-                    <button class="btn btn-sm btn-link p-0" id="notifReadAllBtn">خواندن همه</button>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" id="notifSoundBtn">فعال‌سازی صدای اعلان</button>
-                <div id="notifList" class="small text-muted">در حال بارگذاری...</div>
-                <div class="mt-2 pt-2 border-top text-center">
-                    <a href="{{ route('notifications.index') }}" class="small fw-bold">مشاهده همه آلارم‌ها</a>
-                </div>
-            </div>
-        </div>
+        <button class="btn btn-sm btn-outline-secondary position-relative" type="button" id="notifBell" aria-controls="notifPanel" aria-expanded="false" aria-label="اعلان‌ها">
+            🔔
+            <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
+        </button>
         <button type="button"
                 class="app-back-btn"
                 id="appBackBtn"
@@ -209,6 +284,27 @@
     </div>
 </div>
 
+<div id="notifOverlay" class="notif-overlay"></div>
+<section id="notifPanel" class="notif-panel" aria-hidden="true" aria-labelledby="notifPanelTitle">
+    <div class="notif-panel__head">
+        <div>
+            <h3 id="notifPanelTitle">اعلان‌ها <span id="notifUnreadText" class="badge bg-primary-subtle text-primary-emphasis">۰ خوانده‌نشده</span></h3>
+            <p>آخرین وضعیت پیش‌فاکتورها و فاکتورهای شما</p>
+        </div>
+        <button type="button" class="notif-panel__close" id="notifCloseBtn" aria-label="بستن اعلان‌ها">×</button>
+    </div>
+    <div class="notif-panel__tools">
+        <button type="button" class="notif-tool-btn" id="notifSoundToggle">فعال‌سازی صدای اعلان</button>
+        <button type="button" class="notif-tool-btn" id="notifReadAllBtn">خواندن همه</button>
+    </div>
+    <div id="notifList" class="notif-list">
+        <div class="notif-empty"><span class="notif-empty__dot"></span>در حال دریافت اعلان‌ها...</div>
+    </div>
+    <div class="notif-panel__foot">
+        <a href="{{ route('notifications.index') }}">مشاهده همه اعلان‌ها</a>
+    </div>
+</section>
+
         <main class="container py-4 app-content @yield('content_class')">
             @if(session('success'))
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -235,7 +331,7 @@
 
             @yield('content')
         </main>
-    <div id="notifToastStack" class="position-fixed top-0 end-0 p-3" style="z-index:1080; max-width:min(360px, calc(100vw - 1rem));"></div>
+    <div id="notifToastStack" class="notif-toast-stack position-fixed bottom-0 start-0 p-3"></div>
     </div>
 
 </div>
@@ -273,13 +369,37 @@
     return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
   }
   function notifTypeLabel(type){
-    if ((type || '').startsWith('preinvoice')) return 'پیش‌فاکتور';
-    if ((type || '').includes('ship')) return 'ارسال';
-    if ((type || '').includes('collection') || (type || '').includes('warehouse')) return 'انبار';
-    if ((type || '').includes('finance')) return 'مالی';
-    if ((type || '').startsWith('invoice')) return 'فاکتور';
-    return 'اعلان';
+    const labels = {
+      preinvoice_submitted: 'پیش‌فاکتور',
+      preinvoice_finance_approved: 'مالی',
+      preinvoice_returned_to_sales: 'فوری',
+      preinvoice_cancelled_by_finance: 'فوری',
+      invoice_pending_finance_reapproval: 'مالی',
+      invoice_finance_reapproved: 'مالی',
+      invoice_ready_to_ship: 'ارسال',
+      invoice_shipped: 'ارسال',
+      invoice_created_for_collection: 'انبار'
+    };
+    return labels[type] || 'اعلان';
   }
+  function notifPriorityClass(priority){
+    if (priority === 'urgent') return 'notif-card--urgent';
+    if (priority === 'important') return 'notif-card--important';
+    return '';
+  }
+  function setNotifPanelOpen(open){
+    const panel = document.getElementById('notifPanel');
+    const overlay = document.getElementById('notifOverlay');
+    const bell = document.getElementById('notifBell');
+    if (!panel || !overlay || !bell) return;
+    panel.classList.toggle('is-open', open);
+    overlay.classList.toggle('is-open', open);
+    panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+    bell.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) loadNotifications();
+  }
+  function openNotifPanel(){ setNotifPanelOpen(true); }
+  function closeNotifPanel(){ setNotifPanelOpen(false); }
   function playNotificationBeep(){
     if (localStorage.getItem(notifSoundKey) !== '1') return;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -295,8 +415,8 @@
     const stack = document.getElementById('notifToastStack'); if (!stack) return;
     while (stack.children.length >= 3) stack.firstElementChild.remove();
     const el = document.createElement('div');
-    el.className = 'toast show border-0 shadow mb-2';
-    el.innerHTML = `<div class="toast-header bg-primary text-white"><strong class="me-auto">${escapeHtml(n.title)}</strong><button type="button" class="btn-close btn-close-white ms-2" aria-label="Close"></button></div><div class="toast-body bg-white"><div class="small text-muted mb-2">${escapeHtml(n.message || '').slice(0,140)}</div><a class="btn btn-sm btn-primary" href="${escapeHtml(n.open_url || ('/notifications/'+n.id+'/open'))}">مشاهده</a></div>`;
+    el.className = 'toast show border-0 shadow mb-2 overflow-hidden';
+    el.innerHTML = `<div class="toast-header bg-primary text-white"><strong class="me-auto text-truncate">${escapeHtml(n.title)}</strong><button type="button" class="btn-close btn-close-white ms-2" aria-label="Close"></button></div><div class="toast-body bg-white"><div class="small text-muted mb-2" style="overflow-wrap:anywhere;">${escapeHtml(n.message || '').slice(0,140)}</div><a class="btn btn-sm btn-primary" href="${escapeHtml(n.open_url || ('/notifications/'+n.id+'/open'))}">مشاهده</a></div>`;
     el.querySelector('.btn-close')?.addEventListener('click', () => el.remove());
     stack.appendChild(el); setTimeout(() => el.remove(), 6500);
   }
@@ -324,16 +444,21 @@
     notifState.initialized = true;
 
     const wrap = document.getElementById('notifList');
-    if (!list.length) { wrap.innerHTML = '<div class="text-muted p-3 text-center">اعلانی وجود ندارد.</div>'; return; }
+    if (!wrap) return;
+    if (!list.length) { wrap.innerHTML = '<div class="notif-empty"><span class="notif-empty__dot"></span>اعلانی برای نمایش وجود ندارد.</div>'; return; }
     wrap.innerHTML = list.map(n => {
       const priority = n.priority || 'normal';
-      const tone = priority === 'urgent' ? 'danger' : (priority === 'important' ? 'primary' : 'secondary');
-      const bg = n.read_at ? 'bg-light' : 'bg-info bg-opacity-10 border-info-subtle';
-      return `<a class="d-block text-decoration-none p-2 mb-2 rounded border ${bg}" href="${escapeHtml(n.open_url || ('/notifications/'+n.id+'/open'))}">
-        <div class="d-flex gap-2 align-items-start"><span class="badge rounded-pill bg-${tone}">&nbsp;</span><div class="flex-grow-1 min-w-0">
-        <div class="d-flex justify-content-between gap-2"><div class="fw-bold text-dark text-truncate">${escapeHtml(n.title)}</div><span class="badge bg-${tone}-subtle text-${tone}-emphasis">${notifTypeLabel(n.type)}</span></div>
-        <div class="text-muted small" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(n.message || '')}</div>
-        <div class="text-muted mt-1" style="font-size:.72rem">${escapeHtml(n.created_at_human || '')}</div></div></div>
+      const unread = !n.read_at;
+      return `<a class="notif-card ${unread ? 'notif-card--unread' : ''} ${notifPriorityClass(priority)}" href="${escapeHtml(n.open_url || ('/notifications/'+n.id+'/open'))}">
+        <span class="notif-card__dot"></span>
+        <div class="notif-card__body">
+          <div class="notif-card__top">
+            <strong class="notif-card__title">${escapeHtml(n.title)}</strong>
+            <span class="notif-card__badge">${escapeHtml(notifTypeLabel(n.type))}</span>
+          </div>
+          <p class="notif-card__message">${escapeHtml(n.message || '')}</p>
+          <div class="notif-card__meta"><span>${escapeHtml(n.created_at_human || n.created_at || '')}</span><span>مشاهده</span></div>
+        </div>
       </a>`;
     }).join('');
   }
@@ -343,15 +468,23 @@
   }
   document.addEventListener('DOMContentLoaded', function(){
     loadNotifications().finally(scheduleNotifications);
+    document.getElementById('notifBell')?.addEventListener('click', function(){
+      const panel = document.getElementById('notifPanel');
+      panel?.classList.contains('is-open') ? closeNotifPanel() : openNotifPanel();
+    });
+    document.getElementById('notifOverlay')?.addEventListener('click', closeNotifPanel);
+    document.getElementById('notifCloseBtn')?.addEventListener('click', closeNotifPanel);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNotifPanel(); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadNotifications(); scheduleNotifications(); });
     document.getElementById('notifReadAllBtn')?.addEventListener('click', async function(){
       await fetch('{{ route('notifications.read-all') }}', {method:'POST', headers:{'X-CSRF-TOKEN':'{{ csrf_token() }}'}});
       const seen = notifSeenIds(); document.querySelectorAll('#notifList a[href*="/notifications/"]').forEach(a => { const m = a.href.match(/notifications\/(\d+)\/open/); if (m) seen.add(m[1]); }); saveNotifSeenIds(seen);
+      document.getElementById('notifBadge')?.classList.add('d-none');
       loadNotifications();
     });
-    const soundBtn = document.getElementById('notifSoundBtn');
+    const soundBtn = document.getElementById('notifSoundToggle');
     if (soundBtn) {
-      const refreshSoundLabel = () => soundBtn.textContent = localStorage.getItem(notifSoundKey) === '1' ? 'صدای اعلان فعال است (کلیک برای غیرفعال‌سازی)' : 'فعال‌سازی صدای اعلان';
+      const refreshSoundLabel = () => soundBtn.textContent = localStorage.getItem(notifSoundKey) === '1' ? 'صدای اعلان فعال است' : 'فعال‌سازی صدای اعلان';
       refreshSoundLabel();
       soundBtn.addEventListener('click', () => { const enabled = localStorage.getItem(notifSoundKey) === '1'; localStorage.setItem(notifSoundKey, enabled ? '0' : '1'); refreshSoundLabel(); if (!enabled) playNotificationBeep(); });
     }
