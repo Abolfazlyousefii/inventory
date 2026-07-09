@@ -270,6 +270,9 @@
                     @canPermission('stock_out.view')
                     <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.shipped') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری و ارسال انبار</a>
                     @endcanPermission
+                    @canPermission('stock_out.view')
+                    <a class="sidebar-sublink {{ $is('warehouse.shipping.*') }}" href="{{ route('warehouse.shipping.index') }}">صف ارسال بار</a>
+                    @endcanPermission
                     @canPermission('issues.view')
                     <a class="sidebar-sublink {{ $isRoute('vouchers.sales.queue', 'vouchers.sales.shipped') ? '' : $is('vouchers.*') }}" href="{{ route('vouchers.index') }}">حواله‌های انبار</a>
                     @endcanPermission

@@ -30,6 +30,7 @@ use App\Http\Controllers\StockMovementReportController;
 use App\Http\Controllers\StocktakeController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\ShippingMethodController;
+use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\SalesHavalehController;
 use App\Http\Controllers\AssetPersonnelController;
 use App\Http\Controllers\AssetDocumentController;
@@ -125,6 +126,8 @@ Route::get('/vouchers/sales', [InvoiceController::class, 'salesVouchers'])->name
 Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue');
 Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.data');
 Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.shipped');
+Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('warehouse.shipping.index');
+Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('warehouse.shipping.ship');
 Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.receive');
 Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.start-collection');
 Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.complete-collection');
