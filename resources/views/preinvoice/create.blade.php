@@ -1347,6 +1347,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         <input type="hidden" name="customer_mobile" id="customer_mobile" value="{{ old('customer_mobile', $order->customer_mobile ?? '') }}">
         <input type="hidden" name="payment_status" value="pending">
         <input type="hidden" name="reservation_token" id="reservation_token" value="{{ old('reservation_token') }}">
+        <input type="hidden" name="autosave_uuid" id="autosave_uuid" value="">
         <input type="hidden" name="intent" id="submit_intent" value="submit">
         <input type="hidden" name="discount_breakdown" id="discount_breakdown" value="">
 
@@ -1583,6 +1584,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             product: @json(url('/preinvoice/api/products')),
             reservationsSync: @json(route('preinvoice.api.reservations.sync')),
             reservationsRelease: @json(route('preinvoice.api.reservations.release')),
+            autosave: @json(route('preinvoice.autosave')),
+            autosaveLatest: @json(route('preinvoice.autosave.latest')),
+            autosaveDiscardBase: @json(url('/preinvoice/autosave')),
+            reservationsHeartbeat: @json(route('preinvoice.reservations.heartbeat')),
+            reservationsReleaseToken: @json(route('preinvoice.reservations.release-token')),
             area: @json(url('/preinvoice/api/area')),
             customers: @json(url('/preinvoice/api/customers')),
             customer: @json(url('/preinvoice/api/customers'))
@@ -1629,7 +1635,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const LOCAL_DRAFT_VERSION = 1;
     const LOCAL_DRAFT_KEY = 'aria_preinvoice_local_draft_create_v1';
     const RESERVATION_TOKEN_KEY = 'aria_preinvoice_reservation_token_v1';
+    const BROWSER_SESSION_KEY = 'aria_preinvoice_browser_session_v1';
     let isSyncingReservation = false;
+    let currentAutosaveUuid = null;
+    let autosaveTimer = null;
+    let autosaveDirty = false;
+    let heartbeatTimer = null;
 
 
     function cryptoRandomUuidFallback() {
@@ -1649,6 +1660,15 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const input = document.getElementById('reservation_token');
         if (input) input.value = token;
         return token;
+    }
+
+    function browserSessionId() {
+        let id = normalize(sessionStorage.getItem(BROWSER_SESSION_KEY));
+        if (!id) {
+            id = (crypto?.randomUUID ? crypto.randomUUID() : cryptoRandomUuidFallback());
+            sessionStorage.setItem(BROWSER_SESSION_KEY, id);
+        }
+        return id;
     }
 
     function reservationItemsFromGroups(sourceGroups = groupedSelections) {
@@ -1970,6 +1990,64 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         };
     }
 
+    function collectProductsForAutosave() {
+        const rows = [];
+        Object.values(groupedSelections || {}).forEach(group => {
+            const productId = Number(group.product?.id || 0);
+            (group.items || []).forEach(item => {
+                rows.push({
+                    id: productId,
+                    variety_id: Number(item.variant_id || 0),
+                    quantity: Number(item.quantity || 0),
+                    price: Number(item.price || 0),
+                    line_discount_amount: 0
+                });
+            });
+        });
+        return rows.filter(row => row.id > 0 && row.variety_id > 0 && row.quantity > 0);
+    }
+
+    async function saveDbAutosaveNow() {
+        if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically || !hasAnyFormData()) return;
+        autosaveDirty = false;
+        updateLocalDraftStatus('در حال ذخیره...', false);
+        const res = await fetch(API.autosave, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({
+                draft_uuid: currentAutosaveUuid,
+                reservation_token: ensureReservationToken(),
+                customer_id: document.getElementById('customer_id')?.value || null,
+                customer_name: document.getElementById('customer_name')?.value || '',
+                customer_mobile: document.getElementById('customer_mobile')?.value || '',
+                payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
+                is_in_person: currentIsInPerson() ? 1 : 0,
+                discount_amount: toInt(document.getElementById('discount')?.value || document.getElementById('orderDiscountValue')?.value || 0),
+                products: collectProductsForAutosave()
+            })
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json?.ok === false) throw new Error(json?.message || 'خطا در ذخیره خودکار');
+        currentAutosaveUuid = json.uuid || currentAutosaveUuid;
+        const autosaveInput = document.getElementById('autosave_uuid');
+        if (autosaveInput) autosaveInput.value = currentAutosaveUuid || '';
+        const date = json.saved_at ? new Date(json.saved_at) : new Date();
+        updateLocalDraftStatus('ذخیره شد در ' + date.toLocaleTimeString('fa-IR', {hour: '2-digit', minute: '2-digit'}), true);
+    }
+
+    function scheduleDbAutosave(delay = 1500) {
+        if (IS_EDIT || isSubmittingProgrammatically) return;
+        autosaveDirty = true;
+        clearTimeout(autosaveTimer);
+        autosaveTimer = setTimeout(() => {
+            saveDbAutosaveNow().catch(() => updateLocalDraftStatus('خطا در ذخیره خودکار', false));
+        }, delay);
+    }
+
     function saveLocalDraftNow() {
         if (isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically) return;
 
@@ -1984,6 +2062,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
         try {
             localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(collectLocalDraftPayload()));
+            scheduleDbAutosave();
             updateLocalDraftStatus('ذخیره شد', true);
 
             setTimeout(() => {
@@ -2081,6 +2160,77 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         scheduleLocalDraftSave();
     }
 
+    async function applyDbAutosaveDraft(draft) {
+        if (!draft) return;
+        isHydratingLocalDraft = true;
+        currentAutosaveUuid = draft.uuid || null;
+        const autosaveInput = document.getElementById('autosave_uuid');
+        if (autosaveInput) autosaveInput.value = currentAutosaveUuid || '';
+        clearVisibleFormOnly();
+        document.getElementById('customer_id').value = draft.customer?.id || '';
+        document.getElementById('customer_name').value = draft.customer?.name || '';
+        document.getElementById('customer_mobile').value = draft.customer?.mobile || '';
+        document.getElementById('payment_terms_note').value = draft.payment_terms_note || '';
+        document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
+        document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
+        setReservationMode(Boolean(draft.is_in_person));
+        groupedSelections = {};
+        for (const row of (draft.items || [])) {
+            const productId = Number(row.product_id || 0);
+            const draftVariantId = Number(row.variant_id || 0);
+            if (!productId || !draftVariantId) continue;
+            let product = null;
+            try { product = await getProductDetails(productId, true); } catch (e) {}
+            const varieties = getProductVarieties(product);
+            const v = varieties.find(item => draftVariantId === variantId(item));
+            if (!groupedSelections[productId]) {
+                groupedSelections[productId] = {
+                    product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '' },
+                    discount_type: 'amount',
+                    discount_value: 0,
+                    items: []
+                };
+            }
+            const warning = row.stock_warning ? ' — موجودی فعلی کافی نیست' : '';
+            groupedSelections[productId].items.push({
+                variant_id: draftVariantId,
+                quantity: Number(row.quantity || 0),
+                price: Number(row.price || (v ? variantPrice(v, product) : 0)),
+                model: v ? variantModel(v) : '—',
+                design: v ? variantDesign(v) : '—',
+                variant: v ? variantName(v) : '—',
+                label: (v ? buildVariantTitle(v) : 'تنوع پیش‌فرض') + warning
+            });
+        }
+        renderGroupSummary();
+        updateTotal();
+        updateSubmitState();
+        updateLocalDraftStatus('پیش‌نویس بدون رزرو موجودی بازیابی شد', true);
+        isHydratingLocalDraft = false;
+        scheduleDbAutosave();
+    }
+
+    async function loadLatestDbAutosaveBanner() {
+        if (IS_EDIT) return;
+        try {
+            const res = await fetch(API.autosaveLatest, {headers: {'Accept': 'application/json'}});
+            const json = await res.json();
+            if (!json?.draft) return;
+            const banner = document.getElementById('localDraftBanner');
+            document.getElementById('localDraftBannerText').textContent = 'یک پیش‌نویس ذخیره‌شده پیدا شد. این پیش‌نویس بدون رزرو موجودی بازیابی می‌شود و موجودی کالاها هنگام ادامه کار دوباره بررسی خواهد شد.';
+            banner.classList.add('is-visible');
+            document.getElementById('loadLocalDraftBtn').onclick = () => applyDbAutosaveDraft(json.draft);
+            document.getElementById('discardLocalDraftBtn').onclick = async () => {
+                if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
+                await fetch(API.autosaveDiscardBase + '/' + encodeURIComponent(json.draft.uuid) + '/discard', {
+                    method: 'POST',
+                    headers: {'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''}
+                });
+                banner.classList.remove('is-visible');
+            };
+        } catch (e) {}
+    }
+
     function bindLocalDraftEvents() {
         document.getElementById('loadLocalDraftBtn')?.addEventListener('click', function() {
             const draft = getLocalDraft();
@@ -2136,6 +2286,36 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         window.addEventListener('beforeunload', function() {
             saveLocalDraftNow();
         });
+        window.addEventListener('pagehide', releaseTokenWithBeacon);
+        window.addEventListener('beforeunload', releaseTokenWithBeacon);
+        startReservationHeartbeat();
+        setInterval(() => {
+            if (autosaveDirty) saveDbAutosaveNow().catch(() => updateLocalDraftStatus('خطا در ذخیره خودکار', false));
+        }, 30000);
+    }
+
+    function releaseTokenWithBeacon() {
+        if (isSubmittingProgrammatically) return;
+        const token = normalize(document.getElementById('reservation_token')?.value) || normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
+        if (!token || !navigator.sendBeacon) return;
+        const payload = new FormData();
+        payload.append('token', token);
+        payload.append('_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+        navigator.sendBeacon(API.reservationsReleaseToken, payload);
+    }
+
+    function startReservationHeartbeat() {
+        const beat = async () => {
+            const token = normalize(document.getElementById('reservation_token')?.value) || normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
+            if (!token) return;
+            try {
+                await postReservation(API.reservationsHeartbeat, {token, browser_session_id: browserSessionId()});
+            } catch (e) {
+                console.warn('reservation heartbeat failed', e);
+            }
+        };
+        beat();
+        heartbeatTimer = setInterval(beat, 30000);
     }
 
     updateReservationModeHint();
@@ -2972,6 +3152,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         if (!IS_EDIT) {
             ensureReservationToken();
             bindLocalDraftEvents();
+            await loadLatestDbAutosaveBanner();
         }
 
         initCustomerSearch();

@@ -376,6 +376,141 @@ class PreinvoiceController extends Controller
         return $this->submitPreinvoiceFromRequest($request);
     }
 
+    public function autosave(Request $request)
+    {
+        abort_unless(auth()->check(), 403);
+        $validated = $this->validateAutosavePayload($request);
+        $order = DB::transaction(function () use ($validated) {
+            $order = null;
+            if (! empty($validated['draft_uuid'])) {
+                $order = PreinvoiceOrder::query()
+                    ->where('uuid', $validated['draft_uuid'])
+                    ->where('created_by', auth()->id())
+                    ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+                    ->lockForUpdate()
+                    ->first();
+            }
+
+            $order ??= PreinvoiceOrder::query()
+                ->where('created_by', auth()->id())
+                ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+                ->where('is_auto_draft', true)
+                ->latest('auto_saved_at')
+                ->lockForUpdate()
+                ->first();
+
+            $customer = $this->resolveCustomer($validated);
+            $shippingId = $this->validatedShippingId($validated);
+            $attrs = [
+                'created_by' => auth()->id(),
+                'status' => PreinvoiceOrder::STATUS_DRAFT,
+                'customer_id' => $customer?->id,
+                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
+                'customer_name' => $this->orderCustomerName($validated, $customer),
+                'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
+                'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
+                'description' => $this->orderDescription($validated),
+                'payment_terms_note' => $this->orderPaymentTermsNote($validated),
+                'province_id' => $this->orderProvinceId($validated, $customer, $shippingId),
+                'city_id' => $this->orderCityId($validated, $customer, $shippingId),
+                'shipping_id' => $shippingId,
+                'shipping_price' => $shippingId ? (int) $this->resolveShippingPrice($shippingId) : 0,
+                'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
+                'stock_frozen_until' => null,
+                'stock_released_at' => null,
+                'is_auto_draft' => true,
+                'auto_saved_at' => now(),
+                'draft_token' => $validated['reservation_token'] ?? null,
+            ];
+
+            if (! $order) {
+                $order = PreinvoiceOrder::create($attrs + [
+                    'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
+                    'total_price' => 0,
+                ]);
+            } else {
+                $order->update($attrs + ['total_price' => 0]);
+            }
+
+            $order->items()->delete();
+            $this->syncItems($order, $validated['products'] ?? []);
+            $order->update(['total_price' => $this->calculateOrderTotal($order)]);
+
+            return $order->fresh('items.product', 'items.variant');
+        });
+
+        return response()->json(['ok' => true, 'uuid' => $order->uuid, 'saved_at' => optional($order->auto_saved_at)->toIso8601String()]);
+    }
+
+    public function latestAutosave()
+    {
+        abort_unless(auth()->check(), 403);
+        $order = PreinvoiceOrder::query()
+            ->with(['items.product:id,name,short_barcode,code,sku,price', 'items.variant:id,product_id,variant_name,stock,reserved,sell_price'])
+            ->where('created_by', auth()->id())
+            ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+            ->where('is_auto_draft', true)
+            ->latest('auto_saved_at')
+            ->first();
+
+        if (! $order) {
+            return response()->json(['ok' => true, 'draft' => null]);
+        }
+
+        return response()->json(['ok' => true, 'draft' => [
+            'uuid' => $order->uuid,
+            'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
+            'is_in_person' => (bool) $order->is_in_person,
+            'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],
+            'payment_terms_note' => $order->payment_terms_note,
+            'discount' => ['type' => 'amount', 'value' => (int) $order->discount_amount],
+            'items' => $order->items->map(fn ($item) => [
+                'product_id' => (int) $item->product_id,
+                'variant_id' => (int) $item->variant_id,
+                'quantity' => (int) $item->quantity,
+                'price' => (int) $item->price,
+                'available' => (int) ($item->variant?->stock ?? 0),
+                'stock_warning' => (int) ($item->variant?->stock ?? 0) < (int) $item->quantity,
+                'product' => ['id' => $item->product_id, 'title' => $item->product?->name, 'sku' => $item->product?->short_barcode],
+            ])->values(),
+        ]]);
+    }
+
+    public function discardAutosave(string $uuid)
+    {
+        abort_unless(auth()->check(), 403);
+        $order = PreinvoiceOrder::query()
+            ->where('uuid', $uuid)
+            ->where('created_by', auth()->id())
+            ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+            ->where('is_auto_draft', true)
+            ->firstOrFail();
+        $order->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function heartbeatReservations(Request $request)
+    {
+        abort_unless(auth()->check(), 403);
+        $data = $request->validate(['token' => 'required|uuid', 'browser_session_id' => 'nullable|string|max:100']);
+        $count = $this->draftReservationService->heartbeat($data['token'], (int) auth()->id(), $data['browser_session_id'] ?? null);
+
+        return response()->json(['ok' => true, 'updated' => $count]);
+    }
+
+    public function releaseReservationToken(Request $request)
+    {
+        abort_unless(auth()->check(), 403);
+        $data = $request->validate(['token' => 'nullable|uuid', 'reservation_token' => 'nullable|uuid']);
+        $token = $data['token'] ?? $data['reservation_token'] ?? null;
+        if (! $token) {
+            return response()->json(['ok' => true, 'released' => []]);
+        }
+
+        return response()->json(['ok' => true] + $this->draftReservationService->releaseTokenReservations($token, (int) auth()->id(), 'temporary_session_lost', 'صفحه پیش‌فاکتور بسته یا رفرش شد؛ رزرو موقت آزاد شد.'));
+    }
+
     private function submitPreinvoiceFromRequest(Request $request)
     {
         $validated = $this->validateDraftPayload($request);
@@ -385,8 +520,8 @@ class PreinvoiceController extends Controller
             $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
 
-            $order = PreinvoiceOrder::create([
-                'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
+            $order = $this->editableAutosaveOrder($validated['autosave_uuid'] ?? null);
+            $orderAttrs = [
                 'created_by' => auth()->id(),
                 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
 
@@ -406,7 +541,14 @@ class PreinvoiceController extends Controller
                 'total_price' => 0,
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
-            ]);
+                'is_auto_draft' => false,
+            ];
+            if ($order) {
+                $order->items()->delete();
+                $order->update($orderAttrs);
+            } else {
+                $order = PreinvoiceOrder::create($orderAttrs + ['uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class)]);
+            }
 
             $this->syncItems($order, $validated['products']);
             $this->finalizeDraftReservations($order, $validated['reservation_token'] ?? null, $validated['products'], $reservationMeta);
@@ -441,8 +583,8 @@ class PreinvoiceController extends Controller
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
 
-            $order = PreinvoiceOrder::create([
-                'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
+            $order = $this->editableAutosaveOrder($validated['autosave_uuid'] ?? null);
+            $orderAttrs = [
                 'created_by' => auth()->id(),
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
 
@@ -462,7 +604,15 @@ class PreinvoiceController extends Controller
                 'total_price' => 0,
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
-            ]);
+                'is_auto_draft' => false,
+                'auto_saved_at' => null,
+            ];
+            if ($order) {
+                $order->items()->delete();
+                $order->update($orderAttrs);
+            } else {
+                $order = PreinvoiceOrder::create($orderAttrs + ['uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class)]);
+            }
 
             $this->syncItems($order, $validated['products']);
             $order->update([
@@ -654,6 +804,7 @@ class PreinvoiceController extends Controller
     {
         $validated = $request->validate([
             'reservation_token' => 'nullable|uuid',
+            'autosave_uuid' => 'nullable|string',
             'customer_id' => 'nullable|integer|exists:customers,id',
             'is_in_person' => 'nullable|boolean',
             'customer_name' => 'required|string|max:255',
@@ -729,6 +880,47 @@ class PreinvoiceController extends Controller
 
         if ($checkCurrentStock) {
             $this->validateDraftItemsBusinessRules($validated['products'] ?? [], $validated['reservation_token'] ?? null);
+        }
+
+        return $validated;
+    }
+
+    private function validateAutosavePayload(Request $request): array
+    {
+        $validated = $request->validate([
+            'draft_uuid' => 'nullable|string',
+            'reservation_token' => 'nullable|uuid',
+            'customer_id' => 'nullable|integer|exists:customers,id',
+            'is_in_person' => 'nullable|boolean',
+            'customer_name' => 'nullable|string|max:255',
+            'customer_mobile' => 'nullable|string|max:20',
+            'customer_address' => 'nullable|string|max:1000',
+            'description' => 'nullable|string|max:2000',
+            'payment_terms_note' => 'nullable|string|max:2000',
+            'province_id' => 'nullable|integer',
+            'city_id' => 'nullable|integer',
+            'shipping_id' => 'nullable|integer|exists:shipping_methods,id',
+            'shipping_price' => 'nullable|integer|min:0',
+            'discount_amount' => 'nullable|integer|min:0',
+            'products' => 'nullable|array',
+            'products.*.id' => 'required_with:products|integer|exists:products,id',
+            'products.*.variety_id' => ['required_with:products', 'integer', 'exists:product_variants,id'],
+            'products.*.quantity' => 'required_with:products|integer|min:0',
+            'products.*.price' => 'nullable|integer|min:0',
+            'products.*.line_discount_amount' => 'nullable|integer|min:0',
+        ]);
+
+        $validated['products'] = collect($validated['products'] ?? [])
+            ->filter(fn ($row) => (int) ($row['quantity'] ?? 0) > 0)
+            ->values()
+            ->all();
+
+        foreach ($validated['products'] as $index => $productRow) {
+            $productId = (int) $productRow['id'];
+            $variantId = (int) $productRow['variety_id'];
+            if (! ProductVariant::query()->whereKey($variantId)->where('product_id', $productId)->exists()) {
+                throw ValidationException::withMessages(["products.{$index}.variety_id" => 'تنوع انتخابی برای این کالا معتبر نیست.']);
+            }
         }
 
         return $validated;
@@ -1078,6 +1270,21 @@ class PreinvoiceController extends Controller
         if ($cid <= 0) return null;
 
         return Customer::query()->find($cid);
+    }
+
+    private function editableAutosaveOrder(?string $uuid): ?PreinvoiceOrder
+    {
+        $uuid = trim((string) $uuid);
+        if ($uuid === '') {
+            return null;
+        }
+
+        return PreinvoiceOrder::query()
+            ->where('uuid', $uuid)
+            ->where('created_by', auth()->id())
+            ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+            ->lockForUpdate()
+            ->first();
     }
 
     private function orderCustomerName(array $validated, ?Customer $customer): string
