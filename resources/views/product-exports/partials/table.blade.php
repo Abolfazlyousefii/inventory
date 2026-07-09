@@ -151,6 +151,7 @@
                     <th>محصول</th>
                     <th>کد محصول / SKU</th>
                     <th>دسته‌بندی</th>
+                    <th>مدل لیست</th>
                     <th>موجودی فعلی</th>
                     <th>قیمت فروش</th>
                     <th>وضعیت موجودی</th>
@@ -177,6 +178,7 @@
                         </td>
                         <td data-label="کد / SKU"><span class="export-code" title="{{ $row['sku'] }}">{{ $row['sku'] }}</span></td>
                         <td data-label="دسته‌بندی">{{ $row['category'] }}</td>
+                        <td data-label="مدل لیست">{{ $row['model_list'] ?? '—' }}</td>
                         <td data-label="موجودی"><span class="export-stock export-number">{{ number_format($row['stock']) }}</span> {{ $row['unit'] }}</td>
                         <td data-label="قیمت فروش" class="export-price"><span><strong class="export-number">{{ number_format($row['price']) }}</strong><small>تومان</small></span></td>
                         <td data-label="وضعیت"><span class="export-status export-status--{{ $statusClass }}">{{ $row['stock_status'] }}</span></td>

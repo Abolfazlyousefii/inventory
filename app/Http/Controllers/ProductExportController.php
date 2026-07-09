@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\ModelList;
 use App\Models\Warehouse;
 use App\Services\ProductExportService;
 use Illuminate\Http\Request;
@@ -34,11 +35,16 @@ class ProductExportController extends Controller
             ->orderBy('name')
             ->get();
 
+        $modelLists = ModelList::query()
+            ->orderBy('model_name')
+            ->get(['id', 'model_name', 'code']);
+
         $rows = collect($this->service->rows($filters));
 
         return view('product-exports.index', compact(
             'categories',
             'warehouses',
+            'modelLists',
             'filters',
             'rows'
         ));
@@ -541,6 +547,11 @@ class ProductExportController extends Controller
                 'nullable',
                 'in:all,in_stock,out_of_stock,low_stock',
             ],
+            'model_list_id' => [
+                'nullable',
+                'integer',
+                'exists:model_lists,id',
+            ],
             'search' => [
                 'nullable',
                 'string',
@@ -556,6 +567,7 @@ class ProductExportController extends Controller
             'category_id' => $validated['category_id'] ?? null,
             'warehouse_id' => $validated['warehouse_id'] ?? null,
             'stock_status' => $validated['stock_status'] ?? 'all',
+            'model_list_id' => $validated['model_list_id'] ?? null,
             'search' => trim((string) ($validated['search'] ?? '')),
             'format' => 'pdf',
         ];

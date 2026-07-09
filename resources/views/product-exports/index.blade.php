@@ -9,6 +9,7 @@
         $filters['category_id'] ?? null,
         $filters['warehouse_id'] ?? null,
         ($filters['stock_status'] ?? 'all') !== 'all' ? $filters['stock_status'] : null,
+        $filters['model_list_id'] ?? null,
         $filters['search'] ?? null,
     ])->filter(fn ($value) => filled($value))->count();
 @endphp
@@ -239,6 +240,17 @@
                     <option value="in_stock" @selected(($filters['stock_status'] ?? '') === 'in_stock')>فقط کالاهای موجود</option>
                     <option value="out_of_stock" @selected(($filters['stock_status'] ?? '') === 'out_of_stock')>فقط کالاهای ناموجود</option>
                     <option value="low_stock" @selected(($filters['stock_status'] ?? '') === 'low_stock')>کالاهای کم‌موجودی</option>
+                </select>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <label for="export-model-list" class="form-label">مدل لیست کالا</label>
+                <select id="export-model-list" name="model_list_id" class="form-select">
+                    <option value="">همه مدل‌ها</option>
+                    @foreach($modelLists as $modelList)
+                        <option value="{{ $modelList->id }}" @selected(($filters['model_list_id'] ?? '') == $modelList->id)>
+                            {{ trim(($modelList->model_name ?? '') . (($modelList->code ?? '') !== '' ? ' - ' . $modelList->code : '')) }}
+                        </option>
+                    @endforeach
                 </select>
             </div>
             <div class="col-xl-3 col-md-6">
