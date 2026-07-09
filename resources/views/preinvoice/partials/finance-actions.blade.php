@@ -15,5 +15,5 @@
     <input type="hidden" name="reason" value="کنسل توسط مالی از صف مالی">
     <button class="btn btn-sm btn-outline-danger">کنسل</button>
   </form>
-  <a class="btn btn-sm btn-outline-dark" href="{{ route('archive.preinvoices.show', $o->uuid) }}?print=1" target="_blank">پرینت</a>
+  <a class="btn btn-sm btn-outline-dark" href="{{ route('preinvoice.print', $o->uuid) }}" target="_blank">پرینت</a>
 </div>
