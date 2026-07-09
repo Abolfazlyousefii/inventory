@@ -80,7 +80,8 @@ class PreinvoiceController extends Controller
                 'creator:id,name',
                 'warehouseReviewer:id,name',
                 'reviews.user:id,name',
-                'invoice:id,uuid,preinvoice_order_id,status,created_at,document_date',
+                'invoice:id,uuid,preinvoice_order_id,status,total,subtotal,shipping_price,discount_amount,created_at,document_date,items_updated_at,status_changed_at',
+                'invoice.items:id,invoice_id,product_id,variant_id,quantity,price,line_total,sort_order,line_discount_amount',
             ])
             ->where('uuid', $uuid)
             ->firstOrFail();
@@ -294,7 +295,13 @@ class PreinvoiceController extends Controller
     {
         $orders = PreinvoiceOrder::query()
             ->where('status', PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE)
-            ->with(['creator:id,name'])
+            ->where(function ($query) {
+                $query->whereDoesntHave('invoice')
+                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->whereIn('status', [
+                        Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+                    ]));
+            })
+            ->with(['creator:id,name', 'invoice:id,uuid,preinvoice_order_id,status'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(20);
@@ -325,7 +332,10 @@ class PreinvoiceController extends Controller
         $status = (string) $request->query('status', '');
         $query = PreinvoiceOrder::query()
             ->where('created_by', auth()->id())
-            ->with(['invoice:id,uuid,preinvoice_order_id,status,created_at,document_date'])
+            ->with([
+                'invoice:id,uuid,preinvoice_order_id,status,total,subtotal,shipping_price,discount_amount,created_at,document_date,items_updated_at,status_changed_at',
+                'invoice.items:id,invoice_id,quantity,price,line_total',
+            ])
             ->withCount('items');
 
         if ($status !== '') {
@@ -843,6 +853,7 @@ class PreinvoiceController extends Controller
 
         $request->merge([
             'items' => $items,
+            'warehouse_review_note' => trim((string) ($request->input('warehouse_review_note') ?? $request->input('change_reason') ?? $request->input('reason') ?? '')),
         ]);
 
         $validated = $request->validate([
@@ -2128,12 +2139,8 @@ class PreinvoiceController extends Controller
             $shouldDeductOnFinalize = false;
             $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
-            foreach ($order->items as $it) {
-                $variant = ProductVariant::query()->whereKey((int) $it->variant_id)->lockForUpdate()->first();
-                if ($variant) {
-                    $it->price = (int) ($variant->sell_price ?? 0);
-                    $variant->save();
-                }
+            foreach ($order->items as $index => $it) {
+                app(SalePriceGuard::class)->assertInvoiceUnitPrice((int) $it->price, "items.{$index}.price");
             }
             $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
             $subtotal = $totals['subtotal_before_discount'];
@@ -2187,7 +2194,7 @@ class PreinvoiceController extends Controller
                     'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
-                    'status' => Invoice::STATUS_COLLECTING,
+                    'status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
                     'status_changed_at' => now(),
                     'status_changed_by' => auth()->id(),
                 ]);
@@ -2215,7 +2222,7 @@ class PreinvoiceController extends Controller
                     'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
-                    'status' => Invoice::STATUS_COLLECTING,
+                    'status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
                     'status_changed_at' => now(),
                     'status_changed_by' => auth()->id(),
                 ]);
@@ -2296,11 +2303,11 @@ class PreinvoiceController extends Controller
                 );
             }
 
-            ActivityLogger::log($isFinanceReapproval ? 'finance_reapproved' : 'finance_approved', $invoice->fresh(), $isFinanceReapproval ? 'فاکتور ویرایش‌شده توسط انبار مجدداً تایید مالی شد و به صف جمع‌آوری برگشت.' : 'پیش‌فاکتور توسط مالی تایید و به فاکتور/حواله در حال جمع‌آوری تبدیل شد.', [
+            ActivityLogger::log($isFinanceReapproval ? 'finance_reapproved' : 'finance_approved', $invoice->fresh(), $isFinanceReapproval ? 'فاکتور ویرایش‌شده توسط انبار مجدداً تایید مالی شد و بدون برگشت به صف جمع‌آوری نهایی شد.' : 'پیش‌فاکتور توسط مالی تایید و به فاکتور/حواله در حال جمع‌آوری تبدیل شد.', [
                 'preinvoice_order_id' => $order->id,
                 'invoice_uuid' => $invoice->uuid,
                 'old_status' => $oldInvoiceStatus,
-                'new_status' => Invoice::STATUS_COLLECTING,
+                'new_status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
                 'old_total' => $oldInvoiceTotal,
                 'new_total' => (int) $invoice->total,
                 'total_changed' => $oldInvoiceTotal !== null && $oldInvoiceTotal !== (int) $invoice->total,
@@ -2351,7 +2358,7 @@ class PreinvoiceController extends Controller
         return redirect()->route('invoices.show', $invoice->uuid)
             ->with('success', $invoice->wasRecentlyCreated
                 ? '✅ تایید مالی انجام شد و فاکتور وارد بخش در حال جمع‌آوری شد.'
-                : '✅ تایید مالی مجدد انجام شد و فاکتور به بخش در حال جمع‌آوری برگشت.');
+                : '✅ تایید مالی مجدد انجام شد و فاکتور نهایی شد.');
     }
 
     public function financeCancel(string $uuid, Request $request)

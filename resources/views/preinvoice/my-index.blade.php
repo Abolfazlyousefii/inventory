@@ -18,9 +18,14 @@
       \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
   ], true) || (($order->invoice?->status ?? null) === \App\Models\Invoice::STATUS_NOT_SHIPPED);
   $effectiveStatus = fn($order) => $isCancelledStatus($order) ? \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE : $order->status;
+  $invoiceStatusLabels = app(\App\Services\SalesHavalehStatusService::class)->labels();
   $effectiveStatusLabel = fn($order) => (($order->invoice?->status ?? null) === \App\Models\Invoice::STATUS_NOT_SHIPPED && ! in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE], true))
       ? 'لغوشده به دلیل کنسلی فاکتور مرتبط'
-      : ($statusLabels[$order->status] ?? $order->status_label ?? $order->status);
+      : ($order->invoice ? ($invoiceStatusLabels[$order->invoice->status] ?? $order->invoice->status) : ($statusLabels[$order->status] ?? $order->status_label ?? $order->status));
+  $latestTotal = fn($order) => $order->invoice ? (int) $order->invoice->total : (int) $order->total_price;
+  $latestItemsCount = fn($order) => $order->invoice ? (int) $order->invoice->items->sum('quantity') : (int) $order->items_count;
+  $latestUpdatedAt = fn($order) => $order->invoice ? ($order->invoice->items_updated_at ?? $order->invoice->status_changed_at ?? $order->invoice->created_at) : $order->created_at;
+  $canEditOrder = fn($order) => ! $order->invoice && in_array($order->status, [\App\Models\PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE], true);
 
   $statusBadge = fn($status) => match($status) {
       \App\Models\PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE => 'text-bg-success',
@@ -104,8 +109,8 @@
               <td><span class="customer-cell" title="{{ $order->customer_name }}">{{ $order->customer_name }}</span></td>
               <td class="text-nowrap">{{ $order->customer_mobile ?: '—' }}</td>
               <td><span class="desc-cell" title="{{ $order->description ?: '' }}">{{ $order->description ?: '—' }}</span></td>
-              <td>{{ number_format($order->items_count) }}</td>
-              <td class="text-nowrap">{{ \App\Support\Currency::formatRial($order->total_price) }}</td>
+              <td>{{ number_format($latestItemsCount($order)) }}</td>
+              <td class="text-nowrap">{{ \App\Support\Currency::formatRial($latestTotal($order)) }}</td>
               <td>
                 <span class="badge {{ $statusBadge($badgeStatus) }}">{{ $documentKind }}</span>
                 <div class="small text-muted mt-1">{{ $statusLabel }}</div>
@@ -117,11 +122,15 @@
                   —
                 @endif
               </td>
-              <td class="text-nowrap">{{ $toJalali($order->created_at) }}</td>
+              <td class="text-nowrap">{{ $toJalali($latestUpdatedAt($order)) }}</td>
               <td>
                 <div class="action-stack">
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-                  <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+                  @if($canEditOrder($order))
+                    <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+                  @else
+                    <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-secondary">جزئیات</a>
+                  @endif
                   <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
                 </div>
               </td>
@@ -154,13 +163,17 @@
           <span class="badge text-bg-light border">{{ $statusLabel }}</span>
         </div>
         <div class="small text-muted mb-2">{{ $order->description ? Str::limit($order->description, 120) : 'بدون توضیحات' }}</div>
-        <div class="small d-flex justify-content-between"><span>مبلغ</span><strong>{{ \App\Support\Currency::formatRial($order->total_price) }}</strong></div>
+        <div class="small d-flex justify-content-between"><span>مبلغ</span><strong>{{ \App\Support\Currency::formatRial($latestTotal($order)) }}</strong></div>
         @if($invoiceUuid)
           <div class="small d-flex justify-content-between"><span>فاکتور</span><a class="code-cell" href="{{ route('invoices.show', $invoiceUuid) }}">{{ Str::limit($invoiceUuid, 12, '…') }}</a></div>
         @endif
         <div class="action-stack mt-3 justify-content-start">
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-          <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+          @if($canEditOrder($order))
+            <a href="{{ route('preinvoice.draft.edit', $order->uuid) }}" class="btn btn-sm btn-outline-warning">ویرایش</a>
+          @else
+            <a href="{{ route('preinvoice.my.show', $order->uuid) }}" class="btn btn-sm btn-outline-secondary">جزئیات</a>
+          @endif
           <a href="{{ route('preinvoice.my.show', $order->uuid) }}?print=1" target="_blank" class="btn btn-sm btn-outline-dark">پرینت</a>
         </div>
       </div>
