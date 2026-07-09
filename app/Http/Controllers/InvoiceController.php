@@ -516,7 +516,7 @@ class InvoiceController extends Controller
         $remainingAmount = max((int) $invoice->total - $paidTotal, 0);
         $canRegisterPayments = $this->canHandleFinanceActions();
         $canEditPrices = $this->canHandleFinanceActions();
-        $canEditItemsWithCollectionFlow = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
+        $canEditItemsWithCollectionFlow = (string) $invoice->status !== Invoice::STATUS_SHIPPED;
         $statusLabels = $this->statusService->labels();
 
         return view('invoices.edit', compact('invoice', 'paidTotal', 'remainingAmount', 'canRegisterPayments', 'canEditPrices', 'canEditItemsWithCollectionFlow', 'statusLabels'));
@@ -531,6 +531,8 @@ class InvoiceController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.variant_id' => 'required|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:0',
+            'items.*.price' => 'nullable|integer|min:0',
+            'items.*.line_discount_amount' => 'nullable|integer|min:0',
             'change_reason' => 'nullable|string|max:255',
             'change_note' => 'nullable|string|max:2000',
         ]);
@@ -542,9 +544,14 @@ class InvoiceController extends Controller
             $invoice,
             $data['items'],
             auth()->user(),
+            $this->canHandleFinanceActions(),
             $data['change_reason'] ?? null,
             $data['change_note'] ?? null
         );
+
+        if ($invoice->preinvoiceOrder?->created_by) {
+            $this->notificationService->notifyUserAfterCommit((int) $invoice->preinvoiceOrder->created_by, 'invoice_items_updated_in_edit', 'فاکتور مشتری شما به‌روزرسانی شد', 'اقلام یا مبلغ فاکتور شماره «' . $invoice->uuid . '» به‌روزرسانی شد.', route('preinvoice.my.index'), ['level' => 'info', 'priority' => 'normal', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_items_updated_in_edit:' . $invoice->id . ':' . now()->timestamp]);
+        }
 
         return redirect()->route('invoices.edit', $invoice->uuid)
             ->with('success', 'تغییرات اقلام فاکتور ذخیره شد.');
