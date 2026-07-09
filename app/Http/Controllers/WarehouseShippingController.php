@@ -128,7 +128,7 @@ class WarehouseShippingController extends Controller
                 return;
             }
 
-            $this->notificationService->notifyUser(
+            $this->notificationService->notifyUserAfterCommit(
                 (int) $sellerId,
                 'invoice_shipped',
                 'فاکتور ارسال شد',
