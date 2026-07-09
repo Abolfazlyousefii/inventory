@@ -78,8 +78,9 @@ class WarehouseReviewController extends Controller
         $order = $this->loadOrder($preinvoiceOrder);
         $comparisonRows = $this->auditService->compareRows($order);
         $timeline = $order->warehouseReviewLogs->sortBy('created_at')->values();
+        $hasHistoricalSnapshot = $order->warehouseReviewSnapshots->isNotEmpty();
 
-        return view('warehouse-reviews.print', compact('order', 'comparisonRows', 'timeline'));
+        return view('warehouse-reviews.print', compact('order', 'comparisonRows', 'timeline', 'hasHistoricalSnapshot'));
     }
 
     private function loadOrder(PreinvoiceOrder $order): PreinvoiceOrder
