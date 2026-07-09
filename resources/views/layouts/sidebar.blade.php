@@ -225,7 +225,7 @@
                     <a class="sidebar-sublink {{ $is('purchases.*') }}" href="{{ route('purchases.index') }}">خرید کالا</a>
                     @endcanPermission
                     @canPermission('products.price_changes.view')
-                    <a class="sidebar-sublink {{ $is('products.price-changes.*') ?: $pathActive('products/price-changes', 'products/price-changes/*') }}" href="{{ url('/products/price-changes') }}">تغییر قیمت کالا</a>
+                    <a class="sidebar-sublink {{ $is('products.price-changes.*') ?: $pathActive('products/price-changes', 'products/price-changes/*') }}" href="{{ route('products.price-changes.index') }}">تغییر قیمت کالا</a>
                     @endcanPermission
                     @canPermission('products.export')
                     <a class="sidebar-sublink {{ $is('admin.product-exports.*') }}" href="{{ route('admin.product-exports.index') }}">خروجی کالا</a>
