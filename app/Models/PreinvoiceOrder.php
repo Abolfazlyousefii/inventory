@@ -47,6 +47,9 @@ class PreinvoiceOrder extends Model
         'warehouse_reviewed_at',
         'stock_frozen_until',
         'stock_released_at',
+        'auto_saved_at',
+        'is_auto_draft',
+        'draft_token',
         'items_updated_at',
         'items_updated_by',
     ];
@@ -66,6 +69,9 @@ class PreinvoiceOrder extends Model
         'warehouse_reviewed_at' => 'datetime',
         'stock_frozen_until' => 'datetime',
         'stock_released_at' => 'datetime',
+        'auto_saved_at' => 'datetime',
+        'is_auto_draft' => 'boolean',
+        'draft_token' => 'string',
         'items_updated_at' => 'datetime',
         'items_updated_by' => 'integer',
     ];

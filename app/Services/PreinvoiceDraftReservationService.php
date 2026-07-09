@@ -62,6 +62,7 @@ class PreinvoiceDraftReservationService
                         'user_id' => $userId,
                         'quantity' => $newQty,
                         'expires_at' => $expiresAt,
+                        'last_seen_at' => now(),
                         'converted_at' => null,
                         'preinvoice_order_id' => null,
                         'reservation_scope' => $reservationScope,
@@ -119,6 +120,59 @@ class PreinvoiceDraftReservationService
 
             return ['released' => $released];
         });
+    }
+
+    public function heartbeat(string $token, int $userId, ?string $browserSessionId = null): int
+    {
+        return PreinvoiceDraftReservation::query()
+            ->where('token', $token)
+            ->where('user_id', $userId)
+            ->whereNull('converted_at')
+            ->whereNull('preinvoice_order_id')
+            ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
+            ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
+            ->update([
+                'last_seen_at' => now(),
+                'browser_session_id' => $browserSessionId,
+            ]);
+    }
+
+    public function cleanupStaleTemporaryReservations(int $onlineMinutes = 5, int $inPersonMinutes = 15): array
+    {
+        $releasedRows = 0;
+        $releasedQty = 0;
+
+        DB::transaction(function () use ($onlineMinutes, $inPersonMinutes, &$releasedRows, &$releasedQty) {
+            $rows = PreinvoiceDraftReservation::query()
+                ->whereNull('converted_at')
+                ->whereNull('preinvoice_order_id')
+                ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
+                ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
+                ->where(function ($query) use ($onlineMinutes, $inPersonMinutes) {
+                    $query->where(function ($q) use ($onlineMinutes) {
+                        $q->where('reservation_scope', 'temporary_online')
+                            ->where(function ($qq) use ($onlineMinutes) {
+                                $qq->where('expires_at', '<=', now())
+                                    ->orWhere('last_seen_at', '<=', now()->subMinutes($onlineMinutes));
+                            });
+                    })->orWhere(function ($q) use ($inPersonMinutes) {
+                        $q->where('reservation_scope', 'temporary_in_person')
+                            ->where('last_seen_at', '<=', now()->subMinutes($inPersonMinutes));
+                    });
+                })
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($rows as $row) {
+                $qty = (int) $row->quantity;
+                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $qty);
+                $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
+                $releasedRows++;
+                $releasedQty += $qty;
+            }
+        });
+
+        return ['released_reservations' => $releasedRows, 'released_quantity' => $releasedQty];
     }
 
     public function releaseExpiredDraftReservations(?string $token = null, ?int $userId = null): void

@@ -275,6 +275,11 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     // Preinvoice pages
     Route::get('/preinvoice/create', [PreinvoiceController::class, 'create'])->name('preinvoice.create');
     Route::post('/preinvoice/draft', [PreinvoiceController::class, 'saveDraft'])->name('preinvoice.draft.save');
+    Route::post('/preinvoice/autosave', [PreinvoiceController::class, 'autosave'])->name('preinvoice.autosave');
+    Route::get('/preinvoice/autosave/latest', [PreinvoiceController::class, 'latestAutosave'])->name('preinvoice.autosave.latest');
+    Route::post('/preinvoice/autosave/{uuid}/discard', [PreinvoiceController::class, 'discardAutosave'])->name('preinvoice.autosave.discard');
+    Route::post('/preinvoice/reservations/heartbeat', [PreinvoiceController::class, 'heartbeatReservations'])->name('preinvoice.reservations.heartbeat');
+    Route::post('/preinvoice/reservations/release-token', [PreinvoiceController::class, 'releaseReservationToken'])->name('preinvoice.reservations.release-token');
 
     Route::prefix('warehouse/reviews')->name('warehouse.reviews.')->middleware('permission:preinvoices.warehouse.reviews.view')->group(function () {
         Route::get('/', [WarehouseReviewController::class, 'index'])->name('index');
