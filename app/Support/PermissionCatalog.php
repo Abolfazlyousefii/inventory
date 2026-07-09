@@ -17,6 +17,11 @@ class PermissionCatalog
         return array_merge(self::superAdminRoles(), ['admin', 'Admin', 'ادمین']);
     }
 
+    public static function priceChangeRoles(): array
+    {
+        return array_merge(self::administratorRoles(), ['manager', 'Manager', 'مدیر', 'finance', 'Finance', 'مالی']);
+    }
+
     public static function groups(): array
     {
         return [
@@ -37,6 +42,10 @@ class PermissionCatalog
                 'products.import' => 'ورود/همگام‌سازی کالاها',
                 'products.change_status' => 'تغییر وضعیت کالا',
                 'products.ledger' => 'مشاهده گردش خرید و فروش کالا',
+                'products.price_changes.view' => 'مشاهده تغییر قیمت کالا',
+                'products.price_changes.create' => 'ایجاد سند تغییر قیمت کالا',
+                'products.price_changes.apply' => 'اعمال تغییر قیمت کالا',
+                'products.price_changes.cancel' => 'لغو تغییر قیمت کالا',
             ],
             'دسته‌بندی کالا' => [
                 'categories.view' => 'مشاهده دسته‌بندی‌ها',
@@ -266,12 +275,12 @@ class PermissionCatalog
             'داشبورد' => [
                 ['permission' => 'dashboard.view', 'label' => 'داشبورد'],
             ],
-            'کالاها' => [
-                ['permission' => 'products.view', 'label' => 'نمایش کالاها'],
-                ['permission' => 'categories.view', 'label' => 'دسته‌بندی محصولات'],
-                ['permission' => 'products.export', 'label' => 'خروجی محصولات'],
-                ['permission' => 'model_lists.view', 'label' => 'مدل لیست'],
-                ['permission' => 'products.change_status', 'label' => 'غیرفعال‌سازی کالا'],
+            'کالاهای آریا' => [
+                ['permission' => 'products.create', 'label' => 'تعریف کالا'],
+                ['permission' => 'stock_in.view', 'label' => 'خرید کالا'],
+                ['permission' => 'products.price_changes.view', 'label' => 'تغییر قیمت کالا'],
+                ['permission' => 'products.export', 'label' => 'خروجی کالا'],
+                ['permission' => 'products.change_status', 'label' => 'غیرفعال کردن کالا'],
             ],
             'خرید کالا' => [
                 ['permission' => 'stock_in.view', 'label' => 'لیست خرید کالاها'],
@@ -305,6 +314,8 @@ class PermissionCatalog
                 ['permission' => 'cheques.view', 'label' => 'چک‌های ثبت‌شده'],
             ],
             'پیکربندی' => [
+                ['permission' => 'categories.view', 'label' => 'دسته‌بندی کالاها'],
+                ['permission' => 'model_lists.view', 'label' => 'مدل لیست کالا'],
                 ['permission' => 'shipping_methods.view', 'label' => 'روش‌های ارسال بار'],
                 ['permission' => 'users.view', 'label' => 'کاربران و پرسنل'],
                 ['permission' => 'permissions.view', 'label' => 'مدیریت دسترسی کاربران'],
@@ -371,6 +382,12 @@ class PermissionCatalog
             return method_exists($user, 'hasAnyRole') && $user->hasAnyRole(self::administratorRoles());
         }
 
+        if (str_starts_with($permission, 'products.price_changes.')
+            && method_exists($user, 'hasAnyRole')
+            && $user->hasAnyRole(self::priceChangeRoles())) {
+            return true;
+        }
+
         if (method_exists($user, 'hasPermission') && $user->hasPermission($permission)) {
             return true;
         }
@@ -397,7 +414,7 @@ class PermissionCatalog
         return [
             'dashboard' => 'dashboard.view', 'dashboard.monthly-report' => 'dashboard.view', 'global-search' => 'dashboard.search',
             'notifications.index' => 'notifications.view', 'notifications.latest' => 'notifications.view', 'notifications.unread-count' => 'notifications.view', 'notifications.open' => 'notifications.view', 'notifications.read' => 'notifications.manage', 'notifications.read-all' => 'notifications.manage',
-            'products.index' => 'products.view', 'products.create' => 'products.create', 'products.store' => 'products.create', 'products.edit' => 'products.edit', 'products.update' => 'products.edit', 'products.destroy' => 'products.delete', 'products.warehouse-stock' => 'inventory.view', 'products.image' => 'products.view', 'products.sales-ledger' => 'products.ledger', 'products.purchase-ledger' => 'products.ledger', 'products.pricelist' => 'products.print', 'products.sync.crm' => 'products.import',
+            'products.index' => 'products.view', 'products.create' => 'products.create', 'products.store' => 'products.create', 'products.edit' => 'products.edit', 'products.update' => 'products.edit', 'products.destroy' => 'products.delete', 'products.warehouse-stock' => 'inventory.view', 'products.image' => 'products.view', 'products.sales-ledger' => 'products.ledger', 'products.purchase-ledger' => 'products.ledger', 'products.pricelist' => 'products.print', 'products.sync.crm' => 'products.import', 'products.price-changes.index' => 'products.price_changes.view', 'products.price-changes.create' => 'products.price_changes.create', 'products.price-changes.show' => 'products.price_changes.view', 'products.price-changes.apply' => 'products.price_changes.apply', 'products.price-changes.cancel' => 'products.price_changes.cancel',
             'admin.product-exports.index' => 'products.export', 'admin.product-exports.data' => 'products.export', 'admin.product-exports.export' => 'products.export',
             'categories.index' => 'categories.view', 'categories.create' => 'categories.create', 'categories.store' => 'categories.create', 'categories.edit' => 'categories.edit', 'categories.update' => 'categories.edit', 'categories.destroy' => 'categories.delete', 'categories.fixCodes' => 'categories.edit', 'categories.quickStore' => 'categories.create',
             'product-deactivation-documents.index' => 'products.change_status', 'product-deactivation-documents.create' => 'products.change_status', 'product-deactivation-documents.store' => 'products.change_status', 'product-deactivation-documents.show' => 'products.change_status',
