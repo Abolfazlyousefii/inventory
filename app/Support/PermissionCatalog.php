@@ -185,6 +185,7 @@ class PermissionCatalog
                 'cheques.create' => 'ثبت چک',
                 'account_statements.view' => 'مشاهده گردش حساب',
                 'account_statements.payments.create' => 'ثبت پرداخت در گردش حساب',
+                'finance.reports.view' => 'مشاهده گزارش مالی',
             ],
             'مشتریان' => [
                 'customers.view' => 'مشاهده مشتریان',
@@ -310,6 +311,7 @@ class PermissionCatalog
                 ['permission' => 'account_statements.view', 'label' => 'گردش حساب اشخاص'],
                 ['permission' => 'invoices.view', 'label' => 'فاکتورها'],
                 ['permission' => 'cheques.view', 'label' => 'چک‌های ثبت‌شده'],
+                ['permission' => 'finance.reports.view', 'label' => 'گزارش مالی'],
             ],
             'پیکربندی' => [
                 ['permission' => 'categories.view', 'label' => 'دسته‌بندی کالاها'],
@@ -434,7 +436,7 @@ class PermissionCatalog
             'customers.index' => 'customers.view', 'customers.store' => 'customers.create', 'customers.update' => 'customers.edit', 'customers.destroy' => 'customers.delete', 'customers.import' => 'customers.import',
             'archive.preinvoices.show' => 'preinvoices.print', 'archive.invoices.show' => 'invoices.print',
             'invoices.index' => 'invoices.view', 'invoices.print' => 'invoices.print', 'invoices.edit' => 'invoices.edit', 'invoices.update' => 'invoices.edit', 'invoices.show' => 'invoices.show', 'invoices.status' => 'invoices.change_status', 'invoices.cancel' => 'invoices.cancel', 'invoices.payments.store' => 'payments.create', 'invoices.notes.store' => 'notes.create', 'cheques.store' => 'cheques.create',
-            'finance.cheques.registered' => 'cheques.view', 'finance.cheques.index' => 'cheques.view',
+            'finance.cheques.registered' => 'cheques.view', 'finance.cheques.index' => 'cheques.view', 'finance.reports.index' => 'finance.reports.view', 'finance.reports.sales-visitors' => 'finance.reports.view',
             'payments.view' => 'payments.view', 'account-statements.index' => 'account_statements.view', 'account-statements.payments.store' => 'account_statements.payments.create', 'account-statements.documents.invoices.show' => 'account_statements.view', 'account-statements.documents.returns.show' => 'account_statements.view', 'account-statements.documents.payments.show' => 'account_statements.view', 'account-statements.show' => 'account_statements.view',
             'activity-logs.index' => 'logs.view',
             'users.index' => 'users.view', 'users.sync' => 'users.sync',

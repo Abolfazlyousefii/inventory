@@ -10,6 +10,7 @@ use App\Http\Controllers\CustomerApiController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\FinanceReportController;
 use App\Http\Controllers\InventoryWebhookController;
 use App\Http\Controllers\InvoiceNoteController;
 use App\Http\Controllers\InvoicePaymentController;
@@ -158,6 +159,14 @@ Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])-
 Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.reapprove');
 Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.return-to-sales');
 Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('finance.cheques.registered');
+
+Route::prefix('finance/reports')
+    ->name('finance.reports.')
+    ->middleware(['auth', 'role:admin|Admin|finance|Accountant'])
+    ->group(function () {
+        Route::get('/', [FinanceReportController::class, 'index'])->name('index');
+        Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
+    });
 
 Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
 Route::get('/vouchers/section/{type}/create', [VoucherController::class, 'sectionCreate'])->name('vouchers.section.create');
