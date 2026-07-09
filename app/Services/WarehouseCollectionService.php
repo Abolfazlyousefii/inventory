@@ -299,6 +299,7 @@ class WarehouseCollectionService
                 return array_merge($first, ['existing' => $existing, 'itemId' => $existing ? (int) $existing->id : 0, 'qty' => $qty, 'price' => $price, 'discount' => min($discount, max($qty * $price, 0))]);
             })->values()->all();
 
+            $priceChangeLogs = [];
             $seen = [];
             foreach ($aggregated as $row) {
                 $existing = $row['existing'];
@@ -311,6 +312,16 @@ class WarehouseCollectionService
                     }
                     if ((int) $row['discount'] > $qty * (int) $row['price']) {
                         throw ValidationException::withMessages(['line_discount_amount' => 'تخفیف ردیف نباید بیشتر از جمع ردیف باشد.']);
+                    }
+                    if ((int) $existing->price !== (int) $row['price'] || (int) ($existing->line_discount_amount ?? 0) !== (int) $row['discount']) {
+                        $priceChangeLogs[] = [
+                            'product' => $existing->product?->name ?? ('#' . $existing->product_id),
+                            'variant' => $existing->variant?->variant_name ?: $existing->variant?->variety_name ?: ($existing->variant_id ? ('#' . $existing->variant_id) : '—'),
+                            'old_price' => (int) $existing->price,
+                            'new_price' => (int) $row['price'],
+                            'old_discount' => (int) ($existing->line_discount_amount ?? 0),
+                            'new_discount' => (int) $row['discount'],
+                        ];
                     }
                     $existing->update(['quantity' => $qty, 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0)]);
                     continue;
@@ -335,6 +346,17 @@ class WarehouseCollectionService
             $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
             $description = trim(($reason ? 'دلیل: ' . $reason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
             $this->historyService->log($invoice, 'invoice_items_updated', 'items', null, null, $description, $user->id);
+            foreach ($priceChangeLogs as $logRow) {
+                $this->historyService->log(
+                    $invoice,
+                    'invoice_price_discount_changed',
+                    'price_discount',
+                    json_encode(['price' => $logRow['old_price'], 'discount' => $logRow['old_discount']], JSON_UNESCAPED_UNICODE),
+                    json_encode(['price' => $logRow['new_price'], 'discount' => $logRow['new_discount']], JSON_UNESCAPED_UNICODE),
+                    trim('کالا: ' . $logRow['product'] . ' / تنوع: ' . $logRow['variant'] . ' / قیمت قبلی: ' . $logRow['old_price'] . ' / قیمت جدید: ' . $logRow['new_price'] . ' / تخفیف قبلی: ' . $logRow['old_discount'] . ' / تخفیف جدید: ' . $logRow['new_discount'] . ' / کاربر: ' . $user->id . ' / زمان: ' . now()->toDateTimeString() . ($reason ? ' / دلیل: ' . $reason : '') . ($note ? ' / توضیح: ' . $note : '')),
+                    $user->id
+                );
+            }
 
             return $invoice->fresh(['items.product', 'items.variant']);
         });
