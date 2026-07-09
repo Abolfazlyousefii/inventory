@@ -14,7 +14,7 @@
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
-    $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*');
+    $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
 
     $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
 
@@ -305,7 +305,7 @@
             </div>
         </div>
         @endcanAnyPermission
-@canAnyPermission(['preinvoices.finance.view','account_statements.view','invoices.view','cheques.view'])
+@canAnyPermission(['preinvoices.finance.view','account_statements.view','invoices.view','cheques.view','finance.reports.view'])
         {{-- Finance --}}
         <div class="sidebar-accordion-item {{ $financeActive ? 'is-open' : '' }}" data-accordion-section="finance">
             <button type="button"
@@ -330,6 +330,9 @@
                     @endcanPermission
                     @canPermission('cheques.view')
                     <a class="sidebar-sublink {{ $is('finance.cheques.*') }}" href="{{ route('finance.cheques.registered') }}">چک‌های ثبت‌شده</a>
+                    @endcanPermission
+                    @canPermission('finance.reports.view')
+                    <a class="sidebar-sublink {{ $is('finance.reports.*') }}" href="{{ route('finance.reports.index') }}">گزارش مالی</a>
                     @endcanPermission
                 </div>
             </div>
