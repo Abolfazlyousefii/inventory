@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Category;
+use App\Models\ModelList;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Warehouse;
@@ -24,12 +25,19 @@ class ProductExportService
         $warehouseId = ! empty($filters['warehouse_id'])
             ? (int) $filters['warehouse_id']
             : null;
+        $modelListId = ! empty($filters['model_list_id'])
+            ? (int) $filters['model_list_id']
+            : null;
 
         return Product::query()
             ->with('category')
             ->with([
-                'variants' => function ($query) use ($warehouseId) {
+                'variants' => function ($query) use ($warehouseId, $modelListId) {
                     $query
+                        ->when(
+                            $modelListId !== null,
+                            fn ($variantQuery) => $variantQuery->where('model_list_id', $modelListId)
+                        )
                         ->with(['modelList', 'color'])
                         ->with([
                             'warehouseStocks' => function ($stockQuery) use ($warehouseId) {
@@ -57,6 +65,13 @@ class ProductExportService
                 fn (Builder $query) => $query->where(
                     'category_id',
                     (int) $filters['category_id']
+                )
+            )
+            ->when(
+                $modelListId !== null,
+                fn (Builder $query) => $query->whereHas(
+                    'variants',
+                    fn (Builder $variantQuery) => $variantQuery->where('model_list_id', $modelListId)
                 )
             )
             ->when(
@@ -221,6 +236,8 @@ class ProductExportService
                 'بدون دسته‌بندی'
             ),
 
+            'model_list' => $this->productModelListLabel($product),
+
             'stock' => $stock,
 
             'price' => $this->productSalePrice($product),
@@ -291,6 +308,10 @@ class ProductExportService
             ? Warehouse::query()->find((int) $filters['warehouse_id'])
             : null;
 
+        $modelList = ! empty($filters['model_list_id'])
+            ? ModelList::query()->find((int) $filters['model_list_id'])
+            : null;
+
         return [
             'category' => $this->cleanText(
                 $category?->name,
@@ -304,6 +325,11 @@ class ProductExportService
 
             'stock_status' => $this->stockStatusFilterLabel(
                 $filters['stock_status'] ?? 'all'
+            ),
+
+            'model_list' => $this->cleanText(
+                $modelList?->model_name,
+                'همه مدل‌ها'
             ),
 
             'search' => trim(
@@ -544,6 +570,11 @@ public function hasPdfImage(Product $product): bool
                 $product
             ),
 
+            'model_list' => $this->cleanText(
+                $variant->modelList?->model_name,
+                'بدون مدل'
+            ),
+
             'status' => (bool) $variant->is_active
                 ? 'فعال'
                 : 'غیرفعال',
@@ -570,6 +601,26 @@ public function hasPdfImage(Product $product): bool
     }
 
     /**
+     * مدل‌های لیست مرتبط با تنوع‌های بارگذاری‌شده محصول
+     */
+    private function productModelListLabel(Product $product): string
+    {
+        if (! $product->relationLoaded('variants')) {
+            return '—';
+        }
+
+        $modelNames = $product->variants
+            ->map(fn (ProductVariant $variant) => $this->cleanText($variant->modelList?->model_name, ''))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $modelNames->isNotEmpty()
+            ? $modelNames->implode('، ')
+            : 'بدون مدل';
+    }
+
+    /**
      * نام تنوع
      */
     private function variantName(ProductVariant $variant): string
@@ -578,7 +629,7 @@ public function hasPdfImage(Product $product): bool
             $variant->variant_name
                 ?: $variant->variety_name
                 ?: $variant->color?->name
-                ?: $variant->modelList?->name,
+                ?: $variant->modelList?->model_name,
             'تنوع بدون نام'
         );
     }

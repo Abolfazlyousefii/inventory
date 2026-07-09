@@ -25,6 +25,7 @@
         </td>
         <td class="code">{{ $row['display_code'] ?? '—' }}</td>
         <td>{{ $row['category'] ?? 'بدون دسته‌بندی' }}</td>
+        <td>{{ $row['model_list'] ?? '—' }}</td>
         <td>
             <span class="number">{{ number_format((int) ($row['stock'] ?? 0)) }}</span>
             {{ $row['unit'] ?? 'عدد' }}
@@ -46,6 +47,7 @@
             <td class="variant-name">{{ $variant['name'] ?? 'تنوع بدون نام' }}</td>
             <td class="code">{{ $variant['code'] ?? '—' }}</td>
             <td>{{ $variant['status'] ?? 'نامشخص' }}</td>
+            <td>{{ $variant['model_list'] ?? 'بدون مدل' }}</td>
             <td>
                 <span class="number">{{ number_format((int) ($variant['stock'] ?? 0)) }}</span>
                 {{ $variant['unit'] ?? 'عدد' }}
