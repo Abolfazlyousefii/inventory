@@ -2115,15 +2115,27 @@ class PreinvoiceController extends Controller
             $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
             foreach ($order->items as $it) {
-                $variant = ProductVariant::query()->whereKey((int) $it->variant_id)->lockForUpdate()->first();
-                if ($variant) {
-                    $it->price = (int) ($variant->sell_price ?? 0);
-                    $variant->save();
+                $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
+                $snapshotPrice = (int) ($it->price ?? 0);
+
+                if ($snapshotPrice <= 0 && $variant) {
+                    $snapshotPrice = (int) ($variant->sell_price ?? 0);
                 }
+
+                if ((int) $it->quantity > 0 && $snapshotPrice <= 0) {
+                    $name = trim(($variant?->product?->name ?? 'نامشخص') . ' / ' . ($variant?->variant_name ?: $variant?->variety_name ?: ('#' . (int) $it->variant_id)));
+                    throw ValidationException::withMessages([
+                        'price' => "قیمت کالا/تنوع {$name} صفر است و امکان ثبت فاکتور وجود ندارد.",
+                    ]);
+                }
+
+                $it->price = $snapshotPrice;
             }
             $subtotal = (int) $order->items->sum(fn($it) => ((int) $it->price) * ((int) $it->quantity));
+            $itemDiscount = (int) $order->items->sum(fn($it) => (int) ($it->line_discount_amount ?? 0));
+            $discount = max((int) $order->discount_amount, $itemDiscount);
 
-            $total = max($subtotal + (int) $order->shipping_price - (int) $order->discount_amount, 0);
+            $total = max($subtotal - $discount, 0);
 
             $requiredByVariant = $order->items
                 ->groupBy('variant_id')
@@ -2162,7 +2174,7 @@ class PreinvoiceController extends Controller
                     'city_id' => $order->city_id,
                     'shipping_id' => $order->shipping_id,
                     'shipping_price' => (int) $order->shipping_price,
-                    'discount_amount' => (int) $order->discount_amount,
+                    'discount_amount' => (int) $discount,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
                     'status' => Invoice::STATUS_PENDING_COLLECTION,
@@ -2183,7 +2195,7 @@ class PreinvoiceController extends Controller
 
                     'shipping_id' => $order->shipping_id,
                     'shipping_price' => (int) $order->shipping_price,
-                    'discount_amount' => (int) $order->discount_amount,
+                    'discount_amount' => (int) $discount,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
                     'status' => Invoice::STATUS_PENDING_COLLECTION,

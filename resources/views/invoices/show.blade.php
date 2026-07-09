@@ -93,6 +93,18 @@
     </div>
   @endif
 
+
+  @if(auth()->user()?->hasAnyRole(['admin','Admin','Manager','manager']) && ($invoice->hasZeroPriceItems() || $invoice->hasTotalMismatch()))
+    <div class="alert alert-warning d-flex gap-2 flex-wrap">
+      @if($invoice->hasZeroPriceItems())
+        <span class="badge bg-danger">هشدار قیمت صفر</span>
+      @endif
+      @if($invoice->hasTotalMismatch())
+        <span class="badge bg-warning text-dark">هشدار مغایرت مبلغ</span>
+      @endif
+    </div>
+  @endif
+
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
       <div class="h5 fw-bold mb-0">🧾 فاکتور</div>
