@@ -21,7 +21,10 @@ class ProductPurchaseLedgerController extends Controller
         $query = PurchaseItem::query()
             ->select('purchase_items.*')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->where('purchase_items.product_id', $product->id)
+            ->where(function ($productQuery) use ($product) {
+                $productQuery->where('purchase_items.product_id', $product->id)
+                    ->orWhere('purchase_items.product_name', $product->name);
+            })
             ->with([
                 'purchase:id,supplier_id,user_id,purchased_at,created_at',
                 'purchase.supplier:id,name',
@@ -53,7 +56,10 @@ class ProductPurchaseLedgerController extends Controller
 
         $summaryQuery = PurchaseItem::query()
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->where('purchase_items.product_id', $product->id);
+            ->where(function ($productQuery) use ($product) {
+                $productQuery->where('purchase_items.product_id', $product->id)
+                    ->orWhere('purchase_items.product_name', $product->name);
+            });
 
         if ($selectedVariant) {
             $summaryQuery->where('purchase_items.product_variant_id', $selectedVariant->id);
@@ -84,7 +90,7 @@ class ProductPurchaseLedgerController extends Controller
         $lastItem = (clone $query)->orderByDesc('purchases.purchased_at')->orderByDesc('purchase_items.id')->first();
 
         $ledgerItems = $query->orderByDesc('purchases.purchased_at')->orderByDesc('purchase_items.id')->paginate(25)->withQueryString();
-        $variants = $product->variants()->orderBy('variant_code')->get(['id', 'variant_name', 'variant_code']);
+        $variants = $product->variants()->orderBy('variant_code')->get(['id', 'variant_name', 'variant_code', 'is_active']);
 
         return view('products.purchase-ledger', compact('product', 'selectedVariant', 'variants', 'ledgerItems', 'summary', 'lastItem'));
     }

@@ -80,7 +80,8 @@ class PreinvoiceController extends Controller
                 'creator:id,name',
                 'warehouseReviewer:id,name',
                 'reviews.user:id,name',
-                'invoice:id,uuid,preinvoice_order_id,status,created_at,document_date',
+                'invoice:id,uuid,preinvoice_order_id,status,total,subtotal,shipping_price,discount_amount,created_at,document_date,items_updated_at,status_changed_at',
+                'invoice.items:id,invoice_id,product_id,variant_id,quantity,price,line_total,sort_order,line_discount_amount',
             ])
             ->where('uuid', $uuid)
             ->firstOrFail();
@@ -294,7 +295,13 @@ class PreinvoiceController extends Controller
     {
         $orders = PreinvoiceOrder::query()
             ->where('status', PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE)
-            ->with(['creator:id,name'])
+            ->where(function ($query) {
+                $query->whereDoesntHave('invoice')
+                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->whereIn('status', [
+                        Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+                    ]));
+            })
+            ->with(['creator:id,name', 'invoice:id,uuid,preinvoice_order_id,status'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(20);
@@ -325,7 +332,10 @@ class PreinvoiceController extends Controller
         $status = (string) $request->query('status', '');
         $query = PreinvoiceOrder::query()
             ->where('created_by', auth()->id())
-            ->with(['invoice:id,uuid,preinvoice_order_id,status,created_at,document_date'])
+            ->with([
+                'invoice:id,uuid,preinvoice_order_id,status,total,subtotal,shipping_price,discount_amount,created_at,document_date,items_updated_at,status_changed_at',
+                'invoice.items:id,invoice_id,quantity,price,line_total',
+            ])
             ->withCount('items');
 
         if ($status !== '') {
@@ -843,6 +853,7 @@ class PreinvoiceController extends Controller
 
         $request->merge([
             'items' => $items,
+            'warehouse_review_note' => trim((string) ($request->input('warehouse_review_note') ?? $request->input('change_reason') ?? $request->input('reason') ?? '')),
         ]);
 
         $validated = $request->validate([
@@ -2234,7 +2245,7 @@ class PreinvoiceController extends Controller
                     'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
-                    'status' => Invoice::STATUS_COLLECTING,
+                    'status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
                     'status_changed_at' => now(),
                     'status_changed_by' => auth()->id(),
                 ]);
