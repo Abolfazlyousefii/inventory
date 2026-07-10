@@ -20,7 +20,7 @@ class CustomerLedger extends Model
                     $sub->selectRaw('1')
                         ->from('invoices')
                         ->whereColumn('invoices.id', 'customer_ledgers.reference_id')
-                        ->where('invoices.status', '!=', \App\Models\Invoice::STATUS_NOT_SHIPPED);
+                        ->whereNotIn('invoices.status', \App\Models\Invoice::cancelledStatuses());
                 });
         });
     }

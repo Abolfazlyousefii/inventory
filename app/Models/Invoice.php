@@ -13,9 +13,25 @@ class Invoice extends Model
     public const STATUS_PACKING = 'packing';
     public const STATUS_SHIPPED = 'shipped';
     public const STATUS_NOT_SHIPPED = 'not_shipped';
+    public const STATUS_CANCELED_LEGACY = 'canceled';
+    public const STATUS_CANCELLED_LEGACY = 'cancelled';
     public const STATUS_PENDING_FINANCE_REAPPROVAL = 'pending_finance_reapproval';
     public const STATUS_FINANCE_APPROVED = 'finance_approved';
     public const COLLECTION_STATUS_COMPLETED = 'completed';
+
+    public static function cancelledStatuses(): array
+    {
+        return [
+            self::STATUS_NOT_SHIPPED,
+            self::STATUS_CANCELED_LEGACY,
+            self::STATUS_CANCELLED_LEGACY,
+        ];
+    }
+
+    public function scopeNotCancelled($query)
+    {
+        return $query->whereNotIn('status', self::cancelledStatuses());
+    }
 
     protected $fillable = [
         'uuid','customer_id','preinvoice_order_id','document_date',

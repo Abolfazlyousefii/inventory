@@ -20,9 +20,10 @@ class CustomerLedgerCancelledInvoiceTest extends TestCase
         $activeOne = Invoice::query()->create(['uuid' => 'INV-1', 'customer_id' => $customer->id, 'customer_name' => 'محمد احمدی', 'total' => 253_090_000, 'status' => Invoice::STATUS_SHIPPED]);
         $activeTwo = Invoice::query()->create(['uuid' => 'INV-2', 'customer_id' => $customer->id, 'customer_name' => 'محمد احمدی', 'total' => 41_770_000, 'status' => Invoice::STATUS_FINANCE_APPROVED]);
         $cancelled = Invoice::query()->create(['uuid' => 'INV-3', 'customer_id' => $customer->id, 'customer_name' => 'محمد احمدی', 'total' => 80_030_000, 'status' => Invoice::STATUS_NOT_SHIPPED]);
+        $legacyCancelled = Invoice::query()->create(['uuid' => 'INV-4', 'customer_id' => $customer->id, 'customer_name' => 'محمد احمدی', 'total' => 15_000_000, 'status' => Invoice::STATUS_CANCELED_LEGACY]);
         $payment = InvoicePayment::query()->create(['invoice_id' => $activeOne->id, 'customer_id' => $customer->id, 'amount' => 10_000_000, 'method' => 'cash', 'paid_at' => now()]);
 
-        foreach ([$activeOne, $activeTwo, $cancelled] as $invoice) {
+        foreach ([$activeOne, $activeTwo, $cancelled, $legacyCancelled] as $invoice) {
             CustomerLedger::query()->create(['customer_id' => $customer->id, 'type' => 'debit', 'amount' => $invoice->total, 'reference_type' => Invoice::class, 'reference_id' => $invoice->id]);
         }
         CustomerLedger::query()->create(['customer_id' => $customer->id, 'type' => 'credit', 'amount' => $payment->amount, 'reference_type' => InvoicePayment::class, 'reference_id' => $payment->id]);

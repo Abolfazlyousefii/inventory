@@ -13,7 +13,7 @@ class CustomerLedgerService
             return;
         }
 
-        if ((string) $invoice->status === Invoice::STATUS_NOT_SHIPPED) {
+        if (in_array((string) $invoice->status, Invoice::cancelledStatuses(), true)) {
             $this->voidInvoiceDebit($invoice, 'حذف اثر بدهکاری فاکتور کنسل‌شده');
             return;
         }
