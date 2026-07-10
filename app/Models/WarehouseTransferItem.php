@@ -17,6 +17,8 @@ class WarehouseTransferItem extends Model
         'quantity',
         'unit_price',
         'line_total',
+        'return_kind',
+        'destination_warehouse_id',
         'personnel_asset_code',
     ];
 
@@ -38,5 +40,24 @@ class WarehouseTransferItem extends Model
     public function variant()
     {
         return $this->belongsTo(ProductVariant::class, 'product_variant_id');
+    }
+
+    public function destinationWarehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'destination_warehouse_id');
+    }
+
+    public function effectiveReturnKind(): string
+    {
+        if (in_array($this->return_kind, ['healthy', 'damaged'], true)) {
+            return $this->return_kind;
+        }
+
+        return ($this->destinationWarehouse?->type === 'return') ? 'damaged' : 'healthy';
+    }
+
+    public function returnKindLabel(): string
+    {
+        return $this->effectiveReturnKind() === 'damaged' ? 'مرجوعی' : 'سالم';
     }
 }

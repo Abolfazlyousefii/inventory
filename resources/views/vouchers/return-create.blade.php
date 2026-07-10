@@ -357,6 +357,8 @@
                                                 <th>قابل برگشت</th>
                                                 <th>قیمت واحد طبق فاکتور</th>
                                                 <th style="width:170px;">تعداد برگشتی</th>
+                                                <th>نوع برگشت</th>
+                                                <th>انبار مقصد</th>
                                                 <th>واحد</th>
                                                 <th>مبلغ برگشتی</th>
                                                 <th style="width:80px;"></th>
@@ -394,7 +396,7 @@
                                     <table class="table table-striped line-table" id="manualItemsTable">
                                         <thead>
                                             <tr>
-                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد برگشتی</th><th>واحد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
+                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد برگشتی</th><th>نوع برگشت</th><th>انبار مقصد</th><th>واحد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -559,6 +561,8 @@ document.addEventListener('DOMContentLoaded', function () {
             'product_code' => $item->product?->code ?: ($item->product?->sku ?: ''),
             'variant_name' => $item->variant?->variant_name ?: ($item->variant_name ?: '—'),
             'variant_code' => $item->variant?->variant_code ?: ($item->variant_code ?: ''),
+            'return_kind' => $item->effectiveReturnKind(),
+            'destination_warehouse_id' => $item->destination_warehouse_id ?: $item->transfer?->to_warehouse_id,
         ])->values()->all() : [];
 
         $oldInputItems = old('items');
@@ -605,12 +609,17 @@ document.addEventListener('DOMContentLoaded', function () {
             variant_id: variantId,
             product_variant_id: row.product_variant_id || variantId,
             quantity: quantity > 0 ? quantity : row.quantity,
+            return_kind: row.return_kind || row.returnKind || 'healthy',
+            destination_warehouse_id: row.destination_warehouse_id || row.destinationWarehouseId || '',
         });
     });
     const editingVoucherId = @json($returnEditingVoucherId);
     const existingInvoice = @json($returnExistingInvoice);
     const products = @json($manualReturnProducts);
     const categories = @json($returnCategories);
+    const warehouses = @json($warehouses->map(fn($w) => ['id' => (int) $w->id, 'name' => (string) $w->name, 'type' => (string) ($w->type ?? '')])->values());
+    const centralWarehouseId = @json((int) \App\Services\WarehouseStockService::centralWarehouseId());
+    const returnsWarehouseId = @json((int) $returnsWarehouse->id);
 
     let customerInvoices = [];
     let selectedInvoice = null;
@@ -887,6 +896,8 @@ document.addEventListener('DOMContentLoaded', function () {
             remaining_qty: Math.max(toSafeNumber(row.remaining_qty ?? row.returnable_quantity, 0), qty, 1),
             unit_price: toSafeNumber(row.unit_price ?? row.price, 0),
             unit: String(row.unit || 'عدد'),
+            return_kind: row.return_kind || 'healthy',
+            destination_warehouse_id: row.destination_warehouse_id || '',
             _fromExistingVoucher: true,
         };
     }
@@ -930,11 +941,29 @@ document.addEventListener('DOMContentLoaded', function () {
         return qty > 0 ? qty : null;
     }
 
+    function warehouseOptions(selectedId) {
+        return warehouses.map(function (warehouse) {
+            const selected = String(warehouse.id) === String(selectedId) ? ' selected' : '';
+            return `<option value="${escapeHtml(warehouse.id)}"${selected}>${escapeHtml(warehouse.name)}</option>`;
+        }).join('');
+    }
+
+    function bindReturnKindWarehouse(row) {
+        const kind = row.querySelector('.return-kind-select');
+        const destination = row.querySelector('.destination-warehouse-select');
+        if (!kind || !destination) return;
+        kind.addEventListener('change', function () {
+            destination.value = kind.value === 'damaged' ? String(returnsWarehouseId) : String(centralWarehouseId);
+        });
+    }
+
     function itemRowTemplate(item, index, useOldQuantity) {
         const rawRemaining = toSafeNumber(item.remaining_qty, 0);
         const defaultQtyFromOld = useOldQuantity ? oldQuantityFor(item.invoice_item_id, item.product_id, item.variant_id) : null;
         const remaining = Math.max(defaultQtyFromOld !== null ? Math.max(rawRemaining, defaultQtyFromOld) : rawRemaining, 1);
         const defaultQty = Math.max(defaultQtyFromOld !== null ? defaultQtyFromOld : remaining, 1);
+        const selectedKind = item.return_kind === 'damaged' ? 'damaged' : 'healthy';
+        const selectedWarehouseId = toSafeNumber(item.destination_warehouse_id, selectedKind === 'damaged' ? returnsWarehouseId : centralWarehouseId);
 
         return `
             <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}" data-default-quantity="${escapeHtml(defaultQty)}">
@@ -967,6 +996,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="input-group-text">${escapeHtml(item.unit || 'عدد')}</span>
                     </div>
                 </td>
+                <td><select name="items[${index}][return_kind]" class="form-select form-select-sm return-kind-select"><option value="healthy" ${selectedKind === 'healthy' ? 'selected' : ''}>سالم</option><option value="damaged" ${selectedKind === 'damaged' ? 'selected' : ''}>مرجوعی</option></select></td>
+                <td><select name="items[${index}][destination_warehouse_id]" class="form-select form-select-sm destination-warehouse-select">${warehouseOptions(selectedWarehouseId)}</select></td>
                 <td><span class="badge text-bg-light">${escapeHtml(item.unit || 'عدد')}</span></td>
                 <td><span class="internal-line-total">۰ ریال</span></td>
                 <td>
@@ -1013,6 +1044,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (qtyInput && (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0)) {
                 qtyInput.value = String(toSafeNumber(tr.dataset.defaultQuantity, 1));
             }
+
+            bindReturnKindWarehouse(tr);
 
             if (!qtyInput) return;
 
@@ -1331,7 +1364,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const qtyInput = tr.querySelector('.manual-qty');
 
-        if (!qtyInput) return;
+        bindReturnKindWarehouse(tr);
+
+            if (!qtyInput) return;
 
         qtyInput.disabled = false;
         qtyInput.readOnly = false;
@@ -1355,6 +1390,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const index = nextManualItemIndex();
         const unitPrice = toSafeNumber(rowData.unit_price, 0);
         const defaultQty = Math.max(returnItemQuantity(rowData), 1);
+        const selectedKind = rowData.return_kind === 'healthy' ? 'healthy' : 'damaged';
+        const selectedWarehouseId = toSafeNumber(rowData.destination_warehouse_id, selectedKind === 'damaged' ? returnsWarehouseId : centralWarehouseId);
         const tr = document.createElement('tr');
         tr.dataset.itemIndex = String(index);
         tr.innerHTML = `
@@ -1363,6 +1400,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
             <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty return-quantity-input" value="${escapeHtml(defaultQty)}" data-default-quantity="${escapeHtml(defaultQty)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><select name="items[${index}][return_kind]" class="form-select form-select-sm return-kind-select"><option value="healthy" ${selectedKind === 'healthy' ? 'selected' : ''}>سالم</option><option value="damaged" ${selectedKind === 'damaged' ? 'selected' : ''}>مرجوعی</option></select></td>
+            <td><select name="items[${index}][destination_warehouse_id]" class="form-select form-select-sm destination-warehouse-select">${warehouseOptions(selectedWarehouseId)}</select></td>
             <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
@@ -1372,6 +1411,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><button type="button" class="btn btn-sm btn-outline-danger manual-remove">حذف</button></td>
         `;
         manualTbody.appendChild(tr);
+        bindReturnKindWarehouse(tr);
 
         const categorySelect = tr.querySelector('.manual-category');
         const productSelect = tr.querySelector('.manual-product');
