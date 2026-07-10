@@ -369,7 +369,8 @@
                 <div class="d-flex gap-2 flex-wrap">
                     <a class="btn btn-outline-secondary" href="{{ route('vouchers.index') }}">بازگشت</a>
                     @if($isCustomerReturn)
-                        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#salesReturnExportModal">خروجی اکسل</button>
+                        <a class="btn btn-success" href="{{ route('vouchers.section.return-from-sale.export', request()->query()) }}">خروجی اکسل</a>
+                        <a class="btn btn-outline-danger" href="{{ route('vouchers.section.return-from-sale.pdf', request()->query()) }}">خروجی PDF</a>
                     @endif
                     <a class="btn btn-primary" href="{{ route('vouchers.section.create', $type) }}">+ ثبت جدید</a>
                 </div>
@@ -447,6 +448,18 @@
     @endif
 
     @if($voucherType === \App\Models\WarehouseTransfer::TYPE_CUSTOMER_RETURN)
+
+        <div class="card table-card mb-3">
+            <div class="p-3">
+                <form method="GET" action="{{ route('vouchers.section.index', 'return-from-sale') }}" class="row g-3 align-items-end">
+                    <div class="col-md-3"><label class="form-label">جستجو براساس نام مشتری</label><input class="form-control" name="customer_name" value="{{ $customerName }}" placeholder="مثلاً محمد"></div>
+                    <div class="col-md-3"><label class="form-label">شماره حواله یا سند برگشت</label><input class="form-control" name="document_number" value="{{ $documentNumber }}" placeholder="شماره سند"></div>
+                    <div class="col-md-2"><label class="form-label">تاریخ از</label><input type="date" class="form-control" name="date_from" value="{{ $dateFrom }}"></div>
+                    <div class="col-md-2"><label class="form-label">تاریخ تا</label><input type="date" class="form-control" name="date_to" value="{{ $dateTo }}"></div>
+                    <div class="col-md-2 d-flex gap-2"><button class="btn btn-primary w-100" type="submit">جستجو</button><a class="btn btn-outline-secondary w-100" href="{{ route('vouchers.section.index', 'return-from-sale') }}">پاک کردن فیلترها</a></div>
+                </form>
+            </div>
+        </div>
         <div class="card table-card">
             <div class="section-head">
                 <div>
@@ -457,7 +470,7 @@
             <div class="return-table-wrap">
                 <table class="table table-hover align-middle mb-0 return-table">
                     <colgroup>
-                        <col class="return-col-row"><col class="return-col-ref"><col class="return-col-date"><col class="return-col-customer"><col class="return-col-items"><col class="return-col-item-count"><col class="return-col-amount"><col class="return-col-reason"><col class="return-col-status"><col class="return-col-user"><col class="return-col-actions">
+                        <col class="return-col-row"><col class="return-col-ref"><col class="return-col-date"><col class="return-col-customer"><col class="return-col-items"><col class="return-col-item-count"><col class="return-col-amount"><col><col class="return-col-reason"><col class="return-col-status"><col class="return-col-user"><col class="return-col-actions">
                     </colgroup>
                     <thead>
                     <tr>
@@ -467,7 +480,8 @@
                         <th>مشتری</th>
                         <th>کالا / تنوع</th>
                         <th>تعداد آیتم برگشتی</th>
-                        <th>مبلغ کل برگشتی</th>
+                        <th>مبلغ کل</th>
+                        <th>نوع انبار</th>
                         <th>علت برگشت</th>
                         <th>وضعیت</th>
                         <th>ثبت‌کننده</th>
@@ -513,6 +527,7 @@
                             </td>
                             <td class="cell-strong">{{ number_format($returnedItemsCount) }} آیتم</td>
                             <td class="cell-strong">{{ $toRial($returnedTotalAmount) }}</td>
+                            <td>انبار مقصد: {{ $voucher->toWarehouse?->name ?: 'نامشخص' }}</td>
                             <td><span class="reason-pill">{{ \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—' }}</span></td>
                             <td>{{ \App\Models\WarehouseTransfer::returnSourceLabel($voucher->return_type ?? null) }}</td>
                             <td>{{ $voucher->user?->name ?: '—' }}</td>
@@ -529,7 +544,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="11" class="text-center py-4 text-muted">موردی ثبت نشده است.</td>
+                            <td colspan="12" class="text-center py-4 text-muted">موردی ثبت نشده است.</td>
                         </tr>
                     @endforelse
                     </tbody>

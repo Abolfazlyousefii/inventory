@@ -156,10 +156,11 @@ class StocktakeController extends Controller
         $data = $request->validate([
             'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
             'product_id' => ['required', 'integer', 'exists:products,id'],
+            'variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
         ]);
 
         return response()->json([
-            'system_quantity' => $this->service->getSystemQuantity((int) $data['warehouse_id'], (int) $data['product_id']),
+            'system_quantity' => $this->service->getSystemQuantity((int) $data['warehouse_id'], (int) $data['product_id'], false, isset($data['variant_id']) ? (int) $data['variant_id'] : null),
         ]);
     }
 

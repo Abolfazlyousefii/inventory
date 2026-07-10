@@ -151,6 +151,7 @@ Route::middleware('role:admin|Admin|finance|Accountant|Manager')->prefix('financ
 Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
 Route::get('/vouchers/section/{type}/create', [VoucherController::class, 'sectionCreate'])->name('vouchers.section.create');
 Route::get('/vouchers/section/return-from-sale/export', [VoucherController::class, 'salesReturnsExport'])->name('vouchers.section.return-from-sale.export');
+Route::get('/vouchers/section/return-from-sale/pdf', [VoucherController::class, 'salesReturnsPdf'])->name('vouchers.section.return-from-sale.pdf');
 Route::get('/vouchers/section/return-from-sale/ajax/customers', [VoucherController::class, 'salesReturnsSearchCustomers'])->name('vouchers.section.return-from-sale.ajax.customers');
 Route::get('/vouchers/section/return-from-sale/ajax/categories', [VoucherController::class, 'salesReturnsCategories'])->name('vouchers.section.return-from-sale.ajax.categories');
 Route::get('/vouchers/section/return-from-sale/ajax/subcategories', [VoucherController::class, 'salesReturnsSubcategories'])->name('vouchers.section.return-from-sale.ajax.subcategories');

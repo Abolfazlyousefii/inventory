@@ -97,6 +97,7 @@ class AccountStatementController extends Controller
     public function show(Customer $customer)
     {
         $ledgers = CustomerLedger::query()
+            ->effectiveForBalance()
             ->where('customer_id', $customer->id)
             ->orderByDesc('created_at')
             ->paginate(25);
@@ -190,11 +191,13 @@ class AccountStatementController extends Controller
             ->keyBy('id');
 
         $totalDebit = (int) CustomerLedger::query()
+            ->effectiveForBalance()
             ->where('customer_id', $customer->id)
             ->where('type', 'debit')
             ->sum('amount');
 
         $totalCredit = (int) CustomerLedger::query()
+            ->effectiveForBalance()
             ->where('customer_id', $customer->id)
             ->where('type', 'credit')
             ->sum('amount');
@@ -267,11 +270,13 @@ class AccountStatementController extends Controller
 
         $createdLedger = DB::transaction(function () use ($customer, $data, $amount, $targetBalance, $ledgerNote, $user, $userName, $userNote) {
             $totalDebit = (int) CustomerLedger::query()
+                ->effectiveForBalance()
                 ->where('customer_id', $customer->id)
                 ->where('type', 'debit')
                 ->sum('amount');
 
             $totalCredit = (int) CustomerLedger::query()
+                ->effectiveForBalance()
                 ->where('customer_id', $customer->id)
                 ->where('type', 'credit')
                 ->sum('amount');

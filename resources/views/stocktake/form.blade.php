@@ -219,6 +219,7 @@
 
     async function fillSystemQuantity(tr){
         const productId = tr.querySelector('.product-select').value;
+        const variantId = tr.querySelector('.variant-select')?.value || '';
         const warehouseId = warehouseSelect.value;
         if (!productId || !warehouseId) {
             tr.querySelector('.system-quantity').value = 0;
@@ -226,7 +227,7 @@
             return;
         }
 
-        const url = `{{ route('stock-count-documents.system-quantity') }}?warehouse_id=${warehouseId}&product_id=${productId}`;
+        const url = `{{ route('stock-count-documents.system-quantity') }}?warehouse_id=${warehouseId}&product_id=${productId}&variant_id=${variantId}`;
         const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
         const data = await resp.json();
         tr.querySelector('.system-quantity').value = data.system_quantity ?? 0;
