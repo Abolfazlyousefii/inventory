@@ -284,24 +284,70 @@ class PreinvoiceController extends Controller
         return redirect()->route('preinvoice.warehouse.index')->with('success', '✅ پیش‌فاکتور رد شد.');
     }
 
-    public function draftIndex()
+    public function draftIndex(Request $request)
     {
-        $orders = PreinvoiceOrder::query()
+        abort_unless($this->canHandleFinanceActions(), 403);
+
+        $activeTab = in_array($request->query('tab'), ['pending', 'expired', 'reapproval'], true)
+            ? $request->query('tab')
+            : 'pending';
+        $now = now();
+
+        $pendingCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)->count();
+        $expiredCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)->count();
+        $reapprovalCount = Invoice::query()->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)->count();
+
+        $pendingOrders = PreinvoiceOrder::query()
             ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
-            ->with(['creator:id,name', 'customer:id,reservation_tier'])
+            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items:id,preinvoice_order_id,quantity'])
+            ->orderByRaw('case when stock_frozen_until is null then 1 else 0 end asc')
+            ->orderBy('stock_frozen_until')
             ->orderByDesc('id')
-            ->paginate(20);
+            ->paginate(20, ['*'], 'pending_page')
+            ->withQueryString();
+        $pendingOrders->getCollection()->transform(fn (PreinvoiceOrder $order) => $this->decorateFinanceQueueOrder($order));
+
+        $expiredOrders = PreinvoiceOrder::query()
+            ->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)
+            ->with(['creator:id,name', 'items:id,preinvoice_order_id,quantity'])
+            ->orderByDesc('stock_released_at')
+            ->orderByDesc('id')
+            ->paginate(20, ['*'], 'expired_page')
+            ->withQueryString();
 
         $financeReapprovalInvoices = Invoice::query()
             ->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
-            ->with(['preinvoiceOrder.creator:id,name'])
+            ->with(['preinvoiceOrder.creator:id,name', 'statusChangedByUser:id,name'])
+            ->withSum('payments as paid_amount', 'amount')
             ->orderByDesc('items_updated_at')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(20, ['*'], 'reapproval_page')
+            ->withQueryString();
 
-        $canFinanceApprove = $this->canHandleFinanceActions();
+        return view('preinvoice.drafts-index', compact(
+            'activeTab',
+            'pendingCount',
+            'expiredCount',
+            'reapprovalCount',
+            'pendingOrders',
+            'expiredOrders',
+            'financeReapprovalInvoices'
+        ));
+    }
 
-        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove', 'financeReapprovalInvoices'));
+    private function decorateFinanceQueueOrder(PreinvoiceOrder $order): PreinvoiceOrder
+    {
+        $now = now();
+        $expiresAt = $order->stock_frozen_until;
+        $seconds = $expiresAt ? max(0, $now->diffInSeconds($expiresAt, false)) : null;
+        $isVip = ($order->customer?->reservation_tier === 'vip');
+        $isExpired = ! $isVip && $expiresAt !== null && $expiresAt->lte($now);
+
+        $order->setAttribute('finance_seconds_remaining', $seconds);
+        $order->setAttribute('finance_reservation_expired', $isExpired);
+        $order->setAttribute('finance_reservation_label', $isExpired ? 'منقضی‌شده' : ($expiresAt === null ? 'بدون انقضا' : 'فعال'));
+
+        return $order;
     }
 
     public function allIndex(Request $request)
@@ -1987,7 +2033,7 @@ class PreinvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['Admin', 'finance', 'Accountant']) || $user->can('finance.approve'));
+        return $user && ($user->hasAnyRole(['Admin', 'admin', 'finance', 'Accountant', 'Manager', 'manager']) || $user->can('finance.approve') || $user->can('preinvoices.finance.view'));
     }
 
     private function canHandleWarehouseActions(): bool
@@ -2004,12 +2050,13 @@ class PreinvoiceController extends Controller
     {
         abort_unless($this->canHandleFinanceActions(), 403);
 
-        $order = PreinvoiceOrder::with(['items.product', 'items.variant', 'creator:id,name'])
+        $order = PreinvoiceOrder::with(['items.product', 'items.variant', 'creator:id,name', 'customer:id,crm_customer_id,reservation_tier'])
             ->where('uuid', $uuid)
             ->firstOrFail();
         abort_if(! in_array($order->status, [
             PreinvoiceOrder::STATUS_PENDING_FINANCE,
             PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+            PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
         ], true), 403);
 
         $customerBalanceStatus = 'تسویه شده';
@@ -2117,10 +2164,6 @@ class PreinvoiceController extends Controller
             foreach ($order->items as $it) {
                 $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
                 $snapshotPrice = (int) ($it->price ?? 0);
-
-                if ($snapshotPrice <= 0 && $variant) {
-                    $snapshotPrice = (int) ($variant->sell_price ?? 0);
-                }
 
                 if ((int) $it->quantity > 0 && $snapshotPrice <= 0) {
                     $name = trim(($variant?->product?->name ?? 'نامشخص') . ' / ' . ($variant?->variant_name ?: $variant?->variety_name ?: ('#' . (int) $it->variant_id)));
@@ -2314,6 +2357,9 @@ class PreinvoiceController extends Controller
                 PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
             ], true), 403);
 
+            $this->reservationService->assertFinanceApprovable($order, auth()->user());
+            $this->reservationService->assertFinanceApprovable($order, auth()->user());
+            abort_if($order->invoice()->exists(), 422, 'این پیش‌فاکتور قبلاً به فاکتور تبدیل شده است.');
             $oldStatus = (string) $order->status;
             $release = $this->reservationService->releaseOfficialReservationsForOrder($order, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, $data['reason'], auth()->user());
             $order->update([

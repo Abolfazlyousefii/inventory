@@ -2,300 +2,54 @@
 
 @php
   use Morilog\Jalali\Jalalian;
-  use Illuminate\Support\Str;
+  $rial = fn($v) => number_format((int) $v) . ' ریال';
+  $dateFa = fn($d) => $d ? Jalalian::fromDateTime($d)->format('Y/m/d H:i') : '—';
 @endphp
 
 @section('content')
 <style>
-  .finance-queue-card { overflow: hidden; }
-  .finance-queue-table-desktop { max-width: 100%; overflow-x: hidden; }
-  .finance-queue-table { table-layout: fixed; width: 100%; }
-  .finance-queue-table th,
-  .finance-queue-table td { vertical-align: middle; }
-  .finance-queue-table th { font-size: .78rem; white-space: nowrap; }
-  .finance-queue-table td { font-size: .84rem; }
-  .finance-order-main { min-width: 0; }
-  .finance-order-main .order-code,
-  .finance-order-main .customer-name { overflow-wrap: anywhere; }
-  .finance-payment-note {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    font-size: .78rem;
-    color: #475569;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .reservation-timer-pill { display: inline-flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
-  .reservation-countdown { direction: ltr; unicode-bidi: plaintext; font-variant-numeric: tabular-nums; }
-  .finance-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-  .finance-actions .btn { white-space: nowrap; }
-  .finance-queue-table tr.is-expired { opacity: .78; }
-  .finance-queue-mobile { display: none; }
-  .finance-mobile-card { border: 1px solid #e5e7eb; border-radius: .75rem; padding: .85rem; background: #fff; }
-  .finance-mobile-meta { display: grid; gap: .65rem; }
-  @media (max-width: 767.98px) {
-    .container { max-width: 100%; overflow-x: hidden; }
-    .finance-queue-table-desktop { display: none; }
-    .finance-queue-mobile { display: grid; gap: .75rem; }
-    .finance-actions { justify-content: stretch; }
-    .finance-actions .btn,
-    .finance-actions form { flex: 1 1 calc(50% - 6px); }
-    .finance-actions form .btn { width: 100%; }
-  }
+  .finance-queue{background:#fff}.fq-head h4{font-size:1.05rem;font-weight:700}.fq-muted{color:#64748b}.fq-tabs{gap:.35rem}.fq-tabs .nav-link{font-size:.82rem;padding:.45rem .75rem;border:1px solid #e2e8f0;color:#334155;background:#fff}.fq-tabs .nav-link.active{background:#f1f5f9;color:#0f172a;border-color:#cbd5e1}.fq-card{border:1px solid #e5e7eb;border-radius:.7rem;background:#fff;overflow:hidden}.fq-table{margin:0;table-layout:fixed}.fq-table th{font-size:.75rem;font-weight:600;color:#475569;background:#f8fafc;white-space:nowrap}.fq-table td{font-size:.82rem;vertical-align:middle;color:#1f2937}.fq-doc-link{font-weight:700;text-decoration:none}.fq-timer{display:inline-flex;flex-direction:column;gap:.1rem;min-width:82px}.fq-timer-value{direction:ltr;unicode-bidi:plaintext;font-variant-numeric:tabular-nums;font-weight:700}.fq-timer-label{font-size:.68rem;color:#64748b}.fq-green{color:#15803d}.fq-yellow{color:#a16207}.fq-red{color:#b91c1c}.mobile-list{display:none}.fq-mobile-card{border:1px solid #e5e7eb;border-radius:.7rem;padding:.75rem;background:#fff}.fq-mobile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem}.fq-mobile-grid small{display:block;color:#64748b}.empty-state{text-align:center;color:#64748b;padding:2rem}.table-responsive{overflow-x:visible}@media(max-width:767.98px){.desktop-table{display:none}.mobile-list{display:grid;gap:.6rem}.fq-tabs .nav-link{font-size:.75rem;padding:.4rem}.fq-mobile-actions .btn{width:100%}.container{max-width:100%;overflow-x:hidden}}
 </style>
 
-<div class="container py-4">
-  <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-    <div>
-      <h4 class="mb-1">صف تایید مالی</h4>
-      <div class="text-muted small">پیش‌فاکتورهای ثبت نهایی‌شده برای بررسی مالی</div>
-    </div>
-    <a href="{{ route('preinvoice.create') }}" class="btn btn-sm btn-primary">ایجاد پیش‌فاکتور</a>
+<div class="container py-4 finance-queue" dir="rtl">
+  <div class="fq-head d-flex justify-content-between align-items-start gap-2 mb-3 flex-wrap">
+    <div><h4 class="mb-1">صف تأیید مالی</h4><div class="fq-muted small">لیست ساده اسناد مالی؛ تصمیم‌گیری فقط در صفحه مشاهده انجام می‌شود.</div></div>
   </div>
 
-  @if(session('success'))
-    <div class="alert alert-success">{{ session('success') }}</div>
+  @if(session('success'))<div class="alert alert-success py-2">{{ session('success') }}</div>@endif
+  @if(session('error'))<div class="alert alert-danger py-2">{{ session('error') }}</div>@endif
+  @if($errors->any())<div class="alert alert-danger py-2"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+
+  <ul class="nav nav-pills fq-tabs mb-3">
+    <li class="nav-item"><a class="nav-link {{ $activeTab === 'pending' ? 'active' : '' }}" href="{{ route('preinvoice.draft.index', ['tab' => 'pending']) }}">پیش‌فاکتورهای منتظر تأیید ({{ number_format($pendingCount) }})</a></li>
+    <li class="nav-item"><a class="nav-link {{ $activeTab === 'expired' ? 'active' : '' }}" href="{{ route('preinvoice.draft.index', ['tab' => 'expired']) }}">منقضی‌شده‌ها ({{ number_format($expiredCount) }})</a></li>
+    <li class="nav-item"><a class="nav-link {{ $activeTab === 'reapproval' ? 'active' : '' }}" href="{{ route('preinvoice.draft.index', ['tab' => 'reapproval']) }}">نیازمند تأیید مجدد ({{ number_format($reapprovalCount) }})</a></li>
+  </ul>
+
+  @if($activeTab === 'pending')
+    <div class="fq-card">
+      <div class="desktop-table table-responsive"><table class="table fq-table align-middle"><thead><tr><th>شماره پیش‌فاکتور</th><th>مشتری</th><th>فروشنده</th><th>تعداد اقلام</th><th>مبلغ نهایی</th><th>تاریخ ثبت</th><th>زمان باقی‌مانده رزرو</th><th class="text-end">عملیات</th></tr></thead><tbody>
+        @forelse($pendingOrders as $order)
+          <tr><td><a class="fq-doc-link" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">{{ $order->uuid }}</a></td><td>{{ $order->customer_name ?: '—' }}</td><td>{{ $order->creator?->name ?? '—' }}</td><td>{{ number_format((int) $order->items->sum('quantity')) }}</td><td>{{ $rial($order->total_price) }}</td><td>{{ $dateFa($order->created_at) }}</td><td>@include('preinvoice.partials.simple-reservation-timer', ['order' => $order])</td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">مشاهده</a></td></tr>
+        @empty<tr><td colspan="8"><div class="empty-state">در حال حاضر پیش‌فاکتوری در انتظار تأیید مالی نیست.</div></td></tr>@endforelse
+      </tbody></table></div>
+      <div class="mobile-list p-2">@forelse($pendingOrders as $order)<div class="fq-mobile-card"><div class="d-flex justify-content-between gap-2 mb-2"><a class="fq-doc-link" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">{{ $order->uuid }}</a><span>{{ $rial($order->total_price) }}</span></div><div class="fq-mobile-grid small mb-2"><div><small>مشتری</small>{{ $order->customer_name ?: '—' }}</div><div><small>فروشنده</small>{{ $order->creator?->name ?? '—' }}</div><div><small>اقلام</small>{{ number_format((int) $order->items->sum('quantity')) }}</div><div><small>ثبت</small>{{ $dateFa($order->created_at) }}</div></div>@include('preinvoice.partials.simple-reservation-timer', ['order' => $order])<div class="fq-mobile-actions mt-2"><a class="btn btn-sm btn-outline-primary" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">مشاهده</a></div></div>@empty<div class="empty-state">در حال حاضر پیش‌فاکتوری در انتظار تأیید مالی نیست.</div>@endforelse</div>
+      <div class="p-2">{{ $pendingOrders->links() }}</div>
+    </div>
+  @elseif($activeTab === 'expired')
+    <div class="fq-card"><div class="desktop-table table-responsive"><table class="table fq-table align-middle"><thead><tr><th>شماره پیش‌فاکتور</th><th>مشتری</th><th>فروشنده</th><th>مبلغ</th><th>زمان انقضا</th><th>علت</th><th class="text-end">عملیات</th></tr></thead><tbody>
+      @forelse($expiredOrders as $order)<tr><td><a class="fq-doc-link" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">{{ $order->uuid }}</a></td><td>{{ $order->customer_name ?: '—' }}</td><td>{{ $order->creator?->name ?? '—' }}</td><td>{{ $rial($order->total_price) }}</td><td>{{ $dateFa($order->stock_released_at ?? $order->stock_frozen_until) }}</td><td>انقضای زمان رزرو موجودی</td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">مشاهده</a></td></tr>@empty<tr><td colspan="7"><div class="empty-state">پیش‌فاکتور منقضی‌شده‌ای وجود ندارد.</div></td></tr>@endforelse
+    </tbody></table></div><div class="mobile-list p-2">@forelse($expiredOrders as $order)<div class="fq-mobile-card"><div class="d-flex justify-content-between"><a class="fq-doc-link" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">{{ $order->uuid }}</a><span>{{ $rial($order->total_price) }}</span></div><div class="small fq-muted my-2">{{ $order->customer_name ?: '—' }} | {{ $dateFa($order->stock_released_at ?? $order->stock_frozen_until) }}</div><div class="small mb-2">انقضای زمان رزرو موجودی</div><a class="btn btn-sm btn-outline-primary w-100" href="{{ route('preinvoice.draft.finance', $order->uuid) }}">مشاهده</a></div>@empty<div class="empty-state">پیش‌فاکتور منقضی‌شده‌ای وجود ندارد.</div>@endforelse</div><div class="p-2">{{ $expiredOrders->links() }}</div></div>
+  @else
+    <div class="fq-card"><div class="desktop-table table-responsive"><table class="table fq-table align-middle"><thead><tr><th>شماره فاکتور</th><th>مشتری</th><th>فروشنده</th><th>مبلغ فعلی</th><th>پرداخت‌شده</th><th>مانده</th><th>تاریخ تغییر</th><th>تغییر‌دهنده</th><th class="text-end">عملیات</th></tr></thead><tbody>
+      @forelse($financeReapprovalInvoices as $invoice) @php($paid=(int)($invoice->paid_amount ?? 0)) @php($remaining=max((int)$invoice->total-$paid,0))<tr><td><a class="fq-doc-link" href="{{ route('invoices.show', $invoice->uuid) }}">{{ $invoice->uuid }}</a></td><td>{{ $invoice->customer_name ?: '—' }}</td><td>{{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</td><td>{{ $rial($invoice->total) }}</td><td>{{ $rial($paid) }}</td><td>{{ $rial($remaining) }}</td><td>{{ $dateFa($invoice->items_updated_at) }}</td><td>{{ $invoice->statusChangedByUser?->name ?? '—' }}</td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('invoices.show', $invoice->uuid) }}">مشاهده</a></td></tr>@empty<tr><td colspan="9"><div class="empty-state">هیچ فاکتوری نیازمند تأیید مجدد مالی نیست.</div></td></tr>@endforelse
+    </tbody></table></div><div class="mobile-list p-2">@forelse($financeReapprovalInvoices as $invoice) @php($paid=(int)($invoice->paid_amount ?? 0))<div class="fq-mobile-card"><div class="d-flex justify-content-between"><a class="fq-doc-link" href="{{ route('invoices.show', $invoice->uuid) }}">{{ $invoice->uuid }}</a><span>{{ $rial($invoice->total) }}</span></div><div class="fq-mobile-grid small my-2"><div><small>مشتری</small>{{ $invoice->customer_name ?: '—' }}</div><div><small>فروشنده</small>{{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</div><div><small>پرداخت‌شده</small>{{ $rial($paid) }}</div><div><small>تغییر</small>{{ $dateFa($invoice->items_updated_at) }}</div></div><a class="btn btn-sm btn-outline-primary w-100" href="{{ route('invoices.show', $invoice->uuid) }}">مشاهده</a></div>@empty<div class="empty-state">هیچ فاکتوری نیازمند تأیید مجدد مالی نیست.</div>@endforelse</div><div class="p-2">{{ $financeReapprovalInvoices->links() }}</div></div>
   @endif
-
-
-  <div class="card shadow-sm border-0 finance-queue-card mb-4">
-    <div class="card-header bg-white py-3">
-      <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center">
-        <div>
-          <h6 class="mb-1">فاکتورهای نیازمند تایید مجدد مالی</h6>
-          <small class="text-muted">فاکتورهایی که اقلام آن‌ها توسط انبار حذف و اضافه شده‌اند.</small>
-        </div>
-        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">{{ number_format($financeReapprovalInvoices->count()) }} مورد</span>
-      </div>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
-        <thead class="table-light"><tr><th>شماره فاکتور</th><th>مشتری</th><th>مبلغ جدید</th><th>فروشنده/اپراتور</th><th>توضیح انبار</th><th>تاریخ تغییر</th><th class="text-end">عملیات</th></tr></thead>
-        <tbody>
-          @forelse($financeReapprovalInvoices as $invoice)
-            <tr>
-              <td>{{ $invoice->uuid }}</td>
-              <td>{{ $invoice->customer_name ?: '—' }}</td>
-              <td>{{ number_format((int) $invoice->total) }}</td>
-              <td>{{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</td>
-              <td>{{ $invoice->collection_note ?: '—' }}</td>
-              <td>{{ $invoice->items_updated_at ? Jalalian::fromDateTime($invoice->items_updated_at)->format('Y/m/d H:i') : '—' }}</td>
-              <td class="text-end">
-                <form class="d-inline" method="POST" action="{{ route('finance.invoices.reapprove', $invoice->uuid) }}">@csrf<button class="btn btn-sm btn-success">تایید و ارسال بار</button></form>
-                <form class="d-inline-flex gap-1" method="POST" action="{{ route('finance.invoices.return-to-sales', $invoice->uuid) }}">
-                  @csrf
-                  <input name="reason" class="form-control form-control-sm" placeholder="علت ارجاع" required>
-                  <button class="btn btn-sm btn-outline-warning text-nowrap">ارجاع به اپراتور</button>
-                </form>
-              </td>
-            </tr>
-          @empty
-            <tr><td colspan="7" class="text-center py-4 text-muted">فاکتور نیازمند تایید مجدد مالی وجود ندارد.</td></tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card shadow-sm border-0 finance-queue-card">
-    <div class="card-header bg-white py-3">
-      <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center">
-        <div>
-          <h6 class="mb-1">پیش‌فاکتورهای در انتظار تایید مالی</h6>
-          <small class="text-muted">تیم مالی می‌تواند پیش‌فاکتورهای آماده بررسی را تایید، ارجاع، کنسل یا چاپ کند.</small>
-        </div>
-        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">
-          {{ number_format($orders->total()) }} مورد در انتظار بررسی
-        </span>
-      </div>
-    </div>
-
-    <div class="table-responsive finance-queue-table-desktop">
-      <table class="table table-hover align-middle mb-0 finance-queue-table">
-        <colgroup>
-          <col style="width: 25%;">
-          <col style="width: 18%;">
-          <col style="width: 14%;">
-          <col style="width: 12%;">
-          <col style="width: 11%;">
-          <col style="width: 20%;">
-        </colgroup>
-        <thead>
-          <tr class="table-light">
-            <th>پیش‌فاکتور</th>
-            <th>نقدی / چکی</th>
-            <th>رزرو</th>
-            <th class="text-nowrap">مبلغ</th>
-            <th class="text-nowrap">ثبت</th>
-            <th class="text-end">عملیات</th>
-          </tr>
-        </thead>
-        <tbody>
-          @forelse($orders as $o)
-            @php
-              $paymentTerms = trim((string) ($o->payment_terms_note ?? ''));
-              $isVip = ($o->customer?->reservation_tier === 'vip');
-              $isExpired = !$isVip && $o->stock_frozen_until && $o->stock_frozen_until->isPast();
-              $expiresIso = $o->stock_frozen_until?->toIso8601String();
-              $expiresTitle = $o->stock_frozen_until ? Jalalian::fromDateTime($o->stock_frozen_until)->format('Y/m/d H:i') : '';
-              $createdAt = $o->created_at ? Jalalian::fromDateTime($o->created_at)->format('Y/m/d H:i') : '—';
-            @endphp
-            <tr class="{{ $isExpired ? 'is-expired' : '' }}" data-reservation-row>
-              <td>
-                <div class="finance-order-main">
-                  <div class="fw-semibold order-code">{{ $o->uuid }}</div>
-                  <div class="customer-name">{{ $o->customer_name ?: '—' }}</div>
-                  @if($o->customer_mobile)
-                    <div class="small text-muted">{{ $o->customer_mobile }}</div>
-                  @endif
-                  <div class="small text-muted">ثبت‌کننده: {{ $o->creator?->name ?? '—' }}</div>
-                </div>
-              </td>
-              <td>
-                <div class="finance-payment-note" title="{{ $paymentTerms }}">{{ $paymentTerms !== '' ? Str::limit($paymentTerms, 90) : '—' }}</div>
-              </td>
-              <td class="small">
-                <div class="reservation-timer-pill" title="{{ $expiresTitle }}">
-                  @if($isExpired)
-                    <span class="badge bg-danger-subtle text-danger-emphasis border reservation-status">منقضی‌شده</span>
-                  @elseif($isVip && !$o->stock_frozen_until)
-                    <span class="badge bg-warning-subtle text-warning-emphasis border reservation-status">VIP / بدون انقضا</span>
-                  @elseif(!$o->stock_frozen_until)
-                    <span class="badge bg-secondary-subtle text-secondary-emphasis border reservation-status">بدون زمان</span>
-                  @else
-                    <span class="badge bg-success-subtle text-success-emphasis border reservation-status">فعال</span>
-                  @endif
-                  <span class="reservation-countdown" data-expires-at="{{ $expiresIso }}" data-is-vip="{{ $isVip ? '1' : '0' }}">{{ $isExpired ? '00:00:00' : '—' }}</span>
-                </div>
-              </td>
-              <td class="fw-semibold text-nowrap">{{ number_format((int)$o->total_price) }}</td>
-              <td class="small text-muted">{{ $createdAt }}</td>
-              <td class="text-end">
-                @include('preinvoice.partials.finance-actions', ['o' => $o, 'isExpired' => $isExpired])
-              </td>
-            </tr>
-          @empty
-            <tr><td colspan="6" class="text-center py-4">موردی نیست</td></tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-
-    <div class="finance-queue-mobile p-3">
-      @forelse($orders as $o)
-        @php
-          $paymentTerms = trim((string) ($o->payment_terms_note ?? ''));
-          $isVip = ($o->customer?->reservation_tier === 'vip');
-          $isExpired = !$isVip && $o->stock_frozen_until && $o->stock_frozen_until->isPast();
-          $expiresIso = $o->stock_frozen_until?->toIso8601String();
-          $expiresTitle = $o->stock_frozen_until ? Jalalian::fromDateTime($o->stock_frozen_until)->format('Y/m/d H:i') : '';
-          $createdAt = $o->created_at ? Jalalian::fromDateTime($o->created_at)->format('Y/m/d H:i') : '—';
-        @endphp
-        <div class="finance-mobile-card {{ $isExpired ? 'is-expired' : '' }}" data-reservation-row>
-          <div class="d-flex justify-content-between gap-2 mb-2">
-            <div class="min-w-0">
-              <div class="fw-semibold text-break">{{ $o->uuid }}</div>
-              <div>{{ $o->customer_name ?: '—' }}</div>
-              <div class="small text-muted">{{ $o->customer_mobile ?: 'بدون موبایل' }}</div>
-            </div>
-            <div class="fw-semibold text-nowrap">{{ number_format((int)$o->total_price) }}</div>
-          </div>
-          <div class="finance-mobile-meta small mb-3">
-            <div><span class="text-muted">ثبت‌کننده:</span> {{ $o->creator?->name ?? '—' }}</div>
-            <div><span class="text-muted">ثبت:</span> {{ $createdAt }}</div>
-            <div><span class="text-muted">نقدی / چکی:</span> <span title="{{ $paymentTerms }}">{{ $paymentTerms !== '' ? Str::limit($paymentTerms, 90) : '—' }}</span></div>
-            <div title="{{ $expiresTitle }}">
-              <span class="text-muted">رزرو:</span>
-              @if($isExpired)
-                <span class="badge bg-danger-subtle text-danger-emphasis border reservation-status">منقضی‌شده</span>
-              @elseif($isVip && !$o->stock_frozen_until)
-                <span class="badge bg-warning-subtle text-warning-emphasis border reservation-status">VIP / بدون انقضا</span>
-              @elseif(!$o->stock_frozen_until)
-                <span class="badge bg-secondary-subtle text-secondary-emphasis border reservation-status">بدون زمان</span>
-              @else
-                <span class="badge bg-success-subtle text-success-emphasis border reservation-status">فعال</span>
-              @endif
-              <span class="reservation-countdown" data-expires-at="{{ $expiresIso }}" data-is-vip="{{ $isVip ? '1' : '0' }}">{{ $isExpired ? '00:00:00' : '—' }}</span>
-            </div>
-          </div>
-          @include('preinvoice.partials.finance-actions', ['o' => $o, 'isExpired' => $isExpired])
-        </div>
-      @empty
-        <div class="text-center py-4 text-muted">موردی نیست</div>
-      @endforelse
-    </div>
-  </div>
-
-  <div class="mt-3">
-    {{ $orders->links() }}
-  </div>
 </div>
-@endsection
 
-@push('scripts')
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const pad = (value) => String(value).padStart(2, '0');
-
-    const formatRemaining = (milliseconds) => {
-      const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-      const days = Math.floor(totalSeconds / 86400);
-      const hours = Math.floor((totalSeconds % 86400) / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-
-      if (days > 0) {
-        return `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-      }
-
-      return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-    };
-
-    const expireRow = (element) => {
-      const row = element.closest('[data-reservation-row]');
-      row?.classList.add('is-expired');
-      const status = row?.querySelector('.reservation-status');
-      if (status) {
-        status.className = 'badge bg-danger-subtle text-danger-emphasis border reservation-status';
-        status.textContent = 'منقضی‌شده';
-      }
-      row?.querySelectorAll('[data-finance-approve]').forEach((button) => {
-        button.classList.add('disabled');
-        button.setAttribute('aria-disabled', 'true');
-        button.setAttribute('tabindex', '-1');
-        button.addEventListener('click', (event) => event.preventDefault());
-      });
-      row?.querySelectorAll('[data-expired-message]').forEach((message) => {
-        message.classList.remove('d-none');
-      });
-    };
-
-    const updateCountdowns = () => {
-      const now = Date.now();
-      document.querySelectorAll('.reservation-countdown').forEach((element) => {
-        const expiresAt = element.dataset.expiresAt;
-        const isVip = element.dataset.isVip === '1';
-
-        if (!expiresAt) {
-          element.textContent = isVip ? 'بدون انقضا' : 'نامشخص';
-          return;
-        }
-
-        const expiresTime = new Date(expiresAt).getTime();
-        if (Number.isNaN(expiresTime) || expiresTime <= now) {
-          element.textContent = '00:00:00';
-          expireRow(element);
-          return;
-        }
-
-        element.textContent = `${formatRemaining(expiresTime - now)} مانده`;
-      });
-    };
-
-    updateCountdowns();
-    window.setInterval(updateCountdowns, 1000);
-  });
+function fqFmt(sec){sec=Math.max(0,Math.floor(sec));return [Math.floor(sec/3600),Math.floor(sec%3600/60),sec%60].map(v=>String(v).padStart(2,'0')).join(':')}
+function fqTick(){document.querySelectorAll('[data-simple-timer]').forEach(el=>{const exp=el.dataset.expiresAt,val=el.querySelector('[data-timer-value]');if(!exp){val.textContent='بدون انقضا';return;}const left=Math.floor((new Date(exp)-new Date())/1000);val.textContent=left>0?fqFmt(left):'منقضی شد';val.className='fq-timer-value '+(left<900?'fq-red':left<3600?'fq-yellow':'fq-green');});}
+fqTick();setInterval(fqTick,1000);
 </script>
-@endpush
+@endsection

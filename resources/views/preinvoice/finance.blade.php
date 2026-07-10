@@ -8,6 +8,7 @@
   $discount = (int) $order->discount_amount;
   $grandTotal = max($subtotal + $shipping - $discount, 0);
   $rial = fn ($value) => \App\Support\Currency::formatRial($value);
+  $isReservationExpired = $order->status === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED;
 @endphp
 
 @section('content')
@@ -31,6 +32,10 @@
         @endforeach
       </ul>
     </div>
+  @endif
+
+  @if($isReservationExpired)
+    <div class="alert alert-warning">این پیش‌فاکتور به دلیل پایان زمان رزرو به پیش‌نویس‌های فروشنده بازگردانده شده است.</div>
   @endif
 
   <div class="card mb-3 shadow-sm border-0">
@@ -86,6 +91,7 @@
     @csrf
     <div class="card-body">
       <div class="row g-3">
+        @unless($isReservationExpired)
         <div class="col-lg-5">
           <div class="card border h-100">
             <div class="card-header bg-white">
@@ -111,7 +117,9 @@
           </div>
         </div>
 
-        <div class="col-lg-7">
+        @endunless
+
+        <div class="{{ $isReservationExpired ? 'col-lg-12' : 'col-lg-7' }}">
           <div class="card border h-100">
             <div class="card-header bg-white">
               <h6 class="mb-0">اقلام پیش‌فاکتور و خلاصه مالی</h6>
@@ -164,6 +172,7 @@
       </div>
     </div>
 
+    @unless($isReservationExpired)
     <div class="card-footer d-flex justify-content-end gap-2 flex-wrap">
       <input name="reason" form="returnPreinvoiceForm" class="form-control" style="max-width: 260px;" placeholder="دلیل ارجاع" required>
       <button class="btn btn-outline-warning" form="returnPreinvoiceForm">ارجاع به فروشنده</button>
@@ -171,6 +180,7 @@
       <button class="btn btn-outline-danger" form="cancelPreinvoiceForm">کنسل پیش‌فاکتور</button>
       <button id="finalizePreinvoiceBtn" class="btn btn-success" onclick="return confirm('تاییدیه نهایی مالی ثبت شود؟ با این کار، پیش‌فاکتور به فاکتور تبدیل می‌شود و در صف حواله فروش انبار قرار می‌گیرد.')">تاییدیه نهایی پیش‌فاکتور از سمت مالی</button>
     </div>
+    @endunless
   </form>
 
   <form id="returnPreinvoiceForm" method="POST" action="{{ route('preinvoice.draft.return', $order->uuid) }}" onsubmit="return confirm('پیش‌فاکتور به فروشنده ارجاع شود؟')" class="d-none">
