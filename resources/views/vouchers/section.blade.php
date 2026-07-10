@@ -55,7 +55,10 @@
                 'code' => $code,
                 'quantity' => (int) $item->quantity,
                 'unit' => $unit,
-                'summary' => trim($product . ' / ' . $variant . ($code ? ' (' . $code . ')' : '') . ' - تعداد: ' . number_format((int) $item->quantity) . ' ' . $unit),
+                'kind' => $item->returnKindLabel(),
+                'warehouse' => $item->destinationWarehouse?->name ?: ($item->transfer?->toWarehouse?->name ?: 'نامشخص'),
+                'line_total' => (int) $item->line_total,
+                'summary' => trim($product . ' / ' . $variant . ($code ? ' (' . $code . ')' : '') . ' - تعداد: ' . number_format((int) $item->quantity) . ' ' . $unit . ' - نوع برگشت: ' . $item->returnKindLabel() . ' - انبار مقصد: ' . ($item->destinationWarehouse?->name ?: 'نامشخص')),
             ];
         })->filter(fn ($row) => filled($row['summary']))->values();
     };
@@ -456,6 +459,8 @@
                     <div class="col-md-3"><label class="form-label">شماره حواله یا سند برگشت</label><input class="form-control" name="document_number" value="{{ $documentNumber }}" placeholder="شماره سند"></div>
                     <div class="col-md-2"><label class="form-label">تاریخ از</label><input type="date" class="form-control" name="date_from" value="{{ $dateFrom }}"></div>
                     <div class="col-md-2"><label class="form-label">تاریخ تا</label><input type="date" class="form-control" name="date_to" value="{{ $dateTo }}"></div>
+                    <div class="col-md-2"><label class="form-label">نوع برگشت</label><select class="form-select" name="return_kind"><option value="">همه</option><option value="healthy" @selected($returnKind === 'healthy')>سالم</option><option value="damaged" @selected($returnKind === 'damaged')>مرجوعی</option><option value="mixed" @selected($returnKind === 'mixed')>سالم و مرجوعی</option></select></div>
+                    <div class="col-md-2"><label class="form-label">انبار مقصد</label><select class="form-select" name="warehouse_id"><option value="">همه انبارها</option>@foreach($filterWarehouses as $warehouse)<option value="{{ $warehouse->id }}" @selected((int) $warehouseId === (int) $warehouse->id)>{{ $warehouse->name }}</option>@endforeach</select></div>
                     <div class="col-md-2 d-flex gap-2"><button class="btn btn-primary w-100" type="submit">جستجو</button><a class="btn btn-outline-secondary w-100" href="{{ route('vouchers.section.index', 'return-from-sale') }}">پاک کردن فیلترها</a></div>
                 </form>
             </div>
@@ -481,7 +486,8 @@
                         <th>کالا / تنوع</th>
                         <th>تعداد آیتم برگشتی</th>
                         <th>مبلغ کل</th>
-                        <th>نوع انبار</th>
+                        <th>نوع برگشت</th>
+                        <th>انبار مقصد</th>
                         <th>علت برگشت</th>
                         <th>وضعیت</th>
                         <th>ثبت‌کننده</th>
@@ -497,6 +503,8 @@
                             $itemSummary = $returnedItemsSummary($voucher);
                             $returnedItemsCount = (int) ($voucher->returned_items_count ?? $voucher->items->count());
                             $returnedTotalAmount = (int) ($voucher->returned_items_total_amount ?? $voucher->total_amount ?? $voucher->items->sum('line_total'));
+                            $healthyAmount = (int) $voucher->items->filter(fn ($item) => $item->effectiveReturnKind() === 'healthy')->sum('line_total');
+                            $damagedAmount = (int) $voucher->items->filter(fn ($item) => $item->effectiveReturnKind() === 'damaged')->sum('line_total');
                         @endphp
                         <tr>
                             <td class="cell-muted">{{ $vouchers->firstItem() ? $vouchers->firstItem() + $loop->index : $loop->iteration }}</td>
@@ -515,7 +523,7 @@
                                         <span class="return-item-meta">
                                             @if($itemRow['variant'] !== '—')<span class="mini-badge">{{ $itemRow['variant'] }}</span>@endif
                                             @if($itemRow['code'])<span class="mini-badge" dir="ltr">{{ $itemRow['code'] }}</span>@endif
-                                            <span>تعداد: {{ number_format($itemRow['quantity']) }} {{ $itemRow['unit'] }}</span>
+                                            <span>تعداد: {{ number_format($itemRow['quantity']) }} {{ $itemRow['unit'] }}</span><span class="mini-badge">{{ $itemRow['kind'] }}</span><span class="mini-badge">{{ $itemRow['warehouse'] }}</span>
                                         </span>
                                     </span>
                                 @empty
@@ -526,8 +534,9 @@
                                 @endif
                             </td>
                             <td class="cell-strong">{{ number_format($returnedItemsCount) }} آیتم</td>
-                            <td class="cell-strong">{{ $toRial($returnedTotalAmount) }}</td>
-                            <td>انبار مقصد: {{ $voucher->toWarehouse?->name ?: 'نامشخص' }}</td>
+                            <td class="cell-strong"><div>{{ $toRial($returnedTotalAmount) }}</div><div class="small text-muted">سالم: {{ $toRial($healthyAmount) }} / مرجوعی: {{ $toRial($damagedAmount) }}</div></td>
+                            <td><span class="reason-pill">{{ $voucher->returnKindLabel() }}</span></td>
+                            <td>{{ $voucher->items->pluck('destinationWarehouse.name')->filter()->unique()->implode('، ') ?: ($voucher->toWarehouse?->name ?: 'نامشخص') }}</td>
                             <td><span class="reason-pill">{{ \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—' }}</span></td>
                             <td>{{ \App\Models\WarehouseTransfer::returnSourceLabel($voucher->return_type ?? null) }}</td>
                             <td>{{ $voucher->user?->name ?: '—' }}</td>
