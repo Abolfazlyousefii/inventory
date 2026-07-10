@@ -667,7 +667,14 @@ class VoucherController extends Controller
         return array_map(function (array $item) use ($fallbackWarehouseId, $centralWarehouseId, $returnsWarehouseId) {
             $kind = in_array(($item['return_kind'] ?? null), ['healthy', 'damaged'], true) ? $item['return_kind'] : 'healthy';
             $item['return_kind'] = $kind;
-            $item['destination_warehouse_id'] = (int) ($item['destination_warehouse_id'] ?? ($kind === 'damaged' ? $returnsWarehouseId : $centralWarehouseId) ?: $fallbackWarehouseId);
+            $destinationWarehouseId = (int) ($item['destination_warehouse_id'] ?? 0);
+            if ($destinationWarehouseId <= 0) {
+                $destinationWarehouseId = $kind === 'damaged' ? $returnsWarehouseId : $centralWarehouseId;
+            }
+            if ($destinationWarehouseId <= 0) {
+                $destinationWarehouseId = $fallbackWarehouseId;
+            }
+            $item['destination_warehouse_id'] = $destinationWarehouseId;
 
             $warehouse = Warehouse::query()->whereKey($item['destination_warehouse_id'])->where('is_active', true)->where(function ($q) {
                 $q->whereNull('type')->orWhereNotIn('type', ['personnel', 'scrap']);
