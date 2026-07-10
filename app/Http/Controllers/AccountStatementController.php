@@ -364,6 +364,7 @@ class AccountStatementController extends Controller
             'items.product',
             'items.variant.modelList',
             'items.variant.color',
+            'items.destinationWarehouse',
             'fromWarehouse',
             'toWarehouse',
             'relatedInvoice',

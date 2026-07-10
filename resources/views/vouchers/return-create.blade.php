@@ -357,6 +357,8 @@
                                                 <th>قابل برگشت</th>
                                                 <th>قیمت واحد طبق فاکتور</th>
                                                 <th style="width:170px;">تعداد برگشتی</th>
+                                                <th>نوع برگشت</th>
+                                                <th>انبار مقصد</th>
                                                 <th>واحد</th>
                                                 <th>مبلغ برگشتی</th>
                                                 <th style="width:80px;"></th>
@@ -394,7 +396,7 @@
                                     <table class="table table-striped line-table" id="manualItemsTable">
                                         <thead>
                                             <tr>
-                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد برگشتی</th><th>واحد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
+                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد برگشتی</th><th>نوع برگشت</th><th>انبار مقصد</th><th>واحد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -611,6 +613,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const existingInvoice = @json($returnExistingInvoice);
     const products = @json($manualReturnProducts);
     const categories = @json($returnCategories);
+    const warehouses = @json($warehouses->map(fn($w) => ['id' => (int) $w->id, 'name' => (string) $w->name, 'type' => (string) ($w->type ?? '')])->values());
+    const centralWarehouseId = @json((int) \App\Services\WarehouseStockService::centralWarehouseId());
+    const returnsWarehouseId = @json((int) $returnsWarehouse->id);
 
     let customerInvoices = [];
     let selectedInvoice = null;
@@ -930,6 +935,22 @@ document.addEventListener('DOMContentLoaded', function () {
         return qty > 0 ? qty : null;
     }
 
+    function warehouseOptions(selectedId) {
+        return warehouses.map(function (warehouse) {
+            const selected = String(warehouse.id) === String(selectedId) ? ' selected' : '';
+            return `<option value="${escapeHtml(warehouse.id)}"${selected}>${escapeHtml(warehouse.name)}</option>`;
+        }).join('');
+    }
+
+    function bindReturnKindWarehouse(row) {
+        const kind = row.querySelector('.return-kind-select');
+        const destination = row.querySelector('.destination-warehouse-select');
+        if (!kind || !destination) return;
+        kind.addEventListener('change', function () {
+            destination.value = kind.value === 'damaged' ? String(returnsWarehouseId) : String(centralWarehouseId);
+        });
+    }
+
     function itemRowTemplate(item, index, useOldQuantity) {
         const rawRemaining = toSafeNumber(item.remaining_qty, 0);
         const defaultQtyFromOld = useOldQuantity ? oldQuantityFor(item.invoice_item_id, item.product_id, item.variant_id) : null;
@@ -967,6 +988,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="input-group-text">${escapeHtml(item.unit || 'عدد')}</span>
                     </div>
                 </td>
+                <td><select name="items[${index}][return_kind]" class="form-select form-select-sm return-kind-select"><option value="healthy" selected>سالم</option><option value="damaged">مرجوعی</option></select></td>
+                <td><select name="items[${index}][destination_warehouse_id]" class="form-select form-select-sm destination-warehouse-select">${warehouseOptions(centralWarehouseId)}</select></td>
                 <td><span class="badge text-bg-light">${escapeHtml(item.unit || 'عدد')}</span></td>
                 <td><span class="internal-line-total">۰ ریال</span></td>
                 <td>
@@ -1013,6 +1036,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (qtyInput && (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0)) {
                 qtyInput.value = String(toSafeNumber(tr.dataset.defaultQuantity, 1));
             }
+
+            bindReturnKindWarehouse(tr);
 
             if (!qtyInput) return;
 
@@ -1331,7 +1356,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const qtyInput = tr.querySelector('.manual-qty');
 
-        if (!qtyInput) return;
+        bindReturnKindWarehouse(tr);
+
+            if (!qtyInput) return;
 
         qtyInput.disabled = false;
         qtyInput.readOnly = false;

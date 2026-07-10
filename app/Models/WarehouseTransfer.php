@@ -121,4 +121,13 @@ class WarehouseTransfer extends Model
     {
         return $this->belongsTo(Customer::class);
     }
+
+    public function returnKindLabel(): string
+    {
+        $kinds = $this->items->map(fn ($item) => $item->effectiveReturnKind())->unique()->values();
+        if ($kinds->contains('healthy') && $kinds->contains('damaged')) {
+            return 'سالم و مرجوعی';
+        }
+        return $kinds->first() === 'damaged' ? 'مرجوعی' : 'سالم';
+    }
 }

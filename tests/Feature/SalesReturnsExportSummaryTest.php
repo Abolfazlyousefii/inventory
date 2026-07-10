@@ -30,8 +30,8 @@ class SalesReturnsExportSummaryTest extends TestCase
             'transferred_at' => '2026-07-01 10:00:00',
             'total_amount' => 3000,
         ]);
-        WarehouseTransferItem::query()->create(['warehouse_transfer_id' => $matching->id, 'product_id' => $product->id, 'quantity' => 1, 'line_total' => 1000]);
-        WarehouseTransferItem::query()->create(['warehouse_transfer_id' => $matching->id, 'product_id' => $product->id, 'quantity' => 2, 'line_total' => 2000]);
+        WarehouseTransferItem::query()->create(['warehouse_transfer_id' => $matching->id, 'product_id' => $product->id, 'quantity' => 1, 'line_total' => 1000, 'return_kind' => 'healthy', 'destination_warehouse_id' => $warehouse->id]);
+        WarehouseTransferItem::query()->create(['warehouse_transfer_id' => $matching->id, 'product_id' => $product->id, 'quantity' => 2, 'line_total' => 2000, 'return_kind' => 'damaged', 'destination_warehouse_id' => $warehouse->id]);
 
         WarehouseTransfer::query()->create([
             'voucher_type' => WarehouseTransfer::TYPE_CUSTOMER_RETURN,
@@ -48,5 +48,12 @@ class SalesReturnsExportSummaryTest extends TestCase
         $this->assertSame('RET-100', SalesReturnsExport::documentNumber($rows->first()));
         $this->assertSame(3000, SalesReturnsExport::totalAmount($rows->first()));
         $this->assertSame('انبار مرجوعی', SalesReturnsExport::destinationWarehouseLabel($rows->first()));
+        $this->assertSame('سالم و مرجوعی', SalesReturnsExport::returnKindLabel($rows->first()));
+        $this->assertSame(1000, SalesReturnsExport::healthyAmount($rows->first()));
+        $this->assertSame(2000, SalesReturnsExport::damagedAmount($rows->first()));
+
+        $mixedRows = SalesReturnsExport::baseQuery(['return_kind' => 'mixed'])->get();
+        $this->assertCount(1, $mixedRows);
+        $this->assertSame('RET-100', SalesReturnsExport::documentNumber($mixedRows->first()));
     }
 }
