@@ -424,8 +424,11 @@ class InvoiceController extends Controller
             $invoice = Invoice::query()->with('items')->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
             abort_unless($invoice->status === Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 422, 'وضعیت فاکتور برای تایید مجدد مالی مجاز نیست.');
             abort_if($invoice->items->sum('quantity') <= 0, 422, 'فاکتور باید حداقل یک قلم کالا داشته باشد.');
-            $invoice->recalculateSnapshotTotals();
-            $invoice->refresh();
+            abort_if($invoice->items->contains(fn ($item) => (int) $item->quantity <= 0), 422, 'تعداد همه ردیف‌ها باید بیشتر از صفر باشد.');
+            abort_if($invoice->items->contains(fn ($item) => (int) $item->price <= 0), 422, 'قیمت snapshot همه ردیف‌ها باید بیشتر از صفر باشد.');
+            $subtotal = (int) $invoice->items->sum(fn ($item) => (int) $item->quantity * (int) $item->price);
+            $discount = max((int) ($invoice->discount_amount ?? 0), (int) $invoice->items->sum(fn ($item) => (int) ($item->line_discount_amount ?? 0)));
+            abort_if((int) $invoice->total !== max($subtotal - $discount, 0), 422, 'جمع فاکتور با اقلام snapshot همخوانی ندارد.');
             $this->customerLedgerService->syncInvoiceDebit($invoice);
             $invoice->update(['status' => Invoice::STATUS_READY_TO_SHIP, 'status_changed_at' => now(), 'status_changed_by' => auth()->id()]);
             $this->warehouseCollectionServiceHistory($invoice, 'finance_reapproved', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP, 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
@@ -442,12 +445,12 @@ class InvoiceController extends Controller
 
     public function financeReturnInvoiceToSales(string $uuid, Request $request)
     {
-        $data = $request->validate(['reason' => 'required|string|max:2000']);
+        $data = $request->validate(['reason' => 'required|string|max:255', 'note' => 'nullable|string|max:2000']);
         $invoice = DB::transaction(function () use ($uuid, $data) {
             $invoice = Invoice::query()->with('preinvoiceOrder')->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
             abort_unless($invoice->status === Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 422, 'وضعیت فاکتور برای ارجاع مجاز نیست.');
-            $invoice->update(['status' => Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, 'status_changed_at' => now(), 'status_changed_by' => auth()->id(), 'collection_note' => $data['reason']]);
-            $this->warehouseCollectionServiceHistory($invoice, 'finance_returned_to_sales', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, $data['reason']);
+            $invoice->update(['status' => Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, 'status_changed_at' => now(), 'status_changed_by' => auth()->id(), 'collection_note' => trim($data['reason'] . (!empty($data['note']) ? ' - ' . $data['note'] : ''))]);
+            $this->warehouseCollectionServiceHistory($invoice, 'finance_returned_to_sales', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, trim($data['reason'] . (!empty($data['note']) ? ' - ' . $data['note'] : '')));
             return $invoice;
         });
         if ($invoice->preinvoiceOrder?->created_by) {
