@@ -286,68 +286,22 @@ class PreinvoiceController extends Controller
 
     public function draftIndex(Request $request)
     {
-        abort_unless($this->canHandleFinanceActions(), 403);
-
-        $activeTab = in_array($request->query('tab'), ['pending', 'expired', 'reapproval'], true)
-            ? $request->query('tab')
-            : 'pending';
-        $now = now();
-
-        $pendingCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)->count();
-        $expiredCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)->count();
-        $reapprovalCount = Invoice::query()->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)->count();
-
-        $pendingOrders = PreinvoiceOrder::query()
+        $orders = PreinvoiceOrder::query()
             ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
-            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items:id,preinvoice_order_id,quantity'])
-            ->orderByRaw('case when stock_frozen_until is null then 1 else 0 end asc')
-            ->orderBy('stock_frozen_until')
+            ->with(['creator:id,name', 'customer:id,reservation_tier'])
             ->orderByDesc('id')
-            ->paginate(20, ['*'], 'pending_page')
-            ->withQueryString();
-        $pendingOrders->getCollection()->transform(fn (PreinvoiceOrder $order) => $this->decorateFinanceQueueOrder($order));
-
-        $expiredOrders = PreinvoiceOrder::query()
-            ->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)
-            ->with(['creator:id,name', 'items:id,preinvoice_order_id,quantity'])
-            ->orderByDesc('stock_released_at')
-            ->orderByDesc('id')
-            ->paginate(20, ['*'], 'expired_page')
-            ->withQueryString();
+            ->paginate(20);
 
         $financeReapprovalInvoices = Invoice::query()
             ->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
-            ->with(['preinvoiceOrder.creator:id,name', 'statusChangedByUser:id,name'])
-            ->withSum('payments as paid_amount', 'amount')
+            ->with(['preinvoiceOrder.creator:id,name'])
             ->orderByDesc('items_updated_at')
             ->orderByDesc('id')
-            ->paginate(20, ['*'], 'reapproval_page')
-            ->withQueryString();
+            ->get();
 
-        return view('preinvoice.drafts-index', compact(
-            'activeTab',
-            'pendingCount',
-            'expiredCount',
-            'reapprovalCount',
-            'pendingOrders',
-            'expiredOrders',
-            'financeReapprovalInvoices'
-        ));
-    }
+        $canFinanceApprove = $this->canHandleFinanceActions();
 
-    private function decorateFinanceQueueOrder(PreinvoiceOrder $order): PreinvoiceOrder
-    {
-        $now = now();
-        $expiresAt = $order->stock_frozen_until;
-        $seconds = $expiresAt ? max(0, $now->diffInSeconds($expiresAt, false)) : null;
-        $isVip = ($order->customer?->reservation_tier === 'vip');
-        $isExpired = ! $isVip && $expiresAt !== null && $expiresAt->lte($now);
-
-        $order->setAttribute('finance_seconds_remaining', $seconds);
-        $order->setAttribute('finance_reservation_expired', $isExpired);
-        $order->setAttribute('finance_reservation_label', $isExpired ? 'منقضی‌شده' : ($expiresAt === null ? 'بدون انقضا' : 'فعال'));
-
-        return $order;
+        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove', 'financeReapprovalInvoices'));
     }
 
     public function allIndex(Request $request)
