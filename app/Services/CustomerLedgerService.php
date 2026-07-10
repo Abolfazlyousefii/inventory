@@ -13,6 +13,11 @@ class CustomerLedgerService
             return;
         }
 
+        if ((string) $invoice->status === Invoice::STATUS_NOT_SHIPPED) {
+            $this->voidInvoiceDebit($invoice, 'حذف اثر بدهکاری فاکتور کنسل‌شده');
+            return;
+        }
+
         CustomerLedger::query()->updateOrCreate(
             [
                 'customer_id' => (int) $invoice->customer_id,

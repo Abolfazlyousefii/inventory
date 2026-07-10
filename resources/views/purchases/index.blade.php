@@ -13,7 +13,7 @@
     <div class="purchase-topbar d-flex justify-content-between align-items-center">
         <h4 class="page-title mb-0">خرید کالا</h4>
         <div class="d-flex gap-2 flex-wrap justify-content-end">
-            @canPermission('stock_in.export')<a class="btn btn-outline-light" href="{{ route('purchases.export') }}">خروجی اکسل همه خریدها</a>@endcanPermission
+            @canPermission('stock_in.export')<a class="btn btn-outline-light" href="{{ route('purchases.export', request()->query()) }}">خروجی اکسل همه خریدها</a>@endcanPermission
             @canPermission('stock_in.create')<a class="btn btn-light" href="{{ route('purchases.create') }}">+ ثبت خرید جدید</a>@endcanPermission
         </div>
     </div>

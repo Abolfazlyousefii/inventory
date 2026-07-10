@@ -173,6 +173,34 @@ class StockCountDocumentTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
+
+    public function test_zeroing_one_variant_only_changes_that_variant_and_warehouse(): void
+    {
+        [$user, $warehouse, $products, $variants] = $this->seedBaseData();
+        $otherWarehouse = Warehouse::query()->create(['name' => 'انبار دیگر', 'type' => 'branch', 'is_active' => true]);
+
+        WarehouseStock::query()->where('warehouse_id', $warehouse->id)->delete();
+        WarehouseStock::query()->create(['warehouse_id' => $warehouse->id, 'product_id' => $products[0]->id, 'product_variant_id' => $variants[0]->id, 'quantity' => 10]);
+        $whiteVariant = ProductVariant::query()->create(['product_id' => $products[0]->id, 'variant_name' => 'سفید', 'variety_id' => 1003, 'sell_price' => 1000]);
+        WarehouseStock::query()->create(['warehouse_id' => $warehouse->id, 'product_id' => $products[0]->id, 'product_variant_id' => $whiteVariant->id, 'quantity' => 7]);
+        WarehouseStock::query()->create(['warehouse_id' => $otherWarehouse->id, 'product_id' => $products[0]->id, 'product_variant_id' => $variants[0]->id, 'quantity' => 4]);
+
+        $this->actingAs($user)->post(route('stock-count-documents.store'), [
+            'warehouse_id' => $warehouse->id,
+            'document_date' => '2026-04-05',
+            'items' => [
+                ['product_id' => $products[0]->id, 'variant_id' => $variants[0]->id, 'actual_quantity' => 0],
+            ],
+        ])->assertRedirect();
+
+        $document = StockCountDocument::query()->firstOrFail();
+        $this->actingAs($user)->patch(route('stock-count-documents.finalize', $document))->assertRedirect();
+
+        $this->assertSame(0, (int) WarehouseStock::query()->where('warehouse_id', $warehouse->id)->where('product_variant_id', $variants[0]->id)->value('quantity'));
+        $this->assertSame(7, (int) WarehouseStock::query()->where('warehouse_id', $warehouse->id)->where('product_variant_id', $whiteVariant->id)->value('quantity'));
+        $this->assertSame(4, (int) WarehouseStock::query()->where('warehouse_id', $otherWarehouse->id)->where('product_variant_id', $variants[0]->id)->value('quantity'));
+    }
+
     private function seedBaseData(): array
     {
         $user = User::factory()->create();

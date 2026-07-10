@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
+use Mpdf\Mpdf;
+use Mpdf\Output\Destination;
 
 class VoucherController extends Controller
 {
@@ -178,6 +180,8 @@ class VoucherController extends Controller
         $returnReason = (string) request()->get('return_reason', '');
         $productId = request()->integer('product_id');
         $variantId = request()->integer('variant_id');
+        $customerName = trim((string) request()->get('customer_name', ''));
+        $documentNumber = trim((string) request()->get('document_number', ''));
         $returnReasons = WarehouseTransfer::returnReasonOptions();
         $categories = collect();
 
@@ -213,6 +217,8 @@ class VoucherController extends Controller
                 $voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN && $customerId > 0,
                 fn ($q) => $q->where('customer_id', $customerId)
             )
+            ->when($voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN && $customerName !== '', fn ($q) => $q->whereHas('customer', fn ($c) => $c->where('first_name', 'like', "%{$customerName}%")->orWhere('last_name', 'like', "%{$customerName}%")))
+            ->when($voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN && $documentNumber !== '', fn ($q) => $q->where(function ($n) use ($documentNumber) { $term = "%{$documentNumber}%"; $n->where('reference', 'like', $term)->orWhere('external_invoice_number', 'like', $term); }))
             ->when($dateFrom, fn ($q) => $q->whereDate('transferred_at', '>=', $dateFrom))
             ->when($dateTo, fn ($q) => $q->whereDate('transferred_at', '<=', $dateTo))
             ->when(
@@ -260,7 +266,9 @@ class VoucherController extends Controller
             'returnReason',
             'returnReasons',
             'productId',
-            'variantId'
+            'variantId',
+            'customerName',
+            'documentNumber'
         ));
     }
 
@@ -275,11 +283,42 @@ class VoucherController extends Controller
             'subcategory_id' => $request->integer('subcategory_id'),
             'date_from' => trim((string) $request->query('date_from', '')),
             'date_to' => trim((string) $request->query('date_to', '')),
+            'customer_name' => trim((string) $request->query('customer_name', '')),
+            'document_number' => trim((string) $request->query('document_number', '')),
         ];
 
         $filename = 'sales-returns-' . now()->format('Ymd-His') . '.xlsx';
 
         return Excel::download(new SalesReturnsExport($filters), $filename);
+    }
+
+    public function salesReturnsPdf(Request $request)
+    {
+        $filters = [
+            'product_id' => $request->integer('product_id'),
+            'variant_id' => $request->integer('variant_id'),
+            'customer_id' => $request->integer('customer_id'),
+            'customer_name' => trim((string) $request->query('customer_name', '')),
+            'document_number' => trim((string) $request->query('document_number', '')),
+            'return_reason' => trim((string) $request->query('return_reason', '')),
+            'category_id' => $request->integer('category_id'),
+            'subcategory_id' => $request->integer('subcategory_id'),
+            'date_from' => trim((string) $request->query('date_from', '')),
+            'date_to' => trim((string) $request->query('date_to', '')),
+        ];
+
+        $returns = SalesReturnsExport::baseQuery($filters)->orderBy('transferred_at')->orderBy('id')->get();
+        $html = view('vouchers.exports.sales-returns-pdf', ['returns' => $returns, 'generatedAt' => now()])->render();
+        $mpdf = new Mpdf(['mode' => 'utf-8', 'format' => 'A4', 'default_font' => 'dejavusans', 'autoScriptToLang' => true, 'autoLangToFont' => true]);
+        $mpdf->SetDirectionality('rtl');
+        $mpdf->SetTitle('گزارش برگشت از فروش');
+        $mpdf->WriteHTML($html);
+        $filename = 'sales-returns-' . now()->format('Ymd-His') . '.pdf';
+
+        return response($mpdf->Output($filename, Destination::STRING_RETURN), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
     }
 
 
@@ -1038,6 +1077,8 @@ class VoucherController extends Controller
             'voucher_no' => trim((string) $request->query('voucher_no', '')),
             'date_from' => trim((string) $request->query('date_from', '')),
             'date_to' => trim((string) $request->query('date_to', '')),
+            'customer_name' => trim((string) $request->query('customer_name', '')),
+            'document_number' => trim((string) $request->query('document_number', '')),
             'reason' => trim((string) $request->query('reason', '')),
             'from_warehouse_id' => (int) $request->query('from_warehouse_id', 0),
             'destination' => trim((string) $request->query('destination', '')),
@@ -1121,6 +1162,8 @@ class VoucherController extends Controller
             'voucher_no' => trim((string) $request->query('voucher_no', '')),
             'date_from' => trim((string) $request->query('date_from', '')),
             'date_to' => trim((string) $request->query('date_to', '')),
+            'customer_name' => trim((string) $request->query('customer_name', '')),
+            'document_number' => trim((string) $request->query('document_number', '')),
             'reason' => trim((string) $request->query('reason', '')),
             'direction' => trim((string) $request->query('direction', '')),
             'user_q' => trim((string) $request->query('user_q', '')),

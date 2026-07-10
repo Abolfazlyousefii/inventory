@@ -25,7 +25,7 @@ class StockCountDocumentService
             ]);
 
             foreach ($payload['items'] as $item) {
-                $systemQty = $this->getSystemQuantity((int) $document->warehouse_id, (int) $item['product_id']);
+                $systemQty = $this->getSystemQuantity((int) $document->warehouse_id, (int) $item['product_id'], false, (int) $item['variant_id']);
                 StockCountDocumentItem::create([
                     'document_id' => $document->id,
                     'product_id' => (int) $item['product_id'],
@@ -71,7 +71,7 @@ class StockCountDocumentService
 
             $newItems = [];
             foreach ($payload['items'] as $item) {
-                $systemQty = $this->getSystemQuantity((int) $document->warehouse_id, (int) $item['product_id']);
+                $systemQty = $this->getSystemQuantity((int) $document->warehouse_id, (int) $item['product_id'], false, (int) $item['variant_id']);
                 $row = StockCountDocumentItem::create([
                     'document_id' => $document->id,
                     'product_id' => (int) $item['product_id'],
@@ -130,7 +130,7 @@ class StockCountDocumentService
                     continue;
                 }
 
-                $before = $this->getSystemQuantity((int) $document->warehouse_id, (int) $item->product_id, true);
+                $before = $this->getSystemQuantity((int) $document->warehouse_id, (int) $item->product_id, true, (int) $item->product_variant_id);
                 WarehouseStockService::change((int) $document->warehouse_id, (int) $item->product_id, $difference, (int) $item->product_variant_id);
                 $after = $before + $difference;
 
@@ -185,11 +185,15 @@ class StockCountDocumentService
         return $document->fresh(['warehouse', 'items.product', 'items.variant', 'creator', 'updater']);
     }
 
-    public function getSystemQuantity(int $warehouseId, int $productId, bool $lock = false): int
+    public function getSystemQuantity(int $warehouseId, int $productId, bool $lock = false, ?int $variantId = null): int
     {
         $query = WarehouseStock::query()
             ->where('warehouse_id', $warehouseId)
             ->where('product_id', $productId);
+
+        if ($variantId !== null && $variantId > 0) {
+            $query->where('product_variant_id', $variantId);
+        }
 
         if ($lock) {
             $query->lockForUpdate();

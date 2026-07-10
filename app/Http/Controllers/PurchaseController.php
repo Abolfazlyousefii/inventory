@@ -54,11 +54,17 @@ class PurchaseController extends Controller
     }
 
 
-    public function exportExcel(): BinaryFileResponse
+    public function exportExcel(Request $request): BinaryFileResponse
     {
+        $filters = [
+            'supplier_id' => $request->integer('supplier_id'),
+            'date_from' => trim((string) $request->query('date_from', '')),
+            'date_to' => trim((string) $request->query('date_to', '')),
+        ];
+
         $filename = 'purchases-' . now()->format('Ymd-His') . '.xlsx';
 
-        return Excel::download(new PurchasesExport, $filename);
+        return Excel::download(new PurchasesExport($filters), $filename);
     }
 
     public function show(Purchase $purchase)

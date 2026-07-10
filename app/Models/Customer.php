@@ -46,8 +46,8 @@ class Customer extends Model
     public function scopeWithBalance($query)
     {
         return $query
-            ->withSum(['ledgers as debit_sum' => fn ($q) => $q->where('type', 'debit')], 'amount')
-            ->withSum(['ledgers as credit_sum' => fn ($q) => $q->where('type', 'credit')], 'amount');
+            ->withSum(['ledgers as debit_sum' => fn ($q) => $q->effectiveForBalance()->where('type', 'debit')], 'amount')
+            ->withSum(['ledgers as credit_sum' => fn ($q) => $q->effectiveForBalance()->where('type', 'credit')], 'amount');
     }
 
     public function getBalanceAttribute(): int
