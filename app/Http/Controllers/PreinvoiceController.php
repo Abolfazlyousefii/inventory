@@ -284,24 +284,109 @@ class PreinvoiceController extends Controller
         return redirect()->route('preinvoice.warehouse.index')->with('success', '✅ پیش‌فاکتور رد شد.');
     }
 
-    public function draftIndex()
+    public function draftIndex(Request $request)
     {
-        $orders = PreinvoiceOrder::query()
-            ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
-            ->with(['creator:id,name', 'customer:id,reservation_tier'])
-            ->orderByDesc('id')
-            ->paginate(20);
+        abort_unless($this->canHandleFinanceActions(), 403);
 
-        $financeReapprovalInvoices = Invoice::query()
-            ->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
-            ->with(['preinvoiceOrder.creator:id,name'])
-            ->orderByDesc('items_updated_at')
-            ->orderByDesc('id')
-            ->get();
+        $activeTab = in_array($request->query('tab'), ['preinvoices', 'reapprovals'], true) ? $request->query('tab') : 'preinvoices';
+        $now = now();
 
-        $canFinanceApprove = $this->canHandleFinanceActions();
+        $preinvoiceBase = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE);
+        $reapprovalBase = Invoice::query()->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL);
 
-        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove', 'financeReapprovalInvoices'));
+        $stats = [
+            'pending_finance' => (clone $preinvoiceBase)->count(),
+            'pending_reapproval' => (clone $reapprovalBase)->count(),
+            'expiring_soon' => (clone $preinvoiceBase)->whereNotNull('stock_frozen_until')->where('stock_frozen_until', '>', $now)->where('stock_frozen_until', '<=', $now->copy()->addMinutes(30))->count(),
+            'expired_today' => PreinvoiceOrder::query()->whereDate('stock_frozen_until', $now->toDateString())->where('stock_frozen_until', '<=', $now)->count(),
+        ];
+
+        $ordersQuery = (clone $preinvoiceBase)
+            ->with(['creator:id,name', 'customer:id,reservation_tier,crm_customer_id', 'items:id,preinvoice_order_id,quantity', 'invoice:id,uuid,preinvoice_order_id']);
+
+        if ($request->filled('preinvoice_number')) {
+            $ordersQuery->where('uuid', 'like', '%' . $request->query('preinvoice_number') . '%');
+        }
+        if ($request->filled('customer_name')) {
+            $ordersQuery->where('customer_name', 'like', '%' . $request->query('customer_name') . '%');
+        }
+        if ($request->filled('customer_mobile')) {
+            $ordersQuery->where('customer_mobile', 'like', '%' . $request->query('customer_mobile') . '%');
+        }
+        if ($request->filled('seller')) {
+            $ordersQuery->whereHas('creator', fn ($q) => $q->where('name', 'like', '%' . $request->query('seller') . '%'));
+        }
+        if ($request->filled('date_from')) {
+            $ordersQuery->whereDate('created_at', '>=', $request->query('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $ordersQuery->whereDate('created_at', '<=', $request->query('date_to'));
+        }
+        if ($request->boolean('expiring_soon')) {
+            $ordersQuery->whereNotNull('stock_frozen_until')->where('stock_frozen_until', '>', $now)->where('stock_frozen_until', '<=', $now->copy()->addMinutes(30));
+        }
+        if ($request->boolean('no_expiry')) {
+            $ordersQuery->whereNull('stock_frozen_until');
+        }
+        if ($request->query('reservation_status') === 'expired') {
+            $ordersQuery->whereNotNull('stock_frozen_until')->where('stock_frozen_until', '<=', $now);
+        } elseif ($request->query('reservation_status') === 'active') {
+            $ordersQuery->where(fn ($q) => $q->whereNull('stock_frozen_until')->orWhere('stock_frozen_until', '>', $now));
+        }
+
+        match ($request->query('preinvoice_sort', 'expires_first')) {
+            'newest' => $ordersQuery->orderByDesc('id'),
+            'oldest' => $ordersQuery->orderBy('id'),
+            'amount_desc' => $ordersQuery->orderByDesc('total_price'),
+            'amount_asc' => $ordersQuery->orderBy('total_price'),
+            default => $ordersQuery->orderByRaw('case when stock_frozen_until is null then 1 else 0 end asc')->orderBy('stock_frozen_until')->orderByDesc('id'),
+        };
+
+        $orders = $ordersQuery->paginate(20, ['*'], 'preinvoices_page')->withQueryString();
+        $orders->getCollection()->transform(fn (PreinvoiceOrder $order) => $this->decorateFinanceQueueOrder($order));
+
+        $invoicesQuery = (clone $reapprovalBase)->with(['preinvoiceOrder.creator:id,name', 'items.product:id,name,code,sku', 'items.variant:id,variant_name', 'statusChangedByUser:id,name']);
+        if ($request->filled('invoice_number')) {
+            $invoicesQuery->where('uuid', 'like', '%' . $request->query('invoice_number') . '%');
+        }
+        if ($request->filled('reapproval_customer')) {
+            $invoicesQuery->where('customer_name', 'like', '%' . $request->query('reapproval_customer') . '%');
+        }
+        if ($request->filled('changed_by')) {
+            $invoicesQuery->whereHas('statusChangedByUser', fn ($q) => $q->where('name', 'like', '%' . $request->query('changed_by') . '%'));
+        }
+        if ($request->filled('changed_from')) {
+            $invoicesQuery->whereDate('items_updated_at', '>=', $request->query('changed_from'));
+        }
+        if ($request->filled('changed_to')) {
+            $invoicesQuery->whereDate('items_updated_at', '<=', $request->query('changed_to'));
+        }
+        match ($request->query('reapproval_sort', 'changed_desc')) {
+            'changed_asc' => $invoicesQuery->orderBy('items_updated_at')->orderBy('id'),
+            'amount_desc' => $invoicesQuery->orderByDesc('total'),
+            'amount_asc' => $invoicesQuery->orderBy('total'),
+            default => $invoicesQuery->orderByDesc('items_updated_at')->orderByDesc('id'),
+        };
+        $financeReapprovalInvoices = $invoicesQuery->paginate(20, ['*'], 'reapprovals_page')->withQueryString();
+
+        $canFinanceApprove = true;
+
+        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove', 'financeReapprovalInvoices', 'stats', 'activeTab'));
+    }
+
+    private function decorateFinanceQueueOrder(PreinvoiceOrder $order): PreinvoiceOrder
+    {
+        $now = now();
+        $expiresAt = $order->stock_frozen_until;
+        $seconds = $expiresAt ? max(0, $now->diffInSeconds($expiresAt, false)) : null;
+        $isVip = ($order->customer?->reservation_tier === 'vip');
+        $isExpired = ! $isVip && $expiresAt !== null && $expiresAt->lte($now);
+
+        $order->setAttribute('finance_seconds_remaining', $seconds);
+        $order->setAttribute('finance_reservation_expired', $isExpired);
+        $order->setAttribute('finance_reservation_label', $isExpired ? 'رزرو منقضی شده' : ($isVip && $expiresAt === null ? 'رزرو ویژه بدون انقضا' : ($order->is_in_person ? 'رزرو حضوری فعال' : ($expiresAt === null ? 'رزرو بدون محدودیت زمانی' : 'رزرو فعال'))));
+
+        return $order;
     }
 
     public function allIndex(Request $request)
@@ -1987,7 +2072,7 @@ class PreinvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['Admin', 'finance', 'Accountant']) || $user->can('finance.approve'));
+        return $user && ($user->hasAnyRole(['Admin', 'admin', 'finance', 'Accountant', 'Manager', 'manager']) || $user->can('finance.approve') || $user->can('preinvoices.finance.view'));
     }
 
     private function canHandleWarehouseActions(): bool
@@ -2117,10 +2202,6 @@ class PreinvoiceController extends Controller
             foreach ($order->items as $it) {
                 $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
                 $snapshotPrice = (int) ($it->price ?? 0);
-
-                if ($snapshotPrice <= 0 && $variant) {
-                    $snapshotPrice = (int) ($variant->sell_price ?? 0);
-                }
 
                 if ((int) $it->quantity > 0 && $snapshotPrice <= 0) {
                     $name = trim(($variant?->product?->name ?? 'نامشخص') . ' / ' . ($variant?->variant_name ?: $variant?->variety_name ?: ('#' . (int) $it->variant_id)));
@@ -2314,6 +2395,9 @@ class PreinvoiceController extends Controller
                 PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
             ], true), 403);
 
+            $this->reservationService->assertFinanceApprovable($order, auth()->user());
+            $this->reservationService->assertFinanceApprovable($order, auth()->user());
+            abort_if($order->invoice()->exists(), 422, 'این پیش‌فاکتور قبلاً به فاکتور تبدیل شده است.');
             $oldStatus = (string) $order->status;
             $release = $this->reservationService->releaseOfficialReservationsForOrder($order, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, $data['reason'], auth()->user());
             $order->update([
