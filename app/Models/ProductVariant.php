@@ -11,6 +11,7 @@ class ProductVariant extends Model
     protected $fillable = [
         'product_id',
         'is_active',
+        'sales_enabled',
         'variant_name',
         'model_list_id',
         'color_id',
@@ -30,6 +31,7 @@ class ProductVariant extends Model
 
     protected $casts = [
         'is_active'  => 'boolean',
+        'sales_enabled' => 'boolean',
         'buy_price'  => 'integer',
         'sell_price' => 'integer',
         'stock'      => 'integer',
