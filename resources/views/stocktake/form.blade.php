@@ -1,278 +1,37 @@
 @extends('layouts.app')
-
 @section('content')
-@php
-    $isEdit = $mode === 'edit';
-    $isDraft = $document?->status === 'draft';
-    $action = $isEdit ? route('stock-count-documents.update', $document) : route('stock-count-documents.store');
-@endphp
-
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="page-title mb-0">{{ $isEdit ? 'ویرایش سند انبارگردانی' : 'ثبت سند انبارگردانی' }}</h4>
-    <a href="{{ route('stock-count-documents.index') }}" class="btn btn-outline-secondary">بازگشت</a>
+<div class="container-fluid" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
+ <div class="d-flex justify-content-between mb-3"><h4>ثبت سند انبارگردانی محصولی</h4><a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary">بازگشت</a></div>
+ @if($errors->any())<div class="alert alert-danger"><ul>@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
+ <form id="stocktakeForm" method="post" action="{{ $mode==='edit' ? route('stock-count-documents.update',$document) : route('stock-count-documents.store') }}">@csrf @if($mode==='edit') @method('PUT') @endif
+  <div class="card mb-3"><div class="card-header">اطلاعات سند</div><div class="card-body row g-3"><div class="col-md-2"><label class="form-label">نوع سند</label><input class="form-control" value="انبارگردانی محصولی" readonly></div><div class="col-md-3"><label class="form-label">انبار</label><input class="form-control" value="{{ $centralWarehouse->name }}" readonly></div><div class="col-md-2"><label class="form-label">شماره سند</label><input class="form-control" value="{{ $document?->document_number ?? 'پس از ذخیره ایجاد می‌شود' }}" readonly></div><div class="col-md-2"><label class="form-label">تاریخ سند</label><input type="date" name="document_date" class="form-control" value="{{ old('document_date', optional($document?->document_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" required></div><div class="col-md-2"><label class="form-label">وضعیت</label><input class="form-control" value="پیش‌نویس" readonly></div><div class="col-12"><label class="form-label">توضیحات</label><textarea name="description" class="form-control">{{ old('description',$document?->description) }}</textarea></div></div></div>
+  <div class="card mb-3"><div class="card-header">انتخاب کالا</div><div class="card-body row g-3"><div class="col-md-4"><label>دسته‌بندی اصلی</label><select id="category" class="form-select" {{ $mode==='edit'?'disabled':'' }}><option value="">انتخاب دسته‌بندی اصلی</option>@foreach($rootCategories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select></div><div class="col-md-4"><label>زیر‌دسته‌بندی</label><select id="subcategory" class="form-select" disabled><option value="">انتخاب زیر‌دسته‌بندی</option></select></div><div class="col-md-4"><label>محصول</label><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select><input id="productSearch" class="form-control mt-2" placeholder="جستجوی نام، کد، SKU یا بارکد" {{ $mode==='edit'?'disabled':'' }}></div></div></div>
+  <div class="alert alert-warning">توجه: در ثبت نهایی، موجودی واقعی تمام تنوع‌هایی که مقدار آن‌ها خالی باشد صفر در نظر گرفته می‌شود.</div>
+  <div class="card mb-3"><div class="card-header">ابزار جستجو و ورود سریع</div><div class="card-body d-flex gap-2 flex-wrap"><input id="variantSearch" class="form-control" style="max-width:260px" placeholder="جستجو در تنوع‌ها"><button type="button" class="btn btn-outline-primary" data-tool="fillExpected">پر کردن همه با موجودی فیزیکی مورد انتظار</button><button type="button" class="btn btn-outline-danger" data-tool="zeroAll">صفر کردن همه</button><button type="button" class="btn btn-outline-secondary" data-tool="clearAll">پاک‌کردن مقدارها</button><select id="filterRows" class="form-select" style="max-width:220px"><option value="all">نمایش همه</option><option value="diff">فقط دارای اختلاف</option><option value="stock">فقط دارای موجودی</option><option value="reserved">فقط دارای رزرو</option><option value="uncounted">فقط شمارش‌نشده‌ها</option></select></div></div>
+  <div class="card mb-3"><div class="card-body table-responsive" style="max-height:62vh;overflow:auto"><table class="table table-bordered table-sm align-middle"><thead class="table-light sticky-top"><tr><th>تنوع</th><th>کد/SKU</th><th>وضعیت فروش</th><th>موجودی آزاد سیستم</th><th>رزرو فعال</th><th>فیزیکی مورد انتظار</th><th>موجودی واقعی</th><th>آزاد جدید</th><th>اختلاف</th><th>توضیح</th></tr></thead><tbody id="variantRows"><tr><td colspan="10" class="text-center text-muted">محصول را انتخاب کنید.</td></tr></tbody></table><div id="loadState" class="text-center p-2 text-muted"></div></div></div>
+  <div class="card mb-3"><div class="card-header">خلاصه تغییرات</div><div class="card-body row g-2" id="summary"></div></div>
+  <div class="form-check mb-3"><input class="form-check-input" type="checkbox" value="1" id="confirmEmpty" name="confirm_empty_as_zero"><label class="form-check-label" for="confirmEmpty">تأیید می‌کنم موجودی واقعی تنوع‌های بدون مقدار، صفر ثبت شود.</label></div>
+  <button class="btn btn-primary" type="submit">ذخیره پیش‌نویس</button>
+  @if($mode==='edit')<button class="btn btn-success" id="applyBtn" formaction="{{ route('stock-count-documents.finalize',$document) }}" formmethod="post" disabled onclick="event.preventDefault();showApplyModal();">ثبت نهایی و اعمال موجودی انبار مرکزی</button>@endif
+ </form>
 </div>
-
-@if($isEdit && !$isDraft)
-    <div class="alert alert-warning">این سند نهایی/لغو شده و قابل ویرایش نیست. برای مشاهده به صفحه نمایش سند مراجعه کنید.</div>
-@endif
-
-<form method="POST" action="{{ $action }}">
-    @csrf
-    @if($isEdit)
-        @method('PUT')
-    @endif
-
-    <div class="card mb-3">
-        <div class="card-body row g-3">
-            <div class="col-md-3">
-                <label class="form-label">انبار <span class="text-danger">*</span></label>
-                <select name="warehouse_id" id="warehouseId" class="form-select" required @disabled($isEdit && !$isDraft)>
-                    <option value="">انتخاب...</option>
-                    @foreach($warehouses as $warehouse)
-                        <option value="{{ $warehouse->id }}" @selected((string) old('warehouse_id', $document?->warehouse_id) === (string) $warehouse->id)>{{ $warehouse->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">تاریخ سند <span class="text-danger">*</span></label>
-                <input type="date" name="document_date" class="form-control" required value="{{ old('document_date', optional($document?->document_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" @readonly($isEdit && !$isDraft)>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">شماره سند</label>
-                <input class="form-control" value="{{ $document?->document_number ?? 'پس از ذخیره ایجاد می‌شود' }}" readonly>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">وضعیت</label>
-                <input class="form-control" value="{{ $document?->status ?? 'draft' }}" readonly>
-            </div>
-            <div class="col-12">
-                <label class="form-label">توضیحات</label>
-                <textarea name="description" class="form-control" rows="2" @readonly($isEdit && !$isDraft)>{{ old('description', $document?->description) }}</textarea>
-            </div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-body">
-            <div class="d-flex justify-content-between mb-2">
-                <h6 class="mb-0">ردیف‌های کالا</h6>
-                @if(!$isEdit || $isDraft)
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn">افزودن ردیف</button>
-                @endif
-            </div>
-
-            <div class="table-responsive">
-                <table class="table table-bordered align-middle" id="itemsTable">
-                    <thead>
-                    <tr>
-                        <th style="min-width: 220px;">کالا</th>
-                        <th style="min-width: 240px;">تنوع</th>
-                        <th>موجودی سیستم</th>
-                        <th>موجودی واقعی</th>
-                        <th>اختلاف</th>
-                        <th>توضیح ردیف</th>
-                        <th>حذف</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @php
-                        $oldItems = old('items');
-                        $items = $oldItems ?? ($document?->items?->map(fn($item) => [
-                            'product_id' => $item->product_id,
-                            'variant_id' => $item->product_variant_id,
-                            'system_quantity' => $item->system_quantity,
-                            'actual_quantity' => $item->actual_quantity,
-                            'description' => $item->description,
-                        ])->toArray() ?? []);
-                    @endphp
-                    @forelse($items as $index => $item)
-                        <tr>
-                            <td>
-                                <select name="items[{{ $index }}][product_id]" class="form-select product-select" required @disabled($isEdit && !$isDraft)>
-                                    <option value="">انتخاب...</option>
-                                    @foreach($products as $product)
-                                        <option value="{{ $product->id }}" @selected((string) ($item['product_id'] ?? '') === (string) $product->id)>
-                                            {{ $product->name }} [{{ $product->sku }}]
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </td>
-                            <td>
-                                <select name="items[{{ $index }}][variant_id]" class="form-select variant-select" required @disabled($isEdit && !$isDraft)>
-                                    <option value="">انتخاب...</option>
-                                    @foreach($variants as $variant)
-                                        <option
-                                            value="{{ $variant->id }}"
-                                            data-product-id="{{ $variant->product_id }}"
-                                            @selected((string) ($item['variant_id'] ?? '') === (string) $variant->id)
-                                        >
-                                            {{ $variant->variant_name ?: 'تنوع بدون نام' }}
-                                            @if($variant->variant_code)
-                                                [{{ $variant->variant_code }}]
-                                            @endif
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </td>
-                            <td>
-                                <input class="form-control system-quantity" type="number" name="items[{{ $index }}][system_quantity]" value="{{ $item['system_quantity'] ?? 0 }}" readonly>
-                            </td>
-                            <td>
-                                <input class="form-control actual-quantity" type="number" min="0" name="items[{{ $index }}][actual_quantity]" value="{{ $item['actual_quantity'] ?? 0 }}" required @readonly($isEdit && !$isDraft)>
-                            </td>
-                            <td><span class="difference-badge badge text-bg-light">0</span></td>
-                            <td><input class="form-control" name="items[{{ $index }}][description]" value="{{ $item['description'] ?? '' }}" @readonly($isEdit && !$isDraft)></td>
-                            <td>
-                                @if(!$isEdit || $isDraft)
-                                    <button type="button" class="btn btn-sm btn-outline-danger remove-row">×</button>
-                                @endif
-                            </td>
-                        </tr>
-                    @empty
-                    @endforelse
-                    </tbody>
-                </table>
-            </div>
-
-            @if(!$isEdit || $isDraft)
-                <button class="btn btn-primary">ذخیره سند</button>
-            @endif
-            @if($isEdit)
-                <a class="btn btn-outline-dark" href="{{ route('stock-count-documents.view', $document) }}">نمایش سند</a>
-            @endif
-        </div>
-    </div>
-</form>
-
-<template id="rowTemplate">
-    <tr>
-        <td>
-            <select class="form-select product-select" required>
-                <option value="">انتخاب...</option>
-                @foreach($products as $product)
-                    <option value="{{ $product->id }}">{{ $product->name }} [{{ $product->sku }}]</option>
-                @endforeach
-            </select>
-        </td>
-        <td>
-            <select class="form-select variant-select" required>
-                <option value="">انتخاب...</option>
-                @foreach($variants as $variant)
-                    <option value="{{ $variant->id }}" data-product-id="{{ $variant->product_id }}">
-                        {{ $variant->variant_name ?: 'تنوع بدون نام' }}
-                        @if($variant->variant_code)
-                            [{{ $variant->variant_code }}]
-                        @endif
-                    </option>
-                @endforeach
-            </select>
-        </td>
-        <td><input class="form-control system-quantity" type="number" readonly value="0"></td>
-        <td><input class="form-control actual-quantity" type="number" min="0" required value="0"></td>
-        <td><span class="difference-badge badge text-bg-light">0</span></td>
-        <td><input class="form-control" value=""></td>
-        <td><button type="button" class="btn btn-sm btn-outline-danger remove-row">×</button></td>
-    </tr>
-</template>
-
-@if(!$isEdit || $isDraft)
 <script>
-(function(){
-    const tableBody = document.querySelector('#itemsTable tbody');
-    const rowTemplate = document.getElementById('rowTemplate');
-    const addRowBtn = document.getElementById('addRowBtn');
-    const warehouseSelect = document.getElementById('warehouseId');
-
-    function reindexRows(){
-        [...tableBody.querySelectorAll('tr')].forEach((tr, index) => {
-            tr.querySelector('.product-select').setAttribute('name', `items[${index}][product_id]`);
-            tr.querySelector('.variant-select').setAttribute('name', `items[${index}][variant_id]`);
-            tr.querySelector('.system-quantity').setAttribute('name', `items[${index}][system_quantity]`);
-            tr.querySelector('.actual-quantity').setAttribute('name', `items[${index}][actual_quantity]`);
-            tr.querySelector('td:nth-child(6) input').setAttribute('name', `items[${index}][description]`);
-        });
-    }
-
-    function filterVariantsByProduct(tr){
-        const productId = tr.querySelector('.product-select').value;
-        const variantSelect = tr.querySelector('.variant-select');
-        const currentValue = variantSelect.value;
-
-        let stillValid = false;
-        [...variantSelect.options].forEach((option, index) => {
-            if (index === 0) {
-                option.hidden = false;
-                return;
-            }
-
-            const matches = !productId || option.dataset.productId === productId;
-            option.hidden = !matches;
-            if (matches && option.value === currentValue) {
-                stillValid = true;
-            }
-        });
-
-        if (!stillValid) {
-            variantSelect.value = '';
-        }
-    }
-
-    async function fillSystemQuantity(tr){
-        const productId = tr.querySelector('.product-select').value;
-        const warehouseId = warehouseSelect.value;
-        if (!productId || !warehouseId) {
-            tr.querySelector('.system-quantity').value = 0;
-            renderDiff(tr);
-            return;
-        }
-
-        const url = `{{ route('stock-count-documents.system-quantity') }}?warehouse_id=${warehouseId}&product_id=${productId}`;
-        const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
-        const data = await resp.json();
-        tr.querySelector('.system-quantity').value = data.system_quantity ?? 0;
-        renderDiff(tr);
-    }
-
-    function renderDiff(tr){
-        const system = Number(tr.querySelector('.system-quantity').value || 0);
-        const actual = Number(tr.querySelector('.actual-quantity').value || 0);
-        const diff = actual - system;
-        const badge = tr.querySelector('.difference-badge');
-        badge.textContent = diff;
-        badge.className = 'difference-badge badge ' + (diff > 0 ? 'text-bg-success' : (diff < 0 ? 'text-bg-danger' : 'text-bg-light'));
-    }
-
-    function bindRow(tr){
-        tr.querySelector('.product-select').addEventListener('change', () => {
-            filterVariantsByProduct(tr);
-            fillSystemQuantity(tr);
-        });
-        tr.querySelector('.actual-quantity').addEventListener('input', () => renderDiff(tr));
-        const removeBtn = tr.querySelector('.remove-row');
-        if (removeBtn) {
-            removeBtn.addEventListener('click', () => {
-                tr.remove();
-                reindexRows();
-            });
-        }
-        filterVariantsByProduct(tr);
-        renderDiff(tr);
-    }
-
-    addRowBtn?.addEventListener('click', () => {
-        const tr = rowTemplate.content.firstElementChild.cloneNode(true);
-        tableBody.appendChild(tr);
-        bindRow(tr);
-        reindexRows();
-    });
-
-    warehouseSelect?.addEventListener('change', () => {
-        tableBody.querySelectorAll('tr').forEach((tr) => fillSystemQuantity(tr));
-    });
-
-    tableBody.querySelectorAll('tr').forEach(bindRow);
-    reindexRows();
-})();
+const app=document.getElementById('stocktakeApp'), docId=app.dataset.documentId||'', state={rows:[],page:1,hasMore:false,loading:false,actual:{},notes:{}};
+const csrf='{{ csrf_token() }}';
+function esc(s){return (s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function calc(r){let a=state.actual[r.variant_id]; if(a===''||a==null)return {new:'',diff:''}; a=parseInt(a); return {new:a-r.active_reserved,diff:a-r.expected_physical}}
+function render(){let f=document.getElementById('filterRows').value, q=document.getElementById('variantSearch').value.trim().toLowerCase(); let rows=state.rows.filter(r=>!q||`${r.name} ${r.sku} ${r.barcode}`.toLowerCase().includes(q)).filter(r=>{let c=calc(r), a=state.actual[r.variant_id]; if(f==='diff')return c.diff!==''&&c.diff!==0;if(f==='stock')return r.system_available>0;if(f==='reserved')return r.active_reserved>0;if(f==='uncounted')return a===''||a==null;return true});
+ document.getElementById('variantRows').innerHTML=rows.map(r=>{let c=calc(r), a=state.actual[r.variant_id]??''; let bad=c.new!==''&&c.new<0; let cls=bad?'table-danger':(c.diff>0?'table-success':(c.diff<0?'table-danger':'')); return `<tr class="${cls}"><td>${esc(r.name)}</td><td>${esc(r.sku||'—')}</td><td>${r.sales_enabled?'فعال':'غیرفعال'}</td><td>${r.system_available}</td><td>${r.active_reserved}</td><td>${r.expected_physical}</td><td><input class="form-control form-control-sm actual-input" inputmode="numeric" type="number" min="0" data-id="${r.variant_id}" name="actual_quantities[${r.variant_id}]" value="${a}"></td><td>${c.new}</td><td>${c.diff}</td><td><input class="form-control form-control-sm" name="notes[${r.variant_id}]" value="${esc(state.notes[r.variant_id]||r.note||'')}"></td></tr>`}).join('') || '<tr><td colspan="10" class="text-center text-muted">ردیفی یافت نشد.</td></tr>'; summary();}
+function summary(){let s={total:state.rows.length,counted:0,empty:0,diff:0,inc:0,dec:0,expected:0,actual:0,incSum:0,decSum:0,res:0,err:0}; state.rows.forEach(r=>{let a=state.actual[r.variant_id]; s.expected+=r.expected_physical;if(r.active_reserved>0)s.res++; if(a===''||a==null){s.empty++;a=0}else{s.counted++;a=parseInt(a);s.actual+=a} let d=a-r.expected_physical;if(d!==0)s.diff++; if(d>0){s.inc++;s.incSum+=d} if(d<0){s.dec++;s.decSum+=Math.abs(d)} if(a<r.active_reserved)s.err++;}); document.getElementById('summary').innerHTML=Object.entries({total:'تعداد کل',counted:'شمارش‌شده',empty:'خالی/صفرشونده',diff:'دارای اختلاف',inc:'افزایش',dec:'کاهش',expected:'جمع مورد انتظار',actual:'جمع واقعی',incSum:'جمع افزایش',decSum:'جمع کاهش',res:'دارای رزرو',err:'خطا'}).map(([k,l])=>`<div class="col-md-2"><div class="border rounded p-2">${l}: <b>${s[k]}</b></div></div>`).join(''); let btn=document.getElementById('applyBtn'); if(btn)btn.disabled=!(document.getElementById('confirmEmpty').checked&&s.err===0&&s.total>0);}
+async function load(reset=false){let pid=document.getElementById('product').value;if(!pid)return; if(reset){state.rows=[];state.page=1} if(state.loading)return; state.loading=true; document.getElementById('loadState').textContent='در حال دریافت...'; let u=`/stock-count-documents/products/${pid}/variants?page=${state.page}&limit=100${docId?'&document_id='+docId:''}`; let j=await (await fetch(u,{headers:{Accept:'application/json'}})).json(); j.data.forEach(r=>{state.rows.push(r); if(state.actual[r.variant_id]===undefined)state.actual[r.variant_id]=r.actual_physical??'';}); state.hasMore=j.meta.has_more; state.page++; state.loading=false; document.getElementById('loadState').textContent=state.hasMore?'برای دریافت ادامه اسکرول کنید.':'همه تنوع‌ها دریافت شدند.'; render();}
+document.addEventListener('input',e=>{if(e.target.matches('.actual-input')){state.actual[e.target.dataset.id]=e.target.value;render()} if(e.target.id==='variantSearch')render();});document.getElementById('filterRows').onchange=render;document.getElementById('confirmEmpty').onchange=summary;
+document.querySelector('[style*="max-height"]').addEventListener('scroll',e=>{if(state.hasMore&&e.target.scrollTop+e.target.clientHeight>e.target.scrollHeight-80)load(false)});
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{if(b.dataset.tool==='zeroAll'&&!confirm('همه مقدارها صفر شود؟'))return; state.rows.forEach(r=>{if(b.dataset.tool==='fillExpected')state.actual[r.variant_id]=r.expected_physical; if(b.dataset.tool==='zeroAll')state.actual[r.variant_id]=0; if(b.dataset.tool==='clearAll')state.actual[r.variant_id]='';}); render();});
+document.addEventListener('focusin',e=>{if(e.target.matches('.actual-input'))e.target.select()});document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('.actual-input')){e.preventDefault();let a=[...document.querySelectorAll('.actual-input')],i=a.indexOf(e.target);if(a[i+1])a[i+1].focus();}});
+document.getElementById('category').onchange=async e=>{document.getElementById('subcategory').innerHTML='<option value="">انتخاب زیر‌دسته‌بندی</option>';document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];render(); if(!e.target.value)return; let j=await (await fetch(`/stock-count-documents/subcategories?category_id=${e.target.value}`)).json(); j.forEach(c=>document.getElementById('subcategory').insertAdjacentHTML('beforeend',`<option value="${c.id}">${esc(c.name)}</option>`)); document.getElementById('subcategory').disabled=false; searchProducts();};
+document.getElementById('subcategory').onchange=()=>{document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];render();searchProducts()}; document.getElementById('productSearch').oninput=()=>setTimeout(searchProducts,250);
+async function searchProducts(){let c=document.getElementById('category').value,sc=document.getElementById('subcategory').value,q=document.getElementById('productSearch').value; if(!c&&!q)return; let j=await (await fetch(`/stock-count-documents/products/search?category_id=${c}&subcategory_id=${sc}&q=${encodeURIComponent(q)}`)).json(); let p=document.getElementById('product'); p.innerHTML='<option value="">انتخاب محصول</option>'; j.forEach(x=>p.insertAdjacentHTML('beforeend',`<option value="${x.id}">${esc(x.name)} - ${esc(x.sku||x.code||'')}</option>`));}
+document.getElementById('product').onchange=()=>{state.rows=[];state.actual={};load(true)};function showApplyModal(){ if(confirm('پس از ثبت نهایی، موجودی انبار مرکزی براساس این شمارش اصلاح می‌شود و سند دیگر قابل ویرایش نخواهد بود. تأیید نهایی و اعمال موجودی؟')){let f=document.getElementById('stocktakeForm'); f.querySelector('input[name=_method]').value='PATCH'; f.submit();}}
+if(document.getElementById('product').value)load(true);
 </script>
-@endif
 @endsection
