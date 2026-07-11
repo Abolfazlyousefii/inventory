@@ -113,6 +113,17 @@ class ProductDeactivationDocumentController extends Controller
 
     public function store(Request $request)
     {
+        if (!$request->has('items') && $request->filled('product_id')) {
+            $request->merge([
+                'items' => [[
+                    'category_id' => $request->input('category_id'),
+                    'subcategory_id' => $request->input('subcategory_id'),
+                    'product_id' => $request->input('product_id'),
+                    'variant_id' => $request->input('variant_id'),
+                ]],
+            ]);
+        }
+
         $data = $request->validate([
             'reason_text' => ['required', 'string', 'min:3', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
@@ -165,43 +176,19 @@ class ProductDeactivationDocumentController extends Controller
         }
 
         DB::transaction(function () use ($data) {
-            $firstItem = $data['items'][0];
-            $firstProduct = Product::query()->whereKey((int) $firstItem['product_id'])->lockForUpdate()->firstOrFail();
-            $firstVariant = null;
-            $firstType = ProductDeactivationDocument::TYPE_PRODUCT;
-
-            if (!empty($firstItem['variant_id'])) {
-                $firstVariant = ProductVariant::query()
-                    ->whereKey((int) $firstItem['variant_id'])
-                    ->where('product_id', $firstProduct->id)
-                    ->lockForUpdate()
-                    ->first();
-                $firstType = ProductDeactivationDocument::TYPE_VARIANT;
-            }
-
-            $doc = ProductDeactivationDocument::create([
-                'document_number' => 'TMP-' . now()->format('YmdHis') . '-' . random_int(100, 999),
-                'deactivation_type' => $firstType,
-                'product_id' => $firstProduct->id,
-                'variant_id' => $firstVariant?->id,
-                'items_count' => count($data['items']),
-                'reason_type' => 'custom',
-                'reason_text' => trim((string) $data['reason_text']),
-                'description' => null,
-                'product_name_snapshot' => (string) $firstProduct->name,
-                'variant_name_snapshot' => $firstVariant?->variant_name,
-                'created_by' => (int) auth()->id(),
-            ]);
-
-            // بروزرسانی شماره سند
-            $doc->update([
-                'document_number' => 'PD-' . now()->format('Ymd') . '-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT),
-            ]);
+            $resolvedItems = [];
+            $seenTargets = [];
 
             foreach ($data['items'] as $index => $itemData) {
-                $product = Product::query()->whereKey((int) $itemData['product_id'])->lockForUpdate()->firstOrFail();
+                $product = Product::query()
+                    ->with('category')
+                    ->whereKey((int) $itemData['product_id'])
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
                 $variant = null;
                 $deactivationType = ProductDeactivationDocument::TYPE_PRODUCT;
+                $targetKey = 'product:' . $product->id;
 
                 if (!empty($itemData['variant_id'])) {
                     $variant = ProductVariant::query()
@@ -217,6 +204,60 @@ class ProductDeactivationDocumentController extends Controller
                     }
 
                     $deactivationType = ProductDeactivationDocument::TYPE_VARIANT;
+                    $targetKey = 'variant:' . $variant->id;
+                }
+
+                if (isset($seenTargets[$targetKey])) {
+                    continue;
+                }
+
+                $seenTargets[$targetKey] = true;
+                $resolvedItems[] = [
+                    'product' => $product,
+                    'variant' => $variant,
+                    'deactivation_type' => $deactivationType,
+                ];
+            }
+
+            if (empty($resolvedItems)) {
+                throw ValidationException::withMessages([
+                    'items' => 'حداقل یک هدف معتبر برای غیرفعال‌سازی لازم است.',
+                ]);
+            }
+
+            $firstResolvedItem = $resolvedItems[0];
+            /** @var Product $firstProduct */
+            $firstProduct = $firstResolvedItem['product'];
+            /** @var ProductVariant|null $firstVariant */
+            $firstVariant = $firstResolvedItem['variant'];
+
+            $doc = ProductDeactivationDocument::create([
+                'document_number' => 'TMP-' . now()->format('YmdHis') . '-' . random_int(100, 999),
+                'deactivation_type' => $firstResolvedItem['deactivation_type'],
+                'product_id' => $firstProduct->id,
+                'variant_id' => $firstVariant?->id,
+                'items_count' => count($resolvedItems),
+                'reason_type' => 'custom',
+                'reason_text' => trim((string) $data['reason_text']),
+                'description' => null,
+                'product_name_snapshot' => (string) $firstProduct->name,
+                'variant_name_snapshot' => $firstVariant?->variant_name,
+                'created_by' => (int) auth()->id(),
+            ]);
+
+            // بروزرسانی شماره سند
+            $doc->update([
+                'document_number' => 'PD-' . now()->format('Ymd') . '-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT),
+            ]);
+
+            foreach ($resolvedItems as $resolvedItem) {
+                /** @var Product $product */
+                $product = $resolvedItem['product'];
+                /** @var ProductVariant|null $variant */
+                $variant = $resolvedItem['variant'];
+                $deactivationType = $resolvedItem['deactivation_type'];
+
+                if ($variant) {
                     if ((bool) $variant->is_active) {
                         $variant->update(['is_active' => false]);
                     }
