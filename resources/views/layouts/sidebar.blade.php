@@ -6,8 +6,8 @@
     $isPath = static fn(string ...$patterns): bool => request()->is(...$patterns);
     $pathActive = static fn(string ...$patterns): string => $isPath(...$patterns) ? 'active' : '';
 
-    $productsActive = $isRoute('products.create', 'products.price-changes.*', 'purchases.*', 'admin.product-exports.*', 'product-deactivation-documents.*')
-        || $isPath('products/create', 'products/price-changes', 'products/price-changes/*', 'purchases', 'purchases/*', 'admin/product-exports', 'admin/product-exports/*', 'product-deactivation-documents', 'product-deactivation-documents/*');
+    $productsActive = $isRoute('products.index', 'products.create', 'products.price-changes.*', 'purchases.*', 'admin.product-exports.*', 'product-deactivation-documents.*')
+        || $isPath('products', 'products/create', 'products/price-changes', 'products/price-changes/*', 'purchases', 'purchases/*', 'admin/product-exports', 'admin/product-exports/*', 'product-deactivation-documents', 'product-deactivation-documents/*');
 
     $warehouseActive = $isRoute('vouchers.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
         || $isPath('vouchers', 'vouchers/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*');
@@ -206,7 +206,7 @@
 
 
         {{-- Products --}}
-        @canAnyPermission(['products.create','stock_in.view','products.price_changes.view','products.export','products.change_status'])
+        @canAnyPermission(['products.view','products.create','stock_in.view','products.price_changes.view','products.export','products.change_status'])
         <div class="sidebar-accordion-item {{ $productsActive ? 'is-open' : '' }}" data-accordion-section="products">
             <button type="button"
                     class="sidebar-section-title sidebar-accordion-trigger {{ $productsActive ? 'is-active' : '' }}"
@@ -219,6 +219,9 @@
             </button>
             <div class="sidebar-accordion-panel" data-accordion-panel>
                 <div class="sidebar-submenu">
+                    @canPermission('products.view')
+                    <a class="sidebar-sublink {{ $is('products.index') }}" href="{{ route('products.index') }}">نمایش کالاها</a>
+                    @endcanPermission
                     @canPermission('products.create')
                     <a class="sidebar-sublink {{ $is('products.create') }}" href="{{ route('products.create') }}">تعریف کالا</a>
                     @endcanPermission
