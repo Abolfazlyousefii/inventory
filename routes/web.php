@@ -64,6 +64,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->middleware('permission:products.view')->name('products.index');
+    Route::get('/products/data', [ProductController::class, 'data'])->middleware('permission:products.view')->name('products.data');
     Route::get('/products/create', [ProductController::class, 'create'])->middleware('permission:products.create')->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->middleware('permission:products.create')->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
@@ -81,6 +82,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/{document}/cancel', [PriceChangeDocumentController::class, 'cancel'])->name('cancel');
     });
 
+    Route::get('/products/{product}/variants', [ProductController::class, 'variants'])->whereNumber('product')->middleware('permission:products.view')->name('products.variants');
     Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->middleware('permission:products.edit')->name('products.edit');
     Route::put('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
     Route::patch('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
