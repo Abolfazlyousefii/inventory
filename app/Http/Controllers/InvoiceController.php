@@ -217,7 +217,7 @@ class InvoiceController extends Controller
                 'seller' => $invoice->preinvoiceOrder?->creator?->name,
                 'show_url' => route('vouchers.sales.show', $invoice->uuid),
                 'print_url' => route('vouchers.sales.print', $invoice->uuid),
-                'edit_items_url' => $invoice->status === Invoice::STATUS_COLLECTING ? route('vouchers.sales.edit', $invoice->uuid) : null,
+                'edit_items_url' => $invoice->status === Invoice::STATUS_COLLECTING ? route('vouchers.sales.collection.edit', $invoice->uuid) : null,
                 'history_url' => route('vouchers.sales.history', $invoice->uuid),
                 'receive_url' => $invoice->status === Invoice::STATUS_PENDING_COLLECTION ? route('vouchers.sales.queue.receive', $invoice->uuid) : null,
                 'start_collection_url' => $invoice->status === Invoice::STATUS_WAREHOUSE_RECEIVED ? route('vouchers.sales.queue.start-collection', $invoice->uuid) : null,
@@ -266,7 +266,11 @@ class InvoiceController extends Controller
         $statusLabels = $this->statusService->labels();
         $canEditItems = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
 
-        return redirect()->route('invoices.edit', $invoice->uuid);
+        $canAdjustPrice = auth()->user()?->hasPermission('warehouse.collection.adjust_price')
+            || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
+        $openedAt = optional($invoice->items_updated_at ?: $invoice->updated_at)->toJSON();
+
+        return view('vouchers.sales.edit', compact('invoice', 'statusLabels', 'canEditItems', 'canAdjustPrice', 'openedAt'));
     }
 
 
@@ -360,12 +364,18 @@ class InvoiceController extends Controller
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.variant_id' => 'nullable|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:0',
+            'items.*.price' => 'nullable|numeric|min:1',
+            'items.*.line_discount_amount' => 'nullable|numeric|min:0',
+            'opened_at' => 'required|string',
+            'change_reason' => 'required|string|max:100',
             'change_note' => 'nullable|string|max:2000',
             'collection_note' => 'nullable|string|max:2000',
         ]);
 
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
-        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null);
+        $canAdjustPrice = auth()->user()?->hasPermission('warehouse.collection.adjust_price')
+            || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
+        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null, $canAdjustPrice, $data['change_reason'], $data['opened_at']);
 
         $this->notifyFinanceReapproval($invoice);
 
@@ -411,7 +421,7 @@ class InvoiceController extends Controller
         ]);
 
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
-        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? null);
+        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? null, false, 'warehouse_queue_items', $request->input('opened_at', optional($invoice->items_updated_at ?: $invoice->updated_at)->toJSON()));
 
         $this->notifyFinanceReapproval($invoice);
 
@@ -461,8 +471,12 @@ class InvoiceController extends Controller
 
     private function notifyFinanceReapproval(Invoice $invoice): void
     {
-        $invoice = $invoice->fresh();
-        $this->notificationService->notifyRoleAfterCommit('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'اقلام فاکتور شماره «' . $invoice->uuid . '» برای مشتری «' . ($invoice->customer_name ?: '---') . '» توسط انبار تغییر کرد و نیازمند تایید مجدد مالی است.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id]);
+        try {
+            $invoice = $invoice->fresh();
+            $this->notificationService->notifyRoleAfterCommit('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'فاکتور شماره «' . $invoice->uuid . '» پس از تغییر اقلام جمع‌آوری، برای تأیید مجدد مالی ارسال شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id]);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 
     private function warehouseCollectionServiceHistory(Invoice $invoice, string $action, string $old, string $new, string $description): void

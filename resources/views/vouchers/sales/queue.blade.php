@@ -182,7 +182,7 @@
                     @endif
                     @if($inv->status === Invoice::STATUS_COLLECTING)
                       <form class="d-inline" method="POST" action="{{ route('vouchers.sales.queue.complete-collection', $inv->uuid) }}">@csrf<button class="btn collection-action-success">اتمام و ارسال</button></form>
-                      <a class="btn btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">حذف و اضافه</a>
+                      <a class="btn btn-outline-primary" href="{{ route('vouchers.sales.collection.edit', $inv->uuid) }}">حذف و اضافه</a>
                     @endif
                   @endunless
                   <a class="btn btn-outline-secondary" target="_blank" href="{{ route('vouchers.sales.print', $inv->uuid) }}">چاپ</a>
@@ -227,7 +227,7 @@
               @endif
               @if($inv->status === Invoice::STATUS_COLLECTING)
                 <form method="POST" action="{{ route('vouchers.sales.queue.complete-collection', $inv->uuid) }}">@csrf<button class="btn collection-action-success">اتمام و ارسال</button></form>
-                <a class="btn btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">حذف و اضافه</a>
+                <a class="btn btn-outline-primary" href="{{ route('vouchers.sales.collection.edit', $inv->uuid) }}">حذف و اضافه</a>
               @endif
             @endunless
             <a class="btn btn-outline-secondary" target="_blank" href="{{ route('vouchers.sales.print', $inv->uuid) }}">چاپ</a>

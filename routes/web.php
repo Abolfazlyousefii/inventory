@@ -150,6 +150,8 @@ Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'upd
 Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.products.categories');
 Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.products.by-category');
 Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.products.variants');
+Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.collection.edit');
+Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.collection.update');
 Route::get('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherEdit'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.edit');
 Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVoucherShow'])->name('vouchers.sales.show');
 Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
