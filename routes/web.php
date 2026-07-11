@@ -69,9 +69,11 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
         Route::get('/', [PriceChangeDocumentController::class, 'index'])->name('index');
         Route::get('/create', [PriceChangeDocumentController::class, 'create'])->name('create');
+        Route::get('/categories/root', [PriceChangeDocumentController::class, 'rootCategories'])->name('categories.root');
+        Route::get('/categories/{category}/children', [PriceChangeDocumentController::class, 'categoryChildren'])->whereNumber('category')->name('categories.children');
         Route::get('/products/search', [PriceChangeDocumentController::class, 'productSearch'])->name('products.search');
-        Route::get('/variants/search', [PriceChangeDocumentController::class, 'variantSearch'])->name('variants.search');
-        Route::get('/categories/tree', [PriceChangeDocumentController::class, 'categoriesTree'])->name('categories.tree');
+        Route::get('/products/{product}/variants', [PriceChangeDocumentController::class, 'productVariants'])->whereNumber('product')->name('products.variants');
+        Route::post('/scope-summary', [PriceChangeDocumentController::class, 'scopeSummary'])->name('scope-summary');
         Route::post('/preview', [PriceChangeDocumentController::class, 'preview'])->name('preview');
         Route::post('/', [PriceChangeDocumentController::class, 'store'])->name('store');
         Route::get('/{document}', [PriceChangeDocumentController::class, 'show'])->name('show');
