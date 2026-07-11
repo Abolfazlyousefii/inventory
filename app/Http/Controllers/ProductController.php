@@ -14,6 +14,7 @@ use App\Models\WarehouseStock;
 use App\Services\CrmProductSyncService;
 use App\Services\DefaultProductDesignService;
 use App\Services\ProductVariantStructureService;
+use App\Services\ProductSearchService;
 use App\Services\WarehouseStockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,85 +25,46 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 class ProductController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, ProductSearchService $searchService)
     {
-        $query = Product::query()
-            ->with([
-                'category',
-                'variants.warehouseStocks.warehouse',
-                'warehouseStocks.warehouse',
-            ]);
+        $categoryTree = $searchService->categoriesTree();
 
-        $search = $request->input('q', $request->input('search'));
-        $categoryId = $request->input('category_id', $request->input('category'));
-        $stockStatus = $request->input('stock_status');
-        $sellableStatus = $request->input('sellable_status', $request->input('sale_status'));
-        $minPrice = $request->input('min_price', $request->input('price_min'));
-        $maxPrice = $request->input('max_price', $request->input('price_max'));
+        return view('products.index', [
+            'categoryTree' => $categoryTree,
+        ]);
+    }
 
-        if (filled($search)) {
-            $query->search($search);
-        }
+    public function data(Request $request, ProductSearchService $searchService)
+    {
+        $products = $searchService->products($request);
 
-        if (filled($categoryId)) {
-            $categoryIds = Category::selfAndDescendantIds((int) $categoryId);
-            $query->whereIn('category_id', $categoryIds);
-        }
+        return response()->json([
+            'data' => $products->getCollection()->map(fn ($product) => $searchService->productPayload($product))->values(),
+            'meta' => [
+                'returned' => $products->count(),
+                'has_more' => $products->hasMorePages(),
+                'next_cursor' => optional($products->nextCursor())->encode(),
+            ],
+        ]);
+    }
 
-        if ($stockStatus === 'out') {
-            $query->where('stock', 0);
-        }
+    public function variants(Product $product, Request $request, ProductSearchService $searchService)
+    {
+        $variants = $searchService->variants($product, $request);
 
-        if (filled($minPrice)) {
-            $query->where('price', '>=', (int) preg_replace('/[^\d]/', '', $minPrice));
-        }
-
-        if (filled($maxPrice)) {
-            $query->where('price', '<=', (int) preg_replace('/[^\d]/', '', $maxPrice));
-        }
-
-        if ($sellableStatus === 'sellable') {
-            $query->where('is_sellable', true);
-        } elseif ($sellableStatus === 'unsellable') {
-            $query->where('is_sellable', false);
-        }
-
-        $sort = (string) $request->get('sort', 'id');
-        $dir = strtolower((string) $request->get('dir', 'desc')) === 'asc' ? 'asc' : 'desc';
-
-        $allowedSorts = [
-            'short_barcode' => 'short_barcode',
-            'barcode' => 'barcode',
-            'name' => 'name',
-            'stock' => 'stock',
-            'price' => 'price',
-            'id' => 'id',
-        ];
-
-        $sortColumn = $allowedSorts[$sort] ?? 'id';
-
-        $products = $query
-            ->when(! filled($search), fn ($productQuery) => $productQuery->orderBy($sortColumn, $dir))
-            ->orderByDesc('products.id')
-            ->paginate(20)
-            ->withQueryString();
-
-        $variantStructure = app(ProductVariantStructureService::class);
-        $products->getCollection()->each(function (Product $product) use ($variantStructure) {
-            $product->setRelation('variants', $variantStructure->validVariants($product));
-        });
-
-        $categoryTree = Category::query()
-            ->whereNull('parent_id')
-            ->with('descendants')
-            ->orderBy('name')
-            ->get();
-
-        $centralWarehouseId = (int) (Warehouse::query()->where('type', 'central')->value('id')
-            ?: Warehouse::query()->where('name', 'انبار مرکزی')->value('id')
-            ?: (Warehouse::query()->count() === 1 ? Warehouse::query()->value('id') : 0));
-
-        return view('products.index', compact('products', 'categoryTree', 'sort', 'dir', 'centralWarehouseId'));
+        return response()->json([
+            'product' => [
+                'id' => (int) $product->id,
+                'name' => (string) $product->name,
+                'short_code' => $product->short_barcode ?: $product->code,
+            ],
+            'data' => $variants->getCollection()->map(fn ($variant) => $searchService->variantPayload($variant))->values(),
+            'meta' => [
+                'returned' => $variants->count(),
+                'has_more' => $variants->hasMorePages(),
+                'next_cursor' => optional($variants->nextCursor())->encode(),
+            ],
+        ]);
     }
 
 
