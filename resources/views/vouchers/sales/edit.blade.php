@@ -9,13 +9,11 @@
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h4 class="mb-1">🧾 حذف و اضافه فاکتور</h4>
-      <div class="text-muted small">اصلاح اقلام توسط انبار و ارجاع برای تایید مالی</div>
+      <h4 class="mb-1">جمع‌آوری و اصلاح فاکتور {{ $invoice->uuid }}</h4>
+      <div class="text-muted small">صفحه اختصاصی انبار؛ بدون پرداخت، یادداشت مالی یا عملیات حسابداری</div>
     </div>
     <div class="d-flex gap-2">
-      <a href="{{ route('vouchers.sales.print', $invoice->uuid) }}" target="_blank" class="btn btn-outline-success">چاپ</a>
-      <a href="{{ route('vouchers.sales.show', $invoice->uuid) }}" class="btn btn-outline-secondary">نمایش</a>
-      <a href="{{ route('vouchers.sales.queue') }}" class="btn btn-outline-dark">بازگشت</a>
+      <a href="{{ route('vouchers.sales.queue') }}" class="btn btn-outline-dark">بازگشت به صف جمع‌آوری</a>
     </div>
   </div>
 
@@ -29,9 +27,10 @@
     <div class="alert alert-warning">این فاکتور در وضعیت «{{ $statusLabels[$invoice->status] ?? $invoice->status }}» قابل حذف و اضافه توسط انبار نیست.</div>
   @endunless
 
-  <form method="POST" action="{{ route('vouchers.sales.update', $invoice->uuid) }}" class="card border-0 shadow-sm" id="salesItemsForm">
+  <form method="POST" action="{{ route('vouchers.sales.collection.update', $invoice->uuid) }}" class="card border-0 shadow-sm" id="salesItemsForm">
     @csrf
-    @method('PUT')
+    @method('PATCH')
+    <input type="hidden" name="opened_at" value="{{ $openedAt }}">
     <div class="card-body">
       <div class="row g-2 mb-3">
         <div class="col-md-3"><b>کد فاکتور:</b> {{ $invoice->uuid }}</div>
@@ -49,21 +48,26 @@
       </div>
       <div class="table-responsive">
         <table class="table align-middle" id="invoiceItemsTable">
-          <thead><tr><th>محصول</th><th>مدل</th><th>تعداد</th><th>قیمت</th><th>تخفیف</th><th>حذف</th></tr></thead>
+          <thead class="position-sticky top-0 bg-white"><tr><th>ردیف</th><th>کالا</th><th>تنوع / مدل</th><th>کد / SKU</th><th>موجودی آزاد</th><th>تعداد قبلی</th><th>تعداد جدید</th><th>قیمت واحد</th><th>تخفیف ردیف</th><th>جمع ردیف</th><th>عملیات</th></tr></thead>
           <tbody id="invoiceItemsBody">
             @foreach($invoice->items as $it)
               <tr data-variant-id="{{ $it->variant_id }}">
+                <td>{{ $loop->iteration }}</td>
                 <td>{{ $it->product?->name ?? '#'.$it->product_id }}</td>
-                <td>{{ $it->variant?->variant_name ?? '—' }}</td>
+                <td>{{ $it->variant?->variant_name ?? $it->variant?->variety_name ?? '—' }}</td>
+                <td>{{ $it->variant?->variant_code ?? $it->variant?->variety_code ?? '—' }}</td>
+                <td>{{ number_format(\App\Services\WarehouseStockService::available(\App\Services\WarehouseStockService::centralWarehouseId(), (int)$it->product_id, (int)$it->variant_id)) }}</td>
+                <td>{{ (int)$it->quantity }}</td>
                 <td>
                   <input type="hidden" name="items[{{ $loop->index }}][id]" value="{{ $it->id }}">
                   <input type="hidden" name="items[{{ $loop->index }}][product_id]" value="{{ $it->product_id }}">
                   <input type="hidden" name="items[{{ $loop->index }}][variant_id]" value="{{ $it->variant_id }}">
-                  <input type="number" min="0" name="items[{{ $loop->index }}][quantity]" value="{{ (int)$it->quantity }}" data-original="{{ (int)$it->quantity }}" class="form-control js-item-field js-item-quantity" @disabled(!$canEditItems)>
+                  <input type="number" min="1" name="items[{{ $loop->index }}][quantity]" value="{{ (int)$it->quantity }}" data-original="{{ (int)$it->quantity }}" class="form-control js-item-field js-item-quantity" @disabled(!$canEditItems)>
                 </td>
-                <td class="text-nowrap">{{ number_format((int)$it->price) }}</td>
-                <td class="text-nowrap">{{ number_format((int)($it->line_discount_amount ?? 0)) }}</td>
-                <td><button type="button" class="btn btn-outline-danger btn-sm js-zero-item" @disabled(!$canEditItems)>حذف از فاکتور</button></td>
+                <td><input type="number" min="1" name="items[{{ $loop->index }}][price]" value="{{ (int)$it->price }}" data-original="{{ (int)$it->price }}" class="form-control form-control-sm js-item-field js-price" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)></td>
+                <td><input type="number" min="0" name="items[{{ $loop->index }}][line_discount_amount]" value="{{ (int)($it->line_discount_amount ?? 0) }}" data-original="{{ (int)($it->line_discount_amount ?? 0) }}" class="form-control form-control-sm js-item-field js-discount" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)></td>
+                <td class="js-line-total text-nowrap">{{ number_format((int)$it->line_total) }}</td>
+                <td><button type="button" class="btn btn-outline-danger btn-sm js-zero-item" @disabled(!$canEditItems)>حذف</button><button type="button" class="btn btn-outline-secondary btn-sm js-restore-item d-none">بازگرداندن</button></td>
               </tr>
             @endforeach
           </tbody>
@@ -87,9 +91,9 @@
           <input name="change_note" class="form-control" placeholder="توضیح تکمیلی حذف، کاهش، افزایش یا افزودن کالا" @disabled(!$canEditItems)>
         </div>
       </div>
-    </div>
-    <div class="card-footer text-end">
-      <button class="btn btn-success" @disabled(!$canEditItems)>ارجاع به مالی</button>
+    </div><div class="alert alert-light border m-3" id="changesSummary">خلاصه تغییرات پس از ویرایش اینجا نمایش داده می‌شود.</div>
+    <div class="card-footer text-end position-sticky bottom-0 bg-white">
+      <a href="{{ route('vouchers.sales.queue') }}" class="btn btn-outline-secondary">انصراف و بازگشت</a> <button class="btn btn-success" id="submitCollectionBtn" @disabled(!$canEditItems)>تأیید نهایی و ارجاع مجدد به مالی</button>
     </div>
   </form>
 </div>
@@ -143,7 +147,10 @@ function itemFields() { return document.querySelectorAll('.js-item-field'); }
 function syncChangeReasonRequired() {
   const changed = Array.from(itemFields()).some((field) => String(field.value || '') !== String(field.dataset.original || ''));
   if (reasonSelect) reasonSelect.required = changed;
+  window.onbeforeunload = changed ? () => 'تغییرات ذخیره‌نشده دارید.' : null;
+  recalcTotals();
 }
+function recalcTotals(){let total=0, edited=0;document.querySelectorAll('#invoiceItemsBody tr').forEach((row)=>{const q=Number(row.querySelector('.js-item-quantity')?.value||0),p=Number(row.querySelector('.js-price')?.value||0),d=Number(row.querySelector('.js-discount')?.value||0);const line=Math.max(q*p-d,0);total+=line; if(row.querySelector('.js-line-total')) row.querySelector('.js-line-total').textContent=line.toLocaleString(); if(row.classList.contains('table-danger')||Array.from(row.querySelectorAll('.js-item-field')).some(f=>String(f.value)!==String(f.dataset.original||''))) edited++;}); const el=document.getElementById('changesSummary'); if(el) el.textContent=`ردیف‌های تغییرکرده: ${edited} | مبلغ جدید تقریبی: ${total.toLocaleString()} ریال`;}
 function bindRowButtons(scope = document) {
   scope.querySelectorAll('.js-zero-item').forEach((button) => {
     if (button.dataset.bound) return;
@@ -151,13 +158,11 @@ function bindRowButtons(scope = document) {
     button.addEventListener('click', () => {
       const row = button.closest('tr');
       if (row?.dataset.newRow === '1') row.remove();
-      else {
-        const quantity = row?.querySelector('input[name$="[quantity]"]');
-        if (quantity) { quantity.value = 0; row.classList.add('table-danger'); }
-      }
+      else { row.classList.add('table-danger'); const q=row.querySelector('.js-item-quantity'); if(q){q.dataset.deletedValue=q.value;q.value=0;} button.classList.add('d-none'); row.querySelector('.js-restore-item')?.classList.remove('d-none'); }
       syncChangeReasonRequired();
     });
   });
+  scope.querySelectorAll('.js-restore-item').forEach((button)=>{ if(button.dataset.bound)return; button.dataset.bound='1'; button.addEventListener('click',()=>{const row=button.closest('tr'); row.classList.remove('table-danger'); const q=row.querySelector('.js-item-quantity'); if(q){q.value=q.dataset.deletedValue||q.dataset.original||1;} button.classList.add('d-none'); row.querySelector('.js-zero-item')?.classList.remove('d-none'); syncChangeReasonRequired();});});
   scope.querySelectorAll('.js-item-field').forEach((field) => field.addEventListener('input', syncChangeReasonRequired));
 }
 async function fetchJson(url) { const res = await fetch(url, {headers: {'Accept': 'application/json'}}); if (!res.ok) throw new Error('خطا در دریافت اطلاعات'); return res.json(); }
@@ -200,7 +205,7 @@ function addItemRow(variant, qty) {
   const existing = document.querySelector(`#invoiceItemsBody tr[data-variant-id="${variant.id}"]`);
   if (existing) { const input = existing.querySelector('input[name$="[quantity]"]'); input.value = Number(input.value || 0) + qty; existing.classList.add('table-warning'); return; }
   const idx = nextItemIndex++;
-  document.getElementById('invoiceItemsBody').insertAdjacentHTML('beforeend', `<tr data-variant-id="${variant.id}" data-new-row="1" class="table-success"><td>${selectedProduct.name} <span class="badge text-bg-primary">جدید</span><input type="hidden" name="items[${idx}][product_id]" value="${variant.product_id}"></td><td>${variant.title}<input type="hidden" name="items[${idx}][variant_id]" value="${variant.id}"></td><td><input type="number" min="0" name="items[${idx}][quantity]" value="${qty}" data-original="0" class="form-control js-item-field js-item-quantity"></td><td class="text-nowrap">${Number(variant.sell_price).toLocaleString()}<input type="hidden" name="items[${idx}][price]" value="${variant.sell_price}" readonly></td><td class="text-nowrap">0</td><td><button type="button" class="btn btn-outline-danger btn-sm js-zero-item">حذف از فاکتور</button></td></tr>`);
+  document.getElementById('invoiceItemsBody').insertAdjacentHTML('beforeend', `<tr data-variant-id="${variant.id}" data-new-row="1" class="table-success"><td>جدید</td><td>${selectedProduct.name}<span class="badge text-bg-primary">جدید</span><input type="hidden" name="items[${idx}][product_id]" value="${variant.product_id}"></td><td>${variant.title}<input type="hidden" name="items[${idx}][variant_id]" value="${variant.id}"></td><td>${variant.sku || '—'}</td><td>${variant.available_stock}</td><td>0</td><td><input type="number" min="0" name="items[${idx}][quantity]" value="${qty}" data-original="0" class="form-control form-control-sm js-item-field js-item-quantity"></td><td><input type="number" min="1" name="items[${idx}][price]" value="${variant.sell_price}" data-original="${variant.sell_price}" class="form-control form-control-sm js-item-field js-price" ${@json($canAdjustPrice) ? '' : 'readonly'}></td><td><input type="number" min="0" name="items[${idx}][line_discount_amount]" value="0" data-original="0" class="form-control form-control-sm js-item-field js-discount" ${@json($canAdjustPrice) ? '' : 'readonly'}></td><td class="js-line-total text-nowrap">${(qty * Number(variant.sell_price)).toLocaleString()}</td><td><button type="button" class="btn btn-outline-danger btn-sm js-zero-item">حذف</button><button type="button" class="btn btn-outline-secondary btn-sm js-restore-item d-none">بازگرداندن</button></td></tr>`);
   bindRowButtons(document.getElementById('invoiceItemsBody'));
 }
 modalEl?.addEventListener('shown.bs.modal', () => { if (canEditItems) loadCategories().catch(e => mainCategorySelect.innerHTML = `<option value="">${e.message}</option>`); });
@@ -210,6 +215,7 @@ productSearchInput?.addEventListener('input', () => { clearTimeout(debounceTimer
 productsList?.addEventListener('click', (e) => { const card = e.target.closest('.product-card'); if (card && e.target.classList.contains('js-select-product')) loadVariants(card.dataset.id, card.dataset.name); });
 variantsList?.addEventListener('input', (e) => { if (e.target.classList.contains('variant-qty')) updateSelectedTotal(); });
 confirmAddItemsBtn?.addEventListener('click', () => { document.querySelectorAll('.variant-row').forEach(row => { const qty = Number(row.querySelector('.variant-qty').value || 0); if (qty > 0) addItemRow(JSON.parse(row.dataset.variant), qty); }); bootstrap.Modal.getInstance(modalEl)?.hide(); document.getElementById('addItemNotice')?.classList.remove('d-none'); syncChangeReasonRequired(); });
+document.getElementById('salesItemsForm')?.addEventListener('submit', (e)=>{ if(!confirm('پس از ثبت، فاکتور برای تأیید مجدد به واحد مالی ارسال می‌شود. ادامه می‌دهید؟')){e.preventDefault();return;} window.onbeforeunload=null; const btn=document.getElementById('submitCollectionBtn'); if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}});
 bindRowButtons(); syncChangeReasonRequired();
 </script>
 @endsection
