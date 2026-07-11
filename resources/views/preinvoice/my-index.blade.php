@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'پیش‌فاکتورهای من')
+@section('title', 'فاکتورها و پیش‌فاکتورهای من')
 @section('content_class', 'app-content-wide')
 
 @section('content')
@@ -64,15 +64,17 @@
 <div class="py-2">
   <div class="my-sales-head mb-3 d-flex justify-content-between align-items-start gap-3 flex-wrap">
     <div>
-      <h4 class="fw-bold mb-1">پیش‌فاکتورهای من</h4>
-      <div class="text-muted small">آخرین وضعیت سند فروش شما؛ چه هنوز پیش‌فاکتور باشد، چه به فاکتور تبدیل شده باشد.</div>
+      <h4 class="fw-bold mb-1">فاکتورها و پیش‌فاکتورهای من</h4>
+      <div class="text-muted small">مشاهده آخرین وضعیت تمام اسناد فروش ثبت‌شده</div>
     </div>
     <a href="{{ route('preinvoice.create') }}" class="btn btn-primary">➕ ثبت پیش‌فاکتور جدید</a>
   </div>
 
   <div class="card my-sales-card mb-3"><div class="card-body">
     <form class="row g-2 align-items-end" method="GET" action="{{ route('preinvoice.my.index') }}">
-      <div class="col-md-4 col-xl-3">
+      <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">شماره سند</label><input name="q" class="form-control" value="{{ $filters['q'] ?? '' }}" placeholder="پیش‌فاکتور یا فاکتور"></div>
+      <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">نام مشتری</label><input name="customer" class="form-control" value="{{ $filters['customer'] ?? '' }}" placeholder="نام مشتری"></div>
+      <div class="col-md-3 col-xl-2">
         <label class="form-label fw-bold text-muted small">وضعیت</label>
         <select name="status" class="form-select">
           <option value="">همه وضعیت‌ها</option>
@@ -81,6 +83,10 @@
           @endforeach
         </select>
       </div>
+      <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">نوع سند</label><select name="type" class="form-select"><option value="">همه</option><option value="preinvoice" @selected(($filters['type'] ?? '') === 'preinvoice')>پیش‌فاکتور</option><option value="invoice" @selected(($filters['type'] ?? '') === 'invoice')>فاکتور</option></select></div>
+      <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">از تاریخ</label><input type="date" name="date_from" class="form-control" value="{{ $filters['date_from'] ?? '' }}"></div>
+      <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">تا تاریخ</label><input type="date" name="date_to" class="form-control" value="{{ $filters['date_to'] ?? '' }}"></div>
+      <div class="col-md-3 col-xl-2"><label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="changed_only" value="1" @checked($filters['changed_only'] ?? false)> فقط تغییرکرده‌ها</label></div>
       <div class="col-md-auto d-flex gap-2"><button class="btn btn-primary">اعمال فیلتر</button><a href="{{ route('preinvoice.my.index') }}" class="btn btn-outline-secondary">حذف فیلتر</a></div>
     </form>
   </div></div>
@@ -95,12 +101,12 @@
         <div class="document-card">
           <div class="d-flex justify-content-between gap-3 flex-wrap mb-3">
             <div>
-              <div class="text-muted small mb-1">پیش‌فاکتور مشتری «{{ $summary['customer_name'] ?: '—' }}»</div>
+              <div class="text-muted small mb-1">{{ $summary['has_invoice'] ? 'فاکتور مشتری' : 'پیش‌فاکتور مشتری' }} «{{ $summary['customer_name'] ?: '—' }}»</div>
               <div class="d-flex gap-2 align-items-center flex-wrap">
-                <span class="document-code">{{ Str::limit($summary['preinvoice_uuid'], 18, '…') }}</span>
+                <span class="document-code">{{ Str::limit($summary['document_number'], 18, '…') }}</span>
                 <span class="badge {{ $statusBadge($summary) }}">{{ $summary['status_label'] }}</span>
                 @if($summary['has_invoice'])
-                  <span class="badge text-bg-success">تبدیل‌شده به فاکتور شماره {{ Str::limit($summary['invoice_number'], 18, '…') }}</span>
+                  <span class="badge text-bg-success">پیش‌فاکتور اولیه: {{ Str::limit($summary['preinvoice_uuid'], 18, '…') }}</span>
                 @endif
               </div>
             </div>
@@ -122,12 +128,15 @@
             <div class="meta-box"><div class="label">وضعیت فعلی سند</div><div class="value">{{ $summary['status_label'] }}</div></div>
             <div class="meta-box"><div class="label">آخرین بروزرسانی</div><div class="value">{{ $toJalali($summary['last_changed_at']) }}</div></div>
             <div class="meta-box"><div class="label">اقدام بعدی</div><div class="value">{{ $summary['next_action_label'] }}</div></div>
+            <div class="meta-box"><div class="label">پرداخت‌شده</div><div class="value">{{ is_null($summary['paid_amount']) ? '—' : \App\Support\Currency::formatRial($summary['paid_amount']) }}</div></div>
+            <div class="meta-box"><div class="label">مانده</div><div class="value">{{ is_null($summary['remaining_amount']) ? '—' : \App\Support\Currency::formatRial($summary['remaining_amount']) }}</div></div>
+            <div class="meta-box"><div class="label">وضعیت پرداخت</div><div class="value">{{ $summary['payment_status'] ?? '—' }}</div></div>
             <div class="meta-box"><div class="label">مبلغ اولیه پیش‌فاکتور</div><div class="value">{{ \App\Support\Currency::formatRial($summary['original_total_amount']) }}</div></div>
           </div>
 
           <div class="d-flex flex-wrap gap-2 mb-3">
             @if($summary['has_total_changed'])
-              <span class="badge text-bg-warning">مبلغ فاکتور نسبت به پیش‌فاکتور تغییر کرده است.</span>
+              <span class="badge text-bg-warning">مبلغ تغییر کرده ({{ number_format($summary['total_difference']) }} ریال)</span>
             @endif
             @if($summary['has_items_changed'])
               <span class="badge text-bg-warning">اقلام اصلاح شده</span>
@@ -154,7 +163,7 @@
         </div>
       </div>
     @empty
-      <div class="col-12"><div class="document-card text-center text-muted">پیش‌فاکتوری توسط شما ثبت نشده است.</div></div>
+      <div class="col-12"><div class="document-card text-center text-muted">{{ request()->query() ? 'سندی مطابق فیلترهای انتخاب‌شده پیدا نشد.' : 'هنوز پیش‌فاکتور یا فاکتوری توسط شما ثبت نشده است.' }}</div></div>
     @endforelse
   </div>
 
