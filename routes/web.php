@@ -86,7 +86,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->middleware('permission:products.edit')->name('products.edit');
     Route::put('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
     Route::patch('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
-    Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->name('products.warehouse-stock');
+    Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->middleware('permission:products.view')->name('products.warehouse-stock');
     Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->middleware('permission:products.delete')->name('products.destroy');
     Route::get('/products/{product}/sales-ledger', [ProductSalesLedgerController::class, 'index'])->whereNumber('product')->name('products.sales-ledger');
