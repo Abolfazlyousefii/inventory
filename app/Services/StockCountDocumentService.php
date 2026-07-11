@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\StockCountFinalizeValidationException;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -76,30 +77,54 @@ class StockCountDocumentService
         });
     }
 
-    public function finalize(StockCountDocument $document, int $userId, bool $confirmEmptyAsZero = false): StockCountDocument
+    public function finalize(StockCountDocument $document, int $userId, bool $confirmEmptyAsZero = false, array $payload = []): StockCountDocument
     {
         if (! $confirmEmptyAsZero) throw ValidationException::withMessages(['confirm_empty_as_zero' => 'تأیید صفرشدن مقدارهای خالی الزامی است.']);
-        return DB::transaction(function () use ($document, $userId) {
+        return DB::transaction(function () use ($document, $userId, $payload) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
             if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
+            $actuals = $payload['actual_quantities'] ?? [];
+            $notes = $payload['notes'] ?? [];
+            foreach ($items as $item) {
+                $vid = (int) $item->product_variant_id;
+                if (array_key_exists($vid, $actuals) || array_key_exists((string) $vid, $actuals)) {
+                    $rawActual = $actuals[$vid] ?? $actuals[(string) $vid];
+                    $item->actual_quantity = $rawActual === '' || $rawActual === null ? null : (int) $rawActual;
+                }
+                if (array_key_exists($vid, $notes) || array_key_exists((string) $vid, $notes)) {
+                    $item->description = $notes[$vid] ?? $notes[(string) $vid];
+                }
+            }
             $variantIds = $items->pluck('product_variant_id')->map(fn($v)=>(int)$v)->all();
             $currentIds = ProductVariant::query()->where('product_id', (int) $document->product_id)->orderBy('id')->pluck('id')->map(fn($v)=>(int)$v)->all();
-            if ($currentIds !== $variantIds) abort(422, 'مجموعه تنوع‌های محصول پس از شروع انبارگردانی تغییر کرده است. سند را به‌روزرسانی کنید.');
+            $conflicts = [];
+            if ($currentIds !== $variantIds) {
+                $conflicts[] = [
+                    'variant_id' => null,
+                    'variant_name' => $document->product?->name ?: 'محصول سند',
+                    'sku' => null,
+                    'reason_code' => 'variant_set_changed',
+                    'reason' => 'مجموعه تنوع‌های محصول پس از شروع انبارگردانی تغییر کرده است. سند را به‌روزرسانی کنید.',
+                    'actual_quantity' => null,
+                    'reserved_quantity' => null,
+                    'current_quantity' => null,
+                ];
+            }
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->lockForUpdate()->get()->keyBy('id');
             $stocks = WarehouseStock::query()->where('warehouse_id', $warehouse->id)->whereIn('product_variant_id', $variantIds)->lockForUpdate()->get()->keyBy('product_variant_id');
             foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$document->product_id, (int)$item->product_variant_id, true);
-            $errors = [];
             foreach ($items as $item) {
-                $variant = $variants[(int)$item->product_variant_id]; $stock = $stocks[(int)$item->product_variant_id];
-                $reserved = $this->activeReserved($variant); $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
-                if ($reserved !== (int)$item->reserved_at_start || $available !== (int)$item->system_available_at_start) $errors[] = ($item->variant_name_snapshot ?: ('#'.$item->product_variant_id));
-                if ($actual < $reserved) $errors[] = ($item->variant_name_snapshot ?: ('#'.$item->product_variant_id)) . ' (موجودی واقعی کمتر از رزرو)';
+                $variant = $variants[(int)$item->product_variant_id] ?? null; $stock = $stocks[(int)$item->product_variant_id];
+                $reserved = $variant ? $this->activeReserved($variant) : 0; $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
+                if ($available !== (int)$item->system_available_at_start) $conflicts[] = $this->finalizeConflict($item, 'stock_changed', 'موجودی این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
+                if ($reserved !== (int)$item->reserved_at_start) $conflicts[] = $this->finalizeConflict($item, 'reservation_changed', 'رزرو فعال این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
+                if ($actual < $reserved) $conflicts[] = $this->finalizeConflict($item, 'actual_below_reserved', 'موجودی واقعی کمتر از رزرو فعال است.', $actual, $reserved, $available);
             }
-            if ($errors) abort(422, 'موجودی یا رزرو '.count($errors).' تنوع پس از شروع شمارش تغییر کرده است: '.implode('، ', array_slice($errors,0,8)));
+            if ($conflicts) throw new StockCountFinalizeValidationException('امکان ثبت نهایی سند وجود ندارد. موارد مشخص‌شده را اصلاح کنید.', $conflicts);
             foreach ($items as $item) {
                 $stock = $stocks[(int)$item->product_variant_id]; $reserved = (int)$item->reserved_at_start; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
                 $newAvailable = $actual - $reserved; $diff = $actual - (int)$item->expected_physical_at_start; $before = (int)$stock->quantity;
@@ -138,6 +163,23 @@ class StockCountDocumentService
             return ['variant_id'=>(int)$row->id,'name'=>$row->variant_name ?: $row->variety_name ?: ('#'.$row->id),'sku'=>$row->variant_code ?: $row->variety_code,'barcode'=>$row->variant_code,'sales_enabled'=>(bool)$row->sales_enabled && (bool)$row->is_active,'system_available'=>$available,'active_reserved'=>$reserved,'expected_physical'=>$available+$reserved,'stock_updated_at'=>$stock?->updated_at?->toDateTimeString(),'actual_physical'=>null,'new_available'=>null,'difference'=>null,'note'=>null];
         })->values();
         return ['data'=>$rows,'meta'=>['current_page'=>$p->currentPage(),'last_page'=>$p->lastPage(),'has_more'=>$p->hasMorePages(),'total'=>$p->total()]];
+    }
+
+    private function finalizeConflict($item, string $reasonCode, string $reason, ?int $actual, ?int $reserved, ?int $current): array
+    {
+        return [
+            'variant_id' => (int) $item->product_variant_id,
+            'variant_name' => $item->variant_name_snapshot ?: ('#'.$item->product_variant_id),
+            'sku' => $item->sku_snapshot,
+            'reason_code' => $reasonCode,
+            'reason' => $reason,
+            'actual_quantity' => $actual,
+            'reserved_quantity' => $reserved,
+            'current_quantity' => $current,
+            'expected_quantity' => (int) $item->expected_physical_at_start,
+            'start_reserved_quantity' => (int) $item->reserved_at_start,
+            'start_quantity' => (int) $item->system_available_at_start,
+        ];
     }
 
     private function itemPayload($document,$warehouse,$product,$variant,$stock,int $available,int $reserved,?int $actual,?string $note): array
