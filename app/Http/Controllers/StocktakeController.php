@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\StockCountDocument;
+use App\Exceptions\StockCountFinalizeValidationException;
 use App\Services\StockCountDocumentService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -58,7 +59,29 @@ class StocktakeController extends Controller
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
         $request->validate(['confirm_empty_as_zero'=>['accepted']]);
-        $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true);
+
+        try {
+            $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true, $this->validatedPayload($request, true));
+        } catch (StockCountFinalizeValidationException $exception) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'امکان ثبت نهایی سند وجود ندارد.',
+                    'errors' => [
+                        'finalize' => ['موجودی واقعی برخی تنوع‌ها کمتر از رزرو فعال است.'],
+                    ],
+                    'conflicts' => $exception->conflicts(),
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors([
+                    'finalize' => 'امکان ثبت نهایی سند وجود ندارد. موارد مشخص‌شده را اصلاح کنید.',
+                ], 'stock_count_finalize')
+                ->with('stock_count_conflicts', $exception->conflicts());
+        }
+
         return redirect()->route('stock-count-documents.view', $finalized)->with('success', 'سند انبارگردانی محصولی اعمال شد.');
     }
 
