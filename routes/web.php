@@ -293,6 +293,9 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     Route::get('/stock-count-documents', [StocktakeController::class, 'index'])->middleware('permission:inventory.view')->name('stock-count-documents.index');
     Route::get('/stock-count-documents/create', [StocktakeController::class, 'create'])->name('stock-count-documents.create');
     Route::post('/stock-count-documents', [StocktakeController::class, 'store'])->name('stock-count-documents.store');
+    Route::get('/stock-count-documents/subcategories', [StocktakeController::class, 'subcategories'])->name('stock-count-documents.subcategories');
+    Route::get('/stock-count-documents/products/search', [StocktakeController::class, 'products'])->name('stock-count-documents.products');
+    Route::get('/stock-count-documents/products/{product}/variants', [StocktakeController::class, 'variants'])->name('stock-count-documents.variants');
     Route::get('/stock-count-documents/{stockCountDocument}', [StocktakeController::class, 'show'])->name('stock-count-documents.show');
     Route::get('/stock-count-documents/{stockCountDocument}/view', [StocktakeController::class, 'view'])->name('stock-count-documents.view');
     Route::get('/stock-count-documents/{stockCountDocument}/edit', [StocktakeController::class, 'edit'])->name('stock-count-documents.edit');
