@@ -64,7 +64,7 @@ class PreinvoiceController extends Controller
         $order = PreinvoiceOrder::query()
             ->with([
                 'items.product:id,name',
-                'items.variant:id,product_id,variant_name,stock,reserved,is_active',
+                'items.variant:id,product_id,variant_name,stock,reserved,is_active,sales_enabled',
                 'creator:id,name',
                 'warehouseReviewer:id,name',
                 'reviews.user:id,name',
@@ -88,7 +88,7 @@ class PreinvoiceController extends Controller
 
         $order->refresh()->load([
             'items.product:id,name',
-            'items.variant:id,product_id,variant_name,stock,reserved,is_active',
+            'items.variant:id,product_id,variant_name,stock,reserved,is_active,sales_enabled',
             'creator:id,name',
             'warehouseReviewer:id,name',
             'reviews.user:id,name',
@@ -97,8 +97,8 @@ class PreinvoiceController extends Controller
 
         $products = Product::query()
             ->where('is_sellable', true)
-            ->whereHas('variants', fn($q) => $q->where('is_active', true))
-            ->with(['variants' => fn($q) => $q->where('is_active', true)->orderBy('variant_name')])
+            ->whereHas('variants', fn($q) => $q->where('is_active', true)->where('sales_enabled', true))
+            ->with(['variants' => fn($q) => $q->where('is_active', true)->where('sales_enabled', true)->orderBy('variant_name')])
             ->orderBy('name')
             ->get(['id', 'name']);
 
@@ -1023,7 +1023,7 @@ class PreinvoiceController extends Controller
             $existingQty = (int) ($existingQtyByProductVariant[$productId . ':' . $variantId] ?? 0);
 
             $product = Product::query()->whereKey($productId)->first(['id', 'is_sellable']);
-            $variant = ProductVariant::query()->whereKey($variantId)->first(['id', 'product_id', 'is_active']);
+            $variant = ProductVariant::query()->whereKey($variantId)->first(['id', 'product_id', 'is_active', 'sales_enabled']);
             $isExistingNonIncrease = $existingQty > 0 && $requestedQty <= $existingQty;
 
             if (! $product || (! (bool) $product->is_sellable && ! $isExistingNonIncrease)) {
@@ -1032,7 +1032,7 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            if (! $variant || (int) $variant->product_id !== $productId || (! (bool) $variant->is_active && ! $isExistingNonIncrease)) {
+            if (! $variant || (int) $variant->product_id !== $productId || ((! (bool) $variant->is_active || ! (bool) ($variant->sales_enabled ?? true)) && ! $isExistingNonIncrease)) {
                 throw ValidationException::withMessages([
                     "products.{$index}.variety_id" => 'تنوع انتخابی برای این کالا نامعتبر یا غیرفعال است؛ فقط کاهش یا حذف آیتم‌های قبلی مجاز است.',
                 ]);
@@ -1096,7 +1096,7 @@ class PreinvoiceController extends Controller
 
         $variants = ProductVariant::query()
             ->whereIn('id', $variantIds)
-            ->get(['id', 'product_id', 'sell_price', 'stock', 'reserved', 'is_active'])
+            ->get(['id', 'product_id', 'sell_price', 'stock', 'reserved', 'is_active', 'sales_enabled'])
             ->keyBy('id');
 
         $qtyByVariant = [];
@@ -1106,7 +1106,7 @@ class PreinvoiceController extends Controller
             $productId = (int) ($row['id'] ?? 0);
             $variantId = (int) ($row['variety_id'] ?? 0);
             $variant = $variants->get($variantId);
-            if (!$variant || (int) $variant->product_id !== $productId || !(bool) $variant->is_active) {
+            if (!$variant || (int) $variant->product_id !== $productId || !(bool) $variant->is_active || !(bool) ($variant->sales_enabled ?? true)) {
                 throw ValidationException::withMessages([
                     "products.{$index}.variety_id" => 'تنوع انتخابی معتبر نیست.',
                 ]);
@@ -1143,7 +1143,7 @@ class PreinvoiceController extends Controller
             'warehouse_review_note' => $forApprove ? 'required|string|max:2000' : 'nullable|string|max:2000',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer|exists:products,id,is_sellable,1',
-            'items.*.variant_id' => ['required', 'integer', Rule::exists('product_variants', 'id')->where(fn($q) => $q->where('is_active', true))],
+            'items.*.variant_id' => ['required', 'integer', Rule::exists('product_variants', 'id')->where(fn($q) => $q->where('is_active', true)->where('sales_enabled', true))],
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price' => 'nullable|integer|min:0',
             'items.*.change_reason' => 'nullable|string|in:' . implode(',', array_keys(WarehouseReviewAuditService::REASONS)),
@@ -1164,6 +1164,7 @@ class PreinvoiceController extends Controller
                 ->whereKey((int) $row['variant_id'])
                 ->where('product_id', (int) $row['product_id'])
                 ->where('is_active', true)
+                ->where('sales_enabled', true)
                 ->exists();
 
             if (!$isValidVariant) {
@@ -1780,6 +1781,7 @@ class PreinvoiceController extends Controller
             ->with('product:id,name')
             ->whereKey($variantId)
             ->where('is_active', true)
+            ->where('sales_enabled', true)
             ->lockForUpdate()
             ->firstOrFail();
 
