@@ -384,26 +384,83 @@ class PreinvoiceController extends Controller
     {
         abort_unless(auth()->check(), 403);
 
-        $status = (string) $request->query('status', '');
+        $filters = [
+            'status' => (string) $request->query('status', ''),
+            'q' => trim((string) $request->query('q', '')),
+            'customer' => trim((string) $request->query('customer', '')),
+            'type' => (string) $request->query('type', ''),
+            'date_from' => (string) $request->query('date_from', ''),
+            'date_to' => (string) $request->query('date_to', ''),
+            'changed_only' => $request->boolean('changed_only'),
+        ];
+        $status = $filters['status'];
+
+        $invoiceActivitySql = "select greatest(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
+
         $query = PreinvoiceOrder::query()
             ->where('created_by', auth()->id())
+            ->select('preinvoice_orders.*')
+            ->selectSub("coalesce(($invoiceActivitySql), preinvoice_orders.updated_at)", 'activity_at')
+            ->withCount('items')
+            ->withSum('items as items_quantity_sum', 'quantity')
             ->with([
                 'customer:id,first_name,last_name,mobile',
-                'items:id,preinvoice_order_id,quantity,total_price,sort_order',
-                'invoice:id,uuid,preinvoice_order_id,status,total,items_updated_at,status_changed_at,status_changed_by,created_at,updated_at,customer_name,customer_mobile',
-                'invoice.items:id,invoice_id,quantity,total_price,sort_order',
-                'invoice.shippingMethod:id,name',
-                'invoice.statusChangedByUser:id,name',
+                'invoice' => fn ($invoiceQuery) => $invoiceQuery
+                    ->select('id', 'uuid', 'preinvoice_order_id', 'status', 'total', 'items_updated_at', 'status_changed_at', 'status_changed_by', 'created_at', 'updated_at', 'customer_name', 'customer_mobile', 'shipped_at', 'shipping_id')
+                    ->withCount('items')
+                    ->withSum('items as items_quantity_sum', 'quantity')
+                    ->withSum('payments as paid_total', 'amount')
+                    ->with(['shippingMethod:id,name', 'statusChangedByUser:id,name']),
             ]);
 
-        if ($status !== '') {
-            $query->where(function ($query) use ($status) {
-                $query->where('status', $status)
-                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('status', $status));
+        if ($filters['q'] !== '') {
+            $needle = '%' . $filters['q'] . '%';
+            $query->where(function ($query) use ($needle) {
+                $query->where('uuid', 'like', $needle)
+                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('uuid', 'like', $needle));
             });
         }
 
-        $orders = $query->orderByDesc('id')->paginate(20)->withQueryString();
+        if ($filters['customer'] !== '') {
+            $needle = '%' . $filters['customer'] . '%';
+            $query->where(function ($query) use ($needle) {
+                $query->where('customer_name', 'like', $needle)
+                    ->orWhereHas('customer', fn ($customerQuery) => $customerQuery
+                        ->where('first_name', 'like', $needle)
+                        ->orWhere('last_name', 'like', $needle))
+                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('customer_name', 'like', $needle));
+            });
+        }
+
+        if ($filters['type'] === 'preinvoice') {
+            $query->doesntHave('invoice');
+        } elseif ($filters['type'] === 'invoice') {
+            $query->has('invoice');
+        }
+
+        if ($filters['date_from'] !== '') {
+            $query->whereDate('preinvoice_orders.created_at', '>=', $filters['date_from']);
+        }
+
+        if ($filters['date_to'] !== '') {
+            $query->whereDate('preinvoice_orders.created_at', '<=', $filters['date_to']);
+        }
+
+        if ($filters['changed_only']) {
+            $query->whereHas('invoice', fn ($invoiceQuery) => $invoiceQuery
+                ->whereNotNull('items_updated_at')
+                ->orWhereColumn('invoices.total', '<>', 'preinvoice_orders.total_price'));
+        }
+
+        if ($status !== '') {
+            $query->where(function ($query) use ($status) {
+                $query->where(function ($preinvoiceQuery) use ($status) {
+                    $preinvoiceQuery->doesntHave('invoice')->where('status', $status);
+                })->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('status', $status));
+            });
+        }
+
+        $orders = $query->orderByDesc('activity_at')->orderByDesc('preinvoice_orders.id')->paginate(30)->withQueryString();
         $orders->getCollection()->transform(function (PreinvoiceOrder $order) {
             $order->setAttribute('current_document', $this->buildMyPreinvoiceSummary($order));
 
@@ -411,7 +468,7 @@ class PreinvoiceController extends Controller
         });
         $statusLabels = array_merge($this->myPreinvoiceStatusLabels(), $this->myInvoiceStatusLabels());
 
-        return view('preinvoice.my-index', compact('orders', 'status', 'statusLabels'));
+        return view('preinvoice.my-index', compact('orders', 'status', 'statusLabels', 'filters'));
     }
 
     private function buildMyPreinvoiceSummary(PreinvoiceOrder $order): array
@@ -422,25 +479,26 @@ class PreinvoiceController extends Controller
         $totalAmount = $hasInvoice ? (int) ($invoice->total ?? 0) : (int) ($order->total_price ?? 0);
         $originalTotalAmount = (int) ($order->total_price ?? 0);
         $itemsCount = $hasInvoice
-            ? (int) $invoice->items->sum(fn ($item) => (int) ($item->quantity ?? 0))
-            : (int) $order->items->sum(fn ($item) => (int) ($item->quantity ?? 0));
-        $hasItemsChanged = $hasInvoice && (
-            !empty($invoice->items_updated_at)
-            || in_array($invoice->status, [
-                Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
-                Invoice::STATUS_READY_TO_SHIP,
-                Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION,
-            ], true)
-        );
+            ? (int) ($invoice->items_quantity_sum ?? $invoice->items_count ?? 0)
+            : (int) ($order->items_quantity_sum ?? $order->items_count ?? 0);
+        $paidAmount = $hasInvoice ? (int) ($invoice->paid_total ?? 0) : null;
+        $remainingAmount = $hasInvoice ? max($totalAmount - (int) $paidAmount, 0) : null;
+        $paymentStatus = null;
+        if ($hasInvoice) {
+            $paymentStatus = $paidAmount > $totalAmount ? 'بستانکار' : ($remainingAmount === 0 ? 'تسویه‌شده' : ($paidAmount > 0 ? 'پرداخت ناقص' : 'پرداخت‌نشده'));
+        }
+        $hasItemsChanged = $hasInvoice && !empty($invoice->items_updated_at);
 
         return [
             'source' => $hasInvoice ? 'invoice' : 'preinvoice',
+            'document_number' => $hasInvoice ? $invoice->uuid : $order->uuid,
+            'document_type' => $hasInvoice ? 'invoice' : 'preinvoice',
             'preinvoice_uuid' => $order->uuid,
             'invoice_uuid' => $invoice?->uuid,
             'invoice_number' => $invoice?->uuid,
             'status_key' => $statusKey,
             'status_label' => $hasInvoice
-                ? ($this->myInvoiceStatusLabels()[$statusKey] ?? $invoice->statusLabels()[$statusKey] ?? $statusKey)
+                ? ($this->myInvoiceStatusLabels()[$statusKey] ?? Invoice::statusLabels()[$statusKey] ?? $statusKey)
                 : ($this->myPreinvoiceStatusLabels()[$statusKey] ?? $order->status_label),
             'status_group' => $hasInvoice ? 'invoice' : 'preinvoice',
             'customer_name' => $invoice?->customer_name ?: $order->customer?->display_name ?: $order->customer_name,
@@ -448,10 +506,15 @@ class PreinvoiceController extends Controller
             'items_count' => $itemsCount,
             'total_amount' => $totalAmount,
             'original_total_amount' => $originalTotalAmount,
+            'paid_amount' => $paidAmount,
+            'remaining_amount' => $remainingAmount,
+            'payment_status' => $paymentStatus,
             'has_invoice' => $hasInvoice,
             'has_items_changed' => $hasItemsChanged,
             'has_total_changed' => $hasInvoice && $totalAmount !== $originalTotalAmount,
-            'last_changed_at' => $invoice?->items_updated_at ?: $invoice?->status_changed_at ?: $invoice?->updated_at ?: $order->updated_at,
+            'total_difference' => $hasInvoice ? $totalAmount - $originalTotalAmount : 0,
+            'is_shipped' => $hasInvoice && $statusKey === Invoice::STATUS_SHIPPED,
+            'last_changed_at' => $invoice?->shipped_at ?: $invoice?->items_updated_at ?: $invoice?->status_changed_at ?: $invoice?->updated_at ?: $order->updated_at,
             'next_action_label' => $this->myPreinvoiceNextActionLabel($hasInvoice, $statusKey),
             'view_url' => $hasInvoice ? route('vouchers.sales.show', $invoice->uuid) : route('preinvoice.my.show', $order->uuid),
             'edit_url' => (!$hasInvoice && in_array($order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
