@@ -32,7 +32,7 @@ class PreinvoiceApiController extends Controller
         $products = Product::query()
             ->select(['id', 'name', 'sku', 'short_barcode', 'code', 'price'])
             ->where('is_sellable', true)
-            ->whereHas('variants', fn ($q) => $q->active()->where('stock', '>', 0))
+            ->whereHas('variants', fn ($q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0))
             ->when($q !== '', function ($query) use ($q, $qDigits) {
 
                 // ✅ اگر عدد وارد شد و طولش <= 4 یعنی PPPP
@@ -131,7 +131,7 @@ class PreinvoiceApiController extends Controller
         $hasAvailableOrReservedVariant = $product->variants()
             ->where(function ($outerQuery) use ($reservedVariantIds, $currentPreinvoiceItemVariantIds) {
                 $outerQuery->where(function ($query) use ($reservedVariantIds) {
-                    $query->active()->where(function ($stockQuery) use ($reservedVariantIds) {
+                    $query->active()->where('sales_enabled', true)->where(function ($stockQuery) use ($reservedVariantIds) {
                         $stockQuery->where('stock', '>', 0);
                         if (! empty($reservedVariantIds)) {
                             $stockQuery->orWhereIn('id', $reservedVariantIds);
@@ -150,7 +150,7 @@ class PreinvoiceApiController extends Controller
         $product->load(['variants' => fn ($q) => $q
             ->where(function ($outerQuery) use ($reservedVariantIds, $currentPreinvoiceItemVariantIds) {
                 $outerQuery->where(function ($query) use ($reservedVariantIds) {
-                    $query->active()->where(function ($stockQuery) use ($reservedVariantIds) {
+                    $query->active()->where('sales_enabled', true)->where(function ($stockQuery) use ($reservedVariantIds) {
                         $stockQuery->where('stock', '>', 0);
                         if (! empty($reservedVariantIds)) {
                             $stockQuery->orWhereIn('id', $reservedVariantIds);
@@ -244,7 +244,7 @@ class PreinvoiceApiController extends Controller
             'items.*.variant_id' => [
                 'required_with:items',
                 'integer',
-                Rule::exists('product_variants', 'id')->where(fn ($query) => $query->where('is_active', true)),
+                Rule::exists('product_variants', 'id')->where(fn ($query) => $query->where('is_active', true)->where('sales_enabled', true)),
             ],
             'items.*.quantity' => ['required_with:items', 'integer', 'min:0'],
             'is_in_person' => ['nullable', 'boolean'],
@@ -316,6 +316,7 @@ class PreinvoiceApiController extends Controller
                         ->whereKey($variantId)
                         ->where('product_id', $productId)
                         ->where('is_active', true)
+                        ->where('sales_enabled', true)
                         ->exists();
 
                     if (! $variantMatchesProduct) {

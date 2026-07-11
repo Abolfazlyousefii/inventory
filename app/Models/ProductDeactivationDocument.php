@@ -8,6 +8,8 @@ class ProductDeactivationDocument extends Model
 {
     public const TYPE_PRODUCT = 'product';
     public const TYPE_VARIANT = 'variant';
+    public const TYPE_SUBCATEGORY = 'subcategory';
+    public const TYPE_CATEGORY = 'category';
 
     protected $fillable = [
         'document_number',
@@ -52,6 +54,8 @@ class ProductDeactivationDocument extends Model
         return [
             self::TYPE_PRODUCT => 'محصول',
             self::TYPE_VARIANT => 'تنوع',
+            self::TYPE_SUBCATEGORY => 'زیر‌دسته',
+            self::TYPE_CATEGORY => 'دسته‌بندی',
         ];
     }
 
