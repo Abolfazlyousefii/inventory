@@ -23,6 +23,10 @@ class ProductDeactivationDocument extends Model
         'created_by',
     ];
 
+    protected $casts = [
+        'items_count' => 'integer',
+    ];
+
     public function product()
     {
         return $this->belongsTo(Product::class);
