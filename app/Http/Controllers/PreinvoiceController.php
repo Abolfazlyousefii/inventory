@@ -286,22 +286,84 @@ class PreinvoiceController extends Controller
 
     public function draftIndex(Request $request)
     {
-        $orders = PreinvoiceOrder::query()
+        $activeTab = (string) $request->query('tab', 'preinvoices');
+        if (! in_array($activeTab, ['preinvoices', 'expired', 'reapprovals'], true)) {
+            $activeTab = 'preinvoices';
+        }
+
+        $basePreinvoiceQuery = PreinvoiceOrder::query()
+            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items:id,preinvoice_order_id,quantity'])
+            ->whereIn('status', [
+                PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
+            ]);
+
+        $pendingQuery = (clone $basePreinvoiceQuery)
             ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
-            ->with(['creator:id,name', 'customer:id,reservation_tier'])
-            ->orderByDesc('id')
-            ->paginate(20);
+            ->orderByRaw('stock_frozen_until IS NULL')
+            ->orderBy('stock_frozen_until')
+            ->orderByDesc('id');
+
+        $expiredQuery = (clone $basePreinvoiceQuery)
+            ->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)
+            ->orderByDesc('stock_released_at')
+            ->orderByDesc('id');
+
+        $orders = $pendingQuery->paginate(20, ['*'], 'preinvoices_page')->withQueryString();
+        $expiredOrders = $expiredQuery->paginate(20, ['*'], 'expired_page')->withQueryString();
 
         $financeReapprovalInvoices = Invoice::query()
             ->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
-            ->with(['preinvoiceOrder.creator:id,name'])
+            ->with(['preinvoiceOrder.creator:id,name', 'statusChangedByUser:id,name', 'items.product', 'items.variant'])
             ->orderByDesc('items_updated_at')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(20, ['*'], 'reapprovals_page')
+            ->withQueryString();
+
+        $pendingCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)->count();
+        $expiredCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)->count();
+        $reapprovalCount = Invoice::query()->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)->count();
+        $stats = [
+            'pending_finance' => $pendingCount,
+            'reservation_expired' => $expiredCount,
+            'pending_reapproval' => $reapprovalCount,
+            'expiring_soon' => PreinvoiceOrder::query()
+                ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
+                ->whereNotNull('stock_frozen_until')
+                ->whereBetween('stock_frozen_until', [now(), now()->addHour()])
+                ->count(),
+        ];
+
+        $orders->getCollection()->each(fn (PreinvoiceOrder $order) => $this->attachFinanceReservationMeta($order));
+        $expiredOrders->getCollection()->each(fn (PreinvoiceOrder $order) => $this->attachFinanceReservationMeta($order));
 
         $canFinanceApprove = $this->canHandleFinanceActions();
+        $filters = $request->query();
 
-        return view('preinvoice.drafts-index', compact('orders', 'canFinanceApprove', 'financeReapprovalInvoices'));
+        return view('preinvoice.drafts-index', compact(
+            'orders',
+            'expiredOrders',
+            'financeReapprovalInvoices',
+            'canFinanceApprove',
+            'activeTab',
+            'pendingCount',
+            'expiredCount',
+            'reapprovalCount',
+            'stats',
+            'filters'
+        ));
+    }
+
+    private function attachFinanceReservationMeta(PreinvoiceOrder $order): void
+    {
+        $expiresAt = $order->stock_frozen_until;
+        $isExpired = $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+            || ($expiresAt && $expiresAt->isPast());
+        $secondsRemaining = $expiresAt ? max(0, now()->diffInSeconds($expiresAt, false)) : null;
+
+        $order->setAttribute('finance_reservation_expired', $isExpired);
+        $order->setAttribute('finance_seconds_remaining', $secondsRemaining);
+        $order->setAttribute('finance_reservation_label', $isExpired ? 'منقضی‌شده' : ($expiresAt ? 'فعال' : 'بدون محدودیت زمانی'));
     }
 
     public function allIndex(Request $request)
