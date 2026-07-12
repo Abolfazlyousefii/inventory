@@ -54,7 +54,18 @@ class VoucherSalesReturnTest extends TestCase
             ->assertSee('data-module="new-sales-return"', false)
             ->assertSee('ثبت برگشت جدید')
             ->assertSee('خروجی Excel')
-            ->assertSee('خروجی PDF');
+            ->assertSee('خروجی PDF')
+            ->assertSee('چاپ گزارش')
+            ->assertSee('شماره سند یا حواله')
+            ->assertSee('مشتری')
+            ->assertSee('انبار مقصد')
+            ->assertDontSee('سوابق قدیمی')
+            ->assertDontSee('Read-only')
+            ->assertDontSee('پیش‌نویس‌ها')
+            ->assertDontSee('اعمال‌شده‌ها')
+            ->assertDontSee('لغوشده‌ها')
+            ->assertDontSee('sales_return_documents')
+            ->assertDontSee('nav-tabs');
 
         $this->actingAs($user)
             ->get('/vouchers/section/return-from-sale/create')
@@ -62,6 +73,13 @@ class VoucherSalesReturnTest extends TestCase
             ->assertViewIs('vouchers.return-from-sale.create')
             ->assertSee('data-module="new-sales-return-create"', false)
             ->assertSee('برگشت داخلی')
-            ->assertSee('سازه‌حساب');
+            ->assertSee('سازه‌حساب')
+            ->assertSee('انبار مقصد')
+            ->assertSee('علت برگشت')
+            ->assertSee('افزودن کالا')
+            ->assertSee('قیمت خرید')
+            ->assertSee('قیمت فروش')
+            ->assertSee('مبلغ بستانکاری')
+            ->assertSee('ثبت برگشت از فروش');
     }
 }
