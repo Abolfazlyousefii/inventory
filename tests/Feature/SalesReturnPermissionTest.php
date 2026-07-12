@@ -15,4 +15,10 @@ class SalesReturnPermissionTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user)->get(route('sales-returns.index'))->assertForbidden();
     }
+
+    public function test_user_without_export_permission_cannot_export_excel(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->get(route('sales-returns.export.excel'))->assertForbidden();
+    }
 }

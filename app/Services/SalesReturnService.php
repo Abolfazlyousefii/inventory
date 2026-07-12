@@ -55,12 +55,14 @@ class SalesReturnService
 
     public function prepareInternalItems(Invoice $invoice, array $items, User $actor): array
     {
+        $items = $this->positiveQuantityItems($items);
         $items = $this->applyDestinationWarehouses($items, $actor);
         return $this->calculator->calculateInternalInvoicePreview($invoice, $items);
     }
 
     public function prepareSazehItems(array $items, User $actor): array
     {
+        $items = $this->positiveQuantityItems($items);
         $items = $this->applyDestinationWarehouses($items, $actor);
         return $this->calculator->calculateSazehPreview($items);
     }
@@ -157,6 +159,11 @@ class SalesReturnService
         }
 
         return 'SR-' . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function positiveQuantityItems(array $items): array
+    {
+        return array_values(array_filter($items, fn (array $item) => (int) ($item['return_quantity'] ?? 0) > 0));
     }
 
     private function applyDestinationWarehouses(array $items, User $actor): array

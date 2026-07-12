@@ -143,6 +143,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::prefix('sales-returns')->name('sales-returns.')->group(function () {
         Route::get('/', [SalesReturnController::class, 'index'])->name('index');
+        Route::get('/export/excel', [SalesReturnController::class, 'exportExcel'])->name('export.excel');
+        Route::get('/export/pdf', [SalesReturnController::class, 'exportPdf'])->name('export.pdf');
         Route::get('/create', [SalesReturnController::class, 'create'])->name('create');
         Route::post('/', [SalesReturnController::class, 'store'])->name('store');
         Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->name('customers.search');
@@ -153,6 +155,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->name('preview');
         Route::get('/{document}', [SalesReturnController::class, 'show'])->name('show');
         Route::get('/{document}/edit', [SalesReturnController::class, 'edit'])->name('edit');
+        Route::get('/{document}/print', [SalesReturnController::class, 'print'])->name('print');
+        Route::get('/{document}/pdf', [SalesReturnController::class, 'pdf'])->name('pdf');
         Route::match(['put', 'patch'], '/{document}', [SalesReturnController::class, 'update'])->name('update');
         Route::post('/{document}/cancel', [SalesReturnController::class, 'cancel'])->name('cancel');
     });
