@@ -12,7 +12,7 @@
     $warehouseActive = $isRoute('vouchers.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
         || $isPath('vouchers', 'vouchers/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*');
 
-    $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'sales-returns.*');
+    $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
 
@@ -282,7 +282,7 @@
 
 
         {{-- Commerce & Sales --}}
-        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view','sales_returns.view'])
+        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view'])
         <div class="sidebar-accordion-item {{ $salesActive ? 'is-open' : '' }}" data-accordion-section="sales">
             <button type="button"
                     class="sidebar-section-title sidebar-accordion-trigger {{ $salesActive ? 'is-active' : '' }}"
@@ -303,9 +303,6 @@
                     @endcanPermission
                     @canPermission('customers.view')
                     <a class="sidebar-sublink {{ $is('customers.*', 'persons.*') }}" href="{{ route('customers.index') }}">اشخاص و طرف‌حساب‌ها</a>
-                    @endcanPermission
-                    @canPermission('sales_returns.view')
-                    <a class="sidebar-sublink {{ $is('sales-returns.*') }}" href="{{ route('sales-returns.index') }}">برگشت از فروش</a>
                     @endcanPermission
                 </div>
             </div>
