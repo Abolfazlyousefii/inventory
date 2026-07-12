@@ -97,17 +97,17 @@
                 </thead>
                 <tbody>
                 @forelse($returnRows as $row)
-                    <tr data-return-source="{{ $row['source'] }}" data-return-id="{{ $row['id'] }}">
+                    <tr data-return-source="{{ $row['source'] }}" data-return-id="{{ $row['source_id'] }}">
                         <td>{{ $loop->iteration }}</td>
-                        <td>{{ $row['number'] }}</td>
-                        <td>{{ $row['date'] }}</td>
-                        <td>{{ $row['customer'] }}</td>
+                        <td>{{ $row['document_number'] }}</td>
+                        <td>{{ $row['returned_at_display'] }}</td>
+                        <td>{{ $row['customer_name'] }}</td>
                         <td>{{ $row['items_summary'] }}</td>
                         <td>{{ number_format($row['quantity']) }}</td>
                         <td>{{ $row['return_type'] }}</td>
-                        <td>{{ $row['warehouse'] }}</td>
-                        <td>{{ number_format($row['amount']) }}</td>
-                        <td>{{ $row['creator'] }}</td>
+                        <td>{{ $row['destination_warehouse_name'] }}</td>
+                        <td>{{ number_format($row['total_amount']) }}</td>
+                        <td>{{ $row['created_by_name'] }}</td>
                         <td class="text-nowrap">
                             @if($row['show_url'])
                                 <a class="btn btn-sm btn-outline-primary" href="{{ $row['show_url'] }}">مشاهده</a>
