@@ -2,22 +2,68 @@
 
 namespace App\Exports;
 
-use App\Models\SalesReturnDocument;
-use App\Models\SalesReturnDocumentItem;
-use App\Services\SalesReturnQueryService;
-use Maatwebsite\Excel\Concerns\{FromQuery, ShouldAutoSize, WithChunkReading, WithColumnFormatting, WithHeadings, WithMapping, WithStyles};
+use App\Services\SalesReturnReportService;
+use Illuminate\Support\Collection;
+use Maatwebsite\Excel\Concerns\{FromCollection, ShouldAutoSize, WithColumnFormatting, WithColumnWidths, WithEvents, WithHeadings, WithMapping, WithStyles};
+use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use Morilog\Jalali\Jalalian;
 
-class SalesReturnsExport implements FromQuery, WithHeadings, WithMapping, WithChunkReading, ShouldAutoSize, WithStyles, WithColumnFormatting
+class SalesReturnsExport implements FromCollection, WithHeadings, WithMapping, ShouldAutoSize, WithStyles, WithColumnFormatting, WithColumnWidths, WithEvents
 {
     private int $row = 0;
-    public function __construct(private array $filters, private SalesReturnQueryService $queryService) {}
-    public function query() { return $this->queryService->buildItemQuery($this->filters); }
-    public function headings(): array { return ['ردیف','شماره سند برگشت','وضعیت سند','نوع برگشت','مشتری','موبایل مشتری','شماره فاکتور داخلی','شماره فاکتور سازه‌حساب','شماره مرجع','تاریخ ثبت','تاریخ Apply','کالا','تنوع','SKU','Barcode','تعداد','وضعیت کالا','انبار مقصد','مبلغ واحد بستانکاری','مبلغ کل ردیف','مبلغ کل سند','علت برگشت','ثبت‌کننده','نهایی‌کننده']; }
-    public function map($item): array { $doc=$item->document; return [++$this->row, $doc?->document_number, SalesReturnDocument::statusLabels()[$doc?->status]??$doc?->status, SalesReturnDocument::sourceTypeLabels()[$doc?->source_type]??$doc?->source_type, $doc?->customer?->display_name, $doc?->customer?->mobile, $doc?->invoice?->uuid, $doc?->external_invoice_number, $doc?->reference_number, $doc?->created_at ? Jalalian::fromDateTime($doc->created_at)->format('Y/m/d H:i') : null, $doc?->applied_at ? Jalalian::fromDateTime($doc->applied_at)->format('Y/m/d H:i') : null, $item->product_name_snapshot ?: $item->product?->name, $item->variant_name_snapshot ?: $item->variant?->variant_name, $item->sku_snapshot ?: $item->variant?->variant_code, $item->barcode_snapshot ?: $item->variant?->variant_code, (int)$item->return_quantity, SalesReturnDocumentItem::conditionLabels()[$item->item_condition]??$item->item_condition, $item->destinationWarehouse?->name, (int)$item->refund_unit_price, (int)$item->refund_amount, (int)$doc?->total_refund_amount, $doc?->return_reason, $doc?->creator?->name, $doc?->applier?->name]; }
-    public function chunkSize(): int { return 500; }
-    public function styles(Worksheet $sheet): array { $sheet->setRightToLeft(true); $sheet->freezePane('A2'); return [1=>['font'=>['bold'=>true]]]; }
-    public function columnFormats(): array { return ['S'=>NumberFormat::FORMAT_NUMBER, 'T'=>NumberFormat::FORMAT_NUMBER, 'U'=>NumberFormat::FORMAT_NUMBER]; }
+
+    public function __construct(private array $filters, private SalesReturnReportService $reportService) {}
+
+    public function collection(): Collection
+    {
+        return $this->reportService->getExcelRows($this->filters);
+    }
+
+    public function headings(): array
+    {
+        return ['ردیف','شماره حواله یا شماره سند برگشت','نام مشتری','تاریخ برگشت','نوع برگشت','مبلغ سالم','مبلغ مرجوعی','مبلغ کل برگشت از فروش'];
+    }
+
+    public function map($row): array
+    {
+        return [++$this->row, $row['document_number'], $row['customer_name'], $row['returned_at_display'], $row['return_type'], (int) $row['healthy_amount'], (int) $row['damaged_amount'], (int) $row['total_amount']];
+    }
+
+    public function styles(Worksheet $sheet): array
+    {
+        $sheet->setRightToLeft(true);
+        $sheet->freezePane('A2');
+        $sheet->getStyle('A:H')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT)->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('A1:H1')->getAlignment()->setWrapText(true);
+        $sheet->getStyle('A:H')->getFont()->setName('Vazirmatn');
+        return [1 => ['font' => ['bold' => true], 'fill' => ['fillType' => 'solid', 'color' => ['rgb' => 'EAF2F8']]]];
+    }
+
+    public function columnFormats(): array
+    {
+        return ['F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, 'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, 'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1];
+    }
+
+    public function columnWidths(): array
+    {
+        return ['A'=>8,'B'=>28,'C'=>24,'D'=>18,'E'=>14,'F'=>18,'G'=>18,'H'=>24];
+    }
+
+    public function registerEvents(): array
+    {
+        return [AfterSheet::class => function (AfterSheet $event) {
+            $highestRow = $event->sheet->getHighestRow();
+            $event->sheet->getStyle("A1:H{$highestRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('D1D5DB');
+            for ($row = 2; $row <= $highestRow; $row++) {
+                foreach (['F','G','H'] as $column) {
+                    $value = $event->sheet->getCell("{$column}{$row}")->getValue();
+                    $event->sheet->setCellValueExplicit("{$column}{$row}", (int) $value, DataType::TYPE_NUMERIC);
+                }
+            }
+        }];
+    }
 }

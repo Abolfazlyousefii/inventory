@@ -5,17 +5,20 @@ namespace App\Http\Controllers;
 use App\Exports\SalesReturnsExport;
 use App\Http\Requests\{ApplySalesReturnRequest,SalesReturnIndexRequest,StoreSalesReturnRequest,UpdateSalesReturnRequest};
 use App\Models\{Category,Customer,Product,ProductVariant,SalesReturnDocument,User,Warehouse,WarehouseTransfer};
-use App\Services\{SalesReturnQueryService,SalesReturnService};
-use Dompdf\Dompdf;
+use App\Services\{SalesReturnReportService,SalesReturnService};
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Mpdf\Config\ConfigVariables;
+use Mpdf\Config\FontVariables;
+use Mpdf\Mpdf;
 use Maatwebsite\Excel\Facades\Excel;
 
 class VoucherSalesReturnController extends Controller
 {
- public function __construct(private SalesReturnService $service, private SalesReturnQueryService $reports) {}
- public function index(SalesReturnIndexRequest $request){ $filters=$request->filters()+['status'=>$request->input('status','all')]; $documents=$this->reports->buildDocumentQuery($filters)->with(['items.destinationWarehouse:id,name,type','customer','creator'])->limit(30)->get(); $legacyReturns=WarehouseTransfer::query()->where('voucher_type',WarehouseTransfer::TYPE_CUSTOMER_RETURN)->with(['items.product','items.variant','toWarehouse','customer','user'])->latest()->limit(30)->get(); $returnRows=$this->returnRows($documents,$legacyReturns); return view('vouchers.return-from-sale.index',['returnRows'=>$returnRows,'filters'=>$filters,'warehouses'=>Warehouse::query()->whereIn('type',['central','return'])->orderBy('name')->get(['id','name','type'])]); }
+ public function __construct(private SalesReturnService $service, private SalesReturnReportService $reports) {}
+ public function index(SalesReturnIndexRequest $request){ $filters=$request->filters(); $returnRows=$this->reports->getAllRows($filters); return view('vouchers.return-from-sale.index',['returnRows'=>$returnRows,'filters'=>$filters,'warehouses'=>Warehouse::query()->whereIn('type',['central','return'])->orderBy('name')->get(['id','name','type'])]); }
  public function exportExcel(SalesReturnIndexRequest $request){ $filters=$request->filters(); $file='sales-returns-'.now()->format('Ymd-His').'.xlsx'; return Excel::download(new SalesReturnsExport($filters,$this->reports),$file); }
- public function exportPdf(SalesReturnIndexRequest $request){ return $this->pdfResponse('vouchers.return-from-sale.report-pdf',$this->reportData($request),'sales-returns-report-'.now()->format('Ymd-His').'.pdf', 'landscape'); }
+ public function exportPdf(SalesReturnIndexRequest $request){ return $this->pdfResponse('vouchers.return-from-sale.report-pdf',$this->reportData($request),'sales-returns-'.now()->format('Ymd-His').'.pdf'); }
  public function printReport(SalesReturnIndexRequest $request){ return view('vouchers.return-from-sale.report-print',$this->reportData($request)); }
  public function create(){ return view('vouchers.return-from-sale.create',$this->formData()); }
  public function store(StoreSalesReturnRequest $request){ $data=$this->enrich($request); $doc=$this->service->createDraft($data, auth()->id()); if($request->input('action')==='apply') $doc=$this->service->apply($doc, auth()->id()); return redirect()->route('vouchers.return-from-sale.show',$doc)->with('success','سند برگشت از فروش ذخیره شد.'); }
@@ -24,7 +27,8 @@ class VoucherSalesReturnController extends Controller
  public function update(UpdateSalesReturnRequest $request, SalesReturnDocument $document){ $doc=$this->service->updateDraft($document,$this->enrich($request),auth()->id()); if($request->input('action')==='apply') $doc=$this->service->apply($doc,auth()->id()); return redirect()->route('vouchers.return-from-sale.show',$doc)->with('success','سند بروزرسانی شد.'); }
  public function apply(ApplySalesReturnRequest $request, SalesReturnDocument $document){ $doc=$this->service->apply($document,auth()->id()); return redirect()->route('vouchers.return-from-sale.show',$doc)->with('success',$doc->wasChanged('status')?'سند ثبت نهایی شد.':'این سند قبلاً ثبت نهایی شده است.'); }
  public function cancel(Request $request, SalesReturnDocument $document){ $doc=$this->service->cancelDraft($document,auth()->id(),$request->input('cancel_reason')); return redirect()->route('vouchers.return-from-sale.show',$doc)->with('success','پیش‌نویس لغو شد.'); }
- public function print(SalesReturnDocument $document){ $document->load('customer','invoice','items.destinationWarehouse','creator','applier'); return view('vouchers.return-from-sale.print',compact('document')); }
+ public function print(SalesReturnDocument $document){ $document->load('customer','invoice','items.destinationWarehouse','items.product','items.variant','creator','applier'); return view('vouchers.return-from-sale.print',compact('document')); }
+ public function printLegacy(WarehouseTransfer $transfer){ $transfer->load('customer','relatedInvoice','toWarehouse','items.product','items.variant','user'); return view('vouchers.return-from-sale.legacy-print',['transfer'=>$transfer]); }
  public function pdf(SalesReturnDocument $document){ $document->load('customer','invoice','items.destinationWarehouse','creator','applier'); return $this->pdfResponse('vouchers.return-from-sale.document-pdf',compact('document'),'sales-return-'.$document->document_number.'.pdf'); }
 
  private function returnRows($documents, $legacyReturns)
@@ -42,8 +46,42 @@ class VoucherSalesReturnController extends Controller
      return $newRows->concat($legacyRows)->sortByDesc('date')->values();
  }
 
- private function reportData(SalesReturnIndexRequest $request): array { $filters=$request->filters(); return ['filters'=>$filters,'documents'=>$this->reports->buildDocumentQuery($filters)->with('items.destinationWarehouse:id,name,type')->limit(1000)->get(),'summary'=>$this->reports->summary($filters),'reportService'=>$this->reports]; }
- private function pdfResponse(string $view,array $data,string $filename,string $orientation='portrait'){ $dompdf=new Dompdf(['isRemoteEnabled'=>true,'defaultFont'=>'DejaVu Sans']); $dompdf->loadHtml(view($view,$data)->render(),'UTF-8'); $dompdf->setPaper('A4',$orientation); $dompdf->render(); return response($dompdf->output(),200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="'.$filename.'"']); }
- private function formData(): array { return ['warehouses'=>Warehouse::where('is_active',true)->whereIn('type',['central','return'])->get(), 'categories'=>Category::orderBy('name')->get(), 'legacyReturnUrl'=>route('vouchers.return-from-sale.index')]; }
+ private function reportData(SalesReturnIndexRequest $request): array { $filters=$request->filters(); $rows=$this->reports->getPdfRows($filters); return ['filters'=>$filters,'rows'=>$rows,'generatedAt'=>$this->reports->jalaliDateTime(now())]; }
+ private function pdfResponse(string $view,array $data,string $filename,string $orientation='portrait'){
+     if (! class_exists(Mpdf::class)) {
+         report(new \RuntimeException('PDF engine mpdf/mpdf is not installed or autoloaded.'));
+         return redirect()->route('vouchers.return-from-sale.index')->withErrors(['pdf'=>'موتور تولید PDF روی سرور نصب یا بارگذاری نشده است.']);
+     }
+
+     try {
+         $tempDir = storage_path('app/mpdf-temp');
+         File::ensureDirectoryExists($tempDir);
+
+         $defaultConfig = (new ConfigVariables())->getDefaults();
+         $defaultFontConfig = (new FontVariables())->getDefaults();
+         $fontDirs = $defaultConfig['fontDir'];
+         $fontData = $defaultFontConfig['fontdata'];
+
+         $mpdf=new Mpdf([
+             'mode'=>'utf-8',
+             'format'=>'A4',
+             'orientation'=>$orientation === 'landscape' ? 'L' : 'P',
+             'tempDir'=>$tempDir,
+             'fontDir'=>array_merge($fontDirs, [public_path('fonts'), public_path('css/fonts'), resource_path('fonts')]),
+             'fontdata'=>$fontData,
+             'default_font'=>'dejavusans',
+             'autoScriptToLang'=>true,
+             'autoLangToFont'=>true,
+         ]);
+         $mpdf->SetDirectionality('rtl');
+         $mpdf->WriteHTML(view($view,$data)->render());
+         return response($mpdf->Output($filename, 'S'),200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="'.$filename.'"']);
+     } catch (\Throwable $exception) {
+         report($exception);
+         return redirect()->route('vouchers.return-from-sale.index')->withErrors(['pdf'=>'تولید فایل PDF با مشکل مواجه شد. لطفاً تنظیمات موتور PDF سرور بررسی شود.']);
+     }
+ }
+
+ private function formData(): array { return ['warehouses'=>Warehouse::where('is_active',true)->whereIn('type',['central','return'])->get(), 'categories'=>Category::orderBy('name')->get(), 'returnReasons'=>SalesReturnDocument::returnReasonLabels(), 'legacyReturnUrl'=>route('vouchers.return-from-sale.index')]; }
  private function enrich(Request $request): array { $data=$request->validated(); $data['can_override_destination']=$request->user()?->can('sales_returns.override_destination') || $request->user()?->hasRole(['admin','Admin']); return $data; }
 }

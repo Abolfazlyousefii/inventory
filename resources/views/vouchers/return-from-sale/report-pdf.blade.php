@@ -1,2 +1,39 @@
-@php use Morilog\Jalali\Jalalian; use App\Models\SalesReturnDocument; @endphp
-<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><style>body{font-family:'DejaVu Sans',sans-serif;font-size:11px;color:#111827}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d1d5db;padding:5px}th{background:#f3f4f6}.summary{display:flex;gap:8px;margin:10px 0}.box{border:1px solid #ddd;padding:6px}</style></head><body><h3>گزارش کلی برگشت از فروش</h3><div>تاریخ تولید: {{ Jalalian::fromDateTime(now())->format('Y/m/d H:i') }}</div><div class="summary"><span class="box">تعداد اسناد: {{ number_format($summary['documents_count']) }}</span><span class="box">جمع مبلغ Applied: {{ number_format($summary['total_refund_amount']) }}</span><span class="box">سالم: {{ number_format($summary['healthy_amount']) }}</span><span class="box">معیوب: {{ number_format($summary['damaged_amount']) }}</span></div><table><thead><tr><th>ردیف</th><th>شماره سند</th><th>مشتری</th><th>تاریخ</th><th>نوع برگشت</th><th>سند مرجع</th><th>وضعیت کالا</th><th>انبار مقصد</th><th>مبلغ کل</th></tr></thead><tbody>@foreach($documents as $document)@php($cond=$reportService->healthStatusSummary($document))@php($dest=$reportService->destinationLabels($document))<tr><td>{{ $loop->iteration }}</td><td>{{ $document->document_number }}</td><td>{{ $document->customer?->display_name }}</td><td>{{ $document->created_at ? Jalalian::fromDateTime($document->created_at)->format('Y/m/d H:i') : '—' }}</td><td>{{ SalesReturnDocument::sourceTypeLabels()[$document->source_type]??'—' }}</td><td>{{ $document->invoice?->uuid ?: $document->external_invoice_number }}</td><td>{{ $cond['label'] }}</td><td>{{ $dest['label'] }}</td><td>{{ number_format($document->total_refund_amount) }}</td></tr>@endforeach</tbody></table></body></html>
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<style>
+    @page { size: A4 portrait; margin: 14mm; }
+    html, body { direction: rtl; text-align: right; font-family: dejavusans, sans-serif; color: #111827; font-size: 11px; background: #fff; }
+    h1 { font-size: 20px; font-weight: bold; margin: 0 0 8px; }
+    .generated { margin-bottom: 14px; color: #374151; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
+    th, td { border: 1px solid #d1d5db; padding: 7px 6px; vertical-align: middle; }
+    th { background: #eef5fb; font-weight: bold; }
+    td.amount { direction: ltr; text-align: left; }
+</style>
+</head>
+<body>
+<h1>گزارش کلی برگشت از فروش</h1>
+<div class="generated">تاریخ تولید: {{ $generatedAt }}</div>
+<table>
+    <thead><tr><th>ردیف</th><th>شماره حواله یا سند</th><th>مشتری</th><th>تاریخ</th><th>نوع یا نام انبار</th><th>مبلغ کل</th></tr></thead>
+    <tbody>
+    @forelse($rows as $row)
+        <tr>
+            <td>{{ $loop->iteration }}</td>
+            <td>{{ $row['document_number'] }}</td>
+            <td>{{ $row['customer_name'] }}</td>
+            <td>{{ $row['returned_at_display'] }}</td>
+            <td>{{ $row['destination_warehouse_label'] }}</td>
+            <td class="amount">{{ number_format($row['total_amount']) }} ریال</td>
+        </tr>
+    @empty
+        <tr><td colspan="6" style="text-align:center;color:#6b7280">موردی برای نمایش وجود ندارد.</td></tr>
+    @endforelse
+    </tbody>
+</table>
+</body>
+</html>
