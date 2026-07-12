@@ -2,6 +2,7 @@
 @section('content')
 @php
     $document = $document ?? null;
+    $isEdit = filled($document);
     $salesReturnRoutes = [
         'customersSearch' => route('vouchers.return-from-sale.customers.search'),
         'customerInvoices' => route('vouchers.return-from-sale.customers.invoices', ['customer' => '__CUSTOMER__']),
@@ -9,186 +10,104 @@
         'productsSearch' => route('vouchers.return-from-sale.products.search'),
         'productVariants' => route('vouchers.return-from-sale.products.variants', ['product' => '__PRODUCT__']),
         'preview' => route('vouchers.return-from-sale.preview'),
+        'customerCreate' => $customerCreateUrl ?? route('customers.index'),
     ];
+    $initialItems = old('items') ?: ($document?->items?->map(fn($item) => [
+        'item_source' => $item->item_source,
+        'invoice_item_id' => $item->invoice_item_id,
+        'product_id' => $item->product_id,
+        'product_variant_id' => $item->product_variant_id,
+        'product_name' => $item->product_name_snapshot,
+        'variant_name' => $item->variant_name_snapshot,
+        'sku' => $item->sku_snapshot,
+        'barcode' => $item->barcode_snapshot,
+        'sold_quantity' => $item->sold_quantity_snapshot,
+        'previously_returned' => $item->previously_returned_quantity_snapshot,
+        'returnable' => max((int) $item->sold_quantity_snapshot - (int) $item->previously_returned_quantity_snapshot, (int) $item->return_quantity),
+        'return_quantity' => $item->return_quantity,
+        'item_condition' => $item->item_condition,
+        'destination_warehouse_id' => $item->destination_warehouse_id,
+        'refund_unit_price' => $item->refund_unit_price,
+        'refund_amount' => $item->refund_amount,
+        'purchase_price' => $item->purchase_price,
+        'sell_price' => $item->sell_price,
+        'new_product_payload' => $item->new_product_payload,
+    ])->values()->all() ?? []);
 @endphp
-<div class="container-fluid" dir="rtl" data-module="new-sales-return-create">
+<style>
+    .sr-page{font-size:.84rem;background:#f8fafc}.sr-card{border:1px solid #dbe3ea;border-radius:.45rem;background:#fff}.sr-card .card-header{background:#fff;border-bottom:1px solid #e7edf3;font-weight:600}.sr-muted{color:#64748b}.sr-choice{border:1px solid #dbe3ea;border-radius:.45rem;padding:.75rem;cursor:pointer}.sr-choice.active{border-color:#0d6efd;background:#f4f8ff}.sr-table th{white-space:nowrap;font-weight:600}.sr-table td{vertical-align:middle}.sr-badge{border:1px solid #dbe3ea;border-radius:999px;padding:.1rem .45rem;font-size:.72rem}.sr-search-box{position:relative}.sr-results{position:absolute;z-index:1050;left:0;right:0;max-height:260px;overflow:auto;background:#fff;border:1px solid #dbe3ea;border-radius:.35rem}.sr-result{padding:.5rem;border-bottom:1px solid #edf2f7;cursor:pointer}.sr-result:hover{background:#f8fafc}.modal-xl{--bs-modal-width: min(1180px, 96vw)}@media(max-width:768px){.sr-desktop-table{display:none}.sr-mobile-items{display:block}}@media(min-width:769px){.sr-mobile-items{display:none}}
+</style>
+<div class="container-fluid sr-page py-3" dir="rtl" data-module="sales-return-create">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0">ثبت برگشت از فروش</h4>
-        <a class="btn btn-outline-secondary" href="{{ route('vouchers.return-from-sale.index') }}">بازگشت</a>
+        <div><h4 class="mb-1">{{ $isEdit ? 'ویرایش پیش‌نویس برگشت از فروش' : 'ثبت سند برگشت از فروش' }}</h4><div class="sr-muted small">فرم سریع ثبت پیش‌نویس و ثبت نهایی برگشت از فروش</div></div>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.return-from-sale.index') }}">بازگشت</a>
     </div>
 
     @if($errors->any())
-        <div class="alert alert-danger small">لطفاً خطاهای فرم را بررسی کنید.</div>
+        <div class="alert alert-danger small">لطفاً خطاهای فرم را بررسی کنید. اولین خطا: {{ $errors->first() }}</div>
     @endif
 
-    <form method="POST" action="{{ $document ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store') }}" id="salesReturnForm">
-        @csrf
-        @if($document)
-            @method('PATCH')
-        @endif
+    <form method="POST" action="{{ $isEdit ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store') }}" id="salesReturnForm" novalidate>
+        @csrf @if($isEdit) @method('PATCH') @endif
+        <input type="hidden" name="source_type" id="sourceTypeInput" value="{{ old('source_type', $document?->source_type ?? 'internal_invoice') }}">
+        <input type="hidden" name="customer_id" id="customerId" value="{{ old('customer_id', $document?->customer_id) }}">
+        <input type="hidden" name="invoice_id" id="invoiceId" value="{{ old('invoice_id', $document?->invoice_id) }}">
 
-        <div class="card mb-3">
-            <div class="card-header bg-white fw-bold">اطلاعات برگشت</div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label">نوع برگشت</label>
-                        <select class="form-select" name="source_type" id="sourceType">
-                            <option value="internal_invoice">فاکتور داخلی</option>
-                            <option value="sazeh_hesab">سازه‌حساب</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">مشتری</label>
-                        <input class="form-control" name="customer_id" id="customerId" value="{{ old('customer_id', $document?->customer_id) }}" required>
-                    </div>
-                    <div class="col-md-3 internal-box">
-                        <label class="form-label">فاکتور داخلی</label>
-                        <input class="form-control" name="invoice_id" id="invoiceId" value="{{ old('invoice_id', $document?->invoice_id) }}">
-                    </div>
-                    <div class="col-md-3 sazeh-box d-none">
-                        <label class="form-label">شماره فاکتور سازه‌حساب</label>
-                        <input class="form-control" name="external_invoice_number" value="{{ old('external_invoice_number', $document?->external_invoice_number) }}">
-                    </div>
-                    <div class="col-md-3 sazeh-box d-none">
-                        <label class="form-label">تاریخ فاکتور سازه‌حساب</label>
-                        <input type="date" class="form-control" name="external_invoice_date" value="{{ old('external_invoice_date', $document?->external_invoice_date?->format('Y-m-d')) }}">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">انبار مقصد</label>
-                        <select class="form-select" name="default_destination_warehouse_id" id="defaultWarehouse">
-                            @foreach($warehouses as $warehouse)
-                                <option value="{{ $warehouse->id }}" data-type="{{ $warehouse->type }}">{{ $warehouse->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">علت برگشت</label>
-                        <select class="form-select" name="return_reason">
-                            @foreach($returnReasons as $key => $label)
-                                <option value="{{ $key }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <div class="row g-3">
+            <div class="col-12"><div class="sr-card p-3"><div class="row g-2">
+                <div class="col-md-6"><label class="sr-choice w-100" data-source-choice="internal_invoice"><input class="form-check-input ms-2" type="radio" name="source_choice" value="internal_invoice"> <strong>فاکتور داخلی نرم‌افزار</strong><div class="sr-muted small mt-1">فاکتور فروش در همین نرم‌افزار ثبت شده است.</div></label></div>
+                <div class="col-md-6"><label class="sr-choice w-100" data-source-choice="sazeh_hesab"><input class="form-check-input ms-2" type="radio" name="source_choice" value="sazeh_hesab"> <strong>فاکتور سازه‌حساب</strong><div class="sr-muted small mt-1">فاکتور فروش در نرم‌افزار مالی قبلی ثبت شده است.</div></label></div>
+            </div></div></div>
 
-        <div class="card mb-3">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <span class="fw-bold">اقلام برگشتی</span>
-                <button class="btn btn-sm btn-outline-primary" type="button" id="addRow">افزودن کالا</button>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0" id="itemsTable">
-                    <thead class="table-light">
-                    <tr>
-                        <th>منبع</th>
-                        <th>دسته‌بندی</th>
-                        <th>کالا</th>
-                        <th>تنوع</th>
-                        <th>کد یا بارکد</th>
-                        <th>تعداد</th>
-                        <th>وضعیت کالا</th>
-                        <th>انبار مقصد</th>
-                        <th>قیمت خرید</th>
-                        <th>قیمت فروش</th>
-                        <th>مبلغ بستانکاری</th>
-                        <th>مبلغ کل</th>
-                        <th></th>
-                    </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
+            <div class="col-lg-4"><div class="sr-card card h-100"><div class="card-header">مشتری و فاکتور</div><div class="card-body">
+                <label class="form-label">مشتری</label><div class="input-group input-group-sm sr-search-box"><input class="form-control" id="customerSearch" placeholder="نام، موبایل، کد یا ID (حداقل ۲ کاراکتر)" autocomplete="off"><a class="btn btn-outline-secondary" target="_blank" href="{{ $customerCreateUrl ?? route('customers.index') }}">افزودن مشتری جدید</a><button class="btn btn-outline-primary" type="button" id="refreshCustomers">بروزرسانی</button><div class="sr-results d-none" id="customerResults"></div></div><div class="small sr-muted mt-1" id="selectedCustomerLabel">{{ $document?->customer?->display_name ?? '' }}</div>
+                <div class="mt-3 internal-only"><label class="form-label">فاکتورهای مشتری</label><select class="form-select form-select-sm" id="invoiceSelect"><option value="">ابتدا مشتری را انتخاب کنید</option></select><div class="small sr-muted mt-1">فقط فاکتورهای مجاز مشتری نمایش داده می‌شود.</div></div>
+                <div class="mt-3 sazeh-only d-none"><label class="form-label">شماره فاکتور سازه‌حساب</label><input class="form-control form-control-sm" name="external_invoice_number" value="{{ old('external_invoice_number', $document?->external_invoice_number) }}"></div>
+                <div class="mt-3 sazeh-only d-none"><label class="form-label">تاریخ فاکتور سازه‌حساب</label><input type="date" class="form-control form-control-sm" name="external_invoice_date" value="{{ old('external_invoice_date', $document?->external_invoice_date?->format('Y-m-d')) }}"></div>
+            </div></div></div>
 
-        <div class="card mb-3">
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label">شماره حواله یا ارجاع</label>
-                        <input class="form-control" name="reference_number" value="{{ old('reference_number', $document?->reference_number) }}">
-                    </div>
-                    <div class="col-md-8">
-                        <label class="form-label">توضیحات</label>
-                        <textarea class="form-control" name="description" rows="2">{{ old('description', $document?->description) }}</textarea>
-                    </div>
-                </div>
-            </div>
-        </div>
+            <div class="col-lg-8"><div class="sr-card card h-100"><div class="card-header">علت، مقصد و توضیحات</div><div class="card-body"><div class="row g-3">
+                <div class="col-md-4"><label class="form-label">علت برگشت</label><select class="form-select form-select-sm" name="return_reason" id="returnReason">@foreach($returnReasons as $key => $label)<option value="{{ $key }}" @selected(old('return_reason', $document?->return_reason) === $key)>{{ $label }}</option>@endforeach</select></div>
+                <div class="col-md-4"><label class="form-label">انبار مقصد پیش‌فرض</label><select class="form-select form-select-sm" name="default_destination_warehouse_id" id="defaultWarehouse">@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}" data-type="{{ $warehouse->type }}" @selected(old('default_destination_warehouse_id', $document?->default_destination_warehouse_id) == $warehouse->id)>{{ $warehouse->name }} ({{ $warehouse->type }})</option>@endforeach</select></div>
+                <div class="col-md-4"><label class="form-label">شماره حواله/مرجع</label><input class="form-control form-control-sm" name="reference_number" value="{{ old('reference_number', $document?->reference_number) }}"></div>
+                <div class="col-12"><label class="form-label">توضیحات</label><textarea class="form-control form-control-sm" name="description" id="description" rows="2">{{ old('description', $document?->description) }}</textarea><div class="small sr-muted">در صورت انتخاب «سایر»، توضیحات اجباری است.</div></div>
+            </div></div></div></div>
 
-        <div class="d-flex gap-2">
-            <button class="btn btn-primary" name="action" value="draft">ثبت برگشت از فروش</button>
-            <button class="btn btn-success" name="action" value="apply">ثبت و اعمال نهایی</button>
+            <div class="col-12"><div class="sr-card card"><div class="card-header d-flex justify-content-between align-items-center"><span>اقلام برگشتی</span><button class="btn btn-sm btn-primary" type="button" id="openAddItem">+ افزودن کالا</button></div><div class="card-body p-0">
+                <div class="table-responsive sr-desktop-table"><table class="table table-sm sr-table mb-0" id="itemsTable"><thead class="table-light"><tr><th>کالا و تنوع</th><th>کد/بارکد</th><th class="internal-col">خریداری‌شده</th><th class="internal-col">قبلاً برگشتی</th><th class="internal-col">قابل برگشت</th><th>تعداد برگشتی</th><th>وضعیت</th><th>انبار مقصد</th><th>مبلغ واحد برگشت</th><th>مبلغ کل</th><th></th></tr></thead><tbody></tbody></table></div>
+                <div class="sr-mobile-items p-2" id="mobileItems"></div>
+            </div></div></div>
+
+            <div class="col-12"><div class="sr-card p-3"><div class="row g-2 text-center" id="summaryBox"><div class="col-6 col-md">ردیف‌ها<br><strong data-sum="rows">0</strong></div><div class="col-6 col-md">مجموع تعداد<br><strong data-sum="qty">0</strong></div><div class="col-6 col-md">سالم<br><strong data-sum="healthy">0</strong></div><div class="col-6 col-md">معیوب<br><strong data-sum="damaged">0</strong></div><div class="col-6 col-md">بستانکاری<br><strong data-sum="amount">0</strong></div><div class="col-6 col-md">انبارها<br><strong data-sum="warehouses">—</strong></div></div></div></div>
+
+            <div class="col-12"><div class="d-flex gap-2 flex-wrap"><button class="btn btn-primary" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-success" name="action" value="apply" id="applyButton">ثبت نهایی</button><button class="btn btn-outline-danger" type="button" id="clearForm">پاک‌کردن فرم</button><a class="btn btn-outline-secondary" href="{{ route('vouchers.return-from-sale.index') }}">بازگشت</a></div></div>
         </div>
     </form>
 </div>
 
+<div class="modal fade" id="internalItemsModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h6 class="modal-title">انتخاب اقلام فاکتور داخلی</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input class="form-control form-control-sm mb-2" id="invoiceItemFilter" placeholder="جستجو در اقلام فاکتور"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>انتخاب</th><th>کالا</th><th>تنوع</th><th>کد/بارکد</th><th>خریداری‌شده</th><th>قبلاً برگشتی</th><th>قابل برگشت</th><th>قیمت تاریخی خالص</th><th>وضعیت</th></tr></thead><tbody id="invoiceItemsBody"></tbody></table></div></div><div class="modal-footer"><button class="btn btn-primary btn-sm" type="button" id="addSelectedInvoiceItems">افزودن اقلام انتخاب‌شده</button></div></div></div></div>
+
+<div class="modal fade" id="sazehItemsModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h6 class="modal-title">افزودن کالا برای سازه‌حساب</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><ul class="nav nav-tabs" role="tablist"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#existingProductTab" type="button">انتخاب کالای موجود</button></li>@can('sales_returns.create_product')<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#newProductTab" type="button">تعریف کالای جدید</button></li>@endcan</ul><div class="tab-content border border-top-0 p-3"><div class="tab-pane fade show active" id="existingProductTab"><input class="form-control form-control-sm mb-2" id="productSearch" placeholder="جستجوی تمام کالاها، حتی ناموجود و غیرفعال"><div id="productResults" class="list-group small"></div></div>@can('sales_returns.create_product')<div class="tab-pane fade" id="newProductTab"><div class="row g-2"><div class="col-md-4"><label class="form-label">نام کالا</label><input class="form-control form-control-sm" id="npName"></div><div class="col-md-4"><label class="form-label">دسته‌بندی</label><select class="form-select form-select-sm" id="npCategory"><option value="">انتخاب کنید</option>@foreach($categories as $category)<option value="{{ $category->id }}" data-code="{{ $category->code }}">{{ $category->name }} {{ $category->code ? '(' . $category->code . ')' : '' }}</option>@endforeach</select></div><div class="col-md-4"><label class="form-label">مدل لیست</label><select class="form-select form-select-sm" id="npModel"><option value="">بدون مدل</option>@foreach($modelLists as $model)<option value="{{ $model->id }}" data-code="{{ $model->code }}">{{ trim($model->brand.' '.$model->model_name) }} {{ $model->code ? '(' . $model->code . ')' : '' }}</option>@endforeach</select></div><div class="col-md-3"><label class="form-label">طرح‌بندی دارد؟</label><select class="form-select form-select-sm" id="npHasDesign"><option value="0">خیر</option><option value="1">بله</option></select></div><div class="col-md-3"><label class="form-label">رنگ‌بندی دارد؟</label><select class="form-select form-select-sm" id="npHasColor"><option value="0">خیر</option><option value="1">بله</option></select></div><div class="col-md-3"><label class="form-label">طرح/مدل اولیه</label><input class="form-control form-control-sm" id="npVarietyName" value="طرح پایه"></div><div class="col-md-3"><label class="form-label">کد تنوع ۴ رقمی</label><input class="form-control form-control-sm" id="npVarietyCode" value="0000" maxlength="4"></div><div class="col-md-4"><label class="form-label">نام تنوع اولیه</label><input class="form-control form-control-sm" id="npVariantName"></div><div class="col-md-2"><label class="form-label">واحد</label><input class="form-control form-control-sm" id="npUnit" value="عدد"></div><div class="col-md-3"><label class="form-label">SKU / کد تنوع</label><input class="form-control form-control-sm" id="npSku"></div><div class="col-md-3"><label class="form-label">بارکد</label><input class="form-control form-control-sm" id="npBarcode"></div><div class="col-md-3"><label class="form-label">قیمت خرید فعلی</label><input type="number" min="0" class="form-control form-control-sm" id="npPurchase"></div><div class="col-md-3"><label class="form-label">قیمت فروش فعلی</label><input type="number" min="0" class="form-control form-control-sm" id="npSell"></div><div class="col-md-3"><label class="form-label">قیمت برگشتی مشتری</label><input type="number" min="1" class="form-control form-control-sm" id="npRefund"></div><div class="col-md-3"><label class="form-label">قابل فروش</label><select class="form-select form-select-sm" id="npSales"><option value="1">بله</option><option value="0">خیر</option></select></div><div class="col-md-3"><label class="form-label">وضعیت فعال</label><select class="form-select form-select-sm" id="npActive"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div><div class="col-12"><div class="alert alert-light border small mb-0">پیش‌نمایش کد کالا: <strong id="npProductCodePreview">--0000</strong> | پیش‌نمایش کد تنوع: <strong id="npVariantCodePreview">--000000000</strong> | مسیر دسته‌بندی/مدل از انتخاب‌های بالا خوانده می‌شود.</div></div></div></div>@endcan</div></div><div class="modal-footer"><button class="btn btn-primary btn-sm" type="button" id="addNewProductRow">افزودن ردیف کالای جدید</button></div></div></div></div>
+
 <script>
-    window.salesReturnRoutes = @json($salesReturnRoutes);
+window.salesReturnRoutes = @json($salesReturnRoutes);
+window.salesReturnInitial = {items:@json($initialItems), sourceType:@json(old('source_type', $document?->source_type ?? 'internal_invoice')), customerId:@json(old('customer_id', $document?->customer_id)), invoiceId:@json(old('invoice_id', $document?->invoice_id)), warehouses:@json($warehouses->map(fn($w)=>['id'=>$w->id,'name'=>$w->name,'type'=>$w->type])->values())};
 </script>
 <script>
 (() => {
-    const $ = selector => document.querySelector(selector);
-    const tbody = $('#itemsTable tbody');
-    const warehouses = @json($warehouses->map(fn($warehouse) => ['id' => $warehouse->id, 'name' => $warehouse->name, 'type' => $warehouse->type])->values());
-    let idx = 0;
-
-    function warehouseOptions() {
-        return warehouses.map(warehouse => `<option value="${warehouse.id}" data-type="${warehouse.type}">${warehouse.name}</option>`).join('');
-    }
-
-    function row() {
-        return `<tr>
-            <td><select name="items[${idx}][item_source]" class="form-select form-select-sm"><option value="invoice_item">آیتم فاکتور</option><option value="existing_product">کالای موجود</option><option value="new_product">کالای جدید</option></select><input class="form-control form-control-sm mt-1" name="items[${idx}][invoice_item_id]" placeholder="شناسه آیتم فاکتور"></td>
-            <td><select class="form-select form-select-sm" name="items[${idx}][new_product_payload][category_id]">@foreach($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></td>
-            <td><input class="form-control form-control-sm" name="items[${idx}][new_product_payload][product_name]" placeholder="نام کالا"><input class="form-control form-control-sm mt-1" name="items[${idx}][product_variant_id]" placeholder="شناسه تنوع موجود"></td>
-            <td><input class="form-control form-control-sm" name="items[${idx}][new_product_payload][variant_name]" placeholder="تنوع"></td>
-            <td><input class="form-control form-control-sm" name="items[${idx}][new_product_payload][sku]" placeholder="SKU"><input class="form-control form-control-sm mt-1" name="items[${idx}][new_product_payload][barcode]" placeholder="Barcode"></td>
-            <td><input type="number" min="0" class="form-control form-control-sm qty" name="items[${idx}][return_quantity]" value="1"></td>
-            <td><select name="items[${idx}][item_condition]" class="form-select form-select-sm cond"><option value="healthy">سالم</option><option value="damaged">مرجوعی یا معیوب</option></select></td>
-            <td><select name="items[${idx}][destination_warehouse_id]" class="form-select form-select-sm wh">${warehouseOptions()}</select></td>
-            <td><input type="number" min="0" class="form-control form-control-sm" name="items[${idx}][new_product_payload][purchase_price]" placeholder="قیمت خرید"></td>
-            <td><input type="number" min="0" class="form-control form-control-sm" name="items[${idx}][new_product_payload][sell_price]" placeholder="قیمت فروش"></td>
-            <td><input type="number" min="0" class="form-control form-control-sm price" name="items[${idx}][refund_unit_price]" value="0"></td>
-            <td class="line-total">0</td>
-            <td><button type="button" class="btn btn-sm btn-outline-danger rm">حذف</button></td>
-        </tr>`;
-    }
-
-    function refreshTotals() {
-        tbody.querySelectorAll('tr').forEach(tr => {
-            const quantity = Number(tr.querySelector('.qty')?.value || 0);
-            const price = Number(tr.querySelector('.price')?.value || 0);
-            tr.querySelector('.line-total').textContent = (quantity * price).toLocaleString('fa-IR');
-        });
-    }
-
-    $('#addRow').addEventListener('click', () => {
-        tbody.insertAdjacentHTML('beforeend', row());
-        idx++;
-        refreshTotals();
-    });
-
-    document.addEventListener('input', event => {
-        if (event.target.closest('#itemsTable')) refreshTotals();
-    });
-
-    document.addEventListener('click', event => {
-        if (event.target.classList.contains('rm')) {
-            event.target.closest('tr').remove();
-            refreshTotals();
-        }
-    });
-
-    $('#sourceType').addEventListener('change', event => {
-        const isSazeh = event.target.value === 'sazeh_hesab';
-        document.querySelectorAll('.sazeh-box').forEach(el => el.classList.toggle('d-none', !isSazeh));
-        document.querySelectorAll('.internal-box').forEach(el => el.classList.toggle('d-none', isSazeh));
-    });
-
-    $('#addRow').click();
-})();
+const routes=window.salesReturnRoutes, init=window.salesReturnInitial, state={documentType:init.sourceType||'internal_invoice',customer:null,invoice:null,items:init.items||[],defaultWarehouse:document.getElementById('defaultWarehouse').value,summary:{}};let customerAbort,productAbort;const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));const fmt=n=>Number(n||0).toLocaleString('fa-IR');const whName=id=>(init.warehouses.find(w=>String(w.id)===String(id))||{}).name||'—';const defaultWhFor=cond=>{const t=cond==='damaged'?'return':'central';return (init.warehouses.find(w=>w.type===t)||init.warehouses[0]||{}).id};
+function csrf(){return document.querySelector('meta[name="csrf-token"]')?.content||''}function rowName(it){return `${it.product_name||it.new_product_payload?.product_name||'—'} / ${it.variant_name||it.new_product_payload?.variant_name||'—'}`}
+function syncSource(){ $('#sourceTypeInput').value=state.documentType; $$('[data-source-choice]').forEach(el=>el.classList.toggle('active',el.dataset.sourceChoice===state.documentType)); $$('[name=source_choice]').forEach(r=>r.checked=r.value===state.documentType); $$('.sazeh-only').forEach(el=>el.classList.toggle('d-none',state.documentType!=='sazeh_hesab')); $$('.internal-only,.internal-col').forEach(el=>el.classList.toggle('d-none',state.documentType==='sazeh_hesab')); renderItems(); }
+function setSource(type){ if(type===state.documentType)return; if(state.items.length&&!confirm('با تغییر نوع برگشت، اقلام فعلی پاک می‌شوند. ادامه می‌دهید؟')){syncSource();return} state.documentType=type; state.invoice=null; $('#invoiceId').value=''; state.items=[]; syncSource(); summary(); }
+function hiddenInputs(tr,it,i){const parts=[];function h(k,v){parts.push(`<input type="hidden" name="items[${i}][${k}]" value="${String(v??'').replaceAll('"','&quot;')}">`)}h('item_source',it.item_source);h('invoice_item_id',it.invoice_item_id||'');h('product_variant_id',it.product_variant_id||'');h('return_quantity',it.return_quantity||1);h('item_condition',it.item_condition||'healthy');h('destination_warehouse_id',it.destination_warehouse_id||state.defaultWarehouse||defaultWhFor(it.item_condition));h('refund_unit_price',it.refund_unit_price||0); if(it.new_product_payload) Object.entries(it.new_product_payload).forEach(([k,v])=>h(`new_product_payload][${k}`,v));return parts.join('')}
+function renderItems(){const tb=$('#itemsTable tbody');tb.innerHTML='';$('#mobileItems').innerHTML='';state.items.forEach((it,i)=>{const max=state.documentType==='internal_invoice'?(it.returnable||1):999999;const qty=Math.max(1,Math.min(Number(it.return_quantity||1),max));it.return_quantity=qty;it.refund_amount=qty*Number(it.refund_unit_price||0);const tr=document.createElement('tr');tr.innerHTML=`<td>${hiddenInputs(tr,it,i)}<strong>${rowName(it)}</strong><div class="small sr-muted">${it.item_source==='new_product'?'کالای جدید در ثبت نهایی ساخته می‌شود':it.item_source==='existing_product'?'کالای موجود':'آیتم فاکتور'}</div></td><td>${it.sku||it.barcode||it.new_product_payload?.sku||'—'}</td><td class="internal-col">${it.sold_quantity??'—'}</td><td class="internal-col">${it.previously_returned??'—'}</td><td class="internal-col">${it.returnable??'—'}</td><td><div class="input-group input-group-sm"><button class="btn btn-outline-secondary step" data-i="${i}" data-d="-1" type="button">−</button><input class="form-control qty" data-i="${i}" type="number" min="1" max="${max}" value="${qty}"><button class="btn btn-outline-secondary step" data-i="${i}" data-d="1" type="button">+</button></div><div class="text-danger small" data-error="${i}"></div></td><td><select class="form-select form-select-sm cond" data-i="${i}"><option value="healthy" ${it.item_condition==='healthy'?'selected':''}>سالم</option><option value="damaged" ${it.item_condition==='damaged'?'selected':''}>معیوب</option></select></td><td><select class="form-select form-select-sm wh" data-i="${i}">${init.warehouses.map(w=>`<option value="${w.id}" ${String(w.id)===String(it.destination_warehouse_id)?'selected':''}>${w.name}</option>`).join('')}</select></td><td>${state.documentType==='internal_invoice'?fmt(it.refund_unit_price):`<input class="form-control form-control-sm price" data-i="${i}" type="number" min="1" value="${it.refund_unit_price||0}">`}</td><td>${fmt(it.refund_amount)}</td><td><button class="btn btn-sm btn-outline-danger rm" data-i="${i}" type="button">حذف</button></td>`;tb.appendChild(tr);$('#mobileItems').insertAdjacentHTML('beforeend',`<div class="border rounded p-2 mb-2"><div class="d-flex justify-content-between"><strong>${rowName(it)}</strong><button class="btn btn-sm btn-outline-danger rm" data-i="${i}" type="button">حذف</button></div><div class="small sr-muted">تعداد: ${qty} | مبلغ: ${fmt(it.refund_amount)} | مقصد: ${whName(it.destination_warehouse_id)}</div></div>`)});syncSourceCols();summary()}
+function syncSourceCols(){$$('.internal-col').forEach(el=>el.classList.toggle('d-none',state.documentType==='sazeh_hesab'))}
+function summary(){const rows=state.items.length,qty=state.items.reduce((s,i)=>s+Number(i.return_quantity||0),0),healthy=state.items.filter(i=>(i.item_condition||'healthy')==='healthy').reduce((s,i)=>s+Number(i.return_quantity||0),0),damaged=qty-healthy,amount=state.items.reduce((s,i)=>s+Number(i.refund_amount||0),0),wh=[...new Set(state.items.map(i=>whName(i.destination_warehouse_id)))].filter(Boolean).join('، ')||'—';$('[data-sum=rows]').textContent=rows;$('[data-sum=qty]').textContent=fmt(qty);$('[data-sum=healthy]').textContent=fmt(healthy);$('[data-sum=damaged]').textContent=fmt(damaged);$('[data-sum=amount]').textContent=fmt(amount);$('[data-sum=warehouses]').textContent=wh}
+async function searchCustomers(q){if(customerAbort)customerAbort.abort();if(q.length<2){$('#customerResults').classList.add('d-none');return}customerAbort=new AbortController();const r=await fetch(routes.customersSearch+'?q='+encodeURIComponent(q),{signal:customerAbort.signal});const data=await r.json();$('#customerResults').innerHTML=(data.results||[]).map(c=>`<div class="sr-result" data-id="${c.id}" data-text="${c.text}">${c.text}</div>`).join('')||'<div class="p-2 sr-muted">نتیجه‌ای یافت نشد</div>';$('#customerResults').classList.remove('d-none')}
+async function loadInvoices(){const id=$('#customerId').value;if(!id)return;const r=await fetch(routes.customerInvoices.replace('__CUSTOMER__',id));const data=await r.json();$('#invoiceSelect').innerHTML='<option value="">انتخاب فاکتور</option>'+(data.invoices||[]).map(inv=>`<option value="${inv.id}">${inv.number} | ${inv.date} | ${fmt(inv.total)} | ${inv.items_count} قلم | ${inv.status_label}</option>`).join('');if(init.invoiceId) $('#invoiceSelect').value=init.invoiceId}
+async function loadInvoiceItems(){const inv=$('#invoiceId').value;if(!inv)return;const r=await fetch(routes.invoiceItems.replace('__INVOICE__',inv)+'?customer_id='+encodeURIComponent($('#customerId').value));if(!r.ok){alert((await r.json()).message||'خطا');return}const data=await r.json();$('#invoiceItemsBody').innerHTML=(data.items||[]).map(it=>`<tr class="${it.disabled?'table-secondary':''}" data-text="${(it.product_name||'')+' '+(it.variant_name||'')+' '+(it.sku||'')}"><td><input type="checkbox" class="invoice-pick" ${it.disabled||state.items.some(x=>x.invoice_item_id===it.invoice_item_id)?'disabled':''} data-item='${JSON.stringify(it).replaceAll("'","&#39;")}'></td><td>${it.product_name||'—'}</td><td>${it.variant_name||'—'}</td><td>${it.sku||it.barcode||'—'}</td><td>${it.quantity}</td><td>${it.previously_returned}</td><td>${it.returnable}</td><td>${fmt(it.unit_price)}</td><td>${it.disabled?'کامل برگشت خورده':'قابل انتخاب'}</td></tr>`).join('')}
+async function searchProducts(q){if(productAbort)productAbort.abort();if(q.length<2)return;productAbort=new AbortController();const r=await fetch(routes.productsSearch+'?q='+encodeURIComponent(q),{signal:productAbort.signal});const data=await r.json();$('#productResults').innerHTML=(data.results||[]).map(p=>`<button type="button" class="list-group-item list-group-item-action product-pick" data-product='${JSON.stringify(p).replaceAll("'","&#39;")}'><div><strong>${p.text}</strong> <span class="sr-badge">${p.stock} موجودی</span> ${p.is_active?'':'<span class="badge bg-secondary">غیرفعال</span>'} ${p.sales_enabled?'':'<span class="badge bg-warning text-dark">فروش غیرفعال</span>'}</div><div class="sr-muted">${p.category||'بدون دسته'} | ${p.model_list||'بدون مدل'} | SKU: ${p.sku||'—'} | خرید: ${fmt(p.buy_price)} | فروش: ${fmt(p.sell_price)}</div></button>`).join('')||'<div class="sr-muted">نتیجه‌ای یافت نشد</div>'}
+function updatePreview(){const cat=$('#npCategory')?.selectedOptions[0]?.dataset.code||'--', model=$('#npModel')?.selectedOptions[0]?.dataset.code||'000', design=($('#npVarietyCode')?.value||'0000').slice(-2).padStart(2,'0');$('#npProductCodePreview').textContent=cat+'0000';$('#npVariantCodePreview').textContent=cat+'0000'+model.replace(/\D/g,'').slice(0,3).padStart(3,'0')+design}
+$$('[name=source_choice]').forEach(r=>r.addEventListener('change',e=>setSource(e.target.value)));$('#customerSearch').addEventListener('input',e=>{clearTimeout(window.cst);window.cst=setTimeout(()=>searchCustomers(e.target.value),300)});$('#refreshCustomers').onclick=()=>searchCustomers($('#customerSearch').value);$('#customerResults').addEventListener('click',e=>{const el=e.target.closest('.sr-result');if(!el)return;$('#customerId').value=el.dataset.id;$('#selectedCustomerLabel').textContent=el.dataset.text;$('#customerResults').classList.add('d-none');loadInvoices()});$('#invoiceSelect').addEventListener('change',e=>{$('#invoiceId').value=e.target.value;state.items=[];renderItems()});$('#openAddItem').onclick=()=>{if(state.documentType==='internal_invoice'){loadInvoiceItems().then(()=>new bootstrap.Modal($('#internalItemsModal')).show())}else new bootstrap.Modal($('#sazehItemsModal')).show()};$('#addSelectedInvoiceItems').onclick=()=>{$$('.invoice-pick:checked').forEach(cb=>{const it=JSON.parse(cb.dataset.item);state.items.push({item_source:'invoice_item',invoice_item_id:it.invoice_item_id,product_id:it.product_id,product_variant_id:it.variant_id,product_name:it.product_name,variant_name:it.variant_name,sku:it.sku,barcode:it.barcode,sold_quantity:it.quantity,previously_returned:it.previously_returned,returnable:it.returnable,return_quantity:1,item_condition:'healthy',destination_warehouse_id:state.defaultWarehouse||defaultWhFor('healthy'),refund_unit_price:it.unit_price,refund_amount:it.unit_price})});renderItems();bootstrap.Modal.getInstance($('#internalItemsModal')).hide()};$('#invoiceItemFilter').addEventListener('input',e=>{$$('#invoiceItemsBody tr').forEach(tr=>tr.classList.toggle('d-none',!tr.dataset.text.includes(e.target.value)))});$('#productSearch').addEventListener('input',e=>{clearTimeout(window.pst);window.pst=setTimeout(()=>searchProducts(e.target.value),300)});$('#productResults').addEventListener('click',e=>{const el=e.target.closest('.product-pick');if(!el)return;const p=JSON.parse(el.dataset.product);const price=prompt('قیمت برگشتی مشتری را وارد کنید','');if(!price)return;state.items.push({item_source:'existing_product',product_id:p.id,product_variant_id:p.variant_id,product_name:p.product_name,variant_name:p.variant_name,sku:p.sku,barcode:p.barcode,return_quantity:1,item_condition:'healthy',destination_warehouse_id:state.defaultWarehouse||defaultWhFor('healthy'),refund_unit_price:Number(price),refund_amount:Number(price),purchase_price:p.buy_price,sell_price:p.sell_price});renderItems();bootstrap.Modal.getInstance($('#sazehItemsModal')).hide()});$('#addNewProductRow')?.addEventListener('click',()=>{const payload={product_name:$('#npName').value,category_id:$('#npCategory').value,model_list_id:$('#npModel').value,has_design:$('#npHasDesign').value,has_color:$('#npHasColor').value,variety_name:$('#npVarietyName').value,variety_code:$('#npVarietyCode').value,variant_name:$('#npVariantName').value||$('#npName').value,unit:$('#npUnit').value,sku:$('#npSku').value,barcode:$('#npBarcode').value,purchase_price:$('#npPurchase').value,sell_price:$('#npSell').value,sales_enabled:$('#npSales').value,is_active:$('#npActive').value};state.items.push({item_source:'new_product',product_name:payload.product_name,variant_name:payload.variant_name,return_quantity:1,item_condition:'healthy',destination_warehouse_id:state.defaultWarehouse||defaultWhFor('healthy'),refund_unit_price:Number($('#npRefund').value||0),refund_amount:Number($('#npRefund').value||0),purchase_price:payload.purchase_price,sell_price:payload.sell_price,new_product_payload:payload});renderItems();bootstrap.Modal.getInstance($('#sazehItemsModal')).hide()});['npCategory','npModel','npVarietyCode'].forEach(id=>$('#'+id)?.addEventListener('input',updatePreview));document.addEventListener('click',e=>{if(e.target.classList.contains('rm')){state.items.splice(Number(e.target.dataset.i),1);renderItems()} if(e.target.classList.contains('step')){const it=state.items[Number(e.target.dataset.i)];it.return_quantity=Math.max(1,Number(it.return_quantity||1)+Number(e.target.dataset.d));renderItems()}});document.addEventListener('input',e=>{if(e.target.classList.contains('qty')){state.items[Number(e.target.dataset.i)].return_quantity=Number(e.target.value);renderItems()} if(e.target.classList.contains('price')){state.items[Number(e.target.dataset.i)].refund_unit_price=Number(e.target.value);renderItems()}});document.addEventListener('change',e=>{if(e.target.classList.contains('cond')){const it=state.items[Number(e.target.dataset.i)];it.item_condition=e.target.value;it.destination_warehouse_id=defaultWhFor(e.target.value);renderItems()} if(e.target.classList.contains('wh')){state.items[Number(e.target.dataset.i)].destination_warehouse_id=e.target.value;renderItems()}});$('#defaultWarehouse').addEventListener('change',e=>{state.defaultWarehouse=e.target.value;if(!state.items.length||confirm('مقصد پیش‌فرض روی ردیف‌های موجود هم اعمال شود؟')){state.items.forEach(i=>i.destination_warehouse_id=e.target.value);renderItems()}});$('#applyButton').onclick=e=>{if(!confirm('با ثبت نهایی، موجودی انبار مقصد افزایش یافته و مشتری به مبلغ سند بستانکار می‌شود. پس از ثبت نهایی امکان ویرایش مستقیم سند وجود ندارد.'))e.preventDefault()};$('#clearForm').onclick=()=>{if(confirm('فرم پاک شود؟')){state.items=[];renderItems()}};syncSource();if(init.customerId)loadInvoices();renderItems();updatePreview();})();
 </script>
 @endsection
