@@ -209,6 +209,7 @@
                         $invoice = $ledger->reference_type === \App\Models\Invoice::class ? ($invoices[$ledger->reference_id] ?? null) : null;
                         $payment = $ledger->reference_type === \App\Models\InvoicePayment::class ? ($payments[$ledger->reference_id] ?? null) : null;
                         $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? ($transfers[$ledger->reference_id] ?? null) : null;
+                        $salesReturn = $ledger->reference_type === \App\Models\SalesReturnDocument::class ? ($salesReturnDocuments[$ledger->reference_id] ?? null) : null;
                         $description = $ledger->note ?: '—';
                         $viewUrl = null;
 
@@ -235,6 +236,12 @@
                             }
 
                             $viewUrl = route('account-statements.documents.payments.show', $payment->id);
+                        }
+
+                        if ($salesReturn) {
+                            $source = \App\Models\SalesReturnDocument::sourceTypeLabels()[$salesReturn->source_type] ?? $salesReturn->source_type;
+                            $description = "سند برگشت از فروش {$salesReturn->document_number} | نوع: {$source} | مبلغ " . \App\Support\Currency::formatRial($salesReturn->total_refund_amount);
+                            $viewUrl = route('sales-returns.show', $salesReturn->id);
                         }
 
                         if ($transfer) {

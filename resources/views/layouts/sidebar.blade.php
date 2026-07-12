@@ -275,8 +275,11 @@
                     @canPermission('inventory.count.view')
                     <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') ?: $pathActive('stocktake', 'stocktake/*') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>
                     @endcanPermission
+                    @canPermission('sales_returns.view')
+                    <a class="sidebar-sublink {{ $is('sales-returns.*') }}" href="{{ route('sales-returns.index') }}">برگشت از فروش</a>
+                    @endcanPermission
                     @canPermission('sales_returns.create')
-                    <a class="sidebar-sublink {{ $is('sales-returns.create') }}" href="{{ route('sales-returns.create') }}">ثبت برگشت از فروش</a>
+                    <a class="sidebar-sublink {{ $is('sales-returns.create') }}" href="{{ route('sales-returns.create') }}">ثبت برگشت جدید</a>
                     @endcanPermission
                 </div>
             </div>

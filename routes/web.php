@@ -141,8 +141,12 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/movements', [StockMovementReportController::class, 'index'])->middleware('permission:reports.stock_movement')->name('movements.index');
 
 
+    Route::get('/sales-returns', [SalesReturnController::class, 'index'])->name('sales-returns.index');
     Route::get('/sales-returns/create', [SalesReturnController::class, 'create'])->name('sales-returns.create');
     Route::post('/sales-returns', [SalesReturnController::class, 'store'])->name('sales-returns.store');
+    Route::get('/sales-returns/export/excel', [SalesReturnController::class, 'exportExcel'])->name('sales-returns.export.excel');
+    Route::get('/sales-returns/export/pdf', [SalesReturnController::class, 'exportPdf'])->name('sales-returns.export.pdf');
+    Route::get('/sales-returns/print', [SalesReturnController::class, 'printReport'])->name('sales-returns.print-report');
     Route::get('/sales-returns/customers/search', [SalesReturnLookupController::class, 'customers'])->name('sales-returns.customers.search');
     Route::get('/sales-returns/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->name('sales-returns.customers.invoices');
     Route::get('/sales-returns/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->name('sales-returns.invoices.items');
@@ -155,6 +159,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/sales-returns/{document}/apply', [SalesReturnController::class, 'apply'])->whereNumber('document')->name('sales-returns.apply');
     Route::post('/sales-returns/{document}/cancel', [SalesReturnController::class, 'cancel'])->whereNumber('document')->name('sales-returns.cancel');
     Route::get('/sales-returns/{document}/print', [SalesReturnController::class, 'print'])->whereNumber('document')->name('sales-returns.print');
+    Route::get('/sales-returns/{document}/pdf', [SalesReturnController::class, 'pdf'])->whereNumber('document')->name('sales-returns.pdf');
 
     // Vouchers
 Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
