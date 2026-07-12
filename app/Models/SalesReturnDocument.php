@@ -30,4 +30,5 @@ class SalesReturnDocument extends Model
     public function isSazehHesab(): bool { return $this->source_type === self::SOURCE_SAZEH_HESAB; }
     public static function statusLabels(): array { return [self::STATUS_DRAFT=>'پیش‌نویس', self::STATUS_APPLIED=>'ثبت نهایی', self::STATUS_CANCELLED=>'لغوشده']; }
     public static function sourceTypeLabels(): array { return [self::SOURCE_INTERNAL_INVOICE=>'فاکتور داخلی', self::SOURCE_SAZEH_HESAB=>'فاکتور سازه‌حساب']; }
+    public static function returnReasonLabels(): array { return ['damaged_product'=>'خرابی کالا', 'product_mismatch'=>'مغایرت کالا', 'wrong_dispatch'=>'اشتباه در ارسال', 'customer_cancellation'=>'انصراف مشتری', 'appearance_issue'=>'ایراد ظاهری', 'technical_issue'=>'ایراد فنی', 'registration_error'=>'ثبت اشتباه', 'other'=>'سایر']; }
 }
