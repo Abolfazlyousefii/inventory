@@ -48,9 +48,15 @@
 
   <div class="sales-tabs mb-3" role="tablist">
     @foreach($tabs as $tabKey => $tab)
-      @php($isNeeds = $tabKey === MySalesDocumentsService::TAB_NEEDS_ACTION)
-      <a class="sales-tab {{ $activeTab === $tabKey ? 'active' : '' }} {{ $isNeeds && ($tabCounts[$tabKey] ?? 0) > 0 ? 'needs-attention' : '' }}" href="{{ route('preinvoice.my.index', array_merge(request()->except('page', 'status'), ['tab' => $tabKey])) }}">
-        @if($isNeeds && ($tabCounts[$tabKey] ?? 0) > 0)<span class="dot"></span>@endif{{ $tab['label'] }} <span class="count">({{ number_format($tabCounts[$tabKey] ?? 0) }})</span>
+      @php
+        $isNeeds = $tabKey === MySalesDocumentsService::TAB_NEEDS_ACTION;
+        $tabCount = $tabCounts[$tabKey] ?? 0;
+      @endphp
+      <a class="sales-tab {{ $activeTab === $tabKey ? 'active' : '' }} {{ $isNeeds && $tabCount > 0 ? 'needs-attention' : '' }}" href="{{ route('preinvoice.my.index', array_merge(request()->except('page', 'status'), ['tab' => $tabKey])) }}">
+        @if($isNeeds && $tabCount > 0)
+          <span class="dot"></span>
+        @endif
+        {{ $tab['label'] }} <span class="count">({{ number_format($tabCount) }})</span>
       </a>
     @endforeach
   </div>
@@ -60,7 +66,15 @@
       <input type="hidden" name="tab" value="{{ $activeTab }}">
       <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">شماره سند</label><input name="q" class="form-control" value="{{ $filters['q'] ?? '' }}" placeholder="پیش‌فاکتور یا فاکتور"></div>
       <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">نام مشتری</label><input name="customer" class="form-control" value="{{ $filters['customer'] ?? '' }}" placeholder="نام مشتری"></div>
-      <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">وضعیت</label><select name="status" class="form-select"><option value="">همه وضعیت‌های این تب</option>@foreach($statusLabels as $key => $label)<option value="{{ $key }}" @selected($status === $key)>{{ $label }}</option>@endforeach</select></div>
+      <div class="col-md-3 col-xl-2">
+        <label class="form-label fw-bold text-muted small">وضعیت</label>
+        <select name="status" class="form-select">
+          <option value="">همه وضعیت‌های این تب</option>
+          @foreach($statusLabels as $key => $label)
+            <option value="{{ $key }}" @selected($status === $key)>{{ $label }}</option>
+          @endforeach
+        </select>
+      </div>
       <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">نوع سند</label><select name="type" class="form-select"><option value="">همه</option><option value="preinvoice" @selected(($filters['type'] ?? '') === 'preinvoice')>پیش‌فاکتور</option><option value="invoice" @selected(($filters['type'] ?? '') === 'invoice')>فاکتور</option></select></div>
       <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">از تاریخ</label><input type="date" name="date_from" class="form-control" value="{{ $filters['date_from'] ?? '' }}"></div>
       <div class="col-md-3 col-xl-2"><label class="form-label fw-bold text-muted small">تا تاریخ</label><input type="date" name="date_to" class="form-control" value="{{ $filters['date_to'] ?? '' }}"></div>
@@ -71,58 +85,98 @@
 
   <div class="row g-2" data-sales-documents>
     @forelse($orders as $order)
-      @php($summary = $order->current_document)
-      @php($isNeedsAction = $summary['bucket'] === MySalesDocumentsService::BUCKET_NEEDS_ACTION)
-      @php($isDraft = $summary['bucket'] === MySalesDocumentsService::BUCKET_DRAFT)
-      @php($documentDomId = 'sales-document-details-' . preg_replace('/[^A-Za-z0-9_-]/', '-', (string) $summary['document_number']))
-      <div class="col-12"><article class="document-card {{ $isNeedsAction ? 'needs-action' : '' }}" data-document-card>
-        <div class="document-summary" role="button" tabindex="0" data-document-toggle aria-expanded="false" aria-controls="{{ $documentDomId }}">
-          <span class="document-summary-grid">
-            <span class="summary-cell"><span class="summary-value document-code">{{ Str::limit($summary['document_number'], 18, '…') }}</span><span class="document-type">{{ $summary['has_invoice'] ? 'فاکتور' : 'پیش‌فاکتور' }}@if($summary['has_invoice'])<br><small>پیش‌فاکتور: {{ $summary['preinvoice_uuid'] }}</small>@endif</span></span>
-            <span class="summary-cell"><span class="summary-label">مشتری</span><span class="summary-value">{{ $summary['customer_name'] ?: '—' }}</span></span>
-            <span class="summary-cell"><span class="summary-label">وضعیت</span><span class="badge {{ $statusBadge($summary) }}">{{ $summary['status_label'] }}</span></span>
-            <span class="summary-cell summary-amount"><span class="summary-label">مبلغ فعلی</span><span class="summary-value">{{ \App\Support\Currency::formatRial($summary['total_amount']) }}</span></span>
-            <span class="summary-cell summary-items"><span class="summary-label">اقلام</span><span class="summary-value">{{ number_format($summary['items_count']) }} قلم</span></span>
-            <span class="summary-cell"><span class="summary-label">آخرین تغییر</span><span class="summary-value">{{ $toJalali($summary['last_changed_at']) }}</span></span>
-            <span class="summary-actions" data-document-actions>
-              <a href="{{ $summary['view_url'] }}" class="btn btn-sm btn-outline-primary" data-document-action>{{ $summary['has_invoice'] ? 'مشاهده فاکتور' : 'مشاهده سند' }}</a>
-              @if($summary['edit_url'] && ($isNeedsAction || $isDraft))<a href="{{ $summary['edit_url'] }}" class="btn btn-sm btn-warning" data-document-action>{{ $summary['status_key'] === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED ? 'ادامه ویرایش' : ($isDraft ? 'ادامه ویرایش' : 'اصلاح و ارسال مجدد') }}</a>@endif
-              <span class="btn btn-sm btn-outline-secondary" role="button"><span class="document-toggle-text">جزئیات</span> ▼</span>
+      @php
+        $summary = $order->current_document;
+        $isNeedsAction = $summary['bucket'] === MySalesDocumentsService::BUCKET_NEEDS_ACTION;
+        $isDraft = $summary['bucket'] === MySalesDocumentsService::BUCKET_DRAFT;
+        $documentDomId = 'sales-document-details-' . preg_replace('/[^A-Za-z0-9_-]/', '-', (string) $summary['document_number']);
+      @endphp
+      <div class="col-12">
+        <article class="document-card {{ $isNeedsAction ? 'needs-action' : '' }}" data-document-card>
+          <div class="document-summary" role="button" tabindex="0" data-document-toggle aria-expanded="false" aria-controls="{{ $documentDomId }}">
+            <span class="document-summary-grid">
+              <span class="summary-cell">
+                <span class="summary-value document-code">{{ Str::limit($summary['document_number'], 18, '…') }}</span>
+                <span class="document-type">
+                  {{ $summary['has_invoice'] ? 'فاکتور' : 'پیش‌فاکتور' }}
+                  @if($summary['has_invoice'])
+                    <br><small>پیش‌فاکتور: {{ $summary['preinvoice_uuid'] }}</small>
+                  @endif
+                </span>
+              </span>
+              <span class="summary-cell"><span class="summary-label">مشتری</span><span class="summary-value">{{ $summary['customer_name'] ?: '—' }}</span></span>
+              <span class="summary-cell"><span class="summary-label">وضعیت</span><span class="badge {{ $statusBadge($summary) }}">{{ $summary['status_label'] }}</span></span>
+              <span class="summary-cell summary-amount"><span class="summary-label">مبلغ فعلی</span><span class="summary-value">{{ \App\Support\Currency::formatRial($summary['total_amount']) }}</span></span>
+              <span class="summary-cell summary-items"><span class="summary-label">اقلام</span><span class="summary-value">{{ number_format($summary['items_count']) }} قلم</span></span>
+              <span class="summary-cell"><span class="summary-label">آخرین تغییر</span><span class="summary-value">{{ $toJalali($summary['last_changed_at']) }}</span></span>
+              <span class="summary-actions" data-document-actions>
+                <a href="{{ $summary['view_url'] }}" class="btn btn-sm btn-outline-primary" data-document-action>{{ $summary['has_invoice'] ? 'مشاهده فاکتور' : 'مشاهده سند' }}</a>
+                @if($summary['edit_url'] && ($isNeedsAction || $isDraft))
+                  <a href="{{ $summary['edit_url'] }}" class="btn btn-sm btn-warning" data-document-action>
+                    {{ $summary['status_key'] === \App\Models\PreinvoiceOrder::STATUS_RESERVATION_EXPIRED ? 'ادامه ویرایش' : ($isDraft ? 'ادامه ویرایش' : 'اصلاح و ارسال مجدد') }}
+                  </a>
+                @endif
+                <span class="btn btn-sm btn-outline-secondary" role="button"><span class="document-toggle-text">جزئیات</span> ▼</span>
+              </span>
             </span>
-          </span>
-          <span class="header-badges">
-            @if($isNeedsAction)<span class="badge text-bg-danger">{{ $summary['needs_action_label'] }}</span><span class="badge text-bg-warning text-dark">{{ $summary['needs_action_reason'] }}</span>@endif
-            @if($isDraft)<span class="badge text-bg-secondary">پیش‌نویس</span>@if($order->is_auto_draft)<span class="badge text-bg-info">ذخیره خودکار</span>@else<span class="badge text-bg-light border text-dark">در انتظار تکمیل</span>@endif@endif
-            @if(in_array($summary['status_key'], [\App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE, \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, \App\Models\Invoice::STATUS_NOT_SHIPPED], true))<span class="badge text-bg-dark">لغوشده</span>@endif
-          </span>
-          @if($isNeedsAction)<div class="action-message">{{ $summary['needs_action_message'] }}</div>@endif
-        </div>
-        <div class="document-details" id="{{ $documentDomId }}" data-document-details hidden>
-          <div class="document-detail-grid">
-            <div class="meta-box"><div class="label">مشتری</div><div class="value">{{ $summary['customer_name'] ?: '—' }}</div></div>
-            <div class="meta-box"><div class="label">موبایل</div><div class="value">{{ $summary['customer_mobile'] ?: '—' }}</div></div>
-            <div class="meta-box"><div class="label">مبلغ فعلی</div><div class="value">{{ \App\Support\Currency::formatRial($summary['total_amount']) }}</div></div>
-            <div class="meta-box"><div class="label">تعداد اقلام</div><div class="value">{{ number_format($summary['items_count']) }} قلم</div></div>
-            <div class="meta-box"><div class="label">پرداخت‌شده</div><div class="value">{{ is_null($summary['paid_amount']) ? '—' : \App\Support\Currency::formatRial($summary['paid_amount']) }}</div></div>
-            <div class="meta-box"><div class="label">مانده</div><div class="value">{{ is_null($summary['remaining_amount']) ? '—' : \App\Support\Currency::formatRial($summary['remaining_amount']) }}</div></div>
-            <div class="meta-box"><div class="label">شماره پیش‌فاکتور اولیه</div><div class="value document-code">{{ $summary['preinvoice_uuid'] ?: '—' }}</div></div>
-            <div class="meta-box"><div class="label">اقدام بعدی</div><div class="value">{{ $summary['next_action_label'] }}</div></div>
+            <span class="header-badges">
+              @if($isNeedsAction)
+                <span class="badge text-bg-danger">{{ $summary['needs_action_label'] }}</span>
+                <span class="badge text-bg-warning text-dark">{{ $summary['needs_action_reason'] }}</span>
+              @endif
+              @if($isDraft)
+                <span class="badge text-bg-secondary">پیش‌نویس</span>
+                @if($order->is_auto_draft)
+                  <span class="badge text-bg-info">ذخیره خودکار</span>
+                @else
+                  <span class="badge text-bg-light border text-dark">در انتظار تکمیل</span>
+                @endif
+              @endif
+              @if(in_array($summary['status_key'], [\App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE, \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, \App\Models\Invoice::STATUS_NOT_SHIPPED], true))
+                <span class="badge text-bg-dark">لغوشده</span>
+              @endif
+            </span>
+            @if($isNeedsAction)
+              <div class="action-message">{{ $summary['needs_action_message'] }}</div>
+            @endif
           </div>
-          @if($isNeedsAction)
-            <div class="mb-3"><div class="detail-section-title">اطلاعات ارجاع</div><div class="document-detail-grid">
-              <div class="meta-box"><div class="label">ارجاع‌دهنده</div><div class="value">{{ $summary['return_by'] ?: '—' }}</div></div>
-              <div class="meta-box"><div class="label">تاریخ ارجاع</div><div class="value">{{ $toJalali($summary['return_at']) }}</div></div>
-              <div class="meta-box"><div class="label">واحد ارجاع‌دهنده</div><div class="value">{{ $summary['return_unit'] ?: '—' }}</div></div>
-              <div class="meta-box"><div class="label">علت ارجاع</div><div class="value">{{ $summary['return_reason'] ?: 'علت ارجاع ثبت نشده است.' }}</div></div>
-              <div class="meta-box"><div class="label">توضیحات ارجاع</div><div class="value">{{ $summary['return_note'] ?: '—' }}</div></div>
-            </div></div>
-          @endif
-          @if($order->is_auto_draft)<div class="small text-muted mb-2">آخرین ذخیره خودکار: {{ $toJalali($order->auto_saved_at) }}</div>@endif
-          <div class="detail-actions">
-            <a href="{{ $summary['view_url'] }}" class="btn btn-sm btn-outline-primary">{{ $summary['has_invoice'] ? 'مشاهده فاکتور' : 'مشاهده سند' }}</a>
-            @if($activeTab === MySalesDocumentsService::TAB_DOCUMENTS)<a href="{{ $summary['print_url'] }}" target="_blank" class="btn btn-sm btn-outline-dark">چاپ</a>@endif
-            @if($summary['edit_url'] && ($isNeedsAction || $isDraft))<a href="{{ $summary['edit_url'] }}" class="btn btn-sm btn-warning">{{ $isDraft ? 'ادامه ویرایش' : 'اصلاح سند' }}</a>@endif
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-document-toggle aria-expanded="true" aria-controls="{{ $documentDomId }}">بستن جزئیات ▲</button>
+
+          <div class="document-details" id="{{ $documentDomId }}" data-document-details hidden>
+            <div class="document-detail-grid">
+              <div class="meta-box"><div class="label">مشتری</div><div class="value">{{ $summary['customer_name'] ?: '—' }}</div></div>
+              <div class="meta-box"><div class="label">موبایل</div><div class="value">{{ $summary['customer_mobile'] ?: '—' }}</div></div>
+              <div class="meta-box"><div class="label">مبلغ فعلی</div><div class="value">{{ \App\Support\Currency::formatRial($summary['total_amount']) }}</div></div>
+              <div class="meta-box"><div class="label">تعداد اقلام</div><div class="value">{{ number_format($summary['items_count']) }} قلم</div></div>
+              <div class="meta-box"><div class="label">پرداخت‌شده</div><div class="value">{{ is_null($summary['paid_amount']) ? '—' : \App\Support\Currency::formatRial($summary['paid_amount']) }}</div></div>
+              <div class="meta-box"><div class="label">مانده</div><div class="value">{{ is_null($summary['remaining_amount']) ? '—' : \App\Support\Currency::formatRial($summary['remaining_amount']) }}</div></div>
+              <div class="meta-box"><div class="label">شماره پیش‌فاکتور اولیه</div><div class="value document-code">{{ $summary['preinvoice_uuid'] ?: '—' }}</div></div>
+              <div class="meta-box"><div class="label">اقدام بعدی</div><div class="value">{{ $summary['next_action_label'] }}</div></div>
+            </div>
+            @if($isNeedsAction)
+              <div class="mb-3">
+                <div class="detail-section-title">اطلاعات ارجاع</div>
+                <div class="document-detail-grid">
+                  <div class="meta-box"><div class="label">ارجاع‌دهنده</div><div class="value">{{ $summary['return_by'] ?: '—' }}</div></div>
+                  <div class="meta-box"><div class="label">تاریخ ارجاع</div><div class="value">{{ $toJalali($summary['return_at']) }}</div></div>
+                  <div class="meta-box"><div class="label">واحد ارجاع‌دهنده</div><div class="value">{{ $summary['return_unit'] ?: '—' }}</div></div>
+                  <div class="meta-box"><div class="label">علت ارجاع</div><div class="value">{{ $summary['return_reason'] ?: 'علت ارجاع ثبت نشده است.' }}</div></div>
+                  <div class="meta-box"><div class="label">توضیحات ارجاع</div><div class="value">{{ $summary['return_note'] ?: '—' }}</div></div>
+                </div>
+              </div>
+            @endif
+            @if($order->is_auto_draft)
+              <div class="small text-muted mb-2">آخرین ذخیره خودکار: {{ $toJalali($order->auto_saved_at) }}</div>
+            @endif
+            <div class="detail-actions">
+              <a href="{{ $summary['view_url'] }}" class="btn btn-sm btn-outline-primary">{{ $summary['has_invoice'] ? 'مشاهده فاکتور' : 'مشاهده سند' }}</a>
+              @if($activeTab === MySalesDocumentsService::TAB_DOCUMENTS)
+                <a href="{{ $summary['print_url'] }}" target="_blank" class="btn btn-sm btn-outline-dark">چاپ</a>
+              @endif
+              @if($summary['edit_url'] && ($isNeedsAction || $isDraft))
+                <a href="{{ $summary['edit_url'] }}" class="btn btn-sm btn-warning">{{ $isDraft ? 'ادامه ویرایش' : 'اصلاح سند' }}</a>
+              @endif
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-document-toggle aria-expanded="true" aria-controls="{{ $documentDomId }}">بستن جزئیات ▲</button>
+            </div>
           </div>
         </div>
       </article></div>
