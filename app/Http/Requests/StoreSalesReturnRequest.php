@@ -26,7 +26,7 @@ class StoreSalesReturnRequest extends FormRequest
             'return_reason' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.return_quantity' => ['required', 'integer', 'min:1'],
+            'items.*.return_quantity' => ['required', 'integer', 'min:0'],
             'items.*.item_condition' => ['required', Rule::in(['healthy', 'damaged'])],
             'items.*.destination_warehouse_id' => ['nullable', 'integer', 'exists:warehouses,id'],
         ];
@@ -44,7 +44,7 @@ class StoreSalesReturnRequest extends FormRequest
                 'external_invoice_date' => ['required', 'date'],
                 'items.*.product_id' => ['nullable', 'integer', 'exists:products,id'],
                 'items.*.product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-                'items.*.refund_unit_price' => ['required', 'integer', 'min:1'],
+                'items.*.refund_unit_price' => ['nullable', 'integer', 'min:1'],
                 'items.*.new_product_payload' => ['nullable', 'array'],
                 'items.*.new_product_payload.product_name' => ['nullable', 'string', 'max:255'],
                 'items.*.new_product_payload.variant_name' => ['nullable', 'string', 'max:255'],
@@ -66,6 +66,12 @@ class StoreSalesReturnRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $hasPositiveQuantity = collect($this->input('items', []))->contains(fn ($item) => (int) ($item['return_quantity'] ?? 0) > 0);
+            if (!$hasPositiveQuantity) {
+                $validator->errors()->add('items', 'حداقل یک ردیف با تعداد برگشتی بیشتر از صفر لازم است.');
                 return;
             }
 
@@ -121,6 +127,12 @@ class StoreSalesReturnRequest extends FormRequest
     protected function validateSazeh(Validator $validator): void
     {
         foreach ($this->input('items', []) as $index => $item) {
+            if ((int) ($item['return_quantity'] ?? 0) <= 0) {
+                continue;
+            }
+            if ((int) ($item['refund_unit_price'] ?? 0) < 1) {
+                $validator->errors()->add("items.{$index}.refund_unit_price", 'مبلغ بستانکاری واحد معتبر نیست.');
+            }
             $hasExisting = !empty($item['product_id']) || !empty($item['product_variant_id']);
             $hasPayload = !empty($item['new_product_payload']);
             if (!$hasExisting && !$hasPayload) {

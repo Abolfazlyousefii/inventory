@@ -43,7 +43,7 @@ class SalesReturnLookupController extends Controller
     {
         abort_unless($request->user()?->hasPermission('sales_returns.create'), 403);
         $allowOverride = $request->user()?->hasPermission('sales_returns.override_invoice_status');
-        $query = Invoice::query()->where('customer_id', $customer->id)->whereHas('items');
+        $query = Invoice::query()->withCount('items')->where('customer_id', $customer->id)->whereHas('items');
         if (!$allowOverride) {
             $query->where('status', Invoice::STATUS_SHIPPED);
         }
@@ -55,6 +55,7 @@ class SalesReturnLookupController extends Controller
             'total' => (int) $invoice->total,
             'status' => $invoice->status,
             'status_label' => Invoice::statusLabels()[$invoice->status] ?? $invoice->status,
+            'items_count' => (int) ($invoice->items_count ?? 0),
         ])]);
     }
 
