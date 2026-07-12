@@ -6,8 +6,11 @@ use App\Exports\SalesReturnsExport;
 use App\Http\Requests\{ApplySalesReturnRequest,SalesReturnIndexRequest,StoreSalesReturnRequest,UpdateSalesReturnRequest};
 use App\Models\{Category,Customer,Product,ProductVariant,SalesReturnDocument,User,Warehouse,WarehouseTransfer};
 use App\Services\{SalesReturnReportService,SalesReturnService};
-use Mpdf\Mpdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Mpdf\Config\ConfigVariables;
+use Mpdf\Config\FontVariables;
+use Mpdf\Mpdf;
 use Maatwebsite\Excel\Facades\Excel;
 
 class VoucherSalesReturnController extends Controller
@@ -44,7 +47,41 @@ class VoucherSalesReturnController extends Controller
  }
 
  private function reportData(SalesReturnIndexRequest $request): array { $filters=$request->filters(); $rows=$this->reports->getPdfRows($filters); return ['filters'=>$filters,'rows'=>$rows,'generatedAt'=>$this->reports->jalaliDateTime(now())]; }
- private function pdfResponse(string $view,array $data,string $filename,string $orientation='portrait'){ $mpdf=new Mpdf(['mode'=>'utf-8','format'=>'A4','orientation'=>$orientation === 'landscape' ? 'L' : 'P','default_font'=>'dejavusans','autoScriptToLang'=>true,'autoLangToFont'=>true]); $mpdf->SetDirectionality('rtl'); $mpdf->WriteHTML(view($view,$data)->render()); return response($mpdf->Output($filename, 'S'),200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="'.$filename.'"']); }
+ private function pdfResponse(string $view,array $data,string $filename,string $orientation='portrait'){
+     if (! class_exists(Mpdf::class)) {
+         report(new \RuntimeException('PDF engine mpdf/mpdf is not installed or autoloaded.'));
+         return redirect()->route('vouchers.return-from-sale.index')->withErrors(['pdf'=>'موتور تولید PDF روی سرور نصب یا بارگذاری نشده است.']);
+     }
+
+     try {
+         $tempDir = storage_path('app/mpdf-temp');
+         File::ensureDirectoryExists($tempDir);
+
+         $defaultConfig = (new ConfigVariables())->getDefaults();
+         $defaultFontConfig = (new FontVariables())->getDefaults();
+         $fontDirs = $defaultConfig['fontDir'];
+         $fontData = $defaultFontConfig['fontdata'];
+
+         $mpdf=new Mpdf([
+             'mode'=>'utf-8',
+             'format'=>'A4',
+             'orientation'=>$orientation === 'landscape' ? 'L' : 'P',
+             'tempDir'=>$tempDir,
+             'fontDir'=>array_merge($fontDirs, [public_path('fonts'), public_path('css/fonts'), resource_path('fonts')]),
+             'fontdata'=>$fontData,
+             'default_font'=>'dejavusans',
+             'autoScriptToLang'=>true,
+             'autoLangToFont'=>true,
+         ]);
+         $mpdf->SetDirectionality('rtl');
+         $mpdf->WriteHTML(view($view,$data)->render());
+         return response($mpdf->Output($filename, 'S'),200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="'.$filename.'"']);
+     } catch (\Throwable $exception) {
+         report($exception);
+         return redirect()->route('vouchers.return-from-sale.index')->withErrors(['pdf'=>'تولید فایل PDF با مشکل مواجه شد. لطفاً تنظیمات موتور PDF سرور بررسی شود.']);
+     }
+ }
+
  private function formData(): array { return ['warehouses'=>Warehouse::where('is_active',true)->whereIn('type',['central','return'])->get(), 'categories'=>Category::orderBy('name')->get(), 'returnReasons'=>SalesReturnDocument::returnReasonLabels(), 'legacyReturnUrl'=>route('vouchers.return-from-sale.index')]; }
  private function enrich(Request $request): array { $data=$request->validated(); $data['can_override_destination']=$request->user()?->can('sales_returns.override_destination') || $request->user()?->hasRole(['admin','Admin']); return $data; }
 }

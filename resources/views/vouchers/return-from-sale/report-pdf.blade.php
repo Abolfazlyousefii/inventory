@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <style>
     @page { size: A4 portrait; margin: 14mm; }
-    body { direction: rtl; text-align: right; font-family: dejavusans, sans-serif; color: #111827; font-size: 11px; background: #fff; }
+    html, body { direction: rtl; text-align: right; font-family: dejavusans, sans-serif; color: #111827; font-size: 11px; background: #fff; }
     h1 { font-size: 20px; font-weight: bold; margin: 0 0 8px; }
     .generated { margin-bottom: 14px; color: #374151; }
     table { width: 100%; border-collapse: collapse; }
     thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
     th, td { border: 1px solid #d1d5db; padding: 7px 6px; vertical-align: middle; }
     th { background: #eef5fb; font-weight: bold; }
     td.amount { direction: ltr; text-align: left; }
@@ -27,7 +28,7 @@
             <td>{{ $row['customer_name'] }}</td>
             <td>{{ $row['returned_at_display'] }}</td>
             <td>{{ $row['destination_warehouse_label'] }}</td>
-            <td class="amount">{{ number_format($row['total_amount']) }}</td>
+            <td class="amount">{{ number_format($row['total_amount']) }} ریال</td>
         </tr>
     @empty
         <tr><td colspan="6" style="text-align:center;color:#6b7280">موردی برای نمایش وجود ندارد.</td></tr>
