@@ -210,7 +210,7 @@
                     </div>
                 </a>
 
-                <a class="voucher-card" href="{{ route('vouchers.section.index', 'return-from-sale') }}">
+                <a class="voucher-card" href="{{ route('vouchers.return-from-sale.index') }}">
                     <div class="voucher-icon">🔁</div>
                     <div class="voucher-title">برگشت از فروش</div>
                     <div class="voucher-desc">
