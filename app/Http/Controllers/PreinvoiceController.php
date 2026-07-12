@@ -26,6 +26,7 @@ use App\Services\PaymentRegistrationService;
 use App\Services\NotificationService;
 use App\Services\PreinvoiceDraftReservationService;
 use App\Services\PreinvoiceReservationService;
+use App\Services\MySalesDocumentsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -43,6 +44,7 @@ class PreinvoiceController extends Controller
         private readonly WarehousePendingRefreshService $warehousePendingRefreshService,
         private readonly PreinvoiceDraftReservationService $draftReservationService,
         private readonly PreinvoiceReservationService $reservationService,
+        private readonly MySalesDocumentsService $mySalesDocumentsService,
     ) {}
 
     public function create()
@@ -384,94 +386,36 @@ class PreinvoiceController extends Controller
     {
         abort_unless(auth()->check(), 403);
 
-        $filters = [
-            'status' => (string) $request->query('status', ''),
-            'q' => trim((string) $request->query('q', '')),
-            'customer' => trim((string) $request->query('customer', '')),
-            'type' => (string) $request->query('type', ''),
-            'date_from' => (string) $request->query('date_from', ''),
-            'date_to' => (string) $request->query('date_to', ''),
-            'changed_only' => $request->boolean('changed_only'),
-        ];
-        $status = $filters['status'];
+        $filters = $this->mySalesDocumentsService->filters($request);
+        $tabCounts = $this->mySalesDocumentsService->counts((int) auth()->id());
+        $activeTab = $this->mySalesDocumentsService->defaultTab($tabCounts, $request->query('tab'));
+        $bucket = $this->mySalesDocumentsService->tabToBucket($activeTab);
+        $allowedStatuses = $this->mySalesDocumentsService->bucketStatuses($bucket);
 
-        $invoiceActivitySql = "select greatest(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
-
-        $query = PreinvoiceOrder::query()
-            ->where('created_by', auth()->id())
-            ->select('preinvoice_orders.*')
-            ->selectSub("coalesce(($invoiceActivitySql), preinvoice_orders.updated_at)", 'activity_at')
-            ->withCount('items')
-            ->withSum('items as items_quantity_sum', 'quantity')
-            ->with([
-                'customer:id,first_name,last_name,mobile',
-                'invoice' => fn ($invoiceQuery) => $invoiceQuery
-                    ->select('id', 'uuid', 'preinvoice_order_id', 'status', 'total', 'items_updated_at', 'status_changed_at', 'status_changed_by', 'created_at', 'updated_at', 'customer_name', 'customer_mobile', 'shipped_at', 'shipping_id')
-                    ->withCount('items')
-                    ->withSum('items as items_quantity_sum', 'quantity')
-                    ->withSum('payments as paid_total', 'amount')
-                    ->with(['shippingMethod:id,name', 'statusChangedByUser:id,name']),
-            ]);
-
-        if ($filters['q'] !== '') {
-            $needle = '%' . $filters['q'] . '%';
-            $query->where(function ($query) use ($needle) {
-                $query->where('uuid', 'like', $needle)
-                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('uuid', 'like', $needle));
-            });
+        if ($filters['status'] !== '' && ! in_array($filters['status'], array_merge($allowedStatuses['preinvoice'], $allowedStatuses['invoice']), true)) {
+            $filters['status'] = '';
         }
 
-        if ($filters['customer'] !== '') {
-            $needle = '%' . $filters['customer'] . '%';
-            $query->where(function ($query) use ($needle) {
-                $query->where('customer_name', 'like', $needle)
-                    ->orWhereHas('customer', fn ($customerQuery) => $customerQuery
-                        ->where('first_name', 'like', $needle)
-                        ->orWhere('last_name', 'like', $needle))
-                    ->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('customer_name', 'like', $needle));
-            });
-        }
-
-        if ($filters['type'] === 'preinvoice') {
-            $query->doesntHave('invoice');
-        } elseif ($filters['type'] === 'invoice') {
-            $query->has('invoice');
-        }
-
-        if ($filters['date_from'] !== '') {
-            $query->whereDate('preinvoice_orders.created_at', '>=', $filters['date_from']);
-        }
-
-        if ($filters['date_to'] !== '') {
-            $query->whereDate('preinvoice_orders.created_at', '<=', $filters['date_to']);
-        }
-
-        if ($filters['changed_only']) {
-            $query->whereHas('invoice', fn ($invoiceQuery) => $invoiceQuery
-                ->whereNotNull('items_updated_at')
-                ->orWhereColumn('invoices.total', '<>', 'preinvoice_orders.total_price'));
-        }
-
-        if ($status !== '') {
-            $query->where(function ($query) use ($status) {
-                $query->where(function ($preinvoiceQuery) use ($status) {
-                    $preinvoiceQuery->doesntHave('invoice')->where('status', $status);
-                })->orWhereHas('invoice', fn ($invoiceQuery) => $invoiceQuery->where('status', $status));
-            });
-        }
-
-        $orders = $query->orderByDesc('activity_at')->orderByDesc('preinvoice_orders.id')->paginate(30)->withQueryString();
-        $orders->getCollection()->transform(function (PreinvoiceOrder $order) {
-            $order->setAttribute('current_document', $this->buildMyPreinvoiceSummary($order));
+        $orders = $this->mySalesDocumentsService->paginate((int) auth()->id(), $activeTab, $filters);
+        $orders->getCollection()->transform(function (PreinvoiceOrder $order) use ($bucket) {
+            $order->setAttribute('current_document', $this->buildMyPreinvoiceSummary($order, $bucket));
 
             return $order;
         });
-        $statusLabels = array_merge($this->myPreinvoiceStatusLabels(), $this->myInvoiceStatusLabels());
 
-        return view('preinvoice.my-index', compact('orders', 'status', 'statusLabels', 'filters'));
+        $status = $filters['status'];
+        $statusLabels = $this->labelsForMySalesTab($allowedStatuses);
+        $allStatusLabels = array_merge($this->myPreinvoiceStatusLabels(), $this->myInvoiceStatusLabels());
+        $tabs = [
+            MySalesDocumentsService::TAB_NEEDS_ACTION => ['label' => 'نیاز به اصلاح', 'bucket' => MySalesDocumentsService::BUCKET_NEEDS_ACTION],
+            MySalesDocumentsService::TAB_DRAFTS => ['label' => 'پیش‌نویس‌ها', 'bucket' => MySalesDocumentsService::BUCKET_DRAFT],
+            MySalesDocumentsService::TAB_DOCUMENTS => ['label' => 'فاکتورها', 'bucket' => MySalesDocumentsService::BUCKET_DOCUMENT],
+        ];
+
+        return view('preinvoice.my-index', compact('orders', 'status', 'statusLabels', 'allStatusLabels', 'filters', 'activeTab', 'tabCounts', 'tabs'));
     }
 
-    private function buildMyPreinvoiceSummary(PreinvoiceOrder $order): array
+    private function buildMyPreinvoiceSummary(PreinvoiceOrder $order, string $bucket = MySalesDocumentsService::BUCKET_DOCUMENT): array
     {
         $invoice = $order->invoice;
         $hasInvoice = $invoice !== null;
@@ -489,7 +433,11 @@ class PreinvoiceController extends Controller
         }
         $hasItemsChanged = $hasInvoice && !empty($invoice->items_updated_at);
 
+        $needsActionMeta = $this->myNeedsActionMeta($order, $invoice, $hasInvoice, $statusKey);
+        $canEdit = ! $hasInvoice && in_array($order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true);
+
         return [
+            'bucket' => $bucket,
             'source' => $hasInvoice ? 'invoice' : 'preinvoice',
             'document_number' => $hasInvoice ? $invoice->uuid : $order->uuid,
             'document_type' => $hasInvoice ? 'invoice' : 'preinvoice',
@@ -515,29 +463,92 @@ class PreinvoiceController extends Controller
             'total_difference' => $hasInvoice ? $totalAmount - $originalTotalAmount : 0,
             'is_shipped' => $hasInvoice && $statusKey === Invoice::STATUS_SHIPPED,
             'last_changed_at' => $invoice?->shipped_at ?: $invoice?->items_updated_at ?: $invoice?->status_changed_at ?: $invoice?->updated_at ?: $order->updated_at,
+            'needs_action_label' => $needsActionMeta['label'],
+            'needs_action_reason' => $needsActionMeta['reason'],
+            'needs_action_message' => $needsActionMeta['message'],
+            'return_by' => $needsActionMeta['by'],
+            'return_at' => $needsActionMeta['at'],
+            'return_reason' => $needsActionMeta['return_reason'],
+            'return_note' => $needsActionMeta['note'],
+            'return_unit' => $needsActionMeta['unit'],
+            'can_edit' => $canEdit,
             'next_action_label' => $this->myPreinvoiceNextActionLabel($hasInvoice, $statusKey),
             'view_url' => $hasInvoice ? route('vouchers.sales.show', $invoice->uuid) : route('preinvoice.my.show', $order->uuid),
-            'edit_url' => (!$hasInvoice && in_array($order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true))
-                ? route('preinvoice.draft.edit', $order->uuid)
-                : null,
+            'edit_url' => $canEdit ? route('preinvoice.draft.edit', $order->uuid) : null,
             'print_url' => $hasInvoice ? route('vouchers.sales.print', $invoice->uuid) : route('preinvoice.my.show', $order->uuid) . '?print=1',
         ];
     }
 
+
+    private function labelsForMySalesTab(array $allowedStatuses): array
+    {
+        $labels = array_merge($this->myPreinvoiceStatusLabels(), $this->myInvoiceStatusLabels());
+
+        return collect(array_merge($allowedStatuses['preinvoice'], $allowedStatuses['invoice']))
+            ->mapWithKeys(fn ($status) => [$status => $labels[$status] ?? $status])
+            ->all();
+    }
+
+    private function myNeedsActionMeta(PreinvoiceOrder $order, ?Invoice $invoice, bool $hasInvoice, string $statusKey): array
+    {
+        $empty = ['label' => null, 'reason' => null, 'message' => null, 'by' => null, 'at' => null, 'return_reason' => null, 'note' => null, 'unit' => null];
+
+        if (! $hasInvoice && $statusKey === PreinvoiceOrder::STATUS_RETURNED_TO_SALES) {
+            return [
+                'label' => 'نیاز به بررسی',
+                'reason' => 'ارجاع مالی',
+                'message' => 'این سند برای اصلاح به شما بازگردانده شده است.',
+                'by' => null,
+                'at' => $order->updated_at,
+                'return_reason' => $order->warehouse_reject_reason ?: null,
+                'note' => $order->warehouse_review_note ?: null,
+                'unit' => 'مالی',
+            ];
+        }
+
+        if (! $hasInvoice && $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED) {
+            return [
+                'label' => 'نیاز به بررسی',
+                'reason' => 'رزرو منقضی',
+                'message' => 'رزرو موجودی این سند منقضی شده و نیازمند بررسی است.',
+                'by' => null,
+                'at' => $order->stock_released_at ?: $order->updated_at,
+                'return_reason' => 'رزرو موجودی منقضی شده',
+                'note' => null,
+                'unit' => 'سیستم',
+            ];
+        }
+
+        if ($hasInvoice && $statusKey === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION) {
+            return [
+                'label' => 'نیاز به بررسی',
+                'reason' => 'بازگشت بعد از جمع‌آوری',
+                'message' => 'این فاکتور پس از اصلاحات انبار برای بررسی بازگردانده شده است.',
+                'by' => $invoice?->statusChangedByUser?->name,
+                'at' => $invoice?->status_changed_at ?: $invoice?->updated_at,
+                'return_reason' => $invoice?->collection_note ?: null,
+                'note' => $invoice?->collection_note ?: null,
+                'unit' => 'مالی',
+            ];
+        }
+
+        return $empty;
+    }
+
     private function myPreinvoiceStatusLabels(): array
     {
-        return [
+        return array_merge(PreinvoiceOrder::statusLabels(), [
             PreinvoiceOrder::STATUS_DRAFT => 'پیش‌نویس',
             PreinvoiceOrder::STATUS_PENDING_FINANCE => 'در انتظار تایید مالی',
             PreinvoiceOrder::STATUS_RETURNED_TO_SALES => 'برگشت‌خورده از مالی',
             PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'رزرو منقضی‌شده',
             PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE => 'کنسل‌شده توسط مالی',
-        ];
+        ]);
     }
 
     private function myInvoiceStatusLabels(): array
     {
-        return [
+        return array_merge(Invoice::statusLabels(), [
             Invoice::STATUS_PENDING_COLLECTION => 'در صف جمع‌آوری انبار',
             Invoice::STATUS_WAREHOUSE_RECEIVED => 'دریافت‌شده توسط انبار',
             Invoice::STATUS_COLLECTING => 'در حال جمع‌آوری',
@@ -545,7 +556,7 @@ class PreinvoiceController extends Controller
             Invoice::STATUS_READY_TO_SHIP => 'آماده ارسال بار',
             Invoice::STATUS_SHIPPED => 'ارسال‌شده',
             Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION => 'برگشت‌خورده پس از جمع‌آوری',
-        ];
+        ]);
     }
 
     private function myPreinvoiceNextActionLabel(bool $hasInvoice, string $status): string
