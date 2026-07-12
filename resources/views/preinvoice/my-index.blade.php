@@ -178,8 +178,8 @@
               <button type="button" class="btn btn-sm btn-outline-secondary" data-document-toggle aria-expanded="true" aria-controls="{{ $documentDomId }}">بستن جزئیات ▲</button>
             </div>
           </div>
-        </article>
-      </div>
+        </div>
+      </article></div>
     @empty
       <div class="col-12"><div class="document-card text-center text-muted p-3">{{ request()->except('tab', 'page') ? 'سندی مطابق فیلترهای انتخاب‌شده پیدا نشد.' : $emptyText }}</div></div>
     @endforelse
