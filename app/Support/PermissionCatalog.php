@@ -215,6 +215,17 @@ class PermissionCatalog
                 'users.change_status' => 'تغییر وضعیت کاربر',
                 'users.sync' => 'همگام‌سازی کاربران',
             ],
+            'برگشت از فروش' => [
+                'sales_returns.view' => 'مشاهده برگشت از فروش',
+                'sales_returns.create' => 'ثبت برگشت از فروش',
+                'sales_returns.edit_draft' => 'ویرایش پیش‌نویس برگشت از فروش',
+                'sales_returns.apply' => 'ثبت نهایی برگشت از فروش',
+                'sales_returns.cancel_draft' => 'لغو پیش‌نویس برگشت از فروش',
+                'sales_returns.print' => 'چاپ سند برگشت از فروش',
+                'sales_returns.create_product' => 'تعریف کالا در برگشت سازه‌حساب',
+                'sales_returns.override_destination' => 'تغییر انبار مقصد برگشت',
+                'sales_returns.override_invoice_status' => 'انتخاب وضعیت‌های بیشتر فاکتور',
+            ],
             'نقش‌ها' => [
                 'roles.view' => 'مشاهده نقش‌ها',
                 'roles.create' => 'ایجاد نقش',
@@ -416,6 +427,20 @@ class PermissionCatalog
     public static function routePermissions(): array
     {
         return [
+            'sales-returns.create' => 'sales_returns.create',
+            'sales-returns.store' => 'sales_returns.create',
+            'sales-returns.customers.search' => 'sales_returns.create',
+            'sales-returns.customers.invoices' => 'sales_returns.create',
+            'sales-returns.invoices.items' => 'sales_returns.create',
+            'sales-returns.products.search' => 'sales_returns.create',
+            'sales-returns.products.variants' => 'sales_returns.create',
+            'sales-returns.preview' => 'sales_returns.create',
+            'sales-returns.show' => 'sales_returns.view',
+            'sales-returns.edit' => 'sales_returns.edit_draft',
+            'sales-returns.update' => 'sales_returns.edit_draft',
+            'sales-returns.apply' => 'sales_returns.apply',
+            'sales-returns.cancel' => 'sales_returns.cancel_draft',
+            'sales-returns.print' => 'sales_returns.print',
             'dashboard' => 'dashboard.view', 'dashboard.monthly-report' => 'dashboard.view', 'global-search' => 'dashboard.search',
             'notifications.index' => 'notifications.view', 'notifications.latest' => 'notifications.view', 'notifications.unread-count' => 'notifications.view', 'notifications.open' => 'notifications.view', 'notifications.read' => 'notifications.manage', 'notifications.read-all' => 'notifications.manage',
             'products.index' => 'products.view', 'products.data' => 'products.view', 'products.variants' => 'products.view', 'products.create' => 'products.create', 'products.store' => 'products.create', 'products.edit' => 'products.edit', 'products.update' => 'products.edit', 'products.destroy' => 'products.delete', 'products.warehouse-stock' => 'inventory.view', 'products.image' => 'products.view', 'products.sales-ledger' => 'products.ledger', 'products.purchase-ledger' => 'products.ledger', 'products.pricelist' => 'products.print', 'products.sync.crm' => 'products.import', 'products.price-changes.index' => 'products.price_changes.view', 'products.price-changes.create' => 'products.price_changes.create', 'products.price-changes.products.search' => 'products.price_changes.create', 'products.price-changes.products.variants' => 'products.price_changes.create', 'products.price-changes.categories.root' => 'products.price_changes.create', 'products.price-changes.categories.children' => 'products.price_changes.create', 'products.price-changes.scope-summary' => 'products.price_changes.create', 'products.price-changes.preview' => 'products.price_changes.create', 'products.price-changes.store' => 'products.price_changes.create', 'products.price-changes.show' => 'products.price_changes.view', 'products.price-changes.apply' => 'products.price_changes.apply', 'products.price-changes.cancel' => 'products.price_changes.cancel',
