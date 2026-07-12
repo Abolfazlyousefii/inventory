@@ -9,8 +9,8 @@
     $productsActive = $isRoute('products.index', 'products.create', 'products.price-changes.*', 'purchases.*', 'admin.product-exports.*', 'product-deactivation-documents.*')
         || $isPath('products', 'products/create', 'products/price-changes', 'products/price-changes/*', 'purchases', 'purchases/*', 'admin/product-exports', 'admin/product-exports/*', 'product-deactivation-documents', 'product-deactivation-documents/*');
 
-    $warehouseActive = $isRoute('vouchers.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
-        || $isPath('vouchers', 'vouchers/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*');
+    $warehouseActive = $isRoute('vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
+        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*');
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
@@ -274,6 +274,9 @@
                     @endcanPermission
                     @canPermission('inventory.count.view')
                     <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') ?: $pathActive('stocktake', 'stocktake/*') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>
+                    @endcanPermission
+                    @canPermission('sales_returns.create')
+                    <a class="sidebar-sublink {{ $is('sales-returns.create') }}" href="{{ route('sales-returns.create') }}">ثبت برگشت از فروش</a>
                     @endcanPermission
                 </div>
             </div>

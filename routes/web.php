@@ -34,6 +34,8 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\SalesHavalehController;
+use App\Http\Controllers\SalesReturnController;
+use App\Http\Controllers\SalesReturnLookupController;
 use App\Http\Controllers\AssetPersonnelController;
 use App\Http\Controllers\AssetDocumentController;
 use App\Http\Controllers\AssetTrusteeController;
@@ -137,6 +139,22 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/{product}/movements/create', [StockMovementController::class, 'create'])->whereNumber('product')->name('movements.create');
     Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->whereNumber('product')->name('movements.store');
     Route::get('/movements', [StockMovementReportController::class, 'index'])->middleware('permission:reports.stock_movement')->name('movements.index');
+
+
+    Route::get('/sales-returns/create', [SalesReturnController::class, 'create'])->name('sales-returns.create');
+    Route::post('/sales-returns', [SalesReturnController::class, 'store'])->name('sales-returns.store');
+    Route::get('/sales-returns/customers/search', [SalesReturnLookupController::class, 'customers'])->name('sales-returns.customers.search');
+    Route::get('/sales-returns/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->name('sales-returns.customers.invoices');
+    Route::get('/sales-returns/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->name('sales-returns.invoices.items');
+    Route::get('/sales-returns/products/search', [SalesReturnLookupController::class, 'products'])->name('sales-returns.products.search');
+    Route::get('/sales-returns/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->name('sales-returns.products.variants');
+    Route::post('/sales-returns/preview', [SalesReturnLookupController::class, 'preview'])->name('sales-returns.preview');
+    Route::get('/sales-returns/{document}', [SalesReturnController::class, 'show'])->whereNumber('document')->name('sales-returns.show');
+    Route::get('/sales-returns/{document}/edit', [SalesReturnController::class, 'edit'])->whereNumber('document')->name('sales-returns.edit');
+    Route::patch('/sales-returns/{document}', [SalesReturnController::class, 'update'])->whereNumber('document')->name('sales-returns.update');
+    Route::post('/sales-returns/{document}/apply', [SalesReturnController::class, 'apply'])->whereNumber('document')->name('sales-returns.apply');
+    Route::post('/sales-returns/{document}/cancel', [SalesReturnController::class, 'cancel'])->whereNumber('document')->name('sales-returns.cancel');
+    Route::get('/sales-returns/{document}/print', [SalesReturnController::class, 'print'])->whereNumber('document')->name('sales-returns.print');
 
     // Vouchers
 Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
