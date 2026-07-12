@@ -34,6 +34,8 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\SalesHavalehController;
+use App\Http\Controllers\SalesReturnController;
+use App\Http\Controllers\SalesReturnLookupController;
 use App\Http\Controllers\AssetPersonnelController;
 use App\Http\Controllers\AssetDocumentController;
 use App\Http\Controllers\AssetTrusteeController;
@@ -137,6 +139,27 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/{product}/movements/create', [StockMovementController::class, 'create'])->whereNumber('product')->name('movements.create');
     Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->whereNumber('product')->name('movements.store');
     Route::get('/movements', [StockMovementReportController::class, 'index'])->middleware('permission:reports.stock_movement')->name('movements.index');
+
+
+    Route::prefix('sales-returns')->name('sales-returns.')->group(function () {
+        Route::get('/', [SalesReturnController::class, 'index'])->name('index');
+        Route::get('/export/excel', [SalesReturnController::class, 'exportExcel'])->name('export.excel');
+        Route::get('/export/pdf', [SalesReturnController::class, 'exportPdf'])->name('export.pdf');
+        Route::get('/create', [SalesReturnController::class, 'create'])->name('create');
+        Route::post('/', [SalesReturnController::class, 'store'])->name('store');
+        Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->name('customers.search');
+        Route::get('/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->name('customers.invoices');
+        Route::get('/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->name('invoices.items');
+        Route::get('/products/search', [SalesReturnLookupController::class, 'products'])->name('products.search');
+        Route::get('/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->name('products.variants');
+        Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->name('preview');
+        Route::get('/{document}', [SalesReturnController::class, 'show'])->name('show');
+        Route::get('/{document}/edit', [SalesReturnController::class, 'edit'])->name('edit');
+        Route::get('/{document}/print', [SalesReturnController::class, 'print'])->name('print');
+        Route::get('/{document}/pdf', [SalesReturnController::class, 'pdf'])->name('pdf');
+        Route::match(['put', 'patch'], '/{document}', [SalesReturnController::class, 'update'])->name('update');
+        Route::post('/{document}/cancel', [SalesReturnController::class, 'cancel'])->name('cancel');
+    });
 
     // Vouchers
 Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
