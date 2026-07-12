@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\SalesReturnsExport;
 use App\Http\Requests\{ApplySalesReturnRequest,SalesReturnIndexRequest,StoreSalesReturnRequest,UpdateSalesReturnRequest};
-use App\Models\{Category,Customer,Product,ProductVariant,SalesReturnDocument,User,Warehouse,WarehouseTransfer};
+use App\Models\{Category,Customer,ModelList,Product,ProductVariant,SalesReturnDocument,User,Warehouse,WarehouseTransfer};
 use App\Services\{SalesReturnReportService,SalesReturnService};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
@@ -82,6 +82,6 @@ class VoucherSalesReturnController extends Controller
      }
  }
 
- private function formData(): array { return ['warehouses'=>Warehouse::where('is_active',true)->whereIn('type',['central','return'])->get(), 'categories'=>Category::orderBy('name')->get(), 'returnReasons'=>SalesReturnDocument::returnReasonLabels(), 'legacyReturnUrl'=>route('vouchers.return-from-sale.index')]; }
+ private function formData(): array { return ['warehouses'=>Warehouse::where('is_active',true)->whereIn('type',['central','return'])->orderBy('type')->orderBy('name')->get(), 'categories'=>Category::orderBy('name')->get(['id','name','code','parent_id']), 'modelLists'=>ModelList::orderBy('brand')->orderBy('model_name')->get(['id','brand','model_name','code']), 'returnReasons'=>SalesReturnDocument::returnReasonLabels(), 'conditionLabels'=>\App\Models\SalesReturnDocumentItem::conditionLabels(), 'customerCreateUrl'=>route('customers.index'), 'legacyReturnUrl'=>route('vouchers.return-from-sale.index')]; }
  private function enrich(Request $request): array { $data=$request->validated(); $data['can_override_destination']=$request->user()?->can('sales_returns.override_destination') || $request->user()?->hasRole(['admin','Admin']); return $data; }
 }
