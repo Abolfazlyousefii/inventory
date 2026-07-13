@@ -1,7 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\{Customer,Invoice,ProductVariant,SalesReturnDocument,WarehouseStock};
+use App\Models\{Category,Customer,Invoice,Product,ProductVariant,SalesReturnDocument,WarehouseStock};
 use App\Services\SalesReturnCalculationService;
 use Illuminate\Http\Request;
 
@@ -12,26 +12,28 @@ class SalesReturnLookupController extends Controller
     public function customers(Request $request)
     {
         $q = trim((string) $request->get('q', ''));
-        if (mb_strlen($q) < 2) return ['results' => []];
-
         $rows = Customer::query()
-            ->where(function ($query) use ($q) {
+            ->when(mb_strlen($q) >= 2, function ($customerQuery) use ($q) {
+                $customerQuery->where(function ($query) use ($q) {
                 $query->where('first_name', 'like', "%{$q}%")
                     ->orWhere('last_name', 'like', "%{$q}%")
                     ->orWhereRaw("CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,'')) like ?", ["%{$q}%"])
                     ->orWhere('mobile', 'like', "%{$q}%")
                     ->orWhere('crm_customer_id', 'like', "%{$q}%");
                 if (ctype_digit($q)) $query->orWhere('id', (int) $q);
+                });
             })
+            ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->limit(20)
             ->get(['id', 'first_name', 'last_name', 'mobile', 'crm_customer_id']);
 
-        return ['results' => $rows->map(fn ($c) => [
+        return ['data' => $rows->map(fn ($c) => [
             'id' => $c->id,
-            'text' => trim($c->first_name.' '.$c->last_name) . ' | ' . ($c->mobile ?: 'بدون موبایل') . ' | کد: ' . ($c->crm_customer_id ?: $c->id),
+            'text' => trim($c->first_name.' '.$c->last_name),
+            'name' => trim($c->first_name.' '.$c->last_name),
             'mobile' => $c->mobile,
-            'code' => $c->crm_customer_id ?: $c->id,
+            'customer_code' => $c->crm_customer_id ?: (string) $c->id,
         ])->values()];
     }
 
@@ -91,6 +93,41 @@ class SalesReturnLookupController extends Controller
         })->values()];
     }
 
+    public function categories(Request $request)
+    {
+        $parentId = $request->query('parent_id');
+        $query = Category::query()->withCount('products')->orderBy('name');
+        $parentId === null || $parentId === '' ? $query->whereNull('parent_id') : $query->where('parent_id', (int) $parentId);
+        return ['data' => $query->limit(100)->get(['id', 'name', 'code', 'parent_id'])->map(fn ($category) => [
+            'id' => $category->id,
+            'name' => $category->name,
+            'code' => $category->code,
+            'parent_id' => $category->parent_id,
+            'products_count' => $category->products_count,
+        ])->values()];
+    }
+
+    public function categoryProducts(Category $category, Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+        $products = Product::query()->with(['category:id,name', 'variants:id,product_id,variant_name,variant_code,is_active,sales_enabled,buy_price,sell_price,stock,reserved,model_list_id,variety_name,variety_code'])
+            ->withCount('variants')
+            ->where('category_id', $category->id)
+            ->when($q !== '', fn ($query) => $query->where(fn ($inner) => $inner->where('name', 'like', "%{$q}%")->orWhere('code', 'like', "%{$q}%")->orWhere('sku', 'like', "%{$q}%")->orWhere('barcode', 'like', "%{$q}%")))
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get();
+        return ['data' => $products->map(fn ($product) => [
+            'id' => $product->id,
+            'name' => $product->name,
+            'code' => $product->code ?: $product->sku,
+            'category' => $product->category?->name,
+            'is_active' => (bool) ($product->is_active ?? true),
+            'sales_enabled' => (bool) ($product->is_sellable ?? true),
+            'variants_count' => $product->variants_count,
+        ])->values()];
+    }
+
     public function products(Request $request)
     {
         $q = trim((string) $request->get('q', ''));
@@ -132,7 +169,7 @@ class SalesReturnLookupController extends Controller
     public function variants(\App\Models\Product $product)
     {
         $product->load('variants.warehouseStocks.warehouse');
-        return ['variants' => $product->variants->map(fn ($v) => ['id' => $v->id, 'name' => $v->variant_name, 'sku' => $v->variant_code, 'buy_price' => (int) $v->buy_price, 'sell_price' => (int) $v->sell_price, 'is_active' => (bool) $v->is_active, 'sales_enabled' => (bool) $v->sales_enabled, 'stocks' => $v->warehouseStocks->map(fn ($s) => ['warehouse' => $s->warehouse?->name, 'quantity' => (int) $s->quantity])])];
+        return ['product' => ['id' => $product->id, 'name' => $product->name, 'code' => $product->code ?: $product->sku], 'variants' => $product->variants->map(fn ($v) => ['id' => $v->id, 'name' => $v->variant_name, 'variety_name' => $v->variety_name, 'variety_code' => $v->variety_code, 'sku' => $v->variant_code, 'barcode' => $v->barcode, 'stock' => (int) $v->stock, 'reserved' => (int) $v->reserved, 'buy_price' => (int) $v->buy_price, 'sell_price' => (int) $v->sell_price, 'is_active' => (bool) $v->is_active, 'sales_enabled' => (bool) $v->sales_enabled, 'stocks' => $v->warehouseStocks->map(fn ($s) => ['warehouse' => $s->warehouse?->name, 'quantity' => (int) $s->quantity])])];
     }
 
     public function preview(Request $request)
