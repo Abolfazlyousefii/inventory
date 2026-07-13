@@ -44,6 +44,27 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.new_product_payload.barcode' => ['nullable', 'string', 'max:150'],
             'items.*.new_product_payload.purchase_price' => ['nullable', 'integer', 'min:0'],
             'items.*.new_product_payload.sell_price' => ['nullable', 'integer', 'min:0'],
+
+            'items.*.new_product_payload.schema_version' => ['nullable', 'integer'],
+            'items.*.new_product_payload.temporary_product_uuid' => ['nullable', 'uuid'],
+            'items.*.new_product_payload.name' => ['nullable', 'string', 'max:255'],
+            'items.*.new_product_payload.is_sellable' => ['nullable', 'boolean'],
+            'items.*.new_product_payload.unit' => ['nullable', 'string', 'max:50'],
+            'items.*.new_product_payload.use_models' => ['nullable', 'boolean'],
+            'items.*.new_product_payload.model_brand_group' => ['nullable', 'string', 'max:120'],
+            'items.*.new_product_payload.model_list_ids' => ['nullable', 'array'],
+            'items.*.new_product_payload.model_list_ids.*' => ['integer', 'exists:model_lists,id'],
+            'items.*.new_product_payload.use_designs' => ['nullable', 'boolean'],
+            'items.*.new_product_payload.designs' => ['nullable', 'array'],
+            'items.*.new_product_payload.designs.*.index' => ['required_with:items.*.new_product_payload.designs', 'integer', 'min:1', 'max:99'],
+            'items.*.new_product_payload.designs.*.name' => ['required_with:items.*.new_product_payload.designs', 'string', 'max:120'],
+            'items.*.new_product_payload.refund_unit_price_default' => ['nullable', 'integer', 'min:0'],
+            'items.*.new_product_payload.selected_variants' => ['nullable', 'array', 'min:1'],
+            'items.*.new_product_payload.selected_variants.*.temporary_variant_uuid' => ['nullable', 'uuid'],
+            'items.*.new_product_payload.selected_variants.*.model_list_id' => ['nullable', 'exists:model_lists,id'],
+            'items.*.new_product_payload.selected_variants.*.design_index' => ['nullable', 'integer', 'min:0', 'max:99'],
+            'items.*.new_product_payload.selected_variants.*.display_name' => ['nullable', 'string', 'max:255'],
+            'items.*.new_product_payload.selected_variants.*.preview_code' => ['nullable', 'string', 'max:30'],
         ];
     }
 
@@ -86,7 +107,18 @@ class StoreSalesReturnRequest extends FormRequest
                     if ($src === SalesReturnDocumentItem::SOURCE_NEW_PRODUCT) {
                         if (! ($this->user()?->can('sales_returns.create_product') ?? false)) $validator->errors()->add("items.$idx.new_product_payload", 'مجوز تعریف کالای جدید را ندارید.');
                         $p = $row['new_product_payload'] ?? [];
-                        foreach (['product_name','category_id','variant_name','purchase_price','sell_price'] as $field) if (blank($p[$field] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
+                        foreach ([($p['schema_version'] ?? null) == 2 ? 'name' : 'product_name','category_id','purchase_price','sell_price'] as $field) if (blank($p[$field] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
+                        if (($p['schema_version'] ?? null) == 2) {
+                            if (!empty($p['use_models']) && empty($p['model_list_ids'])) $validator->errors()->add("items.$idx.new_product_payload.model_list_ids", 'حداقل یک مدل انتخاب کنید.');
+                            if (!empty($p['use_models']) && filled($p['model_brand_group'] ?? null)) {
+                                $badBrand = \App\Models\ModelList::whereIn('id', $p['model_list_ids'] ?? [])->where('brand', '<>', $p['model_brand_group'])->exists();
+                                if ($badBrand) $validator->errors()->add("items.$idx.new_product_payload.model_brand_group", 'مدل‌ها متعلق به برند انتخاب‌شده نیستند.');
+                            }
+                            if (!empty($p['use_designs']) && empty($p['designs'])) $validator->errors()->add("items.$idx.new_product_payload.designs", 'طرح‌ها کامل نیستند.');
+                            if (empty($p['selected_variants'])) $validator->errors()->add("items.$idx.new_product_payload.selected_variants", 'حداقل یک تنوع انتخاب کنید.');
+                        } else {
+                            if (blank($p['variant_name'] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.variant_name", 'این فیلد الزامی است.');
+                        }
                         foreach (['sku' => 'variant_code', 'barcode' => 'variant_code'] as $field => $column) if (filled($p[$field] ?? null) && ProductVariant::where($column, $p[$field])->exists()) $validator->errors()->add("items.$idx.new_product_payload.$field", 'کد یا بارکد تکراری است.');
                     }
                 }
