@@ -18,7 +18,7 @@ class StoreSalesReturnRequest extends FormRequest
             'invoice_id' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_INTERNAL_INVOICE, 'nullable', 'exists:invoices,id'],
             'external_invoice_number' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_SAZEH_HESAB, 'nullable', 'string', 'max:100'],
             'external_invoice_date' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_SAZEH_HESAB, 'nullable', 'date'],
-            'default_destination_warehouse_id' => ['nullable', 'exists:warehouses,id'],
+            'default_destination_warehouse_id' => ['required', Rule::exists('warehouses', 'id')->where(fn ($query) => $query->where('is_active', true)->whereIn('type', ['central', 'return']))],
             'return_reason' => ['required', Rule::in(array_keys(SalesReturnDocument::returnReasonLabels()))],
             'reference_number' => ['nullable', 'string', 'max:100'],
             'description' => ['required_if:return_reason,other', 'nullable', 'string'],
@@ -29,7 +29,6 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.product_variant_id' => ['nullable', 'exists:product_variants,id'],
             'items.*.return_quantity' => ['required', 'integer', 'min:1'],
             'items.*.item_condition' => ['required', Rule::in([SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED])],
-            'items.*.destination_warehouse_id' => ['nullable', 'exists:warehouses,id'],
             'items.*.refund_unit_price' => ['nullable', 'integer', 'min:0'],
             'items.*.purchase_price' => ['nullable', 'integer', 'min:0'],
             'items.*.sell_price' => ['nullable', 'integer', 'min:0'],
@@ -73,6 +72,11 @@ class StoreSalesReturnRequest extends FormRequest
         $validator->after(function ($validator) {
             $source = $this->input('source_type');
             $items = collect($this->input('items', []));
+            foreach ($items as $idx => $row) {
+                if (array_key_exists('destination_warehouse_id', (array) $row)) {
+                    $validator->errors()->add("items.$idx.destination_warehouse_id", 'مقصد انبار فقط در سطح سند قابل انتخاب است.');
+                }
+            }
 
             if ($source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE) {
                 $invoice = Invoice::find((int) $this->input('invoice_id'));
