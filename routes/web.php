@@ -208,6 +208,8 @@ Route::prefix('vouchers/section/return-from-sale')
         Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->middleware('permission:sales_returns.view')->name('customers.search');
         Route::get('/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->middleware('permission:sales_returns.view')->name('customers.invoices');
         Route::get('/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->middleware('permission:sales_returns.view')->name('invoices.items');
+        Route::get('/categories', [SalesReturnLookupController::class, 'categories'])->middleware('permission:sales_returns.view')->name('categories.index');
+        Route::get('/categories/{category}/products', [SalesReturnLookupController::class, 'categoryProducts'])->whereNumber('category')->middleware('permission:sales_returns.view')->name('categories.products');
         Route::get('/products/search', [SalesReturnLookupController::class, 'products'])->middleware('permission:sales_returns.view')->name('products.search');
         Route::get('/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->middleware('permission:sales_returns.view')->name('products.variants');
         Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->middleware('permission:sales_returns.create')->name('preview');
