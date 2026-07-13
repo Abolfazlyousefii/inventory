@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Models\{Category,Customer,Invoice,Product,ProductVariant,SalesReturnDocument,WarehouseStock};
 use App\Services\SalesReturnCalculationService;
 use Illuminate\Http\Request;
+use Morilog\Jalali\Jalalian;
 
 class SalesReturnLookupController extends Controller
 {
@@ -50,6 +51,8 @@ class SalesReturnLookupController extends Controller
             'number' => $invoice->uuid,
             'uuid' => $invoice->uuid,
             'date' => $invoice->created_at?->format('Y-m-d'),
+            'invoice_date' => $invoice->created_at?->format('Y-m-d'),
+            'invoice_date_fa' => $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d') : null,
             'total' => (int) $invoice->total,
             'items_count' => $invoice->items_count,
             'status' => $invoice->status,
