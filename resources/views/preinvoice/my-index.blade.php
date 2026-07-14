@@ -29,7 +29,7 @@
       MySalesDocumentsService::TAB_DRAFTS => 'پیش‌نویسی ذخیره نشده است.',
       MySalesDocumentsService::TAB_SHIPPED => 'هنوز فاکتور ارسال‌شده‌ای ندارید.',
       MySalesDocumentsService::TAB_NEEDS_CORRECTION => 'سندی برای بررسی و اصلاح به شما ارجاع نشده است.',
-      default => 'در حال حاضر سند فعالی در جریان ندارید.',
+      default => 'در حال حاضر پیش‌فاکتور یا فاکتور فعالی در جریان ندارید.',
   };
 @endphp
 
