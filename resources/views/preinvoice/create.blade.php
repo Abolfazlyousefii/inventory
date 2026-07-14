@@ -1332,9 +1332,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     <div class="alert alert-danger border-0 shadow-sm rounded-4 fw-bold py-2" style="white-space:pre-wrap">{!! session('error') !!}</div>
     @endif
     @if($errors->any())
-    <div class="alert alert-danger border-0 shadow-sm rounded-4 py-2">
+    <div class="alert alert-danger border-0 shadow-sm rounded-4 py-2" id="topStockErrorSummary">
         <div class="fw-bold mb-1">⚠️ خطا:</div>
-        <ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
+        @if(session('preinvoice_item_errors'))
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                <span>{{ count(session('preinvoice_item_errors', [])) }} قلم نیاز به اصلاح موجودی دارند.</span>
+                <label class="form-check small mb-0"><input class="form-check-input" type="checkbox" id="showOnlyStockErrors"> نمایش فقط اقلام دارای خطا</label>
+            </div>
+        @else
+            <ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
+        @endif
     </div>
     @endif
 
@@ -1635,6 +1642,46 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const LOCAL_DRAFT_VERSION = 1;
     const LOCAL_DRAFT_KEY = 'aria_preinvoice_local_draft_create_v1';
     const RESERVATION_TOKEN_KEY = 'aria_preinvoice_reservation_token_v1';
+
+    const SERVER_ITEM_ERRORS = @json(session('preinvoice_item_errors', []));
+
+    function applyServerItemErrors() {
+        if (!Array.isArray(SERVER_ITEM_ERRORS) || !SERVER_ITEM_ERRORS.length) return;
+        const first = SERVER_ITEM_ERRORS[0];
+        SERVER_ITEM_ERRORS.forEach(error => {
+            const variantId = Number(error.variant_id || 0);
+            if (!variantId) return;
+            document.querySelectorAll(`[data-variant-pill="${variantId}"]`).forEach(pill => {
+                pill.classList.add('border', 'border-danger', 'bg-danger-subtle');
+                const msg = pill.querySelector('[data-stock-row-error]');
+                if (msg) {
+                    msg.textContent = error.message || 'موجودی آزاد این تنوع کافی نیست.';
+                    msg.classList.remove('d-none');
+                }
+            });
+        });
+        const toggle = document.getElementById('showOnlyStockErrors');
+        if (toggle) {
+            toggle.addEventListener('change', () => {
+                const errorVariants = new Set(SERVER_ITEM_ERRORS.map(e => String(Number(e.variant_id || 0))));
+                document.querySelectorAll('[data-variant-pill]').forEach(pill => {
+                    pill.classList.toggle('d-none', toggle.checked && !errorVariants.has(String(Number(pill.dataset.variantPill || 0))));
+                });
+                document.querySelectorAll('[data-group-card]').forEach(card => {
+                    const hasVisible = !!card.querySelector('[data-variant-pill]:not(.d-none)');
+                    card.classList.toggle('d-none', toggle.checked && !hasVisible);
+                });
+            });
+        }
+        const firstPill = document.querySelector(`[data-variant-pill="${Number(first.variant_id || 0)}"]`);
+        if (firstPill) {
+            firstPill.closest('[data-group-card]')?.classList.add('is-open');
+            firstPill.scrollIntoView({behavior: 'smooth', block: 'center'});
+            firstPill.setAttribute('tabindex', '-1');
+            firstPill.focus({preventScroll: true});
+        }
+    }
+
     const BROWSER_SESSION_KEY = 'aria_preinvoice_browser_session_v1';
     let isSyncingReservation = false;
     let currentAutosaveUuid = null;
@@ -2903,9 +2950,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             const discount = groupDiscountTotal(group);
             const finalAmount = groupFinalAmount(group);
             const details = group.items.map(it => `
-            <div class="detail-pill">
+            <div class="detail-pill" data-variant-pill="${Number(it.variant_id)}">
                 <div class="fw-bold">${esc(it.label || 'تنوع پیش‌فرض')}</div>
                 <div class="text-muted mt-1">تعداد: ${formatNum(it.quantity)} | مبلغ: ${formatMoney(Number(it.quantity) * Number(it.price))}</div>
+                <div class="small text-danger mt-1 d-none" data-stock-row-error></div>
             </div>`).join('');
             wrap.insertAdjacentHTML('beforeend', `
         <div class="group-card" data-group-card="${productId}">
@@ -3247,6 +3295,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         });
 
         await hydrateInitialGroups();
+        applyServerItemErrors();
         updateSubmitState();
 
         isBootingPage = false;
