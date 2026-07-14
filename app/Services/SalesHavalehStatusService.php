@@ -84,6 +84,10 @@ class SalesHavalehStatusService
             return;
         }
 
+        if ($invoice->isFinanciallyLocked()) {
+            abort(422, Invoice::FINANCIAL_LOCK_MESSAGE);
+        }
+
         if ($current === Invoice::STATUS_FINANCE_APPROVED && ! $this->isAdmin($user)) {
             abort(422, 'فاکتور تایید مالی‌شده فقط توسط مدیر قابل تغییر وضعیت عملیاتی است.');
         }

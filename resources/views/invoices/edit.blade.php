@@ -82,7 +82,9 @@
         </div>
         <div class="col-md-4">
           <label class="form-label">یادداشت ویرایش مالی <span class="text-danger">*</span></label>
-          <textarea name="edit_reason" class="form-control" rows="2" required placeholder="علت و شرح ویرایش فاکتور را بنویسید">{{ old('edit_reason') }}</textarea>
+          <textarea name="edit_reason" id="edit_reason" form="sales-items-form" class="form-control @error('edit_reason') is-invalid @enderror" rows="2" required placeholder="علت و شرح ویرایش فاکتور را بنویسید">{{ old('edit_reason') }}</textarea>
+          @error('edit_reason')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+          <div class="invalid-feedback d-block js-edit-reason-error" style="display:none !important;">لطفاً دلیل ویرایش مالی را وارد کنید.</div>
         </div>
       </div>
       <div class="alert alert-info mt-3" id="invoiceTotalsBox">مجموع‌ها پس از تغییر اقلام و تخفیف‌ها به صورت زنده در مرورگر محاسبه می‌شود و در ذخیره نهایی دوباره در سرور کنترل خواهد شد.</div>
@@ -202,5 +204,15 @@ document.getElementById('add-modal-item')?.addEventListener('click', () => {
   tr.innerHTML = `<td>${product.selectedOptions[0].text}<input type="hidden" name="items[${i}][product_id]" value="${product.value}"></td><td>${variant.selectedOptions[0].text}<input type="hidden" name="items[${i}][variant_id]" value="${variant.value}" class="js-item-field" data-original=""></td><td><input type="number" min="1" name="items[${i}][quantity]" value="${qty.value}" data-original="0" class="form-control js-item-field"></td><td><input type="text" inputmode="numeric" value="${formatMoney(price.value)}" data-raw-target="item-price-${i}" class="form-control js-money"><input id="item-price-${i}" type="hidden" name="items[${i}][price]" value="${rawNumber(price.value) || 0}" data-original="0" class="js-item-field"></td><td><input type="text" inputmode="numeric" value="0" data-raw-target="item-discount-${i}" class="form-control js-money"><input id="item-discount-${i}" type="hidden" name="items[${i}][line_discount_amount]" value="0" data-original="0" class="js-item-field js-line-discount"></td><td class="js-row-total fw-bold">—</td><td><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('tr').remove(); calculateTotals();">حذف</button></td>`;
   tbody.appendChild(tr); bindMoneyInputs(tr); syncChangeReasonRequired(); modal?.hide();
 });
+
+  document.getElementById('sales-items-form')?.addEventListener('submit', function (event) {
+    const reason = document.getElementById('edit_reason');
+    const error = document.querySelector('.js-edit-reason-error');
+    if (reason && reason.value.trim() === '') {
+      event.preventDefault();
+      reason.focus();
+      if (error) error.style.setProperty('display', 'block', 'important');
+    }
+  });
 </script>
 @endsection

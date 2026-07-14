@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 
 class Invoice extends Model
 {
+    public const FINANCIAL_LOCK_MESSAGE = 'فاکتور ارسال‌شده نهایی شده و امکان تغییر شماره، اقلام، قیمت، تخفیف یا مبلغ آن وجود ندارد. اصلاح این سند باید از طریق فرآیند رسمی اصلاحیه مالی انجام شود.';
+
     public const STATUS_PENDING_WAREHOUSE_APPROVAL = 'pending_warehouse_approval';
     public const STATUS_COLLECTING = 'collecting';
     public const STATUS_CHECKING_DISCREPANCY = 'checking_discrepancy';
@@ -64,6 +67,28 @@ class Invoice extends Model
                 $invoice->document_date = $invoice->preinvoiceOrder?->display_document_date ?? $invoice->created_at ?? now();
             }
         });
+
+        static::updating(function (self $invoice): void {
+            if ($invoice->isDirty('uuid')) {
+                throw ValidationException::withMessages([
+                    'uuid' => 'شماره فاکتور پس از ایجاد قابل تغییر نیست.',
+                ]);
+            }
+        });
+    }
+
+    public function isFinanciallyLocked(): bool
+    {
+        return (string) $this->status === self::STATUS_SHIPPED;
+    }
+
+    public function assertFinanciallyMutable(): void
+    {
+        if ($this->isFinanciallyLocked()) {
+            throw ValidationException::withMessages([
+                'invoice' => self::FINANCIAL_LOCK_MESSAGE,
+            ]);
+        }
     }
 
     public function getDisplayDocumentDateAttribute()

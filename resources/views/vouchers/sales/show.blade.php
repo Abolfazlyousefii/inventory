@@ -22,6 +22,7 @@
 
 @section('content')
 <div class="container py-4">
+  @if($invoice->isFinanciallyLocked())<div class="alert alert-success">ارسال‌شده و قفل مالی</div>@endif
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0">📄 نمایش فقط‌خواندنی حواله فروش</h4>
     <div class="d-flex gap-2">

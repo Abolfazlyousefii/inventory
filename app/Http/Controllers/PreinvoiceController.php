@@ -1969,6 +1969,34 @@ class PreinvoiceController extends Controller
         }
     }
 
+
+    private function syncPreinvoiceFromInvoiceForReapproval(PreinvoiceOrder $order, Invoice $invoice, int $userId): void
+    {
+        $order->items()->delete();
+        foreach ($invoice->items as $item) {
+            $order->items()->create([
+                'product_id' => (int) $item->product_id,
+                'variant_id' => (int) $item->variant_id,
+                'quantity' => (int) $item->quantity,
+                'price' => (int) $item->price,
+                'line_total' => (int) $item->line_total,
+                'sort_order' => (int) ($item->sort_order ?: 0),
+                'line_discount_amount' => (int) ($item->line_discount_amount ?? 0),
+            ]);
+        }
+
+        $order->update([
+            'shipping_price' => (int) $invoice->shipping_price,
+            'discount_amount' => (int) $invoice->discount_amount,
+            'invoice_discount_amount' => (int) $invoice->invoice_discount_amount,
+            'product_discount_amount' => (int) $invoice->product_discount_amount,
+            'discount_allocation_mode' => $invoice->discount_allocation_mode,
+            'total_price' => (int) $invoice->total,
+            'items_updated_at' => now(),
+            'items_updated_by' => $userId,
+        ]);
+    }
+
     private function officialCodeForPreinvoiceConversion(PreinvoiceOrder $order): string
     {
         if (is_string($order->uuid) && preg_match('/^\d{5}$/', $order->uuid) === 1) {
@@ -2132,6 +2160,10 @@ class PreinvoiceController extends Controller
                 abort(403);
             }
 
+            if ($existingInvoice && $existingInvoice->isFinanciallyLocked()) {
+                $existingInvoice->assertFinanciallyMutable();
+            }
+
             if ($existingInvoice && ! in_array((string) $existingInvoice->status, $reapprovableInvoiceStatuses, true)) {
                 throw ValidationException::withMessages([
                     'preinvoice' => 'این سند قبلاً تایید مالی شده و تغییر جدیدی برای تایید ندارد.',
@@ -2167,7 +2199,13 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+            $invoiceItemsForReapproval = $existingInvoice
+                ? $existingInvoice->items()->lockForUpdate()->get()
+                : $order->items;
+            $documentDiscount = $existingInvoice ? (int) $existingInvoice->discount_amount : (int) $order->discount_amount;
+            $shippingPrice = $existingInvoice ? (int) $existingInvoice->shipping_price : (int) $order->shipping_price;
+            $allocationMode = $existingInvoice ? (string) $existingInvoice->discount_allocation_mode : (string) $order->discount_allocation_mode;
+            $totals = SalesDocumentTotals::calculate($invoiceItemsForReapproval, $documentDiscount, $shippingPrice, ['discount_allocation_mode' => $allocationMode]);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
 
@@ -2200,25 +2238,11 @@ class PreinvoiceController extends Controller
             $invoice = $existingInvoice;
 
             if ($invoice) {
-                $invoice->items()->delete();
                 $invoice->update([
-                    'customer_id' => $order->customer_id ?? null,
-                    'customer_name' => $order->customer_name,
-                    'customer_mobile' => $order->customer_mobile,
-                    'customer_address' => $order->customer_address,
-                    'province_id' => $order->province_id,
-                    'city_id' => $order->city_id,
-                    'shipping_id' => $order->shipping_id,
-                    'shipping_price' => (int) $order->shipping_price,
-                    'discount_amount' => (int) $order->discount_amount,
-                    'discount_breakdown' => $order->discount_breakdown,
-                    'invoice_discount_type' => $order->invoice_discount_type,
-                    'invoice_discount_value' => (int) $order->invoice_discount_value,
-                    'invoice_discount_amount' => (int) $order->invoice_discount_amount,
-                    'product_discount_amount' => (int) $order->product_discount_amount,
-                    'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
+                    'invoice_discount_amount' => (int) $totals['invoice_discount'],
+                    'product_discount_amount' => (int) $totals['items_discount'],
                     'status' => $isFinanceReapproval ? Invoice::STATUS_FINANCE_APPROVED : Invoice::STATUS_COLLECTING,
                     'collection_status' => $isFinanceReapproval ? Invoice::COLLECTION_STATUS_COMPLETED : $invoice->collection_status,
                     'collection_completed_at' => $isFinanceReapproval ? ($invoice->collection_completed_at ?? now()) : $invoice->collection_completed_at,
@@ -2267,8 +2291,9 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            foreach ($order->items as $it) {
-                InvoiceItem::create([
+            if (! $existingInvoice) {
+                foreach ($order->items as $it) {
+                    InvoiceItem::create([
                     'invoice_id' => $invoice->id,
                     'product_id' => (int) $it->product_id,
                     'variant_id' => (int) $it->variant_id,
@@ -2279,8 +2304,8 @@ class PreinvoiceController extends Controller
                     'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
                 ]);
 
-                if ($shouldDeductOnFinalize) {
-                    $product = Product::query()->whereKey((int) $it->product_id)->lockForUpdate()->first();
+                    if ($shouldDeductOnFinalize) {
+                        $product = Product::query()->whereKey((int) $it->product_id)->lockForUpdate()->first();
                     $before = (int) ($product?->stock ?? 0);
 
                     if (! $centralStockMovedToReserve) {
@@ -2314,6 +2339,11 @@ class PreinvoiceController extends Controller
                         ]);
                     }
                 }
+                }
+            }
+
+            if ($existingInvoice) {
+                $this->syncPreinvoiceFromInvoiceForReapproval($order, $invoice->fresh('items'), (int) auth()->id());
             }
 
             if (!empty($invoice->customer_id)) {
