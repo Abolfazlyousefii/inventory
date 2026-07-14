@@ -508,6 +508,19 @@ class PreinvoiceController extends Controller
             ];
         }
 
+        if (! $hasInvoice && $statusKey === PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE) {
+            return [
+                'label' => 'نیاز به بررسی',
+                'reason' => 'ارجاع انبار',
+                'message' => 'این سند از فرایند انبار برای بررسی یا اصلاح به شما بازگردانده شده است.',
+                'by' => $order->warehouseReviewer?->name,
+                'at' => $order->warehouse_reviewed_at ?: $order->updated_at,
+                'return_reason' => $order->warehouse_reject_reason ?: null,
+                'note' => $order->warehouse_review_note ?: null,
+                'unit' => 'انبار',
+            ];
+        }
+
         if (! $hasInvoice && $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED) {
             return [
                 'label' => 'نیاز به بررسی',
@@ -530,7 +543,7 @@ class PreinvoiceController extends Controller
                 'at' => $invoice?->status_changed_at ?: $invoice?->updated_at,
                 'return_reason' => $invoice?->collection_note ?: null,
                 'note' => $invoice?->collection_note ?: null,
-                'unit' => 'مالی',
+                'unit' => 'انبار',
             ];
         }
 

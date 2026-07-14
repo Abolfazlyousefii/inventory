@@ -87,7 +87,6 @@ class MySalesDocumentsService
                     Invoice::STATUS_PACKING,
                     Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
                     Invoice::STATUS_READY_TO_SHIP,
-                    Invoice::STATUS_NOT_SHIPPED,
                 ],
             ],
         };
@@ -128,11 +127,26 @@ class MySalesDocumentsService
     {
         if ($filters['q'] !== '') {
             $needle = '%' . $filters['q'] . '%';
-            $query->where(fn ($q) => $q->where('uuid', 'like', $needle)->orWhereHas('invoice', fn ($iq) => $iq->where('uuid', 'like', $needle)));
+            $query->where(function ($q) use ($needle) {
+                $q->where('uuid', 'like', $needle)
+                    ->orWhere('customer_name', 'like', $needle)
+                    ->orWhere('customer_mobile', 'like', $needle)
+                    ->orWhereHas('customer', function ($cq) use ($needle) {
+                        $cq->where('first_name', 'like', $needle)
+                            ->orWhere('last_name', 'like', $needle)
+                            ->orWhereRaw("concat(coalesce(first_name, ''), ' ', coalesce(last_name, '')) like ?", [$needle])
+                            ->orWhere('mobile', 'like', $needle);
+                    })
+                    ->orWhereHas('invoice', function ($iq) use ($needle) {
+                        $iq->where('uuid', 'like', $needle)
+                            ->orWhere('customer_name', 'like', $needle)
+                            ->orWhere('customer_mobile', 'like', $needle);
+                    });
+            });
         }
         if ($filters['customer'] !== '') {
             $needle = '%' . $filters['customer'] . '%';
-            $query->where(fn ($q) => $q->where('customer_name', 'like', $needle)->orWhereHas('customer', fn ($cq) => $cq->where('first_name', 'like', $needle)->orWhere('last_name', 'like', $needle))->orWhereHas('invoice', fn ($iq) => $iq->where('customer_name', 'like', $needle)));
+            $query->where(fn ($q) => $q->where('customer_name', 'like', $needle)->orWhere('customer_mobile', 'like', $needle)->orWhereHas('customer', fn ($cq) => $cq->where('first_name', 'like', $needle)->orWhere('last_name', 'like', $needle)->orWhere('mobile', 'like', $needle))->orWhereHas('invoice', fn ($iq) => $iq->where('customer_name', 'like', $needle)->orWhere('customer_mobile', 'like', $needle)));
         }
         if ($filters['type'] === 'preinvoice') $query->doesntHave('invoice');
         if ($filters['type'] === 'invoice') $query->has('invoice');
@@ -176,6 +190,6 @@ class MySalesDocumentsService
         } else {
             $query->orderByDesc('activity_at');
         }
-        return $query->orderByDesc('preinvoice_orders.id')->paginate(30)->withQueryString();
+        return $query->orderByDesc('preinvoice_orders.id')->paginate(20)->withQueryString();
     }
 }
