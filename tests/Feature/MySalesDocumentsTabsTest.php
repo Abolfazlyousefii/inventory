@@ -13,7 +13,7 @@ class MySalesDocumentsTabsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_needs_action_statuses_are_grouped_correctly_and_appear_first(): void
+    public function test_needs_correction_statuses_are_grouped_correctly(): void
     {
         $seller = User::factory()->create();
         $old = $this->preinvoice($seller, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, ['uuid' => 'PI-OLD', 'updated_at' => now()->subDays(2)]);
@@ -22,14 +22,14 @@ class MySalesDocumentsTabsTest extends TestCase
         $invoiceOrder = $this->preinvoice($seller, PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE, ['uuid' => 'PI-INV']);
         $this->invoice($invoiceOrder, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, ['uuid' => 'INV-RETURNED', 'status_changed_at' => now()->subHour()]);
 
-        $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'needs-action']));
+        $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'needs-correction']));
 
         $response->assertOk()
             ->assertSee('PI-NEW')
             ->assertSee('PI-OLD')
             ->assertSee('INV-RETURNED')
             ->assertDontSee('PI-DRAFT')
-            ->assertSee('نیاز به بررسی');
+            ->assertSee('نیازمند بررسی و اصلاح');
         $response->assertSeeInOrder(['PI-NEW', 'INV-RETURNED', 'PI-OLD']);
     }
 
@@ -52,21 +52,21 @@ class MySalesDocumentsTabsTest extends TestCase
         $this->invoice($order, Invoice::STATUS_PENDING_COLLECTION, ['uuid' => 'INV-ACTIVE']);
         $this->preinvoice($seller, PreinvoiceOrder::STATUS_PENDING_FINANCE, ['uuid' => 'PI-PENDING']);
 
-        $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'documents']));
+        $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'active']));
 
         $response->assertOk()->assertSee('INV-ACTIVE')->assertSee('PI-CONVERTED')->assertSee('PI-PENDING');
         $this->assertSame(1, substr_count($response->getContent(), 'INV-ACTIVE'));
     }
 
-    public function test_default_tab_priority_and_explicit_tab_query(): void
+    public function test_default_tab_is_active_and_explicit_tab_query(): void
     {
         $seller = User::factory()->create();
         $this->preinvoice($seller, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, ['uuid' => 'PI-RETURNED']);
         $this->preinvoice($seller, PreinvoiceOrder::STATUS_DRAFT, ['uuid' => 'PI-DRAFT']);
 
-        $this->actingAs($seller)->get(route('preinvoice.my.index'))->assertOk()->assertSee('PI-RETURNED')->assertDontSee('PI-DRAFT');
+        $this->actingAs($seller)->get(route('preinvoice.my.index'))->assertOk()->assertDontSee('PI-RETURNED')->assertDontSee('PI-DRAFT');
         $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'drafts']))->assertOk()->assertSee('PI-DRAFT')->assertDontSee('PI-RETURNED');
-        $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'invalid']))->assertOk()->assertSee('PI-RETURNED')->assertDontSee('PI-DRAFT');
+        $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'invalid']))->assertOk()->assertDontSee('PI-RETURNED')->assertDontSee('PI-DRAFT');
     }
 
     public function test_seller_isolation_counters_and_read_only_snapshot(): void
@@ -77,10 +77,10 @@ class MySalesDocumentsTabsTest extends TestCase
         $this->preinvoice($other, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, ['uuid' => 'PI-OTHER']);
 
         $before = $this->snapshot();
-        $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'needs-action']));
+        $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => 'needs-correction']));
         $after = $this->snapshot();
 
-        $response->assertOk()->assertSee('PI-MINE')->assertDontSee('PI-OTHER')->assertSee('نیاز به اصلاح <span class="count">(1)</span>', false);
+        $response->assertOk()->assertSee('PI-MINE')->assertDontSee('PI-OTHER')->assertSee('نیازمند بررسی و اصلاح <span class="count">(1)</span>', false);
         $this->assertSame($before, $after);
     }
 

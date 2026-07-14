@@ -121,6 +121,7 @@ class PreinvoiceReservationService
                 ->where('preinvoice_order_id', $lockedOrder->id)
                 ->where('reservation_scope', 'official')
                 ->whereNull('released_at')
+                ->whereNull('release_reason')
                 ->where('quantity', '>', 0)
                 ->lockForUpdate()
                 ->get();
@@ -188,7 +189,7 @@ class PreinvoiceReservationService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedReservation->released_at !== null || (int) $lockedReservation->quantity <= 0) {
+            if ($lockedReservation->released_at !== null || $lockedReservation->release_reason === 'consumed' || (int) $lockedReservation->quantity <= 0) {
                 return ['released' => false, 'quantity' => 0];
             }
 
@@ -241,6 +242,7 @@ class PreinvoiceReservationService
                 ->where('preinvoice_order_id', $lockedOrder->id)
                 ->where('reservation_scope', 'official')
                 ->whereNull('released_at')
+                ->whereNull('release_reason')
                 ->where('quantity', '>', 0)
                 ->lockForUpdate()
                 ->get();
@@ -268,6 +270,7 @@ class PreinvoiceReservationService
                 ->where('preinvoice_order_id', $lockedOrder->id)
                 ->where('reservation_scope', 'official')
                 ->whereNull('released_at')
+                ->whereNull('release_reason')
                 ->where('quantity', '>', 0)
                 ->lockForUpdate()
                 ->get();
@@ -277,11 +280,22 @@ class PreinvoiceReservationService
             }
 
             foreach ($reservations as $reservation) {
+                $quantity = (int) $reservation->quantity;
+                $variant = ProductVariant::query()->whereKey((int) $reservation->variant_id)->lockForUpdate()->first();
+                if ($variant) {
+                    $variant->forceFill(['reserved' => max(0, (int) $variant->reserved - $quantity)])->save();
+                }
+
+                $product = Product::query()->whereKey((int) $reservation->product_id)->lockForUpdate()->first();
+                if ($product) {
+                    $product->forceFill(['reserved' => max(0, (int) $product->reserved - $quantity)])->save();
+                }
+
                 $reservation->forceFill([
                     'converted_at' => $reservation->converted_at ?? now(),
                     'released_by' => $actor?->id,
-                    'release_reason' => null,
-                    'release_note' => null,
+                    'release_reason' => 'consumed',
+                    'release_note' => 'رزرو هنگام تبدیل نهایی به فاکتور مصرف شد.',
                 ])->save();
             }
 
@@ -321,6 +335,7 @@ class PreinvoiceReservationService
             ->where('preinvoice_order_id', $order->id)
             ->where('reservation_scope', 'official')
             ->whereNull('released_at')
+            ->whereNull('release_reason')
             ->where('quantity', '>', 0)
             ->lockForUpdate()
             ->get();

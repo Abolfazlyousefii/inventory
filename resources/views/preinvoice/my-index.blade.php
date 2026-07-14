@@ -26,9 +26,10 @@
       default => 'text-bg-info',
   };
   $emptyText = match($activeTab) {
-      MySalesDocumentsService::TAB_NEEDS_ACTION => 'در حال حاضر سندی نیازمند اصلاح شما نیست.',
-      MySalesDocumentsService::TAB_DRAFTS => 'پیش‌نویسی برای تکمیل وجود ندارد.',
-      default => 'هنوز سندی وارد روند فروش نشده است.',
+      MySalesDocumentsService::TAB_DRAFTS => 'پیش‌نویسی ذخیره نشده است.',
+      MySalesDocumentsService::TAB_SHIPPED => 'هنوز فاکتور ارسال‌شده‌ای ندارید.',
+      MySalesDocumentsService::TAB_NEEDS_CORRECTION => 'سندی برای بررسی و اصلاح به شما ارجاع نشده است.',
+      default => 'در حال حاضر سند فعالی در جریان ندارید.',
   };
 @endphp
 
@@ -49,7 +50,7 @@
   <div class="sales-tabs mb-3" role="tablist">
     @foreach($tabs as $tabKey => $tab)
       @php
-        $isNeeds = $tabKey === MySalesDocumentsService::TAB_NEEDS_ACTION;
+        $isNeeds = $tabKey === MySalesDocumentsService::TAB_NEEDS_CORRECTION;
         $tabCount = $tabCounts[$tabKey] ?? 0;
       @endphp
       <a class="sales-tab {{ $activeTab === $tabKey ? 'active' : '' }} {{ $isNeeds && $tabCount > 0 ? 'needs-attention' : '' }}" href="{{ route('preinvoice.my.index', array_merge(request()->except('page', 'status'), ['tab' => $tabKey])) }}">
@@ -87,7 +88,7 @@
     @forelse($orders as $order)
       @php
         $summary = $order->current_document;
-        $isNeedsAction = $summary['bucket'] === MySalesDocumentsService::BUCKET_NEEDS_ACTION;
+        $isNeedsAction = $summary['bucket'] === MySalesDocumentsService::BUCKET_NEEDS_CORRECTION;
         $isDraft = $summary['bucket'] === MySalesDocumentsService::BUCKET_DRAFT;
         $documentDomId = 'sales-document-details-' . preg_replace('/[^A-Za-z0-9_-]/', '-', (string) $summary['document_number']);
       @endphp
@@ -169,7 +170,7 @@
             @endif
             <div class="detail-actions">
               <a href="{{ $summary['view_url'] }}" class="btn btn-sm btn-outline-primary">{{ $summary['has_invoice'] ? 'مشاهده فاکتور' : 'مشاهده سند' }}</a>
-              @if($activeTab === MySalesDocumentsService::TAB_DOCUMENTS)
+              @if($activeTab === MySalesDocumentsService::TAB_ACTIVE || $activeTab === MySalesDocumentsService::TAB_SHIPPED)
                 <a href="{{ $summary['print_url'] }}" target="_blank" class="btn btn-sm btn-outline-dark">چاپ</a>
               @endif
               @if($summary['edit_url'] && ($isNeedsAction || $isDraft))
