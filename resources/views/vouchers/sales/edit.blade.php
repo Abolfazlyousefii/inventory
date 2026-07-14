@@ -17,9 +17,10 @@
   @endif
 
   @unless($canEditItems)
-    <div class="alert alert-warning">این حواله در وضعیت «{{ $statusLabels[$invoice->status] ?? $invoice->status }}» قابل ویرایش آیتم نیست.</div>
+    <div class="alert alert-warning">{{ $invoice->isFinanciallyLocked() ? 'ارسال‌شده و قفل مالی' : 'این حواله در وضعیت «'.($statusLabels[$invoice->status] ?? $invoice->status).'» قابل ویرایش آیتم نیست.' }}</div>
   @endunless
 
+  @unless($invoice->isFinanciallyLocked())
   <form method="POST" action="{{ route('vouchers.sales.status', $invoice->uuid) }}" class="card border-0 shadow-sm mb-3" id="sales-status-form">
     @csrf
     <div class="card-header bg-white fw-bold">تغییر وضعیت حواله فروش</div>
@@ -41,6 +42,8 @@
       </div>
     </div>
   </form>
+
+  @endunless
 
   <form method="POST" action="{{ route('vouchers.sales.update', $invoice->uuid) }}" class="card border-0 shadow-sm" id="sales-items-form">
     @csrf

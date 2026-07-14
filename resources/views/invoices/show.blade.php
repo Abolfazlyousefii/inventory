@@ -63,6 +63,8 @@
     default => 'bg-secondary',
   };
 
+  $isFinanciallyLocked = $invoice->isFinanciallyLocked();
+
   $badgeMethod = fn($m) => match($m){
     'cash' => 'bg-success',
     'cheque' => 'bg-warning text-dark',
@@ -184,6 +186,9 @@
         {{-- Status --}}
         <div class="card-soft p-3 p-md-4 mb-3">
           <div class="section-title mb-2">📦 وضعیت آماده‌سازی حواله انبار</div>
+          @if($isFinanciallyLocked)
+            <span class="badge bg-success">ارسال‌شده و قفل مالی</span>
+          @else
           <form method="POST" action="{{ route('invoices.status', $invoice->uuid) }}" class="d-flex gap-2">
             @csrf
             <select name="status" class="form-select" @disabled($invoice->status==='not_shipped')>
@@ -193,6 +198,7 @@
             </select>
             <button class="btn btn-primary" @disabled($invoice->status==='not_shipped')>ثبت</button>
           </form>
+          @endif
           <div class="hint mt-2">آخرین بروزرسانی: {{ $jalaliDT($invoice->updated_at) }}</div>
         </div>
 

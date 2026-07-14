@@ -45,6 +45,7 @@ class SalesHavalehService
             }
 
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertFinanciallyMutable();
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
             $itemsById = $lockedItems->keyBy('id');
@@ -131,14 +132,11 @@ class SalesHavalehService
             }
 
             $invoice->refresh()->load(['items', 'preinvoiceOrder']);
-            $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
-            $subtotal = $totals['subtotal_before_discount'];
-            $newTotal = $totals['grand_total'];
+            $snapshot = $this->invoiceSnapshotPayload($invoice, (int) $invoice->discount_amount, (int) $invoice->shipping_price);
+            $newTotal = (int) $snapshot['total'];
             $oldTotal = (int) $invoice->total;
 
-            $invoice->update([
-                'subtotal' => $subtotal,
-                'total' => $newTotal,
+            $invoice->update($snapshot + [
                 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
                 'status_changed_at' => now(),
                 'status_changed_by' => $userId,
@@ -175,6 +173,7 @@ class SalesHavalehService
             }
 
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertFinanciallyMutable();
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
             $itemsById = $lockedItems->keyBy('id');
@@ -244,12 +243,8 @@ class SalesHavalehService
             }
 
             $invoice->refresh()->load(['items', 'preinvoiceOrder.items']);
-            $totals = SalesDocumentTotals::calculate($invoice->items, (int) ($header['discount_amount'] ?? $invoice->discount_amount), (int) ($header['shipping_price'] ?? $invoice->shipping_price), ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
-            $invoice->update([
-                'discount_amount' => (int) ($header['discount_amount'] ?? 0),
-                'shipping_price' => (int) ($header['shipping_price'] ?? 0),
-                'subtotal' => (int) $totals['subtotal_before_discount'],
-                'total' => (int) $totals['grand_total'],
+            $snapshot = $this->invoiceSnapshotPayload($invoice, (int) ($header['discount_amount'] ?? 0), (int) ($header['shipping_price'] ?? 0));
+            $invoice->update($snapshot + [
                 'items_updated_at' => now(),
                 'items_updated_by' => $userId,
             ]);
@@ -261,6 +256,22 @@ class SalesHavalehService
 
             return $invoice->fresh(['items.product', 'items.variant', 'preinvoiceOrder']);
         });
+    }
+
+    private function invoiceSnapshotPayload(Invoice $invoice, int $documentDiscount, int $shippingPrice, ?string $allocationMode = null): array
+    {
+        $allocationMode = (string) ($allocationMode ?? $invoice->discount_allocation_mode ?? '');
+        $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, $shippingPrice, ['discount_allocation_mode' => $allocationMode]);
+
+        return [
+            'discount_amount' => $documentDiscount,
+            'shipping_price' => $shippingPrice,
+            'subtotal' => (int) $totals['subtotal_before_discount'],
+            'total' => (int) $totals['grand_total'],
+            'invoice_discount_amount' => (int) $totals['invoice_discount'],
+            'product_discount_amount' => (int) $totals['items_discount'],
+            'discount_allocation_mode' => $allocationMode,
+        ];
     }
 
     private function syncLinkedPreinvoiceValues(Invoice $invoice, int $userId): void

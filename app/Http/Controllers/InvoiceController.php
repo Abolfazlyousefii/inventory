@@ -13,6 +13,7 @@ use App\Services\SalesPrintDocumentService;
 use App\Services\WarehousePendingRefreshService;
 use App\Services\WarehouseStockService;
 use App\Services\NotificationService;
+use App\Http\Requests\UpdateInvoiceFinancialRequest;
 use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
@@ -314,7 +315,7 @@ class InvoiceController extends Controller
             ->firstOrFail();
 
         $statusLabels = $this->statusService->labels();
-        $canEditItems = $this->statusService->isEditable($invoice, auth()->user());
+        $canEditItems = $this->statusService->isEditable($invoice, auth()->user()) && ! $invoice->isFinanciallyLocked();
         $stockLimits = $this->salesVoucherStockLimits($invoice);
 
         return view('vouchers.sales.edit', compact('invoice', 'statusLabels', 'canEditItems', 'stockLimits'));
@@ -323,6 +324,9 @@ class InvoiceController extends Controller
     public function salesVoucherUpdate(string $uuid, Request $request)
     {
         $invoice = Invoice::query()->with('items')->where('uuid', $uuid)->firstOrFail();
+        if ($invoice->isFinanciallyLocked()) {
+            return $this->lockedInvoiceResponse($request);
+        }
 
         $normalizedItems = collect($request->input('items', []))->map(function (array $row) {
             $row['quantity'] = $this->normalizeIntegerInput($row['quantity'] ?? 0);
@@ -474,17 +478,23 @@ class InvoiceController extends Controller
             ->firstOrFail();
 
         abort_unless($this->canHandleFinanceActions(), 403);
+        if ($invoice->isFinanciallyLocked()) {
+            return redirect()->route('invoices.show', $invoice->uuid)->withErrors(['invoice' => Invoice::FINANCIAL_LOCK_MESSAGE]);
+        }
 
         $statusLabels = $this->statusService->labels();
 
         return view('invoices.edit', compact('invoice', 'statusLabels'));
     }
 
-    public function update(string $uuid, Request $request)
+    public function update(string $uuid, UpdateInvoiceFinancialRequest $request)
     {
         abort_unless($this->canHandleFinanceActions(), 403);
 
         $invoice = Invoice::query()->with(['items', 'preinvoiceOrder:id,created_by'])->where('uuid', $uuid)->firstOrFail();
+        if ($invoice->isFinanciallyLocked()) {
+            return $this->lockedInvoiceResponse($request);
+        }
 
         $normalizedItems = collect($request->input('items', []))->map(function (array $row) {
             $row['quantity'] = $this->normalizeIntegerInput($row['quantity'] ?? 0);
@@ -498,20 +508,7 @@ class InvoiceController extends Controller
             'shipping_price' => $this->normalizeIntegerInput($request->input('shipping_price', 0)),
         ]);
 
-        $data = $request->validate([
-            'discount_amount' => 'nullable|integer|min:0',
-            'shipping_price' => 'nullable|integer|min:0',
-            'items' => 'required|array|min:1',
-            'items.*.id' => 'nullable|exists:invoice_items,id',
-            'items.*.product_id' => 'required_without:items.*.id|nullable|exists:products,id',
-            'items.*.variant_id' => 'required_without:items.*.id|nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|integer|min:0',
-            'items.*.price' => 'required|integer|min:0',
-            'items.*.line_discount_amount' => 'nullable|integer|min:0',
-            'edit_reason' => 'required|string|max:2000',
-        ], [
-            'edit_reason.required' => 'ثبت یادداشت ویرایش فاکتور برای مالی الزامی است.',
-        ]);
+        $data = $request->validated();
 
         $beforeAudit = [
             'invoice' => $invoice->only(['customer_name', 'customer_mobile', 'customer_address', 'subtotal', 'discount_amount', 'shipping_price', 'total', 'status']),
@@ -600,6 +597,9 @@ class InvoiceController extends Controller
     public function updateStatus(string $uuid, Request $request)
     {
         $invoice = Invoice::where('uuid', $uuid)->firstOrFail();
+        if ($invoice->isFinanciallyLocked()) {
+            return $this->lockedInvoiceResponse($request);
+        }
 
         $data = $request->validate([
             'status' => ['required', 'string', Rule::in($this->statusService->manualStatuses())],
@@ -617,6 +617,19 @@ class InvoiceController extends Controller
 
         return redirect()->route('vouchers.sales.edit', $updatedInvoice->uuid)
             ->with('success', '✅ وضعیت حواله بروزرسانی شد.');
+    }
+
+
+    private function lockedInvoiceResponse(Request $request)
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => Invoice::FINANCIAL_LOCK_MESSAGE,
+                'errors' => ['invoice' => [Invoice::FINANCIAL_LOCK_MESSAGE]],
+            ], 409);
+        }
+
+        return back()->withInput()->withErrors(['invoice' => Invoice::FINANCIAL_LOCK_MESSAGE]);
     }
 
     private function notifySellerForInvoiceStatus(Invoice $invoice, string $status, ?string $note = null): void

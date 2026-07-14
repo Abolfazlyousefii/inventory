@@ -134,7 +134,11 @@
                   <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">عملیات</button>
                   <ul class="dropdown-menu">
                     <li><a class="dropdown-item" href="{{ route('invoices.show', $inv->uuid) }}">مشاهده جزئیات</a></li>
-                    <li><a class="dropdown-item" href="{{ route('invoices.edit', $inv->uuid) }}">ویرایش</a></li>
+                    @if(! $inv->isFinanciallyLocked())
+                      <li><a class="dropdown-item" href="{{ route('invoices.edit', $inv->uuid) }}">ویرایش</a></li>
+                    @else
+                      <li><span class="dropdown-item-text text-success">ارسال‌شده و قفل مالی</span></li>
+                    @endif
                     @if(($canRegisterPayments ?? false) && $remaining > 0)
                       <li>
                         <button type="button" class="dropdown-item js-open-payment" data-action="{{ route('invoices.payments.store', $inv->uuid) }}" data-invoice="{{ $inv->uuid }}" data-customer="{{ $customerName }}" data-remaining="{{ $remaining }}" data-remaining-label="{{ $rial($remaining) }}">ثبت پرداخت</button>
@@ -179,7 +183,11 @@
           <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">عملیات</button>
           <ul class="dropdown-menu">
             <li><a class="dropdown-item" href="{{ route('invoices.show', $inv->uuid) }}">مشاهده جزئیات</a></li>
-            <li><a class="dropdown-item" href="{{ route('invoices.edit', $inv->uuid) }}">ویرایش</a></li>
+            @if(! $inv->isFinanciallyLocked())
+                      <li><a class="dropdown-item" href="{{ route('invoices.edit', $inv->uuid) }}">ویرایش</a></li>
+                    @else
+                      <li><span class="dropdown-item-text text-success">ارسال‌شده و قفل مالی</span></li>
+                    @endif
             @if(($canRegisterPayments ?? false) && $remaining > 0)
               <li>
                 <button type="button" class="dropdown-item js-open-payment" data-action="{{ route('invoices.payments.store', $inv->uuid) }}" data-invoice="{{ $inv->uuid }}" data-customer="{{ $customerName }}" data-remaining="{{ $remaining }}" data-remaining-label="{{ $rial($remaining) }}">ثبت پرداخت</button>
