@@ -28,7 +28,7 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.item_source' => ['required', Rule::in([SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT, SalesReturnDocumentItem::SOURCE_NEW_PRODUCT])],
             'items.*.product_variant_id' => ['nullable', 'exists:product_variants,id'],
             'items.*.return_quantity' => ['required', 'integer', 'min:1'],
-            'items.*.item_condition' => ['required', Rule::in([SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED])],
+            'items.*.item_condition' => ['nullable', Rule::in([SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED])],
             'items.*.refund_unit_price' => ['nullable', 'integer', 'min:0'],
             'items.*.purchase_price' => ['nullable', 'integer', 'min:0'],
             'items.*.sell_price' => ['nullable', 'integer', 'min:0'],

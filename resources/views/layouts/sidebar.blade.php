@@ -278,9 +278,6 @@
                     @canPermission('sales_returns.view')
                     <a class="sidebar-sublink {{ $is('vouchers.return-from-sale.*') }}" href="{{ route('vouchers.return-from-sale.index') }}">برگشت از فروش</a>
                     @endcanPermission
-                    @canPermission('sales_returns.create')
-                    <a class="sidebar-sublink {{ $is('vouchers.return-from-sale.create') }}" href="{{ route('vouchers.return-from-sale.create') }}">ثبت برگشت جدید</a>
-                    @endcanPermission
                 </div>
             </div>
         </div>
