@@ -24,7 +24,11 @@ it('can reflect every declared public method in app classes', function (string $
         return;
     }
 
-    foreach (public_methods_declared_in($class) as $method) {
+    $methods = public_methods_declared_in($class);
+
+    expect($methods)->toBeArray();
+
+    foreach ($methods as $method) {
         expect($method->getFileName())->toBe($file)
             ->and($method->getStartLine())->toBeInt()
             ->and($method->getEndLine())->toBeGreaterThanOrEqual($method->getStartLine());
