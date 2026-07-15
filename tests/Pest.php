@@ -2,7 +2,7 @@
 
 use Tests\TestCase;
 
-uses(TestCase::class)->in('Feature');
+uses(TestCase::class)->in('Feature', 'Unit');
 
 function app_php_files(string $directory): array
 {
