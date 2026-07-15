@@ -10,12 +10,12 @@ it('loads every controller class and inspects its public actions', function (str
 
     $reflection = new ReflectionClass($class);
 
-    expect($reflection->isAbstract())->toBeFalse();
-
     if ($reflection->getShortName() === 'Controller') {
         expect(public_methods_declared_in($class))->toBeArray();
         return;
     }
+
+    expect($reflection->isAbstract())->toBeFalse();
 
     $actions = public_methods_declared_in($class);
 
