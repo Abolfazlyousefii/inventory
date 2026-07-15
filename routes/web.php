@@ -405,8 +405,8 @@ Route::get('/auto-login', function (Request $request) {
 
     try {
         $response = Http::withOptions(['verify' => config('services.crm.verify_ssl')])
-            ->connectTimeout(config('services.crm.connect_timeout'))
-            ->timeout(config('services.crm.timeout'))
+            ->connectTimeout(config('services.crm.client_connect_timeout'))
+            ->timeout(config('services.crm.client_timeout'))
             ->post($tokenUrl, [
                 'phone' => $phone,
                 'secret' => config('services.crm.client_secret'),
