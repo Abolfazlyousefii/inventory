@@ -55,6 +55,20 @@ class Invoice extends Model
         'items_updated_by' => 'integer',
     ];
 
+    public static function cancelledStatuses(): array
+    {
+        return [
+            self::STATUS_NOT_SHIPPED,
+            self::STATUS_CANCELED_LEGACY,
+            self::STATUS_CANCELLED_LEGACY,
+        ];
+    }
+
+    public function scopeNotCancelled($query)
+    {
+        return $query->whereNotIn('status', self::cancelledStatuses());
+    }
+
 
     protected static function booted(): void
     {
