@@ -92,7 +92,7 @@ class WarehouseReviewController extends Controller
             'warehouseReviewSnapshots' => fn ($query) => $query->latest(),
             'warehouseReviewLogs.user:id,name',
             'warehouseReviewItemLogs.user:id,name',
-            'invoice:id,uuid,preinvoice_order_id,created_at',
+            'invoice:id,uuid,preinvoice_order_id,created_at,document_date',
         ]);
     }
 }

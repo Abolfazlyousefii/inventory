@@ -36,7 +36,7 @@
               <td>{{ $inv->customer_name }}</td>
               <td>{{ number_format((int)$inv->total) }}</td>
               <td><span class="badge bg-light text-dark border">{{ $statusLabels[$inv->status] ?? $inv->status }}</span></td>
-              <td>{{ optional($inv->created_at)->format('Y-m-d H:i') }}</td>
+              <td>{{ \App\Support\JalaliDate::dateTime($inv->display_document_date) }}</td>
               <td class="text-end">
                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.sales.show', $inv->uuid) }}">مشاهده</a>
                 <a class="btn btn-sm btn-outline-primary" href="{{ route('vouchers.sales.edit', $inv->uuid) }}">تغییر وضعیت</a>

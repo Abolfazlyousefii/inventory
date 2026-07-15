@@ -6,10 +6,13 @@ use App\Models\AssetDocument;
 use App\Models\AssetDocumentItem;
 use App\Models\AssetDocumentItemCode;
 use App\Models\AssetPersonnel;
+use App\Models\User;
 use App\Services\AssetCodeService;
 use App\Services\AssetDocumentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class AssetDocumentController extends Controller
 {
@@ -25,7 +28,7 @@ class AssetDocumentController extends Controller
         $documentNo = trim((string) $request->query('document_number', ''));
 
         $documents = AssetDocument::query()
-            ->with('personnel')
+            ->with(['personnel', 'trusteeUser'])
             ->withCount('items')
             ->when($status !== '', fn ($q) => $q->where('status', $status))
             ->when($personnelId > 0, fn ($q) => $q->where('personnel_id', $personnelId))
@@ -43,6 +46,7 @@ class AssetDocumentController extends Controller
     public function create()
     {
         $personnel = AssetPersonnel::query()->where('is_active', true)->orderBy('full_name')->get();
+        $trusteeUsers = $this->selectableTrusteeUsers();
         $itemNameSuggestions = AssetDocumentItem::query()
             ->select('item_name')
             ->distinct()
@@ -56,6 +60,7 @@ class AssetDocumentController extends Controller
                 'status' => AssetDocument::STATUS_DRAFT,
             ]),
             'personnel' => $personnel,
+            'trusteeUsers' => $trusteeUsers,
             'itemNameSuggestions' => $itemNameSuggestions,
             'statusLabels' => AssetDocument::statusLabels(),
             'action' => route('asset.documents.store'),
@@ -67,7 +72,7 @@ class AssetDocumentController extends Controller
     {
         $data = $request->validate([
             'document_date' => 'required|date',
-            'personnel_id' => 'required|exists:asset_personnel,id',
+            'trustee_user_id' => ['required', 'integer', $this->activeUserRule()],
             'description' => 'nullable|string',
             'signed_form' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
             'items' => 'required|array|min:1',
@@ -84,6 +89,12 @@ class AssetDocumentController extends Controller
             'items.*.asset_codes_input.required' => 'ثبت کدهای ۴ رقمی اموال در همه ردیف‌ها الزامی است.',
         ]);
 
+        $user = $this->findActiveUser((int) $data['trustee_user_id']);
+        $assetPersonnel = $this->findOrCreateAssetPersonnelForUser($user);
+        $data['personnel_id'] = $assetPersonnel->id;
+        $data['trustee_user_id'] = $user->id;
+        $data['trustee_name_snapshot'] = $user->name;
+
         $data = array_merge($data, $this->storeSignedForm($request));
         $document = $this->service->create($data, $data['items'], auth()->id());
 
@@ -92,7 +103,7 @@ class AssetDocumentController extends Controller
 
     public function show(AssetDocument $document)
     {
-        $document->load(['personnel', 'items.codes', 'creator', 'updater', 'histories.actor']);
+        $document->load(['personnel', 'trusteeUser', 'items.codes', 'creator', 'updater', 'histories.actor']);
         $statusLabels = AssetDocument::statusLabels();
         $isSignedFormImage = $document->signed_form_mime && str_starts_with($document->signed_form_mime, 'image/');
 
@@ -101,7 +112,7 @@ class AssetDocumentController extends Controller
 
     public function view(AssetDocument $document)
     {
-        $document->load(['personnel', 'items.codes']);
+        $document->load(['personnel', 'trusteeUser', 'items.codes']);
         $statusLabels = AssetDocument::statusLabels();
 
         return response()->json([
@@ -126,6 +137,7 @@ class AssetDocumentController extends Controller
 
         $document->load('items.codes');
         $personnel = AssetPersonnel::query()->where('is_active', true)->orderBy('full_name')->get();
+        $trusteeUsers = $this->selectableTrusteeUsers();
         $itemNameSuggestions = AssetDocumentItem::query()
             ->select('item_name')
             ->distinct()
@@ -136,6 +148,7 @@ class AssetDocumentController extends Controller
         return view('asset.documents.form', [
             'document' => $document,
             'personnel' => $personnel,
+            'trusteeUsers' => $trusteeUsers,
             'itemNameSuggestions' => $itemNameSuggestions,
             'statusLabels' => AssetDocument::statusLabels(),
             'action' => route('asset.documents.update', $document),
@@ -147,7 +160,7 @@ class AssetDocumentController extends Controller
     {
         $data = $request->validate([
             'document_date' => 'required|date',
-            'personnel_id' => 'required|exists:asset_personnel,id',
+            'trustee_user_id' => ['required', 'integer', $this->activeUserRule()],
             'description' => 'nullable|string',
             'signed_form' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
             'items' => 'required|array|min:1',
@@ -164,6 +177,12 @@ class AssetDocumentController extends Controller
             'items.*.asset_codes_input.required' => 'ثبت کدهای ۴ رقمی اموال در همه ردیف‌ها الزامی است.',
         ]);
 
+        $user = $this->findActiveUser((int) $data['trustee_user_id']);
+        $assetPersonnel = $this->findOrCreateAssetPersonnelForUser($user);
+        $data['personnel_id'] = $assetPersonnel->id;
+        $data['trustee_user_id'] = $user->id;
+        $data['trustee_name_snapshot'] = $user->name;
+
         $data = array_merge($data, $this->storeSignedForm($request));
         $updated = $this->service->update($document, $data, $data['items'], auth()->id());
 
@@ -172,7 +191,7 @@ class AssetDocumentController extends Controller
 
     public function print(AssetDocument $document)
     {
-        $document->load(['personnel', 'items.codes', 'creator']);
+        $document->load(['personnel', 'trusteeUser', 'items.codes', 'creator']);
 
         return view('asset.documents.print', compact('document'));
     }
@@ -220,7 +239,7 @@ class AssetDocumentController extends Controller
         if ($code !== '') {
             $result = AssetDocumentItemCode::query()
                 ->where('asset_code', $code)
-                ->with(['item.document.personnel'])
+                ->with(['item.document.personnel', 'item.document.trusteeUser'])
                 ->first();
         }
 
@@ -235,7 +254,7 @@ class AssetDocumentController extends Controller
 
         $result = AssetDocumentItemCode::query()
             ->where('asset_code', $code)
-            ->with(['item.document.personnel'])
+            ->with(['item.document.personnel', 'item.document.trusteeUser'])
             ->firstOrFail();
 
         return response()->json([
@@ -243,7 +262,68 @@ class AssetDocumentController extends Controller
             'item_name' => $result->item?->item_name,
             'document_number' => $result->item?->document?->document_number,
             'document_status' => $result->item?->document?->status,
-            'personnel' => $result->item?->document?->personnel?->full_name,
+            'personnel' => $result->item?->document?->trusteeDisplayName(),
+        ]);
+    }
+
+
+    private function selectableTrusteeUsers()
+    {
+        return User::query()
+            ->when(Schema::hasColumn('users', 'is_active'), fn ($q) => $q->where('is_active', true))
+            ->orderBy('name')
+            ->get(['id', 'name', 'phone', 'email', 'personnel_code', 'department', 'position']);
+    }
+
+    private function activeUserRule()
+    {
+        $rule = Rule::exists('users', 'id');
+
+        if (Schema::hasColumn('users', 'is_active')) {
+            $rule->where('is_active', true);
+        }
+
+        return $rule;
+    }
+
+    private function findActiveUser(int $userId): User
+    {
+        return User::query()
+            ->when(Schema::hasColumn('users', 'is_active'), fn ($q) => $q->where('is_active', true))
+            ->findOrFail($userId);
+    }
+
+    private function findOrCreateAssetPersonnelForUser(User $user): AssetPersonnel
+    {
+        $personnel = AssetPersonnel::query()->where('user_id', $user->id)->first();
+
+        if ($personnel) {
+            return $personnel;
+        }
+
+        $baseCode = trim((string) ($user->personnel_code ?: ('USR-' . $user->id)));
+        $personnelCode = $baseCode;
+
+        if (AssetPersonnel::query()->where('personnel_code', $personnelCode)->exists()) {
+            $personnelCode = 'USR-' . $user->id;
+        }
+
+        $suffix = 1;
+        $uniqueCode = $personnelCode;
+        while (AssetPersonnel::query()->where('personnel_code', $uniqueCode)->exists()) {
+            $uniqueCode = $personnelCode . '-' . $suffix++;
+        }
+
+        return AssetPersonnel::query()->create([
+            'user_id' => $user->id,
+            'user_name_snapshot' => $user->name,
+            'full_name' => $user->name,
+            'personnel_code' => $uniqueCode,
+            'department' => $user->department,
+            'position' => $user->position,
+            'mobile' => $user->phone,
+            'is_active' => true,
+            'description' => 'ایجاد خودکار از کاربر سیستم برای امین اموال',
         ]);
     }
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
 use App\Models\Warehouse;
+use App\Support\SalesDocumentTotals;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
@@ -17,6 +18,7 @@ class SalesPrintDocumentService
         $invoice->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'payments', 'preinvoiceOrder', 'shippingMethod', 'customer']);
 
         $paid = $invoice->relationLoaded('payments') ? (int) $invoice->payments->sum('amount') : (int) $invoice->paid_amount;
+        $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
 
         return [
             'documentType' => 'invoice',
@@ -24,8 +26,8 @@ class SalesPrintDocumentService
             'numberLabel' => 'شماره فاکتور',
             'number' => $invoice->uuid,
             'customerNumber' => $invoice->external_order_id ?: null,
-            'registeredAt' => $invoice->preinvoiceOrder?->created_at ?? $invoice->created_at,
-            'issuedAt' => $invoice->created_at,
+            'registeredAt' => $invoice->display_document_date,
+            'issuedAt' => $invoice->display_document_date,
             'status' => $this->statusLabel($invoice->status),
             'customer' => [
                 'name' => $invoice->customer_name ?: $invoice->customer?->display_name,
@@ -40,12 +42,15 @@ class SalesPrintDocumentService
             ],
             'items' => $this->items($invoice->items),
             'totals' => [
-                'subtotal' => (int) ($invoice->subtotal ?: $invoice->items->sum(fn ($i) => (int) $i->quantity * (int) $i->price)),
-                'discount' => (int) $invoice->discount_amount,
-                'shipping' => (int) $invoice->shipping_price,
-                'total' => (int) $invoice->total,
+                'subtotal' => $totals['subtotal_before_discount'],
+                'discount' => $totals['total_discount'],
+                'itemsDiscount' => $totals['items_discount'],
+                'invoiceDiscount' => $totals['invoice_discount'],
+                'subtotalAfterDiscount' => $totals['subtotal_after_discount'],
+                'shipping' => $totals['shipping'],
+                'total' => $totals['grand_total'],
                 'paid' => $paid,
-                'remaining' => max((int) $invoice->total - $paid, 0),
+                'remaining' => max($totals['grand_total'] - $paid, 0),
             ],
             'company' => config('company'),
             'logo' => asset('logo.png'),
@@ -57,7 +62,7 @@ class SalesPrintDocumentService
     public function preinvoiceData(PreinvoiceOrder $order, string $mode = 'warehouse'): array
     {
         $order->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'shippingMethod', 'customer', 'invoice']);
-        $itemsTotal = (int) $order->items->sum(fn ($i) => (int) $i->quantity * (int) $i->price);
+        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
 
         return [
             'documentType' => 'preinvoice',
@@ -65,7 +70,7 @@ class SalesPrintDocumentService
             'numberLabel' => 'شماره پیش‌فاکتور',
             'number' => $order->uuid,
             'customerNumber' => $order->external_order_id ?: null,
-            'registeredAt' => $order->created_at,
+            'registeredAt' => $order->display_document_date,
             'issuedAt' => null,
             'status' => $this->statusLabel($order->status),
             'customer' => [
@@ -81,10 +86,13 @@ class SalesPrintDocumentService
             ],
             'items' => $this->items($order->items),
             'totals' => [
-                'subtotal' => $itemsTotal,
-                'discount' => (int) $order->discount_amount,
-                'shipping' => (int) $order->shipping_price,
-                'total' => (int) ($order->total_price ?: ($itemsTotal - (int) $order->discount_amount + (int) $order->shipping_price)),
+                'subtotal' => $totals['subtotal_before_discount'],
+                'discount' => $totals['total_discount'],
+                'itemsDiscount' => $totals['items_discount'],
+                'invoiceDiscount' => $totals['invoice_discount'],
+                'subtotalAfterDiscount' => $totals['subtotal_after_discount'],
+                'shipping' => $totals['shipping'],
+                'total' => $totals['grand_total'],
                 'paid' => null,
                 'remaining' => null,
             ],
@@ -111,7 +119,7 @@ class SalesPrintDocumentService
                 'unitPrice' => (int) $item->price,
                 'lineDiscount' => (int) ($item->line_discount_amount ?? 0),
                 'netUnitPrice' => max((int) $item->price - (int) floor(((int) ($item->line_discount_amount ?? 0)) / max((int) $item->quantity, 1)), 0),
-                'lineTotal' => (int) ($item->line_total ?? max(((int) $item->quantity * (int) $item->price) - (int) ($item->line_discount_amount ?? 0), 0)),
+                'lineTotal' => SalesDocumentTotals::lineTotal($item),
             ];
         });
     }

@@ -31,6 +31,8 @@ class AssetDocumentService
                 'document_number' => $header['document_number'] ?? $this->generateDocumentNumber(),
                 'document_date' => $header['document_date'],
                 'personnel_id' => $header['personnel_id'],
+                'trustee_user_id' => $header['trustee_user_id'] ?? null,
+                'trustee_name_snapshot' => $header['trustee_name_snapshot'] ?? null,
                 'status' => AssetDocument::STATUS_DRAFT,
                 'description' => $header['description'] ?? null,
                 'signed_form_path' => $header['signed_form_path'] ?? null,
@@ -58,7 +60,7 @@ class AssetDocumentService
 
             $this->historyService->log($document, 'created', null, ['status' => AssetDocument::STATUS_DRAFT], 'ایجاد سند اموال', $userId);
 
-            return $document->fresh(['personnel', 'items.codes']);
+            return $document->fresh(['personnel', 'trusteeUser', 'items.codes']);
         });
     }
 
@@ -68,7 +70,7 @@ class AssetDocumentService
             abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
         }
 
-        $normalizedItems = $this->validationService->normalizeAndValidateItems($items);
+        $normalizedItems = $this->validationService->normalizeAndValidateItems($items, $document->id);
 
         return DB::transaction(function () use ($document, $header, $normalizedItems, $userId) {
             $old = $document->toArray();
@@ -77,6 +79,8 @@ class AssetDocumentService
             $document->update([
                 'document_date' => $header['document_date'],
                 'personnel_id' => $header['personnel_id'],
+                'trustee_user_id' => $header['trustee_user_id'] ?? $document->trustee_user_id,
+                'trustee_name_snapshot' => $header['trustee_name_snapshot'] ?? $document->trustee_name_snapshot,
                 'description' => $header['description'] ?? null,
                 'signed_form_path' => $header['signed_form_path'] ?? $document->signed_form_path,
                 'signed_form_original_name' => $header['signed_form_original_name'] ?? $document->signed_form_original_name,
@@ -108,7 +112,7 @@ class AssetDocumentService
 
             $this->historyService->log($document, 'updated', $old, $document->fresh()->toArray(), 'ویرایش سند اموال', $userId);
 
-            return $document->fresh(['personnel', 'items.codes']);
+            return $document->fresh(['personnel', 'trusteeUser', 'items.codes']);
         });
     }
 

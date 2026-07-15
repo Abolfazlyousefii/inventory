@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    @php($totals = \App\Support\SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]))
     <title>چاپ فاکتور {{ $invoice->uuid }}</title>
     <style>
         :root { --print-font: 11px; --print-border: #1f2937; --print-muted: #4b5563; --print-soft: #f8fafc; }
@@ -110,7 +111,7 @@
             <h1 class="doc-title">فاکتور فروش</h1>
             <div class="doc-meta">
                 <div>شماره: <strong>{{ $invoice->uuid }}</strong></div>
-                <div>تاریخ: {{ $fmtDate($invoice->created_at) }}</div>
+                <div>تاریخ: {{ $fmtDate($invoice->display_document_date) }}</div>
             </div>
         </div>
     </header>
@@ -125,7 +126,7 @@
         <div class="info-box">
             <div class="info-box-title">ارسال</div>
             <div class="info-row"><div class="info-label">روش ارسال:</div><div>{{ $shippingName }}</div></div>
-            <div class="info-row"><div class="info-label">هزینه ارسال:</div><div>{{ $money($invoice->shipping_price) }}</div></div>
+            <div class="info-row"><div class="info-label">هزینه ارسال:</div><div>{{ $money($totals['shipping']) }}</div></div>
         </div>
     </section>
 
@@ -145,7 +146,7 @@
             <tbody>
             @forelse($invoice->items as $item)
                 @php
-                    $lineTotal = (int) ($item->line_total ?: ((int) $item->quantity * (int) $item->price));
+                    $lineTotal = \App\Support\SalesDocumentTotals::lineTotal($item);
                     $itemProductCode = $productCode($item);
                 @endphp
                 <tr>
@@ -166,10 +167,10 @@
 
     <section class="summary-wrap">
         <table class="summary-table">
-            <tr><td>جمع کالاها</td><td style="text-align:left;direction:ltr">{{ $money($invoice->subtotal) }}</td></tr>
-            <tr><td>تخفیف</td><td style="text-align:left;direction:ltr">{{ $money($invoice->discount_amount) }}</td></tr>
-            <tr><td>هزینه ارسال</td><td style="text-align:left;direction:ltr">{{ $money($invoice->shipping_price) }}</td></tr>
-            <tr class="final-row"><td>مبلغ نهایی</td><td style="text-align:left;direction:ltr">{{ $money($invoice->total) }}</td></tr>
+            <tr><td>جمع کالاها</td><td style="text-align:left;direction:ltr">{{ $money($totals['subtotal_before_discount']) }}</td></tr>
+            <tr><td>تخفیف</td><td style="text-align:left;direction:ltr">{{ $money($totals['total_discount']) }}</td></tr>
+            <tr><td>هزینه ارسال</td><td style="text-align:left;direction:ltr">{{ $money($totals['shipping']) }}</td></tr>
+            <tr class="final-row"><td>مبلغ نهایی</td><td style="text-align:left;direction:ltr">{{ $money($totals['grand_total']) }}</td></tr>
         </table>
     </section>
 

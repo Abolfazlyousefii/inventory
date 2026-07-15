@@ -18,6 +18,7 @@ class WarehouseTransfer extends Model
     public const RETURN_REASON_WARRANTY = 'warranty';
     public const RETURN_REASON_PACKAGING_DAMAGE = 'packaging_damage';
     public const RETURN_REASON_TRANSIT_DAMAGE = 'transit_damage';
+    public const RETURN_REASON_GOODS_HEALTHY = 'goods_healthy';
 
     public static function typeOptions(): array
     {
@@ -50,6 +51,7 @@ class WarehouseTransfer extends Model
             self::RETURN_REASON_WARRANTY => 'برگشت به دلیل گارانتی (خرابی کالا)',
             self::RETURN_REASON_PACKAGING_DAMAGE => 'آسیب‌دیدگی به‌دلیل پکینگ/کارتن',
             self::RETURN_REASON_TRANSIT_DAMAGE => 'شکستگی در مسیر ارسال',
+            self::RETURN_REASON_GOODS_HEALTHY => 'سالم بودن کالا',
         ];
     }
 
@@ -63,6 +65,8 @@ class WarehouseTransfer extends Model
         'external_invoice_number',
         'customer_id',
         'beneficiary_name',
+        'receiver_user_id',
+        'receiver_name_snapshot',
         'return_reason',
         'user_id',
         'transferred_at',
@@ -94,6 +98,20 @@ class WarehouseTransfer extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function receiverUser()
+    {
+        return $this->belongsTo(User::class, 'receiver_user_id');
+    }
+
+    public function receiverDisplayName(): string
+    {
+        return $this->receiver_name_snapshot
+            ?: ($this->receiverUser?->name
+                ?: ($this->beneficiary_name
+                    ?: ($this->toWarehouse?->personnel_name
+                        ?: ($this->toWarehouse?->name ?: '—'))));
+    }
+
     public function relatedInvoice()
     {
         return $this->belongsTo(Invoice::class, 'related_invoice_id');
@@ -102,5 +120,14 @@ class WarehouseTransfer extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function returnKindLabel(): string
+    {
+        $kinds = $this->items->map(fn ($item) => $item->effectiveReturnKind())->unique()->values();
+        if ($kinds->contains('healthy') && $kinds->contains('damaged')) {
+            return 'سالم و مرجوعی';
+        }
+        return $kinds->first() === 'damaged' ? 'مرجوعی' : 'سالم';
     }
 }

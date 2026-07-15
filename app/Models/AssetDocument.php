@@ -14,6 +14,8 @@ class AssetDocument extends Model
         'document_number',
         'document_date',
         'personnel_id',
+        'trustee_user_id',
+        'trustee_name_snapshot',
         'status',
         'description',
         'signed_form_path',
@@ -44,6 +46,18 @@ class AssetDocument extends Model
     public function personnel()
     {
         return $this->belongsTo(AssetPersonnel::class, 'personnel_id');
+    }
+
+    public function trusteeUser()
+    {
+        return $this->belongsTo(User::class, 'trustee_user_id');
+    }
+
+    public function trusteeDisplayName(): string
+    {
+        return $this->trustee_name_snapshot
+            ?: ($this->trusteeUser?->name
+                ?: ($this->personnel?->full_name ?: '—'));
     }
 
     public function items()

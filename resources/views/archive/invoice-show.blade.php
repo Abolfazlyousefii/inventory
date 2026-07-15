@@ -36,6 +36,7 @@
   };
 
   $itemsCount = $invoice->items?->sum('quantity') ?? 0;
+  $totals = \App\Support\SalesDocumentTotals::calculate($invoice->items ?? collect(), (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
   $paymentsTotal = $invoice->payments?->sum('amount') ?? 0;
   $logLabels = ['attributes' => 'مقادیر ثبت‌شده', 'changes' => 'مقادیر جدید', 'old' => 'مقادیر قبلی', 'original' => 'مقادیر قبلی'];
 @endphp
@@ -465,7 +466,7 @@
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div>
             <div class="summary-label">جمع جزء</div>
-            <div class="summary-value">{{ $rial($invoice->subtotal) }}</div>
+            <div class="summary-value">{{ $rial($totals['subtotal_before_discount']) }}</div>
           </div>
           <div class="summary-icon">💵</div>
         </div>
@@ -477,7 +478,7 @@
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div>
             <div class="summary-label">تخفیف</div>
-            <div class="summary-value">{{ $rial($invoice->discount_amount) }}</div>
+            <div class="summary-value">{{ $rial($totals['total_discount']) }}</div>
           </div>
           <div class="summary-icon">🏷️</div>
         </div>
@@ -501,7 +502,7 @@
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div>
             <div class="summary-label">جمع کل</div>
-            <div class="summary-value big">{{ $rial($invoice->total) }}</div>
+            <div class="summary-value big">{{ $rial($totals['grand_total']) }}</div>
           </div>
           <div class="summary-icon">🧾</div>
         </div>

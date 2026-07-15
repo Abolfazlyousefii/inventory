@@ -21,7 +21,7 @@
         <tr>
           <td>{{ $d->document_number }}</td>
           <td>{{ optional($d->document_date)->format('Y-m-d') }}</td>
-          <td>{{ $d->personnel?->full_name }}</td>
+          <td>{{ $d->trusteeDisplayName() }}</td>
           <td>{{ $d->items_count }}</td>
           <td><span class="badge bg-light text-dark border">{{ $statusLabels[$d->status] ?? $d->status }}</span></td>
           <td class="text-end d-flex gap-1 justify-content-end">

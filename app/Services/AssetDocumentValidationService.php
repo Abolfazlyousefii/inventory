@@ -3,37 +3,59 @@
 namespace App\Services;
 
 use App\Models\AssetDocumentItemCode;
+use Illuminate\Validation\ValidationException;
 
 class AssetDocumentValidationService
 {
     public function __construct(private readonly AssetCodeService $assetCodeService) {}
 
-    public function normalizeAndValidateItems(array $items): array
+    public function normalizeAndValidateItems(array $items, ?int $excludeDocumentId = null): array
     {
         if (count($items) < 1) {
-            abort(422, 'حداقل یک ردیف کالا باید ثبت شود.');
+            throw ValidationException::withMessages([
+                'items' => 'حداقل یک ردیف کالا باید ثبت شود.',
+            ]);
         }
 
         $allCodes = [];
+        $codeFields = [];
 
-        $normalized = collect($items)->map(function ($item, $index) use (&$allCodes) {
+        $normalized = collect($items)->map(function ($item, $index) use (&$allCodes, &$codeFields) {
             $name = trim((string) ($item['item_name'] ?? ''));
             $quantity = (int) ($item['quantity'] ?? 0);
             $codesInput = (string) ($item['asset_codes_input'] ?? '');
             $description = trim((string) ($item['description'] ?? ''));
+            $codesAttribute = "items.{$index}.asset_codes_input";
 
             if ($name === '') {
-                abort(422, 'نام کالا در همه ردیف‌ها الزامی است.');
+                throw ValidationException::withMessages([
+                    "items.{$index}.item_name" => 'نام کالا در این ردیف الزامی است.',
+                ]);
             }
+
             if ($quantity < 1) {
-                abort(422, 'تعداد کالا باید حداقل 1 باشد.');
+                throw ValidationException::withMessages([
+                    "items.{$index}.quantity" => 'تعداد کالا باید حداقل ۱ باشد.',
+                ]);
             }
 
             $codes = $this->assetCodeService->parseCodes($codesInput);
-            $this->assetCodeService->validateFourDigitCodes($codes);
+            $this->assetCodeService->validateFourDigitCodes($codes, $codesAttribute);
 
             if (count($codes) !== $quantity) {
-                abort(422, 'تعداد کدهای اموال باید با تعداد کالا برابر باشد. (ردیف ' . ($index + 1) . ')');
+                throw ValidationException::withMessages([
+                    $codesAttribute => 'تعداد کدهای اموال باید با تعداد کالا برابر باشد.',
+                ]);
+            }
+
+            foreach ($codes as $code) {
+                if (isset($codeFields[$code])) {
+                    throw ValidationException::withMessages([
+                        $codesAttribute => "کد اموال {$code} در چند ردیف این سند تکرار شده است.",
+                    ]);
+                }
+
+                $codeFields[$code] = $codesAttribute;
             }
 
             $allCodes = array_merge($allCodes, $codes);
@@ -46,17 +68,20 @@ class AssetDocumentValidationService
             ];
         })->values()->all();
 
-        if (count($allCodes) !== count(array_unique($allCodes))) {
-            abort(422, 'کد اموال تکراری بین ردیف‌ها مجاز نیست.');
+        $existingQuery = AssetDocumentItemCode::query()
+            ->whereIn('asset_code', $allCodes);
+
+        if ($excludeDocumentId) {
+            $existingQuery->whereDoesntHave('item.document', fn ($query) => $query->whereKey($excludeDocumentId));
         }
 
-        $existing = AssetDocumentItemCode::query()
-            ->whereIn('asset_code', $allCodes)
-            ->pluck('asset_code')
-            ->all();
+        $existing = $existingQuery->pluck('asset_code')->all();
 
         if (!empty($existing)) {
-            abort(422, 'کد اموال ' . $existing[0] . ' قبلاً ثبت شده است.');
+            $code = (string) $existing[0];
+            throw ValidationException::withMessages([
+                $codeFields[$code] ?? 'items' => "کد اموال {$code} قبلاً در سیستم ثبت شده است.",
+            ]);
         }
 
         return $normalized;

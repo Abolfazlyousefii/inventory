@@ -9,6 +9,20 @@ class PreinvoiceOrder extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $order): void {
+            if (! $order->document_date) {
+                $order->document_date = $order->created_at ?? now();
+            }
+        });
+    }
+
+    public function getDisplayDocumentDateAttribute()
+    {
+        return $this->document_date ?? $this->created_at;
+    }
+
     public const STATUS_DRAFT = 'draft';
     public const STATUS_TRUE_DRAFT = 'draft';
     public const STATUS_RESERVED_WAITING_WAREHOUSE = 'reserved_waiting_warehouse';
@@ -27,6 +41,7 @@ class PreinvoiceOrder extends Model
         'uuid',
         'external_order_id',
         'created_by',
+        'document_date',
         'status',
         'customer_id', // <-- این فیلد اضافه شد تا باگ ذخیره نشدن مشتری رفع شود
         'is_in_person',
@@ -40,6 +55,12 @@ class PreinvoiceOrder extends Model
         'shipping_id',
         'shipping_price',
         'discount_amount',
+        'discount_breakdown',
+        'invoice_discount_type',
+        'invoice_discount_value',
+        'invoice_discount_amount',
+        'product_discount_amount',
+        'discount_allocation_mode',
         'total_price',
         'warehouse_review_note',
         'warehouse_reject_reason',
@@ -64,6 +85,10 @@ class PreinvoiceOrder extends Model
         'shipping_id' => 'integer',
         'shipping_price' => 'integer',
         'discount_amount' => 'integer',
+        'discount_breakdown' => 'array',
+        'invoice_discount_value' => 'integer',
+        'invoice_discount_amount' => 'integer',
+        'product_discount_amount' => 'integer',
         'total_price' => 'integer',
         'warehouse_reviewed_by' => 'integer',
         'warehouse_reviewed_at' => 'datetime',
@@ -74,6 +99,7 @@ class PreinvoiceOrder extends Model
         'draft_token' => 'string',
         'items_updated_at' => 'datetime',
         'items_updated_by' => 'integer',
+        'document_date' => 'datetime',
     ];
 
     public function items()

@@ -42,7 +42,7 @@
       <div class="col-md-4"><strong>انبار مقصد:</strong> {{ $voucher->toWarehouse?->name ?? '—' }}</div>
       <div class="col-md-4"><strong>ثبت‌کننده:</strong> {{ $voucher->user?->name ?? '—' }}</div>
       <div class="col-md-6"><strong>فاکتور مرجع:</strong> {{ $voucher->relatedInvoice?->uuid ?? '—' }}</div>
-      <div class="col-md-6"><strong>تحویل‌گیرنده/ذی‌نفع:</strong> {{ $voucher->beneficiary_name ?? '—' }}</div>
+      <div class="col-md-6"><strong>تحویل‌گیرنده/ذی‌نفع:</strong> {{ $voucher->receiverDisplayName() }}</div>
       <div class="col-12"><strong>توضیحات:</strong> {{ $voucher->note ?: '—' }}</div>
     </div>
   </div>
@@ -78,8 +78,8 @@
               <td dir="ltr" class="text-nowrap">{{ $productCode }}</td>
               <td dir="ltr" class="text-nowrap">{{ $warehouseLocation }}</td>
               <td>{{ $item->variant_name ?: ($item->variant?->variant_name ?? '—') }}{{ $item->personnel_asset_code ? ' | کد اموال: '.$item->personnel_asset_code : '' }}</td>
-              <td>{{ number_format((int) $item->quantity) }}</td>
-              <td>عدد</td>
+              <td>{{ number_format((int) $item->quantity) }} {{ $item->product?->unit ?: 'عدد' }}</td>
+              <td>{{ $item->product?->unit ?: 'عدد' }}</td>
               <td>{{ $item->line_total ? 'مبلغ ردیف: '.number_format((int)$item->line_total) : '—' }}</td>
             </tr>
           @empty

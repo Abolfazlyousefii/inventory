@@ -40,7 +40,7 @@
         <td><strong>تاریخ ثبت:</strong> {{ optional($document->document_date)->format('Y-m-d') }}</td>
       </tr>
       <tr>
-        <td><strong>نام پرسنل:</strong> {{ $document->personnel?->full_name ?: '—' }}</td>
+        <td><strong>نام پرسنل:</strong> {{ $document->trusteeDisplayName() }}</td>
         <td><strong>کد پرسنلی:</strong> {{ $document->personnel?->personnel_code ?: '—' }}</td>
       </tr>
       <tr>
@@ -78,7 +78,7 @@
     <div class="signatures">
       <div class="sign-box">
         <div class="sign-title">تحویل‌گیرنده (پرسنل)</div>
-        <div>نام و نام خانوادگی: {{ $document->personnel?->full_name ?: '....................' }}</div>
+        <div>نام و نام خانوادگی: {{ $document->trusteeDisplayName() !== '—' ? $document->trusteeDisplayName() : '....................' }}</div>
         <div style="margin-top:10px;">امضا: ............................</div>
         <div style="margin-top:10px;">تاریخ: ............................</div>
         <div class="fingerprint">محل اثر انگشت پرسنل</div>

@@ -23,7 +23,7 @@
                 @endforeach
               </ul>
             </td>
-            <td>{{ $inv->created_at?->format('Y/m/d H:i') }}</td>
+            <td>{{ \App\Support\JalaliDate::dateTime($inv->display_document_date) }}</td>
             <td><span class="badge bg-secondary">{{ $inv->status }}</span></td>
             <td class="text-end">
               <div class="btn-group btn-group-sm">

@@ -23,11 +23,15 @@ class SystemNotification extends Model
 
     public function scopeForUser(Builder $query, User $user): Builder
     {
-        if ($user->hasAnyRole(['admin', 'Admin'])) {
+        if ($user->hasAnyRole(['admin', 'Admin', 'super_admin', 'Manager', 'manager'])) {
             return $query;
         }
 
-        $roles = $user->getRoleNames()->map(fn ($r) => (string) $r)->all();
+        $roles = $user->getRoleNames()
+            ->flatMap(fn ($r) => [(string) $r, strtolower((string) $r), ucfirst(strtolower((string) $r))])
+            ->unique()
+            ->values()
+            ->all();
 
         return $query->where(function (Builder $q) use ($user, $roles) {
             $q->where('user_id', $user->id)

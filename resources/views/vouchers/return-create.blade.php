@@ -121,6 +121,13 @@
         max-width:130px;
     }
 
+    /* Bootstrap input-group gives form controls width: 1%; keep return quantities visible/editable in create and edit forms. */
+    .input-group > .return-quantity-input.form-control{
+        width:auto;
+        min-width:110px;
+        flex:0 0 130px;
+    }
+
     .select2-container{
         width:100% !important;
         direction:rtl;
@@ -177,7 +184,7 @@
 
 <div class="container py-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0">ثبت برگشت از فروش</h4>
+        <h4 class="mb-0">{{ isset($voucher) ? 'ویرایش برگشت از فروش' : 'ثبت برگشت از فروش' }}</h4>
         <a class="btn btn-outline-secondary" href="{{ route('vouchers.section.index', 'return-from-sale') }}">بازگشت</a>
     </div>
 
@@ -203,29 +210,32 @@
         </div>
 
         <div class="p-3">
-            <form method="POST" action="{{ route('vouchers.section.store', 'return-from-sale') }}" id="returnForm">
+            <form method="POST" action="{{ isset($voucher) ? route('vouchers.update', $voucher) : route('vouchers.section.store', 'return-from-sale') }}" id="returnForm">
                 @csrf
+                @isset($voucher)
+                    @method('PUT')
+                @endisset
 
-                <input type="hidden" name="related_invoice_uuid" id="relatedInvoiceUuid" value="{{ old('related_invoice_uuid') }}">
+                <input type="hidden" name="related_invoice_uuid" id="relatedInvoiceUuid" value="{{ old('related_invoice_uuid', $voucher->relatedInvoice->uuid ?? '') }}">
 
                 <div class="row g-3 mb-1">
                     <div class="col-lg-4">
                         <label class="form-label">نوع برگشت از فروش</label>
                         <select name="return_type" id="returnTypeSelect" class="form-select" required>
-                            <option value="internal_invoice" @selected(old('return_type', 'internal_invoice') === 'internal_invoice')>بر اساس فاکتور داخلی</option>
-                            <option value="external_manual" @selected(old('return_type') === 'external_manual')>بدون فاکتور داخلی / فاکتور سازه‌حساب</option>
+                            <option value="internal_invoice" @selected(old('return_type', $voucher->return_type ?? 'internal_invoice') === 'internal_invoice')>بر اساس فاکتور داخلی</option>
+                            <option value="external_manual" @selected(old('return_type', $voucher->return_type ?? null) === 'external_manual')>بدون فاکتور داخلی / فاکتور سازه‌حساب</option>
                         </select>
                     </div>
                     <div class="col-lg-4 d-none" id="externalInvoiceWrap">
                         <label class="form-label">شماره فاکتور سازه‌حساب</label>
-                        <input name="external_invoice_number" id="externalInvoiceNumber" class="form-control" value="{{ old('external_invoice_number') }}" maxlength="100">
+                        <input name="external_invoice_number" id="externalInvoiceNumber" class="form-control" value="{{ old('external_invoice_number', $voucher->external_invoice_number ?? '') }}" maxlength="100">
                         <div class="form-text">برای مرجوعی‌هایی که فاکتورشان در نرم‌افزار قبلی ثبت شده است.</div>
                     </div>
                     <div class="col-lg-4">
                         <label class="form-label">انبار مقصد</label>
                         <select class="form-select" name="to_warehouse_id" id="warehouseSelect" required>
                             @foreach($warehouses as $warehouse)
-                                <option value="{{ $warehouse->id }}" @selected((int) old('to_warehouse_id', $returnsWarehouse->id) === (int) $warehouse->id)>
+                                <option value="{{ $warehouse->id }}" @selected((int) old('to_warehouse_id', $voucher->to_warehouse_id ?? $returnsWarehouse->id) === (int) $warehouse->id)>
                                     {{ $warehouse->name }}
                                 </option>
                             @endforeach
@@ -257,7 +267,7 @@
                                     data-search="{{ $customerSearch }}"
                                     data-name="{{ $customerTitle }}"
                                     data-phone="{{ $customerPhone }}"
-                                    @selected(old('customer_id') == $customer->id)
+                                    @selected(old('customer_id', $voucher->customer_id ?? null) == $customer->id)
                                 >
                                     {{ $customerTitle }}@if($customerPhone) | {{ $customerPhone }}@endif
                                 </option>
@@ -279,7 +289,7 @@
                         <select name="return_reason" id="returnReasonSelect" class="form-select" required>
                             <option value="">انتخاب علت...</option>
                             @foreach($returnReasons as $reasonKey => $reasonTitle)
-                                <option value="{{ $reasonKey }}" @selected(old('return_reason') === $reasonKey)>
+                                <option value="{{ $reasonKey }}" @selected(old('return_reason', $voucher->return_reason ?? null) === $reasonKey)>
                                     {{ $reasonTitle }}
                                 </option>
                             @endforeach
@@ -346,7 +356,10 @@
                                                 <th>قبلاً برگشتی</th>
                                                 <th>قابل برگشت</th>
                                                 <th>قیمت واحد طبق فاکتور</th>
-                                                <th style="width:150px;">تعداد برگشتی</th>
+                                                <th style="width:170px;">تعداد برگشتی</th>
+                                                <th>نوع برگشت</th>
+                                                <th>انبار مقصد</th>
+                                                <th>واحد</th>
                                                 <th>مبلغ برگشتی</th>
                                                 <th style="width:80px;"></th>
                                             </tr>
@@ -383,7 +396,7 @@
                                     <table class="table table-striped line-table" id="manualItemsTable">
                                         <thead>
                                             <tr>
-                                                <th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
+                                                <th>دسته‌بندی</th><th>کالا / تعریف سریع</th><th>تنوع</th><th>کد / بارکد</th><th>تعداد برگشتی</th><th>نوع برگشت</th><th>انبار مقصد</th><th>واحد</th><th>مبلغ فروش واحد</th><th>مبلغ کل</th><th></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -396,20 +409,22 @@
                     </div>
 
 
+                    @unless(isset($voucher))
                     <div class="col-md-6">
                         <label class="form-label">شماره حواله / ارجاع اختیاری</label>
-                        <input name="reference" class="form-control" value="{{ old('reference') }}" maxlength="100">
+                        <input name="reference" class="form-control" value="{{ old('reference', $voucher->reference ?? '') }}" maxlength="100">
                     </div>
+                    @endunless
 
                     <div class="col-md-6">
                         <label class="form-label">توضیحات اختیاری</label>
-                        <input name="note" class="form-control" value="{{ old('note') }}" maxlength="255">
+                        <input name="note" class="form-control" value="{{ old('note', $voucher->note ?? '') }}" maxlength="255">
                     </div>
 
                     <div class="col-12">
                         <div class="sticky-submit">
                             <button type="submit" class="btn btn-success w-100" id="submitBtn">
-                                ثبت برگشت از فروش
+                                {{ isset($voucher) ? 'ذخیره ویرایش برگشت از فروش' : 'ثبت برگشت از فروش' }}
                             </button>
                         </div>
                     </div>
@@ -458,8 +473,10 @@
             'name' => (string) ($product->name ?? ''),
             'code' => (string) ($product->code ?? $product->sku ?? $product->barcode ?? $product->short_barcode ?? ''),
             'barcode' => (string) ($product->barcode ?? $product->short_barcode ?? ''),
+            'category_id' => (int) ($product->category_id ?? 0),
             'sale_price' => (int) ($product->price ?? $product->sale_retail ?? $product->sale_wholesale ?? 0),
             'price' => (int) ($product->price ?? $product->sale_retail ?? $product->sale_wholesale ?? 0),
+            'unit' => (string) ($product->unit ?? ''),
             'variants' => $variants->map(function ($variant) {
                 $variantName = $variant->variant_name
                     ?: ($variant->variety_name
@@ -530,15 +547,85 @@ document.addEventListener('DOMContentLoaded', function () {
         invoiceProductsBase: @json(url('/vouchers/invoice')),
     };
 
-    const oldRelatedInvoiceUuid = @json(old('related_invoice_uuid'));
-    const oldItems = @json(old('items', []));
+    @php
+        $persistedReturnItems = isset($voucher) ? $voucher->items->map(fn ($item) => [
+            'invoice_item_id' => $item->invoice_item_id,
+            'product_id' => $item->product_id,
+            'variant_id' => $item->product_variant_id ?: $item->variant_id,
+            'product_variant_id' => $item->product_variant_id ?: $item->variant_id,
+            'quantity' => (int) $item->quantity,
+            'unit_price' => (int) $item->unit_price,
+            'category_id' => $item->product?->category_id,
+            'unit' => $item->product?->unit,
+            'product_name' => $item->product?->name,
+            'product_code' => $item->product?->code ?: ($item->product?->sku ?: ''),
+            'variant_name' => $item->variant?->variant_name ?: ($item->variant_name ?: '—'),
+            'variant_code' => $item->variant?->variant_code ?: ($item->variant_code ?: ''),
+            'return_kind' => $item->effectiveReturnKind(),
+            'destination_warehouse_id' => $item->destination_warehouse_id ?: $item->transfer?->to_warehouse_id,
+        ])->values()->all() : [];
+
+        $oldInputItems = old('items');
+        $returnOldItems = is_array($oldInputItems)
+            ? collect($oldInputItems)->values()->map(function ($row, $index) use ($persistedReturnItems) {
+                $persisted = $persistedReturnItems[$index] ?? [];
+                $row = is_array($row) ? $row : [];
+                $quantity = (int) ($row['quantity'] ?? 0);
+
+                if ($quantity <= 0) {
+                    $quantity = (int) ($persisted['quantity'] ?? 1);
+                }
+
+                return array_replace($persisted, $row, ['quantity' => max($quantity, 1)]);
+            })->all()
+            : $persistedReturnItems;
+
+        $returnExistingInvoice = isset($voucher) && $voucher->relatedInvoice ? [
+            'uuid' => $voucher->relatedInvoice->uuid,
+            'invoice_date' => optional($voucher->relatedInvoice->created_at)->format('Y-m-d H:i'),
+            'created_at' => optional($voucher->relatedInvoice->created_at)->format('Y-m-d H:i'),
+            'total' => (int) ($voucher->relatedInvoice->total ?? 0),
+        ] : null;
+
+        $returnOldRelatedInvoiceUuid = old('related_invoice_uuid', $voucher->relatedInvoice->uuid ?? '');
+        $returnEditingVoucherId = $voucher->id ?? null;
+        $returnCategories = $categories->map(fn ($category) => [
+            'id' => (int) $category->id,
+            'name' => (string) $category->name,
+            'code' => (string) ($category->code ?? ''),
+        ])->values();
+    @endphp
+
+    const oldRelatedInvoiceUuid = @json($returnOldRelatedInvoiceUuid);
+    const rawOldItems = @json($returnOldItems);
+    const oldItems = (Array.isArray(rawOldItems) ? rawOldItems : Object.values(rawOldItems || {})).map(function (row) {
+        row = row || {};
+        const quantity = returnItemQuantity(row);
+        const variantId = row.variant_id || row.product_variant_id || row.variety_id || '';
+
+        return Object.assign({}, row, {
+            invoice_item_id: row.invoice_item_id || row.invoiceItemId || '',
+            product_id: row.product_id || row.productId || '',
+            variant_id: variantId,
+            product_variant_id: row.product_variant_id || variantId,
+            quantity: quantity > 0 ? quantity : row.quantity,
+            return_kind: row.return_kind || row.returnKind || 'healthy',
+            destination_warehouse_id: row.destination_warehouse_id || row.destinationWarehouseId || '',
+        });
+    });
+    const editingVoucherId = @json($returnEditingVoucherId);
+    const existingInvoice = @json($returnExistingInvoice);
     const products = @json($manualReturnProducts);
-    const categories = @json($categories->map(fn ($category) => ['id' => (int) $category->id, 'name' => (string) $category->name, 'code' => (string) ($category->code ?? '')])->values());
+    const categories = @json($returnCategories);
+    const warehouses = @json($warehouses->map(fn($w) => ['id' => (int) $w->id, 'name' => (string) $w->name, 'type' => (string) ($w->type ?? '')])->values());
+    const centralWarehouseId = @json((int) \App\Services\WarehouseStockService::centralWarehouseId());
+    const returnsWarehouseId = @json((int) $returnsWarehouse->id);
 
     let customerInvoices = [];
     let selectedInvoice = null;
     let invoiceItems = [];
     let manualBackdrop = null;
+    let manualItemIndex = 0;
 
     function normalizeDigits(value) {
         const persian = '۰۱۲۳۴۵۶۷۸۹';
@@ -547,6 +634,17 @@ document.addEventListener('DOMContentLoaded', function () {
         return String(value || '')
             .replace(/[۰-۹]/g, function (d) { return String(persian.indexOf(d)); })
             .replace(/[٠-٩]/g, function (d) { return String(arabic.indexOf(d)); });
+    }
+
+    function toSafeNumber(value, fallback = 0) {
+        if (value === null || value === undefined || value === '') return fallback;
+
+        const normalized = normalizeDigits(String(value))
+            .replace(/[٬,،\s]/g, '')
+            .replace(/[^0-9.-]/g, '');
+        const number = Number(normalized);
+
+        return Number.isFinite(number) ? number : fallback;
     }
 
     function escapeHtml(value) {
@@ -559,7 +657,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function toMoney(value) {
-        const number = Number(value || 0);
+        const number = toSafeNumber(value, 0);
         return number.toLocaleString('fa-IR');
     }
 
@@ -749,27 +847,81 @@ document.addEventListener('DOMContentLoaded', function () {
         const raw = payload.products || payload.items || payload.variants || [];
 
         return raw.map(function (item) {
-            const qty = Number(item.qty || item.quantity || item.invoice_qty || 0);
-            const returned = Number(item.already_returned_qty || item.returned_qty || 0);
-            const remaining = Number(item.remaining_qty !== undefined ? item.remaining_qty : Math.max(qty - returned, 0));
+            const qty = toSafeNumber(item.qty ?? item.quantity ?? item.invoice_qty, 0);
+            const returned = toSafeNumber(item.already_returned_qty ?? item.returned_qty, 0);
+            const remaining = toSafeNumber(item.remaining_qty, Math.max(qty - returned, 0));
 
             return {
-                invoice_item_id: Number(item.invoice_item_id || 0),
-                product_id: Number(item.product_id || 0),
-                variant_id: Number(item.variant_id || item.product_variant_id || 0),
+                invoice_item_id: toSafeNumber(item.invoice_item_id, 0),
+                product_id: toSafeNumber(item.product_id, 0),
+                variant_id: toSafeNumber(item.variant_id ?? item.product_variant_id, 0),
                 name: String(item.name || item.product_name || 'بدون نام'),
                 product_code: String(item.product_code || item.code || ''),
                 variant_name: String(item.variant_name || 'بدون تنوع'),
                 variant_code: String(item.variant_code || ''),
-                variant_stock: Number(item.variant_stock || item.stock || 0),
+                variant_stock: toSafeNumber(item.variant_stock ?? item.stock, 0),
                 qty: qty,
                 already_returned_qty: returned,
                 remaining_qty: remaining,
-                unit_price: Number(item.unit_price || item.price || 0),
+                unit_price: toSafeNumber(item.unit_price ?? item.price, 0),
+                unit: String(item.unit || item.product_unit || 'عدد'),
             };
         }).filter(function (item) {
             return item.invoice_item_id > 0 && item.product_id > 0 && item.variant_id > 0;
         });
+    }
+
+
+    function returnItemQuantity(row) {
+        if (!row || typeof row !== 'object') return 0;
+
+        const value = row.quantity ?? row.qty ?? row.return_quantity ?? row.returned_quantity ?? 0;
+        return toSafeNumber(value, 0);
+    }
+
+    function existingItemAsInvoiceRow(row) {
+        const qty = returnItemQuantity(row);
+
+        return {
+            invoice_item_id: toSafeNumber(row.invoice_item_id, 0),
+            product_id: toSafeNumber(row.product_id, 0),
+            variant_id: toSafeNumber(row.variant_id ?? row.product_variant_id, 0),
+            name: String(row.product_name || row.name || 'کالای ثبت‌شده'),
+            product_code: String(row.product_code || row.code || ''),
+            variant_name: String(row.variant_name || '—'),
+            variant_code: String(row.variant_code || ''),
+            variant_stock: 0,
+            qty: toSafeNumber(row.invoice_qty, qty),
+            already_returned_qty: toSafeNumber(row.already_returned_qty, 0),
+            remaining_qty: Math.max(toSafeNumber(row.remaining_qty ?? row.returnable_quantity, 0), qty, 1),
+            unit_price: toSafeNumber(row.unit_price ?? row.price, 0),
+            unit: String(row.unit || 'عدد'),
+            return_kind: row.return_kind || 'healthy',
+            destination_warehouse_id: row.destination_warehouse_id || '',
+            _fromExistingVoucher: true,
+        };
+    }
+
+    function mergeExistingItemsForEdit(items) {
+        if (!editingVoucherId || !Array.isArray(oldItems) || !oldItems.length) return items;
+
+        const merged = items.slice();
+        oldItems.forEach(function (row) {
+            const exists = merged.some(function (item) {
+                if (row.invoice_item_id && item.invoice_item_id && String(row.invoice_item_id) === String(item.invoice_item_id)) return true;
+
+                const rowVariantId = row.variant_id ?? row.product_variant_id ?? '';
+
+                return String(row.product_id || '') === String(item.product_id || '') &&
+                       String(rowVariantId) === String(item.variant_id || item.product_variant_id || '');
+            });
+
+            if (!exists) {
+                merged.push(existingItemAsInvoiceRow(row));
+            }
+        });
+
+        return merged;
     }
 
     function oldQuantityFor(invoiceItemId, productId, variantId) {
@@ -778,22 +930,43 @@ document.addEventListener('DOMContentLoaded', function () {
         const found = oldItems.find(function (row) {
             if (row.invoice_item_id && String(row.invoice_item_id) === String(invoiceItemId)) return true;
 
+            const rowVariantId = row.variant_id ?? row.product_variant_id ?? '';
+
             return String(row.product_id || '') === String(productId) &&
-                   String(row.variant_id || '') === String(variantId);
+                   String(rowVariantId) === String(variantId);
         });
 
         if (!found) return null;
-        const qty = Number(found.quantity || 0);
+        const qty = returnItemQuantity(found);
         return qty > 0 ? qty : null;
     }
 
+    function warehouseOptions(selectedId) {
+        return warehouses.map(function (warehouse) {
+            const selected = String(warehouse.id) === String(selectedId) ? ' selected' : '';
+            return `<option value="${escapeHtml(warehouse.id)}"${selected}>${escapeHtml(warehouse.name)}</option>`;
+        }).join('');
+    }
+
+    function bindReturnKindWarehouse(row) {
+        const kind = row.querySelector('.return-kind-select');
+        const destination = row.querySelector('.destination-warehouse-select');
+        if (!kind || !destination) return;
+        kind.addEventListener('change', function () {
+            destination.value = kind.value === 'damaged' ? String(returnsWarehouseId) : String(centralWarehouseId);
+        });
+    }
+
     function itemRowTemplate(item, index, useOldQuantity) {
-        const remaining = Number(item.remaining_qty || 0);
+        const rawRemaining = toSafeNumber(item.remaining_qty, 0);
         const defaultQtyFromOld = useOldQuantity ? oldQuantityFor(item.invoice_item_id, item.product_id, item.variant_id) : null;
-        const defaultQty = defaultQtyFromOld !== null ? Math.min(defaultQtyFromOld, remaining) : remaining;
+        const remaining = Math.max(defaultQtyFromOld !== null ? Math.max(rawRemaining, defaultQtyFromOld) : rawRemaining, 1);
+        const defaultQty = Math.max(defaultQtyFromOld !== null ? defaultQtyFromOld : remaining, 1);
+        const selectedKind = item.return_kind === 'damaged' ? 'damaged' : 'healthy';
+        const selectedWarehouseId = toSafeNumber(item.destination_warehouse_id, selectedKind === 'damaged' ? returnsWarehouseId : centralWarehouseId);
 
         return `
-            <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}">
+            <tr data-product-id="${escapeHtml(item.product_id)}" data-variant-id="${escapeHtml(item.variant_id)}" data-unit-price="${escapeHtml(item.unit_price || 0)}" data-default-quantity="${escapeHtml(defaultQty)}">
                 <td>
                     <input type="hidden" name="items[${index}][invoice_item_id]" value="${escapeHtml(item.invoice_item_id)}">
                     <input type="hidden" name="items[${index}][product_id]" value="${escapeHtml(item.product_id)}">
@@ -810,16 +983,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td><span class="badge text-bg-primary">${toMoney(remaining)}</span></td>
                 <td><span class="badge text-bg-light">${toMoney(item.unit_price || 0)} ریال</span></td>
                 <td>
-                    <input
+                    <div class="input-group input-group-sm">
+                        <input
                         type="number"
                         min="1"
                         max="${escapeHtml(remaining)}"
                         name="items[${index}][quantity]"
-                        class="form-control qty-input"
+                        class="form-control qty-input return-quantity-input"
                         value="${escapeHtml(defaultQty)}"
                         required
                     >
+                        <span class="input-group-text">${escapeHtml(item.unit || 'عدد')}</span>
+                    </div>
                 </td>
+                <td><select name="items[${index}][return_kind]" class="form-select form-select-sm return-kind-select"><option value="healthy" ${selectedKind === 'healthy' ? 'selected' : ''}>سالم</option><option value="damaged" ${selectedKind === 'damaged' ? 'selected' : ''}>مرجوعی</option></select></td>
+                <td><select name="items[${index}][destination_warehouse_id]" class="form-select form-select-sm destination-warehouse-select">${warehouseOptions(selectedWarehouseId)}</select></td>
+                <td><span class="badge text-bg-light">${escapeHtml(item.unit || 'عدد')}</span></td>
                 <td><span class="internal-line-total">۰ ریال</span></td>
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn">حذف</button>
@@ -833,8 +1012,8 @@ document.addEventListener('DOMContentLoaded', function () {
         let amountTotal = 0;
 
         tbody.querySelectorAll('tr').forEach(function (tr) {
-            const qty = Number(tr.querySelector('.qty-input')?.value || 0);
-            const unitPrice = Number(tr.dataset.unitPrice || 0);
+            const qty = toSafeNumber(tr.querySelector('.qty-input')?.value, 0);
+            const unitPrice = toSafeNumber(tr.dataset.unitPrice, 0);
             const lineTotal = Math.max(qty, 0) * Math.max(unitPrice, 0);
             const lineTotalEl = tr.querySelector('.internal-line-total');
 
@@ -862,9 +1041,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 recalcInternalReturnSummary();
             });
 
+            if (qtyInput && (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0)) {
+                qtyInput.value = String(toSafeNumber(tr.dataset.defaultQuantity, 1));
+            }
+
+            bindReturnKindWarehouse(tr);
+
+            if (!qtyInput) return;
+
             qtyInput.addEventListener('input', function () {
-                const max = Number(qtyInput.max || 0);
-                let value = Number(qtyInput.value || 0);
+                const max = toSafeNumber(qtyInput.max, 0);
+                let value = toSafeNumber(qtyInput.value, 0);
 
                 if (max > 0 && value > max) {
                     qtyInput.value = String(max);
@@ -889,13 +1076,14 @@ document.addEventListener('DOMContentLoaded', function () {
         recalcInternalReturnSummary();
         showItemsWarning('');
 
-        const returnableItems = invoiceItems.filter(function (item) {
+        const sourceItems = useOldQuantity ? mergeExistingItemsForEdit(invoiceItems) : invoiceItems;
+        const returnableItems = sourceItems.filter(function (item) {
             return Number(item.remaining_qty || 0) > 0;
         });
 
         itemsSection.classList.remove('d-none');
 
-        if (!invoiceItems.length) {
+        if (!sourceItems.length) {
             itemsEmptyState.classList.remove('d-none');
             showItemsWarning('هیچ آیتمی از API فاکتور دریافت نشد. خروجی متد invoiceProducts را بررسی کن.');
             return;
@@ -925,7 +1113,8 @@ document.addEventListener('DOMContentLoaded', function () {
         showItemsWarning('در حال بارگذاری کالاهای خریداری‌شده فاکتور...');
 
         try {
-            const url = endpoints.invoiceProductsBase + '/' + encodeURIComponent(uuid) + '/products';
+            let url = endpoints.invoiceProductsBase + '/' + encodeURIComponent(uuid) + '/products';
+            if (editingVoucherId) url += '?exclude_voucher_id=' + encodeURIComponent(editingVoucherId);
             const response = await fetch(url, {
                 headers: { 'Accept': 'application/json' }
             });
@@ -941,6 +1130,13 @@ document.addEventListener('DOMContentLoaded', function () {
             invoiceItems = normalizeInvoiceProductsPayload(payload);
             renderInvoiceItems(useOldQuantity);
         } catch (error) {
+            if (useOldQuantity && Array.isArray(oldItems) && oldItems.length) {
+                invoiceItems = oldItems.map(existingItemAsInvoiceRow);
+                renderInvoiceItems(true);
+                showItemsWarning('ارتباط با سرور برای دریافت کالاهای فاکتور برقرار نشد؛ اقلام ذخیره‌شده همین سند نمایش داده شد.');
+                return;
+            }
+
             invoiceItems = [];
             itemsEmptyState.classList.remove('d-none');
             showItemsWarning('ارتباط با سرور برای دریافت کالاهای فاکتور برقرار نشد.');
@@ -1018,8 +1214,9 @@ document.addEventListener('DOMContentLoaded', function () {
         return selectSearchText(data.element, data.text).includes(term) ? data : null;
     }
 
-    function productOptions(selected) {
-        return '<option value="">انتخاب کالا...</option><option value="__new__">➕ تعریف کالای جدید</option>' + products.map(function (p) {
+    function productOptions(selected, categoryId = '') {
+        const filteredProducts = categoryId ? products.filter(function (p) { return String(p.category_id || '') === String(categoryId); }) : products;
+        return '<option value="">انتخاب کالا...</option><option value="__new__">➕ تعریف کالای جدید</option>' + filteredProducts.map(function (p) {
             const variantsSearch = (p.variants || []).map(function (v) {
                 return [v.name || '', v.code || '', v.barcode || ''].join(' ');
             }).join(' ');
@@ -1146,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function recalcManualTotals() {
         let total = 0;
         manualTbody.querySelectorAll('tr').forEach(function (tr) {
-            const qty = Number(tr.querySelector('.manual-qty')?.value || 0);
+            const qty = toSafeNumber(tr.querySelector('.manual-qty')?.value, 0);
             const price = syncMoneyRaw(tr);
             const line = Math.max(qty, 0) * Math.max(price, 0);
             tr.querySelector('.manual-line-total').textContent = toMoney(line) + ' ریال';
@@ -1156,15 +1353,56 @@ document.addEventListener('DOMContentLoaded', function () {
         manualItemsEmptyState.classList.toggle('d-none', manualTbody.querySelectorAll('tr').length > 0);
     }
 
+    function nextManualItemIndex() {
+        manualItemIndex += 1;
+
+        return manualItemIndex;
+    }
+
+    function ensureManualQuantityUsable(tr, focus = false) {
+        if (!tr) return;
+
+        const qtyInput = tr.querySelector('.manual-qty');
+
+        bindReturnKindWarehouse(tr);
+
+            if (!qtyInput) return;
+
+        qtyInput.disabled = false;
+        qtyInput.readOnly = false;
+        qtyInput.required = true;
+        qtyInput.min = '1';
+
+        if (!qtyInput.value || toSafeNumber(qtyInput.value, 0) <= 0) {
+            qtyInput.value = String(toSafeNumber(qtyInput.dataset.defaultQuantity, 1));
+        }
+
+        if (focus) {
+            window.setTimeout(function () {
+                qtyInput.disabled = false;
+                qtyInput.readOnly = false;
+                qtyInput.focus({ preventScroll: true });
+            }, 0);
+        }
+    }
+
     function addManualRow(rowData = {}) {
-        const index = Date.now() + manualTbody.children.length;
-        const unitPrice = Number(rowData.unit_price || 0);
+        const index = nextManualItemIndex();
+        const unitPrice = toSafeNumber(rowData.unit_price, 0);
+        const defaultQty = Math.max(returnItemQuantity(rowData), 1);
+        const selectedKind = rowData.return_kind === 'healthy' ? 'healthy' : 'damaged';
+        const selectedWarehouseId = toSafeNumber(rowData.destination_warehouse_id, selectedKind === 'damaged' ? returnsWarehouseId : centralWarehouseId);
         const tr = document.createElement('tr');
+        tr.dataset.itemIndex = String(index);
         tr.innerHTML = `
-            <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id)}</select>${newProductFields(index, rowData)}</td>
+            <td><select class="form-select manual-category">${categoryOptions(rowData.category_id)}</select></td>
+            <td><select name="items[${index}][product_id]" class="form-select manual-product" required>${productOptions(rowData.product_id, rowData.category_id)}</select>${newProductFields(index, rowData)}</td>
             <td><select name="items[${index}][variant_id]" class="form-select manual-variant" required>${variantOptions(rowData.product_id, rowData.variant_id)}</select></td>
             <td><span class="mono manual-code">—</span></td>
-            <td><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty" value="${escapeHtml(rowData.quantity || 1)}" required></td>
+            <td><div class="input-group input-group-sm"><input name="items[${index}][quantity]" type="number" min="1" class="form-control manual-qty return-quantity-input" value="${escapeHtml(defaultQty)}" data-default-quantity="${escapeHtml(defaultQty)}" required><span class="input-group-text manual-unit-label">${escapeHtml(rowData.unit || 'عدد')}</span></div></td>
+            <td><select name="items[${index}][return_kind]" class="form-select form-select-sm return-kind-select"><option value="healthy" ${selectedKind === 'healthy' ? 'selected' : ''}>سالم</option><option value="damaged" ${selectedKind === 'damaged' ? 'selected' : ''}>مرجوعی</option></select></td>
+            <td><select name="items[${index}][destination_warehouse_id]" class="form-select form-select-sm destination-warehouse-select">${warehouseOptions(selectedWarehouseId)}</select></td>
+            <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
                 <input type="hidden" name="items[${index}][unit_price]" class="manual-price" value="${escapeHtml(unitPrice)}">
@@ -1173,23 +1411,32 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><button type="button" class="btn btn-sm btn-outline-danger manual-remove">حذف</button></td>
         `;
         manualTbody.appendChild(tr);
+        bindReturnKindWarehouse(tr);
 
+        const categorySelect = tr.querySelector('.manual-category');
         const productSelect = tr.querySelector('.manual-product');
         const variantSelect = tr.querySelector('.manual-variant');
         const priceDisplayInput = tr.querySelector('.manual-price-display');
+        const manualQtyInput = tr.querySelector('.manual-qty');
         const codeEl = tr.querySelector('.manual-code');
+        const unitLabelEl = tr.querySelector('.manual-unit-label');
+        const unitCellEl = tr.querySelector('.manual-unit-cell');
 
-        function refreshVariantMeta(applySuggestedPrice) {
+        function refreshVariantMeta(applySuggestedPrice, focusQuantity = false) {
+            ensureManualQuantityUsable(tr, focusQuantity);
             const isNewProduct = productSelect.value === '__new__';
             const quickFields = tr.querySelector('.quick-new-product');
             quickFields?.classList.toggle('d-none', !isNewProduct);
             tr.querySelectorAll('.new-product-required').forEach(function (el) { el.required = isNewProduct; });
             variantSelect.required = !isNewProduct;
             variantSelect.disabled = isNewProduct;
-            if (isNewProduct) { codeEl.textContent = 'بعد از ثبت ساخته می‌شود'; recalcManualTotals(); return; }
+            if (isNewProduct) { codeEl.textContent = 'بعد از ثبت ساخته می‌شود'; unitLabelEl.textContent = 'عدد'; unitCellEl.textContent = 'عدد'; recalcManualTotals(); return; }
             const product = products.find(function (p) { return String(p.id) === String(productSelect.value); });
             const option = variantSelect.selectedOptions[0];
             codeEl.textContent = option?.dataset?.code || product?.code || product?.barcode || '—';
+            const unit = product?.unit || 'عدد';
+            unitLabelEl.textContent = unit;
+            unitCellEl.textContent = unit;
             if (applySuggestedPrice && option?.dataset?.price !== undefined) {
                 const suggested = Number(option.dataset.price || product?.price || 0);
                 priceDisplayInput.value = suggested.toLocaleString('en-US');
@@ -1197,23 +1444,33 @@ document.addEventListener('DOMContentLoaded', function () {
             recalcManualTotals();
         }
 
+        function onCategoryChanged() {
+            destroySelect2(productSelect);
+            productSelect.innerHTML = productOptions('', categorySelect.value);
+            initManualSelect(productSelect);
+            fillVariantSelect(tr, '');
+            refreshVariantMeta(true);
+        }
+
         function onProductChanged() {
             if (productSelect.value !== '__new__') fillVariantSelect(tr, productSelect.value);
-            refreshVariantMeta(true);
+            refreshVariantMeta(true, true);
         }
 
         function onVariantChanged() {
-            refreshVariantMeta(true);
+            refreshVariantMeta(true, true);
         }
 
         if (window.jQuery && jQuery.fn) {
+            jQuery(categorySelect).on('change', onCategoryChanged);
             jQuery(productSelect).on('change', onProductChanged);
             jQuery(variantSelect).on('change', onVariantChanged);
         } else {
+            categorySelect.addEventListener('change', onCategoryChanged);
             productSelect.addEventListener('change', onProductChanged);
             variantSelect.addEventListener('change', onVariantChanged);
         }
-        tr.querySelector('.manual-qty').addEventListener('input', recalcManualTotals);
+        ensureManualQuantityUsable(tr);
         tr.querySelectorAll('.quick-money').forEach(function (input) { input.addEventListener('input', function () { const raw = parseMoney(input.value); input.value = input.value.trim() === '' ? '' : raw.toLocaleString('en-US'); }); });
         priceDisplayInput.addEventListener('input', function () {
             const raw = parseMoney(priceDisplayInput.value);
@@ -1230,7 +1487,7 @@ document.addEventListener('DOMContentLoaded', function () {
             recalcManualTotals();
         });
         fillVariantSelect(tr, productSelect.value, rowData.variant_id || '');
-        initManualSelects(tr);
+        initManualSelect(productSelect);
         refreshVariantMeta(false);
     }
 
@@ -1268,6 +1525,13 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     addManualItemBtn.addEventListener('click', function () { addManualRow(); });
+
+    manualTbody.addEventListener('input', function (event) {
+        if (event.target && event.target.classList.contains('return-quantity-input')) {
+            ensureManualQuantityUsable(event.target.closest('tr'));
+            recalcManualTotals();
+        }
+    });
 
     openInvoiceModalBtn.addEventListener('click', function () {
         if (!customerSelect.value) {
@@ -1357,9 +1621,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const productId = row.querySelector('[name$="[product_id]"]')?.value || '';
             const variantId = row.querySelector('[name$="[variant_id]"]')?.value || (productId === '__new__' ? '__new__' : '');
             const qtyInput = row.querySelector(isManualReturn() ? '.manual-qty' : '.qty-input');
-            const qty = Number(qtyInput?.value || 0);
-            const maxQty = isManualReturn() ? 0 : Number(qtyInput?.max || 0);
-            const unitPrice = isManualReturn() ? Number(row.querySelector('.manual-price')?.value || -1) : 0;
+            const qty = toSafeNumber(qtyInput?.value, 0);
+            const maxQty = isManualReturn() ? 0 : toSafeNumber(qtyInput?.max, 0);
+            const unitPrice = isManualReturn() ? toSafeNumber(row.querySelector('.manual-price')?.value, -1) : 0;
             const dupKey = productId + ':' + variantId;
 
             if (!productId || !variantId || qty <= 0 || (isManualReturn() && unitPrice < 0)) {
@@ -1400,7 +1664,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (oldRelatedInvoiceUuid && !isManualReturn()) {
-        applySelectedInvoice({
+        if (Array.isArray(oldItems) && oldItems.length) {
+            invoiceItems = oldItems.map(existingItemAsInvoiceRow);
+            renderInvoiceItems(true);
+        }
+
+        applySelectedInvoice(existingInvoice || {
             uuid: oldRelatedInvoiceUuid,
             invoice_date: '—',
             created_at: '—',

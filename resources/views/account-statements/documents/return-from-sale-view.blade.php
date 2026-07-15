@@ -26,6 +26,9 @@
 
     $variantCode = fn ($item): string => $item->variant?->variant_code
         ?: ($item->variant_code ?: '—');
+    $returnReasonLabel = \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—';
+    $healthyAmount = (int) $voucher->items->filter(fn ($item) => $item->effectiveReturnKind() === 'healthy')->sum('line_total');
+    $damagedAmount = (int) $voucher->items->filter(fn ($item) => $item->effectiveReturnKind() === 'damaged')->sum('line_total');
 @endphp
 
 @section('content')
@@ -50,7 +53,10 @@
             <div class="col-md-4"><strong>شماره فاکتور سازه‌حساب:</strong> {{ $voucher->external_invoice_number ?: '—' }}</div>
             <div class="col-md-4"><strong>علت برگشت:</strong> {{ \App\Models\WarehouseTransfer::returnReasonOptions()[$voucher->return_reason] ?? '—' }}</div>
             <div class="col-md-6"><strong>انبار مبدا:</strong> {{ $voucher->fromWarehouse?->name ?: '—' }}</div>
-            <div class="col-md-6"><strong>انبار مقصد:</strong> {{ $voucher->toWarehouse?->name ?: '—' }}</div>
+            <div class="col-md-6"><strong>انبار مقصد:</strong> {{ $voucher->items->pluck('destinationWarehouse.name')->filter()->unique()->implode('، ') ?: ($voucher->toWarehouse?->name ?: 'نامشخص') }}</div>
+            <div class="col-md-4"><strong>تعداد اقلام سالم:</strong> {{ number_format($voucher->items->filter(fn ($item) => $item->effectiveReturnKind() === 'healthy')->sum('quantity')) }}</div>
+            <div class="col-md-4"><strong>مبلغ اقلام سالم:</strong> {{ \App\Support\Currency::formatRial($healthyAmount) }}</div>
+            <div class="col-md-4"><strong>مبلغ اقلام مرجوعی:</strong> {{ \App\Support\Currency::formatRial($damagedAmount) }}</div>
             <div class="col-md-4"><strong>ثبت‌کننده سند:</strong> {{ $voucher->user?->name ?: '—' }}</div>
             <div class="col-md-12"><strong>توضیحات:</strong> {{ $voucher->note ?: '—' }}</div>
         </div>
@@ -68,6 +74,10 @@
                     <th>نوع / تنوع دقیق کالا</th>
                     <th>کد تنوع</th>
                     <th>تعداد برگشتی</th>
+                    <th>واحد</th>
+                    <th>علت برگشت</th>
+                    <th>نوع برگشت</th>
+                    <th>انبار مقصد</th>
                     <th>قیمت واحد</th>
                     <th>جمع</th>
                 </tr>
@@ -79,12 +89,16 @@
                     <td>{{ $item->product?->name ?? ('#' . $item->product_id) }}</td>
                     <td>{{ $variantLabel($item) }}</td>
                     <td dir="ltr">{{ $variantCode($item) }}</td>
-                    <td>{{ number_format((int) $item->quantity) }}</td>
+                    <td>{{ number_format((int) $item->quantity) }} {{ $item->product?->unit ?: 'عدد' }}</td>
+                    <td>{{ $item->product?->unit ?: 'عدد' }}</td>
+                    <td>{{ $returnReasonLabel }}</td>
+                    <td>{{ $item->returnKindLabel() }}</td>
+                    <td>{{ $item->destinationWarehouse?->name ?: 'نامشخص' }}</td>
                     <td>{{ number_format((int) $item->unit_price) }}</td>
                     <td>{{ number_format((int) $item->line_total) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7" class="text-center text-muted py-4">آیتمی ثبت نشده است.</td></tr>
+                <tr><td colspan="10" class="text-center text-muted py-4">آیتمی ثبت نشده است.</td></tr>
             @endforelse
             </tbody>
         </table>

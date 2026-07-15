@@ -7,6 +7,7 @@ use App\Models\ProductVariant;
 use App\Models\Warehouse;
 use App\Models\WarehouseStock;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use App\Services\AriyajanebiSyncService;
 
 class WarehouseStockService
@@ -124,10 +125,20 @@ class WarehouseStockService
             return;
         }
 
-        $product->update([
+        $summaryUpdate = [
             'stock' => max(0, (int) $product->variants->sum('stock')),
-            'price' => max(0, (int) ($product->variants->where('is_active', true)->min('sell_price') ?? 0)),
-        ]);
+        ];
+
+        $minSellPrice = $product->variants
+            ->where('is_active', true)
+            ->where('sell_price', '>', 0)
+            ->min('sell_price');
+
+        if ($minSellPrice !== null && (int) $minSellPrice > 0) {
+            $summaryUpdate['price'] = (int) $minSellPrice;
+        }
+
+        $product->update($summaryUpdate);
     }
 
     public static function syncAllCentralVariantStocksFromVariants(bool $confirmed = false): void
@@ -232,6 +243,16 @@ class WarehouseStockService
 
     private static function assertVariantBelongsToProduct(int $productId, ?int $variantId): void
     {
+        $hasVariants = ProductVariant::query()
+            ->where('product_id', $productId)
+            ->exists();
+
+        if ($hasVariants && !$variantId) {
+            throw ValidationException::withMessages([
+                'variant_id' => 'برای کالای دارای تنوع، انتخاب تنوع الزامی است.',
+            ]);
+        }
+
         if (!$variantId) {
             $hasVariants = ProductVariant::query()->where('product_id', $productId)->exists();
 
@@ -248,7 +269,9 @@ class WarehouseStockService
             ->exists();
 
         if (!$exists) {
-            abort(422, 'تنوع انتخاب‌شده برای این محصول معتبر نیست.');
+            throw ValidationException::withMessages([
+                'variant_id' => 'تنوع انتخاب‌شده برای این محصول معتبر نیست.',
+            ]);
         }
     }
 

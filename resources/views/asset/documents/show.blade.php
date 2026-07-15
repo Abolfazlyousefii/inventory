@@ -15,7 +15,7 @@
   <div class="col-md-4"><b>شماره سند:</b> {{ $document->document_number }}</div>
   <div class="col-md-4"><b>تاریخ:</b> {{ optional($document->document_date)->format('Y-m-d') }}</div>
   <div class="col-md-4"><b>وضعیت:</b> {{ $statusLabels[$document->status] ?? $document->status }}</div>
-  <div class="col-md-6"><b>پرسنل:</b> {{ $document->personnel?->full_name }}</div>
+  <div class="col-md-6"><b>پرسنل:</b> {{ $document->trusteeDisplayName() }}</div>
   <div class="col-md-6"><b>ثبت‌کننده:</b> {{ $document->creator?->name ?: '—' }}</div>
   <div class="col-12"><b>توضیحات:</b> {{ $document->description ?: '—' }}</div>
 </div></div>

@@ -128,7 +128,7 @@
                 <tbody>
                     @forelse($ledgerItems as $item)
                         <tr>
-                            <td>{{ $item->invoice?->created_at ? Jalalian::fromDateTime($item->invoice->created_at)->format('Y/m/d H:i') : '—' }}</td>
+                            <td>{{ $item->invoice ? \App\Support\JalaliDate::dateTime($item->invoice->display_document_date) : '—' }}</td>
                             <td>{{ $item->invoice?->uuid ?? '—' }}</td>
                             <td>{{ $item->invoice?->customer_name ?? '—' }}</td>
                             <td>{{ $item->product?->name ?? $product->name }}</td>

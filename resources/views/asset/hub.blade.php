@@ -25,14 +25,6 @@
 
 <div class="row g-3">
   <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ route('asset.personnel.index') }}" class="asset-hub-card card p-3">
-      <div class="asset-hub-icon mb-3">👥</div>
-      <h5 class="fw-bold">تعریف و لیست پرسنل</h5>
-      <p class="text-muted mb-0">ثبت، مشاهده و مدیریت اطلاعات پرسنل</p>
-    </a>
-  </div>
-
-  <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ route('asset.documents.index') }}" class="asset-hub-card card p-3">
       <div class="asset-hub-icon mb-3">📄</div>
       <h5 class="fw-bold">اسناد ثبت‌شده</h5>

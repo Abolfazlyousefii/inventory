@@ -46,7 +46,8 @@
   };
 
   $itemsCount = $order->items->sum('quantity');
-  $itemsTotal = $order->items->sum(fn($it) => (int) $it->quantity * (int) $it->price);
+  $printTotals = \App\Support\SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+  $itemsTotal = $printTotals['subtotal_before_discount'];
   $printSubtotal = $itemsTotal;
   $printShippingName = $order->shippingMethod?->name ?? ($order->shipping_id ? ('روش ارسال #' . $order->shipping_id) : '---');
   $logLabels = ['attributes' => 'مقادیر ثبت‌شده', 'changes' => 'مقادیر جدید', 'old' => 'مقادیر قبلی', 'original' => 'مقادیر قبلی'];
@@ -684,9 +685,9 @@
     <section class="print-summary-wrap">
       <table class="print-summary">
         <tr><td>جمع کالاها</td><td style="text-align:left;direction:ltr">{{ $rial($printSubtotal) }}</td></tr>
-        <tr><td>تخفیف</td><td style="text-align:left;direction:ltr">{{ $rial($order->discount_amount) }}</td></tr>
+        <tr><td>تخفیف</td><td style="text-align:left;direction:ltr">{{ $rial($printTotals['total_discount']) }}</td></tr>
         <tr><td>هزینه ارسال</td><td style="text-align:left;direction:ltr">{{ $rial($order->shipping_price) }}</td></tr>
-        <tr class="print-final-row"><td>مبلغ نهایی</td><td style="text-align:left;direction:ltr">{{ $rial($order->total_price) }}</td></tr>
+        <tr class="print-final-row"><td>مبلغ نهایی</td><td style="text-align:left;direction:ltr">{{ $rial($printTotals['grand_total']) }}</td></tr>
       </table>
     </section>
 

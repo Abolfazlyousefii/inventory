@@ -478,7 +478,7 @@
 
               <td>
                 <span class="date-text">
-                  {{ $o->created_at ? Jalalian::fromDateTime($o->created_at)->format('Y/m/d H:i') : '—' }}
+                  {{ \App\Support\JalaliDate::dateTime($o->display_document_date) }}
                 </span>
               </td>
               <td class="text-end">

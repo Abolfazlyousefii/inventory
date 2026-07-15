@@ -13,6 +13,11 @@ class CustomerLedgerService
             return;
         }
 
+        if (in_array((string) $invoice->status, Invoice::cancelledStatuses(), true)) {
+            $this->voidInvoiceDebit($invoice, 'حذف اثر بدهکاری فاکتور کنسل‌شده');
+            return;
+        }
+
         CustomerLedger::query()->updateOrCreate(
             [
                 'customer_id' => (int) $invoice->customer_id,
@@ -25,5 +30,14 @@ class CustomerLedgerService
                 'note' => 'ثبت/بروزرسانی بدهکاری بابت حواله فروش ' . $invoice->uuid,
             ]
         );
+    }
+
+    public function voidInvoiceDebit(Invoice $invoice, ?string $note = null): void
+    {
+        CustomerLedger::query()
+            ->where('reference_type', Invoice::class)
+            ->where('reference_id', (int) $invoice->id)
+            ->where('type', 'debit')
+            ->delete();
     }
 }

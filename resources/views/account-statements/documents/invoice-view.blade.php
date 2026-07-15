@@ -17,7 +17,7 @@
     <div class="card-body">
         <div class="row g-3">
             <div class="col-md-4"><strong>کد فاکتور:</strong> {{ $invoice->uuid }}</div>
-            <div class="col-md-4"><strong>تاریخ:</strong> {{ $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '—' }}</div>
+            <div class="col-md-4"><strong>تاریخ:</strong> {{ \App\Support\JalaliDate::dateTime($invoice->display_document_date) }}</div>
             <div class="col-md-4"><strong>مبلغ کل:</strong> {{ \App\Support\Currency::formatRial($invoice->total) }}</div>
             <div class="col-md-4"><strong>مشتری:</strong> {{ $invoice->customer_name ?: '—' }}</div>
             <div class="col-md-4"><strong>شماره تماس:</strong> {{ $invoice->customer_mobile ?: '—' }}</div>

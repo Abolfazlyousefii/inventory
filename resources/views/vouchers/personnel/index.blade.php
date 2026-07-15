@@ -21,7 +21,7 @@
                         <td>{{ $voucher->reference ?: ('TR-'.$voucher->id) }}</td>
                         <td>{{ $voucher->transferred_at?->format('Y/m/d H:i') }}</td>
                         <td>{{ $voucher->fromWarehouse?->name ?: '—' }}</td>
-                        <td>{{ $voucher->toWarehouse?->name ?: '—' }}</td>
+                        <td>{{ $voucher->receiverDisplayName() }}</td>
                         <td>{{ $voucher->user?->name ?: '—' }}</td>
                         <td><a class="btn btn-sm btn-outline-primary" href="{{ route('vouchers.edit', $voucher) }}">ویرایش</a></td>
                     </tr>

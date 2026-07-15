@@ -31,7 +31,7 @@ class ProductSalesLedgerController extends Controller
             ->with([
                 'product:id,name',
                 'variant:id,variant_name',
-                'invoice:id,uuid,customer_id,customer_name,created_at,preinvoice_order_id',
+                'invoice:id,uuid,customer_id,customer_name,created_at,document_date,preinvoice_order_id',
                 'invoice.preinvoiceOrder:id,created_by',
                 'invoice.preinvoiceOrder.creator:id,name',
             ]);

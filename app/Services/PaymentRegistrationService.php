@@ -19,7 +19,9 @@ class PaymentRegistrationService
     ): InvoicePayment {
         $method = (string) ($payload['method'] ?? 'cash');
         $amount = (int) ($payload['amount'] ?? 0);
-        $paidAt = $payload['paid_at'] ?? now()->toDateString();
+        $paidAt = $method === 'cheque'
+            ? ($payload['received_at'] ?? $payload['cheque_received_at'] ?? $payload['paid_at'] ?? now()->toDateString())
+            : ($payload['paid_at'] ?? now()->toDateString());
 
         $payment = $invoice->payments()->create([
             'customer_id' => $customerId ?: ($invoice->customer_id ?: null),
@@ -27,26 +29,28 @@ class PaymentRegistrationService
             'method' => $method,
             'amount' => $amount,
             'paid_at' => $paidAt,
-            'bank_name' => $method === 'cash' ? ($payload['bank_name'] ?? null) : null,
-            'payment_identifier' => $payload['payment_identifier'] ?? null,
+            'bank_name' => $payload['bank_name'] ?? ($method === 'cheque' ? ($payload['cheque_bank_name'] ?? null) : null),
+            'payment_identifier' => $method === 'cheque'
+                ? ($payload['cheque_number'] ?? $payload['payment_identifier'] ?? null)
+                : ($payload['payment_identifier'] ?? null),
             'receipt_image' => $receiptImagePath,
-            'note' => $payload['note'] ?? null,
+            'note' => $method === 'cheque' ? null : ($payload['note'] ?? null),
         ]);
 
         if ($method === 'cheque') {
             Cheque::create([
                 'invoice_payment_id' => $payment->id,
-                'bank_name' => $payload['cheque_bank_name'] ?? null,
-                'branch_name' => $payload['cheque_branch_name'] ?? null,
+                'bank_name' => $payload['bank_name'] ?? ($payload['cheque_bank_name'] ?? null),
+                'branch_name' => null,
                 'cheque_number' => $payload['cheque_number'] ?? null,
-                'amount' => (int) ($payload['cheque_amount'] ?? $amount),
-                'due_date' => $payload['cheque_due_date'] ?? null,
-                'received_at' => $payload['cheque_received_at'] ?? null,
-                'customer_name' => $payload['cheque_customer_name'] ?? null,
-                'customer_code' => $payload['cheque_customer_code'] ?? null,
-                'account_number' => $payload['cheque_account_number'] ?? null,
-                'account_holder' => $payload['cheque_account_holder'] ?? null,
-                'image' => $chequeImagePath,
+                'amount' => $amount,
+                'due_date' => $payload['due_date'] ?? ($payload['cheque_due_date'] ?? null),
+                'received_at' => $payload['received_at'] ?? ($payload['cheque_received_at'] ?? null),
+                'customer_name' => null,
+                'customer_code' => null,
+                'account_number' => null,
+                'account_holder' => null,
+                'image' => null,
                 'status' => $payload['cheque_status'] ?? 'pending',
             ]);
         }

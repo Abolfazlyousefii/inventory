@@ -19,7 +19,7 @@
         <div class="row g-2">
           <div class="col-md-4"><b>کد اموال:</b> {{ $result->asset_code }}</div>
           <div class="col-md-4"><b>کالا:</b> {{ $result->item?->item_name }}</div>
-          <div class="col-md-4"><b>پرسنل:</b> {{ $result->item?->document?->personnel?->full_name }}</div>
+          <div class="col-md-4"><b>پرسنل:</b> {{ $result->item?->document?->trusteeDisplayName() }}</div>
           <div class="col-md-4"><b>شماره سند:</b> {{ $result->item?->document?->document_number }}</div>
           <div class="col-md-4"><b>تاریخ سند:</b> {{ optional($result->item?->document?->document_date)->format('Y-m-d') }}</div>
           <div class="col-md-4"><b>وضعیت سند:</b> {{ $result->item?->document?->status }}</div>

@@ -33,7 +33,7 @@
           @forelse($orders as $order)
             <tr>
               <td>{{ $order->uuid }}</td>
-              <td>{{ $order->created_at ? Jalalian::fromDateTime($order->created_at)->format('Y/m/d H:i') : '—' }}</td>
+              <td>{{ \App\Support\JalaliDate::dateTime($order->display_document_date) }}</td>
               <td>{{ $order->customer_name }}</td>
               <td class="text-muted small" style="min-width: 220px; max-width: 320px; white-space: normal;">
                 {{ $order->description ? \Illuminate\Support\Str::limit($order->description, 120) : '—' }}

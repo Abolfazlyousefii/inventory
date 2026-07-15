@@ -28,6 +28,8 @@
 
     $initialItems = $order->items->map(function ($item) {
         return [
+            'id' => (int) $item->id,
+            'item_id' => (int) $item->id,
             'product_id' => (int) $item->product_id,
             'variant_id' => (int) $item->variant_id,
             'quantity' => (int) $item->quantity,
@@ -76,7 +78,7 @@
             <div class="col-md-3">
                 <div class="text-muted small">تاریخ</div>
                 <strong>
-                    {{ $order->created_at ? Jalalian::fromDateTime($order->created_at)->format('Y/m/d H:i') : '—' }}
+                    {{ \App\Support\JalaliDate::dateTime($order->display_document_date) }}
                 </strong>
             </div>
 
@@ -266,6 +268,7 @@
         });
 
         tr.dataset.originalQuantity = String(data.quantity || 1);
+        tr.dataset.itemId = String(data.item_id || data.id || '');
         tr.dataset.productId = String(data.product_id || '');
         tr.dataset.variantId = String(data.variant_id || '');
 
@@ -284,8 +287,11 @@
             }
 
             removedItems.push({
+                id: tr.dataset.itemId || '',
+                item_id: tr.dataset.itemId || '',
                 product_id: tr.dataset.productId || tr.querySelector('.product').value,
                 variant_id: tr.dataset.variantId || tr.querySelector('.variant').value,
+                _delete: 1,
                 change_reason: reason,
                 change_note: note
             });
@@ -331,9 +337,10 @@
     }
 
     function attachHiddenInputs(form) {
-        form.querySelectorAll('input[name^="items["], input[name^="removed_items["]').forEach(el => el.remove());
+        form.querySelectorAll('[name^="items["], [name^="removed_items["]').forEach(el => el.remove());
 
         [...tbody.querySelectorAll('tr')].forEach((tr, index) => {
+            const itemId = tr.dataset.itemId || '';
             const productId = tr.querySelector('.product').value;
             const variantId = tr.querySelector('.variant').value;
             const quantity = tr.querySelector('.qty').value;
@@ -342,6 +349,8 @@
             const note = tr.querySelector('.change-note').value;
 
             const fields = {
+                id: itemId,
+                item_id: itemId,
                 product_id: productId,
                 variant_id: variantId,
                 quantity: quantity,
