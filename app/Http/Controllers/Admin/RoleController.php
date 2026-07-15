@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use App\Support\PermissionCatalog;
 use Illuminate\View\View;
-use App\Support\PermissionCatalog;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
