@@ -23,7 +23,9 @@ return new class extends Migration
 
         Schema::create('invoice_collection_revision_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('invoice_collection_revision_id')->constrained('invoice_collection_revisions')->cascadeOnDelete();
+            $table->foreignId('invoice_collection_revision_id')
+                ->constrained('invoice_collection_revisions', indexName: 'icri_revision_id_fk')
+                ->cascadeOnDelete();
             $table->foreignId('invoice_item_id')->nullable()->constrained('invoice_items')->nullOnDelete();
             $table->foreignId('product_id')->nullable()->constrained('products')->nullOnDelete();
             $table->foreignId('product_variant_id')->nullable()->constrained('product_variants')->nullOnDelete();
