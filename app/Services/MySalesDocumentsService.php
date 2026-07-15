@@ -10,13 +10,20 @@ use Illuminate\Pagination\LengthAwarePaginator;
 
 class MySalesDocumentsService
 {
-    public const TAB_NEEDS_ACTION = 'needs-action';
+    public const TAB_ACTIVE = 'active';
     public const TAB_DRAFTS = 'drafts';
-    public const TAB_DOCUMENTS = 'documents';
+    public const TAB_SHIPPED = 'shipped';
+    public const TAB_NEEDS_CORRECTION = 'needs-correction';
 
-    public const BUCKET_NEEDS_ACTION = 'needs_action';
+    public const BUCKET_ACTIVE = 'active';
     public const BUCKET_DRAFT = 'draft';
-    public const BUCKET_DOCUMENT = 'document';
+    public const BUCKET_SHIPPED = 'shipped';
+    public const BUCKET_NEEDS_CORRECTION = 'needs_correction';
+
+    public const TAB_NEEDS_ACTION = self::TAB_NEEDS_CORRECTION;
+    public const TAB_DOCUMENTS = self::TAB_ACTIVE;
+    public const BUCKET_NEEDS_ACTION = self::BUCKET_NEEDS_CORRECTION;
+    public const BUCKET_DOCUMENT = self::BUCKET_ACTIVE;
 
     public function filters(Request $request): array
     {
@@ -33,28 +40,33 @@ class MySalesDocumentsService
 
     public function validTabs(): array
     {
-        return [self::TAB_NEEDS_ACTION, self::TAB_DRAFTS, self::TAB_DOCUMENTS];
+        return [self::TAB_ACTIVE, self::TAB_DRAFTS, self::TAB_SHIPPED, self::TAB_NEEDS_CORRECTION];
     }
 
     public function tabToBucket(string $tab): string
     {
         return match ($tab) {
-            self::TAB_NEEDS_ACTION => self::BUCKET_NEEDS_ACTION,
             self::TAB_DRAFTS => self::BUCKET_DRAFT,
-            default => self::BUCKET_DOCUMENT,
+            self::TAB_SHIPPED => self::BUCKET_SHIPPED,
+            self::TAB_NEEDS_CORRECTION => self::BUCKET_NEEDS_CORRECTION,
+            default => self::BUCKET_ACTIVE,
         };
     }
 
     public function bucketStatuses(string $bucket): array
     {
         return match ($bucket) {
-            self::BUCKET_NEEDS_ACTION => [
-                'preinvoice' => [PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED],
+            self::BUCKET_NEEDS_CORRECTION => [
+                'preinvoice' => [PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE],
                 'invoice' => [Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION],
             ],
             self::BUCKET_DRAFT => [
                 'preinvoice' => [PreinvoiceOrder::STATUS_DRAFT],
                 'invoice' => [],
+            ],
+            self::BUCKET_SHIPPED => [
+                'preinvoice' => [],
+                'invoice' => [Invoice::STATUS_SHIPPED],
             ],
             default => [
                 'preinvoice' => [
@@ -63,9 +75,7 @@ class MySalesDocumentsService
                     PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
                     PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
                     PreinvoiceOrder::STATUS_PENDING_FINANCE,
-                    PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
-                    PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
-                    PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE,
+                    PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
                 ],
                 'invoice' => [
                     Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
@@ -77,8 +87,6 @@ class MySalesDocumentsService
                     Invoice::STATUS_PACKING,
                     Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
                     Invoice::STATUS_READY_TO_SHIP,
-                    Invoice::STATUS_SHIPPED,
-                    Invoice::STATUS_NOT_SHIPPED,
                 ],
             ],
         };
@@ -89,9 +97,7 @@ class MySalesDocumentsService
         if ($explicitTab && in_array($explicitTab, $this->validTabs(), true)) {
             return $explicitTab;
         }
-        if (($counts[self::TAB_NEEDS_ACTION] ?? 0) > 0) return self::TAB_NEEDS_ACTION;
-        if (($counts[self::TAB_DRAFTS] ?? 0) > 0) return self::TAB_DRAFTS;
-        return self::TAB_DOCUMENTS;
+        return self::TAB_ACTIVE;
     }
 
     public function baseQuery(int $sellerId): Builder
@@ -121,11 +127,26 @@ class MySalesDocumentsService
     {
         if ($filters['q'] !== '') {
             $needle = '%' . $filters['q'] . '%';
-            $query->where(fn ($q) => $q->where('uuid', 'like', $needle)->orWhereHas('invoice', fn ($iq) => $iq->where('uuid', 'like', $needle)));
+            $query->where(function ($q) use ($needle) {
+                $q->where('uuid', 'like', $needle)
+                    ->orWhere('customer_name', 'like', $needle)
+                    ->orWhere('customer_mobile', 'like', $needle)
+                    ->orWhereHas('customer', function ($cq) use ($needle) {
+                        $cq->where('first_name', 'like', $needle)
+                            ->orWhere('last_name', 'like', $needle)
+                            ->orWhereRaw("concat(coalesce(first_name, ''), ' ', coalesce(last_name, '')) like ?", [$needle])
+                            ->orWhere('mobile', 'like', $needle);
+                    })
+                    ->orWhereHas('invoice', function ($iq) use ($needle) {
+                        $iq->where('uuid', 'like', $needle)
+                            ->orWhere('customer_name', 'like', $needle)
+                            ->orWhere('customer_mobile', 'like', $needle);
+                    });
+            });
         }
         if ($filters['customer'] !== '') {
             $needle = '%' . $filters['customer'] . '%';
-            $query->where(fn ($q) => $q->where('customer_name', 'like', $needle)->orWhereHas('customer', fn ($cq) => $cq->where('first_name', 'like', $needle)->orWhere('last_name', 'like', $needle))->orWhereHas('invoice', fn ($iq) => $iq->where('customer_name', 'like', $needle)));
+            $query->where(fn ($q) => $q->where('customer_name', 'like', $needle)->orWhere('customer_mobile', 'like', $needle)->orWhereHas('customer', fn ($cq) => $cq->where('first_name', 'like', $needle)->orWhere('last_name', 'like', $needle)->orWhere('mobile', 'like', $needle))->orWhereHas('invoice', fn ($iq) => $iq->where('customer_name', 'like', $needle)->orWhere('customer_mobile', 'like', $needle)));
         }
         if ($filters['type'] === 'preinvoice') $query->doesntHave('invoice');
         if ($filters['type'] === 'invoice') $query->has('invoice');
@@ -152,7 +173,7 @@ class MySalesDocumentsService
     public function counts(int $sellerId): array
     {
         $out = [];
-        foreach ([self::TAB_NEEDS_ACTION, self::TAB_DRAFTS, self::TAB_DOCUMENTS] as $tab) {
+        foreach ([self::TAB_ACTIVE, self::TAB_DRAFTS, self::TAB_SHIPPED, self::TAB_NEEDS_CORRECTION] as $tab) {
             $out[$tab] = (clone $this->applyBucket($this->baseQuery($sellerId), $this->tabToBucket($tab)))->toBase()->getCountForPagination();
         }
         return $out;
@@ -163,12 +184,12 @@ class MySalesDocumentsService
         $bucket = $this->tabToBucket($tab);
         $query = $this->applyBucket($this->baseQuery($sellerId), $bucket);
         $this->applyFilters($query, $filters, $this->bucketStatuses($bucket));
-        if ($bucket === self::BUCKET_NEEDS_ACTION) {
+        if ($bucket === self::BUCKET_NEEDS_CORRECTION) {
             $query->selectRaw("greatest(coalesce((select invoices.status_changed_at from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1), '1000-01-01'), coalesce(preinvoice_orders.stock_released_at, '1000-01-01'), coalesce(preinvoice_orders.items_updated_at, '1000-01-01'), coalesce(preinvoice_orders.updated_at, '1000-01-01')) as action_required_at")
                 ->orderByDesc('action_required_at');
         } else {
             $query->orderByDesc('activity_at');
         }
-        return $query->orderByDesc('preinvoice_orders.id')->paginate(30)->withQueryString();
+        return $query->orderByDesc('preinvoice_orders.id')->paginate(20)->withQueryString();
     }
 }

@@ -333,22 +333,17 @@ class ProductController extends Controller
 
     private function reservedPreinvoiceQuantities(Product $product, array $variantIds)
     {
-        $activeStatuses = [
-            PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE,
-            PreinvoiceOrder::STATUS_WAREHOUSE_REVIEWING,
-            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-            PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
-            PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE,
-        ];
-
-        return PreinvoiceOrderItem::query()
-            ->join('preinvoice_orders', 'preinvoice_orders.id', '=', 'preinvoice_order_items.preinvoice_order_id')
-            ->where('preinvoice_order_items.product_id', $product->id)
-            ->whereIn('preinvoice_order_items.variant_id', $variantIds)
-            ->whereIn('preinvoice_orders.status', $activeStatuses)
-            ->whereNull('preinvoice_orders.stock_released_at')
-            ->select('preinvoice_order_items.variant_id', DB::raw('SUM(preinvoice_order_items.quantity) as reserved_quantity'))
-            ->groupBy('preinvoice_order_items.variant_id')
+        return PreinvoiceDraftReservation::query()
+            ->where('product_id', $product->id)
+            ->whereIn('variant_id', $variantIds)
+            ->where('reservation_scope', 'official')
+            ->whereNotNull('converted_at')
+            ->whereNull('released_at')
+            ->where(function ($query) {
+                $query->whereNull('release_reason')->orWhere('release_reason', '<>', 'consumed');
+            })
+            ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
+            ->groupBy('variant_id')
             ->pluck('reserved_quantity', 'variant_id')
             ->map(fn ($quantity) => (int) $quantity);
     }
@@ -359,6 +354,8 @@ class ProductController extends Controller
             ->where('product_id', $product->id)
             ->whereIn('variant_id', $variantIds)
             ->whereNull('converted_at')
+            ->whereNull('preinvoice_order_id')
+            ->whereNull('released_at')
             ->where(function ($query) {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })

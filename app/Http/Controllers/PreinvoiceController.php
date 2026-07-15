@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\PreinvoiceItemStockException;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Invoice;
@@ -407,9 +408,10 @@ class PreinvoiceController extends Controller
         $statusLabels = $this->labelsForMySalesTab($allowedStatuses);
         $allStatusLabels = array_merge($this->myPreinvoiceStatusLabels(), $this->myInvoiceStatusLabels());
         $tabs = [
-            MySalesDocumentsService::TAB_NEEDS_ACTION => ['label' => 'نیاز به اصلاح', 'bucket' => MySalesDocumentsService::BUCKET_NEEDS_ACTION],
+            MySalesDocumentsService::TAB_ACTIVE => ['label' => 'پیش‌فاکتورهای من', 'bucket' => MySalesDocumentsService::BUCKET_ACTIVE],
             MySalesDocumentsService::TAB_DRAFTS => ['label' => 'پیش‌نویس‌ها', 'bucket' => MySalesDocumentsService::BUCKET_DRAFT],
-            MySalesDocumentsService::TAB_DOCUMENTS => ['label' => 'فاکتورها', 'bucket' => MySalesDocumentsService::BUCKET_DOCUMENT],
+            MySalesDocumentsService::TAB_SHIPPED => ['label' => 'فاکتورهای ارسال‌شده', 'bucket' => MySalesDocumentsService::BUCKET_SHIPPED],
+            MySalesDocumentsService::TAB_NEEDS_CORRECTION => ['label' => 'نیازمند بررسی و اصلاح', 'bucket' => MySalesDocumentsService::BUCKET_NEEDS_CORRECTION],
         ];
 
         return view('preinvoice.my-index', compact('orders', 'status', 'statusLabels', 'allStatusLabels', 'filters', 'activeTab', 'tabCounts', 'tabs'));
@@ -506,6 +508,19 @@ class PreinvoiceController extends Controller
             ];
         }
 
+        if (! $hasInvoice && $statusKey === PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE) {
+            return [
+                'label' => 'نیاز به بررسی',
+                'reason' => 'ارجاع انبار',
+                'message' => 'این سند از فرایند انبار برای بررسی یا اصلاح به شما بازگردانده شده است.',
+                'by' => $order->warehouseReviewer?->name,
+                'at' => $order->warehouse_reviewed_at ?: $order->updated_at,
+                'return_reason' => $order->warehouse_reject_reason ?: null,
+                'note' => $order->warehouse_review_note ?: null,
+                'unit' => 'انبار',
+            ];
+        }
+
         if (! $hasInvoice && $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED) {
             return [
                 'label' => 'نیاز به بررسی',
@@ -528,7 +543,7 @@ class PreinvoiceController extends Controller
                 'at' => $invoice?->status_changed_at ?: $invoice?->updated_at,
                 'return_reason' => $invoice?->collection_note ?: null,
                 'note' => $invoice?->collection_note ?: null,
-                'unit' => 'مالی',
+                'unit' => 'انبار',
             ];
         }
 
@@ -1199,15 +1214,31 @@ class PreinvoiceController extends Controller
 
         $draftReservations = $this->activeDraftReservationQuantities($reservationToken);
 
+        $itemErrors = [];
         foreach ($qtyByVariant as $variantId => $requiredQty) {
             $variant = $variants->get((int) $variantId);
             $availableQty = max(0, $this->centralInventoryService->availableForVariant((int) $variantId) + (int) ($draftReservations[(int) $variantId] ?? 0));
 
             if ($requiredQty > $availableQty) {
-                throw ValidationException::withMessages([
-                    'products' => "موجودی تنوع انتخابی کافی نیست. موجودی قابل فروش: {$availableQty} | درخواست: {$requiredQty}",
-                ]);
+                $variant->loadMissing('product:id,name');
+                $firstIndex = collect($products)->search(fn ($row) => (int) ($row['variety_id'] ?? 0) === (int) $variantId);
+                $variantName = (string) ($variant->variant_name ?: ($variant->variety_name ?: ($variant->variant_code ?: $variant->id)));
+                $itemErrors[] = [
+                    'item_id' => (int) ($products[$firstIndex]['item_id'] ?? 0) ?: null,
+                    'row_key' => 'variant-' . (int) $variantId,
+                    'variant_id' => (int) $variantId,
+                    'variant_code' => (string) ($variant->variant_code ?: $variant->variety_code),
+                    'product_name' => (string) ($variant->product?->name ?? 'نامشخص'),
+                    'variant_name' => $variantName,
+                    'requested_quantity' => (int) $requiredQty,
+                    'available_quantity' => (int) $availableQty,
+                    'message' => "موجودی آزاد تنوع «{$variantName}» برابر {$availableQty} عدد است. مقدار درخواستی: {$requiredQty}. حداکثر قابل ثبت: {$availableQty}.",
+                ];
             }
+        }
+
+        if ($itemErrors !== []) {
+            throw new PreinvoiceItemStockException($itemErrors);
         }
     }
 
@@ -1336,7 +1367,7 @@ class PreinvoiceController extends Controller
             'quantity' => (int) $item->quantity,
             'price' => (int) $item->price,
             'stock_at_review' => $item->variant ? max(0, (int) $item->variant->stock) : null,
-            'available_stock_at_review' => $item->variant ? max(0, (int) $item->variant->stock - (int) $item->variant->reserved) : null,
+            'available_stock_at_review' => $item->variant ? max(0, (int) $item->variant->stock) : null,
         ])->values()->all();
     }
 
@@ -1362,6 +1393,7 @@ class PreinvoiceController extends Controller
             ->where('preinvoice_order_id', $order->id)
             ->whereNotNull('converted_at')
             ->whereNull('released_at')
+            ->whereNull('release_reason')
             ->whereIn('variant_id', $requiredByVariant->keys())
             ->lockForUpdate()
             ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
@@ -1773,6 +1805,7 @@ class PreinvoiceController extends Controller
             ->where('preinvoice_order_id', $order->id)
             ->whereNotNull('converted_at')
             ->whereNull('released_at')
+            ->whereNull('release_reason')
             ->lockForUpdate()
             ->get()
             ->keyBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
@@ -1820,7 +1853,12 @@ class PreinvoiceController extends Controller
             if (! $stockAlreadyAdjusted) {
                 $this->releaseStockForItem((int) $reservation->product_id, (int) $reservation->variant_id, (int) $reservation->quantity);
             }
-            $reservation->delete();
+            $reservation->forceFill([
+                'released_at' => now(),
+                'released_by' => auth()->id(),
+                'release_reason' => 'preinvoice_item_removed',
+                'release_note' => 'ردیف پیش‌فاکتور حذف شد یا مقدار آن صفر شد.',
+            ])->save();
         }
     }
 
@@ -2076,7 +2114,7 @@ class PreinvoiceController extends Controller
                 continue;
             }
 
-            $available = max(0, (int) $variant->stock - (int) $variant->reserved);
+            $available = max(0, (int) $variant->stock);
             if ($available >= $shortfall) {
                 $this->changeReservedOnly((int) $variant->product_id, (int) $variant->id, $shortfall);
             }
@@ -2349,21 +2387,6 @@ class PreinvoiceController extends Controller
                     'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
                 ]);
 
-                if ($shouldConsumeReservedOnFinalize) {
-                    $product = Product::query()->whereKey((int) $it->product_id)->lockForUpdate()->first();
-                    if ($product) {
-                        $product->update([
-                            'reserved' => max(0, (int) $product->reserved - (int) $it->quantity),
-                        ]);
-                    }
-
-                    $variant = ProductVariant::query()->whereKey((int) $it->variant_id)->lockForUpdate()->first();
-                    if ($variant) {
-                        $variant->update([
-                            'reserved' => max(0, (int) $variant->reserved - (int) $it->quantity),
-                        ]);
-                    }
-                }
             }
 
             if (!empty($invoice->customer_id)) {
