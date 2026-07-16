@@ -58,6 +58,12 @@ class SalesDocumentAccessService
 
     public function canSellerEditPreinvoiceItems(PreinvoiceOrder $order, ?User $user): bool
     {
+        $order->loadMissing('invoice:id,preinvoice_order_id');
+
+        if ($this->isConvertedPreinvoice($order)) {
+            return false;
+        }
+
         if (! in_array((string) $order->status, [
             PreinvoiceOrder::STATUS_DRAFT,
             PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
