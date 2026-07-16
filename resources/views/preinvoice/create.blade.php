@@ -1355,7 +1355,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         <input type="hidden" name="payment_status" value="pending">
         <input type="hidden" name="reservation_token" id="reservation_token" value="{{ old('reservation_token') }}">
         <input type="hidden" name="autosave_uuid" id="autosave_uuid" value="">
-        <input type="hidden" name="intent" id="submit_intent" value="submit">
         <input type="hidden" name="discount_breakdown" id="discount_breakdown" value="">
 
 
@@ -1495,16 +1494,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                     <input type="text" name="total_price" id="total_price" class="form-control form-control-sm total-view" readonly value="0">
                 </div>
                 <div>
-                    @if($isEdit)
-                    <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ذخیره و ارسال مجدد برای تایید</button>
-                    @else
                     <div class="d-flex flex-wrap gap-2">
                         <button class="btn btn-outline-primary px-4 py-2 rounded-3 fw-bold" id="saveDraftBtn" name="intent" value="draft" disabled>ذخیره پیش‌نویس</button>
-                        <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ثبت نهایی</button>
+                        <button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ثبت نهایی و ارسال به مالی</button>
                     </div>
                     <div class="hint mt-2">بدون رزرو موجودی و بدون ارسال به مالی</div>
                     <div class="hint">بررسی موجودی، رزرو رسمی و ارسال به مالی</div>
-                    @endif
                     <div class="submit-disabled-hint" id="submitHint">برای ثبت، مشتری و حداقل یک کالا لازم است.</div>
                 </div>
             </div>
@@ -3139,8 +3134,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         e.preventDefault();
         const submitter = e.submitter || document.activeElement;
         const intent = submitter?.value === 'draft' ? 'draft' : 'submit';
-        const intentInput = document.getElementById('submit_intent');
-        if (intentInput) intentInput.value = intent;
         const customerName = normalize(document.getElementById('customer_name').value);
         const customerMobile = normalize(document.getElementById('customer_mobile').value);
         const productInputs = document.querySelectorAll('#groupProductsInputs input[name$="[quantity]"]');
@@ -3164,6 +3157,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 localStorage.removeItem(RESERVATION_TOKEN_KEY);
             }
             hideLocalDraftBanner();
+            appendProgrammaticIntent(intent);
             document.getElementById('orderForm').submit();
             return true;
         }
@@ -3192,8 +3186,20 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             localStorage.removeItem(RESERVATION_TOKEN_KEY);
         }
         hideLocalDraftBanner();
+        appendProgrammaticIntent(intent);
         document.getElementById('orderForm').submit();
         return true;
+    }
+
+    function appendProgrammaticIntent(intent) {
+        const form = document.getElementById('orderForm');
+        form.querySelector('input[data-programmatic-intent]')?.remove();
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'intent';
+        input.value = intent;
+        input.dataset.programmaticIntent = 'true';
+        form.appendChild(input);
     }
 
     document.addEventListener('DOMContentLoaded', async function() {

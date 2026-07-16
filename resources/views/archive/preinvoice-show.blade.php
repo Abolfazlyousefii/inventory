@@ -738,6 +738,11 @@
           </span>
 
           <div class="d-flex flex-wrap gap-2 no-print justify-content-lg-end">
+            @if(($documentAction['can_edit'] ?? false))
+              <a href="{{ $documentAction['edit_url'] }}" class="btn btn-light fw-bold">ادامه ویرایش پیش‌نویس</a>
+            @elseif(!empty($documentAction['disabled_reason']))
+              <span class="alert alert-light py-2 px-3 mb-0">{{ $documentAction['disabled_reason'] }}</span>
+            @endif
             <button type="button" onclick="window.print()" class="btn back-btn">پرینت</button>
             <a href="{{ route('preinvoice.all.index') }}" class="btn back-btn d-inline-flex align-items-center gap-2">
               <span>بازگشت</span>

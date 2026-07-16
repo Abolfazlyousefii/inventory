@@ -436,7 +436,22 @@ class PreinvoiceController extends Controller
         $hasItemsChanged = $hasInvoice && !empty($invoice->items_updated_at);
 
         $needsActionMeta = $this->myNeedsActionMeta($order, $invoice, $hasInvoice, $statusKey);
-        $canEdit = ! $hasInvoice && in_array($order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true);
+        $canEdit = $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
+        $primaryActionLabel = match (true) {
+            $canEdit && $statusKey === PreinvoiceOrder::STATUS_DRAFT => 'ادامه ویرایش',
+            $canEdit && $statusKey === PreinvoiceOrder::STATUS_RETURNED_TO_SALES => 'اصلاح و ارسال مجدد',
+            $canEdit && $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'بررسی و ثبت مجدد',
+            $hasInvoice => 'مشاهده فاکتور',
+            default => 'مشاهده',
+        };
+        $viewUrl = $hasInvoice ? route('vouchers.sales.show', $invoice->uuid) : route('preinvoice.my.show', $order->uuid);
+        $editUrl = $canEdit ? route('preinvoice.draft.edit', $order->uuid) : null;
+        $disabledReason = match (true) {
+            $hasInvoice => 'این پیش‌فاکتور دارای فاکتور مرتبط است و فقط به صورت خواندنی قابل مشاهده است.',
+            ! in_array((string) $order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true) => 'وضعیت فعلی سند امکان ویرایش توسط فروشنده را نمی‌دهد.',
+            ! $canEdit => 'شما مالک این پیش‌فاکتور نیستید یا مجوز ویرایش آن را ندارید.',
+            default => null,
+        };
 
         return [
             'bucket' => $bucket,
@@ -474,9 +489,15 @@ class PreinvoiceController extends Controller
             'return_note' => $needsActionMeta['note'],
             'return_unit' => $needsActionMeta['unit'],
             'can_edit' => $canEdit,
+            'can_submit' => $canEdit,
+            'primary_action_label' => $primaryActionLabel,
+            'primary_action_url' => $editUrl ?: $viewUrl,
+            'secondary_action_label' => $canEdit ? 'مشاهده' : null,
+            'secondary_action_url' => $canEdit ? $viewUrl : null,
+            'disabled_reason' => $disabledReason,
             'next_action_label' => $this->myPreinvoiceNextActionLabel($hasInvoice, $statusKey),
-            'view_url' => $hasInvoice ? route('vouchers.sales.show', $invoice->uuid) : route('preinvoice.my.show', $order->uuid),
-            'edit_url' => $canEdit ? route('preinvoice.draft.edit', $order->uuid) : null,
+            'view_url' => $viewUrl,
+            'edit_url' => $editUrl,
             'print_url' => $hasInvoice ? route('vouchers.sales.print', $invoice->uuid) : route('preinvoice.my.show', $order->uuid) . '?print=1',
         ];
     }
@@ -612,7 +633,9 @@ class PreinvoiceController extends Controller
             return view('prints.invoice', compact('printData'));
         }
 
-        return view('archive.preinvoice-show', compact('order'));
+        $documentAction = $this->buildMyPreinvoiceSummary($order);
+
+        return view('archive.preinvoice-show', compact('order', 'documentAction'));
     }
     public function saveDraft(Request $request)
     {
@@ -897,9 +920,7 @@ class PreinvoiceController extends Controller
     public function editDraft(string $uuid)
     {
         $order = PreinvoiceOrder::with(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice'])->where('uuid', $uuid)->firstOrFail();
-        if (! $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user())) {
-            return redirect()->back()->with('error', 'این پیش‌فاکتور به فاکتور تبدیل شده است و فقط واحد مالی مجاز به ویرایش آن است.');
-        }
+        abort_unless($this->accessService->canSellerEditPreinvoiceItems($order, auth()->user()), 403);
 
         $shippingMethods = ShippingMethod::query()
             ->select(['id', 'name', 'price'])
@@ -916,9 +937,7 @@ class PreinvoiceController extends Controller
     {
         abort_unless(auth()->check(), 403);
         $order = PreinvoiceOrder::with(['items', 'invoice.items'])->where('uuid', $uuid)->firstOrFail();
-        if (! $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user())) {
-            return redirect()->back()->with('error', 'این پیش‌فاکتور به فاکتور تبدیل شده است و فقط واحد مالی مجاز به ویرایش آن است.');
-        }
+        abort_unless($this->accessService->canSellerEditPreinvoiceItems($order, auth()->user()), 403);
 
         $intent = (string) $request->input('intent', 'submit');
         $isSubmit = $intent !== 'draft';
