@@ -28,6 +28,7 @@ use App\Services\NotificationService;
 use App\Services\PreinvoiceDraftReservationService;
 use App\Services\PreinvoiceReservationService;
 use App\Services\MySalesDocumentsService;
+use App\Services\FinancePreinvoiceEditorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -50,6 +51,7 @@ class PreinvoiceController extends Controller
         private readonly PreinvoiceDraftReservationService $draftReservationService,
         private readonly PreinvoiceReservationService $reservationService,
         private readonly MySalesDocumentsService $mySalesDocumentsService,
+        private readonly FinancePreinvoiceEditorService $financePreinvoiceEditorService,
     ) {}
 
     public function create()
@@ -1399,12 +1401,10 @@ class PreinvoiceController extends Controller
 
     private function calculateOrderTotal(PreinvoiceOrder $order): int
     {
-        $subtotal = (int) $order->items()
-            ->reorder()
-            ->selectRaw('COALESCE(SUM(quantity * price), 0) as total')
-            ->value('total');
+        $order->loadMissing('items');
+        $totals = SalesDocumentTotals::calculate($order->items, (int) ($order->invoice_discount_amount ?? $order->discount_amount), (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
 
-        return max($subtotal - (int) $order->discount_amount, 0);
+        return (int) $totals['grand_total'];
     }
 
     private function assertOrderHasStock(PreinvoiceOrder $order): void
@@ -1500,8 +1500,9 @@ class PreinvoiceController extends Controller
             return;
         }
 
-        $subtotal = (int) $order->items->sum(fn($it) => ((int) $it->quantity) * ((int) $it->price));
-        $total = max($subtotal + (int) $order->shipping_price - (int) $order->discount_amount, 0);
+        $totals = SalesDocumentTotals::calculate($order->items, (int) ($order->invoice_discount_amount ?? $order->discount_amount), (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $subtotal = (int) $totals['subtotal_before_discount'];
+        $total = (int) $totals['grand_total'];
 
         $invoice->items()->delete();
         foreach ($order->items as $item) {
@@ -1526,7 +1527,13 @@ class PreinvoiceController extends Controller
             'city_id' => $order->city_id,
             'shipping_id' => $order->shipping_id,
             'shipping_price' => (int) $order->shipping_price,
-            'discount_amount' => (int) $order->discount_amount,
+            'discount_amount' => (int) $totals['total_discount'],
+            'discount_breakdown' => $order->discount_breakdown,
+            'invoice_discount_type' => $order->invoice_discount_type,
+            'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+            'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
+            'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
+            'discount_allocation_mode' => $order->discount_allocation_mode,
             'subtotal' => $subtotal,
             'total' => $total,
             'status' => Invoice::STATUS_PENDING_COLLECTION,
@@ -2240,69 +2247,18 @@ class PreinvoiceController extends Controller
         $validated = $request->validated();
 
         try {
-            DB::transaction(function () use ($uuid, $validated, $request) {
-            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
-            abort_unless($this->canFinanceEditPreinvoice($order, auth()->user()), $order->invoice()->exists() ? 409 : 403);
-
-            $items = $order->items()->with(['product', 'variant'])->lockForUpdate()->get()->keyBy('id');
-            $payload = collect($validated['items'])->keyBy(fn ($row) => (int) $row['id']);
-            if ($items->keys()->sort()->values()->all() !== $payload->keys()->sort()->values()->all()) {
-                throw ValidationException::withMessages(['items' => 'اقلام ارسالی باید دقیقاً با اقلام پیش‌فاکتور برابر باشند؛ افزودن یا حذف ردیف مجاز نیست.']);
+            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
+            $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
+            if (($validated['intent'] ?? 'save') === 'save_and_finalize') {
+                $updated->refresh()->load('items');
+                return $this->finalize($uuid, new Request());
             }
-
-            $beforeItems = $this->snapshotItems($order->fresh(['items.product', 'items.variant']));
-            $beforeTotal = (int) $order->total_price;
-
-            foreach ($items as $itemId => $item) {
-                $row = $payload[$itemId];
-                $oldQty = (int) $item->quantity;
-                $newQty = (int) $row['quantity'];
-                $delta = $newQty - $oldQty;
-                if ($delta !== 0) {
-                    $this->reservationService->adjustOfficialReservationDelta($order, $item, $delta, auth()->user());
-                }
-
-                $discount = min((int) ($row['line_discount_amount'] ?? 0), $newQty * (int) $row['price']);
-                $item->forceFill([
-                    'quantity' => $newQty,
-                    'price' => (int) $row['price'],
-                    'line_discount_amount' => $discount,
-                    'line_total' => max(($newQty * (int) $row['price']) - $discount, 0),
-                ])->save();
-            }
-
-            $order->load('items');
-            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
-            $order->forceFill([
-                'total_price' => (int) $totals['grand_total'],
-                'product_discount_amount' => (int) $totals['items_discount'],
-                'items_updated_at' => now(),
-                'items_updated_by' => auth()->id(),
-            ])->save();
-
-            $afterItems = $this->snapshotItems($order->fresh(['items.product', 'items.variant']));
-            $order->reviews()->create([
-                'user_id' => auth()->id(),
-                'action' => 'finance_edited',
-                'reason' => $validated['edit_reason'],
-                'before_items' => $beforeItems,
-                'after_items' => $afterItems,
-            ]);
-            ActivityLogger::log('finance_edited', $order->fresh(), 'ویرایش مالی پیش‌فاکتور ثبت شد.', [
-                'uuid' => $order->uuid,
-                'reason' => $validated['edit_reason'],
-                'before_total' => $beforeTotal,
-                'after_total' => (int) $totals['grand_total'],
-                'before_items' => $beforeItems,
-                'after_items' => $afterItems,
-            ]);
-        });
         } catch (QueryException $exception) {
             Log::error('Finance preinvoice update failed.', [
                 'preinvoice_uuid' => $uuid,
                 'user_id' => auth()->id(),
                 'route' => optional($request->route())->getName(),
-                'action' => $validated['action'] ?? null,
+                'intent' => $validated['intent'] ?? null,
                 'item_ids' => collect($validated['items'] ?? [])->pluck('id')->values()->all(),
                 'sql_state' => $exception->errorInfo[0] ?? null,
                 'exception_class' => $exception::class,
@@ -2312,6 +2268,33 @@ class PreinvoiceController extends Controller
         }
 
         return redirect()->route('preinvoice.draft.finance.edit', $uuid)->with('success', 'تغییرات مالی با موفقیت ذخیره شد. پیش‌فاکتور همچنان در صف مالی قرار دارد.');
+    }
+
+    public function financeSaveAndFinalize(string $uuid, FinanceUpdatePreinvoiceRequest $request)
+    {
+        abort_unless($this->canHandleFinanceActions(), 403);
+        $validated = $request->validated();
+        $validated['intent'] = 'save_and_finalize';
+
+        try {
+            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
+            $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
+            $updated->refresh()->load('items');
+        } catch (QueryException $exception) {
+            Log::error('Finance preinvoice save-and-finalize update failed.', [
+                'preinvoice_uuid' => $uuid,
+                'user_id' => auth()->id(),
+                'route' => optional($request->route())->getName(),
+                'intent' => 'save_and_finalize',
+                'item_ids' => collect($validated['items'] ?? [])->pluck('id')->values()->all(),
+                'sql_state' => $exception->errorInfo[0] ?? null,
+                'exception_class' => $exception::class,
+            ]);
+
+            return back()->withErrors(['finance_update' => 'ذخیره و تأیید انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
+        }
+
+        return $this->finalize($uuid, new Request());
     }
 
     public function finance(string $uuid)
@@ -2443,11 +2426,10 @@ class PreinvoiceController extends Controller
 
                 $it->price = $snapshotPrice;
             }
-            $subtotal = (int) $order->items->sum(fn($it) => ((int) $it->price) * ((int) $it->quantity));
-            $itemDiscount = (int) $order->items->sum(fn($it) => (int) ($it->line_discount_amount ?? 0));
-            $discount = max((int) $order->discount_amount, $itemDiscount);
-
-            $total = max($subtotal - $discount, 0);
+            $totals = SalesDocumentTotals::calculate($order->items, (int) ($order->invoice_discount_amount ?? $order->discount_amount), (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+            $subtotal = (int) $totals['subtotal_before_discount'];
+            $discount = (int) $totals['total_discount'];
+            $total = (int) $totals['grand_total'];
 
             $requiredByVariant = $order->items
                 ->groupBy('variant_id')
@@ -2487,6 +2469,12 @@ class PreinvoiceController extends Controller
                     'shipping_id' => $order->shipping_id,
                     'shipping_price' => (int) $order->shipping_price,
                     'discount_amount' => (int) $discount,
+                    'discount_breakdown' => $order->discount_breakdown,
+                    'invoice_discount_type' => $order->invoice_discount_type,
+                    'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                    'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
+                    'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
+                    'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
                     'status' => Invoice::STATUS_PENDING_COLLECTION,
@@ -2508,6 +2496,12 @@ class PreinvoiceController extends Controller
                     'shipping_id' => $order->shipping_id,
                     'shipping_price' => (int) $order->shipping_price,
                     'discount_amount' => (int) $discount,
+                    'discount_breakdown' => $order->discount_breakdown,
+                    'invoice_discount_type' => $order->invoice_discount_type,
+                    'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                    'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
+                    'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
+                    'discount_allocation_mode' => $order->discount_allocation_mode,
                     'subtotal' => (int) $subtotal,
                     'total' => (int) $total,
                     'status' => Invoice::STATUS_PENDING_COLLECTION,

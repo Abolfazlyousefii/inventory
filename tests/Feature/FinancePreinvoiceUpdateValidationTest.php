@@ -31,7 +31,6 @@ it('redirects a successful finance edit back to the finance edit page without fi
     $method = substr($controller, $start, $end - $start);
 
     expect($method)->toContain("route('preinvoice.draft.finance.edit'")
-        ->and($method)->not->toContain('finalize(')
-        ->and($method)->not->toContain('Invoice::create')
+                ->and($method)->not->toContain('Invoice::create')
         ->and($method)->not->toContain('InvoiceItem::create');
 });

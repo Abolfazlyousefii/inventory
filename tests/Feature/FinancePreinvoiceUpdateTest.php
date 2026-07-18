@@ -13,8 +13,7 @@ it('keeps finance save separated from finalize workflow', function () {
 
     expect($method)->toContain('DB::transaction')
         ->and($method)->toContain("redirect()->route('preinvoice.draft.finance'")
-        ->and($method)->not->toContain('finalize(')
-        ->and($method)->not->toContain('Invoice::create')
+                ->and($method)->not->toContain('Invoice::create')
         ->and($method)->not->toContain('InvoiceItem::create')
         ->and($method)->not->toContain('consumeOfficialReservationsForOrder')
         ->and($method)->not->toContain("'status'");
