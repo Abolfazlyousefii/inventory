@@ -2292,7 +2292,7 @@ class PreinvoiceController extends Controller
             return back()->withErrors(['finance_update' => 'ذخیره و تأیید انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
 
-        return $this->finalize($uuid, new Request());
+        return $this->finalize($uuid, $request);
     }
 
     public function finance(string $uuid)

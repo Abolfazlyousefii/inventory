@@ -47,17 +47,18 @@ class FinancePreinvoiceEditorService
                 }
 
                 $price = (int) $row['price'];
-                $manualDiscount = min((int) ($row['line_discount_amount'] ?? 0), $newQty * $price);
                 $item->forceFill([
                     'quantity' => $newQty,
                     'price' => $price,
-                    'line_discount_amount' => $manualDiscount,
-                    'line_total' => max(($newQty * $price) - $manualDiscount, 0),
+                    'line_total' => $newQty * $price,
                 ])->save();
             }
 
             $lockedOrder->load('items.product', 'items.variant');
-            $productDiscounts = $this->allocateProductDiscounts($lockedOrder, (array) ($data['product_discounts'] ?? []));
+            $productDiscountPayload = array_key_exists('product_discounts', $data)
+                ? (array) $data['product_discounts']
+                : $this->productDiscountInputsFromBreakdown($lockedOrder);
+            $productDiscounts = $this->allocateProductDiscounts($lockedOrder, $productDiscountPayload);
             foreach ($lockedOrder->items as $item) {
                 $lineDiscount = (int) ($productDiscounts['lines'][$item->id] ?? $item->line_discount_amount ?? 0);
                 $item->forceFill([
@@ -187,6 +188,17 @@ class FinancePreinvoiceEditorService
         }
 
         return ['lines' => $lines, 'groups' => $groups];
+    }
+
+    private function productDiscountInputsFromBreakdown(PreinvoiceOrder $order): array
+    {
+        return collect($order->discount_breakdown['groups'] ?? [])->map(function ($group) {
+            return [
+                'product_id' => (int) ($group['product_id'] ?? 0),
+                'type' => (string) ($group['discount_type'] ?? 'amount'),
+                'value' => (int) ($group['discount_value'] ?? 0),
+            ];
+        })->filter(fn ($group) => (int) $group['product_id'] > 0)->values()->all();
     }
 
     private function snapshot(PreinvoiceOrder $order): array

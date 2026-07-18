@@ -19,16 +19,9 @@ class SalesDocumentTotals
 
         $subtotalBeforeDiscount = (int) $rows->sum(fn ($item) => self::lineSubtotal($item));
         $itemsDiscount = (int) $rows->sum(fn ($item) => self::lineDiscount($item));
-        $invoiceDiscount = max((int) $documentDiscount, 0);
-        $mode = (string) ($options['discount_allocation_mode'] ?? '');
-
-        if ($mode === 'allocated_lines') {
-            $totalDiscount = min($subtotalBeforeDiscount, $itemsDiscount);
-            $invoiceDiscountForDisplay = $invoiceDiscount;
-        } else {
-            $totalDiscount = min($subtotalBeforeDiscount, $itemsDiscount + $invoiceDiscount);
-            $invoiceDiscountForDisplay = $invoiceDiscount;
-        }
+        $subtotalAfterProductDiscount = max($subtotalBeforeDiscount - $itemsDiscount, 0);
+        $invoiceDiscount = min(max((int) $documentDiscount, 0), $subtotalAfterProductDiscount);
+        $totalDiscount = min($subtotalBeforeDiscount, $itemsDiscount + $invoiceDiscount);
 
         $subtotalAfterDiscount = max($subtotalBeforeDiscount - $totalDiscount, 0);
         $shipping = max((int) $shipping, 0);
@@ -36,8 +29,9 @@ class SalesDocumentTotals
         return [
             'subtotal_before_discount' => $subtotalBeforeDiscount,
             'items_discount' => $itemsDiscount,
-            'invoice_discount' => $invoiceDiscountForDisplay,
+            'invoice_discount' => $invoiceDiscount,
             'total_discount' => $totalDiscount,
+            'subtotal_after_product_discount' => $subtotalAfterProductDiscount,
             'subtotal_after_discount' => $subtotalAfterDiscount,
             'total_tax' => 0,
             'shipping' => $shipping,
