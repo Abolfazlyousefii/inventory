@@ -2,6 +2,8 @@
 
 use App\Models\PreinvoiceOrder;
 use App\Models\PreinvoiceOrderItem;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Services\PreinvoiceDiscountHydrator;
 use Illuminate\Support\Collection;
 
@@ -15,13 +17,18 @@ function legacyHydrationOrder(array $attributes, array $items): PreinvoiceOrder
 
 function legacyHydrationItem(int $productId, int $quantity, int $price, int $discount): PreinvoiceOrderItem
 {
-    return new PreinvoiceOrderItem([
+    $item = new PreinvoiceOrderItem([
         'product_id' => $productId,
         'variant_id' => $productId,
         'quantity' => $quantity,
         'price' => $price,
         'line_discount_amount' => $discount,
     ]);
+
+    $item->setRelation('product', new Product(['id' => $productId]));
+    $item->setRelation('variant', new ProductVariant(['id' => $productId, 'product_id' => $productId]));
+
+    return $item;
 }
 
 it('hydrates unstructured legacy discount as invoice discount when line discounts are zero', function () {
