@@ -21,7 +21,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'items.*.price' => ['required', 'integer', 'min:0'],
             'items.*.line_discount_amount' => ['nullable', 'integer', 'min:0'],
             'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
-            'action' => ['nullable', 'in:save,save_and_finalize'],
+            'action' => ['nullable', 'in:save'],
         ];
     }
 
@@ -34,9 +34,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
                 if ($discount > $gross) {
                     $validator->errors()->add("items.{$index}.line_discount_amount", 'تخفیف ردیف نمی‌تواند بیشتر از مبلغ ناخالص همان ردیف باشد.');
                 }
-                if ($this->input('action') === 'save_and_finalize' && (int) ($row['price'] ?? 0) <= 0) {
-                    $validator->errors()->add("items.{$index}.price", 'برای تأیید مالی، قیمت تمام اقلام باید بیشتر از صفر باشد.');
-                }
+
             }
         });
     }

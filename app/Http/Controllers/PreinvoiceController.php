@@ -33,6 +33,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Log;
 use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
 use App\Support\SalesDocumentTotals;
 
@@ -2237,7 +2239,8 @@ class PreinvoiceController extends Controller
         abort_unless($this->canHandleFinanceActions(), 403);
         $validated = $request->validated();
 
-        DB::transaction(function () use ($uuid, $validated) {
+        try {
+            DB::transaction(function () use ($uuid, $validated, $request) {
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
             abort_unless($this->canFinanceEditPreinvoice($order, auth()->user()), $order->invoice()->exists() ? 409 : 403);
 
@@ -2294,12 +2297,21 @@ class PreinvoiceController extends Controller
                 'after_items' => $afterItems,
             ]);
         });
+        } catch (QueryException $exception) {
+            Log::error('Finance preinvoice update failed.', [
+                'preinvoice_uuid' => $uuid,
+                'user_id' => auth()->id(),
+                'route' => optional($request->route())->getName(),
+                'action' => $validated['action'] ?? null,
+                'item_ids' => collect($validated['items'] ?? [])->pluck('id')->values()->all(),
+                'sql_state' => $exception->errorInfo[0] ?? null,
+                'exception_class' => $exception::class,
+            ]);
 
-        if (($validated['action'] ?? 'save') === 'save_and_finalize') {
-            return $this->finalize($uuid, new Request());
+            return back()->withErrors(['finance_update' => 'ذخیره تغییرات انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
 
-        return redirect()->route('preinvoice.draft.finance.edit', $uuid)->with('success', 'تغییرات مالی پیش‌فاکتور ذخیره شد.');
+        return redirect()->route('preinvoice.draft.finance', $uuid)->with('success', 'تغییرات مالی با موفقیت ذخیره شد. پیش‌فاکتور همچنان در صف مالی قرار دارد.');
     }
 
     public function finance(string $uuid)
