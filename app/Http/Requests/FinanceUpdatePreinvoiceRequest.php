@@ -91,13 +91,18 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
     {
         $validator->after(function (Validator $validator): void {
             foreach ((array) $this->input('items', []) as $index => $row) {
-                $gross = max(0, (int) ($row['quantity'] ?? 0)) * max(0, (int) ($row['price'] ?? 0));
                 if (($this->input('intent') === 'save_and_finalize') && (int) ($row['price'] ?? 0) <= 0) {
                     $validator->errors()->add("items.{$index}.price", 'برای تأیید مالی، قیمت تمام اقلام باید بیشتر از صفر باشد.');
                 }
             }
             if ($this->input('invoice_discount_type') === 'percent' && (int) $this->input('invoice_discount_value', 0) > 100) {
                 $validator->errors()->add('invoice_discount_value', 'درصد تخفیف کلی نمی‌تواند بیشتر از ۱۰۰ باشد.');
+            }
+
+            foreach ((array) $this->input('product_discounts', []) as $index => $row) {
+                if (($row['type'] ?? null) === 'percent' && (int) ($row['value'] ?? 0) > 100) {
+                    $validator->errors()->add("product_discounts.{$index}.value", 'درصد تخفیف محصول نمی‌تواند بیشتر از ۱۰۰ باشد.');
+                }
             }
         });
     }
