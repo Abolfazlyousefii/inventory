@@ -12,6 +12,7 @@ class PreinvoiceOrderItem extends Model
         'variant_id',
         'quantity',
         'price',
+        'line_total',
         'sort_order',
         'line_discount_amount',
     ];
@@ -21,6 +22,7 @@ class PreinvoiceOrderItem extends Model
         'variant_id' => 'integer',
         'quantity' => 'integer',
         'price' => 'integer',
+        'line_total' => 'integer',
         'sort_order' => 'integer',
         'line_discount_amount' => 'integer',
     ];
