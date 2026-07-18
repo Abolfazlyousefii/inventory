@@ -41,8 +41,8 @@ it('builds the purchases excel export query and headings for saved purchase rows
     expect($export)->toBeInstanceOf(FromQuery::class)
         ->and($export)->toBeInstanceOf(WithHeadings::class)
         ->and($export)->toBeInstanceOf(WithMapping::class)
-        ->and($export->headings())->toContain('شناسه خرید', 'نام کالا', 'جمع نهایی ردیف (ریال)')
-        ->and($export->query()->getModel()->getTable())->toBe('purchase_items');
+        ->and($export->headings())->toContain('ردیف', 'تاریخ فاکتور خرید', 'نام تأمین‌کننده', 'شماره فاکتور خرید', 'مبلغ کل فاکتور')
+        ->and($export->query()->getModel()->getTable())->toBe('purchases');
 });
 
 it('exports sales return rows with report filters headings and mapped totals', function (): void {

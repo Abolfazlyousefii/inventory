@@ -43,7 +43,7 @@ function financeEditableOrderFixture(): array
         'is_active' => true,
         'sales_enabled' => true,
         'variant_name' => 'Default',
-        'variant_code' => 'FIN-VARIANT-'.uniqid(),
+        'variant_code' => 'FIN-'.str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT),
         'sell_price' => 12_000_000,
         'stock' => 50,
         'reserved' => 0,

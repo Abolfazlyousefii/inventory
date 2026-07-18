@@ -41,7 +41,7 @@ function financeValidationOrderFixture(): PreinvoiceOrder
         'is_active' => true,
         'sales_enabled' => true,
         'variant_name' => 'Default',
-        'variant_code' => 'VALIDATION-VARIANT-'.uniqid(),
+        'variant_code' => 'VAL-'.str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT),
         'sell_price' => 1_000_000,
         'stock' => 10,
         'reserved' => 0,

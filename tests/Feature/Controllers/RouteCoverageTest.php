@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Support\PermissionCatalog;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Collection;
@@ -44,6 +45,8 @@ beforeEach(function (): void {
     Mail::fake();
     Notification::fake();
     Storage::fake('local');
+
+    $this->withoutMiddleware(ValidateCsrfToken::class);
 
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 });

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exports\SalesReturnsExport;
+use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Warehouse;
@@ -20,7 +21,8 @@ class SalesReturnsExportSummaryTest extends TestCase
         $customer = Customer::query()->create(['first_name' => 'محمد', 'last_name' => 'رضایی', 'mobile' => '09120000001']);
         $other = Customer::query()->create(['first_name' => 'علی', 'last_name' => 'کریمی', 'mobile' => '09120000002']);
         $warehouse = Warehouse::query()->create(['name' => 'انبار مرجوعی', 'type' => 'return', 'is_active' => true]);
-        $product = Product::query()->create(['name' => 'کالای تست']);
+        $category = Category::query()->create(['name' => 'دسته مرجوعی']);
+        $product = Product::query()->create(['category_id' => $category->id, 'name' => 'کالای تست']);
 
         $matching = WarehouseTransfer::query()->create([
             'voucher_type' => WarehouseTransfer::TYPE_CUSTOMER_RETURN,

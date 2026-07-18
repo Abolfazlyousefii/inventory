@@ -485,12 +485,22 @@ Route::get('/auto-login', function (Request $request) {
         abort(400, 'Phone required');
     }
 
-    // POST به CRM بدون SSL verify
-    $response = Http::withOptions(['verify' => false])
-        ->post('https://crm.ariyajanebi.ir/api/token-for-client', [
+    try {
+        $response = Http::withOptions([
+            'verify' => (bool) config('services.crm.verify_ssl', false),
+            'connect_timeout' => (int) config('services.crm.connect_timeout', 5),
+            'timeout' => (int) config('services.crm.timeout', 10),
+        ])->post(config('services.crm.client_token_url', 'https://crm.ariyajanebi.ir/api/token-for-client'), [
             'phone' => $phone,
-            'secret' => env('CRM_CLIENT_SECRET')
+            'secret' => config('services.crm.client_secret', env('CRM_CLIENT_SECRET')),
         ]);
+    } catch (\Illuminate\Http\Client\ConnectionException|\Illuminate\Http\Client\RequestException $exception) {
+        \Illuminate\Support\Facades\Log::warning('CRM auto-login service unavailable.', [
+            'exception' => $exception::class,
+        ]);
+
+        abort(503, 'CRM service unavailable');
+    }
 
     if ($response->failed()) {
         abort(401, 'Unauthorized');
