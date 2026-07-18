@@ -33,6 +33,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
+use App\Support\SalesDocumentTotals;
 
 class PreinvoiceController extends Controller
 {
@@ -337,7 +339,10 @@ class PreinvoiceController extends Controller
                 ->count(),
         ];
 
-        $orders->getCollection()->each(fn (PreinvoiceOrder $order) => $this->attachFinanceReservationMeta($order));
+        $orders->getCollection()->each(function (PreinvoiceOrder $order) {
+            $this->attachFinanceReservationMeta($order);
+            $order->setAttribute('can_finance_edit', $this->canFinanceEditPreinvoice($order, auth()->user()));
+        });
         $expiredOrders->getCollection()->each(fn (PreinvoiceOrder $order) => $this->attachFinanceReservationMeta($order));
 
         $canFinanceApprove = $this->canHandleFinanceActions();
@@ -2195,6 +2200,108 @@ class PreinvoiceController extends Controller
         return $user->hasAnyRole(['Admin', 'warehouse', 'StorageManager']) || $user->can('warehouse.approve');
     }
 
+
+    public function canFinanceEditPreinvoice(PreinvoiceOrder $order, $user): bool
+    {
+        if (! $user || ! ($user->hasAnyRole(['admin', 'Admin', 'finance', 'Accountant', 'Manager']) || $user->can('finance.approve') || $user->can('preinvoices.finance.view'))) {
+            return false;
+        }
+
+        return in_array($order->status, [
+            PreinvoiceOrder::STATUS_PENDING_FINANCE,
+            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+            PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
+        ], true)
+            && ! $order->invoice()->exists()
+            && $order->status !== PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE;
+    }
+
+    public function financeEdit(string $uuid)
+    {
+        abort_unless($this->canHandleFinanceActions(), 403);
+
+        $order = PreinvoiceOrder::with(['items.product', 'items.variant', 'creator:id,name', 'customer:id,crm_customer_id,reservation_tier', 'shippingMethod', 'invoice'])
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+
+        abort_unless($this->canFinanceEditPreinvoice($order, auth()->user()), $order->invoice ? 409 : 403);
+
+        $zeroPriceItems = $order->items->filter(fn ($item) => (int) $item->price <= 0)->pluck('id')->all();
+        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+
+        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals'));
+    }
+
+    public function financeUpdate(string $uuid, FinanceUpdatePreinvoiceRequest $request)
+    {
+        abort_unless($this->canHandleFinanceActions(), 403);
+        $validated = $request->validated();
+
+        DB::transaction(function () use ($uuid, $validated) {
+            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+            abort_unless($this->canFinanceEditPreinvoice($order, auth()->user()), $order->invoice()->exists() ? 409 : 403);
+
+            $items = $order->items()->with(['product', 'variant'])->lockForUpdate()->get()->keyBy('id');
+            $payload = collect($validated['items'])->keyBy(fn ($row) => (int) $row['id']);
+            if ($items->keys()->sort()->values()->all() !== $payload->keys()->sort()->values()->all()) {
+                throw ValidationException::withMessages(['items' => 'اقلام ارسالی باید دقیقاً با اقلام پیش‌فاکتور برابر باشند؛ افزودن یا حذف ردیف مجاز نیست.']);
+            }
+
+            $beforeItems = $this->snapshotItems($order->fresh(['items.product', 'items.variant']));
+            $beforeTotal = (int) $order->total_price;
+
+            foreach ($items as $itemId => $item) {
+                $row = $payload[$itemId];
+                $oldQty = (int) $item->quantity;
+                $newQty = (int) $row['quantity'];
+                $delta = $newQty - $oldQty;
+                if ($delta !== 0) {
+                    $this->reservationService->adjustOfficialReservationDelta($order, $item, $delta, auth()->user());
+                }
+
+                $discount = min((int) ($row['line_discount_amount'] ?? 0), $newQty * (int) $row['price']);
+                $item->forceFill([
+                    'quantity' => $newQty,
+                    'price' => (int) $row['price'],
+                    'line_discount_amount' => $discount,
+                    'line_total' => max(($newQty * (int) $row['price']) - $discount, 0),
+                ])->save();
+            }
+
+            $order->load('items');
+            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+            $order->forceFill([
+                'total_price' => (int) $totals['grand_total'],
+                'product_discount_amount' => (int) $totals['items_discount'],
+                'items_updated_at' => now(),
+                'items_updated_by' => auth()->id(),
+            ])->save();
+
+            $afterItems = $this->snapshotItems($order->fresh(['items.product', 'items.variant']));
+            $order->reviews()->create([
+                'user_id' => auth()->id(),
+                'action' => 'finance_edited',
+                'reason' => $validated['edit_reason'],
+                'before_items' => $beforeItems,
+                'after_items' => $afterItems,
+            ]);
+            ActivityLogger::log('finance_edited', $order->fresh(), 'ویرایش مالی پیش‌فاکتور ثبت شد.', [
+                'uuid' => $order->uuid,
+                'reason' => $validated['edit_reason'],
+                'before_total' => $beforeTotal,
+                'after_total' => (int) $totals['grand_total'],
+                'before_items' => $beforeItems,
+                'after_items' => $afterItems,
+            ]);
+        });
+
+        if (($validated['action'] ?? 'save') === 'save_and_finalize') {
+            return $this->finalize($uuid, new Request());
+        }
+
+        return redirect()->route('preinvoice.draft.finance.edit', $uuid)->with('success', 'تغییرات مالی پیش‌فاکتور ذخیره شد.');
+    }
+
     public function finance(string $uuid)
     {
         abort_unless($this->canHandleFinanceActions(), 403);
@@ -2270,7 +2377,8 @@ class PreinvoiceController extends Controller
             'payments.*.cheque_status' => 'nullable|in:pending,cleared,bounced,registered,unregistered',
         ]);
 
-        $invoice = DB::transaction(function () use ($order, $validated) {
+        try {
+            $invoice = DB::transaction(function () use ($order, $validated) {
             $lockedOrder = PreinvoiceOrder::query()
                 ->whereKey($order->id)
                 ->lockForUpdate()
@@ -2471,6 +2579,14 @@ class PreinvoiceController extends Controller
 
             return $invoice;
         });
+
+        } catch (ValidationException $exception) {
+            if (array_key_exists('price', $exception->errors())) {
+                return redirect()->route('preinvoice.draft.finance.edit', $uuid)->withErrors($exception->errors())->withInput();
+            }
+
+            throw $exception;
+        }
 
         return redirect()->route('invoices.show', $invoice->uuid)
             ->with('success', '✅ تایید مالی انجام شد و پیش‌فاکتور به فاکتور/حواله انبار تبدیل شد.');
