@@ -29,11 +29,22 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             return $row;
         })->all();
 
+        $productDiscounts = collect((array) $this->input('product_discounts', []))->map(function ($row) {
+            if (! is_array($row)) {
+                return $row;
+            }
+            if (array_key_exists('value', $row)) {
+                $row['value'] = $this->normalizeMoney($row['value']);
+            }
+            return $row;
+        })->all();
+
         $intent = $this->input('intent', $this->input('action', 'save'));
         $this->merge([
             'intent' => $intent,
             'action' => $intent,
             'items' => $items,
+            'product_discounts' => $productDiscounts,
             'invoice_discount_value' => $this->normalizeMoney($this->input('invoice_discount_value', 0)),
         ]);
     }
@@ -46,7 +57,11 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.price' => ['required', 'integer', 'min:0'],
             'items.*.line_discount_amount' => ['nullable', 'integer', 'min:0'],
-            'invoice_discount_type' => ['nullable', 'in:none,amount,percent'],
+            'product_discounts' => ['nullable', 'array'],
+            'product_discounts.*.product_id' => ['required_with:product_discounts', 'integer'],
+            'product_discounts.*.type' => ['required_with:product_discounts', 'in:amount,percent'],
+            'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0'],
+            'invoice_discount_type' => ['required', 'in:none,amount,percent'],
             'invoice_discount_value' => ['nullable', 'integer', 'min:0'],
             'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
             'intent' => ['nullable', 'in:save,save_and_finalize'],

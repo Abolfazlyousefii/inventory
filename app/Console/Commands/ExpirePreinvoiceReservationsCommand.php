@@ -7,7 +7,9 @@ use Illuminate\Console\Command;
 
 class ExpirePreinvoiceReservationsCommand extends Command
 {
-    protected $signature = 'reservations:expire';
+    protected $signature = 'preinvoices:expire-reservations';
+
+    protected $aliases = ['reservations:expire'];
 
     protected $description = 'Expire overdue official preinvoice reservations and release reserved stock.';
 

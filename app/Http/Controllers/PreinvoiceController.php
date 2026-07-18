@@ -29,6 +29,7 @@ use App\Services\PreinvoiceDraftReservationService;
 use App\Services\PreinvoiceReservationService;
 use App\Services\MySalesDocumentsService;
 use App\Services\FinancePreinvoiceEditorService;
+use App\Services\PreinvoiceReservationExpiryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -52,6 +53,7 @@ class PreinvoiceController extends Controller
         private readonly PreinvoiceReservationService $reservationService,
         private readonly MySalesDocumentsService $mySalesDocumentsService,
         private readonly FinancePreinvoiceEditorService $financePreinvoiceEditorService,
+        private readonly PreinvoiceReservationExpiryService $reservationExpiryService,
     ) {}
 
     public function create()
@@ -2248,11 +2250,7 @@ class PreinvoiceController extends Controller
 
         try {
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
-            $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
-            if (($validated['intent'] ?? 'save') === 'save_and_finalize') {
-                $updated->refresh()->load('items');
-                return $this->finalize($uuid, new Request());
-            }
+            $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
         } catch (QueryException $exception) {
             Log::error('Finance preinvoice update failed.', [
                 'preinvoice_uuid' => $uuid,
@@ -2339,6 +2337,10 @@ class PreinvoiceController extends Controller
         abort_unless($this->canHandleFinanceActions(), 403);
 
         $order = PreinvoiceOrder::with(['items', 'invoice'])->where('uuid', $uuid)->firstOrFail();
+        if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
+            $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
+            return redirect()->route('preinvoice.draft.index')->withErrors(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
+        }
         $this->reservationService->assertFinanceApprovable($order, auth()->user());
 
         if ($order->invoice || $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
@@ -2380,6 +2382,10 @@ class PreinvoiceController extends Controller
                 ->with('items')
                 ->firstOrFail();
             $order = $lockedOrder;
+            if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
+                $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
+                throw ValidationException::withMessages(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
+            }
             $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
             $existingInvoice = Invoice::query()
                 ->where('preinvoice_order_id', $order->id)

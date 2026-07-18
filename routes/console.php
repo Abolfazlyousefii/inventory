@@ -105,7 +105,7 @@ Schedule::call(function () {
 })->everyMinute();
 
 Schedule::command('ariya:import-orders')->everyFiveMinutes();
-Schedule::command('reservations:expire')->everyFiveMinutes();
+Schedule::command('preinvoices:expire-reservations')->everyMinute()->withoutOverlapping();
 
 Artisan::command('products:audit-variants {product : Product id/code/sku/short_barcode/barcode}', function (string $product) {
     $service = app(\App\Services\ProductVariantStructureService::class);
