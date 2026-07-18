@@ -47,16 +47,26 @@ class FinancePreinvoiceEditorService
                 }
 
                 $price = (int) $row['price'];
-                $discount = min((int) ($row['line_discount_amount'] ?? 0), $newQty * $price);
+                $manualDiscount = min((int) ($row['line_discount_amount'] ?? 0), $newQty * $price);
                 $item->forceFill([
                     'quantity' => $newQty,
                     'price' => $price,
-                    'line_discount_amount' => $discount,
-                    'line_total' => max(($newQty * $price) - $discount, 0),
+                    'line_discount_amount' => $manualDiscount,
+                    'line_total' => max(($newQty * $price) - $manualDiscount, 0),
                 ])->save();
             }
 
-            $lockedOrder->load('items');
+            $lockedOrder->load('items.product', 'items.variant');
+            $productDiscounts = $this->allocateProductDiscounts($lockedOrder, (array) ($data['product_discounts'] ?? []));
+            foreach ($lockedOrder->items as $item) {
+                $lineDiscount = (int) ($productDiscounts['lines'][$item->id] ?? $item->line_discount_amount ?? 0);
+                $item->forceFill([
+                    'line_discount_amount' => $lineDiscount,
+                    'line_total' => max(((int) $item->quantity * (int) $item->price) - $lineDiscount, 0),
+                ])->save();
+            }
+
+            $lockedOrder->load('items.product', 'items.variant');
             $itemsDiscount = (int) $lockedOrder->items->sum(fn ($item) => SalesDocumentTotals::lineDiscount($item));
             $invoiceDiscountType = (string) ($data['invoice_discount_type'] ?? $lockedOrder->invoice_discount_type ?? 'none');
             if (! in_array($invoiceDiscountType, ['none', 'amount', 'percent'], true)) {
@@ -74,15 +84,18 @@ class FinancePreinvoiceEditorService
                 default => 0,
             };
 
-            $totals = SalesDocumentTotals::calculate($lockedOrder->items, $invoiceDiscountAmount, (int) $lockedOrder->shipping_price, ['discount_allocation_mode' => $lockedOrder->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::calculate($lockedOrder->items, $invoiceDiscountAmount, (int) $lockedOrder->shipping_price, ['discount_allocation_mode' => 'product_lines']);
             $breakdown = [
-                'items_discount' => (int) $totals['items_discount'],
-                'invoice_discount' => (int) $totals['invoice_discount'],
-                'total_discount' => (int) $totals['total_discount'],
-                'subtotal_before_discount' => (int) $totals['subtotal_before_discount'],
-                'subtotal_after_discount' => (int) $totals['subtotal_after_discount'],
-                'shipping' => (int) $totals['shipping'],
+                'subtotal' => (int) $totals['subtotal_before_discount'],
+                'product_discount_amount' => (int) $totals['items_discount'],
+                'invoice_discount_type' => $invoiceDiscountType,
+                'invoice_discount_value' => $invoiceDiscountValue,
+                'invoice_discount_amount' => (int) $totals['invoice_discount'],
+                'total_discount_amount' => (int) $totals['total_discount'],
+                'subtotal_after_product_discount' => $discountableBase,
                 'grand_total' => (int) $totals['grand_total'],
+                'shipping' => (int) $totals['shipping'],
+                'groups' => array_values($productDiscounts['groups']),
             ];
 
             $lockedOrder->forceFill([
@@ -92,6 +105,7 @@ class FinancePreinvoiceEditorService
                 'invoice_discount_value' => $invoiceDiscountValue,
                 'invoice_discount_amount' => (int) $totals['invoice_discount'],
                 'product_discount_amount' => (int) $totals['items_discount'],
+                'discount_allocation_mode' => 'product_lines',
                 'discount_breakdown' => $breakdown,
                 'total_price' => (int) $totals['grand_total'],
                 'items_updated_at' => now(),
@@ -119,6 +133,60 @@ class FinancePreinvoiceEditorService
 
             return $lockedOrder->fresh(['items.product', 'items.variant', 'invoice']);
         });
+    }
+
+
+    private function allocateProductDiscounts(PreinvoiceOrder $order, array $inputs): array
+    {
+        $byProduct = [];
+        foreach ($inputs as $input) {
+            if (! is_array($input)) {
+                continue;
+            }
+            $productId = (int) ($input['product_id'] ?? 0);
+            if ($productId <= 0) {
+                continue;
+            }
+            $type = in_array(($input['type'] ?? 'amount'), ['amount', 'percent'], true) ? $input['type'] : 'amount';
+            $value = max((int) ($input['value'] ?? 0), 0);
+            $byProduct[$productId] = ['type' => $type, 'value' => $type === 'percent' ? min($value, 100) : $value];
+        }
+
+        $lines = [];
+        $groups = [];
+        foreach ($order->items->groupBy('product_id') as $productId => $items) {
+            $gross = (int) $items->sum(fn ($item) => SalesDocumentTotals::lineSubtotal($item));
+            $input = $byProduct[(int) $productId] ?? null;
+            $amount = 0;
+            if ($input) {
+                $amount = $input['type'] === 'percent' ? (int) floor($gross * $input['value'] / 100) : $input['value'];
+                $amount = min(max($amount, 0), $gross);
+            }
+            $allocated = 0;
+            $positive = $items->filter(fn ($item) => SalesDocumentTotals::lineSubtotal($item) > 0)->values();
+            foreach ($positive as $index => $item) {
+                $lineGross = SalesDocumentTotals::lineSubtotal($item);
+                $share = $index === $positive->count() - 1 ? $amount - $allocated : (int) floor($amount * $lineGross / max($gross, 1));
+                $share = min(max($share, 0), $lineGross);
+                $lines[$item->id] = $share;
+                $allocated += $share;
+            }
+            foreach ($items as $item) {
+                $lines[$item->id] = $lines[$item->id] ?? 0;
+            }
+            if ($input || $amount > 0) {
+                $groups[] = [
+                    'product_id' => (int) $productId,
+                    'discount_type' => $input['type'] ?? 'amount',
+                    'discount_value' => (int) ($input['value'] ?? 0),
+                    'discount_amount' => (int) array_sum(array_intersect_key($lines, array_flip($items->pluck('id')->all()))),
+                    'raw_subtotal' => $gross,
+                    'final_amount' => max($gross - $amount, 0),
+                ];
+            }
+        }
+
+        return ['lines' => $lines, 'groups' => $groups];
     }
 
     private function snapshot(PreinvoiceOrder $order): array

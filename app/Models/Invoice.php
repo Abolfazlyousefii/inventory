@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Support\SalesDocumentTotals;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -80,14 +81,18 @@ class Invoice extends Model
             $item->assertValidSnapshotPrice();
         }
 
-        $subtotal = (int) $this->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
-        $discount = (int) $this->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0));
-        $discount = max($discount, (int) ($this->discount_amount ?? 0));
+        $documentDiscount = (int) ($this->invoice_discount_amount ?? 0);
+        if ($documentDiscount <= 0 && (int) ($this->product_discount_amount ?? 0) <= 0) {
+            $documentDiscount = max((int) ($this->discount_amount ?? 0) - (int) $this->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
+        }
+        $totals = SalesDocumentTotals::calculate($this->items, $documentDiscount, (int) $this->shipping_price, ['discount_allocation_mode' => $this->discount_allocation_mode]);
 
         $this->forceFill([
-            'subtotal' => $subtotal,
-            'discount_amount' => $discount,
-            'total' => max($subtotal - $discount, 0),
+            'subtotal' => (int) $totals['subtotal_before_discount'],
+            'discount_amount' => (int) $totals['total_discount'],
+            'invoice_discount_amount' => (int) $totals['invoice_discount'],
+            'product_discount_amount' => (int) $totals['items_discount'],
+            'total' => (int) $totals['grand_total'],
         ])->save();
     }
 
@@ -99,10 +104,13 @@ class Invoice extends Model
     public function hasTotalMismatch(): bool
     {
         $this->loadMissing('items');
-        $subtotal = (int) $this->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
-        $discount = max((int) ($this->discount_amount ?? 0), (int) $this->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0)));
+        $documentDiscount = (int) ($this->invoice_discount_amount ?? 0);
+        if ($documentDiscount <= 0 && (int) ($this->product_discount_amount ?? 0) <= 0) {
+            $documentDiscount = max((int) ($this->discount_amount ?? 0) - (int) $this->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
+        }
+        $totals = SalesDocumentTotals::calculate($this->items, $documentDiscount, (int) $this->shipping_price, ['discount_allocation_mode' => $this->discount_allocation_mode]);
 
-        return (int) $this->subtotal !== $subtotal || (int) $this->total !== max($subtotal - $discount, 0);
+        return (int) $this->subtotal !== (int) $totals['subtotal_before_discount'] || (int) $this->total !== (int) $totals['grand_total'];
     }
 
     public function items() { return $this->hasMany(InvoiceItem::class)->orderBy('sort_order')->orderBy('id'); }
