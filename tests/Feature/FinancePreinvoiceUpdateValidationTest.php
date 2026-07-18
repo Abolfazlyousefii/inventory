@@ -1,7 +1,73 @@
 <?php
 
 use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
-use Illuminate\Support\Facades\File;
+use App\Models\Category;
+use App\Models\PreinvoiceOrder;
+use App\Models\PreinvoiceOrderItem;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\ViewErrorBag;
+use Illuminate\Support\MessageBag;
+use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
+
+function financeValidationUser(): User
+{
+    $user = User::factory()->create();
+    $role = Role::findOrCreate('finance', 'web');
+    $user->assignRole($role);
+
+    return $user;
+}
+
+function financeValidationOrderFixture(): PreinvoiceOrder
+{
+    $category = Category::query()->create(['name' => 'Validation category '.uniqid()]);
+
+    $product = Product::withoutEvents(fn () => Product::query()->create([
+        'category_id' => $category->id,
+        'name' => 'Validation product',
+        'sku' => 'VALIDATION-PRODUCT-'.uniqid(),
+        'stock' => 10,
+        'reserved' => 0,
+        'price' => 1_000_000,
+    ]));
+
+    $variant = ProductVariant::withoutEvents(fn () => ProductVariant::query()->create([
+        'product_id' => $product->id,
+        'is_active' => true,
+        'sales_enabled' => true,
+        'variant_name' => 'Default',
+        'variant_code' => 'VALIDATION-VARIANT-'.uniqid(),
+        'sell_price' => 1_000_000,
+        'stock' => 10,
+        'reserved' => 0,
+    ]));
+
+    $order = PreinvoiceOrder::query()->create([
+        'uuid' => 'finance-validation-'.uniqid(),
+        'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
+        'customer_name' => 'مشتری اعتبارسنجی',
+        'shipping_price' => 0,
+        'discount_allocation_mode' => 'product_lines',
+        'total_price' => 1_000_000,
+    ]);
+
+    PreinvoiceOrderItem::query()->create([
+        'preinvoice_order_id' => $order->id,
+        'product_id' => $product->id,
+        'variant_id' => $variant->id,
+        'quantity' => 1,
+        'price' => 1_000_000,
+        'line_total' => 1_000_000,
+        'line_discount_amount' => 0,
+    ]);
+
+    return $order;
+}
 
 it('defines Persian edit reason validation messages', function () {
     $request = new FinanceUpdatePreinvoiceRequest();
@@ -12,25 +78,49 @@ it('defines Persian edit reason validation messages', function () {
         ->and($request->attributes()['edit_reason'])->toBe('دلیل ویرایش مالی');
 });
 
-it('renders edit reason once next to the textarea inside the finance edit save form', function () {
-    $view = File::get(resource_path('views/preinvoice/finance-edit.blade.php'));
+it('renders edit reason field attributes old input and one validation message', function () {
+    $order = financeValidationOrderFixture();
+    $errors = (new ViewErrorBag())->put('default', new MessageBag([
+        'edit_reason' => ['لطفاً دلیل ویرایش مالی را وارد کنید.'],
+    ]));
 
-    expect($view)->toContain('id="financeEditForm"')
-        ->and($view)->toContain('id="edit_reason"')
-        ->and($view)->toContain('name="edit_reason"')
-        ->and($view)->toContain('required minlength="3" maxlength="1000"')
-        ->and(substr_count($view, "@error('edit_reason')"))->toBe(1)
-        ->and($view)->toContain("reject(fn($messages, $key) => $key === 'edit_reason'")
-        ->and($view)->toContain("old('edit_reason')");
+    $response = $this->actingAs(financeValidationUser())
+        ->withSession([
+            '_old_input' => ['edit_reason' => 'علت قبلی تست'],
+            'errors' => $errors,
+        ])->get(route('preinvoice.draft.finance.edit', $order->uuid));
+
+    $response->assertOk()
+        ->assertSee('id="edit_reason"', false)
+        ->assertSee('name="edit_reason"', false)
+        ->assertSee('required minlength="3" maxlength="1000"', false)
+        ->assertSee('علت قبلی تست', false)
+        ->assertSee('لطفاً دلیل ویرایش مالی را وارد کنید.', false);
+
+    expect(substr_count($response->getContent(), 'لطفاً دلیل ویرایش مالی را وارد کنید.'))->toBe(1);
 });
 
 it('redirects a successful finance edit back to the finance edit page without finalize coupling', function () {
-    $controller = File::get(app_path('Http/Controllers/PreinvoiceController.php'));
-    $start = strpos($controller, 'public function financeUpdate');
-    $end = strpos($controller, 'public function finance(string $uuid)', $start);
-    $method = substr($controller, $start, $end - $start);
+    $order = financeValidationOrderFixture();
+    $item = $order->items()->firstOrFail();
 
-    expect($method)->toContain("route('preinvoice.draft.finance.edit'")
-                ->and($method)->not->toContain('Invoice::create')
-        ->and($method)->not->toContain('InvoiceItem::create');
+    $response = $this->actingAs(financeValidationUser())->put(route('preinvoice.draft.finance.update', $order->uuid), [
+        'intent' => 'save',
+        'action' => 'save',
+        'items' => [[
+            'id' => $item->id,
+            'quantity' => 1,
+            'price' => '1,000,000',
+        ]],
+        'product_discounts' => [[
+            'product_id' => $item->product_id,
+            'type' => 'amount',
+            'value' => '0',
+        ]],
+        'invoice_discount_type' => 'none',
+        'invoice_discount_value' => '0',
+        'edit_reason' => 'ذخیره تست اعتبارسنجی',
+    ]);
+
+    $response->assertRedirect(route('preinvoice.draft.finance.edit', $order->uuid));
 });

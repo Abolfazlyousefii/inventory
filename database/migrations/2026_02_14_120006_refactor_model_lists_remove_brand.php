@@ -14,7 +14,20 @@ return new class extends Migration
         }
 
         if (Schema::hasColumn('model_lists', 'brand')) {
-            DB::statement("UPDATE model_lists SET model_name = TRIM(CONCAT(brand, ' ', model_name)) WHERE brand IS NOT NULL AND brand <> ''");
+            DB::table('model_lists')
+                ->whereNotNull('brand')
+                ->where('brand', '<>', '')
+                ->select(['id', 'brand', 'model_name'])
+                ->orderBy('id')
+                ->chunkById(500, function ($rows): void {
+                    foreach ($rows as $row) {
+                        DB::table('model_lists')
+                            ->where('id', $row->id)
+                            ->update([
+                                'model_name' => trim(trim((string) $row->brand).' '.trim((string) $row->model_name)),
+                            ]);
+                    }
+                });
 
             Schema::table('model_lists', function (Blueprint $table) {
                 $table->dropUnique('model_lists_brand_model_name_unique');

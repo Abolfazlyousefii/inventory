@@ -43,6 +43,20 @@ class SalesDocumentTotalsTest extends TestCase
         $this->assertSame(90_000_000, $totals['grand_total']);
     }
 
+
+    public function test_product_lines_combines_product_and_invoice_discounts(): void
+    {
+        $totals = SalesDocumentTotals::calculate([
+            (object) ['quantity' => 1, 'price' => 22_000_000, 'line_discount_amount' => 2_200_000],
+        ], 990_000, 0, ['discount_allocation_mode' => 'product_lines']);
+
+        $this->assertSame(22_000_000, $totals['subtotal_before_discount']);
+        $this->assertSame(2_200_000, $totals['items_discount']);
+        $this->assertSame(990_000, $totals['invoice_discount']);
+        $this->assertSame(3_190_000, $totals['total_discount']);
+        $this->assertSame(18_810_000, $totals['grand_total']);
+    }
+
     public function test_discounts_are_capped_at_subtotal(): void
     {
         $totals = SalesDocumentTotals::calculate([
