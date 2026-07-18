@@ -15,7 +15,7 @@ class CustomerLedgerCancelledInvoiceTest extends TestCase
 
     public function test_cancelled_invoice_is_not_counted_but_active_invoices_and_payments_are(): void
     {
-        $customer = Customer::query()->create(['first_name' => 'محمد', 'last_name' => 'احمدی', 'opening_balance' => 0]);
+        $customer = Customer::query()->create(['first_name' => 'محمد', 'last_name' => 'احمدی', 'mobile' => '09120000001', 'opening_balance' => 0]);
 
         $activeOne = Invoice::query()->create(['uuid' => 'INV-1', 'customer_id' => $customer->id, 'customer_name' => 'محمد احمدی', 'total' => 253_090_000, 'status' => Invoice::STATUS_SHIPPED]);
         $activeTwo = Invoice::query()->create(['uuid' => 'INV-2', 'customer_id' => $customer->id, 'customer_name' => 'محمد احمدی', 'total' => 41_770_000, 'status' => Invoice::STATUS_FINANCE_APPROVED]);
