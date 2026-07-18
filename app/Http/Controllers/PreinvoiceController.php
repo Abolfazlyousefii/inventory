@@ -30,6 +30,8 @@ use App\Services\PreinvoiceReservationService;
 use App\Services\MySalesDocumentsService;
 use App\Services\FinancePreinvoiceEditorService;
 use App\Services\PreinvoiceReservationExpiryService;
+use App\Services\PreinvoiceDiscountHydrator;
+use App\Services\PreinvoiceDiscountService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -54,6 +56,8 @@ class PreinvoiceController extends Controller
         private readonly MySalesDocumentsService $mySalesDocumentsService,
         private readonly FinancePreinvoiceEditorService $financePreinvoiceEditorService,
         private readonly PreinvoiceReservationExpiryService $reservationExpiryService,
+        private readonly PreinvoiceDiscountHydrator $preinvoiceDiscountHydrator,
+        private readonly PreinvoiceDiscountService $preinvoiceDiscountService,
     ) {}
 
     public function create()
@@ -718,7 +722,7 @@ class PreinvoiceController extends Controller
 
             $order->items()->delete();
             $this->syncItems($order, $validated['products'] ?? []);
-            $order->update(['total_price' => $this->calculateOrderTotal($order)]);
+            $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
             return $order->fresh('items.product', 'items.variant');
         });
@@ -835,6 +839,7 @@ class PreinvoiceController extends Controller
             }
 
             $this->syncItems($order, $validated['products']);
+            $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
             $this->finalizeDraftReservations($order, $validated['reservation_token'] ?? null, $validated['products'], $reservationMeta);
             $this->syncPreinvoiceReservations($order, true, $reservationMeta);
             $order->update([
@@ -899,6 +904,7 @@ class PreinvoiceController extends Controller
             }
 
             $this->syncItems($order, $validated['products']);
+            $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
             $order->update([
                 'total_price' => $this->calculateOrderTotal($order),
                 'stock_frozen_until' => null,
@@ -1013,6 +1019,7 @@ class PreinvoiceController extends Controller
             ]);
 
             $this->syncItems($order, $validated['products'], true);
+            $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
             if (! $isSubmit && ! empty($validated['reservation_token'])) {
                 $this->draftReservationService->releaseTokenReservations(
@@ -1108,6 +1115,7 @@ class PreinvoiceController extends Controller
             'products.*.price' => 'nullable|integer|min:0',
             'products.*.item_id' => 'nullable|integer',
             'products.*.line_discount_amount' => 'nullable|integer|min:0',
+            'discount_breakdown' => 'nullable|string',
         ], [
             'customer_name.required' => 'نام مشتری الزامی است.',
             'customer_mobile.required' => 'شماره موبایل مشتری الزامی است.',
@@ -1188,6 +1196,7 @@ class PreinvoiceController extends Controller
             'products.*.quantity' => 'required_with:products|integer|min:0',
             'products.*.price' => 'nullable|integer|min:0',
             'products.*.line_discount_amount' => 'nullable|integer|min:0',
+            'discount_breakdown' => 'nullable|string',
         ]);
 
         $validated['products'] = collect($validated['products'] ?? [])
@@ -1718,6 +1727,7 @@ class PreinvoiceController extends Controller
                 'variant_id' => (int) $p['variety_id'],
                 'quantity' => (int) $p['quantity'],
                 'price' => (int) ($p['price'] ?? $variant->sell_price ?? 0),
+                'line_total' => max(((int) $p['quantity'] * (int) ($p['price'] ?? $variant->sell_price ?? 0)) - (int) ($p['line_discount_amount'] ?? 0), 0),
                 'line_discount_amount' => (int) ($p['line_discount_amount'] ?? 0),
             ];
             $itemId = (int) ($p['item_id'] ?? 0);
@@ -2238,9 +2248,11 @@ class PreinvoiceController extends Controller
         abort_unless($this->canFinanceEditPreinvoice($order, auth()->user()), $order->invoice ? 409 : 403);
 
         $zeroPriceItems = $order->items->filter(fn ($item) => (int) $item->price <= 0)->pluck('id')->all();
-        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $discountEditorState = $this->preinvoiceDiscountHydrator->hydrateForEditing($order);
+        $invoiceDiscount = (int) ($discountEditorState['invoice_discount']['amount'] ?? 0);
+        $totals = SalesDocumentTotals::calculate($order->items, $invoiceDiscount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
 
-        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals'));
+        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals', 'discountEditorState'));
     }
 
     public function financeUpdate(string $uuid, FinanceUpdatePreinvoiceRequest $request)
@@ -2252,15 +2264,7 @@ class PreinvoiceController extends Controller
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
             $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
         } catch (QueryException $exception) {
-            Log::error('Finance preinvoice update failed.', [
-                'preinvoice_uuid' => $uuid,
-                'user_id' => auth()->id(),
-                'route' => optional($request->route())->getName(),
-                'intent' => $validated['intent'] ?? null,
-                'item_ids' => collect($validated['items'] ?? [])->pluck('id')->values()->all(),
-                'sql_state' => $exception->errorInfo[0] ?? null,
-                'exception_class' => $exception::class,
-            ]);
+            Log::error('Finance preinvoice update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, $validated['intent'] ?? 'save'));
 
             return back()->withErrors(['finance_update' => 'ذخیره تغییرات انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
@@ -2279,20 +2283,31 @@ class PreinvoiceController extends Controller
             $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
             $updated->refresh()->load('items');
         } catch (QueryException $exception) {
-            Log::error('Finance preinvoice save-and-finalize update failed.', [
-                'preinvoice_uuid' => $uuid,
-                'user_id' => auth()->id(),
-                'route' => optional($request->route())->getName(),
-                'intent' => 'save_and_finalize',
-                'item_ids' => collect($validated['items'] ?? [])->pluck('id')->values()->all(),
-                'sql_state' => $exception->errorInfo[0] ?? null,
-                'exception_class' => $exception::class,
-            ]);
+            Log::error('Finance preinvoice save-and-finalize update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, 'save_and_finalize'));
 
             return back()->withErrors(['finance_update' => 'ذخیره و تأیید انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
 
         return $this->finalize($uuid, $request);
+    }
+
+    private function financeQueryExceptionContext(QueryException $exception, string $uuid, array $validated, Request $request, string $intent): array
+    {
+        return [
+            'preinvoice_uuid' => $uuid,
+            'user_id' => auth()->id(),
+            'route' => optional($request->route())->getName(),
+            'intent' => $intent,
+            'item_ids' => collect($validated['items'] ?? [])->pluck('id')->values()->all(),
+            'exception_class' => $exception::class,
+            'exception_message' => $exception->getMessage(),
+            'sql_state' => $exception->errorInfo[0] ?? null,
+            'driver_error_code' => $exception->errorInfo[1] ?? null,
+            'query' => method_exists($exception, 'getSql') ? $exception->getSql() : null,
+            'bindings' => method_exists($exception, 'getBindings') ? $exception->getBindings() : [],
+            'file' => $exception->getFile(),
+            'line' => $exception->getLine(),
+        ];
     }
 
     public function finance(string $uuid)
