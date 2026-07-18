@@ -24,7 +24,12 @@
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="mb-0">✅ مشاهده و تایید مالی پیش‌فاکتور</h4>
-    <a href="{{ route('preinvoice.draft.index') }}" class="btn btn-outline-secondary">بازگشت به صف مالی</a>
+    <div class="d-flex gap-2 flex-wrap">
+      @unless($isReservationExpired)
+        <a href="{{ route('preinvoice.draft.finance.edit', $order->uuid) }}" class="btn btn-warning">ویرایش مالی</a>
+      @endunless
+      <a href="{{ route('preinvoice.draft.index') }}" class="btn btn-outline-secondary">بازگشت به صف مالی</a>
+    </div>
   </div>
 
   @if(session('success'))
@@ -79,6 +84,10 @@
           <div class="text-muted small mb-1">جمع کل فاکتور</div>
           <div class="fw-bold">{{ $rial($grandTotal) }}</div>
         </div>
+        <div class="col-md-3 col-sm-6">
+          <div class="text-muted small mb-1">مهلت رزرو</div>
+          @include('preinvoice.partials.reservation-countdown', ['order' => $order, 'compact' => true])
+        </div>
       </div>
     </div>
   </div>
@@ -93,14 +102,6 @@
       <div class="text-body" style="white-space: pre-wrap;">{{ $order->description ?: 'توضیحی برای این پیش‌فاکتور ثبت نشده است.' }}</div>
     </div>
   </div>
-
-  @unless($isReservationExpired)
-  <form id="financeUpdateForm" method="POST" action="{{ route('preinvoice.draft.finance.update', $order->uuid) }}" class="d-none">
-    @csrf
-    @method('PUT')
-    <input type="hidden" name="action" value="save">
-  </form>
-  @endunless
 
   <form id="finalizePreinvoiceForm" method="POST" action="{{ route('preinvoice.draft.finalize', $order->uuid) }}" enctype="multipart/form-data" class="card shadow-sm border-0">
     <input type="hidden" name="action" value="finalize">
@@ -158,11 +159,10 @@
                       <td>{{ $it->product?->name ?? ('#'.$it->product_id) }}</td>
                       <td>{{ $it->variant?->variant_name ?? '—' }}</td>
                       <td>
-                        <input type="hidden" form="financeUpdateForm" name="items[{{ $loop->index }}][id]" value="{{ $it->id }}">
-                        <input type="number" min="1" step="1" form="financeUpdateForm" name="items[{{ $loop->index }}][quantity]" value="{{ old('items.'.$loop->index.'.quantity', (int) $it->quantity) }}" class="form-control form-control-sm" @disabled($isReservationExpired)>
+                        {{ number_format((int) $it->quantity) }}
                       </td>
-                      <td><input type="number" min="0" step="1" form="financeUpdateForm" name="items[{{ $loop->index }}][price]" value="{{ old('items.'.$loop->index.'.price', (int) $it->price) }}" class="form-control form-control-sm" @disabled($isReservationExpired)></td>
-                      <td><input type="number" min="0" step="1" form="financeUpdateForm" name="items[{{ $loop->index }}][line_discount_amount]" value="{{ old('items.'.$loop->index.'.line_discount_amount', (int) ($it->line_discount_amount ?? 0)) }}" class="form-control form-control-sm" @disabled($isReservationExpired)></td>
+                      <td>{{ $rial($it->price) }}</td>
+                      <td>{{ $rial($it->line_discount_amount ?? 0) }}</td>
                       <td>{{ number_format(max(((int) $it->price * (int) $it->quantity) - (int) ($it->line_discount_amount ?? 0), 0)) }}</td>
                     </tr>
                   @endforeach
@@ -209,8 +209,6 @@
       <button class="btn btn-outline-warning" form="returnPreinvoiceForm">ارجاع به فروشنده</button>
       <input name="reason" form="cancelPreinvoiceForm" class="form-control" style="max-width: 260px;" placeholder="دلیل کنسلی" required>
       <button class="btn btn-outline-danger" form="cancelPreinvoiceForm">کنسل پیش‌فاکتور</button>
-      <input name="edit_reason" form="financeUpdateForm" class="form-control" style="max-width: 300px;" placeholder="دلیل ویرایش مالی" value="{{ old('edit_reason') }}" required>
-      <button type="submit" form="financeUpdateForm" class="btn btn-primary">ذخیره تغییرات مالی</button>
       <button id="finalizePreinvoiceBtn" name="action" value="finalize" class="btn btn-success" onclick="return confirm('تاییدیه نهایی مالی ثبت شود؟ با این کار، پیش‌فاکتور به فاکتور تبدیل می‌شود و در صف حواله فروش انبار قرار می‌گیرد.')">تأیید نهایی مالی</button>
     </div>
     @endunless

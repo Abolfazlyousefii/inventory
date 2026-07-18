@@ -12,6 +12,7 @@ use App\Support\ActivityLogger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use App\Services\NotificationService;
 
 class PreinvoiceReservationService
 {
@@ -19,16 +20,12 @@ class PreinvoiceReservationService
     {
         $temporaryResult = $this->expireTemporaryOnlineReservations();
 
-        $orderIds = PreinvoiceDraftReservation::query()
-            ->whereNotNull('preinvoice_order_id')
-            ->where('reservation_scope', 'official')
-            ->whereNotNull('expires_at')
-            ->where('expires_at', '<=', now())
-            ->whereNull('released_at')
-            ->whereHas('order', fn ($query) => $query->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE))
-            ->distinct()
-            ->pluck('preinvoice_order_id')
-            ->filter()
+        $orderIds = PreinvoiceOrder::query()
+            ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
+            ->whereNotNull('stock_frozen_until')
+            ->where('stock_frozen_until', '<=', now())
+            ->whereDoesntHave('invoice')
+            ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
 
@@ -126,10 +123,6 @@ class PreinvoiceReservationService
                 ->lockForUpdate()
                 ->get();
 
-            if ($reservations->isEmpty()) {
-                return ['expired' => false, 'released_reservations' => 0, 'released_quantity' => 0];
-            }
-
             $releasedReservations = 0;
             $releasedQuantity = 0;
 
@@ -141,7 +134,7 @@ class PreinvoiceReservationService
                 }
             }
 
-            if ($releasedReservations > 0 && $lockedOrder->status === PreinvoiceOrder::STATUS_PENDING_FINANCE) {
+            if ($lockedOrder->status === PreinvoiceOrder::STATUS_PENDING_FINANCE) {
                 $oldStatus = $lockedOrder->status;
                 $lockedOrder->forceFill([
                     'status' => PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
@@ -154,7 +147,7 @@ class PreinvoiceReservationService
                     'action' => 'reservation_expired',
                     'reason' => 'رزرو موجودی پیش‌فاکتور منقضی و آزاد شد.',
                     'before_items' => ['status' => $oldStatus],
-                    'after_items' => ['status' => PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, 'released_quantity' => $releasedQuantity],
+                    'after_items' => ['status' => PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, 'released_quantity' => $releasedQuantity, 'released_reservations' => $releasedReservations],
                 ]);
 
                 ActivityLogger::log('reservation_expired', $lockedOrder->fresh(), 'رزرو موجودی پیش‌فاکتور منقضی و آزاد شد.', [
@@ -165,6 +158,17 @@ class PreinvoiceReservationService
                     'actor_id' => $actor?->id,
                 ]);
 
+                if (! empty($lockedOrder->created_by)) {
+                    app(NotificationService::class)->notifyUserAfterCommit(
+                        (int) $lockedOrder->created_by,
+                        'preinvoice_reservation_expired',
+                        'نیاز به بررسی مجدد پیش‌فاکتور',
+                        "زمان رزرو پیش‌فاکتور {$lockedOrder->uuid} به پایان رسیده است.\nموجودی اقلام را بررسی و سند را مجدداً ثبت کنید.",
+                        '/preinvoice/my?tab=needs-correction',
+                        ['level' => 'warning', 'priority' => 'urgent', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $lockedOrder->id, 'unique_key' => "preinvoice_reservation_expired:{$lockedOrder->id}:{$lockedOrder->created_by}"]
+                    );
+                }
+
                 Log::info('Preinvoice reservation expired.', [
                     'preinvoice_order_id' => $lockedOrder->id,
                     'uuid' => $lockedOrder->uuid,
@@ -174,7 +178,7 @@ class PreinvoiceReservationService
             }
 
             return [
-                'expired' => $releasedReservations > 0,
+                'expired' => $lockedOrder->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
                 'released_reservations' => $releasedReservations,
                 'released_quantity' => $releasedQuantity,
             ];
