@@ -129,6 +129,13 @@ class Invoice extends Model
     public function histories() { return $this->hasMany(SalesHavalehHistory::class)->latest('done_at'); }
     public function activityLogs() { return $this->morphMany(ActivityLog::class, 'subject')->latest('occurred_at'); }
 
+    public static function cancelledStatuses(): array
+    {
+        return [
+            self::STATUS_NOT_SHIPPED,
+        ];
+    }
+
     public static function statusLabels(): array
     {
         return [
