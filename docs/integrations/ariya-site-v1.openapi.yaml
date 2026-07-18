@@ -1,0 +1,27 @@
+openapi: 3.1.0
+info: {title: Ariya Site Inventory Integration, version: '1.0.0'}
+servers: [{url: /api/integrations/ariya/v1}]
+paths:
+  /orders:
+    post:
+      summary: Accept a paid website order event
+      parameters:
+        - {name: X-Ariya-Event-Id, in: header, required: true, schema: {type: string, format: uuid}}
+        - {name: X-Ariya-Timestamp, in: header, required: true, schema: {type: string}}
+        - {name: X-Ariya-Signature, in: header, required: true, schema: {type: string}}
+        - {name: X-Ariya-Source, in: header, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OrderCreated'}}}}
+      responses: {'200': {description: accepted or idempotent replay}, '401': {description: invalid signature}, '409': {description: changed replay}, '422': {description: validation or mapping error}}
+  /events/{eventId}: {get: {parameters: [{name: eventId, in: path, required: true, schema: {type: string}}], responses: {'200': {description: event status}, '404': {description: not found}}}}
+  /catalog/variants: {get: {responses: {'200': {description: variant snapshot}}}}
+  /catalog/variants/{externalId}: {get: {parameters: [{name: externalId, in: path, required: true, schema: {type: string}}], responses: {'200': {description: variant}, '404': {description: not found}}}}
+components:
+  schemas:
+    OrderCreated:
+      type: object
+      required: [event_id,event_type,occurred_at,order]
+      properties:
+        event_id: {type: string, format: uuid}
+        event_type: {const: order.created}
+        occurred_at: {type: string, format: date-time}
+        order: {type: object, required: [external_order_id,status,payment,items], properties: {external_order_id: {type: string}, order_number: {type: string}, status: {type: string}, currency: {type: string}, customer: {type: object}, shipping: {type: object}, discount_amount: {type: integer}, total_amount: {type: integer}, payment: {type: object}, items: {type: array, items: {type: object}}}}

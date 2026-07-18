@@ -1,0 +1,4 @@
+<?php
+namespace App\Console\Commands;
+use App\Models\ProductVariant; use App\Services\Integrations\CatalogIntegrationPublisher; use Illuminate\Console\Command;
+class ReconcileAriyaSiteCatalog extends Command { protected $signature='integration:ariya-site:reconcile-catalog {--dry-run} {--chunk=100} {--resume-from=0}'; protected $description='Publish Ariya site catalog snapshot events without changing internal stock.'; public function handle(CatalogIntegrationPublisher $p): int { $count=0; ProductVariant::where('is_active',true)->where('id','>',(int)$this->option('resume-from'))->orderBy('id')->chunkById((int)$this->option('chunk'), function($vars) use($p,&$count){ foreach($vars as $v){$count++; if(!$this->option('dry-run')) $p->publishVariant($v,'catalog.variant.updated');} }); $this->info("Ariya catalog reconciliation queued {$count} variants."); return self::SUCCESS; } }

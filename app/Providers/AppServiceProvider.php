@@ -26,6 +26,7 @@ use App\Observers\ProductVariantSyncObserver;
 use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Models\WarehouseStock;
 use Illuminate\Support\ServiceProvider;
+use App\Observers\ProductVariantObserver;
 use Illuminate\Pagination\Paginator;
 class AppServiceProvider extends ServiceProvider
 {
@@ -57,6 +58,7 @@ class AppServiceProvider extends ServiceProvider
 
         Product::observe(ProductInventoryObserver::class);
         ProductVariant::observe(ProductVariantSyncObserver::class);
+        ProductVariant::observe(ProductVariantObserver::class);
         WarehouseStock::observe(WarehouseStockObserver::class);
         StockMovement::observe(StockMovementObserver::class);
         Paginator::useBootstrapFive(); // یا useBootstrapFour()
