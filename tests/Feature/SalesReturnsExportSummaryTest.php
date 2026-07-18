@@ -17,8 +17,8 @@ class SalesReturnsExportSummaryTest extends TestCase
 
     public function test_sales_returns_export_uses_one_summary_row_per_return_and_filters_customer_name(): void
     {
-        $customer = Customer::query()->create(['first_name' => 'محمد', 'last_name' => 'رضایی']);
-        $other = Customer::query()->create(['first_name' => 'علی', 'last_name' => 'کریمی']);
+        $customer = Customer::query()->create(['first_name' => 'محمد', 'last_name' => 'رضایی', 'mobile' => '09120000001']);
+        $other = Customer::query()->create(['first_name' => 'علی', 'last_name' => 'کریمی', 'mobile' => '09120000002']);
         $warehouse = Warehouse::query()->create(['name' => 'انبار مرجوعی', 'type' => 'return', 'is_active' => true]);
         $product = Product::query()->create(['name' => 'کالای تست']);
 

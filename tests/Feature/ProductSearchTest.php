@@ -29,11 +29,11 @@ class ProductSearchTest extends TestCase
         return $user;
     }
 
-    public function test_products_index_query_search_with_unmatched_text_returns_no_products(): void
+    public function test_products_index_exposes_ajax_search_shell_with_initial_filters(): void
     {
         $this->actingAsProductsViewer();
 
-        $category = Category::create(['name' => 'لوازم جانبی']);
+        $category = Category::create(['name' => 'سامسونگ']);
         Product::create([
             'category_id' => $category->id,
             'name' => 'کاور کیفی مگنتی سامسونگ',
@@ -42,14 +42,18 @@ class ProductSearchTest extends TestCase
             'price' => 1000,
         ]);
 
-        $response = $this->get('/products?q=zzzzzzzzzzzz');
+        $response = $this->get('/products?q=' . urlencode('کیفی مگنتی سامسون') . '&category_id=' . $category->id);
 
         $response->assertOk();
+        $response->assertSee('id="productSearch"', false);
+        $response->assertSee('data-products-url="' . route('products.data') . '"', false);
+        $response->assertSee('data-initial-filters', false);
+        $response->assertSee('&quot;q&quot;:&quot;کیفی مگنتی سامسون&quot;', false);
+        $response->assertSee('&quot;category_id&quot;:&quot;' . $category->id . '&quot;', false);
         $response->assertDontSee('کاور کیفی مگنتی سامسونگ');
-        $response->assertSee('۰ کالا');
     }
 
-    public function test_products_index_keeps_search_strict_with_category_filter_and_pagination_links(): void
+    public function test_products_data_keeps_search_strict_with_category_filter_and_cursor_meta(): void
     {
         $this->actingAsProductsViewer();
 
@@ -80,24 +84,21 @@ class ProductSearchTest extends TestCase
             'price' => 1000,
         ]);
 
-        for ($i = 1; $i <= 21; $i++) {
-            Product::create([
-                'category_id' => $samsung->id,
-                'name' => "کیفی مگنتی سامسونگ صفحه {$i}",
-                'sku' => "HTTP-SKU-PAGE-{$i}",
-                'stock' => 5,
-                'price' => 1000,
+        $response = $this->getJson('/products/data?q=' . urlencode('کیفی مگنتی سامسون') . '&category_id=' . $samsung->id);
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'data' => [['id', 'name', 'short_code', 'category', 'category_path', 'variants_count', 'total_stock', 'reserved', 'min_price', 'max_price', 'sales_enabled', 'image_url', 'updated_at', 'routes']],
+                'meta' => ['returned', 'has_more', 'next_cursor'],
             ]);
-        }
 
-        $response = $this->get('/products?q=' . urlencode('کیفی مگنتی سامسون') . '&category_id=' . $samsung->id);
-
-        $response->assertOk();
-        $response->assertSee($matching->name);
-        $response->assertDontSee('کابل سامسونگ');
-        $response->assertDontSee('کاور کیفی مگنتی آیفون');
-        $response->assertSee('q=%DA%A9%DB%8C%D9%81%DB%8C%20%D9%85%DA%AF%D9%86%D8%AA%DB%8C%20%D8%B3%D8%A7%D9%85%D8%B3%D9%88%D9%86', false);
-        $response->assertSee('category_id=' . $samsung->id, false);
+        $ids = collect($response->json('data'))->pluck('id')->all();
+        $this->assertContains($matching->id, $ids);
+        $this->assertNotContains(Product::where('sku', 'HTTP-SKU-102')->value('id'), $ids);
+        $this->assertNotContains(Product::where('sku', 'HTTP-SKU-103')->value('id'), $ids);
+        $this->assertSame(1, $response->json('meta.returned'));
+        $this->assertFalse($response->json('meta.has_more'));
+        $this->assertNull($response->json('meta.next_cursor'));
     }
 
     public function test_products_index_form_submits_one_canonical_q_field(): void
@@ -107,8 +108,8 @@ class ProductSearchTest extends TestCase
         $response = $this->get('/products?q=' . urlencode('سامسونگ'));
 
         $response->assertOk();
-        $this->assertSame(1, substr_count($response->getContent(), 'name="q"'));
-        $response->assertSee('id="productSearchQuery"', false);
+        $this->assertSame(0, substr_count($response->getContent(), 'name="q"'));
+        $response->assertSee('id="productSearch"', false);
     }
 
     public function test_multi_word_product_search_requires_every_token_across_searchable_fields(): void
