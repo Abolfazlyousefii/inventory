@@ -25,6 +25,24 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
         ];
     }
 
+
+    public function messages(): array
+    {
+        return [
+            'edit_reason.required' => 'لطفاً دلیل ویرایش مالی را وارد کنید.',
+            'edit_reason.string' => 'دلیل ویرایش مالی نامعتبر است.',
+            'edit_reason.min' => 'دلیل ویرایش مالی باید حداقل ۳ کاراکتر باشد.',
+            'edit_reason.max' => 'دلیل ویرایش مالی نمی‌تواند بیشتر از ۱۰۰۰ کاراکتر باشد.',
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'edit_reason' => 'دلیل ویرایش مالی',
+        ];
+    }
+
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {

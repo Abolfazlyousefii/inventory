@@ -16,7 +16,8 @@
     <a class="btn btn-outline-secondary" href="{{ route('preinvoice.draft.index') }}">بازگشت به صف مالی</a>
   </div>
   @foreach(['success'=>'success','warning'=>'warning','error'=>'danger'] as $key=>$type) @if(session($key))<div class="alert alert-{{ $type }}">{{ session($key) }}</div>@endif @endforeach
-  @if($errors->any())<div class="alert alert-danger"><strong>خطاهای فرم:</strong><ul class="mb-0">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
+  @php($summaryErrors = collect($errors->getMessages())->reject(fn($messages, $key) => $key === 'edit_reason' || str_starts_with($key, 'items.'))->flatten())
+  @if($summaryErrors->isNotEmpty())<div class="alert alert-danger"><strong>خطاها:</strong><ul class="mb-0">@foreach($summaryErrors as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
   @if($firstZero)<div class="alert alert-warning d-flex justify-content-between flex-wrap gap-2"><span>برای تأیید مالی، قیمت تمام اقلام باید بیشتر از صفر باشد.</span><a class="btn btn-sm btn-danger" href="#item-row-{{ $firstZero->id }}">رفتن به اولین ردیف مشکل‌دار</a></div>@endif
 
   <div class="card mb-3"><div class="card-body"><div class="row g-3 small">
@@ -37,13 +38,15 @@
         <td><input class="form-control form-control-sm js-discount @error('items.'.$idx.'.line_discount_amount') is-invalid @enderror" type="number" min="0" name="items[{{ $idx }}][line_discount_amount]" value="{{ old('items.'.$idx.'.line_discount_amount',(int)($it->line_discount_amount ?? 0)) }}">@error('items.'.$idx.'.line_discount_amount')<div class="invalid-feedback">{{ $message }}</div>@enderror</td>
         <td class="js-gross line-preview">{{ $rial($gross) }}</td><td class="js-net line-preview">{{ $rial($net) }}</td>
       </tr>@endforeach
-    </tbody></table></div><div class="card-body border-top"><label class="form-label">دلیل ویرایش <span class="text-danger">*</span></label><textarea class="form-control @error('edit_reason') is-invalid @enderror" name="edit_reason" rows="3" required>{{ old('edit_reason') }}</textarea>@error('edit_reason')<div class="invalid-feedback">{{ $message }}</div>@enderror</div>
-    <div class="card-footer d-flex gap-2 justify-content-end flex-wrap finance-edit-actions"><button class="btn btn-primary" name="action" value="save">ذخیره تغییرات</button><button class="btn btn-success" name="action" value="save_and_finalize" {{ $firstZero ? 'disabled' : '' }}>ذخیره و تأیید مالی</button></div></div>
+    </tbody></table></div><div class="card-body border-top"><label for="edit_reason" class="form-label">دلیل ویرایش <span class="text-danger">*</span></label><textarea id="edit_reason" name="edit_reason" rows="3" class="form-control @error('edit_reason') is-invalid @enderror" required minlength="3" maxlength="1000" placeholder="مثلاً: اصلاح قیمت گارد تدی طبق اعلام واحد مالی">{{ old('edit_reason') }}</textarea>@error('edit_reason')<div class="invalid-feedback">{{ $message }}</div>@enderror</div>
+    <div class="card-footer d-flex gap-2 justify-content-end flex-wrap finance-edit-actions"><button class="btn btn-primary" name="action" value="save">ذخیره تغییرات مالی</button><button type="submit" form="finalizePreinvoiceForm" class="btn btn-success" {{ $firstZero ? 'disabled' : '' }}>تأیید نهایی مالی</button></div></div>
   </form>
+  <form id="finalizePreinvoiceForm" method="POST" action="{{ route('preinvoice.draft.finalize', $order->uuid) }}" class="d-none">@csrf</form>
 </div>
 <script>
 const fmt=n=>Number(Math.max(0,n||0)).toLocaleString('fa-IR')+' ریال';
 document.querySelectorAll('[data-finance-item-row]').forEach(row=>{const calc=()=>{const q=Number(row.querySelector('.js-qty').value||0),p=Number(row.querySelector('.js-price').value||0),d=Number(row.querySelector('.js-discount').value||0),g=q*p,n=Math.max(g-Math.min(Math.max(d,0),g),0);row.querySelector('.js-gross').textContent=fmt(g);row.querySelector('.js-net').textContent=fmt(n)};row.querySelectorAll('input').forEach(i=>i.addEventListener('input',calc));calc();});
+@if($errors->has('edit_reason'))document.getElementById('edit_reason')?.focus();@endif
 document.querySelector('#financeEditForm')?.addEventListener('submit',e=>{const b=e.submitter;if(b){b.disabled=true;b.innerHTML='<span class="spinner-border spinner-border-sm"></span> در حال ذخیره';}});
 </script>
 @endsection

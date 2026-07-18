@@ -2311,7 +2311,7 @@ class PreinvoiceController extends Controller
             return back()->withErrors(['finance_update' => 'ذخیره تغییرات انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
 
-        return redirect()->route('preinvoice.draft.finance', $uuid)->with('success', 'تغییرات مالی با موفقیت ذخیره شد. پیش‌فاکتور همچنان در صف مالی قرار دارد.');
+        return redirect()->route('preinvoice.draft.finance.edit', $uuid)->with('success', 'تغییرات مالی با موفقیت ذخیره شد. پیش‌فاکتور همچنان در صف مالی قرار دارد.');
     }
 
     public function finance(string $uuid)
