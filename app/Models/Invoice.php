@@ -26,7 +26,7 @@ class Invoice extends Model
         'customer_name','customer_mobile','customer_address',
         'province_id','city_id','shipping_id','shipping_price',
         'shipping_method_id','shipping_cost',
-        'discount_amount','subtotal','total','status','status_changed_at','status_changed_by'
+        'discount_amount','discount_breakdown','invoice_discount_type','invoice_discount_value','invoice_discount_amount','product_discount_amount','discount_allocation_mode','subtotal','total','status','status_changed_at','status_changed_by'
         ,'shipping_status','shipped_at','shipped_by','shipping_note',
         'external_order_id', 'items_updated_at', 'items_updated_by',
         'warehouse_received_at', 'warehouse_received_by', 'collection_started_at',
@@ -36,6 +36,10 @@ class Invoice extends Model
     protected $casts = [
         'shipping_status' => 'string',
         'shipping_cost' => 'integer',
+        'discount_breakdown' => 'array',
+        'invoice_discount_value' => 'integer',
+        'invoice_discount_amount' => 'integer',
+        'product_discount_amount' => 'integer',
         'shipped_at' => 'datetime',
         'shipped_by' => 'integer',
         'shipping_note' => 'string',
