@@ -90,10 +90,10 @@ class PreinvoiceReservationSyncTest extends TestCase
         $product = Product::withoutEvents(fn () => Product::query()->create(['category_id' => 1, 'name' => 'Shapouri item', 'sku' => 'SH-1', 'stock' => 7, 'reserved' => 17, 'price' => 100]));
         $variant = ProductVariant::withoutEvents(fn () => ProductVariant::query()->create(['product_id' => $product->id, 'is_active' => true, 'variant_name' => 'Default', 'stock' => 7, 'reserved' => 17]));
         $order = PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create(['uuid' => 'test-order', 'status' => PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE]));
-        PreinvoiceOrderItem::query()->create(['preinvoice_order_id' => $order->id, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 17, 'price' => 100]);
+        PreinvoiceOrderItem::withoutEvents(fn () => PreinvoiceOrderItem::query()->create(['preinvoice_order_id' => $order->id, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 17, 'price' => 100]));
 
-        PreinvoiceDraftReservation::query()->create(['token' => '00000000-0000-0000-0000-000000000001', 'preinvoice_order_id' => $order->id, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 10, 'converted_at' => now()]);
-        PreinvoiceDraftReservation::query()->create(['token' => '00000000-0000-0000-0000-000000000002', 'preinvoice_order_id' => $order->id, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 7, 'converted_at' => now()]);
+        PreinvoiceDraftReservation::withoutEvents(fn () => PreinvoiceDraftReservation::query()->create(['token' => '00000000-0000-0000-0000-000000000001', 'preinvoice_order_id' => $order->id, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 10, 'converted_at' => now()]));
+        PreinvoiceDraftReservation::withoutEvents(fn () => PreinvoiceDraftReservation::query()->create(['token' => '00000000-0000-0000-0000-000000000002', 'preinvoice_order_id' => $order->id, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 7, 'converted_at' => now()]));
 
         app(PreinvoiceController::class)->syncPreinvoiceReservations($order->fresh('items'));
 
