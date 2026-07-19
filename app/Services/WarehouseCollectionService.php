@@ -7,6 +7,7 @@ use App\Models\InvoiceItem;
 use App\Models\ProductVariant;
 use App\Models\WarehouseStock;
 use App\Models\User;
+use App\Support\SalesDocumentTotals;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -68,7 +69,9 @@ class WarehouseCollectionService
     public function updateCollectedItems(Invoice $invoice, array $items, User $user, ?string $note = null, bool $canEditPrices = false, ?string $reason = null, ?string $openedAt = null): Invoice
     {
         $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $note, $canEditPrices, $reason, $openedAt) {
-            $invoice = Invoice::query()->with(['items.product', 'items.variant', 'payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice = Invoice::query()->with(['payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $lockedItems = InvoiceItem::query()->with(['product', 'variant'])->where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
+            $invoice->setRelation('items', $lockedItems);
             $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
 
             $currentStamp = optional($invoice->items_updated_at ?: $invoice->updated_at)->toJSON();
@@ -83,12 +86,13 @@ class WarehouseCollectionService
             $revisionRows = [];
 
             foreach ($items as $row) {
-                $qty = (int) $row['quantity'];
-                if ($qty <= 0) {
-                    continue;
-                }
+                $deleteRequested = filter_var($row['_delete'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $qty = $deleteRequested ? 0 : (int) $row['quantity'];
                 $itemId = (int) ($row['invoice_item_id'] ?? $row['id'] ?? 0);
                 $existing = $itemId > 0 ? $existingById->get($itemId) : null;
+                if (! $existing && $qty <= 0) {
+                    continue;
+                }
                 if ($itemId > 0 && ! $existing) {
                     throw ValidationException::withMessages(['items' => 'آیتم انتخاب‌شده متعلق به این فاکتور نیست.']);
                 }
@@ -114,7 +118,7 @@ class WarehouseCollectionService
 
                 $price = $canEditPrices && $requestedPrice !== null ? $requestedPrice : ($existing ? (int) $existing->price : (int) $variant->sell_price);
                 $discount = $canEditPrices && $requestedDiscount !== null ? $requestedDiscount : ($existing ? (int) ($existing->line_discount_amount ?? 0) : 0);
-                if ($price <= 0) {
+                if ($qty > 0 && $price <= 0) {
                     throw ValidationException::withMessages(['price' => 'قیمت واحد باید بزرگ‌تر از صفر باشد.']);
                 }
                 if ($discount < 0 || $discount > ($qty * $price)) {
@@ -147,7 +151,7 @@ class WarehouseCollectionService
                 if ($available < $delta) {
                     $variant = ProductVariant::query()->with('product')->findOrFail((int) $variantId);
                     $name = trim(($variant->product?->name ?? 'کالا') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
-                    throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد درخواستی: {$delta}"]);
+                    throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد اضافه‌شده: {$delta}"]);
                 }
             }
 
@@ -170,7 +174,7 @@ class WarehouseCollectionService
 
                 if ($existing) {
                     $seen[] = (int) $existing->id;
-                    $existing->update(['quantity' => (int) $row['qty'], 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount']]);
+                    $existing->update(['quantity' => (int) $row['qty'], 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max(((int) $row['qty'] * (int) $row['price']) - (int) $row['discount'], 0)]);
                     $changed = $old['quantity'] !== (int) $row['qty'] || $old['price'] !== (int) $row['price'] || $old['discount'] !== (int) $row['discount'];
                     if ($changed) {
                         $revisionRows[] = $this->revisionItemPayload($existing->fresh(['product','variant']), $old, 'multiple_changes');
@@ -178,7 +182,7 @@ class WarehouseCollectionService
                     continue;
                 }
 
-                $created = InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $row['productId'], 'variant_id' => $row['variantId'], 'quantity' => (int) $row['qty'], 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount']]);
+                $created = InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $row['productId'], 'variant_id' => $row['variantId'], 'quantity' => (int) $row['qty'], 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max(((int) $row['qty'] * (int) $row['price']) - (int) $row['discount'], 0)]);
                 $seen[] = (int) $created->id;
                 $revisionRows[] = $this->revisionItemPayload($created->fresh(['product','variant']), null, 'added');
             }
@@ -191,15 +195,20 @@ class WarehouseCollectionService
             }
 
             $invoice->refresh()->load('items');
-            $subtotal = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
-            $discount = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0));
-            $total = max($subtotal - $discount, 0);
+            $documentDiscount = (int) ($invoice->invoice_discount_amount ?? 0);
+            if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
+                $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
+            }
+            $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+            $subtotal = (int) $totals['subtotal_before_discount'];
+            $discount = (int) $totals['total_discount'];
+            $total = (int) $totals['grand_total'];
             if ($total < (int) $invoice->payments->sum('amount')) {
                 throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است.']);
             }
 
             $oldStatus = (string) $invoice->status;
-            $invoice->update(['subtotal' => $subtotal, 'discount_amount' => $discount, 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
+            $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
             $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
 
@@ -212,7 +221,7 @@ class WarehouseCollectionService
     private function revisionItemPayload(InvoiceItem $item, ?array $old, string $type, bool $removed = false): array
     {
         return [
-            'invoice_item_id' => $item->id,
+            'invoice_item_id' => $removed ? null : $item->id,
             'product_id' => $item->product_id,
             'product_variant_id' => $item->variant_id,
             'change_type' => $type,
@@ -328,7 +337,7 @@ class WarehouseCollectionService
                     $available = $this->centralAvailableStockForUpdate((int) $variant->product_id, (int) $variant->id);
                     if ($available < $delta) {
                         $name = trim(($variant->product?->name ?? 'کالا') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
-                        throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد درخواستی: {$delta}"]);
+                        throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد اضافه‌شده: {$delta}"]);
                     }
                 }
                 WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
@@ -381,9 +390,14 @@ class WarehouseCollectionService
             }
 
             $invoice->refresh()->load('items');
-            $subtotal = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) $item->quantity * (int) $item->price);
-            $discount = (int) $invoice->items->sum(fn (InvoiceItem $item) => (int) ($item->line_discount_amount ?? 0));
-            $total = max($subtotal - $discount, 0);
+            $documentDiscount = (int) ($invoice->invoice_discount_amount ?? 0);
+            if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
+                $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
+            }
+            $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+            $subtotal = (int) $totals['subtotal_before_discount'];
+            $discount = (int) $totals['total_discount'];
+            $total = (int) $totals['grand_total'];
             if ($total < (int) $invoice->payments->sum('amount')) {
                 throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است. ابتدا پرداخت‌ها را اصلاح کنید یا مبلغ فاکتور را بررسی کنید.']);
             }

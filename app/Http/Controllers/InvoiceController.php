@@ -364,11 +364,12 @@ class InvoiceController extends Controller
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.variant_id' => 'nullable|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:0',
+            'items.*._delete' => 'nullable|boolean',
             'items.*.price' => 'nullable|numeric|min:1',
             'items.*.line_discount_amount' => 'nullable|numeric|min:0',
             'opened_at' => 'required|string',
-            'change_reason' => 'required|string|max:100',
-            'change_note' => 'nullable|string|max:2000',
+            'change_reason' => ['required', 'string', Rule::in(['physical_shortage', 'customer_cancelled', 'wrong_item', 'warehouse_correction', 'replacement', 'other'])],
+            'change_note' => 'required_if:change_reason,other|nullable|string|max:2000',
             'collection_note' => 'nullable|string|max:2000',
         ]);
 
