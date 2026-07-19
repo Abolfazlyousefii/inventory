@@ -57,7 +57,7 @@ class MySalesDocumentsService
     {
         return match ($bucket) {
             self::BUCKET_NEEDS_CORRECTION => [
-                'preinvoice' => [PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE],
+                'preinvoice' => [PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE],
                 'invoice' => [Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION],
             ],
             self::BUCKET_DRAFT => [
@@ -75,6 +75,7 @@ class MySalesDocumentsService
                     PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
                     PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
                     PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                    PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
                     PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
                 ],
                 'invoice' => [

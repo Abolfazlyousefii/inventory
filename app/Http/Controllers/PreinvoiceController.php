@@ -451,6 +451,19 @@ class PreinvoiceController extends Controller
         $hasItemsChanged = $hasInvoice && !empty($invoice->items_updated_at);
 
         $needsActionMeta = $this->myNeedsActionMeta($order, $invoice, $hasInvoice, $statusKey);
+        $reservationExpiresAt = $order->stock_frozen_until;
+        $reservationReleasedAt = $order->stock_released_at;
+        $reservationIsExpired = ! $hasInvoice && (
+            $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+            || ($reservationExpiresAt && $reservationExpiresAt->isPast())
+        );
+        $reservationSecondsRemaining = $reservationExpiresAt && ! $reservationIsExpired
+            ? max(0, now()->diffInSeconds($reservationExpiresAt, false))
+            : 0;
+        $showReservationTimer = ! $hasInvoice && (
+            (bool) $reservationExpiresAt
+            || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+        );
         $canEdit = $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
         $primaryActionLabel = match (true) {
             $canEdit && $statusKey === PreinvoiceOrder::STATUS_DRAFT => 'ادامه ویرایش',
@@ -490,6 +503,11 @@ class PreinvoiceController extends Controller
             'remaining_amount' => $remainingAmount,
             'payment_status' => $paymentStatus,
             'has_invoice' => $hasInvoice,
+            'reservation_expires_at' => $reservationExpiresAt,
+            'reservation_released_at' => $reservationReleasedAt,
+            'reservation_is_expired' => $reservationIsExpired,
+            'reservation_seconds_remaining' => $reservationSecondsRemaining,
+            'show_reservation_timer' => $showReservationTimer,
             'has_items_changed' => $hasItemsChanged,
             'has_total_changed' => $hasInvoice && $totalAmount !== $originalTotalAmount,
             'total_difference' => $hasInvoice ? $totalAmount - $originalTotalAmount : 0,
