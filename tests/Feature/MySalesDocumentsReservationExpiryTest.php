@@ -204,3 +204,100 @@ it('expired_preinvoice_resubmit_fails_atomically_when_stock_is_insufficient', fu
         ->and((int) $variant->reserved)->toBe(0)
         ->and((int) $product->reserved)->toBe(0);
 });
+
+function mySalesExpiryOfficialReservation(PreinvoiceOrder $order, Product $product, ProductVariant $variant, int $quantity = 2): PreinvoiceDraftReservation
+{
+    $product->forceFill(['reserved' => (int) $product->reserved + $quantity])->save();
+    $variant->forceFill(['reserved' => (int) $variant->reserved + $quantity])->save();
+
+    return PreinvoiceDraftReservation::query()->create([
+        'token' => (string) Illuminate\Support\Str::uuid(),
+        'user_id' => $order->created_by,
+        'preinvoice_order_id' => $order->id,
+        'product_id' => $product->id,
+        'variant_id' => $variant->id,
+        'quantity' => $quantity,
+        'expires_at' => $order->stock_frozen_until,
+        'converted_at' => now()->subHour(),
+        'reservation_scope' => 'official',
+    ]);
+}
+
+it('my_index_expires_overdue_pending_finance_preinvoice', function () {
+    $seller = User::factory()->create();
+    ['order' => $order, 'product' => $product, 'variant' => $variant] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_PENDING_FINANCE, now()->subMinute());
+    mySalesExpiryOfficialReservation($order, $product, $variant);
+
+    $response = $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => MySalesDocumentsService::TAB_ACTIVE]));
+
+    $order->refresh();
+    $response->assertOk()
+        ->assertSee($order->uuid)
+        ->assertSee('نیاز به بررسی')
+        ->assertSee('بررسی و ثبت مجدد')
+        ->assertSee(route('preinvoice.draft.edit', $order->uuid), false)
+        ->assertDontSee(route('preinvoice.draft.finance', $order->uuid), false);
+    expect($order->status)->toBe(PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)
+        ->and($order->stock_released_at)->not->toBeNull();
+});
+
+it('active_non_expired_preinvoice_stays_pending_finance', function () {
+    $seller = User::factory()->create();
+    ['order' => $order] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_PENDING_FINANCE, now()->addMinutes(20));
+
+    $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => MySalesDocumentsService::TAB_ACTIVE]))
+        ->assertOk()
+        ->assertSee($order->uuid)
+        ->assertSee('data-reservation-timer', false)
+        ->assertSee('مشاهده');
+
+    expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE);
+});
+
+it('invoice_prevents_expiry_fallback', function () {
+    $seller = User::factory()->create();
+    ['order' => $order, 'product' => $product, 'variant' => $variant] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_PENDING_FINANCE, now()->subMinute());
+    $reservation = mySalesExpiryOfficialReservation($order, $product, $variant);
+    Invoice::query()->create([
+        'uuid' => 'INV-'.uniqid(),
+        'preinvoice_order_id' => $order->id,
+        'customer_name' => 'مشتری تست',
+        'customer_mobile' => '09120000000',
+        'total' => 200000,
+        'status' => Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL,
+    ]);
+
+    $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => MySalesDocumentsService::TAB_ACTIVE]))
+        ->assertOk()
+        ->assertDontSee('data-reservation-timer', false);
+
+    expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
+        ->and($order->fresh()->stock_released_at)->toBeNull()
+        ->and($reservation->fresh()->released_at)->toBeNull();
+});
+
+it('direct_edit_expires_order_before_access_check', function () {
+    $seller = User::factory()->create();
+    ['order' => $order, 'product' => $product, 'variant' => $variant] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_PENDING_FINANCE, now()->subMinute());
+    mySalesExpiryOfficialReservation($order, $product, $variant);
+
+    $this->actingAs($seller)->get(route('preinvoice.draft.edit', $order->uuid))->assertOk();
+
+    expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_RESERVATION_EXPIRED);
+});
+
+it('fallback_does_not_release_twice', function () {
+    $seller = User::factory()->create();
+    ['order' => $order, 'product' => $product, 'variant' => $variant] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_PENDING_FINANCE, now()->subMinute());
+    $reservation = mySalesExpiryOfficialReservation($order, $product, $variant, 2);
+    $initialProductReserved = (int) $product->fresh()->reserved;
+    $initialVariantReserved = (int) $variant->fresh()->reserved;
+
+    $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => MySalesDocumentsService::TAB_ACTIVE]))->assertOk();
+    $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => MySalesDocumentsService::TAB_ACTIVE]))->assertOk();
+
+    expect($reservation->fresh()->released_at)->not->toBeNull()
+        ->and($reservation->fresh()->release_reason)->toBe('reservation_expired_my_sales_page')
+        ->and((int) $product->fresh()->reserved)->toBe($initialProductReserved - 2)
+        ->and((int) $variant->fresh()->reserved)->toBe($initialVariantReserved - 2);
+});

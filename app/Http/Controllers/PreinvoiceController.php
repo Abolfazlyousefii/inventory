@@ -402,6 +402,8 @@ class PreinvoiceController extends Controller
     {
         abort_unless(auth()->check(), 403);
 
+        $this->expireOverduePreinvoicesForCurrentSeller();
+
         $filters = $this->mySalesDocumentsService->filters($request);
         $tabCounts = $this->mySalesDocumentsService->counts((int) auth()->id());
         $activeTab = $this->mySalesDocumentsService->defaultTab($tabCounts, $request->query('tab'));
@@ -535,6 +537,34 @@ class PreinvoiceController extends Controller
         ];
     }
 
+    private function expireOverduePreinvoicesForCurrentSeller(): void
+    {
+        PreinvoiceOrder::query()
+            ->where('created_by', auth()->id())
+            ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
+            ->whereNotNull('stock_frozen_until')
+            ->where('stock_frozen_until', '<=', now())
+            ->whereDoesntHave('invoice')
+            ->chunkById(100, function ($orders): void {
+                foreach ($orders as $order) {
+                    $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'my_sales_page');
+                }
+            });
+    }
+
+    private function expireSellerFacingPreinvoiceIfOverdue(PreinvoiceOrder $order): void
+    {
+        $order->loadMissing('invoice:id,preinvoice_order_id');
+
+        if ($order->invoice
+            || $order->status !== PreinvoiceOrder::STATUS_PENDING_FINANCE
+            || $order->stock_frozen_until === null
+            || $order->stock_frozen_until->isFuture()) {
+            return;
+        }
+
+        $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'seller_direct_access');
+    }
 
     private function labelsForMySalesTab(array $allowedStatuses): array
     {
@@ -659,6 +689,17 @@ class PreinvoiceController extends Controller
             ->where('uuid', $uuid)
             ->where('created_by', auth()->id())
             ->firstOrFail();
+
+        $this->expireSellerFacingPreinvoiceIfOverdue($order);
+        $order->refresh()->load([
+            'items.product',
+            'items.variant.modelList',
+            'items.variant.color',
+            'creator:id,name',
+            'warehouseReviewer:id,name',
+            'reviews.user:id,name',
+            'invoice:id,uuid,preinvoice_order_id,status,created_at',
+        ]);
 
         if ($request->has('print') || $request->has('mode')) {
             $printData = $printService->preinvoiceData($order, (string) $request->query('mode', $request->query('print', 'warehouse')));
@@ -954,7 +995,12 @@ class PreinvoiceController extends Controller
 
     public function editDraft(string $uuid)
     {
+        abort_unless(auth()->check(), 403);
+
         $order = PreinvoiceOrder::with(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice'])->where('uuid', $uuid)->firstOrFail();
+        $this->expireSellerFacingPreinvoiceIfOverdue($order);
+        $order->refresh()->load(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice']);
+
         abort_unless($this->accessService->canSellerEditPreinvoiceItems($order, auth()->user()), 403);
 
         $shippingMethods = ShippingMethod::query()
