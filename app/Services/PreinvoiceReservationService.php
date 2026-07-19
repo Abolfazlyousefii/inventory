@@ -164,7 +164,7 @@ class PreinvoiceReservationService
                         'preinvoice_reservation_expired',
                         'نیاز به بررسی مجدد پیش‌فاکتور',
                         "زمان رزرو پیش‌فاکتور {$lockedOrder->uuid} به پایان رسیده است.\nموجودی اقلام را بررسی و سند را مجدداً ثبت کنید.",
-                        '/preinvoice/my?tab=needs-correction',
+                        route('preinvoice.my.index', ['tab' => 'active']),
                         ['level' => 'warning', 'priority' => 'urgent', 'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $lockedOrder->id, 'unique_key' => "preinvoice_reservation_expired:{$lockedOrder->id}:{$lockedOrder->created_by}"]
                     );
                 }

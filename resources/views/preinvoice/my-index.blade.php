@@ -86,7 +86,7 @@
     @forelse($orders as $order)
       @php
         $summary = $order->current_document;
-        $isNeedsAction = $summary['bucket'] === MySalesDocumentsService::BUCKET_NEEDS_CORRECTION;
+        $isNeedsAction = ! empty($summary['needs_action_label']);
         $isDraft = $summary['bucket'] === MySalesDocumentsService::BUCKET_DRAFT;
         $documentDomId = 'sales-document-details-' . preg_replace('/[^A-Za-z0-9_-]/', '-', (string) $summary['document_number']);
       @endphp
@@ -94,7 +94,7 @@
         <div class="my-sales-document__summary">
           <div class="my-sales-document__identity"><strong class="my-sales-document__code">{{ Str::limit($summary['document_number'], 18, '…') }}</strong><span class="my-sales-document__type">{{ $summary['has_invoice'] ? 'فاکتور' : 'پیش‌فاکتور' }}</span>@if($summary['has_invoice'])<small class="my-sales-document__preinvoice">پیش‌فاکتور: {{ $summary['preinvoice_uuid'] }}</small>@endif</div>
           <div class="my-sales-document__customer"><span class="my-sales-document__label">مشتری</span><strong>{{ $summary['customer_name'] ?: '—' }}</strong></div>
-          <div class="my-sales-document__status"><span class="my-sales-document__label">وضعیت</span><span class="badge {{ $statusBadge($summary) }}">{{ $summary['status_label'] }}</span>@if($isNeedsAction)<small class="my-sales-document__notice">{{ $summary['needs_action_label'] }}</small>@endif @if(!$summary['has_invoice'] && $order->stock_frozen_until) @include('preinvoice.partials.reservation-countdown', ['order' => $order, 'compact' => true]) @endif</div>
+          <div class="my-sales-document__status"><span class="my-sales-document__label">وضعیت</span><span class="badge {{ $statusBadge($summary) }}">{{ $summary['status_label'] }}</span>@if($isNeedsAction)<small class="my-sales-document__notice">{{ $summary['needs_action_label'] }}</small>@endif @if($summary['show_reservation_timer']) @include('preinvoice.partials.reservation-countdown', ['order' => $order, 'compact' => true, 'expiresAt' => $summary['reservation_expires_at'], 'remainingSeconds' => $summary['reservation_seconds_remaining'], 'isExpired' => $summary['reservation_is_expired']]) @endif</div>
           <div class="my-sales-document__amount"><span class="my-sales-document__label">مبلغ</span><strong>{{ \App\Support\Currency::formatRial($summary['total_amount']) }}</strong></div>
           <div class="my-sales-document__items"><span class="my-sales-document__label">اقلام</span><strong>{{ number_format($summary['items_count']) }} قلم</strong></div>
           <div class="my-sales-document__date"><span class="my-sales-document__label">آخرین تغییر</span><strong>{{ $toJalali($summary['last_changed_at']) }}</strong></div>
