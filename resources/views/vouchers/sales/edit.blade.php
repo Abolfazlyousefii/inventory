@@ -62,7 +62,8 @@
                   <input type="hidden" name="items[{{ $loop->index }}][id]" value="{{ $it->id }}">
                   <input type="hidden" name="items[{{ $loop->index }}][product_id]" value="{{ $it->product_id }}">
                   <input type="hidden" name="items[{{ $loop->index }}][variant_id]" value="{{ $it->variant_id }}">
-                  <input type="number" min="1" name="items[{{ $loop->index }}][quantity]" value="{{ (int)$it->quantity }}" data-original="{{ (int)$it->quantity }}" class="form-control js-item-field js-item-quantity" @disabled(!$canEditItems)>
+                  <input type="hidden" name="items[{{ $loop->index }}][_delete]" value="0" class="js-delete-flag">
+                  <input type="number" min="0" name="items[{{ $loop->index }}][quantity]" value="{{ (int)$it->quantity }}" data-original="{{ (int)$it->quantity }}" class="form-control js-item-field js-item-quantity" @disabled(!$canEditItems)>
                 </td>
                 <td><input type="number" min="1" name="items[{{ $loop->index }}][price]" value="{{ (int)$it->price }}" data-original="{{ (int)$it->price }}" class="form-control form-control-sm js-item-field js-price" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)></td>
                 <td><input type="number" min="0" name="items[{{ $loop->index }}][line_discount_amount]" value="{{ (int)($it->line_discount_amount ?? 0) }}" data-original="{{ (int)($it->line_discount_amount ?? 0) }}" class="form-control form-control-sm js-item-field js-discount" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)></td>
@@ -158,11 +159,11 @@ function bindRowButtons(scope = document) {
     button.addEventListener('click', () => {
       const row = button.closest('tr');
       if (row?.dataset.newRow === '1') row.remove();
-      else { row.classList.add('table-danger'); const q=row.querySelector('.js-item-quantity'); if(q){q.dataset.deletedValue=q.value;q.value=0;} button.classList.add('d-none'); row.querySelector('.js-restore-item')?.classList.remove('d-none'); }
+      else { row.classList.add('table-danger'); const q=row.querySelector('.js-item-quantity'); const flag=row.querySelector('.js-delete-flag'); if(q){q.dataset.deletedValue=q.value;q.value=0;} if(flag){flag.value=1;} button.classList.add('d-none'); row.querySelector('.js-restore-item')?.classList.remove('d-none'); }
       syncChangeReasonRequired();
     });
   });
-  scope.querySelectorAll('.js-restore-item').forEach((button)=>{ if(button.dataset.bound)return; button.dataset.bound='1'; button.addEventListener('click',()=>{const row=button.closest('tr'); row.classList.remove('table-danger'); const q=row.querySelector('.js-item-quantity'); if(q){q.value=q.dataset.deletedValue||q.dataset.original||1;} button.classList.add('d-none'); row.querySelector('.js-zero-item')?.classList.remove('d-none'); syncChangeReasonRequired();});});
+  scope.querySelectorAll('.js-restore-item').forEach((button)=>{ if(button.dataset.bound)return; button.dataset.bound='1'; button.addEventListener('click',()=>{const row=button.closest('tr'); row.classList.remove('table-danger'); const q=row.querySelector('.js-item-quantity'); const flag=row.querySelector('.js-delete-flag'); if(q){q.value=q.dataset.deletedValue||q.dataset.original||1;} if(flag){flag.value=0;} button.classList.add('d-none'); row.querySelector('.js-zero-item')?.classList.remove('d-none'); syncChangeReasonRequired();});});
   scope.querySelectorAll('.js-item-field').forEach((field) => field.addEventListener('input', syncChangeReasonRequired));
 }
 async function fetchJson(url) { const res = await fetch(url, {headers: {'Accept': 'application/json'}}); if (!res.ok) throw new Error('خطا در دریافت اطلاعات'); return res.json(); }
