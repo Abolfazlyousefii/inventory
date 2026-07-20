@@ -38,6 +38,7 @@ class WarehouseCollectionItemAdjustmentTest extends TestCase
         $this->assertStringContainsString('lockForUpdate()->firstOrFail()', $service);
         $this->assertStringContainsString('InvoiceItem::query()->with([\'product\', \'variant\'])->where(\'invoice_id\'', $service);
         $this->assertStringContainsString('$deleteRequested = filter_var', $service);
+        $this->assertStringContainsString('if ($existing && $qty <= 0)', $service);
         $this->assertStringContainsString('$newByVariant', $service);
         $this->assertStringContainsString('$delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0)', $service);
         $this->assertStringContainsString('WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta', $service);

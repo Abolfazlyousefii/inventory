@@ -96,6 +96,9 @@ class WarehouseCollectionService
                 if ($itemId > 0 && ! $existing) {
                     throw ValidationException::withMessages(['items' => 'آیتم انتخاب‌شده متعلق به این فاکتور نیست.']);
                 }
+                if ($existing && $qty <= 0) {
+                    continue;
+                }
 
                 $variantId = $existing ? (int) $existing->variant_id : (int) $row['variant_id'];
                 $productId = $existing ? (int) $existing->product_id : (int) $row['product_id'];

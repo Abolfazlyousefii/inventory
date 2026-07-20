@@ -31,6 +31,8 @@
     @csrf
     @method('PATCH')
     <input type="hidden" name="opened_at" value="{{ $openedAt }}">
+    <input type="hidden" name="items_payload" id="itemsPayload">
+    <input type="hidden" name="items_payload_count" id="itemsPayloadCount">
     <div class="card-body">
       <div class="row g-2 mb-3">
         <div class="col-md-3"><b>کد فاکتور:</b> {{ $invoice->uuid }}</div>
@@ -152,6 +154,32 @@ function syncChangeReasonRequired() {
   recalcTotals();
 }
 function recalcTotals(){let total=0, edited=0;document.querySelectorAll('#invoiceItemsBody tr').forEach((row)=>{const q=Number(row.querySelector('.js-item-quantity')?.value||0),p=Number(row.querySelector('.js-price')?.value||0),d=Number(row.querySelector('.js-discount')?.value||0);const line=Math.max(q*p-d,0);total+=line; if(row.querySelector('.js-line-total')) row.querySelector('.js-line-total').textContent=line.toLocaleString(); if(row.classList.contains('table-danger')||Array.from(row.querySelectorAll('.js-item-field')).some(f=>String(f.value)!==String(f.dataset.original||''))) edited++;}); const el=document.getElementById('changesSummary'); if(el) el.textContent=`ردیف‌های تغییرکرده: ${edited} | مبلغ جدید تقریبی: ${total.toLocaleString()} ریال`;}
+function rowInput(row, suffix) { return row.querySelector(`input[name^="items["][name$="[${suffix}]"]`); }
+function buildItemsPayload() {
+  return Array.from(document.querySelectorAll('#invoiceItemsBody tr')).map((row) => {
+    const id = rowInput(row, 'id')?.value || null;
+    const deleteFlag = rowInput(row, '_delete')?.value === '1' || row.classList.contains('table-danger');
+    return {
+      id,
+      invoice_item_id: id,
+      product_id: rowInput(row, 'product_id')?.value || null,
+      variant_id: rowInput(row, 'variant_id')?.value || null,
+      quantity: deleteFlag ? 0 : Number(rowInput(row, 'quantity')?.value || 0),
+      price: Number(rowInput(row, 'price')?.value || 0),
+      line_discount_amount: Number(rowInput(row, 'line_discount_amount')?.value || 0),
+      _delete: deleteFlag,
+    };
+  });
+}
+function prepareJsonPayloadForSubmit() {
+  const payloadInput = document.getElementById('itemsPayload');
+  const countInput = document.getElementById('itemsPayloadCount');
+  if (!payloadInput || !countInput) throw new Error('فیلدهای ارسال اقلام پیدا نشد.');
+  const items = buildItemsPayload();
+  payloadInput.value = JSON.stringify(items);
+  countInput.value = String(items.length);
+  document.querySelectorAll('input[name^="items["]').forEach((input) => { input.disabled = true; });
+}
 function bindRowButtons(scope = document) {
   scope.querySelectorAll('.js-zero-item').forEach((button) => {
     if (button.dataset.bound) return;
@@ -216,7 +244,7 @@ productSearchInput?.addEventListener('input', () => { clearTimeout(debounceTimer
 productsList?.addEventListener('click', (e) => { const card = e.target.closest('.product-card'); if (card && e.target.classList.contains('js-select-product')) loadVariants(card.dataset.id, card.dataset.name); });
 variantsList?.addEventListener('input', (e) => { if (e.target.classList.contains('variant-qty')) updateSelectedTotal(); });
 confirmAddItemsBtn?.addEventListener('click', () => { document.querySelectorAll('.variant-row').forEach(row => { const qty = Number(row.querySelector('.variant-qty').value || 0); if (qty > 0) addItemRow(JSON.parse(row.dataset.variant), qty); }); bootstrap.Modal.getInstance(modalEl)?.hide(); document.getElementById('addItemNotice')?.classList.remove('d-none'); syncChangeReasonRequired(); });
-document.getElementById('salesItemsForm')?.addEventListener('submit', (e)=>{ if(!confirm('پس از ثبت، فاکتور برای تأیید مجدد به واحد مالی ارسال می‌شود. ادامه می‌دهید؟')){e.preventDefault();return;} window.onbeforeunload=null; const btn=document.getElementById('submitCollectionBtn'); if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}});
+document.getElementById('salesItemsForm')?.addEventListener('submit', (e)=>{ if(!confirm('پس از ثبت، فاکتور برای تأیید مجدد به واحد مالی ارسال می‌شود. ادامه می‌دهید؟')){e.preventDefault();return;} try{prepareJsonPayloadForSubmit();}catch(error){e.preventDefault(); alert(error.message || 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است.'); return;} window.onbeforeunload=null; const btn=document.getElementById('submitCollectionBtn'); if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}});
 bindRowButtons(); syncChangeReasonRequired();
 </script>
 @endsection
