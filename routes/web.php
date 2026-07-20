@@ -203,6 +203,7 @@ Route::prefix('vouchers/section/return-from-sale')
     ->name('vouchers.return-from-sale.')
     ->group(function () {
         Route::get('/', [VoucherSalesReturnController::class, 'index'])->middleware('permission:sales_returns.view')->name('index');
+        Route::get('/data', [VoucherSalesReturnController::class, 'data'])->middleware('permission:sales_returns.view')->name('data');
         Route::get('/create', [VoucherSalesReturnController::class, 'create'])->middleware('permission:sales_returns.create')->name('create');
         Route::post('/', [VoucherSalesReturnController::class, 'store'])->middleware('permission:sales_returns.create')->name('store');
         Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->middleware('permission:sales_returns.view')->name('customers.search');
@@ -216,9 +217,14 @@ Route::prefix('vouchers/section/return-from-sale')
         Route::get('/export/excel', [VoucherSalesReturnController::class, 'exportExcel'])->middleware('permission:sales_returns.export')->name('export.excel');
         Route::get('/export/pdf', [VoucherSalesReturnController::class, 'exportPdf'])->middleware('permission:sales_returns.export')->name('export.pdf');
         Route::get('/print', [VoucherSalesReturnController::class, 'printReport'])->middleware('permission:sales_returns.print')->name('print-report');
+        Route::get('/print/customers', [VoucherSalesReturnController::class, 'printCustomers'])->middleware('permission:sales_returns.print')->name('print.customers');
+        Route::get('/print/products', [VoucherSalesReturnController::class, 'printProducts'])->middleware('permission:sales_returns.print')->name('print.products');
         Route::get('/legacy/{transfer}/print', [VoucherSalesReturnController::class, 'printLegacy'])->whereNumber('transfer')->middleware('permission:sales_returns.print')->name('legacy.print');
         Route::get('/{document}', [VoucherSalesReturnController::class, 'show'])->whereNumber('document')->middleware('permission:sales_returns.view')->name('show');
         Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->middleware('permission:sales_returns.edit_draft')->name('edit');
+        Route::get('/{document}/applied-edit', [VoucherSalesReturnController::class, 'editApplied'])->whereNumber('document')->middleware('permission:sales_returns.edit_applied')->name('applied.edit');
+        Route::patch('/{document}/applied-update', [VoucherSalesReturnController::class, 'updateApplied'])->whereNumber('document')->middleware('permission:sales_returns.edit_applied')->name('applied.update');
+        Route::post('/{document}/void', [VoucherSalesReturnController::class, 'voidApplied'])->whereNumber('document')->middleware('permission:sales_returns.void_applied')->name('applied.void');
         Route::patch('/{document}', [VoucherSalesReturnController::class, 'update'])->whereNumber('document')->middleware('permission:sales_returns.edit_draft')->name('update');
         Route::post('/{document}/apply', [VoucherSalesReturnController::class, 'apply'])->whereNumber('document')->middleware('permission:sales_returns.apply')->name('apply');
         Route::post('/{document}/cancel', [VoucherSalesReturnController::class, 'cancel'])->whereNumber('document')->middleware('permission:sales_returns.cancel_draft')->name('cancel');
