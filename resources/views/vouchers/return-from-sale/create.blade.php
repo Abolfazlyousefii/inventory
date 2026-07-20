@@ -3,6 +3,7 @@
 @php
     $document = $document ?? null;
     $isEdit = filled($document);
+    $isAppliedEdit = $isAppliedEdit ?? ($document?->isApplied() ?? false);
     $salesReturnRoutes = [
         'customersSearch' => route('vouchers.return-from-sale.customers.search'),
         'customerInvoices' => route('vouchers.return-from-sale.customers.invoices', ['customer' => '__CUSTOMER__']),
@@ -49,7 +50,7 @@
 </style>
 <div class="container-fluid sr-page py-3" dir="rtl" data-module="sales-return-create">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <div><h4 class="mb-1">{{ $isEdit ? 'ویرایش پیش‌نویس برگشت از فروش' : 'ثبت سند برگشت از فروش' }}</h4><div class="sr-muted small">شماره سند: {{ $document?->document_number ?: 'پس از ذخیره به‌صورت خودکار ایجاد می‌شود.' }}</div></div>
+        <div><h4 class="mb-1">{{ $isAppliedEdit ? 'ویرایش برگشت از فروش' : ($isEdit ? 'ویرایش پیش‌نویس برگشت از فروش' : 'ثبت سند برگشت از فروش') }}</h4><div class="sr-muted small">شماره سند: {{ $document?->document_number ?: 'پس از ذخیره به‌صورت خودکار ایجاد می‌شود.' }}</div></div>
         <a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.return-from-sale.index') }}">بازگشت</a>
     </div>
 
@@ -60,11 +61,22 @@
         <div class="alert alert-warning small" id="legacyDestinationWarning">این پیش‌نویس قدیمی دارای چند مقصد انبار است. مقصد پیش‌فرض فقط مقدار اولیه ردیف‌های بدون مقصد خواهد بود.</div>
     @endif
 
-    <form method="POST" action="{{ $isEdit ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store') }}" id="salesReturnForm" novalidate>
+    <form method="POST" action="{{ $isAppliedEdit ? route('vouchers.return-from-sale.applied.update', $document) : ($isEdit ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store')) }}" id="salesReturnForm" novalidate>
         @csrf @if($isEdit) @method('PATCH') @endif
         <input type="hidden" name="source_type" id="sourceTypeInput" value="{{ old('source_type', $document?->source_type ?? 'internal_invoice') }}">
         <input type="hidden" name="customer_id" id="customerId" value="{{ old('customer_id', $document?->customer_id) }}">
         <input type="hidden" name="invoice_id" id="invoiceId" value="{{ old('invoice_id', $document?->invoice_id) }}">
+        @if($isAppliedEdit)
+            <div class="sr-card sr-compact mb-3">
+                <div class="row g-2 small">
+                    <div class="col-md-3"><span class="sr-muted">شماره سند</span><div class="sr-code">{{ $document->document_number }}</div></div>
+                    <div class="col-md-3"><span class="sr-muted">تاریخ اولیه</span><div>{{ $document->created_at?->format('Y-m-d H:i') }}</div></div>
+                    <div class="col-md-3"><span class="sr-muted">مشتری</span><div>{{ $document->customer?->display_name ?: '—' }}</div></div>
+                    <div class="col-md-3"><span class="sr-muted">نوع منبع / فاکتور مرجع</span><div>{{ \App\Models\SalesReturnDocument::sourceTypeLabels()[$document->source_type] ?? $document->source_type }} / {{ $document->invoice?->invoice_number ?? $document->external_invoice_number ?? '—' }}</div></div>
+                </div>
+            </div>
+        @endif
+
 
         <div class="row g-3">
             <div class="col-12"><div class="sr-card sr-compact"><div class="sr-type-segment">
@@ -92,8 +104,9 @@
             <div class="col-12"><div class="sr-card sr-compact"><div class="sr-summary-strip small" id="summaryBox"><div class="col-6 col-md">ردیف‌ها<br><strong data-sum="rows">0</strong></div><div class="col-6 col-md">مجموع تعداد<br><strong data-sum="qty">0</strong></div><div class="col-6 col-md">بستانکاری<br><strong data-sum="amount">0</strong></div><div class="col-6 col-md">انبار مقصد<br><strong data-sum="warehouses">—</strong></div></div></div></div>
 
             <div class="col-12"><div class="sr-card sr-compact"><label class="form-label">توضیحات سند</label><textarea class="form-control" name="description" id="description" rows="3" placeholder="توضیحات تکمیلی درباره این برگشت...">{{ old('description', $document?->description) }}</textarea><div class="small sr-muted">در صورت انتخاب «سایر»، توضیحات یا توضیح علت اجباری است.</div></div></div>
+            @if($isAppliedEdit)<div class="col-12"><div class="sr-card sr-compact"><label class="form-label">دلیل اصلاح <span class="text-danger">*</span></label><textarea class="form-control" name="adjustment_reason" rows="2" required>{{ old('adjustment_reason') }}</textarea></div></div>@endif
 
-            <div class="col-12"><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-danger" type="button" id="clearForm">پاک‌کردن فرم</button><button class="btn btn-secondary" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-success" name="action" value="apply" id="applyButton">ثبت نهایی</button></div></div>
+            <div class="col-12"><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-danger" type="button" id="clearForm">پاک‌کردن فرم</button>@if($isAppliedEdit)<button class="btn btn-success" id="applyButton">ذخیره اصلاحات</button>@else<button class="btn btn-secondary" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-success" name="action" value="apply" id="applyButton">ثبت نهایی</button>@endif</div></div>
         </div>
     </form>
 </div>
@@ -107,7 +120,7 @@ window.salesReturnInitial = {items:@json($initialItems), sourceType:@json(old('s
 </script>
 <script>
 (() => {
-const routes=window.salesReturnRoutes, init=window.salesReturnInitial;
+const routes=window.salesReturnRoutes, init=window.salesReturnInitial; const isAppliedEdit=@json($isAppliedEdit);
 const state={type:init.sourceType||'internal_invoice',customer:{id:init.customerId||null,name:'',mobile:'',code:''},invoice:null,externalInvoiceDate:document.getElementById('externalInvoiceDate')?.value||'',internalItems:[],sazehItems:[],newProducts:[],newProduct:{prices:{purchase:null,sell:null,refund:null}},selectedCategories:[],selectedProducts:{},selectedVariants:new Map(),defaultDestinationWarehouseId:document.getElementById('defaultWarehouse').value,summary:{},items:init.items||[]};
 let customerAbort, invoiceAbort, customerRequest=0, invoiceRequest=0, customerActive=-1, productAbort, categoryProductAbort, customerTimer, productTimer;
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
@@ -135,7 +148,8 @@ function syncSource(){applySourceType(state.type,{skipRender:false});}
 function clearSourceSpecificState(previousType){state.invoice=null;$('#invoiceId').value='';if(previousType==='internal_invoice')resetInvoiceSelect('فاکتور داخلی فقط در نوع فاکتور داخلی بارگذاری می‌شود.', true);state.internalItems=[];state.sazehItems=[];state.selectedCategories=[];state.selectedProducts={};state.selectedVariants=new Map();}
 function setSource(type){const previousType=state.type;if(!['internal_invoice','sazeh_hesab'].includes(type))type='internal_invoice';if(state.items.length&&!confirm('با تغییر نوع برگشت، اقلام فعلی پاک می‌شوند. ادامه می‌دهید؟')){applySourceType(previousType);return}if(type!==previousType){state.items=[];clearSourceSpecificState(previousType);}applySourceType(type);}
 
-$$('[name=source_choice]').forEach(r=>r.addEventListener('change',e=>setSource(e.target.value)));$$('[data-source-choice]').forEach(card=>card.addEventListener('click',e=>{if(e.target.matches('input'))return;setSource(card.dataset.sourceChoice);}));
+if(isAppliedEdit){$$('[name=source_choice]').forEach(r=>r.disabled=true);$('#customerSearch')&&($('#customerSearch').disabled=true);$('#invoiceSelect')&&($('#invoiceSelect').disabled=true);}
+$$('[name=source_choice]').forEach(r=>r.addEventListener('change',e=>{if(!isAppliedEdit)setSource(e.target.value)}));$$('[data-source-choice]').forEach(card=>card.addEventListener('click',e=>{if(e.target.matches('input'))return;setSource(card.dataset.sourceChoice);}));
 function hiddenInputs(it,i){const parts=[];const input=(name,v)=>parts.push(`<input type="hidden" name="${name}" value="${esc(v)}">`);const h=(k,v)=>input(`items[${i}][${k}]`,v);const nested=(base,val)=>{if(Array.isArray(val)){val.forEach((v,idx)=>nested(`${base}[${idx}]`,v));return}if(val&&typeof val==='object'){Object.entries(val).forEach(([k,v])=>nested(`${base}[${k}]`,v));return}input(base,val??'')};h('item_source',it.item_source);h('invoice_item_id',it.invoice_item_id||'');h('product_variant_id',it.product_variant_id||'');h('return_quantity',it.return_quantity||1);h('item_condition',it.item_condition||'healthy');h('destination_warehouse_id',it.destination_warehouse_id||state.defaultDestinationWarehouseId||'');h('refund_unit_price',it.refund_unit_price||0);h('purchase_price',it.purchase_price||'');h('sell_price',it.sell_price||'');if(it.new_product_payload)nested(`items[${i}][new_product_payload]`,it.new_product_payload);return parts.join('')}
 function rowName(it){return `${it.product_name||it.new_product_payload?.product_name||'—'} / ${it.variant_name||it.new_product_payload?.variant_name||'—'}`}
 function whOptions(selected){return init.warehouses.map(w=>`<option value="${w.id}" data-type="${esc(w.type)}" ${String(selected||'')===String(w.id)?'selected':''}>${esc(w.name)}</option>`).join('')}

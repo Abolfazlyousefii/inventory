@@ -9,8 +9,12 @@
     $productsActive = $isRoute('products.index', 'products.create', 'products.price-changes.*', 'purchases.*', 'admin.product-exports.*', 'product-deactivation-documents.*')
         || $isPath('products', 'products/create', 'products/price-changes', 'products/price-changes/*', 'purchases', 'purchases/*', 'admin/product-exports', 'admin/product-exports/*', 'product-deactivation-documents', 'product-deactivation-documents/*');
 
-    $warehouseActive = $isRoute('vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
-        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*');
+    $isSalesReturnRoute = $isRoute('vouchers.return-from-sale.*') || $isPath('vouchers/section/return-from-sale', 'vouchers/section/return-from-sale/*');
+
+    $warehouseActive = ! $isSalesReturnRoute && (
+        $isRoute('vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
+        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*')
+    );
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
 
@@ -274,9 +278,6 @@
                     @endcanPermission
                     @canPermission('inventory.count.view')
                     <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') ?: $pathActive('stocktake', 'stocktake/*') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>
-                    @endcanPermission
-                    @canPermission('sales_returns.view')
-                    <a class="sidebar-sublink {{ $is('vouchers.return-from-sale.*') }}" href="{{ route('vouchers.return-from-sale.index') }}">برگشت از فروش</a>
                     @endcanPermission
                 </div>
             </div>
