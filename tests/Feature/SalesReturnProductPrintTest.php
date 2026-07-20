@@ -22,4 +22,25 @@ class SalesReturnProductPrintTest extends TestCase
     public function test_filters_are_applied_to_product_report(): void { $s=file_get_contents(app_path('Services/SalesReturnReportService.php')); $this->assertStringContainsString('customer_id', $s); $this->assertStringContainsString('date_from', $s); }
     public function test_report_totals_equal_sum_of_rows(): void { $this->assertStringContainsString('total_refund_amount', file_get_contents(resource_path('views/vouchers/return-from-sale/print-products.blade.php'))); }
     public function test_large_product_report_uses_aggregate_queries_not_model_groupby(): void { $s=file_get_contents(app_path('Services/SalesReturnReportService.php')); $this->assertStringContainsString('selectRaw', $s); $this->assertStringNotContainsString('SalesReturnDocumentItem::query()->with', $s); }
+
+    public function test_same_variant_with_different_snapshots_keeps_strict_group_by_and_merges_by_variant(): void
+    {
+        $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
+        $this->assertStringContainsString("'i.product_name_snapshot','p.name','i.variant_name_snapshot','pv.variant_name','i.sku_snapshot','i.barcode_snapshot','pv.variant_code'", $service);
+        $this->assertStringContainsString("return 'variant:'.(int)\$row->product_variant_id", $service);
+    }
+
+    public function test_two_variants_of_one_product_remain_separate_after_strict_group_fix(): void
+    {
+        $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
+        $this->assertStringContainsString("->groupBy('i.product_variant_id','i.product_id'", $service);
+        $this->assertStringContainsString("->groupBy('wi.product_variant_id','wi.product_id'", $service);
+    }
+
+    public function test_new_and_legacy_product_queries_do_not_group_by_select_aliases(): void
+    {
+        $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
+        $this->assertStringNotContainsString("'product_name','variant_name','sku'", $service);
+        $this->assertStringNotContainsString("'product_name','variant_name','sku','warehouse_name'", $service);
+    }
 }

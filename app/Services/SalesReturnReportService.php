@@ -257,7 +257,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
             ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]))
             ->selectRaw("'new' as source, i.product_variant_id, i.product_id, COALESCE(i.product_name_snapshot, p.name, '') as product_name, COALESCE(i.variant_name_snapshot, pv.variant_name, '') as variant_name, COALESCE(i.sku_snapshot, i.barcode_snapshot, pv.variant_code, '') as sku, SUM(i.return_quantity) as total_quantity, SUM(CASE WHEN i.item_condition = 'healthy' THEN i.return_quantity ELSE 0 END) as healthy_quantity, SUM(CASE WHEN i.item_condition = 'damaged' THEN i.return_quantity ELSE 0 END) as damaged_quantity, SUM(i.refund_amount) as total_refund_amount, GROUP_CONCAT(DISTINCT d.id) as document_keys, GROUP_CONCAT(DISTINCT d.customer_id) as customer_ids, MIN(COALESCE(d.applied_at, d.created_at)) as first_return_at, MAX(COALESCE(d.applied_at, d.created_at)) as last_return_at")
-            ->groupBy('i.product_variant_id','i.product_id','product_name','variant_name','sku');
+            ->groupBy('i.product_variant_id','i.product_id','i.product_name_snapshot','p.name','i.variant_name_snapshot','pv.variant_name','i.sku_snapshot','i.barcode_snapshot','pv.variant_code');
 
         $legacy = DB::table('warehouse_transfer_items as wi')
             ->join('warehouse_transfers as w', 'w.id', '=', 'wi.warehouse_transfer_id')
@@ -270,7 +270,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
             ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
             ->selectRaw("'legacy' as source, wi.product_variant_id, wi.product_id, COALESCE(p.name, '') as product_name, COALESCE(pv.variant_name, wi.variant_name, '') as variant_name, COALESCE(wi.variant_code, pv.variant_code, '') as sku, SUM(wi.quantity) as total_quantity, SUM(CASE WHEN {$legacyCondition} = 'healthy' THEN wi.quantity ELSE 0 END) as healthy_quantity, SUM(CASE WHEN {$legacyCondition} = 'damaged' THEN wi.quantity ELSE 0 END) as damaged_quantity, SUM(COALESCE(wi.line_total, wi.quantity * COALESCE(wi.unit_price, 0))) as total_refund_amount, GROUP_CONCAT(DISTINCT w.id) as document_keys, GROUP_CONCAT(DISTINCT w.customer_id) as customer_ids, MIN(COALESCE(w.transferred_at, w.created_at)) as first_return_at, MAX(COALESCE(w.transferred_at, w.created_at)) as last_return_at")
-            ->groupBy('wi.product_variant_id','wi.product_id','product_name','variant_name','sku');
+            ->groupBy('wi.product_variant_id','wi.product_id','p.name','pv.variant_name','wi.variant_name','wi.variant_code','pv.variant_code');
 
         return $new->get()->concat($legacy->get());
     }
@@ -294,7 +294,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
             ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]))
             ->selectRaw("i.product_variant_id, i.product_id, COALESCE(i.product_name_snapshot, p.name, '') as product_name, COALESCE(i.variant_name_snapshot, pv.variant_name, '') as variant_name, COALESCE(i.sku_snapshot, i.barcode_snapshot, pv.variant_code, '') as sku, COALESCE(wh.name, '—') as warehouse_name, SUM(i.return_quantity) as quantity")
-            ->groupBy('i.product_variant_id','i.product_id','product_name','variant_name','sku','warehouse_name');
+            ->groupBy('i.product_variant_id','i.product_id','i.product_name_snapshot','p.name','i.variant_name_snapshot','pv.variant_name','i.sku_snapshot','i.barcode_snapshot','pv.variant_code','wh.name');
 
         $legacy = DB::table('warehouse_transfer_items as wi')
             ->join('warehouse_transfers as w', 'w.id', '=', 'wi.warehouse_transfer_id')
@@ -307,7 +307,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
             ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
             ->selectRaw("wi.product_variant_id, wi.product_id, COALESCE(p.name, '') as product_name, COALESCE(pv.variant_name, wi.variant_name, '') as variant_name, COALESCE(wi.variant_code, pv.variant_code, '') as sku, COALESCE(wh.name, '—') as warehouse_name, SUM(wi.quantity) as quantity")
-            ->groupBy('wi.product_variant_id','wi.product_id','product_name','variant_name','sku','warehouse_name');
+            ->groupBy('wi.product_variant_id','wi.product_id','p.name','pv.variant_name','wi.variant_name','wi.variant_code','pv.variant_code','wh.name');
 
         return $new->get()->concat($legacy->get());
     }
