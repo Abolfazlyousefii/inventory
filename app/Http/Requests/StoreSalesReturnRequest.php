@@ -28,7 +28,8 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.item_source' => ['required', Rule::in([SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT, SalesReturnDocumentItem::SOURCE_NEW_PRODUCT])],
             'items.*.product_variant_id' => ['nullable', 'exists:product_variants,id'],
             'items.*.return_quantity' => ['required', 'integer', 'min:1'],
-            'items.*.item_condition' => ['nullable', Rule::in([SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED])],
+            'items.*.item_condition' => ['required', Rule::in([SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED])],
+            'items.*.destination_warehouse_id' => ['required', 'integer', Rule::exists('warehouses', 'id')->where(fn ($query) => $query->where('is_active', true)->whereIn('type', ['central', 'return']))],
             'items.*.refund_unit_price' => ['nullable', 'integer', 'min:0'],
             'items.*.purchase_price' => ['nullable', 'integer', 'min:0'],
             'items.*.sell_price' => ['nullable', 'integer', 'min:0'],
@@ -67,17 +68,30 @@ class StoreSalesReturnRequest extends FormRequest
         ];
     }
 
+    protected function prepareForValidation(): void
+    {
+        $defaultWarehouse = $this->input('default_destination_warehouse_id');
+        $items = collect($this->input('items', []))->map(function ($row) use ($defaultWarehouse) {
+            $row = (array) $row;
+            if (blank($row['destination_warehouse_id'] ?? null) && filled($defaultWarehouse)) {
+                $row['destination_warehouse_id'] = $defaultWarehouse;
+            }
+            if (blank($row['item_condition'] ?? null)) {
+                $row['item_condition'] = SalesReturnDocumentItem::CONDITION_HEALTHY;
+            }
+            if (isset($row['refund_unit_price'])) {
+                $row['refund_unit_price'] = (int) preg_replace('/[^0-9]/', '', strtr((string) $row['refund_unit_price'], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']));
+            }
+            return $row;
+        })->all();
+        $this->merge(['items' => $items]);
+    }
+
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
             $source = $this->input('source_type');
             $items = collect($this->input('items', []));
-            foreach ($items as $idx => $row) {
-                if (array_key_exists('destination_warehouse_id', (array) $row)) {
-                    $validator->errors()->add("items.$idx.destination_warehouse_id", 'مقصد انبار فقط در سطح سند قابل انتخاب است.');
-                }
-            }
-
             if ($source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE) {
                 $invoice = Invoice::find((int) $this->input('invoice_id'));
                 if (! $invoice) return;
