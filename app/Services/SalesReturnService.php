@@ -3,16 +3,25 @@
 namespace App\Services;
 
 use App\Models\{Category,Customer,CustomerLedger,Invoice,InvoiceItem,ModelList,Product,ProductVariant,SalesReturnDocument,SalesReturnDocumentItem,StockMovement,Warehouse,WarehouseStock};
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class SalesReturnService
 {
     public function __construct(private SalesReturnCalculationService $calculator, private SalesReturnNewProductPayloadNormalizer $normalizer) {}
 
-    public function createDraft(array $data, ?int $actorId): SalesReturnDocument { return DB::transaction(fn()=> $this->persistDraft(new SalesReturnDocument(['document_number'=>$this->nextDocumentNumber(),'status'=>SalesReturnDocument::STATUS_DRAFT,'created_by'=>$actorId]), $data, $actorId)); }
+    public function createDraft(array $data, ?int $actorId): SalesReturnDocument
+    {
+        return DB::transaction(function () use ($data, $actorId) {
+            $document = new SalesReturnDocument([
+                'document_number' => $this->nextDocumentNumber(),
+                'status' => SalesReturnDocument::STATUS_DRAFT,
+                'created_by' => $actorId,
+            ]);
+
+            return $this->persistDraft($document, $data, $actorId);
+        });
+    }
     public function updateDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument { if(!$doc->isDraft()) throw ValidationException::withMessages(['document'=>'فقط پیش‌نویس قابل ویرایش است.']); return DB::transaction(fn()=> $this->persistDraft($doc, $data, $actorId)); }
     private function persistDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument
     {
@@ -78,5 +87,46 @@ class SalesReturnService
     private function refreshTotals(SalesReturnDocument $doc): void { $doc->load('items'); $doc->update(['items_count'=>$doc->items->count(),'total_quantity'=>$doc->items->sum('return_quantity'),'total_refund_amount'=>$doc->items->sum('refund_amount')]); }
     private function condition(?string $c): string { return in_array($c,[SalesReturnDocumentItem::CONDITION_HEALTHY,SalesReturnDocumentItem::CONDITION_DAMAGED],true)?$c:SalesReturnDocumentItem::CONDITION_HEALTHY; }
     private function conditionForWarehouse(Warehouse $warehouse): string { return $warehouse->type === 'return' ? SalesReturnDocumentItem::CONDITION_DAMAGED : SalesReturnDocumentItem::CONDITION_HEALTHY; }
-    private function nextDocumentNumber(): string { for($i=0;$i<5;$i++){ try{return DB::transaction(function(){ DB::table('document_sequences')->updateOrInsert(['type'=>'sales_return'],['last_number'=>0,'created_at'=>now(),'updated_at'=>now()]); $seq=DB::table('document_sequences')->where('type','sales_return')->lockForUpdate()->first(); $next=((int)$seq->last_number)+1; DB::table('document_sequences')->where('type','sales_return')->update(['last_number'=>$next,'updated_at'=>now()]); return 'SR-'.str_pad((string)$next,6,'0',STR_PAD_LEFT);}); } catch(QueryException $e){ if($i===4) throw $e; }} throw new \RuntimeException('Cannot generate sales return number.'); }
+    private function nextDocumentNumber(): string
+    {
+        $now = now();
+
+        DB::table('document_sequences')->insertOrIgnore([
+            'type' => 'sales_return',
+            'last_number' => 0,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $sequence = DB::table('document_sequences')
+            ->where('type', 'sales_return')
+            ->lockForUpdate()
+            ->first();
+
+        if (! $sequence) {
+            throw new \RuntimeException('Sales return document sequence could not be initialized.');
+        }
+
+        $lastDocumentNumber = SalesReturnDocument::query()
+            ->where('document_number', 'like', 'SR-%')
+            ->orderByDesc('document_number')
+            ->value('document_number');
+
+        $lastExistingNumber = 0;
+
+        if (is_string($lastDocumentNumber) && preg_match('/^SR-(\d+)$/', $lastDocumentNumber, $matches)) {
+            $lastExistingNumber = (int) $matches[1];
+        }
+
+        $next = max((int) $sequence->last_number, $lastExistingNumber) + 1;
+
+        DB::table('document_sequences')
+            ->where('type', 'sales_return')
+            ->update([
+                'last_number' => $next,
+                'updated_at' => $now,
+            ]);
+
+        return 'SR-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+    }
 }

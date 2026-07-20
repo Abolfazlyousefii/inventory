@@ -23,6 +23,7 @@ class SalesReturnDocument extends Model
     public function applier(){ return $this->belongsTo(User::class, 'applied_by'); }
     public function canceller(){ return $this->belongsTo(User::class, 'cancelled_by'); }
     public function defaultDestinationWarehouse(){ return $this->belongsTo(Warehouse::class, 'default_destination_warehouse_id'); }
+    public function revisions(){ return $this->hasMany(SalesReturnDocumentRevision::class, 'document_id')->latest('id'); }
     public function isDraft(): bool { return $this->status === self::STATUS_DRAFT; }
     public function isApplied(): bool { return $this->status === self::STATUS_APPLIED; }
     public function isCancelled(): bool { return $this->status === self::STATUS_CANCELLED; }
