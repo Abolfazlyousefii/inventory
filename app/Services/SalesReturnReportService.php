@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\{SalesReturnDocument, SalesReturnDocumentItem, WarehouseTransfer};
+use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -15,33 +16,48 @@ class SalesReturnReportService extends SalesReturnQueryService
         return $this->getOfficialRows($filters);
     }
 
-    public function getPaginatedRows(array $filters, int $perPage = 15): LengthAwarePaginator
+    public function getPaginatedRows(array $filters, int $perPage = 20): LengthAwarePaginator
     {
-        $rows = $this->getIndexRows($filters)->values();
-        $page = LengthAwarePaginator::resolveCurrentPage();
-        return (new LengthAwarePaginator($rows->forPage($page, $perPage)->values(), $rows->count(), $perPage, $page))->withQueryString();
+        $perPage = max(20, $perPage);
+        $docTerm = trim((string) ($filters['document_number'] ?? ''));
+        $like = $docTerm !== '' ? '%'.str_replace(['\\','%','_'], ['\\\\','\\%','\\_'], $docTerm).'%' : null;
+        $from = $this->filterDate($filters['date_from'] ?? null)?->startOfDay();
+        $to = $this->filterDate($filters['date_to'] ?? null)?->endOfDay();
+
+        $new = DB::table('sales_return_documents as d')
+            ->leftJoin('customers as c', 'c.id', '=', 'd.customer_id')
+            ->selectRaw("'new' as source, d.id as source_id, d.document_number, d.customer_id, '' as customer_name, COALESCE(d.applied_at, d.created_at) as canonical_date, d.status, d.total_quantity, d.total_refund_amount as total_amount, CASE WHEN d.document_number = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm])
+            ->when($like, fn($q) => $q->where('d.document_number', 'like', $like))
+            ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('d.customer_id', $v))
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]));
+
+        $legacy = DB::table('warehouse_transfers as w')
+            ->leftJoin('customers as c', 'c.id', '=', 'w.customer_id')
+            ->leftJoin('warehouse_transfer_items as wi', 'wi.warehouse_transfer_id', '=', 'w.id')
+            ->where('w.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
+            ->selectRaw("'legacy' as source, w.id as source_id, COALESCE(w.reference, CAST(w.id as CHAR)) as document_number, w.customer_id, COALESCE(w.beneficiary_name, '') as customer_name, COALESCE(w.transferred_at, w.created_at) as canonical_date, 'legacy' as status, COALESCE(SUM(wi.quantity),0) as total_quantity, COALESCE(w.total_amount, SUM(wi.line_total),0) as total_amount, CASE WHEN w.reference = ? OR CAST(w.id as CHAR) = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm, $docTerm])
+            ->when($like, fn($q) => $q->where(function($qq) use ($like) { $qq->where('w.reference', 'like', $like)->orWhere('w.id', 'like', $like); }))
+            ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('w.customer_id', $v))
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
+            ->groupBy('w.id','w.reference','w.customer_id','w.beneficiary_name','w.transferred_at','w.created_at','w.total_amount');
+
+        $union = $new->unionAll($legacy);
+        $page = DB::query()->fromSub($union, 'sr_rows')->orderByDesc('exact_rank')->orderByDesc('canonical_date')->orderByDesc('source_id')->paginate($perPage)->withQueryString();
+        $rows = collect($page->items());
+        $newIds = $rows->where('source','new')->pluck('source_id')->all();
+        $legacyIds = $rows->where('source','legacy')->pluck('source_id')->all();
+        $docs = SalesReturnDocument::with(['items.destinationWarehouse:id,name,type','items.product','items.variant','customer','creator'])->whereIn('id',$newIds)->get()->keyBy('id');
+        $legacyModels = WarehouseTransfer::with(['items.product','items.variant','toWarehouse','customer','user'])->whereIn('id',$legacyIds)->get()->keyBy('id');
+        $mapped = $rows->map(fn($r) => $r->source === 'new' ? $this->normalizeNewRow($docs[(int)$r->source_id]) : $this->normalizeLegacyRow($legacyModels[(int)$r->source_id]))->values();
+        return new LengthAwarePaginator($mapped, $page->total(), $page->perPage(), $page->currentPage(), ['path' => request()->url(), 'query' => request()->query()]);
     }
 
     public function getIndexRows(array $filters): Collection
     {
-        $legacy = WarehouseTransfer::query()
-            ->where('voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
-            ->with(['items.product','items.variant','toWarehouse','customer','user']);
-        $this->applyLegacyFilters($legacy, $filters);
-
-        $new = $this->buildDocumentQuery($filters)
-            ->with(['items.destinationWarehouse:id,name,type','customer','creator']);
-
-        $legacyRows = $legacy->get()->map(fn (WarehouseTransfer $transfer) => $this->normalizeLegacyRow($transfer));
-        $legacyReferences = $legacyRows->pluck('document_number')->filter()->map(fn ($v) => (string) $v)->all();
-
-        $newRows = $new->get()
-            ->reject(fn (SalesReturnDocument $document) => $document->reference_number && in_array((string) $document->reference_number, $legacyReferences, true))
-            ->map(fn (SalesReturnDocument $document) => $this->normalizeNewRow($document));
-
-        return $legacyRows->concat($newRows)->sortByDesc(fn ($row) => $row['returned_at_sort'] ?? '')->values();
+        return collect($this->getPaginatedRows($filters, 100000)->items());
     }
-
 
     public function getAllRows(array $filters): Collection
     {
@@ -113,10 +129,10 @@ class SalesReturnReportService extends SalesReturnQueryService
             'is_draft' => $document->isDraft(),
             'is_applied' => $document->isApplied(),
             'is_cancelled' => $document->isCancelled(),
-            'can_edit' => $document->isDraft(),
-            'can_cancel' => $document->isDraft(),
-            'edit_url' => $document->isDraft() ? route('vouchers.return-from-sale.edit', $document) : null,
-            'cancel_url' => $document->isDraft() ? route('vouchers.return-from-sale.cancel', $document) : null,
+            'can_edit' => $document->isDraft() ? (auth()->user()?->can('sales_returns.edit_draft') ?? false) : ($document->isApplied() && (auth()->user()?->can('sales_returns.edit_applied') ?? false)),
+            'can_cancel' => $document->isDraft() ? (auth()->user()?->can('sales_returns.cancel_draft') ?? false) : ($document->isApplied() && (auth()->user()?->can('sales_returns.void_applied') ?? false)),
+            'edit_url' => $document->isDraft() ? route('vouchers.return-from-sale.edit', $document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.edit', $document) : null),
+            'cancel_url' => $document->isDraft() ? route('vouchers.return-from-sale.cancel', $document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.void', $document) : null),
             'document_number' => $document->document_number,
             'customer_name' => $document->customer?->display_name ?: '—',
             'returned_at' => $returnedAt,
@@ -155,8 +171,8 @@ class SalesReturnReportService extends SalesReturnQueryService
         $query->when($filters['document_number'] ?? null, fn ($q, $v) => $q->where('reference', 'like', "%{$v}%"))
             ->when($filters['customer_id'] ?? null, fn ($q, $v) => $q->where('customer_id', $v))
             ->when($filters['destination_warehouse_id'] ?? null, fn ($q, $v) => $q->where('to_warehouse_id', $v))
-            ->when($this->filterDate($filters['date_from'] ?? null), fn ($q, $d) => $q->where('transferred_at', '>=', $d->startOfDay()))
-            ->when($this->filterDate($filters['date_to'] ?? null), fn ($q, $d) => $q->where('transferred_at', '<=', $d->endOfDay()));
+            ->when($this->filterDate($filters['date_from'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) >= ?', [$d->startOfDay()]))
+            ->when($this->filterDate($filters['date_to'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) <= ?', [$d->endOfDay()]));
     }
 
     private function filterDate(?string $value): ?Carbon
