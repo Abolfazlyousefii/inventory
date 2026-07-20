@@ -16,15 +16,15 @@ class SalesReturnDocumentNumberTest extends TestCase
         $service = $this->serviceSource();
 
         $this->assertStringContainsString("insertOrIgnore", $service);
-        $this->assertStringContainsString("where('document_number', 'like', 'SR-%')", $service);
-        $this->assertStringContainsString("return 'SR-'.str_pad((string) \$next, 6, '0', STR_PAD_LEFT);", $service);
+        $this->assertStringContainsString("whereNotNull('document_number')", $service);
+        $this->assertStringContainsString("return (string) \$next;", $service);
     }
 
     public function test_stale_sequence_is_recovered(): void
     {
         $service = $this->serviceSource();
 
-        $this->assertStringContainsString("max((int) \$sequence->last_number, \$lastExistingNumber) + 1", $service);
+        $this->assertStringContainsString('max((int) $sequence->last_number, (int) $maxExisting) + 1', $service);
         $this->assertStringContainsString("'last_number' => \$next", $service);
     }
 
@@ -32,7 +32,7 @@ class SalesReturnDocumentNumberTest extends TestCase
     {
         $service = $this->serviceSource();
 
-        $this->assertStringContainsString("max((int) \$sequence->last_number, \$lastExistingNumber) + 1", $service);
+        $this->assertStringContainsString('max((int) $sequence->last_number, (int) $maxExisting) + 1', $service);
         $this->assertStringNotContainsString("'last_number'=>0", $service);
     }
 
@@ -48,7 +48,7 @@ class SalesReturnDocumentNumberTest extends TestCase
     {
         $service = $this->serviceSource();
 
-        $this->assertStringContainsString("preg_match('/^SR-(\\d+)$/', \$lastDocumentNumber, \$matches)", $service);
+        $this->assertStringContainsString("preg_match('/^SR-(\\d+)$/', \$number, \$matches)", $service);
         $this->assertStringNotContainsString('SR-TEST', $service);
     }
 

@@ -52,6 +52,7 @@ class SalesReturnAppliedAdjustmentService
             if ($doc->isCancelled()) throw ValidationException::withMessages(['document' => 'این سند قبلاً ابطال شده است.']);
             if (! $doc->isApplied()) throw ValidationException::withMessages(['document' => 'فقط سند ثبت‌نهایی‌شده قابل حذف/ابطال است.']);
             $doc->load(['items.destinationWarehouse','items.product','items.variant','customer']);
+            $this->assertReturnInventoryAvailable($doc);
             $before = $this->snapshot($doc);
             $revision = $this->revision($doc, 'applied_voided', $reason, $before, $actorId, (int) $doc->total_refund_amount);
             $this->reverseInventory($doc, $actorId, 'sales_return_void_reversal', $revision->id);
@@ -72,20 +73,67 @@ class SalesReturnAppliedAdjustmentService
 
     private function reverseInventory(SalesReturnDocument $doc, int $actorId, string $reason, int $revisionId): void
     {
-        foreach ($doc->items as $item) {
-            $stock = WarehouseStock::where('warehouse_id',$item->destination_warehouse_id)->where('product_variant_id',$item->product_variant_id)->lockForUpdate()->first();
-            $before = (int) ($stock?->quantity ?? 0); $qty = (int) $item->return_quantity;
-            if ($before < $qty) throw ValidationException::withMessages(['stock' => "امکان ویرایش سند وجود ندارد؛\nاز موجودی برگشتی «".($item->product_name_snapshot ?: $item->product?->name ?: 'کالا').' / '.($item->variant_name_snapshot ?: $item->variant?->variant_name ?: 'تنوع')."» در انبار «".($item->destinationWarehouse?->name ?: '—')."» استفاده شده است.\nموجودی فعلی: {$before}\nمقدار موردنیاز برای برگشت عملیات: {$qty}"]);
-            $stock->quantity = $before - $qty; $stock->save();
-            $this->movement($item, $actorId, 'out', $reason, $qty, $before, $stock->quantity, $revisionId);
+        $this->assertReturnInventoryAvailable($doc);
+
+        foreach ($this->inventoryGroups($doc) as $group) {
+            $before = (int) WarehouseStock::where('warehouse_id', $group['warehouse_id'])
+                ->where('product_variant_id', $group['variant_id'])
+                ->lockForUpdate()
+                ->value('quantity');
+            $result = WarehouseStockService::change($group['warehouse_id'], $group['product_id'], -$group['quantity'], $group['variant_id']);
+            $this->movement($group['item'], $actorId, 'out', $reason, $group['quantity'], $before, (int) $result->quantity, $revisionId);
         }
     }
 
     private function applyInventory(SalesReturnDocumentItem $item, int $actorId, string $reason, int $revisionId): void
     {
-        $stock = WarehouseStock::firstOrCreate(['warehouse_id'=>$item->destination_warehouse_id,'product_variant_id'=>$item->product_variant_id], ['product_id'=>$item->product_id,'quantity'=>0]);
-        $stock->lockForUpdate(); $before=(int)$stock->quantity; $stock->quantity=$before+(int)$item->return_quantity; $stock->product_id=$item->product_id; $stock->save();
-        $this->movement($item, $actorId, 'in', $reason, (int)$item->return_quantity, $before, (int)$stock->quantity, $revisionId);
+        $before = (int) WarehouseStock::where('warehouse_id', $item->destination_warehouse_id)
+            ->where('product_variant_id', $item->product_variant_id)
+            ->lockForUpdate()
+            ->value('quantity');
+        $result = WarehouseStockService::change((int) $item->destination_warehouse_id, (int) $item->product_id, (int) $item->return_quantity, (int) $item->product_variant_id);
+        $this->movement($item, $actorId, 'in', $reason, (int)$item->return_quantity, $before, (int) $result->quantity, $revisionId);
+    }
+
+    private function assertReturnInventoryAvailable(SalesReturnDocument $doc): void
+    {
+        $groups = $this->inventoryGroups($doc);
+        $warehouseIds = collect($groups)->pluck('warehouse_id')->unique()->values();
+        $variantIds = collect($groups)->pluck('variant_id')->unique()->values();
+
+        WarehouseStock::whereIn('warehouse_id', $warehouseIds)
+            ->whereIn('product_variant_id', $variantIds)
+            ->orderBy('warehouse_id')
+            ->orderBy('product_variant_id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($groups as $group) {
+            $current = (int) WarehouseStock::where('warehouse_id', $group['warehouse_id'])
+                ->where('product_variant_id', $group['variant_id'])
+                ->value('quantity');
+
+            if ($current < $group['quantity']) {
+                $item = $group['item'];
+                throw ValidationException::withMessages(['stock' => "امکان ابطال این برگشت از فروش وجود ندارد؛\nاز موجودی برگشتی «".($item->product_name_snapshot ?: $item->product?->name ?: 'کالا').' / '.($item->variant_name_snapshot ?: $item->variant?->variant_name ?: 'تنوع')."» در انبار «".($item->destinationWarehouse?->name ?: '—')."» استفاده شده است.\nموجودی فعلی: {$current}\nمقدار موردنیاز برای برگشت عملیات: {$group['quantity']}"]);
+            }
+        }
+    }
+
+    private function inventoryGroups(SalesReturnDocument $doc): array
+    {
+        return $doc->items
+            ->groupBy(fn ($item) => implode(':', [(int) $item->destination_warehouse_id, (int) $item->product_id, (int) $item->product_variant_id]))
+            ->map(fn ($items) => [
+                'warehouse_id' => (int) $items->first()->destination_warehouse_id,
+                'product_id' => (int) $items->first()->product_id,
+                'variant_id' => (int) $items->first()->product_variant_id,
+                'quantity' => (int) $items->sum('return_quantity'),
+                'item' => $items->first(),
+            ])
+            ->sortBy(fn ($group) => sprintf('%012d:%012d:%012d', $group['warehouse_id'], $group['variant_id'], $group['product_id']))
+            ->values()
+            ->all();
     }
 
     private function movement(SalesReturnDocumentItem $item, int $actorId, string $type, string $reason, int $qty, int $before, int $after, int $revisionId): void
