@@ -16,7 +16,7 @@ use Maatwebsite\Excel\Facades\Excel;
 class VoucherSalesReturnController extends Controller
 {
  public function __construct(private SalesReturnService $service, private SalesReturnReportService $reports) {}
- public function index(SalesReturnIndexRequest $request){ $filters=$request->filters(); $returnRows=$this->reports->getAllRows($filters); return view('vouchers.return-from-sale.index',['returnRows'=>$returnRows,'filters'=>$filters,'warehouses'=>Warehouse::query()->whereIn('type',['central','return'])->orderBy('name')->get(['id','name','type'])]); }
+ public function index(SalesReturnIndexRequest $request){ $filters=$request->filters(); $returnRows=$this->reports->getPaginatedRows($filters, max(20, (int)($filters['per_page'] ?? 20))); $selectedCustomer=isset($filters['customer_id']) ? Customer::query()->find((int)$filters['customer_id']) : null; return view('vouchers.return-from-sale.index',['returnRows'=>$returnRows,'filters'=>$filters,'selectedCustomer'=>$selectedCustomer,'warehouses'=>Warehouse::query()->where('is_active',true)->whereIn('type',['central','return'])->orderBy('name')->get(['id','name','type'])]); }
  public function exportExcel(SalesReturnIndexRequest $request){ $filters=$request->filters(); $file='sales-returns-'.now()->format('Ymd-His').'.xlsx'; return Excel::download(new SalesReturnsExport($filters,$this->reports),$file); }
  public function exportPdf(SalesReturnIndexRequest $request){ return $this->pdfResponse('vouchers.return-from-sale.report-pdf',$this->reportData($request),'sales-returns-'.now()->format('Ymd-His').'.pdf'); }
  public function printReport(SalesReturnIndexRequest $request){ return view('vouchers.return-from-sale.report-print',$this->reportData($request)); }

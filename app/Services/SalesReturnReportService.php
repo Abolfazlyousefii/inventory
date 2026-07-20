@@ -12,17 +12,17 @@ class SalesReturnReportService extends SalesReturnQueryService
 {
     public function buildReportQuery(array $filters = []): Collection
     {
-        return $this->getAllRows($filters);
+        return $this->getOfficialRows($filters);
     }
 
     public function getPaginatedRows(array $filters, int $perPage = 15): LengthAwarePaginator
     {
-        $rows = $this->getAllRows($filters)->values();
+        $rows = $this->getIndexRows($filters)->values();
         $page = LengthAwarePaginator::resolveCurrentPage();
-        return new LengthAwarePaginator($rows->forPage($page, $perPage)->values(), $rows->count(), $perPage, $page);
+        return (new LengthAwarePaginator($rows->forPage($page, $perPage)->values(), $rows->count(), $perPage, $page))->withQueryString();
     }
 
-    public function getAllRows(array $filters): Collection
+    public function getIndexRows(array $filters): Collection
     {
         $legacy = WarehouseTransfer::query()
             ->where('voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
@@ -30,7 +30,6 @@ class SalesReturnReportService extends SalesReturnQueryService
         $this->applyLegacyFilters($legacy, $filters);
 
         $new = $this->buildDocumentQuery($filters)
-            ->where('status', SalesReturnDocument::STATUS_APPLIED)
             ->with(['items.destinationWarehouse:id,name,type','customer','creator']);
 
         $legacyRows = $legacy->get()->map(fn (WarehouseTransfer $transfer) => $this->normalizeLegacyRow($transfer));
@@ -43,8 +42,20 @@ class SalesReturnReportService extends SalesReturnQueryService
         return $legacyRows->concat($newRows)->sortByDesc(fn ($row) => $row['returned_at_sort'] ?? '')->values();
     }
 
-    public function getExcelRows(array $filters): Collection { return $this->getAllRows($filters); }
-    public function getPdfRows(array $filters): Collection { return $this->getAllRows($filters); }
+
+    public function getAllRows(array $filters): Collection
+    {
+        return $this->getOfficialRows($filters);
+    }
+
+    private function getOfficialRows(array $filters): Collection
+    {
+        $filters['status'] = SalesReturnDocument::STATUS_APPLIED;
+        return $this->getIndexRows($filters)->filter(fn ($row) => ($row['source'] ?? null) === 'legacy' || ($row['status'] ?? null) === SalesReturnDocument::STATUS_APPLIED)->values();
+    }
+
+    public function getExcelRows(array $filters): Collection { return $this->getOfficialRows($filters); }
+    public function getPdfRows(array $filters): Collection { return $this->getOfficialRows($filters); }
 
     public function normalizeLegacyRow(WarehouseTransfer $transfer): array
     {
@@ -56,6 +67,15 @@ class SalesReturnReportService extends SalesReturnQueryService
             'row_key' => 'legacy-'.$transfer->id,
             'source' => 'legacy',
             'source_id' => $transfer->id,
+            'status' => 'legacy',
+            'status_label' => 'قدیمی',
+            'is_draft' => false,
+            'is_applied' => true,
+            'is_cancelled' => false,
+            'can_edit' => false,
+            'can_cancel' => false,
+            'edit_url' => null,
+            'cancel_url' => null,
             'document_number' => $transfer->reference ?: (string) $transfer->id,
             'customer_name' => $transfer->customer?->display_name ?: ($transfer->beneficiary_name ?: '—'),
             'returned_at' => $returnedAt,
@@ -72,6 +92,8 @@ class SalesReturnReportService extends SalesReturnQueryService
             'print_url' => route('vouchers.return-from-sale.legacy.print', $transfer),
             'items_summary' => $transfer->items->map(fn ($item) => trim(($item->product?->name ?: '—').' / '.($item->variant?->variant_name ?: ($item->variant_name ?: '—')).' × '.number_format((int) $item->quantity)))->filter()->implode('، ') ?: ($transfer->note ?: '—'),
             'quantity' => (int) $transfer->items->sum('quantity'),
+            'condition_label' => $warehouseName !== '—' && str_contains($warehouseName, 'مرجوع') ? 'معیوب' : 'سالم',
+            'destination_warehouse_details' => $warehouseName.': '.number_format((int) $transfer->items->sum('quantity')),
         ];
     }
 
@@ -86,6 +108,15 @@ class SalesReturnReportService extends SalesReturnQueryService
             'row_key' => 'new-'.$document->id,
             'source' => 'new',
             'source_id' => $document->id,
+            'status' => $document->status,
+            'status_label' => SalesReturnDocument::statusLabels()[$document->status] ?? $document->status,
+            'is_draft' => $document->isDraft(),
+            'is_applied' => $document->isApplied(),
+            'is_cancelled' => $document->isCancelled(),
+            'can_edit' => $document->isDraft(),
+            'can_cancel' => $document->isDraft(),
+            'edit_url' => $document->isDraft() ? route('vouchers.return-from-sale.edit', $document) : null,
+            'cancel_url' => $document->isDraft() ? route('vouchers.return-from-sale.cancel', $document) : null,
             'document_number' => $document->document_number,
             'customer_name' => $document->customer?->display_name ?: '—',
             'returned_at' => $returnedAt,
@@ -97,6 +128,8 @@ class SalesReturnReportService extends SalesReturnQueryService
             'total_amount' => $healthy + $damaged,
             'destination_warehouse_name' => $warehouses->count() > 1 ? 'چند انبار' : ($warehouses->first() ?: '—'),
             'destination_warehouse_label' => 'انبار مقصد: '.($warehouses->count() > 1 ? 'چند انبار' : ($warehouses->first() ?: '—')),
+            'destination_warehouse_details' => $document->items->groupBy('destination_warehouse_id')->map(fn ($items) => ($items->first()->destinationWarehouse?->name ?: '—').': '.number_format((int) $items->sum('return_quantity')))->implode('، '),
+            'condition_label' => $document->items->where('item_condition', SalesReturnDocumentItem::CONDITION_HEALTHY)->sum('return_quantity') && $document->items->where('item_condition', SalesReturnDocumentItem::CONDITION_DAMAGED)->sum('return_quantity') ? 'ترکیبی' : ($document->items->where('item_condition', SalesReturnDocumentItem::CONDITION_DAMAGED)->sum('return_quantity') ? 'معیوب' : 'سالم'),
             'created_by_name' => $document->creator?->name ?: '—',
             'show_url' => route('vouchers.return-from-sale.show', $document),
             'print_url' => route('vouchers.return-from-sale.print', $document),
