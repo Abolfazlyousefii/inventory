@@ -107,18 +107,25 @@ class SalesReturnService
             throw new \RuntimeException('Sales return document sequence could not be initialized.');
         }
 
-        $lastDocumentNumber = SalesReturnDocument::query()
-            ->where('document_number', 'like', 'SR-%')
-            ->orderByDesc('document_number')
-            ->value('document_number');
+        $maxExisting = SalesReturnDocument::query()
+            ->whereNotNull('document_number')
+            ->pluck('document_number')
+            ->map(function ($number) {
+                $number = trim((string) $number);
 
-        $lastExistingNumber = 0;
+                if (preg_match('/^\d+$/', $number) === 1) {
+                    return (int) $number;
+                }
 
-        if (is_string($lastDocumentNumber) && preg_match('/^SR-(\d+)$/', $lastDocumentNumber, $matches)) {
-            $lastExistingNumber = (int) $matches[1];
-        }
+                if (preg_match('/^SR-(\d+)$/', $number, $matches) === 1) {
+                    return (int) $matches[1];
+                }
 
-        $next = max((int) $sequence->last_number, $lastExistingNumber) + 1;
+                return 0;
+            })
+            ->max() ?? 0;
+
+        $next = max((int) $sequence->last_number, (int) $maxExisting) + 1;
 
         DB::table('document_sequences')
             ->where('type', 'sales_return')
@@ -127,6 +134,6 @@ class SalesReturnService
                 'updated_at' => $now,
             ]);
 
-        return 'SR-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+        return (string) $next;
     }
 }

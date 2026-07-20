@@ -7,10 +7,6 @@ use App\Http\Requests\{ApplySalesReturnRequest,SalesReturnIndexRequest,StoreSale
 use App\Models\{Category,Customer,ModelList,Product,ProductVariant,SalesReturnDocument,User,Warehouse,WarehouseTransfer};
 use App\Services\{SalesReturnAppliedAdjustmentService,SalesReturnReportService,SalesReturnService};
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\File;
-use Mpdf\Config\ConfigVariables;
-use Mpdf\Config\FontVariables;
-use Mpdf\Mpdf;
 use Maatwebsite\Excel\Facades\Excel;
 
 class VoucherSalesReturnController extends Controller
@@ -35,7 +31,7 @@ class VoucherSalesReturnController extends Controller
  public function cancel(Request $request, SalesReturnDocument $document){ $doc=$this->service->cancelDraft($document,auth()->id(),$request->input('cancel_reason')); return redirect()->route('vouchers.return-from-sale.show',$doc)->with('success','پیش‌نویس لغو شد.'); }
  public function print(SalesReturnDocument $document){ $document->load('customer','invoice','items.destinationWarehouse','items.product','items.variant','creator','applier'); return view('vouchers.return-from-sale.print',compact('document')); }
  public function printLegacy(WarehouseTransfer $transfer){ $transfer->load('customer','relatedInvoice','toWarehouse','items.product','items.variant','user'); return view('vouchers.return-from-sale.legacy-print',['transfer'=>$transfer]); }
- public function pdf(SalesReturnDocument $document){ $document->load('customer','invoice','items.destinationWarehouse','creator','applier'); return $this->pdfResponse('vouchers.return-from-sale.document-pdf',compact('document'),'sales-return-'.$document->document_number.'.pdf'); }
+ public function pdf(SalesReturnDocument $document){ return redirect()->route('vouchers.return-from-sale.print', $document); }
 
  private function returnRows($documents, $legacyReturns)
  {
@@ -56,40 +52,7 @@ class VoucherSalesReturnController extends Controller
  private function customerPrintData(array $filters): array { $rows=$this->reports->getPdfRows($filters); $selectedCustomer=isset($filters['customer_id']) ? Customer::query()->find((int)$filters['customer_id']) : null; return ['filters'=>$filters,'activeFilters'=>$this->activePrintFilters($filters,$selectedCustomer),'rows'=>$rows,'selectedCustomer'=>$selectedCustomer,'documentsCount'=>$rows->count(),'totalAmount'=>(int)$rows->sum('total_amount'),'generatedAt'=>$this->reports->jalaliDateTime(now())]; }
  private function productPrintData(array $filters): array { $rows=$this->reports->getProductReturnSummary($filters); $totals=$this->reports->getProductReturnTotals($filters); $selectedCustomer=isset($filters['customer_id']) ? Customer::query()->find((int)$filters['customer_id']) : null; return ['filters'=>$filters,'activeFilters'=>$this->activePrintFilters($filters,$selectedCustomer),'rows'=>$rows,'totals'=>$totals,'selectedCustomer'=>$selectedCustomer,'generatedAt'=>$this->reports->jalaliDateTime(now())]; }
  private function activePrintFilters(array $filters, ?Customer $customer): array { return collect(['شماره سند'=>$filters['document_number']??null,'مشتری'=>$customer?->display_name,'از تاریخ'=>$filters['date_from']??null,'تا تاریخ'=>$filters['date_to']??null])->filter(fn($v)=>filled($v))->all(); }
- private function pdfResponse(string $view,array $data,string $filename,string $orientation='portrait'){
-     if (! class_exists(Mpdf::class)) {
-         report(new \RuntimeException('PDF engine mpdf/mpdf is not installed or autoloaded.'));
-         return redirect()->route('vouchers.return-from-sale.index')->withErrors(['pdf'=>'موتور تولید PDF روی سرور نصب یا بارگذاری نشده است.']);
-     }
 
-     try {
-         $tempDir = storage_path('app/mpdf-temp');
-         File::ensureDirectoryExists($tempDir);
-
-         $defaultConfig = (new ConfigVariables())->getDefaults();
-         $defaultFontConfig = (new FontVariables())->getDefaults();
-         $fontDirs = $defaultConfig['fontDir'];
-         $fontData = $defaultFontConfig['fontdata'];
-
-         $mpdf=new Mpdf([
-             'mode'=>'utf-8',
-             'format'=>'A4',
-             'orientation'=>$orientation === 'landscape' ? 'L' : 'P',
-             'tempDir'=>$tempDir,
-             'fontDir'=>array_merge($fontDirs, [public_path('fonts'), public_path('css/fonts'), resource_path('fonts')]),
-             'fontdata'=>$fontData,
-             'default_font'=>'dejavusans',
-             'autoScriptToLang'=>true,
-             'autoLangToFont'=>true,
-         ]);
-         $mpdf->SetDirectionality('rtl');
-         $mpdf->WriteHTML(view($view,$data)->render());
-         return response($mpdf->Output($filename, 'S'),200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="'.$filename.'"']);
-     } catch (\Throwable $exception) {
-         report($exception);
-         return redirect()->route('vouchers.return-from-sale.index')->withErrors(['pdf'=>'تولید فایل PDF با مشکل مواجه شد. لطفاً تنظیمات موتور PDF سرور بررسی شود.']);
-     }
- }
 
  private function formData(): array { return ['warehouses'=>Warehouse::where('is_active',true)->whereIn('type',['central','return'])->orderBy('type')->orderBy('name')->get(), 'categories'=>Category::orderBy('name')->get(['id','name','code','parent_id']), 'modelLists'=>ModelList::orderBy('brand')->orderBy('model_name')->get(['id','brand','model_name','code']), 'returnReasons'=>SalesReturnDocument::returnReasonLabels(), 'conditionLabels'=>\App\Models\SalesReturnDocumentItem::conditionLabels(), 'customerCreateUrl'=>route('customers.index'), 'legacyReturnUrl'=>route('vouchers.return-from-sale.index')]; }
  private function enrich(Request $request): array { $data=$request->validated(); $data['can_override_destination']=$request->user()?->can('sales_returns.override_destination') || $request->user()?->hasRole(['admin','Admin']); return $data; }
