@@ -119,5 +119,5 @@ class SalesReturnQueryService
 
     private function applySort(Builder $query, string $sort): void { match($sort){ 'oldest'=>$query->oldest('created_at')->orderBy('id'), 'amount_desc'=>$query->orderByDesc('total_refund_amount')->orderByDesc('id'), 'amount_asc'=>$query->orderBy('total_refund_amount')->orderBy('id'), 'customer'=>$query->join('customers','sales_return_documents.customer_id','=','customers.id')->orderBy('customers.last_name')->orderBy('customers.first_name')->select('sales_return_documents.*'), default=>$query->orderByRaw('COALESCE(applied_at, created_at) DESC')->orderByDesc('id') }; }
     private function hasItemFilters(array $filters): bool { return (bool) array_filter([$filters['destination_warehouse_id']??null, ($filters['item_condition']??'all') !== 'all' ? $filters['item_condition'] : null, $filters['product_id']??null, $filters['product_variant_id']??null]); }
-    private function date(?string $value): ?Carbon { if(!$value)return null; try { return preg_match('/^\d{4}\/\d{1,2}\/\d{1,2}$/',$value) ? Jalalian::fromFormat('Y/m/d',$value)->toCarbon() : Carbon::parse($value); } catch (\Throwable) { return null; } }
+    private function date(?string $value): ?Carbon { if(!$value)return null; return Jalalian::fromFormat('Y/m/d',$value)->toCarbon(); }
 }
