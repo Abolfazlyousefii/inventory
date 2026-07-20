@@ -24,9 +24,8 @@ class SalesReturnFirstPatchTest extends TestCase
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/index.blade.php'));
 
-        $this->assertStringContainsString('getIndexRows', $service);
-        $this->assertStringContainsString("'can_edit' => \$document->isDraft()", $service);
-        $this->assertStringContainsString("'can_cancel' => \$document->isDraft()", $service);
+        $this->assertStringContainsString("'can_edit' => \$document->isDraft() ?", $service);
+        $this->assertStringContainsString("'can_cancel' => \$document->isDraft() ?", $service);
         $this->assertStringContainsString('حذف پیش‌نویس', $blade);
     }
 
