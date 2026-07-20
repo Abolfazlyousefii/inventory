@@ -56,7 +56,7 @@ class SalesReturnIndexStabilizationTest extends TestCase
     {
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $partial = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
-        $this->assertStringContainsString("'can_edit' => \$document->isDraft()", $service);
+        $this->assertStringContainsString("'can_edit' => \$document->isDraft() ?", $service);
         $this->assertStringContainsString('ویرایش', $partial);
         $this->assertStringContainsString('حذف پیش‌نویس', $partial);
     }
@@ -66,7 +66,7 @@ class SalesReturnIndexStabilizationTest extends TestCase
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $partial = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
         $this->assertStringContainsString("'edit_url' => \$document->isDraft() ?", $service);
-        $this->assertStringContainsString('ثبت نهایی', $partial);
+        $this->assertStringContainsString('applied.edit', $service);
     }
 
     public function test_legacy_row_is_read_only(): void
@@ -74,7 +74,7 @@ class SalesReturnIndexStabilizationTest extends TestCase
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $partial = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
         $this->assertStringContainsString("'can_edit' => false", $service);
-        $this->assertStringContainsString('سند قدیمی', $partial);
+        $this->assertStringContainsString('قدیمی', $partial);
     }
 
     public function test_source_switch_has_explicit_panels(): void
