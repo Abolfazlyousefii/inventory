@@ -19,7 +19,10 @@ use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use JsonException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InvoiceController extends Controller
@@ -358,25 +361,74 @@ class InvoiceController extends Controller
     public function salesVoucherUpdate(string $uuid, Request $request)
     {
         $data = $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.id' => 'nullable|exists:invoice_items,id',
-            'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
-            'items.*.product_id' => 'nullable|exists:products,id',
-            'items.*.variant_id' => 'nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|integer|min:0',
-            'items.*._delete' => 'nullable|boolean',
-            'items.*.price' => 'nullable|numeric|min:1',
-            'items.*.line_discount_amount' => 'nullable|numeric|min:0',
+            'items_payload' => 'nullable|string',
+            'items_payload_count' => 'nullable|integer|min:1|max:2000',
             'opened_at' => 'required|string',
             'change_reason' => ['required', 'string', Rule::in(['physical_shortage', 'customer_cancelled', 'wrong_item', 'warehouse_correction', 'replacement', 'other'])],
             'change_note' => 'required_if:change_reason,other|nullable|string|max:2000',
             'collection_note' => 'nullable|string|max:2000',
         ]);
 
+        if ($request->filled('items_payload')) {
+            try {
+                $items = json_decode((string) $data['items_payload'], true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                throw ValidationException::withMessages(['items_payload' => 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است. صفحه را تازه‌سازی کرده و دوباره تلاش کنید.']);
+            }
+
+            if (! is_array($items)) {
+                throw ValidationException::withMessages(['items_payload' => 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است. صفحه را تازه‌سازی کرده و دوباره تلاش کنید.']);
+            }
+
+            $expectedCount = (int) ($data['items_payload_count'] ?? 0);
+            if ($expectedCount < 1 || count($items) < 1 || count($items) > 2000 || count($items) !== $expectedCount) {
+                throw ValidationException::withMessages(['items_payload' => 'اطلاعات فرم به‌صورت ناقص به سرور رسیده است. هیچ تغییری ثبت نشد.']);
+            }
+
+            $items = collect($items)->map(function ($item) {
+                $item = is_array($item) ? $item : [];
+                if (filter_var($item['_delete'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    $item['quantity'] = 0;
+                    $item['_delete'] = true;
+                }
+
+                return $item;
+            })->all();
+
+            Validator::make(['items' => $items], [
+                'items' => 'required|array|min:1|max:2000',
+                'items.*.id' => 'nullable|integer|exists:invoice_items,id',
+                'items.*.invoice_item_id' => 'nullable|integer|exists:invoice_items,id',
+                'items.*.product_id' => 'required|integer|exists:products,id',
+                'items.*.variant_id' => 'required|integer|exists:product_variants,id',
+                'items.*.quantity' => 'required|integer|min:0',
+                'items.*._delete' => 'nullable|boolean',
+                'items.*.price' => 'nullable|numeric|min:1',
+                'items.*.line_discount_amount' => 'nullable|numeric|min:0',
+            ])->validate();
+        } else {
+            $legacy = $request->validate([
+                'items' => 'required|array|min:1',
+                'items.*.id' => 'nullable|exists:invoice_items,id',
+                'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
+                'items.*.product_id' => 'nullable|exists:products,id',
+                'items.*.variant_id' => 'nullable|exists:product_variants,id',
+                'items.*.quantity' => 'required|integer|min:0',
+                'items.*._delete' => 'nullable|boolean',
+                'items.*.price' => 'nullable|numeric|min:1',
+                'items.*.line_discount_amount' => 'nullable|numeric|min:0',
+            ]);
+            $items = $legacy['items'];
+
+            if (isset($data['items_payload_count']) && count($items) < (int) $data['items_payload_count']) {
+                throw ValidationException::withMessages(['items' => 'اطلاعات فرم به‌صورت ناقص به سرور رسیده است. هیچ تغییری ثبت نشد.']);
+            }
+        }
+
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         $canAdjustPrice = auth()->user()?->hasPermission('warehouse.collection.adjust_price')
             || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
-        $this->warehouseCollectionService->updateCollectedItems($invoice, $data['items'], auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null, $canAdjustPrice, $data['change_reason'], $data['opened_at']);
+        $this->warehouseCollectionService->updateCollectedItems($invoice, $items, auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null, $canAdjustPrice, $data['change_reason'], $data['opened_at']);
 
         $this->notifyFinanceReapproval($invoice);
 
