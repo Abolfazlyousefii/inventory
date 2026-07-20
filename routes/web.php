@@ -217,6 +217,8 @@ Route::prefix('vouchers/section/return-from-sale')
         Route::get('/export/excel', [VoucherSalesReturnController::class, 'exportExcel'])->middleware('permission:sales_returns.export')->name('export.excel');
         Route::get('/export/pdf', [VoucherSalesReturnController::class, 'exportPdf'])->middleware('permission:sales_returns.export')->name('export.pdf');
         Route::get('/print', [VoucherSalesReturnController::class, 'printReport'])->middleware('permission:sales_returns.print')->name('print-report');
+        Route::get('/print/customers', [VoucherSalesReturnController::class, 'printCustomers'])->middleware('permission:sales_returns.print')->name('print.customers');
+        Route::get('/print/products', [VoucherSalesReturnController::class, 'printProducts'])->middleware('permission:sales_returns.print')->name('print.products');
         Route::get('/legacy/{transfer}/print', [VoucherSalesReturnController::class, 'printLegacy'])->whereNumber('transfer')->middleware('permission:sales_returns.print')->name('legacy.print');
         Route::get('/{document}', [VoucherSalesReturnController::class, 'show'])->whereNumber('document')->middleware('permission:sales_returns.view')->name('show');
         Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->middleware('permission:sales_returns.edit_draft')->name('edit');

@@ -462,6 +462,8 @@ class PermissionCatalog
             'vouchers.return-from-sale.export.excel' => 'sales_returns.export',
             'vouchers.return-from-sale.export.pdf' => 'sales_returns.export',
             'vouchers.return-from-sale.print-report' => 'sales_returns.print',
+            'vouchers.return-from-sale.print.customers' => 'sales_returns.print',
+            'vouchers.return-from-sale.print.products' => 'sales_returns.print',
             'vouchers.return-from-sale.show' => 'sales_returns.view',
             'vouchers.return-from-sale.edit' => 'sales_returns.edit_draft',
             'vouchers.return-from-sale.update' => 'sales_returns.edit_draft',
