@@ -74,10 +74,10 @@ class ProductCatalogExportTest extends TestCase
     {
         $this->signIn();
         $product = $this->product('Multi model');
-        [$a, $b, $c] = [ModelList::create(['model_name' => 'A']), ModelList::create(['model_name' => 'B']), ModelList::create(['model_name' => 'C'])];
+        [$a, $b, $c] = [ModelList::create(['brand' => 'Brand', 'model_name' => 'A']), ModelList::create(['brand' => 'Brand', 'model_name' => 'B']), ModelList::create(['brand' => 'Brand', 'model_name' => 'C'])];
         $this->variant($product, $a, 'Variant A'); $this->variant($product, $b, 'Variant B'); $this->variant($product, $c, 'Variant C');
 
-        $this->get(route('admin.product-exports.data', ['model_list_ids' => [$a->id, $c->id]]))
+        $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$a->id, $c->id]]))
             ->assertOk()->assertSee('Multi model')->assertSee('Variant A')->assertSee('Variant C')->assertDontSee('Variant B');
     }
 
@@ -85,10 +85,10 @@ class ProductCatalogExportTest extends TestCase
     {
         $this->signIn();
         $product = $this->product('All variants');
-        [$a, $b] = [ModelList::create(['model_name' => 'A']), ModelList::create(['model_name' => 'B'])];
+        [$a, $b] = [ModelList::create(['brand' => 'Brand', 'model_name' => 'A']), ModelList::create(['brand' => 'Brand', 'model_name' => 'B'])];
         $this->variant($product, $a, 'Variant A');
 
-        $this->get(route('admin.product-exports.data', ['model_list_ids' => [$b->id]]))->assertOk()->assertDontSee('All variants');
+        $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$b->id]]))->assertOk()->assertDontSee('All variants');
         $this->get(route('admin.product-exports.data'))->assertOk()->assertSee('Variant A');
     }
 
@@ -96,19 +96,19 @@ class ProductCatalogExportTest extends TestCase
     {
         $this->signIn();
         $product = $this->product('Stock model');
-        [$a, $b] = [ModelList::create(['model_name' => 'A']), ModelList::create(['model_name' => 'B'])];
+        [$a, $b] = [ModelList::create(['brand' => 'Brand', 'model_name' => 'A']), ModelList::create(['brand' => 'Brand', 'model_name' => 'B'])];
         $this->variant($product, $a, 'A zero', 0); $this->variant($product, $b, 'B stock', 10);
 
-        $this->get(route('admin.product-exports.data', ['model_list_ids' => [$a->id], 'stock_status' => 'in_stock']))->assertOk()->assertDontSee('Stock model');
-        $this->get(route('admin.product-exports.data', ['model_list_ids' => [$b->id], 'stock_status' => 'in_stock']))->assertOk()->assertSee('Stock model');
-        $this->get(route('admin.product-exports.data', ['model_list_ids' => [$a->id], 'stock_status' => 'out_of_stock']))->assertOk()->assertSee('Stock model');
+        $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$a->id], 'stock_status' => 'in_stock']))->assertOk()->assertDontSee('Stock model');
+        $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$b->id], 'stock_status' => 'in_stock']))->assertOk()->assertSee('Stock model');
+        $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$a->id], 'stock_status' => 'out_of_stock']))->assertOk()->assertSee('Stock model');
     }
 
     public function test_print_route_and_old_export_route(): void
     {
         $this->signIn();
         $product = $this->product('Printable product', null, 25000, 'products/demo.jpg');
-        $model = ModelList::create(['model_name' => 'Print Model']);
+        $model = ModelList::create(['brand' => 'Brand', 'model_name' => 'Print Model']);
         $this->variant($product, $model, 'Printable Variant', 4, 12000);
 
         $this->get(route('admin.product-exports.print'))->assertOk()
@@ -121,7 +121,7 @@ class ProductCatalogExportTest extends TestCase
     public function test_screen_paginates_24_products_and_query_count_does_not_grow_linearly(): void
     {
         $this->signIn();
-        $model = ModelList::create(['model_name' => 'Performance']);
+        $model = ModelList::create(['brand' => 'Brand', 'model_name' => 'Performance']);
         for ($i = 1; $i <= 500; $i++) {
             $product = $this->product('Performance '.$i);
             for ($j = 1; $j <= 5; $j++) $this->variant($product, $model, "V{$i}-{$j}", $j);

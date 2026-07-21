@@ -1,1 +1,0 @@
-export default class TomSelect{constructor(element,settings={}){this.input=element;this.settings=settings;element.tomselect=this;element.classList.add('tomselected');}destroy(){if(this.input)delete this.input.tomselect;}}
