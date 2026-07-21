@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 
 class ProductExportService
@@ -43,10 +44,17 @@ class ProductExportService
             ->orderBy('id');
     }
 
-    public function applyCatalogVariantConstraints(Builder $query, array $filters = []): Builder
+    public function applyCatalogVariantConstraints(Builder|Relation $query, array $filters = []): Builder|Relation
     {
-        return $query->where('is_active', true)
-            ->when($this->modelListIds($filters) !== [], fn (Builder $q) => $q->whereIn('model_list_id', $this->modelListIds($filters)));
+        $modelListIds = $this->modelListIds($filters);
+
+        $query->where('is_active', true);
+
+        if ($modelListIds !== []) {
+            $query->whereIn('model_list_id', $modelListIds);
+        }
+
+        return $query;
     }
 
     public function paginate(array $filters, int $perPage = 24): LengthAwarePaginator

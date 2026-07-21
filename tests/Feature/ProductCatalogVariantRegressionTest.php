@@ -15,30 +15,73 @@ class ProductCatalogVariantRegressionTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_product_with_active_variants_displays_variants(): void
+    public function test_index_accepts_has_many_relation(): void
     {
-        $this->signIn(); $product=$this->product('Variant product'); $model=ModelList::create(['brand'=>'Samsung','model_name'=>'A15']);
-        foreach(['A15 مشکی','A15 آبی','A15 سفید'] as $name) $this->variant($product,$model,$name);
-        $this->get(route('admin.product-exports.index'))->assertOk()->assertSee('A15 مشکی')->assertSee('A15 آبی')->assertSee('A15 سفید')->assertDontSee('بدون تنوع قابل نمایش');
+        $this->signIn();
+        $product = $this->product('Variant product');
+        $model = ModelList::create(['brand' => 'Samsung', 'model_name' => 'A15']);
+
+        $this->variant($product, $model, 'A15 مشکی');
+        $this->variant($product, $model, 'A15 آبی');
+
+        $this->get(route('admin.product-exports.index'))
+            ->assertOk()
+            ->assertSee('Variant product')
+            ->assertSee('A15 مشکی')
+            ->assertSee('A15 آبی')
+            ->assertDontSee('بدون تنوع قابل نمایش');
     }
 
-    public function test_print_displays_product_variants(): void
+    public function test_print_accepts_has_many_relation(): void
     {
-        $this->signIn(); $product=$this->product('Print variants'); $model=ModelList::create(['brand'=>'Samsung','model_name'=>'A25']); $this->variant($product,$model,'Print A25');
-        $this->get(route('admin.product-exports.print'))->assertOk()->assertSee('Print variants')->assertSee('Print A25');
+        $this->signIn();
+        $product = $this->product('Print variants');
+        $model = ModelList::create(['brand' => 'Samsung', 'model_name' => 'A25']);
+
+        $this->variant($product, $model, 'Print A25 Black');
+        $this->variant($product, $model, 'Print A25 Blue');
+
+        $this->get(route('admin.product-exports.print'))
+            ->assertOk()
+            ->assertSee('Print variants')
+            ->assertSee('Print A25 Black')
+            ->assertSee('Print A25 Blue');
     }
 
-    public function test_different_products_do_not_share_variants(): void
+    public function test_model_list_filter_still_works(): void
     {
-        $this->signIn(); $model=ModelList::create(['brand'=>'Samsung','model_name'=>'A35']); $a=$this->product('Product A'); $b=$this->product('Product B'); $this->variant($a,$model,'Only A'); $this->variant($b,$model,'Only B');
-        $html=$this->get(route('admin.product-exports.data'))->assertOk()->getContent();
-        $this->assertStringContainsString('Product A', $html); $this->assertStringContainsString('Only A', $html); $this->assertStringContainsString('Product B', $html); $this->assertStringContainsString('Only B', $html);
+        $this->signIn();
+        $product = $this->product('Filtered model product');
+        $includedModel = ModelList::create(['brand' => 'Samsung', 'model_name' => 'A35']);
+        $excludedModel = ModelList::create(['brand' => 'Samsung', 'model_name' => 'A55']);
+
+        $this->variant($product, $includedModel, 'Selected model variant');
+        $this->variant($product, $excludedModel, 'Other model variant');
+
+        $this->get(route('admin.product-exports.index', [
+            'model_brand' => 'Samsung',
+            'model_list_ids' => [$includedModel->id],
+        ]))
+            ->assertOk()
+            ->assertSee('Filtered model product')
+            ->assertSee('Selected model variant')
+            ->assertDontSee('Other model variant');
     }
 
     public function test_inactive_variant_is_excluded(): void
     {
-        $this->signIn(); $product=$this->product('Active only'); $model=ModelList::create(['brand'=>'Samsung','model_name'=>'A55']); $this->variant($product,$model,'Visible'); $this->variant($product,$model,'Hidden',3,2000,false);
-        $this->get(route('admin.product-exports.data'))->assertOk()->assertSee('Visible')->assertDontSee('Hidden');
+        $this->signIn();
+        $product = $this->product('Active only');
+        $model = ModelList::create(['brand' => 'Samsung', 'model_name' => 'A55']);
+
+        $this->variant($product, $model, 'Visible variant');
+        $this->variant($product, $model, 'Hidden variant', 3, 2000, false);
+
+        $this->get(route('admin.product-exports.index'))
+            ->assertOk()
+            ->assertSee('Active only')
+            ->assertSee('Visible variant')
+            ->assertDontSee('Hidden variant');
     }
 
     public function test_catalog_query_does_not_use_parameterized_valid_variants_relation(): void
