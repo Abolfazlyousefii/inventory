@@ -84,6 +84,11 @@ class Product extends Model
         return app(ProductVariantStructureService::class)->applyValidConstraints($this->variants(), $this);
     }
 
+    public function catalogVariants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
     public function validVariantCollection(bool $activeOnly = true)
     {
         return app(ProductVariantStructureService::class)->validVariants($this, $activeOnly);
