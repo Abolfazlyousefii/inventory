@@ -40,8 +40,15 @@ return new class extends Migration {
             if (! Schema::hasColumn('stock_count_document_items', 'stock_updated_at_start')) $table->timestamp('stock_updated_at_start')->nullable()->after('warehouse_stock_updated_at_start');
         });
 
-        try { DB::statement('ALTER TABLE stock_count_document_items DROP INDEX stock_count_document_items_document_id_product_id_unique'); } catch (Throwable $e) {}
-        try { DB::statement('ALTER TABLE stock_count_document_items MODIFY actual_quantity INT NULL'); } catch (Throwable $e) {}
+        try {
+            Schema::table('stock_count_document_items', function (Blueprint $table) {
+                $table->dropUnique('stock_count_document_items_document_id_product_id_unique');
+            });
+        } catch (Throwable $e) {}
+
+        if (DB::getDriverName() !== 'sqlite') {
+            try { DB::statement('ALTER TABLE stock_count_document_items MODIFY actual_quantity INT NULL'); } catch (Throwable $e) {}
+        }
     }
 
     public function down(): void {}
