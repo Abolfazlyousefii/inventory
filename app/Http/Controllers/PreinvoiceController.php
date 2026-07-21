@@ -920,6 +920,7 @@ class PreinvoiceController extends Controller
         });
 
         return redirect()->route('preinvoice.create')
+            ->with('preinvoice_submit_succeeded', true)
             ->with('success', $this->finalSubmitSuccessMessage($reservationMeta));
     }
 
@@ -990,6 +991,7 @@ class PreinvoiceController extends Controller
         });
 
         return redirect()->route('preinvoice.draft.edit', $order->uuid)
+            ->with('preinvoice_submit_succeeded', true)
             ->with('success', '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی رزرو نشد.');
     }
 
@@ -1148,11 +1150,100 @@ class PreinvoiceController extends Controller
             return $reservationMeta;
         });
 
-        return back()->with('success', $isSubmit ? $this->finalSubmitSuccessMessage($reservationMeta) : '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی رزرو نشد.');
+        return back()
+            ->with('preinvoice_submit_succeeded', true)
+            ->with('success', $isSubmit ? $this->finalSubmitSuccessMessage($reservationMeta) : '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی رزرو نشد.');
+    }
+
+
+    private function prepareProductsPayload(Request $request): void
+    {
+        if (! $request->has('products_payload')) {
+            return;
+        }
+
+        if ((string) $request->input('products_payload_version') !== '1') {
+            throw ValidationException::withMessages([
+                'products' => 'نسخه اطلاعات اقلام پیش‌فاکتور نامعتبر است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        if ((string) $request->input('products_payload_complete') !== '1') {
+            throw ValidationException::withMessages([
+                'products' => 'اطلاعات اقلام پیش‌فاکتور ناقص یا نامعتبر است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        $rawPayload = (string) $request->input('products_payload', '');
+        if (trim($rawPayload) === '') {
+            throw ValidationException::withMessages([
+                'products' => 'اطلاعات اقلام پیش‌فاکتور ناقص یا نامعتبر است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        try {
+            $decodedProducts = json_decode($rawPayload, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw ValidationException::withMessages([
+                'products' => 'اطلاعات اقلام پیش‌فاکتور ناقص یا نامعتبر است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        if (! is_array($decodedProducts) || array_is_list($decodedProducts) === false) {
+            throw ValidationException::withMessages([
+                'products' => 'اطلاعات اقلام پیش‌فاکتور ناقص یا نامعتبر است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        $payloadCount = (int) $request->input('products_payload_count', 0);
+        $actualCount = count($decodedProducts);
+        if ($payloadCount !== $actualCount) {
+            throw ValidationException::withMessages([
+                'products' => 'اطلاعات اقلام به‌صورت ناقص به سرور رسیده است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        if ($actualCount < 1 || $actualCount > 3000) {
+            throw ValidationException::withMessages([
+                'products' => 'تعداد اقلام پیش‌فاکتور نامعتبر است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        $serverTotalQuantity = 0;
+        $serverGrossTotal = 0;
+        foreach ($decodedProducts as $row) {
+            if (! is_array($row)) {
+                throw ValidationException::withMessages([
+                    'products' => 'اطلاعات اقلام پیش‌فاکتور ناقص یا نامعتبر است. هیچ تغییری ثبت نشد.',
+                ]);
+            }
+            $quantity = (int) ($row['quantity'] ?? 0);
+            $price = (int) ($row['price'] ?? 0);
+            $serverTotalQuantity += $quantity;
+            $serverGrossTotal += $quantity * $price;
+        }
+
+        if ($request->filled('products_payload_total_quantity') && (int) $request->input('products_payload_total_quantity') !== $serverTotalQuantity) {
+            throw ValidationException::withMessages([
+                'products' => 'جمع اقلام ارسالی با اطلاعات فرم مطابقت ندارد. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        if ($request->filled('products_payload_gross_total') && (int) $request->input('products_payload_gross_total') !== $serverGrossTotal) {
+            throw ValidationException::withMessages([
+                'products' => 'جمع اقلام ارسالی با اطلاعات فرم مطابقت ندارد. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        $request->merge([
+            'products' => $decodedProducts,
+        ]);
     }
 
     private function validateDraftPayload(Request $request, bool $checkCurrentStock = true, ?PreinvoiceOrder $editingOrder = null): array
     {
+        $this->prepareProductsPayload($request);
+
         $validated = $request->validate([
             'reservation_token' => 'nullable|uuid',
             'autosave_uuid' => 'nullable|string',
@@ -1171,6 +1262,12 @@ class PreinvoiceController extends Controller
 
             'discount_amount' => 'nullable|integer|min:0',
             'total_price' => 'nullable|integer|min:0',
+            'products_payload' => 'nullable|string',
+            'products_payload_count' => 'nullable|integer|min:1|max:3000',
+            'products_payload_version' => 'nullable|integer|in:1',
+            'products_payload_complete' => 'nullable|in:1',
+            'products_payload_total_quantity' => 'nullable|integer|min:1',
+            'products_payload_gross_total' => 'nullable|integer|min:0',
 
             'products' => 'required|array|min:1',
             'products.*.id' => 'required|integer|exists:products,id',
@@ -1185,6 +1282,11 @@ class PreinvoiceController extends Controller
             'customer_mobile.required' => 'شماره موبایل مشتری الزامی است.',
             'products.required' => 'حداقل یک محصول باید ثبت شود.',
             'products.min' => 'حداقل یک محصول باید ثبت شود.',
+            'products.*.id.required' => 'شناسه کالا در یکی از ردیف‌ها ارسال نشده است.',
+            'products.*.variety_id.required' => 'شناسه تنوع در یکی از ردیف‌ها ارسال نشده است.',
+            'products.*.quantity.required' => 'تعداد یکی از ردیف‌ها ارسال نشده است.',
+            'products.*.quantity.min' => 'تعداد هر ردیف باید حداقل یک باشد.',
+            'products_payload.required' => 'اطلاعات اقلام پیش‌فاکتور ارسال نشده است.',
         ]);
 
         $provinceId = !empty($validated['province_id']) ? (int) $validated['province_id'] : null;
