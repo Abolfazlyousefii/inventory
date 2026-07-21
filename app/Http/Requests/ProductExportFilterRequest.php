@@ -48,7 +48,7 @@ class ProductExportFilterRequest extends FormRequest
             }
         }
 
-        $input['stock_status'] = $input['stock_status'] ?: 'all';
+        $input['stock_status'] = ($input['stock_status'] ?? null) ?: 'all';
 
         $this->replace($input);
     }
