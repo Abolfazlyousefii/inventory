@@ -103,6 +103,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
         Route::get('/', [ProductExportController::class, 'index'])->name('index');
         Route::get('/data', [ProductExportController::class, 'filter'])->name('data');
+        Route::get('/print', [ProductExportController::class, 'print'])->name('print');
+        Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
     });
 

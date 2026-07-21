@@ -10,3 +10,15 @@
 @layer components {
   .corp-card { @apply bg-white border border-gray-200 rounded-xl shadow-sm; }
 }
+
+.ts-wrapper,
+.ts-dropdown {
+  direction: rtl;
+  text-align: right;
+  font-family: inherit;
+}
+
+.ts-wrapper .ts-control,
+.ts-dropdown .option {
+  font-family: inherit;
+}
