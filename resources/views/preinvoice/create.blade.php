@@ -6,6 +6,17 @@ $order = $order ?? null;
 $customersPageUrl = $customersPageUrl ?? url('/customers');
 
 $initRows = old('products');
+$oldProductsPayload = old('products_payload');
+if (!$initRows && is_string($oldProductsPayload) && trim($oldProductsPayload) !== '') {
+    try {
+        $decodedOldProductsPayload = json_decode($oldProductsPayload, true, 512, JSON_THROW_ON_ERROR);
+        if (is_array($decodedOldProductsPayload)) {
+            $initRows = $decodedOldProductsPayload;
+        }
+    } catch (\Throwable $e) {
+        // Keep DB/local autosave fallback intact when the old JSON payload is corrupt.
+    }
+}
 
 if (!$initRows && $order) {
 $initRows = $order->items->map(function ($it) {
@@ -1356,6 +1367,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         <input type="hidden" name="reservation_token" id="reservation_token" value="{{ old('reservation_token') }}">
         <input type="hidden" name="autosave_uuid" id="autosave_uuid" value="">
         <input type="hidden" name="discount_breakdown" id="discount_breakdown" value="">
+        <input type="hidden" name="products_payload" id="products_payload" value="">
+        <input type="hidden" name="products_payload_count" id="products_payload_count" value="0">
+        <input type="hidden" name="products_payload_version" id="products_payload_version" value="1">
+        <input type="hidden" name="products_payload_complete" id="products_payload_complete" value="0">
+        <input type="hidden" name="products_payload_total_quantity" id="products_payload_total_quantity" value="0">
+        <input type="hidden" name="products_payload_gross_total" id="products_payload_gross_total" value="0">
 
 
         <div class="soft-card compact-card mb-3">
@@ -1613,6 +1630,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const OLD_DISCOUNT_AMOUNT = window.PREINVOICE_BOOT.oldDiscountAmount;
     const IS_EDIT = !!window.PREINVOICE_BOOT.isEdit;
     const EDIT_ORDER_UUID = window.PREINVOICE_BOOT.orderUuid || null;
+    const SUBMIT_SUCCEEDED = @json(session()->pull('preinvoice_submit_succeeded', false));
 
     const productCache = new Map();
 
@@ -3119,6 +3137,64 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         return true;
     }
 
+
+    function collectProductsForSubmit() {
+        const rows = [];
+        let rowNumber = 0;
+        for (const group of Object.values(groupedSelections || {})) {
+            const productId = Number(group?.product?.id || 0);
+            const productTitle = group?.product?.title || ('محصول #' + productId);
+            for (const item of (group?.items || [])) {
+                rowNumber++;
+                const row = {
+                    item_id: Number(item.item_id || 0) || null,
+                    id: productId,
+                    product_id: productId,
+                    variety_id: Number(item.variant_id || 0),
+                    variant_id: Number(item.variant_id || 0),
+                    quantity: Number(item.quantity || 0),
+                    price: Number(item.price || 0),
+                    line_discount_amount: Number(item.line_discount_amount || 0)
+                };
+                if (!(row.id > 0 && row.variety_id > 0 && row.quantity > 0 && row.price >= 0)) {
+                    throw new Error(`اطلاعات یکی از اقلام پیش‌فاکتور ناقص است.
+هیچ تغییری ثبت نشد.
+ردیف ${formatNum(rowNumber)}: ${productTitle}`);
+                }
+                rows.push(row);
+            }
+        }
+        return rows;
+    }
+
+    function prepareProductsPayloadForSubmit() {
+        const payloadEl = document.getElementById('products_payload');
+        const countEl = document.getElementById('products_payload_count');
+        const versionEl = document.getElementById('products_payload_version');
+        const completeEl = document.getElementById('products_payload_complete');
+        const qtyEl = document.getElementById('products_payload_total_quantity');
+        const grossEl = document.getElementById('products_payload_gross_total');
+        if (completeEl) completeEl.value = '0';
+        const rows = collectProductsForSubmit();
+        if (!rows.length) {
+            throw new Error('حداقل یک کالا باید اضافه شود.');
+        }
+        const payload = JSON.stringify(rows);
+        const totalQuantity = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+        const grossTotal = rows.reduce((sum, row) => sum + (Number(row.quantity || 0) * Number(row.price || 0)), 0);
+        payloadEl.value = payload;
+        countEl.value = String(rows.length);
+        versionEl.value = '1';
+        qtyEl.value = String(totalQuantity);
+        grossEl.value = String(grossTotal);
+        completeEl.value = '1';
+        // disable legacy product inputs after the JSON payload has been built successfully
+        document.querySelectorAll('#groupProductsInputs input[name^="products["]').forEach(input => {
+            input.disabled = true;
+        });
+        return rows;
+    }
+
     function normalizeBeforeSubmit() {
         const totalEl = document.getElementById('total_price');
         if (totalEl) totalEl.value = String(toInt(totalEl.value));
@@ -3136,12 +3212,18 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const intent = submitter?.value === 'draft' ? 'draft' : 'submit';
         const customerName = normalize(document.getElementById('customer_name').value);
         const customerMobile = normalize(document.getElementById('customer_mobile').value);
-        const productInputs = document.querySelectorAll('#groupProductsInputs input[name$="[quantity]"]');
+        let rowsForSubmit = [];
+        try {
+            rowsForSubmit = collectProductsForSubmit();
+        } catch (err) {
+            alert(err.message || 'اطلاعات یکی از اقلام پیش‌فاکتور ناقص است.\nهیچ تغییری ثبت نشد.');
+            return false;
+        }
         if (!customerName || !customerMobile) {
             alert('لطفا مشتری را انتخاب کنید.');
             return false;
         }
-        if (!productInputs.length) {
+        if (!rowsForSubmit.length) {
             alert('حداقل یک کالا باید اضافه شود.');
             return false;
         }
@@ -3150,13 +3232,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         btn.disabled = true;
         if (intent === 'draft') {
             normalizeBeforeSubmit();
+            try {
+                prepareProductsPayloadForSubmit();
+            } catch (err) {
+                alert(err.message || 'اطلاعات اقلام پیش‌فاکتور ناقص است.\nهیچ تغییری ثبت نشد.');
+                btn.disabled = false;
+                btn.textContent = oldText;
+                return false;
+            }
             btn.textContent = 'در حال ذخیره پیش‌نویس...';
             isSubmittingProgrammatically = true;
-            if (!IS_EDIT) {
-                localStorage.removeItem(LOCAL_DRAFT_KEY);
-                localStorage.removeItem(RESERVATION_TOKEN_KEY);
-            }
-            hideLocalDraftBanner();
             appendProgrammaticIntent(intent);
             document.getElementById('orderForm').submit();
             return true;
@@ -3179,13 +3264,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             return false;
         }
         normalizeBeforeSubmit();
+        try {
+            prepareProductsPayloadForSubmit();
+        } catch (err) {
+            alert(err.message || 'اطلاعات اقلام پیش‌فاکتور ناقص است.\nهیچ تغییری ثبت نشد.');
+            btn.disabled = false;
+            btn.textContent = oldText;
+            return false;
+        }
         btn.textContent = 'در حال ثبت...';
         isSubmittingProgrammatically = true;
-        if (!IS_EDIT) {
-            localStorage.removeItem(LOCAL_DRAFT_KEY);
-            localStorage.removeItem(RESERVATION_TOKEN_KEY);
-        }
-        hideLocalDraftBanner();
         appendProgrammaticIntent(intent);
         document.getElementById('orderForm').submit();
         return true;
@@ -3203,6 +3291,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     document.addEventListener('DOMContentLoaded', async function() {
+        if (SUBMIT_SUCCEEDED && !IS_EDIT) {
+            localStorage.removeItem(LOCAL_DRAFT_KEY);
+            localStorage.removeItem(RESERVATION_TOKEN_KEY);
+            hideLocalDraftBanner();
+        }
         if (!IS_EDIT) {
             ensureReservationToken();
             bindLocalDraftEvents();
