@@ -12,7 +12,9 @@ return new class extends Migration {
             return;
         }
 
-        DB::statement('ALTER TABLE preinvoice_orders MODIFY province_id INT UNSIGNED NULL');
+        Schema::table('preinvoice_orders', function (Blueprint $table) {
+            $table->unsignedInteger('province_id')->nullable()->change();
+        });
     }
 
     public function down(): void
@@ -22,6 +24,8 @@ return new class extends Migration {
         }
 
         DB::statement('UPDATE preinvoice_orders SET province_id = 0 WHERE province_id IS NULL');
-        DB::statement('ALTER TABLE preinvoice_orders MODIFY province_id INT UNSIGNED NOT NULL');
+        Schema::table('preinvoice_orders', function (Blueprint $table) {
+            $table->unsignedInteger('province_id')->nullable(false)->change();
+        });
     }
 };
