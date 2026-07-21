@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -36,6 +37,12 @@ return new class extends Migration {
             return;
         }
 
+        if (DB::getDriverName() === 'sqlite') {
+            $this->modifySqliteColumnNullable($column, $nullable);
+
+            return;
+        }
+
         $metadata = $this->columnMetadata($column);
         if (! $metadata) {
             return;
@@ -64,6 +71,14 @@ return new class extends Migration {
             return;
         }
 
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('preinvoice_orders', function (Blueprint $table) {
+                $table->unsignedBigInteger('shipping_price')->default(0)->change();
+            });
+
+            return;
+        }
+
         $metadata = $this->columnMetadata('shipping_price');
         if (! $metadata || $metadata->COLUMN_DEFAULT !== null) {
             return;
@@ -71,6 +86,17 @@ return new class extends Migration {
 
         $nullable = strtoupper((string) $metadata->IS_NULLABLE) === 'YES' ? 'NULL' : 'NOT NULL';
         DB::statement("ALTER TABLE preinvoice_orders MODIFY shipping_price {$metadata->COLUMN_TYPE} {$nullable} DEFAULT 0");
+    }
+
+    private function modifySqliteColumnNullable(string $column, bool $nullable): void
+    {
+        Schema::table('preinvoice_orders', function (Blueprint $table) use ($column, $nullable) {
+            match ($column) {
+                'shipping_id', 'province_id', 'city_id' => $table->unsignedInteger($column)->nullable($nullable)->change(),
+                'customer_address' => $table->text($column)->nullable($nullable)->change(),
+                default => null,
+            };
+        });
     }
 
     private function columnMetadata(string $column): ?object
