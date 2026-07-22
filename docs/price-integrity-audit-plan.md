@@ -90,3 +90,38 @@ A04، A05، A08 و A16 با شدت Medium گزارش می‌شوند.
 3. تأیید قیمت‌های High Confidence توسط مسئول فروش/مالی.
 4. تهیه اسکریپت اصلاح جداگانه با dry-run و transaction.
 5. گزارش جداگانه اسناد تاریخی صفر برای حسابداری بدون تغییر خودکار آنها.
+
+# Patch ایمن ممیزی قیمت
+
+- ثبت Command در Laravel 12 از مسیر `bootstrap/app.php` و `withCommands([__DIR__.'/../app/Console/Commands'])` انجام می‌شود؛ `app/Console/Kernel.php` در این ساختار لازم نیست.
+- Guard فقط ابتدای Statement را پس از حذف whitespace/comment بررسی می‌کند و Write verbهای `INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, `RENAME`, `GRANT`, `REVOKE` را Block می‌کند؛ بنابراین Alias یا متن داخل SELECT که شامل این کلمات باشد خطای مثبت کاذب نمی‌سازد.
+- خروجی پیش‌فرض روی دیسک local در `storage/app/reports/price-integrity/` نوشته می‌شود و فایل‌های ثابت `summary.json`، `anomalies.csv|json` و `suggestions.csv|json` تولید می‌شوند.
+- این Patch هیچ مسیر apply/repair ندارد، هیچ Migration یا جدول موقتی ایجاد نمی‌کند و `data_changed` همیشه `false` است.
+- پیشنهاد قیمت فروش فقط از منابع فروش/تغییر قیمت/پیش‌فاکتور مثبت ساخته می‌شود؛ `buy_price` بدون قانون رسمی حاشیه سود فقط در گزارش دیده می‌شود و Suggested Price تولید نمی‌کند.
+
+## دستور امن اجرا روی سرور
+
+```bash
+php artisan inventory:audit-price-integrity --format=csv --summary
+```
+
+برای خروجی JSON:
+
+```bash
+php artisan inventory:audit-price-integrity --format=json --summary
+```
+
+برای محدودکردن دامنه بررسی:
+
+```bash
+php artisan inventory:audit-price-integrity --product=123 --variant=456 --severity=Critical --format=csv --summary
+```
+
+## Indexهای پیشنهادی برای بررسی آینده، بدون Migration در این Patch
+
+- `warehouse_stocks(product_variant_id, quantity)` و `warehouse_stocks(product_id, product_variant_id)`
+- `product_variants(product_id, is_active, sales_enabled, sell_price)`
+- `invoice_items(variant_id, price, created_at)` و `invoice_items(product_id, price, created_at)`
+- `preinvoice_order_items(variant_id, price, created_at)`
+- `purchase_items(product_variant_id, created_at)`
+- `price_change_document_items(product_variant_id, applied_at, new_price)`
