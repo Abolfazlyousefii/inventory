@@ -17,7 +17,7 @@ class AuditProductPriceIntegrity extends Command
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
     private const FINAL_INVOICE_STATUSES = ['shipped', 'ready_to_ship', 'pending_collection', 'collecting', 'checking_discrepancy', 'final_check', 'packing', 'warehouse_received', 'pending_finance_reapproval', 'returned_to_sales_after_collection', 'processing'];
 
-    private static bool $writeGuardInstalled = false;
+    private static ?\WeakMap $guardedConnections = null;
     private static bool $writeGuardEnabled = false;
 
     public function handle(): int
@@ -48,11 +48,14 @@ class AuditProductPriceIntegrity extends Command
     {
         self::$writeGuardEnabled = true;
 
-        if (self::$writeGuardInstalled) {
+        $connection = DB::connection();
+        self::$guardedConnections ??= new \WeakMap();
+
+        if (isset(self::$guardedConnections[$connection])) {
             return;
         }
 
-        DB::connection()->beforeExecuting(
+        $connection->beforeExecuting(
             function (string $query, array $bindings, Connection $connection): void {
                 if (! self::$writeGuardEnabled) {
                     return;
@@ -64,7 +67,7 @@ class AuditProductPriceIntegrity extends Command
             }
         );
 
-        self::$writeGuardInstalled = true;
+        self::$guardedConnections[$connection] = true;
     }
 
     private function disableWriteQueryGuard(): void
@@ -115,6 +118,12 @@ class AuditProductPriceIntegrity extends Command
                 continue;
             }
 
+            $commentEnd = $this->sqlCommentEnd($sql, $i);
+            if ($commentEnd !== null) {
+                $i = $commentEnd;
+                continue;
+            }
+
             if ($char === '\'' || $char === '"' || $char === '`') {
                 $quote = $char;
                 continue;
@@ -133,6 +142,25 @@ class AuditProductPriceIntegrity extends Command
             if ($depth === 0 && preg_match('/\G\s*('.self::WRITE_VERBS.'|select)\b/i', $sql, $match, 0, $i)) {
                 return strtolower($match[1]);
             }
+        }
+
+        return null;
+    }
+
+    private function sqlCommentEnd(string $sql, int $offset): ?int
+    {
+        $next = $sql[$offset + 1] ?? '';
+
+        if ($sql[$offset] === '/' && $next === '*') {
+            $end = strpos($sql, '*/', $offset + 2);
+
+            return $end === false ? strlen($sql) - 1 : $end + 1;
+        }
+
+        if (($sql[$offset] === '-' && $next === '-') || $sql[$offset] === '#') {
+            $end = strcspn($sql, "\r\n", $offset);
+
+            return min(strlen($sql) - 1, $offset + $end);
         }
 
         return null;

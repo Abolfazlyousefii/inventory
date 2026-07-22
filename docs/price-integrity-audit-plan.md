@@ -94,7 +94,7 @@ A04، A05، A08 و A16 با شدت Medium گزارش می‌شوند.
 # Patch ایمن ممیزی قیمت
 
 - ثبت Command در Laravel 12 از مسیر `bootstrap/app.php` و `withCommands([__DIR__.'/../app/Console/Commands'])` انجام می‌شود؛ `app/Console/Kernel.php` در این ساختار لازم نیست.
-- Guard با hook پیش از اجرا (`DB::connection()->beforeExecuting`) فقط ابتدای Statement را پس از حذف whitespace/comment بررسی می‌کند و Write verbهای `INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, `RENAME`, `GRANT`, `REVOKE` را Block می‌کند؛ بنابراین Alias یا متن داخل SELECT/CTE خواندنی که شامل این کلمات باشد خطای مثبت کاذب نمی‌سازد و CTE منتهی به Write پیش از اجرا Block می‌شود.
+- Guard با hook پیش از اجرا (`DB::connection()->beforeExecuting`) و ثبت به‌ازای هر Connection با `WeakMap` فقط ابتدای Statement را پس از حذف whitespace/comment بررسی می‌کند و Write verbهای `INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, `RENAME`, `GRANT`, `REVOKE` را Block می‌کند؛ بنابراین Alias یا متن داخل SELECT/CTE خواندنی که شامل این کلمات باشد خطای مثبت کاذب نمی‌سازد و CTE منتهی به Write پیش از اجرا Block می‌شود؛ commentهای میانی داخل CTE نیز در parser نادیده گرفته می‌شوند.
 - خروجی پیش‌فرض روی دیسک local در `storage/app/reports/price-integrity/` نوشته می‌شود و فایل‌های ثابت `summary.json`، `anomalies.csv|json` و `suggestions.csv|json` تولید می‌شوند.
 - این Patch هیچ مسیر apply/repair ندارد، هیچ Migration یا جدول موقتی ایجاد نمی‌کند و `data_changed` همیشه `false` است.
 - پیشنهاد قیمت فروش فقط از منابع فروش/تغییر قیمت/پیش‌فاکتور مثبت ساخته می‌شود؛ `buy_price` بدون قانون رسمی حاشیه سود فقط در گزارش دیده می‌شود و Suggested Price تولید نمی‌کند.

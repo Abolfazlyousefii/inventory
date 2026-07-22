@@ -86,11 +86,7 @@ class PriceIntegrityAuditCommandTest extends TestCase
             $t->string('name');
         });
 
-        $command = app(\App\Console\Commands\AuditProductPriceIntegrity::class);
-        $install = new \ReflectionMethod($command, 'installWriteQueryGuard');
-        $install->setAccessible(true);
-        $disable = new \ReflectionMethod($command, 'disableWriteQueryGuard');
-        $disable->setAccessible(true);
+        [$install, $disable, $command] = $this->guardReflection();
 
         try {
             $install->invoke($command);
@@ -103,7 +99,48 @@ class PriceIntegrityAuditCommandTest extends TestCase
         }
     }
 
-    public function test_write_query_guard_allows_select_and_select_cte(): void
+    public function test_write_query_guard_blocks_update_before_execution(): void
+    {
+        Schema::create('guard_update_rows', function (Blueprint $t): void {
+            $t->id();
+            $t->string('name');
+        });
+        DB::table('guard_update_rows')->insert(['name' => 'original']);
+
+        [$install, $disable, $command] = $this->guardReflection();
+
+        try {
+            $install->invoke($command);
+
+            $this->expectException(\RuntimeException::class);
+            DB::update('update guard_update_rows set name = ? where name = ?', ['changed', 'original']);
+        } finally {
+            $disable->invoke($command);
+            $this->assertSame('original', DB::table('guard_update_rows')->value('name'));
+        }
+    }
+
+    public function test_write_query_guard_blocks_write_cte_before_execution(): void
+    {
+        Schema::create('guard_cte_rows', function (Blueprint $t): void {
+            $t->id();
+            $t->string('name');
+        });
+
+        [$install, $disable, $command] = $this->guardReflection();
+
+        try {
+            $install->invoke($command);
+
+            $this->expectException(\RuntimeException::class);
+            DB::statement("with probe as (select 'delete is text' as label) /* update in comment */ insert into guard_cte_rows (name) values ('blocked')");
+        } finally {
+            $disable->invoke($command);
+            $this->assertSame(0, DB::table('guard_cte_rows')->count());
+        }
+    }
+
+    public function test_write_query_guard_allows_select_and_select_cte_then_disable_allows_normal_writes(): void
     {
         Schema::create('guard_select_rows', function (Blueprint $t): void {
             $t->id();
@@ -111,19 +148,46 @@ class PriceIntegrityAuditCommandTest extends TestCase
         });
         DB::table('guard_select_rows')->insert(['name' => 'allowed']);
 
-        $command = app(\App\Console\Commands\AuditProductPriceIntegrity::class);
-        $install = new \ReflectionMethod($command, 'installWriteQueryGuard');
-        $install->setAccessible(true);
-        $disable = new \ReflectionMethod($command, 'disableWriteQueryGuard');
-        $disable->setAccessible(true);
+        [$install, $disable, $command] = $this->guardReflection();
 
         try {
             $install->invoke($command);
 
             $this->assertSame('allowed', DB::selectOne('select name from guard_select_rows where name = ?', ['allowed'])->name);
-            $this->assertSame('UPDATE text only', DB::selectOne("with probe as (select 'UPDATE text only' as label) select label from probe")->label);
+            $this->assertSame('UPDATE text only', DB::selectOne("with probe as (select 'UPDATE text only' as label) /* delete in comment */ select label from probe")->label);
         } finally {
             $disable->invoke($command);
+        }
+
+        DB::table('guard_select_rows')->insert(['name' => 'after-disable']);
+        $this->assertSame(2, DB::table('guard_select_rows')->count());
+    }
+
+    public function test_write_query_guard_registers_again_for_new_connection_after_purge(): void
+    {
+        Schema::create('guard_reconnect_rows', function (Blueprint $t): void {
+            $t->id();
+            $t->string('name');
+        });
+
+        [$install, $disable, $command] = $this->guardReflection();
+        $install->invoke($command);
+        $disable->invoke($command);
+
+        DB::purge('sqlite');
+        Schema::create('guard_reconnect_rows', function (Blueprint $t): void {
+            $t->id();
+            $t->string('name');
+        });
+
+        try {
+            $install->invoke($command);
+
+            $this->expectException(\RuntimeException::class);
+            DB::insert('insert into guard_reconnect_rows (name) values (?)', ['blocked-new-connection']);
+        } finally {
+            $disable->invoke($command);
+            $this->assertSame(0, DB::table('guard_reconnect_rows')->count());
         }
     }
 
@@ -178,6 +242,17 @@ class PriceIntegrityAuditCommandTest extends TestCase
         Schema::create('invoice_items', function (Blueprint $t): void { $t->id(); $t->unsignedBigInteger('invoice_id'); $t->unsignedBigInteger('product_id'); $t->unsignedBigInteger('variant_id')->nullable(); $t->integer('quantity'); $t->bigInteger('price'); $t->bigInteger('line_total')->default(0); $t->timestamps(); });
         Schema::create('preinvoice_orders', function (Blueprint $t): void { $t->id(); $t->uuid('uuid')->nullable(); $t->string('status')->nullable(); $t->string('customer_name')->nullable(); $t->string('customer_mobile')->nullable(); $t->text('customer_address')->nullable(); $t->unsignedInteger('province_id')->nullable(); $t->bigInteger('total_price')->default(0); $t->timestamps(); });
         Schema::create('preinvoice_order_items', function (Blueprint $t): void { $t->id(); $t->unsignedBigInteger('preinvoice_order_id'); $t->unsignedBigInteger('product_id'); $t->unsignedBigInteger('variant_id')->nullable(); $t->integer('quantity'); $t->bigInteger('price'); $t->timestamps(); });
+    }
+
+    private function guardReflection(): array
+    {
+        $command = app(\App\Console\Commands\AuditProductPriceIntegrity::class);
+        $install = new \ReflectionMethod($command, 'installWriteQueryGuard');
+        $install->setAccessible(true);
+        $disable = new \ReflectionMethod($command, 'disableWriteQueryGuard');
+        $disable->setAccessible(true);
+
+        return [$install, $disable, $command];
     }
 
     private function csv(string $path): array
