@@ -53,9 +53,17 @@ class ProductPriceListPdfTest extends TestCase
 
     public function test_view_contract(): void
     {
-        $view = file_get_contents(resource_path('views/product-exports/price-list-pdf.blade.php')).file_get_contents(resource_path('views/product-exports/partials/clean-price-list.blade.php'));
+        $pdfView = file_get_contents(resource_path('views/product-exports/price-list-pdf.blade.php'));
+        $previewView = file_get_contents(resource_path('views/product-exports/partials/clean-price-list.blade.php'));
+        $colorView = file_get_contents(resource_path('views/product-exports/partials/color-list.blade.php'));
+        $view = $pdfView.$previewView.$colorView;
+
         foreach (['rowspan=','catalog-card','output_mode','Laravel','placeholder-product','window.print'] as $needle) $this->assertStringNotContainsString($needle, $view);
         foreach (['price-list-product-header','price-list-detail-row','price-list-models','price-list-colors','price-list-price'] as $needle) $this->assertStringContainsString($needle, $view);
+        foreach (['<colgroup>', 'width: 46%', 'width: 38%', 'width: 16%', 'product-header-row', 'column-header-row', 'dir="ltr"', 'model-token', 'colors-grid', 'white-space:nowrap', 'border-left:0.6px solid #D7E2E8', 'product-price-table--large'] as $needle) {
+            $this->assertStringContainsString($needle, $view);
+        }
+        $this->assertMatchesRegularExpression('/<thead><tr class="product-header-row">.*<tr class="column-header-row">/s', $pdfView);
     }
 
     private function signIn(): void { $role=Role::findOrCreate('products-viewer','web'); $permission=Permission::findOrCreate('products.view','web'); $role->givePermissionTo($permission); $user=User::factory()->create(); $user->assignRole($role); $this->actingAs($user); }
