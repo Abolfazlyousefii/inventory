@@ -199,3 +199,6 @@ Artisan::command('products:repair-variants {product : Product id/code/sku/short_
 
     return 0;
 })->purpose('Deactivate invalid product variants without deleting stock/history');
+
+Schedule::command('integration:ariya-site:reconcile-catalog')->dailyAt('02:00')->withoutOverlapping();
+Schedule::call(fn () => \App\Models\Integration\IntegrationOutboxEvent::where('status','pending')->where('available_at','<=',now())->limit(100)->pluck('id')->each(fn($id)=>\App\Jobs\Integrations\DeliverAriyaOutboxEventJob::dispatch($id)->onQueue(config('ariya_site.queue','integrations'))))->everyFifteenMinutes()->name('ariya-site-outbox-retry')->withoutOverlapping();
