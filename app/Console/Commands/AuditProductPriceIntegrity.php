@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +17,9 @@ class AuditProductPriceIntegrity extends Command
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
     private const FINAL_INVOICE_STATUSES = ['shipped', 'ready_to_ship', 'pending_collection', 'collecting', 'checking_discrepancy', 'final_check', 'packing', 'warehouse_received', 'pending_finance_reapproval', 'returned_to_sales_after_collection', 'processing'];
 
+    private static bool $writeGuardInstalled = false;
+    private static bool $writeGuardEnabled = false;
+
     public function handle(): int
     {
         $format = strtolower((string) $this->option('format'));
@@ -27,24 +30,112 @@ class AuditProductPriceIntegrity extends Command
 
         $this->installWriteQueryGuard();
 
-        $anomalies = $this->applyFilters($this->buildAnomalies());
-        $suggestions = $this->buildSuggestions($anomalies);
-        $summary = $this->buildSummary($anomalies, $suggestions);
-        $paths = $this->writeReports($anomalies, $suggestions, $summary, $format);
+        try {
+            $anomalies = $this->applyFilters($this->buildAnomalies());
+            $suggestions = $this->buildSuggestions($anomalies);
+            $summary = $this->buildSummary($anomalies, $suggestions);
+            $paths = $this->writeReports($anomalies, $suggestions, $summary, $format);
 
-        $this->line(json_encode(['summary' => $summary, 'paths' => $paths], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            $this->line(json_encode(['summary' => $summary, 'paths' => $paths], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
-        return self::SUCCESS;
+            return self::SUCCESS;
+        } finally {
+            $this->disableWriteQueryGuard();
+        }
     }
 
     private function installWriteQueryGuard(): void
     {
-        DB::listen(function (QueryExecuted $query): void {
-            $sql = ltrim(preg_replace('/^(?:\s|\/\*.*?\*\/|--[^\r\n]*(?:\r?\n|$)|#[^\r\n]*(?:\r?\n|$))+/s', ' ', $query->sql) ?? $query->sql);
-            if (preg_match('/^(?:with\s+.*?\s+)?('.self::WRITE_VERBS.')\b/is', $sql)) {
-                throw new \RuntimeException('Unsafe write query blocked during price audit.');
+        self::$writeGuardEnabled = true;
+
+        if (self::$writeGuardInstalled) {
+            return;
+        }
+
+        DB::connection()->beforeExecuting(
+            function (string $query, array $bindings, Connection $connection): void {
+                if (! self::$writeGuardEnabled) {
+                    return;
+                }
+
+                if ($this->isWriteStatement($query)) {
+                    throw new \RuntimeException('Unsafe write query blocked before execution during price audit.');
+                }
             }
-        });
+        );
+
+        self::$writeGuardInstalled = true;
+    }
+
+    private function disableWriteQueryGuard(): void
+    {
+        self::$writeGuardEnabled = false;
+    }
+
+    private function isWriteStatement(string $query): bool
+    {
+        $sql = $this->stripLeadingSqlComments($query);
+
+        if (preg_match('/^('.self::WRITE_VERBS.')\b/i', $sql)) {
+            return true;
+        }
+
+        if (! preg_match('/^with\b/i', $sql)) {
+            return false;
+        }
+
+        $outerVerb = $this->firstTopLevelVerbAfterCte($sql);
+
+        return $outerVerb !== null && preg_match('/^('.self::WRITE_VERBS.')$/i', $outerVerb) === 1;
+    }
+
+    private function stripLeadingSqlComments(string $query): string
+    {
+        return ltrim(preg_replace('/^(?:\s|\/\*.*?\*\/|--[^\r\n]*(?:\r?\n|$)|#[^\r\n]*(?:\r?\n|$))+/s', ' ', $query) ?? $query);
+    }
+
+    private function firstTopLevelVerbAfterCte(string $sql): ?string
+    {
+        $length = strlen($sql);
+        $depth = 0;
+        $quote = null;
+
+        for ($i = 4; $i < $length; $i++) {
+            $char = $sql[$i];
+
+            if ($quote !== null) {
+                if ($char === $quote) {
+                    $next = $sql[$i + 1] ?? '';
+                    if ($next === $quote) {
+                        $i++;
+                        continue;
+                    }
+                    $quote = null;
+                }
+                continue;
+            }
+
+            if ($char === '\'' || $char === '"' || $char === '`') {
+                $quote = $char;
+                continue;
+            }
+
+            if ($char === '(') {
+                $depth++;
+                continue;
+            }
+
+            if ($char === ')') {
+                $depth = max(0, $depth - 1);
+                continue;
+            }
+
+            if ($depth === 0 && preg_match('/\G\s*('.self::WRITE_VERBS.'|select)\b/i', $sql, $match, 0, $i)) {
+                return strtolower($match[1]);
+            }
+        }
+
+        return null;
     }
 
     private function buildAnomalies(): array

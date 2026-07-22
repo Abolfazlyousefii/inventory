@@ -78,6 +78,55 @@ class PriceIntegrityAuditCommandTest extends TestCase
         $this->assertFalse(collect($queries)->contains(fn ($sql) => preg_match('/^\s*(insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke)\b/i', $sql)));
     }
 
+
+    public function test_write_query_guard_blocks_insert_before_execution(): void
+    {
+        Schema::create('guard_probe_rows', function (Blueprint $t): void {
+            $t->id();
+            $t->string('name');
+        });
+
+        $command = app(\App\Console\Commands\AuditProductPriceIntegrity::class);
+        $install = new \ReflectionMethod($command, 'installWriteQueryGuard');
+        $install->setAccessible(true);
+        $disable = new \ReflectionMethod($command, 'disableWriteQueryGuard');
+        $disable->setAccessible(true);
+
+        try {
+            $install->invoke($command);
+
+            $this->expectException(\RuntimeException::class);
+            DB::insert('/* audit guard */ insert into guard_probe_rows (name) values (?)', ['blocked']);
+        } finally {
+            $disable->invoke($command);
+            $this->assertSame(0, DB::table('guard_probe_rows')->count());
+        }
+    }
+
+    public function test_write_query_guard_allows_select_and_select_cte(): void
+    {
+        Schema::create('guard_select_rows', function (Blueprint $t): void {
+            $t->id();
+            $t->string('name');
+        });
+        DB::table('guard_select_rows')->insert(['name' => 'allowed']);
+
+        $command = app(\App\Console\Commands\AuditProductPriceIntegrity::class);
+        $install = new \ReflectionMethod($command, 'installWriteQueryGuard');
+        $install->setAccessible(true);
+        $disable = new \ReflectionMethod($command, 'disableWriteQueryGuard');
+        $disable->setAccessible(true);
+
+        try {
+            $install->invoke($command);
+
+            $this->assertSame('allowed', DB::selectOne('select name from guard_select_rows where name = ?', ['allowed'])->name);
+            $this->assertSame('UPDATE text only', DB::selectOne("with probe as (select 'UPDATE text only' as label) select label from probe")->label);
+        } finally {
+            $disable->invoke($command);
+        }
+    }
+
     public function test_csv_and_json_outputs_are_written(): void
     {
         $this->seedBase();
