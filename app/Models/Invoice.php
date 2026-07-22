@@ -22,11 +22,6 @@ class Invoice extends Model
     public const STATUS_READY_TO_SHIP = 'ready_to_ship';
     public const STATUS_RETURNED_TO_SALES_AFTER_COLLECTION = 'returned_to_sales_after_collection';
 
-    public const STATUS_CANCELED_LEGACY = 'canceled';
-    public const STATUS_CANCELLED_LEGACY = 'cancelled';
-    public const STATUS_FINANCE_APPROVED = 'finance_approved';
-    public const COLLECTION_STATUS_COMPLETED = 'completed';
-
     protected $fillable = [
         'uuid','customer_id','preinvoice_order_id',
         'customer_name','customer_mobile','customer_address',
@@ -59,20 +54,6 @@ class Invoice extends Model
         'items_updated_at' => 'datetime',
         'items_updated_by' => 'integer',
     ];
-
-    public static function cancelledStatuses(): array
-    {
-        return [
-            self::STATUS_NOT_SHIPPED,
-            self::STATUS_CANCELED_LEGACY,
-            self::STATUS_CANCELLED_LEGACY,
-        ];
-    }
-
-    public function scopeNotCancelled($query)
-    {
-        return $query->whereNotIn('status', self::cancelledStatuses());
-    }
 
 
     protected static function booted(): void
