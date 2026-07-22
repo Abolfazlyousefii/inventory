@@ -13,6 +13,8 @@ use Illuminate\Support\Collection;
 
 class ProductExportService
 {
+    public function __construct(private readonly ProductCatalogGroupingService $groupingService = new ProductCatalogGroupingService()) {}
+
     public function buildQuery(array $filters): Builder
     {
         $modelListIds = $this->modelListIds($filters);
@@ -26,10 +28,10 @@ class ProductExportService
                 $this->applyCatalogVariantConstraints($query, ['model_list_ids' => $modelListIds]);
 
                 $query->select([
-                    'id', 'product_id', 'model_list_id', 'variant_name', 'variety_name', 'variety_code',
+                    'id', 'product_id', 'model_list_id', 'color_id', 'variant_name', 'variety_name', 'variety_code',
                     'variant_code', 'sell_price', 'stock', 'is_active', 'sales_enabled',
                 ])
-                    ->with(['modelList:id,brand,model_name,code'])
+                    ->with(['modelList:id,brand,model_name,code', 'color:id,name,code,hex_code'])
                     ->orderBy('model_list_id')
                     ->orderBy('variant_name')
                     ->orderBy('variety_name')
@@ -60,7 +62,8 @@ class ProductExportService
     public function paginate(array $filters, int $perPage = 24): LengthAwarePaginator
     {
         $paginator = $this->buildQuery($filters)->paginate($perPage)->withQueryString();
-        $paginator->setCollection($paginator->getCollection()->map(fn (Product $product) => $this->mapProduct($product, $filters)));
+        $mapped = $paginator->getCollection()->map(fn (Product $product) => $this->mapProduct($product, $filters));
+        $paginator->setCollection($this->filterWithoutPrice($mapped, $filters));
 
         return $paginator;
     }
@@ -68,30 +71,32 @@ class ProductExportService
     public function allForPrint(array $filters): Collection
     {
         $products = $this->buildQuery($filters)->get()->map(fn (Product $product) => $this->mapProduct($product, $filters));
-        return $products;
+        return $this->filterWithoutPrice($products, $filters)->values();
     }
 
     public function mapProduct(Product $product, array $filters): array
     {
         $variantsCollection = $product->catalogVariants;
-        $variants = $variantsCollection->map(fn (ProductVariant $variant) => [
-            'id' => $variant->id,
-            'name' => $this->variantDisplayName($variant),
-            'model_list_name' => $this->cleanText($variant->modelList?->model_name, ''),
-            'price' => $this->variantPrice($variant, $product),
-            'price_label' => $this->priceLabel($this->variantPrice($variant, $product)),
-        ])->values()->all();
-
+        $grouped = $this->groupingService->group($product, $variantsCollection);
         $price = $this->productPrice($product, $variantsCollection);
+        $modelsTextLength = collect($grouped['groups'])->flatMap(fn ($group) => $group['models'])->implode('، ');
 
         return [
             'id' => $product->id,
             'name' => $this->cleanText($product->name, 'محصول بدون نام'),
-            'image_url' => $this->imageUrl($product),
-            'price' => $price,
-            'price_label' => $this->productPriceLabel($price, $variantsCollection),
             'category_name' => $this->cleanText($product->category?->name, 'بدون دسته‌بندی'),
-            'variants' => $variants,
+            'image_url' => $this->imageUrl($product),
+            'has_real_image' => trim((string) ($product->image_path ?? '')) !== '',
+            'price' => $price,
+            'price_label' => $price ? $this->priceLabel($price) : 'قیمت ثبت نشده',
+            'price_summary' => $grouped['has_price'] ? $grouped['price_summary'] : 'قیمت ثبت نشده',
+            'variant_count' => $grouped['variant_count'],
+            'model_count' => $grouped['model_count'],
+            'color_count' => $grouped['color_count'],
+            'catalog_groups' => $grouped['groups'],
+            'price_list_rows' => $grouped['price_list_rows'],
+            'is_wide' => count($grouped['groups']) > 4 || $grouped['model_count'] > 20 || mb_strlen($modelsTextLength) > 180,
+            'has_price' => $grouped['has_price'],
         ];
     }
 
@@ -103,10 +108,13 @@ class ProductExportService
         $models = $modelIds === [] ? collect() : ModelList::query()->whereIn('id', $modelIds)->orderBy('model_name')->get();
 
         return [
+            'title' => ($filters['output_mode'] ?? 'catalog') === 'price_list' ? 'لیست قیمت محصولات' : 'کاتالوگ محصولات',
+            'output_mode' => $filters['output_mode'] ?? 'catalog',
             'root_category' => $this->cleanText($root?->name, 'همه دسته‌ها'),
             'subcategory' => $this->cleanText($child?->name, 'همه زیردسته‌ها'),
             'model_brand' => $this->cleanText($filters['model_brand'] ?? null, 'همه انواع مدل'),
-            'model_lists' => $models->isEmpty() ? 'همه مدل‌ها' : $models->pluck('model_name')->implode('، '),
+            'model_lists' => $models->isEmpty() ? 'همه مدل‌ها' : ($models->count() <= 3 ? $models->pluck('model_name')->implode('، ') : number_format($models->count()).' مدل'),
+            'selected_models_count' => $models->count(),
             'stock_status' => match ($filters['stock_status'] ?? 'all') {
                 'in_stock' => 'موجود',
                 'out_of_stock' => 'ناموجود',
@@ -116,6 +124,11 @@ class ProductExportService
             'products_count' => null,
             'store_name' => config('app.name', 'سامانه انبارداری'),
         ];
+    }
+
+    private function filterWithoutPrice(Collection $products, array $filters): Collection
+    {
+        return ($filters['include_without_price'] ?? false) ? $products : $products->filter(fn (array $product) => $product['has_price']);
     }
 
     public function modelListIds(array $filters): array
@@ -203,7 +216,7 @@ class ProductExportService
 
     private function placeholderImage(): string
     {
-        return 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22%3E%3Crect width=%2232%22 height=%2232%22 fill=%22%23f8fafc%22/%3E%3Ctext x=%2216%22 y=%2220%22 font-size=%2210%22 text-anchor=%22middle%22 fill=%22%23718096%22%3EARIA%3C/text%3E%3C/svg%3E';
+        return 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2210%22 fill=%22%23f8fafc%22/%3E%3Cpath d=%22M18 22h28v24H18zM23 18h18v4H23z%22 fill=%22%23d8e4ee%22/%3E%3C/svg%3E';
     }
 
     private function cleanText(mixed $value, string $fallback = ''): string

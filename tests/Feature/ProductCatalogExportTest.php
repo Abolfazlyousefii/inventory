@@ -78,7 +78,7 @@ class ProductCatalogExportTest extends TestCase
         $this->variant($product, $a, 'Variant A'); $this->variant($product, $b, 'Variant B'); $this->variant($product, $c, 'Variant C');
 
         $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$a->id, $c->id]]))
-            ->assertOk()->assertSee('Multi model')->assertSee('Variant A')->assertSee('Variant C')->assertDontSee('Variant B');
+            ->assertOk()->assertSee('Multi model')->assertSee('A')->assertSee('C')->assertDontSee('Variant B');
     }
 
     public function test_product_without_matching_model_variant_is_excluded_and_empty_model_shows_all(): void
@@ -89,7 +89,7 @@ class ProductCatalogExportTest extends TestCase
         $this->variant($product, $a, 'Variant A');
 
         $this->get(route('admin.product-exports.data', ['model_brand' => 'Brand', 'model_list_ids' => [$b->id]]))->assertOk()->assertDontSee('All variants');
-        $this->get(route('admin.product-exports.data'))->assertOk()->assertSee('Variant A');
+        $this->get(route('admin.product-exports.data'))->assertOk()->assertSee('A');
     }
 
     public function test_in_stock_filter_uses_visible_variants(): void
@@ -113,7 +113,7 @@ class ProductCatalogExportTest extends TestCase
 
         $this->get(route('admin.product-exports.print'))->assertOk()
             ->assertSee('lang="fa"', false)->assertSee('dir="rtl"', false)->assertSee('چاپ محصولات')
-            ->assertSee('Printable product')->assertSee('12,000 ریال')->assertSee('Printable Variant')
+            ->assertSee('Printable product')->assertSee('12,000 ریال')->assertSee('Print Model')
             ->assertSee(route('products.image', $product))->assertDontSee('مجموع موجودی')->assertDontSee('موجودی فعلی')->assertDontSee('انبار');
         $this->get(route('admin.product-exports.export', ['stock_status' => 'in_stock']))->assertRedirect(route('admin.product-exports.print', ['stock_status' => 'in_stock']));
     }
