@@ -1,5 +1,2 @@
-@if(($filters['output_mode'] ?? 'catalog') === 'price_list')
-    @include('product-exports.partials.price-list', ['products' => $products])
-@else
-    @include('product-exports.partials.catalog-card-list', ['products' => $products])
-@endif
+@include('product-exports.partials.clean-price-list', ['products' => $products])
+@if(method_exists($products, 'links'))<div class="catalog-pagination">{{ $products->links() }}</div>@endif

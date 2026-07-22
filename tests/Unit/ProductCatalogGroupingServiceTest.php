@@ -61,7 +61,7 @@ class ProductCatalogGroupingServiceTest extends TestCase
     {
         $result = $this->service->group($this->product(null), new Collection([$this->variant('A15', 'مشکی', null), $this->variant('A15', 'آبی', null)]));
         $this->assertFalse($result['has_price']);
-        $this->assertSame('بدون قیمت', $result['price_summary']);
+        $this->assertSame('قیمت ثبت نشده', $result['price_summary']);
         $this->assertSame('قیمت ثبت نشده', $result['groups'][0]['price_label']);
     }
 
