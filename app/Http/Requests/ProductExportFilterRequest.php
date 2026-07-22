@@ -28,6 +28,8 @@ class ProductExportFilterRequest extends FormRequest
             elseif ($category) $input['root_category_id']=$category->id;
         }
         $input['stock_status'] = ($input['stock_status'] ?? null) ?: 'all';
+        $truthy = ['1', 'true', 'on', 1, true];
+        $input['include_without_price'] = in_array($input['include_without_price'] ?? false, $truthy, true);
         $this->replace($input);
     }
 
@@ -40,6 +42,7 @@ class ProductExportFilterRequest extends FormRequest
             'model_list_ids' => ['nullable','array','max:200'],
             'model_list_ids.*' => ['integer','distinct','exists:model_lists,id'],
             'stock_status' => ['nullable', Rule::in(['all','in_stock','out_of_stock'])],
+            'include_without_price' => ['nullable','boolean'],
             'page' => ['nullable','integer','min:1'],
         ];
     }
@@ -65,6 +68,7 @@ class ProductExportFilterRequest extends FormRequest
             'model_brand' => $v['model_brand'] ?? null,
             'model_list_ids' => $v['model_list_ids'] ?? [],
             'stock_status' => $v['stock_status'] ?? 'all',
+            'include_without_price' => (bool) ($v['include_without_price'] ?? false),
             'page' => $v['page'] ?? 1,
         ];
     }

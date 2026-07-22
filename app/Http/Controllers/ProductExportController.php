@@ -6,13 +6,15 @@ use App\Http\Requests\ProductExportFilterRequest;
 use App\Models\Category;
 use App\Models\ModelList;
 use App\Services\ProductExportService;
+use App\Services\ProductPriceListPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Illuminate\View\View;
 
 class ProductExportController extends Controller
 {
-    public function __construct(private readonly ProductExportService $service) {}
+    public function __construct(private readonly ProductExportService $service, private readonly ProductPriceListPdfService $pdfService) {}
 
     public function index(ProductExportFilterRequest $request): View
     {
@@ -38,16 +40,27 @@ class ProductExportController extends Controller
         $filters = $request->filters();
         $products = $this->service->paginate($filters, 24);
 
-        return view('product-exports.partials.product-list', compact('products'))->render();
+        return view('product-exports.partials.product-list', compact('products', 'filters'))->render();
     }
 
-    public function print(ProductExportFilterRequest $request): View
+    public function print(ProductExportFilterRequest $request): RedirectResponse
+    {
+        return redirect()->route('admin.product-exports.download', $request->query());
+    }
+
+    public function download(ProductExportFilterRequest $request): Response
     {
         $filters = $request->filters();
         $products = $this->service->allForPrint($filters);
         $meta = $this->service->meta($filters);
+        $meta['products_count'] = $products->count();
+        $pdf = $this->pdfService->render($products->all(), $meta);
+        $filename = 'aria-gostar-price-list-'.now()->format('Y-m-d-Hi').'.pdf';
 
-        return view('product-exports.print', compact('products', 'filters', 'meta'));
+        return response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
     }
 
     public function export(ProductExportFilterRequest $request): RedirectResponse

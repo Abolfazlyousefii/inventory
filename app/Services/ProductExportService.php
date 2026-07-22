@@ -13,6 +13,8 @@ use Illuminate\Support\Collection;
 
 class ProductExportService
 {
+    public function __construct(private readonly ProductCatalogGroupingService $groupingService = new ProductCatalogGroupingService()) {}
+
     public function buildQuery(array $filters): Builder
     {
         $modelListIds = $this->modelListIds($filters);
@@ -26,10 +28,10 @@ class ProductExportService
                 $this->applyCatalogVariantConstraints($query, ['model_list_ids' => $modelListIds]);
 
                 $query->select([
-                    'id', 'product_id', 'model_list_id', 'variant_name', 'variety_name', 'variety_code',
+                    'id', 'product_id', 'model_list_id', 'color_id', 'variant_name', 'variety_name', 'variety_code',
                     'variant_code', 'sell_price', 'stock', 'is_active', 'sales_enabled',
                 ])
-                    ->with(['modelList:id,brand,model_name,code'])
+                    ->with(['modelList:id,brand,model_name,code', 'color:id,name,code,hex_code'])
                     ->orderBy('model_list_id')
                     ->orderBy('variant_name')
                     ->orderBy('variety_name')
@@ -60,7 +62,8 @@ class ProductExportService
     public function paginate(array $filters, int $perPage = 24): LengthAwarePaginator
     {
         $paginator = $this->buildQuery($filters)->paginate($perPage)->withQueryString();
-        $paginator->setCollection($paginator->getCollection()->map(fn (Product $product) => $this->mapProduct($product, $filters)));
+        $mapped = $paginator->getCollection()->map(fn (Product $product) => $this->mapProduct($product, $filters));
+        $paginator->setCollection($this->filterWithoutPrice($mapped, $filters));
 
         return $paginator;
     }
@@ -68,30 +71,31 @@ class ProductExportService
     public function allForPrint(array $filters): Collection
     {
         $products = $this->buildQuery($filters)->get()->map(fn (Product $product) => $this->mapProduct($product, $filters));
-        return $products;
+        return $this->filterWithoutPrice($products, $filters)->values();
     }
 
     public function mapProduct(Product $product, array $filters): array
     {
         $variantsCollection = $product->catalogVariants;
-        $variants = $variantsCollection->map(fn (ProductVariant $variant) => [
-            'id' => $variant->id,
-            'name' => $this->variantDisplayName($variant),
-            'model_list_name' => $this->cleanText($variant->modelList?->model_name, ''),
-            'price' => $this->variantPrice($variant, $product),
-            'price_label' => $this->priceLabel($this->variantPrice($variant, $product)),
-        ])->values()->all();
-
-        $price = $this->productPrice($product, $variantsCollection);
+        $grouped = $this->groupingService->group($product, $variantsCollection);
+        $imagePath = $this->imagePath($product);
+        $modelsTextLength = collect($grouped['groups'])->flatMap(fn ($group) => $group['models'])->implode('، ');
 
         return [
             'id' => $product->id,
             'name' => $this->cleanText($product->name, 'محصول بدون نام'),
-            'image_url' => $this->imageUrl($product),
-            'price' => $price,
-            'price_label' => $this->productPriceLabel($price, $variantsCollection),
             'category_name' => $this->cleanText($product->category?->name, 'بدون دسته‌بندی'),
-            'variants' => $variants,
+            'image_path' => $imagePath,
+            'has_real_image' => $imagePath !== null,
+            'price_min' => $grouped['price_min'],
+            'price_max' => $grouped['price_max'],
+            'price_summary' => $grouped['price_summary'],
+            'variant_count' => $grouped['variant_count'],
+            'model_count' => $grouped['model_count'],
+            'color_count' => $grouped['color_count'],
+            'groups' => $grouped['groups'],
+            'is_wide' => count($grouped['groups']) > 4 || $grouped['model_count'] > 20 || mb_strlen($modelsTextLength) > 180,
+            'has_price' => $grouped['has_price'],
         ];
     }
 
@@ -103,10 +107,12 @@ class ProductExportService
         $models = $modelIds === [] ? collect() : ModelList::query()->whereIn('id', $modelIds)->orderBy('model_name')->get();
 
         return [
+            'title' => 'لیست قیمت محصولات',
             'root_category' => $this->cleanText($root?->name, 'همه دسته‌ها'),
             'subcategory' => $this->cleanText($child?->name, 'همه زیردسته‌ها'),
             'model_brand' => $this->cleanText($filters['model_brand'] ?? null, 'همه انواع مدل'),
-            'model_lists' => $models->isEmpty() ? 'همه مدل‌ها' : $models->pluck('model_name')->implode('، '),
+            'model_lists' => $models->isEmpty() ? 'همه مدل‌ها' : number_format($models->count()).' مدل انتخاب‌شده',
+            'selected_models_count' => $models->count(),
             'stock_status' => match ($filters['stock_status'] ?? 'all') {
                 'in_stock' => 'موجود',
                 'out_of_stock' => 'ناموجود',
@@ -114,8 +120,13 @@ class ProductExportService
             },
             'generated_at' => now()->format('Y/m/d H:i'),
             'products_count' => null,
-            'store_name' => config('app.name', 'سامانه انبارداری'),
+            'store_name' => 'آریا گستر',
         ];
+    }
+
+    private function filterWithoutPrice(Collection $products, array $filters): Collection
+    {
+        return ($filters['include_without_price'] ?? false) ? $products : $products->filter(fn (array $product) => $product['has_price']);
     }
 
     public function modelListIds(array $filters): array
@@ -193,17 +204,13 @@ class ProductExportService
         return $parts->implode(' - ');
     }
 
-    public function imageUrl(Product $product): string
+    public function imagePath(Product $product): ?string
     {
         $path = trim((string) ($product->image_path ?? ''));
-        if ($path !== '' && filter_var($path, FILTER_VALIDATE_URL)) return $path;
-        if ($path !== '') return route('products.image', $product);
-        return $this->placeholderImage();
-    }
-
-    private function placeholderImage(): string
-    {
-        return 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22%3E%3Crect width=%2232%22 height=%2232%22 fill=%22%23f8fafc%22/%3E%3Ctext x=%2216%22 y=%2220%22 font-size=%2210%22 text-anchor=%22middle%22 fill=%22%23718096%22%3EARIA%3C/text%3E%3C/svg%3E';
+        if ($path === '' || filter_var($path, FILTER_VALIDATE_URL)) return null;
+        $candidates = [public_path($path), public_path('storage/'.ltrim($path, '/')), storage_path('app/public/'.ltrim($path, '/')), storage_path('app/'.ltrim($path, '/'))];
+        foreach ($candidates as $candidate) { if (is_file($candidate)) return $candidate; }
+        return null;
     }
 
     private function cleanText(mixed $value, string $fallback = ''): string
