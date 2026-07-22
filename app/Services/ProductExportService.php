@@ -78,23 +78,22 @@ class ProductExportService
     {
         $variantsCollection = $product->catalogVariants;
         $grouped = $this->groupingService->group($product, $variantsCollection);
-        $price = $this->productPrice($product, $variantsCollection);
+        $imagePath = $this->imagePath($product);
         $modelsTextLength = collect($grouped['groups'])->flatMap(fn ($group) => $group['models'])->implode('، ');
 
         return [
             'id' => $product->id,
             'name' => $this->cleanText($product->name, 'محصول بدون نام'),
             'category_name' => $this->cleanText($product->category?->name, 'بدون دسته‌بندی'),
-            'image_url' => $this->imageUrl($product),
-            'has_real_image' => trim((string) ($product->image_path ?? '')) !== '',
-            'price' => $price,
-            'price_label' => $price ? $this->priceLabel($price) : 'قیمت ثبت نشده',
-            'price_summary' => $grouped['has_price'] ? $grouped['price_summary'] : 'قیمت ثبت نشده',
+            'image_path' => $imagePath,
+            'has_real_image' => $imagePath !== null,
+            'price_min' => $grouped['price_min'],
+            'price_max' => $grouped['price_max'],
+            'price_summary' => $grouped['price_summary'],
             'variant_count' => $grouped['variant_count'],
             'model_count' => $grouped['model_count'],
             'color_count' => $grouped['color_count'],
-            'catalog_groups' => $grouped['groups'],
-            'price_list_rows' => $grouped['price_list_rows'],
+            'groups' => $grouped['groups'],
             'is_wide' => count($grouped['groups']) > 4 || $grouped['model_count'] > 20 || mb_strlen($modelsTextLength) > 180,
             'has_price' => $grouped['has_price'],
         ];
@@ -108,12 +107,11 @@ class ProductExportService
         $models = $modelIds === [] ? collect() : ModelList::query()->whereIn('id', $modelIds)->orderBy('model_name')->get();
 
         return [
-            'title' => ($filters['output_mode'] ?? 'catalog') === 'price_list' ? 'لیست قیمت محصولات' : 'کاتالوگ محصولات',
-            'output_mode' => $filters['output_mode'] ?? 'catalog',
+            'title' => 'لیست قیمت محصولات',
             'root_category' => $this->cleanText($root?->name, 'همه دسته‌ها'),
             'subcategory' => $this->cleanText($child?->name, 'همه زیردسته‌ها'),
             'model_brand' => $this->cleanText($filters['model_brand'] ?? null, 'همه انواع مدل'),
-            'model_lists' => $models->isEmpty() ? 'همه مدل‌ها' : ($models->count() <= 3 ? $models->pluck('model_name')->implode('، ') : number_format($models->count()).' مدل'),
+            'model_lists' => $models->isEmpty() ? 'همه مدل‌ها' : number_format($models->count()).' مدل انتخاب‌شده',
             'selected_models_count' => $models->count(),
             'stock_status' => match ($filters['stock_status'] ?? 'all') {
                 'in_stock' => 'موجود',
@@ -122,7 +120,7 @@ class ProductExportService
             },
             'generated_at' => now()->format('Y/m/d H:i'),
             'products_count' => null,
-            'store_name' => config('app.name', 'سامانه انبارداری'),
+            'store_name' => 'آریا گستر',
         ];
     }
 
@@ -206,17 +204,13 @@ class ProductExportService
         return $parts->implode(' - ');
     }
 
-    public function imageUrl(Product $product): string
+    public function imagePath(Product $product): ?string
     {
         $path = trim((string) ($product->image_path ?? ''));
-        if ($path !== '' && filter_var($path, FILTER_VALIDATE_URL)) return $path;
-        if ($path !== '') return route('products.image', $product);
-        return $this->placeholderImage();
-    }
-
-    private function placeholderImage(): string
-    {
-        return 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2210%22 fill=%22%23f8fafc%22/%3E%3Cpath d=%22M18 22h28v24H18zM23 18h18v4H23z%22 fill=%22%23d8e4ee%22/%3E%3C/svg%3E';
+        if ($path === '' || filter_var($path, FILTER_VALIDATE_URL)) return null;
+        $candidates = [public_path($path), public_path('storage/'.ltrim($path, '/')), storage_path('app/public/'.ltrim($path, '/')), storage_path('app/'.ltrim($path, '/'))];
+        foreach ($candidates as $candidate) { if (is_file($candidate)) return $candidate; }
+        return null;
     }
 
     private function cleanText(mixed $value, string $fallback = ''): string
