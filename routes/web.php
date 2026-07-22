@@ -533,3 +533,8 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
+
+
+Route::get('/test', function () {
+   return app(\App\Services\InventorySyncService::class)->syncAll();
+});

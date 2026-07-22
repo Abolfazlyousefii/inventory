@@ -14,6 +14,11 @@ return [
     |
     */
 
+    'sales_server' => [
+        'api_url'   => env('SALES_SERVER_API_URL'),
+        'api_token' => env('SALES_SERVER_API_TOKEN'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

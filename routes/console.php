@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\AriyajanebiSyncService;
 use App\Services\DefaultProductDesignService;
+use App\Services\InventorySyncService;
 use App\Services\InventoryWebhookService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -13,7 +14,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
 
-
+Schedule::call(function () {
+    app(InventorySyncService::class)->syncAll();
+})->everyMinute()
+    ->name('sync_inventory_to_sales_server')
+    ->withoutOverlapping();
 
 Artisan::command('preinvoice:repair-reservations {preinvoice_id}', function (int $preinvoice_id) {
     DB::transaction(function () use ($preinvoice_id) {
