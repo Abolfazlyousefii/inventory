@@ -33,8 +33,9 @@ class ProductExportScreenLayoutTest extends TestCase
             ->assertSee('pe-model-panel__grid')
             ->assertSee('pe-filter-actions')
             ->assertSee('pe-price-table')
-            ->assertSee('<col style="width: 46%">', false)
-            ->assertSee('<col style="width: 38%">', false)
+            ->assertSee('<col style="width: 28%">', false)
+            ->assertSee('<col style="width: 36%">', false)
+            ->assertSee('<col style="width: 20%">', false)
             ->assertSee('<col style="width: 16%">', false)
             ->assertSee('دانلود لیست قیمت PDF')
             ->assertSee('class="pe-model-token" dir="ltr"', false)
@@ -45,6 +46,7 @@ class ProductExportScreenLayoutTest extends TestCase
         $html = $response->getContent();
         $this->assertSame(1, substr_count($html, '<thead>'));
         $this->assertSame(1, substr_count($html, 'مدل‌های سازگار</th>'));
+        $this->assertSame(1, substr_count($html, 'محصول</th>'));
     }
 
     public function test_product_export_javascript_contract_exists(): void

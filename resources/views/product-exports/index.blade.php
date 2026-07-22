@@ -1,5 +1,12 @@
 @extends('layouts.app')
 @section('title', 'لیست قیمت محصولات آریا گستر')
+@section('content_class', 'app-content-wide')
+@section('meta')
+    @vite(['resources/css/app.css'])
+@endsection
+@push('scripts')
+    @vite(['resources/js/app.js'])
+@endpush
 @section('content')
 @php
     $selectedModels = collect($filters['model_list_ids'] ?? [])->map(fn($id)=>(int)$id)->values()->all();
