@@ -38,7 +38,7 @@ class ProductExportController extends Controller
         $filters = $request->filters();
         $products = $this->service->paginate($filters, 24);
 
-        return view('product-exports.partials.product-list', compact('products'))->render();
+        return view('product-exports.partials.product-list', compact('products', 'filters'))->render();
     }
 
     public function print(ProductExportFilterRequest $request): View
@@ -46,6 +46,7 @@ class ProductExportController extends Controller
         $filters = $request->filters();
         $products = $this->service->allForPrint($filters);
         $meta = $this->service->meta($filters);
+        $meta['products_count'] = $products->count();
 
         return view('product-exports.print', compact('products', 'filters', 'meta'));
     }
