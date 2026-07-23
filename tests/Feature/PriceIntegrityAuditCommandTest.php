@@ -26,9 +26,21 @@ class PriceIntegrityAuditCommandTest extends TestCase
         $suggestions = $this->csv('reports/price-integrity/suggestions.csv');
         $summary = $this->summary();
 
-        $this->assertNotEmpty($this->where($anomalies, 'anomaly_code', 'A02'));
-        $this->assertSame('Critical', $this->where($anomalies, 'anomaly_code', 'A02')[0]['severity']);
-        $this->assertSame('High', $this->where($suggestions, 'anomaly_code', 'A02')[0]['confidence']);
+        $a02 = $this->where($anomalies, 'anomaly_code', 'A02')[0] ?? null;
+        $a02Suggestion = $this->where($suggestions, 'anomaly_code', 'A02')[0] ?? null;
+
+        $this->assertNotNull($a02);
+        $this->assertSame('Critical', $a02['severity']);
+        $this->assertSame('5', $a02['warehouse_stock']);
+        $this->assertNotSame('', $a02['product_name']);
+        $this->assertNotSame('', $a02['variant_name']);
+        $this->assertSame('0', $a02['variant_sell_price']);
+        $this->assertSame('900', $a02['last_positive_sale_price']);
+        $this->assertNotNull($a02Suggestion);
+        $this->assertSame('900', $a02Suggestion['suggested_price']);
+        $this->assertSame('High', $a02Suggestion['confidence']);
+        $this->assertGreaterThan(0, $summary['positive_warehouse_stock']);
+        $this->assertGreaterThan(0, $summary['sellable_zero_price']);
         $this->assertFalse($summary['data_changed']);
     }
 
@@ -60,13 +72,15 @@ class PriceIntegrityAuditCommandTest extends TestCase
         $this->assertSame('1', $row['manual_pricing_required']);
     }
 
-    public function test_invoice_and_preinvoice_zero_items_are_critical(): void
+    public function test_invoice_and_preinvoice_zero_items_are_critical_and_preserve_updated_at(): void
     {
         $this->seedBase();
-        $this->artisan('inventory:audit-price-integrity')->assertExitCode(0);
-        $codes = collect($this->csv('reports/price-integrity/anomalies.csv'))->keyBy('anomaly_code');
+        $this->artisan('inventory:audit-price-integrity --format=json')->assertExitCode(0);
+        $codes = collect($this->json('reports/price-integrity/anomalies.json'))->keyBy('anomaly_code');
         $this->assertSame('Critical', $codes['A05']['severity']);
         $this->assertSame('Critical', $codes['A06']['severity']);
+        $this->assertSame('2026-01-02 03:04:05', $codes['A05']['updated_at']);
+        $this->assertSame('2026-01-03 04:05:06', $codes['A06']['updated_at']);
     }
 
     public function test_no_write_queries_are_executed_by_command(): void
@@ -225,10 +239,10 @@ class PriceIntegrityAuditCommandTest extends TestCase
         DB::table('invoices')->insert(['id' => 1, 'uuid' => '11111111-1111-1111-1111-111111111111', 'status' => 'shipped', 'total' => 900, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('invoice_items')->insert([
             ['invoice_id' => 1, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'price' => 900, 'line_total' => 900, 'created_at' => now()->subDay(), 'updated_at' => now()],
-            ['invoice_id' => 1, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'price' => 0, 'line_total' => 0, 'created_at' => now(), 'updated_at' => now()],
+            ['invoice_id' => 1, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'price' => 0, 'line_total' => 0, 'created_at' => now(), 'updated_at' => '2026-01-03 04:05:06'],
         ]);
         DB::table('preinvoice_orders')->insert(['id' => 1, 'uuid' => '22222222-2222-2222-2222-222222222222', 'status' => 'draft', 'customer_name' => 'C', 'customer_mobile' => '1', 'customer_address' => 'A', 'province_id' => 1, 'total_price' => 0, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('preinvoice_order_items')->insert(['preinvoice_order_id' => 1, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'price' => 0, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('preinvoice_order_items')->insert(['preinvoice_order_id' => 1, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'price' => 0, 'created_at' => now(), 'updated_at' => '2026-01-02 03:04:05']);
     }
 
     private function schema(): void
@@ -264,6 +278,9 @@ class PriceIntegrityAuditCommandTest extends TestCase
 
     private function where(array $rows, string $key, string $value): array
     { return array_values(array_filter($rows, fn ($r) => $r[$key] === $value)); }
+
+    private function json(string $path): array
+    { return json_decode(Storage::disk('local')->get($path), true); }
 
     private function summary(): array
     { return json_decode(Storage::disk('local')->get('reports/price-integrity/summary.json'), true); }
