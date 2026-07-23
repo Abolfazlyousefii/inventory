@@ -15,8 +15,9 @@ return [
     */
 
     'sales_server' => [
-        'api_url'   => env('SALES_SERVER_API_URL'),
+        'api_url' => env('SALES_SERVER_API_URL'),
         'api_token' => env('SALES_SERVER_API_TOKEN'),
+        'sync_enabled' => env('SALES_SERVER_SYNC_ENABLED', false),
     ],
 
     'postmark' => [
