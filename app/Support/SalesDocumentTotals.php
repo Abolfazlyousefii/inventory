@@ -46,6 +46,34 @@ class SalesDocumentTotals
         ];
     }
 
+
+    /**
+     * Calculate totals directly from a persisted sales document.
+     * For product_lines, only invoice_discount_amount is the document-level
+     * discount; product discounts are already stored on item lines.
+     */
+    public static function fromDocument(object $document): array
+    {
+        $items = $document->items ?? collect();
+        $mode = $document->discount_allocation_mode ?? null;
+        $lineDiscount = (int) collect($items)->sum(fn ($item) => self::lineDiscount($item));
+
+        if ($mode === 'product_lines') {
+            $documentDiscount = (int) ($document->invoice_discount_amount ?? 0);
+        } elseif ($mode === 'allocated_lines') {
+            $documentDiscount = (int) ($document->discount_amount ?? 0);
+        } else {
+            $storedInvoice = $document->invoice_discount_amount ?? null;
+            $documentDiscount = $storedInvoice !== null
+                ? (int) $storedInvoice
+                : max((int) ($document->discount_amount ?? 0) - $lineDiscount, 0);
+        }
+
+        return self::calculate($items, $documentDiscount, (int) ($document->shipping_price ?? 0), [
+            'discount_allocation_mode' => $mode,
+        ]);
+    }
+
     public static function lineSubtotal(object $item): int
     {
         return max((int) ($item->quantity ?? 0), 0) * max((int) ($item->price ?? 0), 0);

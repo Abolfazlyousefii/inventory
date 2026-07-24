@@ -722,7 +722,7 @@ class SalesHavalehService
                 return $existing;
             }
 
-            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::fromDocument($order);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
 

@@ -11,7 +11,10 @@ use Illuminate\Validation\ValidationException;
 
 class FinancePreinvoiceEditorService
 {
-    public function __construct(private readonly PreinvoiceReservationService $reservationService) {}
+    public function __construct(
+        private readonly PreinvoiceReservationService $reservationService,
+        private readonly ProductDiscountAllocator $productDiscountAllocator,
+    ) {}
 
     public function update(PreinvoiceOrder $order, array $data, User $actor): PreinvoiceOrder
     {
@@ -58,7 +61,7 @@ class FinancePreinvoiceEditorService
             $productDiscountPayload = array_key_exists('product_discounts', $data)
                 ? (array) $data['product_discounts']
                 : $this->productDiscountInputsFromBreakdown($lockedOrder);
-            $productDiscounts = $this->allocateProductDiscounts($lockedOrder, $productDiscountPayload);
+            $productDiscounts = $this->productDiscountAllocator->allocate($lockedOrder->items, $productDiscountPayload);
             foreach ($lockedOrder->items as $item) {
                 $lineDiscount = (int) ($productDiscounts['lines'][$item->id] ?? $item->line_discount_amount ?? 0);
                 $item->forceFill([
@@ -136,59 +139,6 @@ class FinancePreinvoiceEditorService
         });
     }
 
-
-    private function allocateProductDiscounts(PreinvoiceOrder $order, array $inputs): array
-    {
-        $byProduct = [];
-        foreach ($inputs as $input) {
-            if (! is_array($input)) {
-                continue;
-            }
-            $productId = (int) ($input['product_id'] ?? 0);
-            if ($productId <= 0) {
-                continue;
-            }
-            $type = in_array(($input['type'] ?? 'amount'), ['amount', 'percent'], true) ? $input['type'] : 'amount';
-            $value = max((int) ($input['value'] ?? 0), 0);
-            $byProduct[$productId] = ['type' => $type, 'value' => $type === 'percent' ? min($value, 100) : $value];
-        }
-
-        $lines = [];
-        $groups = [];
-        foreach ($order->items->groupBy('product_id') as $productId => $items) {
-            $gross = (int) $items->sum(fn ($item) => SalesDocumentTotals::lineSubtotal($item));
-            $input = $byProduct[(int) $productId] ?? null;
-            $amount = 0;
-            if ($input) {
-                $amount = $input['type'] === 'percent' ? (int) floor($gross * $input['value'] / 100) : $input['value'];
-                $amount = min(max($amount, 0), $gross);
-            }
-            $allocated = 0;
-            $positive = $items->filter(fn ($item) => SalesDocumentTotals::lineSubtotal($item) > 0)->values();
-            foreach ($positive as $index => $item) {
-                $lineGross = SalesDocumentTotals::lineSubtotal($item);
-                $share = $index === $positive->count() - 1 ? $amount - $allocated : (int) floor($amount * $lineGross / max($gross, 1));
-                $share = min(max($share, 0), $lineGross);
-                $lines[$item->id] = $share;
-                $allocated += $share;
-            }
-            foreach ($items as $item) {
-                $lines[$item->id] = $lines[$item->id] ?? 0;
-            }
-            if ($input || $amount > 0) {
-                $groups[] = [
-                    'product_id' => (int) $productId,
-                    'discount_type' => $input['type'] ?? 'amount',
-                    'discount_value' => (int) ($input['value'] ?? 0),
-                    'discount_amount' => (int) array_sum(array_intersect_key($lines, array_flip($items->pluck('id')->all()))),
-                    'raw_subtotal' => $gross,
-                    'final_amount' => max($gross - $amount, 0),
-                ];
-            }
-        }
-
-        return ['lines' => $lines, 'groups' => $groups];
-    }
 
     private function productDiscountInputsFromBreakdown(PreinvoiceOrder $order): array
     {
