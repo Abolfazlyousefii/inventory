@@ -25,7 +25,7 @@ class AuditInvoiceFinancials extends Command
             return self::FAILURE;
         }
 
-        $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+        $totals = SalesDocumentTotals::fromDocument($invoice);
         $items = $invoice->items->map(function ($item) {
             $gross = SalesDocumentTotals::lineSubtotal($item);
             $net = SalesDocumentTotals::lineTotal($item);

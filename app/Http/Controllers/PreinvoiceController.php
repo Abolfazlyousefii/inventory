@@ -763,6 +763,9 @@ class PreinvoiceController extends Controller
                 'shipping_id' => $shippingId,
                 'shipping_price' => $shippingId ? (int) $this->resolveShippingPrice($shippingId) : 0,
                 'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
+                'discount_breakdown' => $this->decodeDiscountBreakdown($validated['discount_breakdown'] ?? null),
+                'invoice_discount_type' => $validated['invoice_discount_type'] ?? null,
+                'invoice_discount_value' => (int) ($validated['invoice_discount_value'] ?? 0),
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
                 'is_auto_draft' => true,
@@ -810,7 +813,8 @@ class PreinvoiceController extends Controller
             'is_in_person' => (bool) $order->is_in_person,
             'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],
             'payment_terms_note' => $order->payment_terms_note,
-            'discount' => ['type' => 'amount', 'value' => (int) $order->discount_amount],
+            'discount' => ['type' => $order->invoice_discount_type ?: data_get($order->discount_breakdown, 'order_discount_type', 'amount'), 'value' => (int) ($order->invoice_discount_value ?? data_get($order->discount_breakdown, 'order_discount_value', 0))],
+            'discount_breakdown' => $order->discount_breakdown,
             'items' => $order->items->map(fn ($item) => [
                 'product_id' => (int) $item->product_id,
                 'variant_id' => (int) $item->variant_id,
@@ -818,6 +822,7 @@ class PreinvoiceController extends Controller
                 'price' => (int) $item->price,
                 'available' => (int) ($item->variant?->stock ?? 0),
                 'stock_warning' => (int) ($item->variant?->stock ?? 0) < (int) $item->quantity,
+                'line_discount_amount' => (int) ($item->line_discount_amount ?? 0),
                 'product' => ['id' => $item->product_id, 'title' => $item->product?->name, 'sku' => $item->product?->short_barcode],
             ])->values(),
         ]]);
@@ -1240,6 +1245,20 @@ class PreinvoiceController extends Controller
         ]);
     }
 
+
+    private function decodeDiscountBreakdown(mixed $value): ?array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
     private function validateDraftPayload(Request $request, bool $checkCurrentStock = true, ?PreinvoiceOrder $editingOrder = null): array
     {
         $this->prepareProductsPayload($request);
@@ -1356,6 +1375,8 @@ class PreinvoiceController extends Controller
             'shipping_id' => 'nullable|integer|exists:shipping_methods,id',
             'shipping_price' => 'nullable|integer|min:0',
             'discount_amount' => 'nullable|integer|min:0',
+            'invoice_discount_type' => 'nullable|in:amount,percent,none',
+            'invoice_discount_value' => 'nullable|integer|min:0',
             'products' => 'nullable|array',
             'products.*.id' => 'required_with:products|integer|exists:products,id',
             'products.*.variety_id' => ['required_with:products', 'integer', 'exists:product_variants,id'],
@@ -1579,7 +1600,7 @@ class PreinvoiceController extends Controller
     private function calculateOrderTotal(PreinvoiceOrder $order): int
     {
         $order->loadMissing('items');
-        $totals = SalesDocumentTotals::calculate($order->items, (int) ($order->invoice_discount_amount ?? $order->discount_amount), (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $totals = SalesDocumentTotals::fromDocument($order);
 
         return (int) $totals['grand_total'];
     }
@@ -1677,7 +1698,7 @@ class PreinvoiceController extends Controller
             return;
         }
 
-        $totals = SalesDocumentTotals::calculate($order->items, (int) ($order->invoice_discount_amount ?? $order->discount_amount), (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $totals = SalesDocumentTotals::fromDocument($order);
         $subtotal = (int) $totals['subtotal_before_discount'];
         $total = (int) $totals['grand_total'];
 
@@ -2613,7 +2634,9 @@ class PreinvoiceController extends Controller
 
                 $it->price = $snapshotPrice;
             }
-            $totals = SalesDocumentTotals::calculate($order->items, (int) ($order->invoice_discount_amount ?? $order->discount_amount), (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+            $this->preinvoiceDiscountService->assertIntegrityOrRepair($order);
+            $order->refresh()->load('items');
+            $totals = SalesDocumentTotals::fromDocument($order);
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];

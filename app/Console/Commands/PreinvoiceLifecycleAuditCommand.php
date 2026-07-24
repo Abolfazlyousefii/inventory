@@ -35,7 +35,7 @@ class PreinvoiceLifecycleAuditCommand extends Command
 
         $order = PreinvoiceOrder::query()->with(['items', 'invoice.items'])->findOrFail($orderId);
         $invoice = Invoice::query()->with('items')->where('preinvoice_order_id', $order->id)->first();
-        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $totals = SalesDocumentTotals::fromDocument($order);
         $itemsQty = (int) $order->items->sum('quantity');
         $itemsTotal = (int) $order->items->sum(fn ($item) => max(((int) $item->price * (int) $item->quantity) - (int) ($item->line_discount_amount ?? 0), 0));
 

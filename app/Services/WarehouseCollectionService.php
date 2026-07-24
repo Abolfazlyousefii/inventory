@@ -202,7 +202,7 @@ class WarehouseCollectionService
             if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
                 $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
             }
-            $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];
@@ -397,7 +397,7 @@ class WarehouseCollectionService
             if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
                 $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
             }
-            $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];

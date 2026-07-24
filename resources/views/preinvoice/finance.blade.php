@@ -3,7 +3,7 @@
 @php
   use Morilog\Jalali\Jalalian;
 
-  $totals = \App\Support\SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+  $totals = \App\Support\SalesDocumentTotals::fromDocument($order);
   $subtotal = $totals['subtotal_before_discount'];
   $shipping = $totals['shipping'];
   $productDiscount = (int) ($order->product_discount_amount ?? 0);

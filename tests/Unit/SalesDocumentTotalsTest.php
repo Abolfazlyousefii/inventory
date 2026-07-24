@@ -67,4 +67,38 @@ class SalesDocumentTotalsTest extends TestCase
         $this->assertSame(10_000, $totals['total_discount']);
         $this->assertSame(0, $totals['grand_total']);
     }
+
+    public function test_from_document_does_not_double_count_product_lines_discount(): void
+    {
+        $doc = (object) [
+            'items' => collect([(object) ['quantity' => 1, 'price' => 100_000_000, 'line_discount_amount' => 8_000_000]]),
+            'discount_amount' => 8_000_000,
+            'invoice_discount_amount' => 0,
+            'shipping_price' => 0,
+            'discount_allocation_mode' => 'product_lines',
+        ];
+
+        $totals = SalesDocumentTotals::fromDocument($doc);
+
+        $this->assertSame(8_000_000, $totals['items_discount']);
+        $this->assertSame(0, $totals['invoice_discount']);
+        $this->assertSame(8_000_000, $totals['total_discount']);
+        $this->assertSame(92_000_000, $totals['grand_total']);
+    }
+
+    public function test_from_document_keeps_allocated_lines_legacy_behavior(): void
+    {
+        $doc = (object) [
+            'items' => collect([(object) ['quantity' => 1, 'price' => 100_000_000, 'line_discount_amount' => 8_000_000]]),
+            'discount_amount' => 8_000_000,
+            'invoice_discount_amount' => 0,
+            'shipping_price' => 0,
+            'discount_allocation_mode' => 'allocated_lines',
+        ];
+
+        $totals = SalesDocumentTotals::fromDocument($doc);
+
+        $this->assertSame(8_000_000, $totals['total_discount']);
+        $this->assertSame(92_000_000, $totals['grand_total']);
+    }
 }
