@@ -1,6 +1,9 @@
 @extends('layouts.app')
 
 @section('content')
+@if(method_exists($invoice, 'isCancelled') && $invoice->isCancelled())
+  <div class="alert alert-danger">این فاکتور لغو شده و فقط برای سوابق مالی و انبار نگهداری می‌شود.</div>
+@endif
 
 @php
   $rial = fn($a) => \App\Support\Currency::formatRial($a);
