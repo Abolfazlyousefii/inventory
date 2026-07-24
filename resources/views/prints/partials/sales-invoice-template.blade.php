@@ -81,8 +81,8 @@
     @unless($isWarehouseMode)
         <section class="summary-section">
             <div></div><table class="summary-table"><tbody>
-                <tr><td>جمع کالاها</td><td>{{ $money($printData['totals']['subtotal']) }}</td></tr>
-                <tr><td>تخفیف</td><td>{{ $money($printData['totals']['discount']) }}</td></tr>
+                <tr><td>جمع کالاها</td><td>{{ $money($printData['totals']['itemsNetSubtotal']) }}</td></tr>
+                <tr><td>تخفیف کلی فاکتور</td><td>{{ $money($printData['totals']['invoiceDiscount']) }}</td></tr>
                 <tr><td>هزینه ارسال</td><td>{{ $money($printData['totals']['shipping']) }}</td></tr>
                 @if(!is_null($printData['totals']['paid']))<tr><td>مبلغ پرداخت‌شده</td><td>{{ $money($printData['totals']['paid']) }}</td></tr>@endif
                 @if(!is_null($printData['totals']['remaining']))<tr><td>مانده</td><td>{{ $money($printData['totals']['remaining']) }}</td></tr>@endif
