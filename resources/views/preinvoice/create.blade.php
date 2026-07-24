@@ -1597,6 +1597,19 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     </div>
 </div>
 
+@php
+    $oldDiscountAmount = old('discount_amount', ($order->invoice_discount_amount ?? $order->discount_amount ?? 0));
+    $oldInvoiceDiscountType = old(
+        'invoice_discount_type',
+        $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')
+    );
+    $oldInvoiceDiscountValue = old(
+        'invoice_discount_value',
+        $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)
+    );
+    $oldDiscountBreakdown = old('discount_breakdown', $order->discount_breakdown ?? null);
+@endphp
+
 <script>
     window.PREINVOICE_BOOT = {
         api: {
@@ -1618,10 +1631,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         oldCustomerName: @json(old('customer_name', $order->customer_name ?? '')),
         oldCustomerMobile: @json(old('customer_mobile', $order->customer_mobile ?? '')),
         oldPaymentTermsNote: @json($oldPaymentTermsNote),
-        oldDiscountAmount: @json(old('discount_amount', ($order->invoice_discount_amount ?? $order->discount_amount ?? 0))),
-        oldInvoiceDiscountType: @json(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount'))),
-        oldInvoiceDiscountValue: @json(old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0))),
-        oldDiscountBreakdown: @json(old('discount_breakdown', $order->discount_breakdown ?? null)),
+        oldDiscountAmount: @json($oldDiscountAmount),
+        oldInvoiceDiscountType: @json($oldInvoiceDiscountType),
+        oldInvoiceDiscountValue: @json($oldInvoiceDiscountValue),
+        oldDiscountBreakdown: @json($oldDiscountBreakdown),
         isEdit: @json($isEdit),
         orderUuid: @json($order->uuid ?? null)
     };
