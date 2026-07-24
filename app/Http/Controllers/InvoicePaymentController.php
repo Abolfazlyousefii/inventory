@@ -26,6 +26,7 @@ class InvoicePaymentController extends Controller
 
         [$payment, $remainingBefore, $remainingAfter] = DB::transaction(function () use ($request, $invoice) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
             $remainingBefore = $this->remainingAmount($invoice);
             $payment = $this->createPaymentRecord($request, $invoice, $invoice->customer_id ? (int) $invoice->customer_id : null, $remainingBefore);
 
@@ -89,6 +90,7 @@ class InvoicePaymentController extends Controller
 
         [$payment, $remainingBefore, $remainingAfter] = DB::transaction(function () use ($invoice, $data, $request, $customer) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
             $remainingBefore = $this->remainingAmount($invoice);
             $data = $this->normalizeEditPaymentPayload($data, $invoice);
             $this->assertPaymentDoesNotExceedRemaining((int) $data['amount'], $remainingBefore);

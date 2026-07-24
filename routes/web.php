@@ -426,13 +426,14 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     // Invoices
     Route::prefix('invoices')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->middleware('permission:invoices.cancel')->name('invoices.cancelled');
         Route::get('/{uuid}/print', [InvoiceController::class, 'print'])->name('invoices.print');
         Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.edit');
         Route::put('/{uuid}', [InvoiceController::class, 'update'])->name('invoices.update');
         Route::get('/{uuid}/history', [InvoiceController::class, 'history'])->name('invoices.history');
         Route::get('/{uuid}', [InvoiceController::class, 'show'])->name('invoices.show');
         Route::post('/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.status');
-        Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
+        Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->middleware('permission:invoices.cancel')->name('invoices.cancel');
         Route::post('/{uuid}/cancel/undo', [InvoiceController::class, 'undoCancel'])->name('invoices.cancel.undo');
         Route::post('/{uuid}/payments', [InvoicePaymentController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager')->name('invoices.payments.store');
         Route::post('/{uuid}/notes', [InvoiceNoteController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.notes.store');

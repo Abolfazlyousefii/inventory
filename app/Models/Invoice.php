@@ -31,7 +31,8 @@ class Invoice extends Model
         ,'shipping_status','shipped_at','shipped_by','shipping_note',
         'external_order_id', 'items_updated_at', 'items_updated_by',
         'warehouse_received_at', 'warehouse_received_by', 'collection_started_at',
-        'collection_started_by', 'collected_at', 'collected_by', 'collection_note'
+        'collection_started_by', 'collected_at', 'collected_by', 'collection_note',
+        'cancelled_at', 'cancelled_by', 'cancellation_reason', 'cancellation_note'
     ];
 
     protected $casts = [
@@ -51,6 +52,10 @@ class Invoice extends Model
         'collected_at' => 'datetime',
         'collected_by' => 'integer',
         'collection_note' => 'string',
+        'cancelled_at' => 'datetime',
+        'cancelled_by' => 'integer',
+        'cancellation_reason' => 'string',
+        'cancellation_note' => 'string',
         'items_updated_at' => 'datetime',
         'items_updated_by' => 'integer',
     ];
@@ -122,6 +127,7 @@ class Invoice extends Model
     public function shippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_id'); }
     public function dispatchShippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_method_id'); }
     public function statusChangedByUser() { return $this->belongsTo(User::class, 'status_changed_by'); }
+    public function canceller() { return $this->belongsTo(User::class, 'cancelled_by'); }
     public function shippedBy() { return $this->belongsTo(User::class, 'shipped_by'); }
     public function warehouseReceivedBy() { return $this->belongsTo(User::class, 'warehouse_received_by'); }
     public function collectionStartedBy() { return $this->belongsTo(User::class, 'collection_started_by'); }
@@ -134,6 +140,33 @@ class Invoice extends Model
         return [
             self::STATUS_NOT_SHIPPED,
         ];
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereNotIn('status', self::cancelledStatuses());
+    }
+
+    public function scopeCancelled($query)
+    {
+        return $query->whereIn('status', self::cancelledStatuses());
+    }
+
+    public function isCancelled(): bool
+    {
+        return in_array((string) $this->status, self::cancelledStatuses(), true);
+    }
+
+    public function assertNotCancelled(): void
+    {
+        if ($this->isCancelled()) {
+            throw ValidationException::withMessages(['invoice' => 'این فاکتور لغو شده است و امکان انجام عملیات جدید روی آن وجود ندارد.']);
+        }
+    }
+
+    public function assertFinanciallyMutable(): void
+    {
+        $this->assertNotCancelled();
     }
 
     public static function statusLabels(): array
