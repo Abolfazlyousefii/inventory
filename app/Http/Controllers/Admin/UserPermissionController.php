@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\AccessPermission;
+use App\Http\Requests\Admin\UpdateUserPermissionsRequest;
 use App\Models\User;
+use App\Services\Permissions\PermissionManagementService;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,91 +14,36 @@ use Spatie\Permission\Models\Role;
 
 class UserPermissionController extends Controller
 {
+    public function __construct(private PermissionManagementService $service) {}
+
     public function index(Request $request): View
     {
-        $this->syncCatalogPermissions();
-
-        $users = User::query()->with('roles')->orderBy('name')->get();
-        $selectedUser = $request->integer('user_id')
-            ? User::with(['permissions', 'roles'])->find($request->integer('user_id'))
-            : $users->first()?->load(['permissions', 'roles']);
-
-        $permissions = AccessPermission::query()
-            ->whereNotNull('key')
-            ->orderBy('group')
-            ->orderBy('name')
-            ->get()
-            ->groupBy('group');
-
-        $selectedPermissionIds = $selectedUser
-            ? $selectedUser->permissions->pluck('id')->all()
-            : [];
-
-        $roles = Role::query()->orderBy('name')->get();
-        $selectedRoleNames = $selectedUser
-            ? $selectedUser->roles->pluck('name')->all()
-            : [];
-
-        $sidebarPages = $this->sidebarPagesWithModels();
-
-        return view('admin.permissions.index', compact('users', 'selectedUser', 'permissions', 'selectedPermissionIds', 'sidebarPages', 'roles', 'selectedRoleNames'));
-    }
-
-    public function update(Request $request, User $user): RedirectResponse
-    {
-        $validated = $request->validate([
-            'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['integer', 'exists:permissions,id'],
-            'roles' => ['nullable', 'array'],
-            'roles.*' => ['string', 'exists:roles,name'],
-        ]);
-
-        $permissionIds = $validated['permissions'] ?? [];
-        $roleNames = $validated['roles'] ?? [];
-
-        if ($user->is(auth()->user()) && $user->isSuperAdmin() && ! in_array('super_admin', $roleNames, true)) {
-            $superAdminCount = User::role('super_admin')->count();
-            if ($superAdminCount <= 1) {
-                return back()->with('error', 'برای جلوگیری از قفل شدن پنل، امکان حذف تنها نقش مدیرکل از حساب خودتان وجود ندارد.');
-            }
-        }
-
-        $user->permissions()->sync($permissionIds);
-        if (auth()->user()?->can('permissions.assign_roles')) {
-            $user->syncRoles($roleNames);
-        }
-
-        return redirect()
-            ->route('admin.permissions.index', ['user_id' => $user->id])
-            ->with('success', 'دسترسی‌های کاربر با موفقیت ذخیره شد.');
-    }
-
-
-    private function syncCatalogPermissions(): void
-    {
         PermissionCatalog::syncToDatabase();
+        $users = User::with('roles')->orderBy('name')->get();
+        $selectedUser = User::with(['permissions', 'roles'])->find($request->integer('user_id') ?: $users->first()?->id);
+        $effective = $selectedUser ? $this->service->effective($selectedUser) : [];
+        $modules = collect($effective)->reject('deprecated')->groupBy('module');
+        $roles = Role::withCount('permissions')->orderBy('name')->get();
+        $roleLabels = PermissionCatalog::roleLabels();
+        $roleAliases = PermissionCatalog::roleAliases();
+
+        return view('admin.permissions.index', compact('users', 'selectedUser', 'effective', 'modules', 'roles', 'roleLabels', 'roleAliases'));
     }
 
-    private function sidebarPagesWithModels(): array
+    public function update(UpdateUserPermissionsRequest $request, User $user): RedirectResponse
     {
-        $sidebarPermissionKeys = collect(PermissionCatalog::sidebarPages())
-            ->flatten(1)
-            ->pluck('permission')
-            ->unique()
-            ->values();
+        abort_unless($request->integer('user_id') === $user->id, 422, 'شناسه کاربر ناهماهنگ است.');
+        $data = $request->validated();
+        $actor = $request->user();
+        $this->service->update(
+            $user,
+            $data['direct_permissions'] ?? [],
+            $data['roles'] ?? $user->roles()->pluck('name')->all(),
+            $actor,
+            $actor->can('permissions.edit'),
+            $actor->can('permissions.assign_roles'),
+        );
 
-        $permissionsByKey = AccessPermission::query()
-            ->whereIn('key', $sidebarPermissionKeys)
-            ->get()
-            ->keyBy('key');
-
-        return collect(PermissionCatalog::sidebarPages())
-            ->map(fn (array $pages): array => collect($pages)
-                ->map(fn (array $page): array => $page + ['model' => $permissionsByKey->get($page['permission'])])
-                ->filter(fn (array $page): bool => $page['model'] !== null)
-                ->values()
-                ->all())
-            ->filter(fn (array $pages): bool => $pages !== [])
-            ->all();
+        return to_route('admin.permissions.index', ['user_id' => $user->id])->with('success', 'نقش‌ها و دسترسی‌ها با موفقیت ذخیره شد.');
     }
 }

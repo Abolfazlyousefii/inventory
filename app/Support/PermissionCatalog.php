@@ -116,9 +116,15 @@ class PermissionCatalog
                 'issues.cancel' => 'لغو حواله انبار',
                 'issues.print' => 'چاپ حواله انبار',
                 'warehouse.collection.view' => 'مشاهده صفحه جمع‌آوری انبار',
+                'warehouse.collection.queue.view' => 'مشاهده صف جمع‌آوری فاکتور',
+                'warehouse.collection.receive' => 'تحویل گرفتن فاکتور برای جمع‌آوری',
+                'warehouse.collection.start' => 'شروع جمع‌آوری فاکتور',
                 'warehouse.collection.edit' => 'ویرایش اقلام جمع‌آوری انبار',
                 'warehouse.collection.adjust_price' => 'تغییر قیمت و تخفیف در جمع‌آوری انبار',
                 'warehouse.collection.submit_reapproval' => 'ثبت نهایی جمع‌آوری و ارجاع به مالی',
+                'warehouse.shipping.queue.view' => 'مشاهده صف ارسال فاکتور',
+                'warehouse.shipping.view' => 'مشاهده جزئیات ارسال',
+                'warehouse.shipping.ship' => 'ثبت ارسال فاکتور',
             ],
             'انتقال بین انبار' => [
                 'transfers.view' => 'مشاهده انتقال‌ها',
@@ -313,8 +319,8 @@ class PermissionCatalog
             ],
             'انبارداری شرکت آریا' => [
                 ['permission' => 'issues.view', 'label' => 'حواله‌های انبار'],
-                ['permission' => 'stock_out.view', 'label' => 'صف جمع‌آوری فاکتور'],
-                ['permission' => 'stock_out.view', 'label' => 'صف ارسال فاکتور'],
+                ['permission' => 'warehouse.collection.queue.view', 'label' => 'صف جمع‌آوری فاکتور'],
+                ['permission' => 'warehouse.shipping.queue.view', 'label' => 'صف ارسال فاکتور'],
                 ['permission' => 'assets.view', 'label' => 'امین اموال'],
                 ['permission' => 'warehouse_map.view', 'label' => 'نقشه انبار'],
                 ['permission' => 'inventory.count.view', 'label' => 'انبارگردانی'],
@@ -354,6 +360,107 @@ class PermissionCatalog
         }
 
         return $permissions;
+    }
+
+    /** Metadata used by the UI, authorization audit and role presets. */
+    public static function registry(): array
+    {
+        $legacy = [
+            'preinvoices.warehouse.view', 'preinvoices.warehouse.edit',
+            'preinvoices.warehouse.confirm', 'preinvoices.warehouse.cancel',
+            'preinvoices.warehouse.reviews.view',
+        ];
+        $critical = [
+            'products.delete', 'products.price_changes.apply', 'invoices.cancel',
+            'inventory.adjust', 'stock_in.delete', 'settings.restore',
+            'users.change_password', 'permissions.edit', 'permissions.sync',
+            'warehouse.collection.adjust_price',
+        ];
+        $dependencies = [
+            'products.show' => ['products.view'],
+            'products.edit' => ['products.view', 'products.show'],
+            'products.delete' => ['products.view', 'products.show'],
+            'invoices.show' => ['invoices.view'],
+            'invoices.edit' => ['invoices.view', 'invoices.show'],
+            'invoices.cancel' => ['invoices.view', 'invoices.show'],
+            'payments.create' => ['payments.view', 'invoices.show'],
+            'stock_in.edit' => ['stock_in.view'],
+            'stock_in.confirm' => ['stock_in.view'],
+            'sales_returns.apply' => ['sales_returns.view'],
+            'inventory.count.confirm' => ['inventory.count.view'],
+            'warehouse.collection.view' => ['warehouse.collection.queue.view'],
+            'warehouse.collection.receive' => ['warehouse.collection.queue.view'],
+            'warehouse.collection.start' => ['warehouse.collection.queue.view'],
+            'warehouse.collection.edit' => ['warehouse.collection.view'],
+            'warehouse.collection.submit_reapproval' => ['warehouse.collection.view'],
+            'warehouse.collection.adjust_price' => ['warehouse.collection.view', 'warehouse.collection.edit'],
+            'warehouse.shipping.view' => ['warehouse.shipping.queue.view'],
+            'warehouse.shipping.ship' => ['warehouse.shipping.queue.view', 'warehouse.shipping.view'],
+        ];
+        $sidebar = collect(self::sidebarPages())->flatten(1)->pluck('permission')->all();
+
+        return collect(self::all())->mapWithKeys(function (array $permission, int $index) use ($legacy, $critical, $dependencies, $sidebar): array {
+            $key = $permission['key'];
+            $action = str($key)->afterLast('.')->toString();
+            $risk = in_array($key, $critical, true) ? 'critical'
+                : (in_array($action, ['edit', 'create', 'confirm', 'cancel', 'delete', 'sync', 'apply'], true) ? 'sensitive' : 'normal');
+
+            return [$key => [
+                'key' => $key,
+                'label' => $permission['name'],
+                'description' => 'دسترسی کنترل‌شده برای '.$permission['name'],
+                'module' => self::moduleFor($key),
+                'module_label' => $permission['group'],
+                'action' => $action,
+                'risk' => $risk,
+                'depends_on' => $dependencies[$key] ?? [],
+                'deprecated' => in_array($key, $legacy, true),
+                'active' => ! in_array($key, $legacy, true),
+                'sort_order' => ($index + 1) * 10,
+                'page_permission' => str_ends_with($key, '.view'),
+                'sidebar' => in_array($key, $sidebar, true),
+                'routes' => array_keys(self::routePermissions(), $key, true),
+            ]];
+        })->all();
+    }
+
+    private static function moduleFor(string $key): string
+    {
+        return match (true) {
+            str_starts_with($key, 'warehouse.collection') => 'warehouse_collection',
+            str_starts_with($key, 'warehouse.shipping') => 'warehouse_shipping',
+            str_starts_with($key, 'stock_in') => 'purchases',
+            str_starts_with($key, 'inventory.count') => 'stocktake',
+            str_starts_with($key, 'model_lists'), str_starts_with($key, 'brands') => 'brands_models',
+            str_starts_with($key, 'invoices'), str_starts_with($key, 'payments'), str_starts_with($key, 'cheques'), str_starts_with($key, 'account_statements'), str_starts_with($key, 'finance') => 'finance',
+            str_starts_with($key, 'preinvoices') => 'sales',
+            str_starts_with($key, 'inventory_webhooks') => 'api_webhooks',
+            default => str($key)->before('.')->toString(),
+        };
+    }
+
+    public static function activeKeys(): array
+    {
+        return collect(self::registry())->reject('deprecated')->pluck('key')->all();
+    }
+
+    public static function roleAliases(): array
+    {
+        return [
+            'super_admin' => ['super_admin', 'super-admin', 'Super Admin', 'مدیرکل', 'Owner'],
+            'system_admin' => ['admin', 'Admin', 'ادمین', 'ITManager', 'ITUser'],
+            'sales_manager' => ['SaleManager', 'Manager'],
+            'sales_user' => ['Sales', 'SaleUser'],
+            'accountant' => ['Accountant', 'finance', 'Finance'],
+            'warehouse_manager' => ['StorageManager'],
+            'warehouse_operator' => ['StorageUser', 'warehouse', 'Warehouse'],
+            'auditor' => ['Guest'],
+        ];
+    }
+
+    public static function roleLabels(): array
+    {
+        return ['super_admin'=>'مدیر کل','system_admin'=>'مدیر سیستم','sales_manager'=>'مدیر فروش','sales_user'=>'فروشنده','finance_manager'=>'مدیر مالی','accountant'=>'حسابدار','warehouse_manager'=>'مدیر انبار','warehouse_operator'=>'کارشناس انبار','purchasing_user'=>'کارشناس خرید','auditor'=>'مشاهده‌گر / حسابرس'];
     }
 
     public static function syncToDatabase(): void
@@ -430,6 +537,19 @@ class PermissionCatalog
     public static function routePermissions(): array
     {
         return [
+            'admin.permissions.index' => 'permissions.view',
+            'admin.permissions.update' => 'permissions.edit',
+            'vouchers.sales.queue' => 'warehouse.collection.queue.view',
+            'vouchers.sales.queue.data' => 'warehouse.collection.queue.view',
+            'vouchers.sales.queue.receive' => 'warehouse.collection.receive',
+            'vouchers.sales.queue.start-collection' => 'warehouse.collection.start',
+            'vouchers.sales.queue.complete-collection' => 'warehouse.collection.submit_reapproval',
+            'vouchers.sales.queue.items' => 'warehouse.collection.edit',
+            'vouchers.sales.collection.edit' => 'warehouse.collection.edit',
+            'vouchers.sales.collection.update' => 'warehouse.collection.edit',
+            'vouchers.sales.shipped' => 'warehouse.shipping.queue.view',
+            'warehouse.shipping.index' => 'warehouse.shipping.queue.view',
+            'warehouse.shipping.ship' => 'warehouse.shipping.ship',
             'sales-returns.index' => 'sales_returns.view',
             'sales-returns.create' => 'sales_returns.create',
             'sales-returns.store' => 'sales_returns.create',
