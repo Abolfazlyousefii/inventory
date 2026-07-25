@@ -248,7 +248,7 @@
 
 
         {{-- Warehouse --}}
-        @canAnyPermission(['issues.view','stock_out.view','inventory.count.view','assets.view','warehouse_map.view'])
+        @canAnyPermission(['issues.view','warehouse.collection.queue.view','warehouse.shipping.queue.view','inventory.count.view','assets.view','warehouse_map.view'])
         <div class="sidebar-accordion-item {{ $warehouseActive ? 'is-open' : '' }}" data-accordion-section="warehouse">
             <button type="button"
                     class="sidebar-section-title sidebar-accordion-trigger {{ $warehouseActive ? 'is-active' : '' }}"
@@ -264,10 +264,10 @@
                     @canPermission('issues.view')
                     <a class="sidebar-sublink {{ $isRoute('vouchers.sales.queue', 'vouchers.sales.queue.*') || $isPath('vouchers/sales/queue', 'vouchers/sales/queue/*') ? '' : ($is('vouchers.*') ?: $pathActive('vouchers', 'vouchers/*')) }}" href="{{ route('vouchers.index') }}">حواله‌های انبار</a>
                     @endcanPermission
-                    @canPermission('stock_out.view')
+                    @canPermission('warehouse.collection.queue.view')
                     <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.queue.*') ?: $pathActive('vouchers/sales/queue', 'vouchers/sales/queue/*') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری فاکتور</a>
                     @endcanPermission
-                    @canPermission('stock_out.view')
+                    @canPermission('warehouse.shipping.queue.view')
                     <a class="sidebar-sublink {{ $is('warehouse.shipping.*') ?: $pathActive('warehouse/shipping', 'warehouse/shipping/*') }}" href="{{ route('warehouse.shipping.index') }}">صف ارسال فاکتور</a>
                     @endcanPermission
                     @canPermission('assets.view')
