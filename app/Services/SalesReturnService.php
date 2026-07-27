@@ -79,7 +79,42 @@ class SalesReturnService
     public function recordInventoryEntry(SalesReturnDocumentItem $item, ?int $actorId): void { if(StockMovement::where('reference_type',SalesReturnDocumentItem::class)->where('reference_id',$item->id)->exists()) return; $destinationWarehouseId=(int)($item->destination_warehouse_id ?: $item->document?->default_destination_warehouse_id); if($destinationWarehouseId<=0) throw ValidationException::withMessages(['items.'.$item->sort_order.'.destination_warehouse_id'=>'انبار مقصد ردیف نامعتبر است.']); $before=(int)WarehouseStock::where('warehouse_id',$destinationWarehouseId)->where('product_variant_id',$item->product_variant_id)->value('quantity'); WarehouseStockService::change($destinationWarehouseId,(int)$item->product_id,(int)$item->return_quantity,(int)$item->product_variant_id); $after=(int)WarehouseStock::where('warehouse_id',$destinationWarehouseId)->where('product_variant_id',$item->product_variant_id)->value('quantity'); StockMovement::create(['product_id'=>$item->product_id,'product_variant_id'=>$item->product_variant_id,'warehouse_id'=>$destinationWarehouseId,'user_id'=>$actorId ?: 1,'type'=>'in','reason'=>'sales_return','quantity'=>$item->return_quantity,'stock_before'=>$before,'stock_after'=>$after,'note'=>'برگشت از فروش '.$item->document->document_number,'reference'=>$item->document->document_number,'reference_type'=>SalesReturnDocumentItem::class,'reference_id'=>$item->id]); }
     public function recordCustomerCredit(SalesReturnDocument $doc, ?int $actorId): void { if($doc->total_refund_amount<=0)return; CustomerLedger::updateOrCreate(['customer_id'=>$doc->customer_id,'reference_type'=>SalesReturnDocument::class,'reference_id'=>$doc->id,'type'=>'credit'],['amount'=>$doc->total_refund_amount,'note'=>'بستانکاری بابت برگشت از فروش شماره '.$doc->document_number]); }
 
-    private function assertInternalReturnablesStillValid(SalesReturnDocument $doc): void { $doc->items->load('invoiceItem'); $ids=$doc->items->pluck('invoice_item_id')->filter()->values()->all(); InvoiceItem::query()->whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get(); $previewRows=$doc->items->map(fn($i)=>['invoice_item_id'=>$i->invoice_item_id,'return_quantity'=>$i->return_quantity])->all(); $invoice=Invoice::with('items')->findOrFail((int)$doc->invoice_id); if((int)$invoice->customer_id !== (int)$doc->customer_id) throw ValidationException::withMessages(['invoice_id'=>'فاکتور متعلق به مشتری سند نیست.']); $rows=$this->calculator->calculateInternalPreview($invoice,$previewRows); $byId=collect($rows)->keyBy(fn($r)=>(int)$r['invoice_item']->id); foreach($doc->items as $idx=>$item){ $row=$byId->get((int)$item->invoice_item_id); if(!$row || (int)$item->return_quantity > (int)$row['returnable_quantity']) throw ValidationException::withMessages(['items.'.($idx).'.return_quantity'=>'تعداد قابل برگشت در زمان ثبت نهایی تغییر کرده است.']); } }
+    private function assertInternalReturnablesStillValid(SalesReturnDocument $doc): void
+    {
+        $doc->items->load('invoiceItem');
+        $ids = $doc->items->pluck('invoice_item_id')->filter()->values()->all();
+        InvoiceItem::query()->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+        $previewRows = $doc->items->map(fn ($item) => [
+            'invoice_item_id' => $item->invoice_item_id,
+            'return_quantity' => $item->return_quantity,
+        ])->all();
+        $invoice = Invoice::with('items')->findOrFail((int) $doc->invoice_id);
+
+        if ((int) $invoice->customer_id !== (int) $doc->customer_id) {
+            throw ValidationException::withMessages(['invoice_id' => 'فاکتور متعلق به مشتری سند نیست.']);
+        }
+
+        $rows = $this->calculator->calculateInternalPreview($invoice, $previewRows);
+        $byId = collect($rows)->keyBy(fn ($row) => (int) $row['invoice_item']->id);
+
+        foreach ($doc->items as $idx => $item) {
+            $row = $byId->get((int) $item->invoice_item_id);
+            if (! $row || (int) $item->return_quantity > (int) $row['returnable_quantity']) {
+                throw ValidationException::withMessages([
+                    'items.'.$idx.'.return_quantity' => 'تعداد قابل برگشت در زمان ثبت نهایی تغییر کرده است.',
+                ]);
+            }
+
+            $invoiceItem = $row['invoice_item'];
+            $item->forceFill([
+                'unit_price_snapshot' => (int) $invoiceItem->price,
+                'line_discount_snapshot' => (int) ($invoiceItem->line_discount_amount ?? 0),
+                'allocated_invoice_discount_snapshot' => (int) $row['allocated_discount'],
+                'refund_unit_price' => (int) $row['refund_unit_price'],
+                'refund_amount' => (int) $row['refund_amount'],
+            ])->save();
+        }
+    }
     private function normalizeCategory2(?string $code): string { $c=trim((string)$code); if(!preg_match('/^\d{2}$/',$c)) throw ValidationException::withMessages(['category_id'=>'کد دسته‌بندی باید ۲ رقمی باشد.']); return $c; }
     private function normalizeModel3(?string $code): string { $c=preg_replace('/\D+/','',(string)$code); return str_pad(substr($c,0,3),3,'0',STR_PAD_LEFT); }
     private function nextProductSeq4(): string { $productMax=(int)DB::table('products')->selectRaw("MAX(CAST(COALESCE(NULLIF(short_barcode,''), SUBSTRING(code, 3, 4)) AS UNSIGNED)) as mx")->lockForUpdate()->value('mx'); $variantMax=(int)DB::table('product_variants')->whereNotNull('variant_code')->where('variant_code','<>','')->selectRaw("MAX(CAST(SUBSTRING(variant_code, 3, 4) AS UNSIGNED)) as mx")->lockForUpdate()->value('mx'); $next=max($productMax,$variantMax)+1; return str_pad((string)max(1,$next),4,'0',STR_PAD_LEFT); }

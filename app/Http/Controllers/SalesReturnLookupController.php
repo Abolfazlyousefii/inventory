@@ -71,15 +71,14 @@ class SalesReturnLookupController extends Controller
         $invoice->load('items.product', 'items.variant');
         $ids = $invoice->items->pluck('id')->all();
         $prev = $this->calculator->previouslyReturnedQuantities($ids);
-        $alloc = $this->calculator->allocateInvoiceDiscount($invoice);
+        $prevAmounts = $this->calculator->previouslyReturnedAmounts($ids);
+        $breakdowns = $this->calculator->invoiceItemBreakdowns($invoice);
 
-        return ['items' => $invoice->items->map(function ($item) use ($prev, $alloc) {
+        return ['items' => $invoice->items->map(function ($item) use ($prev, $prevAmounts, $breakdowns) {
             $sold = (int) $item->quantity;
             $returned = (int) ($prev[$item->id] ?? 0);
             $returnable = max($sold - $returned, 0);
-            $gross = $sold * (int) $item->price;
-            $net = max($gross - (int) ($item->line_discount_amount ?? 0) - (int) ($alloc[$item->id] ?? 0), 0);
-            $unit = $sold > 0 ? (int) floor($net / $sold) : 0;
+            $breakdown = $breakdowns[$item->id];
             return [
                 'invoice_item_id' => $item->id,
                 'product_id' => $item->product_id,
@@ -90,10 +89,17 @@ class SalesReturnLookupController extends Controller
                 'barcode' => $item->variant?->barcode,
                 'quantity' => $sold,
                 'previously_returned' => $returned,
+                'previously_returned_amount' => (int) ($prevAmounts[$item->id] ?? 0),
                 'returnable' => $returnable,
-                'unit_price' => $unit,
-                'line_discount' => (int) ($item->line_discount_amount ?? 0),
-                'allocated_invoice_discount' => (int) ($alloc[$item->id] ?? 0),
+                'unit_price' => $breakdown['net_refund_unit_price'],
+                'historical_unit_price' => $breakdown['historical_unit_price'],
+                'gross_amount' => $breakdown['gross_amount'],
+                'line_discount' => $breakdown['line_discount_total'],
+                'line_discount_unit' => $breakdown['line_discount_unit'],
+                'allocated_invoice_discount' => $breakdown['allocated_invoice_discount_total'],
+                'allocated_invoice_discount_unit' => $breakdown['allocated_invoice_discount_unit'],
+                'net_refund_total' => $breakdown['net_refund_total'],
+                'net_refund_unit_price' => $breakdown['net_refund_unit_price'],
                 'disabled' => $returnable <= 0,
             ];
         })->values()];

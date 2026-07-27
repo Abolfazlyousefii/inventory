@@ -169,8 +169,8 @@ class InvoiceController extends Controller
     public function salesQueue(Request $request)
     {
         $invoices = $this->salesQueueQuery(false)
-            ->orderBy('status_changed_at')
-            ->orderBy('id')
+            ->orderByDesc('invoices.created_at')
+            ->orderByDesc('invoices.id')
             ->paginate(20)
             ->withQueryString();
 
@@ -204,10 +204,15 @@ class InvoiceController extends Controller
 
     public function salesQueueData(Request $request)
     {
-        $invoices = $this->salesQueueQuery(false)->orderBy('status_changed_at')->orderBy('id')->limit(100)->get();
+        $perPage = max(1, min($request->integer('per_page', 20), 50));
+        $page = max(1, $request->integer('page', 1));
+        $invoices = $this->salesQueueQuery(false)
+            ->orderByDesc('invoices.created_at')
+            ->orderByDesc('invoices.id')
+            ->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
-            'rows' => $invoices->map(fn (Invoice $invoice) => [
+            'rows' => $invoices->getCollection()->map(fn (Invoice $invoice) => [
                 'uuid' => $invoice->uuid,
                 'customer_name' => $invoice->customer_name,
                 'customer_mobile' => $invoice->customer_mobile,
@@ -229,6 +234,10 @@ class InvoiceController extends Controller
                 'start_collection_url' => $invoice->status === Invoice::STATUS_WAREHOUSE_RECEIVED ? route('vouchers.sales.queue.start-collection', $invoice->uuid) : null,
                 'complete_collection_url' => in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true) ? route('vouchers.sales.queue.complete-collection', $invoice->uuid) : null,
             ])->values(),
+            'total' => $invoices->total(),
+            'current_page' => $invoices->currentPage(),
+            'per_page' => $invoices->perPage(),
+            'last_page' => $invoices->lastPage(),
         ]);
     }
 

@@ -106,6 +106,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/print', [ProductExportController::class, 'print'])->name('print');
         Route::get('/download', [ProductExportController::class, 'download'])->name('download');
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
+        Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->middleware('permission:products.export')->name('products.search');
         Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
     });
