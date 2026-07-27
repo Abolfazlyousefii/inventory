@@ -180,8 +180,9 @@
         @if($isEdit)
             @method('PUT')
         @endif
+        <input type="hidden" name="submission_token" value="{{ old('submission_token', (string) \Illuminate\Support\Str::uuid()) }}">
         <input type="hidden" name="warehouse_id" value="{{ old('warehouse_id', $purchase->warehouse_id ?? '') }}">
-        <div id="itemsPayload"></div>
+        <input type="hidden" name="items_json" id="itemsPayload" value="">
 
         <div class="card purchase-main-card mb-3">
             <div class="card-body">
@@ -197,7 +198,7 @@
                     <div class="col-md-4">
                         <label class="form-label">تامین‌کننده / مشتری</label>
                         <div class="d-flex gap-2">
-                            <select class="form-select form-select-sm" name="supplier_id" id="purchaseSupplierSelect" data-placeholder="جستجوی نام یا موبایل تأمین‌کننده / مشتری..." required>
+                            <select class="form-select form-select-sm @error('supplier_id') is-invalid @enderror" name="supplier_id" id="purchaseSupplierSelect" data-placeholder="جستجوی نام یا موبایل تأمین‌کننده / مشتری..." required>
                                 <option value="">انتخاب کنید...</option>
                                 @foreach($suppliers as $supplier)
                                     <option value="{{ $supplier->purchase_option_value ?? $supplier->id }}" @selected(old('supplier_id', $purchase->supplier_id ?? null)==($supplier->purchase_option_value ?? $supplier->id))>
@@ -207,6 +208,9 @@
                             </select>
                             <a href="{{ route('persons.index') }}" class="btn btn-sm btn-outline-dark">اشخاص</a>
                         </div>
+                        @error('supplier_id')
+                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                        @enderror
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">انبار مقصد</label>
@@ -835,17 +839,8 @@
         return String(value ?? '').trim() === '' ? '' : parseNumericInput(value);
     }
 
-    function appendHidden(index, name, value) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = `items[${index}][${name}]`;
-        input.value = value ?? '';
-        payloadEl.appendChild(input);
-    }
-
     function buildPayload() {
-        payloadEl.innerHTML = '';
-        let index = 0;
+        const items = [];
 
         productCardsEl.querySelectorAll('[data-product-card]').forEach((card) => {
             const productId = card.dataset.productId;
@@ -853,25 +848,29 @@
             const defaults = cardDefaults(card);
 
             card.querySelectorAll('[data-variant-row]').forEach((row) => {
-                const qty = Number(row.querySelector('[data-qty]')?.value || 0);
+                const qty = parseNumericInput(row.querySelector('[data-qty]')?.value || 0);
                 const purchaseItemId = row.dataset.purchaseItemId || '';
                 if (qty <= 0 && !purchaseItemId) return;
 
-                if (purchaseItemId) appendHidden(index, 'id', purchaseItemId);
-                appendHidden(index, 'product_id', productId);
-                appendHidden(index, 'variant_id', row.dataset.variantId);
-                appendHidden(index, 'quantity', qty);
-                appendHidden(index, 'buy_price', numericPayloadValue(row.querySelector('[data-buy]')?.value || ''));
-                appendHidden(index, 'sell_price', numericPayloadValue(row.querySelector('[data-sell]')?.value || ''));
-                appendHidden(index, 'product_buy_price', numericPayloadValue(defaults.buy || ''));
-                appendHidden(index, 'product_sell_price', numericPayloadValue(defaults.sell || ''));
-                appendHidden(index, 'name', product?.name || '');
-                appendHidden(index, 'code', product?.code || product?.sku || '');
-                index++;
+                items.push({
+                    ...(purchaseItemId ? { id: purchaseItemId } : {}),
+                    client_key: `product-${productId}-variant-${row.dataset.variantId}`,
+                    product_id: productId,
+                    variant_id: row.dataset.variantId,
+                    quantity: qty,
+                    buy_price: numericPayloadValue(row.querySelector('[data-buy]')?.value || ''),
+                    sell_price: numericPayloadValue(row.querySelector('[data-sell]')?.value || ''),
+                    product_buy_price: numericPayloadValue(defaults.buy || ''),
+                    product_sell_price: numericPayloadValue(defaults.sell || ''),
+                    name: product?.name || '',
+                    code: product?.code || product?.sku || '',
+                });
             });
         });
 
-        return index;
+        payloadEl.value = JSON.stringify(items);
+
+        return items.length;
     }
 
     quickCategoryEl.addEventListener('change', renderProductOptions);
@@ -1006,13 +1005,26 @@
     });
 
     purchaseForm.addEventListener('submit', (event) => {
+        if (purchaseForm.dataset.submitting === '1') {
+            event.preventDefault();
+            return;
+        }
+
         const count = buildPayload();
         invoiceDiscountValueEl.value = String(invoiceDiscountValueEl.value || '').trim() === '' ? '' : parseNumericInput(invoiceDiscountValueEl.value);
 
         if (count === 0) {
             event.preventDefault();
             alert('حداقل یک تنوع را برای خرید انتخاب کنید.');
+            return;
         }
+
+        purchaseForm.dataset.submitting = '1';
+        purchaseForm.querySelectorAll('button[type="submit"]').forEach((button) => {
+            button.disabled = true;
+            button.dataset.originalText = button.textContent;
+            button.textContent = 'در حال ثبت...';
+        });
     });
 
     async function hydrateInitialItems() {
@@ -1034,6 +1046,14 @@
     hydrateInitialItems();
     recalc();
     updateAllVariantFilters();
+
+    const firstInvalidField = purchaseForm.querySelector('.is-invalid');
+    if (firstInvalidField) {
+        setTimeout(() => {
+            firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstInvalidField.focus({ preventScroll: true });
+        }, 100);
+    }
 })();
 </script>
 @endsection
