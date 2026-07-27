@@ -2,141 +2,399 @@
 
 @section('title', 'داشبورد')
 
-@php
-use Morilog\Jalali\Jalalian;
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('css/dashboard.css') }}">
+@endpush
 
-$statusLabels = [
-    'pending_warehouse_approval' => 'در انتظار تایید انبار',
-    'collecting' => 'در حال جمع‌آوری',
-    'checking_discrepancy' => 'بررسی مغایرت',
-    'final_check' => 'بازبینی نهایی',
-    'packing' => 'بسته‌بندی',
-    'shipped' => 'ارسال‌شده',
-    'not_shipped' => 'ارسال‌نشده',
-];
+@push('scripts')
+    <script src="{{ asset('js/dashboard.js') }}" defer></script>
+@endpush
+
+@php
+    use Morilog\Jalali\Jalalian;
+
+    $statusVariants = [
+        \App\Models\PreinvoiceOrder::STATUS_DRAFT => 'muted',
+        \App\Models\PreinvoiceOrder::STATUS_PENDING_FINANCE => 'info',
+        \App\Models\PreinvoiceOrder::STATUS_FINANCE_REVIEWING => 'info-strong',
+        \App\Models\PreinvoiceOrder::STATUS_RETURNED_TO_SALES => 'warning',
+        \App\Models\PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE => 'success',
+        \App\Models\PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE => 'danger',
+    ];
 @endphp
 
 @section('content')
-<style>
-    .dashboard-shell{background:#f6f8fb;border-radius:20px;padding:14px;max-width:100%;overflow-x:hidden}.dash-surface{background:#fff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 8px 24px rgba(15,39,69,.04)}.dash-title{color:#102a43;font-weight:800}.dash-muted{color:#64748b}.dash-section-title{color:#102a43;font-size:1.05rem;font-weight:800}.quick-card{display:block;height:100%;padding:18px;text-decoration:none;color:#102a43;border:1px solid #e2e8f0;border-radius:18px;background:linear-gradient(180deg,#fff,#f8fbff);transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.quick-card:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(37,99,235,.1);border-color:#bfdbfe;color:#0f172a}.quick-icon{width:44px;height:44px;border-radius:14px;background:#eef4ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;font-size:1.25rem}.quick-card-desc{font-size:.86rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.search-box{background:linear-gradient(135deg,#eff6ff,#f8fafc)}.task-row{border-bottom:1px solid #edf2f7;padding:.75rem 0}.task-row:last-child{border-bottom:0}.task-row.is-zero{opacity:.58}.summary-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px;height:100%}.summary-value{font-size:1.1rem;font-weight:800;color:#0f172a}.admin-panel details>summary{cursor:pointer;list-style:none}.admin-panel details>summary::-webkit-details-marker{display:none}.dash-link-row{border-bottom:1px solid #edf2f7;padding-top:.65rem!important;padding-bottom:.65rem!important;border-radius:10px}.dash-link-row:last-child{border-bottom:0}.dash-link-row:hover{background:#f8fbff}.dash-progress-bg{background:#e7eef8!important}@media(max-width:575.98px){.dashboard-shell{padding:10px}.quick-card{padding:14px}.quick-icon{width:38px;height:38px}.summary-value{font-size:1rem}}
-</style>
+<div class="seller-dashboard">
+    @if($sellerDashboardEnabled)
+        <header class="seller-hero" aria-labelledby="seller-dashboard-title">
+            <div class="seller-hero__intro">
+                <div class="seller-hero__eyebrow">میز کار فروش</div>
+                <h1 id="seller-dashboard-title">سلام {{ $userName }}، امروز چه سفارشی ثبت می‌کنیم؟</h1>
+                <p>سریع پیش‌فاکتور بسازید، سفارش‌های قبلی را ادامه دهید و مشتری موردنظر را پیدا کنید.</p>
+                <div class="seller-hero__meta" aria-label="اطلاعات امروز">
+                    <span>{{ $todayDateLabel }}</span>
+                    <span>آخرین بارگذاری {{ $todayDateTimeLabel }}</span>
+                    <span>{{ $userRoleLabel }}</span>
+                </div>
+            </div>
 
-<div class="dashboard-shell">
-    <div class="dash-surface p-3 mb-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
-        <div>
-            <h4 class="mb-1 dash-title">داشبورد</h4>
-            <div class="dash-muted">امروز چه کاری می‌خواهید انجام دهید؟</div>
-        </div>
-        <div class="text-md-end small dash-muted">
-            <div>{{ $todayDateLabel }}</div>
-            <div>{{ $todayDateTimeLabel }} @if($userName) | {{ $userName }} @endif</div>
-        </div>
-    </div>
+            <div class="seller-hero__tools">
+                @if($sellerCanSearch)
+                    <form method="GET" action="{{ route('global-search') }}" class="seller-search" role="search">
+                        <label class="visually-hidden" for="dashboard-global-search">جست‌وجوی سراسری</label>
+                        <span class="seller-search__icon">@include('dashboard.partials.icon', ['name' => 'search'])</span>
+                        <input id="dashboard-global-search" name="q" type="search" placeholder="نام مشتری، موبایل، کالا، فاکتور یا بارکد..." autocomplete="off">
+                        <button type="submit">جست‌وجو</button>
+                    </form>
+                @endif
 
-    <section class="dash-surface p-3 mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="dash-section-title">شروع سریع</div>
-            <span class="small dash-muted">میانبرهای اصلی</span>
-        </div>
-        <div class="row g-3">
-            @forelse($quickActions as $action)
-                <div class="col-12 col-sm-6 col-lg-4 col-xxl-3">
-                    <a class="quick-card" href="{{ $action['route'] }}">
-                        <span class="quick-icon mb-3"><i class="bi bi-{{ $action['icon'] }}"></i></span>
-                        <h6 class="fw-bold mb-1">{{ $action['title'] }}</h6>
-                        <div class="quick-card-desc">{{ $action['description'] }}</div>
+                @if($sellerCanCreate)
+                    <a class="seller-primary-cta" href="{{ route('preinvoice.create') }}">
+                        @include('dashboard.partials.icon', ['name' => 'plus'])
+                        <span>ثبت پیش‌فاکتور جدید</span>
                     </a>
-                </div>
-            @empty
-                <div class="col-12"><div class="alert alert-light border mb-0">برای نقش شما میانبر فعالی تعریف نشده است.</div></div>
-            @endforelse
-        </div>
-    </section>
-
-    <section class="dash-surface search-box p-3 mb-4">
-        <div class="dash-section-title mb-2">جستجوی سریع</div>
-        <form method="GET" action="{{ route('global-search') }}" class="row g-2 align-items-center">
-            <div class="col-12 col-lg-10">
-                <input name="q" class="form-control form-control-lg" placeholder="جستجوی کالا، مشتری، فاکتور یا بارکد..." autocomplete="off">
+                @endif
             </div>
-            <div class="col-12 col-lg-2 d-grid">
-                <button class="btn btn-primary btn-lg">جستجو</button>
-            </div>
-        </form>
-        <div class="small dash-muted mt-2">نام کالا، کد، SKU، بارکد، شماره فاکتور/پیش‌فاکتور، نام یا موبایل مشتری را وارد کنید.</div>
-    </section>
+        </header>
 
-    <div class="row g-3 mb-4">
-        <div class="col-xl-7">
-            <section class="dash-surface p-3 h-100">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="dash-section-title">کارهای امروز</div>
-                    <span class="small dash-muted">موارد نیازمند رسیدگی</span>
-                </div>
-                @foreach($actionItems as $item)
-                    <div class="task-row d-flex flex-wrap justify-content-between align-items-center gap-2 {{ (int) $item['count'] === 0 ? 'is-zero' : '' }}">
-                        <div class="fw-semibold text-dark">{{ $item['title'] }}</div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="badge text-bg-light border text-dark">{{ number_format($item['count']) }}</span>
-                            <a href="{{ $item['route'] }}" class="btn btn-sm btn-outline-primary">مشاهده</a>
-                        </div>
+        @if($sellerQuickActions->isNotEmpty())
+            <section class="seller-section" aria-labelledby="seller-quick-actions-title">
+                <div class="seller-section__heading">
+                    <div>
+                        <h2 id="seller-quick-actions-title">دسترسی‌های اصلی فروش</h2>
+                        <p>کار موردنظر را مستقیم شروع کنید.</p>
                     </div>
-                @endforeach
-            </section>
-        </div>
-        <div class="col-xl-5">
-            <section class="dash-surface p-3 h-100">
-                <div class="dash-section-title mb-3">خلاصه امروز</div>
-                <div class="row g-2">
-                    @foreach($todaySummary as $summary)
-                        <div class="col-6">
-                            <div class="summary-card">
-                                <div class="small dash-muted mb-1">{{ $summary['title'] }}</div>
-                                <div class="summary-value">{{ number_format($summary['value']) }}</div>
-                                <div class="small dash-muted">{{ $summary['suffix'] }}</div>
-                            </div>
-                        </div>
+                </div>
+
+                <div class="seller-quick-grid">
+                    @foreach($sellerQuickActions as $action)
+                        <a href="{{ $action['route'] }}" class="seller-quick-card {{ $action['emphasis'] ? 'seller-quick-card--primary' : '' }}">
+                            <span class="seller-quick-card__icon">
+                                @include('dashboard.partials.icon', ['name' => match($action['key']) {
+                                    'create' => 'plus',
+                                    'mine' => 'document',
+                                    'customers' => 'customers',
+                                    default => 'invoice',
+                                }])
+                            </span>
+                            @if($action['emphasis'])
+                                <span class="seller-quick-card__label">مهم‌ترین کار</span>
+                            @endif
+                            <strong>{{ $action['title'] }}</strong>
+                            <span class="seller-quick-card__description">{{ $action['description'] }}</span>
+                            @if($action['key'] === 'mine')
+                                <span class="seller-quick-card__badges">
+                                    <span>{{ number_format($sellerStatusCounts['drafts']) }} پیش‌نویس</span>
+                                    <span>{{ number_format($sellerStatusCounts['returned_to_sales']) }} برگشتی</span>
+                                </span>
+                            @endif
+                            <span class="seller-quick-card__action">{{ $action['key'] === 'create' ? 'ثبت سفارش' : 'باز کردن' }}</span>
+                        </a>
                     @endforeach
                 </div>
             </section>
-        </div>
-    </div>
+        @endif
 
-    <section class="dash-surface p-3 admin-panel">
-        <details>
-            <summary class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div>
-                    <div class="dash-section-title">گزارش‌های بیشتر</div>
-                    <div class="small dash-muted">داشبورد مدیریتی، خلاصه ماهانه و آخرین فعالیت‌ها</div>
-                </div>
-                <span class="btn btn-outline-secondary btn-sm">نمایش داشبورد مدیریتی</span>
-            </summary>
-
-            <div class="pt-3 mt-3 border-top">
-                <div class="row g-3 mb-3">
-                    <div class="col-xl-4"><div class="summary-card"><div class="fw-bold mb-2">خلاصه فروش</div><div class="small d-flex justify-content-between mb-2"><span class="dash-muted">پیش‌فاکتور این ماه</span><strong>{{ number_format($salesSummary['preinvoicesThisMonth']) }}</strong></div><div class="small d-flex justify-content-between mb-2"><span class="dash-muted">فاکتور این ماه</span><strong>{{ number_format($salesSummary['invoicesThisMonth']) }}</strong></div><div class="small d-flex justify-content-between"><span class="dash-muted">مبلغ فروش این ماه</span><strong>{{ number_format($salesSummary['salesAmountThisMonth']) }}</strong></div></div></div>
-                    <div class="col-xl-4"><div class="summary-card"><div class="fw-bold mb-2">خلاصه انبارداری</div><div class="small d-flex justify-content-between mb-2"><span class="dash-muted">حواله‌های امروز</span><strong>{{ number_format($warehouseSummary['todayHavalehCount']) }}</strong></div><div class="small d-flex justify-content-between mb-2"><span class="dash-muted">در انتظار انبار</span><strong>{{ number_format($warehouseSummary['pendingWarehouse']) }}</strong></div><div class="small d-flex justify-content-between"><span class="dash-muted">کالاهای ناموجود</span><strong>{{ number_format($warehouseSummary['outOfStock']) }}</strong></div></div></div>
-                    <div class="col-xl-4"><div class="summary-card"><div class="fw-bold mb-2">خلاصه مالی</div><div class="small d-flex justify-content-between mb-2"><span class="dash-muted">صف مالی</span><strong>{{ number_format($financeSummary['financeQueue']) }}</strong></div><div class="small d-flex justify-content-between mb-2"><span class="dash-muted">پرداخت نقدی</span><strong>{{ number_format($financeSummary['todayCashPayments']) }}</strong></div><div class="small d-flex justify-content-between"><span class="dash-muted">پرداخت چکی</span><strong>{{ number_format($financeSummary['todayChequePayments']) }}</strong></div></div></div>
-                </div>
-
-                <div class="dash-surface p-3 mb-3" id="monthlyReportsCard" data-endpoint="{{ route('dashboard.monthly-report') }}" data-initial='@json($monthlyReport)'>
-                    <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
-                        <div><div class="dash-section-title mb-1">خلاصه ماهانه</div><div id="monthlyReportRange" class="dash-muted small">بازه: {{ $monthlyReport['range_label'] }}</div></div>
-                        <div class="d-flex gap-2 align-items-end"><div><label for="reportMonthSelect" class="form-label small dash-muted mb-1">ماه</label><select id="reportMonthSelect" class="form-select form-select-sm">@foreach($reportMonths as $monthNumber => $monthLabel)<option value="{{ $monthNumber }}" @selected($selectedReportMonth==$monthNumber)>{{ $monthLabel }}</option>@endforeach</select></div><div><label for="reportYearSelect" class="form-label small dash-muted mb-1">سال</label><select id="reportYearSelect" class="form-select form-select-sm">@foreach($reportYears as $yearOption)<option value="{{ $yearOption }}" @selected($selectedReportYear==$yearOption)>{{ $yearOption }}</option>@endforeach</select></div></div>
+        @if($sellerWorkItems->isNotEmpty())
+            <div class="seller-main-grid">
+                <section class="seller-panel" aria-labelledby="seller-work-title">
+                    <div class="seller-section__heading">
+                        <div>
+                            <h2 id="seller-work-title">کارهای من</h2>
+                            <p>سفارش‌هایی که امروز به رسیدگی شما نیاز دارند</p>
+                        </div>
                     </div>
-                    <div id="monthlyHorizontalChart" class="d-grid gap-2"></div>
-                </div>
 
-                <div class="row g-3">
-                    <div class="col-lg-7"><div class="summary-card"><div class="fw-bold mb-2">آخرین فعالیت‌ها</div><div class="dash-link-row py-2 d-flex justify-content-between"><span>آخرین پیش‌فاکتور</span><span class="dash-muted small">{{ $recentActivity['latestPreinvoice']?->customer_name ?? '---' }}</span></div><div class="dash-link-row py-2 d-flex justify-content-between"><span>آخرین حواله</span><span class="dash-muted small">{{ $recentActivity['latestHavaleh']?->uuid ?? '---' }}</span></div><div class="dash-link-row py-2 d-flex justify-content-between"><span>آخرین تغییر وضعیت</span><span class="dash-muted small">{{ $statusLabels[$recentActivity['latestStatusChange']?->new_value ?? ''] ?? '---' }}</span></div>@foreach($recentActivity['latestUserActivities']->take(2) as $log)<div class="dash-link-row py-2 d-flex justify-content-between"><span class="small">{{ $log->user?->name ?? 'سیستم' }} - {{ $log->description }}</span><span class="dash-muted small">{{ Jalalian::fromDateTime($log->occurred_at)->format('m/d H:i') }}</span></div>@endforeach</div></div>
-                    <div class="col-lg-5"><div class="summary-card"><div class="fw-bold mb-2">بخش‌های نرم‌افزار</div>@foreach($moduleShortcuts as $module)<a href="{{ $module['route'] }}" class="dash-link-row py-2 text-decoration-none d-flex justify-content-between align-items-center"><div><div class="fw-semibold text-dark">{{ $module['title'] }}</div><div class="dash-muted small">{{ $module['description'] }}</div></div><i class="bi bi-{{ $module['icon'] }} text-primary"></i></a>@endforeach</div></div>
-                </div>
+                    <div class="seller-work-list">
+                        @foreach($sellerWorkItems as $item)
+                            <article class="seller-work-item seller-work-item--{{ $item['variant'] }}">
+                                <span class="seller-work-item__icon">@include('dashboard.partials.icon', ['name' => $item['icon']])</span>
+                                <div class="seller-work-item__body">
+                                    <h3>{{ $item['title'] }}</h3>
+                                    <p>{{ $item['description'] }}</p>
+                                </div>
+                                <strong class="seller-work-item__count" aria-label="{{ number_format($item['count']) }} مورد">{{ number_format($item['count']) }}</strong>
+                                <a href="{{ $item['route'] }}" class="seller-button seller-button--secondary">{{ $item['action_label'] }}</a>
+                            </article>
+                        @endforeach
+                    </div>
+                </section>
+
+                <section class="seller-panel" aria-labelledby="seller-today-title">
+                    <div class="seller-section__heading">
+                        <div>
+                            <h2 id="seller-today-title">خلاصه عملکرد امروز من</h2>
+                            <p>فقط سفارش‌های ثبت‌شده توسط شما</p>
+                        </div>
+                    </div>
+
+                    <div class="seller-summary-grid">
+                        <div class="seller-summary-card">
+                            <span>پیش‌فاکتور امروز من</span>
+                            <strong>{{ number_format($sellerTodaySummary['preinvoices']) }}</strong>
+                            <small>سفارش</small>
+                        </div>
+                        <div class="seller-summary-card">
+                            <span>مبلغ سفارش‌های امروز من</span>
+                            <strong>{{ number_format($sellerTodaySummary['amount']) }}</strong>
+                            <small>ریال</small>
+                        </div>
+                        <div class="seller-summary-card">
+                            <span>تأییدشده امروز</span>
+                            <strong>{{ number_format($sellerTodaySummary['converted']) }}</strong>
+                            <small>سفارش</small>
+                        </div>
+                        <div class="seller-summary-card">
+                            <span>برگشتی برای اصلاح</span>
+                            <strong>{{ number_format($sellerTodaySummary['returned']) }}</strong>
+                            <small>سفارش</small>
+                        </div>
+                    </div>
+
+                    <div class="seller-conversion">
+                        <div>
+                            <span>نسبت تبدیل سفارش‌های امروز</span>
+                            <small>سهم سفارش‌های امروز که به فاکتور تبدیل شده‌اند</small>
+                        </div>
+                        <strong>{{ rtrim(rtrim(number_format($sellerConversionRate, 1, '.', ''), '0'), '.') }}٪</strong>
+                    </div>
+                </section>
             </div>
-        </details>
-    </section>
-</div>
 
-<script>
-document.addEventListener('DOMContentLoaded',function(){const card=document.getElementById('monthlyReportsCard');if(!card)return;const endpoint=card.dataset.endpoint,monthSelect=document.getElementById('reportMonthSelect'),yearSelect=document.getElementById('reportYearSelect'),rangeLabelEl=document.getElementById('monthlyReportRange'),chartEl=document.getElementById('monthlyHorizontalChart'),formatNumber=(v)=>new Intl.NumberFormat('fa-IR').format(Number(v||0));function renderChart(report){chartEl.innerHTML='';(report.metrics||[]).slice(0,5).forEach((metric)=>{const row=document.createElement('div');row.innerHTML=`<div class="d-flex justify-content-between mb-1 small"><span class="fw-semibold">${metric.label}</span><span class="dash-muted">${formatNumber(metric.value)} ${metric.unit}</span></div><div class="progress dash-progress-bg" style="height:10px;"><div class="progress-bar bg-${metric.color}" style="width:${metric.percent}%"></div></div>`;chartEl.appendChild(row);});}function renderReport(report){rangeLabelEl.textContent=`بازه: ${report.range_label}`;renderChart(report);}let initialReport=null;try{initialReport=JSON.parse(card.dataset.initial||'{}')}catch(e){initialReport=null}if(initialReport&&initialReport.metrics)renderReport(initialReport);async function fetchReport(){const url=`${endpoint}?report_month=${encodeURIComponent(monthSelect.value)}&report_year=${encodeURIComponent(yearSelect.value)}`;card.classList.add('opacity-75');try{const response=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'}});if(!response.ok)throw new Error('failed');renderReport(await response.json())}catch(err){console.error(err)}finally{card.classList.remove('opacity-75')}}monthSelect?.addEventListener('change',fetchReport);yearSelect?.addEventListener('change',fetchReport);});
-</script>
+            <section class="seller-panel seller-recent" aria-labelledby="seller-recent-title">
+                <div class="seller-section__heading seller-section__heading--action">
+                    <div>
+                        <h2 id="seller-recent-title">آخرین پیش‌فاکتورهای من</h2>
+                        <p>پنج سفارش اخیر شما با تازه‌ترین وضعیت</p>
+                    </div>
+                    <a href="{{ route('preinvoice.my.index') }}" class="seller-text-link">مشاهده همه</a>
+                </div>
+
+                @if($sellerRecentPreinvoices->isEmpty())
+                    <div class="seller-empty">
+                        <span class="seller-empty__icon">@include('dashboard.partials.icon', ['name' => 'document'])</span>
+                        <h3>هنوز پیش‌فاکتوری ثبت نکرده‌اید.</h3>
+                        <p>اولین سفارش مشتری را از همین‌جا شروع کنید.</p>
+                        @if($sellerCanCreate)
+                            <a href="{{ route('preinvoice.create') }}" class="seller-button seller-button--primary">ثبت اولین پیش‌فاکتور</a>
+                        @endif
+                    </div>
+                @else
+                    <div class="seller-table-wrap">
+                        <table class="seller-table">
+                            <caption class="visually-hidden">پنج پیش‌فاکتور اخیر کاربر فعلی</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">شماره</th>
+                                    <th scope="col">مشتری</th>
+                                    <th scope="col">مبلغ</th>
+                                    <th scope="col">زمان ثبت</th>
+                                    <th scope="col">وضعیت</th>
+                                    <th scope="col">عملیات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($sellerRecentPreinvoices as $order)
+                                    @php
+                                        $statusLabel = $preinvoiceStatusLabels[$order->status] ?? 'وضعیت نامشخص';
+                                        $statusVariant = $statusVariants[$order->status] ?? 'muted';
+                                        $date = $order->document_date ?? $order->created_at;
+                                        $dateLabel = $date?->isToday()
+                                            ? 'امروز '.$date->format('H:i')
+                                            : ($date ? Jalalian::fromDateTime($date)->format('Y/m/d') : '—');
+                                    @endphp
+                                    <tr>
+                                        <td data-label="شماره"><span class="seller-document-number">{{ $order->uuid }}</span></td>
+                                        <td data-label="مشتری">{{ $order->customer_name ?: 'بدون نام' }}</td>
+                                        <td data-label="مبلغ"><strong>{{ number_format($order->total_price) }}</strong> <small>ریال</small></td>
+                                        <td data-label="زمان ثبت">{{ $dateLabel }}</td>
+                                        <td data-label="وضعیت"><span class="seller-status seller-status--{{ $statusVariant }}">{{ $statusLabel }}</span></td>
+                                        <td data-label="عملیات"><a class="seller-button seller-button--secondary" href="{{ $order->dashboard_action_route }}">{{ $order->dashboard_action_label }}</a></td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </section>
+
+            @if($sellerSupplementaryActions->isNotEmpty())
+                <section class="seller-section" aria-labelledby="seller-more-actions-title">
+                    <div class="seller-section__heading">
+                        <div>
+                            <h2 id="seller-more-actions-title">دسترسی‌های تکمیلی فروش</h2>
+                            <p>ابزارهای مرتبط فقط بر اساس دسترسی شما</p>
+                        </div>
+                    </div>
+                    <div class="seller-small-links">
+                        @foreach($sellerSupplementaryActions as $action)
+                            <a href="{{ $action['route'] }}">
+                                <span class="seller-small-links__icon">@include('dashboard.partials.icon', ['name' => 'document'])</span>
+                                <span><strong>{{ $action['title'] }}</strong><small>{{ $action['description'] }}</small></span>
+                            </a>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
+
+            @if($sellerFollowUps->isNotEmpty())
+                <section class="seller-panel seller-followups" aria-labelledby="seller-followups-title">
+                    <div class="seller-section__heading">
+                        <div>
+                            <h2 id="seller-followups-title">پیگیری‌های مهم</h2>
+                            <p>موارد واقعی که بهتر است از قلم نیفتند</p>
+                        </div>
+                    </div>
+                    <div class="seller-followups__grid">
+                        @foreach($sellerFollowUps as $item)
+                            <a href="{{ $item['route'] }}" class="seller-followup seller-followup--{{ $item['variant'] }}">
+                                <span>{{ $item['title'] }}</span>
+                                <strong>{{ number_format($item['count']) }}</strong>
+                                <small>{{ $item['description'] }}</small>
+                            </a>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
+        @endif
+    @else
+        <header class="seller-hero seller-hero--compact">
+            <div class="seller-hero__intro">
+                <div class="seller-hero__eyebrow">داشبورد داخلی</div>
+                <h1>سلام {{ $userName }}</h1>
+                <p>گزارش‌ها و میانبرهای مجاز نقش {{ $userRoleLabel }} در ادامه نمایش داده شده‌اند.</p>
+                <div class="seller-hero__meta"><span>{{ $todayDateLabel }}</span><span>آخرین بارگذاری {{ $todayDateTimeLabel }}</span></div>
+            </div>
+        </header>
+    @endif
+
+    @if($canViewManagementReports || $canViewFinanceReports || $canViewWarehouseReports)
+        <section class="seller-management" aria-labelledby="management-reports-title">
+            <details>
+                <summary>
+                    <span>
+                        <strong id="management-reports-title">{{ $canViewManagementReports ? 'گزارش‌های مدیریتی' : 'گزارش‌های عملیاتی مجاز' }}</strong>
+                        <small>خلاصه‌های مالی، انبار و مدیریت متناسب با دسترسی شما</small>
+                    </span>
+                    <span class="seller-management__toggle">نمایش گزارش‌ها</span>
+                </summary>
+
+                <div class="seller-management__content">
+                    <div class="seller-report-grid">
+                        @if($salesSummary)
+                            <article class="seller-report-card">
+                                <h3>خلاصه فروش</h3>
+                                <dl>
+                                    <div><dt>پیش‌فاکتور این ماه</dt><dd>{{ number_format($salesSummary['preinvoicesThisMonth']) }}</dd></div>
+                                    <div><dt>فاکتور این ماه</dt><dd>{{ number_format($salesSummary['invoicesThisMonth']) }}</dd></div>
+                                    <div><dt>مبلغ فروش این ماه</dt><dd>{{ number_format($salesSummary['salesAmountThisMonth']) }} ریال</dd></div>
+                                    <div><dt>برگشت از فروش</dt><dd>{{ number_format($salesSummary['returnFromSaleCount']) }}</dd></div>
+                                </dl>
+                            </article>
+                        @endif
+
+                        @if($warehouseSummary)
+                            <article class="seller-report-card">
+                                <h3>خلاصه انبار</h3>
+                                <dl>
+                                    <div><dt>حواله‌های امروز</dt><dd>{{ number_format($warehouseSummary['todayHavalehCount']) }}</dd></div>
+                                    <div><dt>در انتظار انبار</dt><dd>{{ number_format($warehouseSummary['pendingWarehouse']) }}</dd></div>
+                                    <div><dt>کالاهای کم‌موجود</dt><dd>{{ number_format($warehouseSummary['lowStock']) }}</dd></div>
+                                    <div><dt>کالاهای ناموجود</dt><dd>{{ number_format($warehouseSummary['outOfStock']) }}</dd></div>
+                                </dl>
+                            </article>
+                        @endif
+
+                        @if($financeSummary)
+                            <article class="seller-report-card">
+                                <h3>خلاصه مالی</h3>
+                                <dl>
+                                    <div><dt>صف مالی</dt><dd>{{ number_format($financeSummary['financeQueue']) }}</dd></div>
+                                    <div><dt>دریافت امروز</dt><dd>{{ number_format($financeSummary['todayReceipts']) }} ریال</dd></div>
+                                    <div><dt>پرداخت نقدی امروز</dt><dd>{{ number_format($financeSummary['todayCashPayments']) }}</dd></div>
+                                    <div><dt>پرداخت چکی امروز</dt><dd>{{ number_format($financeSummary['todayChequePayments']) }}</dd></div>
+                                </dl>
+                            </article>
+                        @endif
+                    </div>
+
+                    @if($canViewManagementReports && $monthlyReport)
+                        <section class="seller-report-card seller-monthly-report" id="monthlyReportsCard" data-endpoint="{{ route('dashboard.monthly-report') }}" aria-labelledby="monthly-report-title">
+                            <div class="seller-monthly-report__head">
+                                <div>
+                                    <h3 id="monthly-report-title">گزارش ماهانه</h3>
+                                    <p id="monthlyReportRange">بازه: {{ $monthlyReport['range_label'] }}</p>
+                                </div>
+                                <div class="seller-monthly-report__filters">
+                                    <label for="reportMonthSelect">ماه
+                                        <select id="reportMonthSelect">
+                                            @foreach($reportMonths as $monthNumber => $monthLabel)
+                                                <option value="{{ $monthNumber }}" @selected($selectedReportMonth === $monthNumber)>{{ $monthLabel }}</option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+                                    <label for="reportYearSelect">سال
+                                        <select id="reportYearSelect">
+                                            @foreach($reportYears as $year)
+                                                <option value="{{ $year }}" @selected($selectedReportYear === $year)>{{ $year }}</option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+                                </div>
+                            </div>
+                            <div id="monthlyReportError" class="seller-report-error" role="status" hidden></div>
+                            <div id="monthlyHorizontalChart" class="seller-monthly-chart" aria-live="polite"></div>
+                            <script type="application/json" id="monthlyReportInitialData">@json($monthlyReport, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT)</script>
+                        </section>
+                    @endif
+
+                    @if($warnings->isNotEmpty())
+                        <section class="seller-report-card" aria-labelledby="dashboard-warnings-title">
+                            <h3 id="dashboard-warnings-title">هشدارها</h3>
+                            <div class="seller-warning-grid">
+                                @foreach($warnings as $warning)
+                                    <div class="seller-warning seller-warning--{{ $warning['variant'] }}">
+                                        <strong>{{ $warning['title'] }}</strong>
+                                        <span>{{ number_format($warning['count']) }}</span>
+                                        <small>{{ $warning['description'] }}</small>
+                                        @if($warning['route'])
+                                            <a href="{{ $warning['route'] }}">مشاهده</a>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </section>
+                    @endif
+
+                    <div class="seller-report-grid seller-report-grid--secondary">
+                        @if($recentActivity)
+                            <article class="seller-report-card">
+                                <h3>فعالیت‌های اخیر</h3>
+                                <div class="seller-activity-list">
+                                    <div><span>آخرین پیش‌فاکتور</span><strong>{{ $recentActivity['latestPreinvoice']?->customer_name ?? '—' }}</strong></div>
+                                    <div><span>آخرین حواله</span><strong>{{ $recentActivity['latestHavaleh']?->uuid ?? '—' }}</strong></div>
+                                    <div><span>آخرین تغییر وضعیت</span><strong>{{ \App\Models\Invoice::statusLabels()[$recentActivity['latestStatusChange']?->new_value ?? ''] ?? '—' }}</strong></div>
+                                    @foreach($recentActivity['latestUserActivities']->take(3) as $log)
+                                        <div><span>{{ $log->user?->name ?? 'سیستم' }} — {{ $log->description }}</span><strong>{{ Jalalian::fromDateTime($log->occurred_at)->format('m/d H:i') }}</strong></div>
+                                    @endforeach
+                                </div>
+                            </article>
+                        @endif
+
+                        @if($moduleShortcuts->isNotEmpty())
+                            <article class="seller-report-card">
+                                <h3>میانبرهای ماژول‌ها</h3>
+                                <div class="seller-module-links">
+                                    @foreach($moduleShortcuts as $module)
+                                        <a href="{{ $module['route'] }}"><strong>{{ $module['title'] }}</strong><small>{{ $module['description'] }}</small></a>
+                                    @endforeach
+                                </div>
+                            </article>
+                        @endif
+                    </div>
+                </div>
+            </details>
+        </section>
+    @endif
+</div>
 @endsection

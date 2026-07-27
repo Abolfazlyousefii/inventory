@@ -1,26 +1,237 @@
 @extends('layouts.app')
+
+@section('title', 'مدیریت نقش ها و دسترسی ها')
+
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('css/permissions.css') }}">
+@endpush
+
+@push('scripts')
+    <script src="{{ asset('js/permissions.js') }}" defer></script>
+@endpush
+
 @section('content')
-<style>
-.permission-shell{--pm:#4f46e5}.permission-modules{position:sticky;top:1rem;max-height:72vh;overflow:auto}.permission-module{cursor:pointer}.permission-row[hidden]{display:none!important}.risk-critical{border-right:4px solid #dc3545}.permission-savebar{position:sticky;bottom:12px;z-index:1020;background:#fff;border:1px solid #dee2e6;box-shadow:0 -6px 24px #0f172a20}.role-card{height:100%;cursor:pointer}.role-card:has(input:checked){border-color:var(--pm)!important;background:#eef2ff}.technical-key{direction:ltr;text-align:left}@media(max-width:991.98px){.permission-modules{position:static;display:flex;overflow-x:auto;max-height:none}.permission-module{min-width:150px}.permission-savebar .btn{width:100%}}
-</style>
 <div class="permission-shell pb-4">
- <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3"><div><h4 class="mb-1">مدیریت نقش‌ها و دسترسی کاربران</h4><p class="text-muted mb-0">دسترسی مؤثر، مجموع دسترسی نقش‌ها و دسترسی‌های مستقیم افزایشی است.</p></div><span class="badge text-bg-light border">دسترسی‌های قدیمی در این صفحه مخفی‌اند</span></div>
- @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
- @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
- <div class="card shadow-sm mb-3"><div class="card-body"><form method="GET" class="row g-2 align-items-end"><div class="col-lg-9"><label for="userPicker" class="form-label fw-bold">انتخاب کاربر</label><select id="userPicker" name="user_id" class="form-select" onchange="this.form.submit()">@foreach($users as $u)<option value="{{ $u->id }}" @selected($selectedUser?->is($u))>{{ $u->name }} — {{ $u->phone ?: $u->email }} @if($u->personnel_code)— {{ $u->personnel_code }}@endif — {{ $u->roles->pluck('name')->join('، ') ?: 'بدون نقش' }} — {{ $u->is_active ? 'فعال' : 'غیرفعال' }}</option>@endforeach</select></div><div class="col-lg-3 d-grid"><button class="btn btn-outline-primary">بارگذاری اطلاعات</button></div></form></div></div>
- @if($selectedUser)
- @php $directCount=collect($effective)->where('source','direct')->count()+collect($effective)->where('source','both')->count(); $effectiveCount=collect($effective)->where('granted',true)->count(); @endphp
- <div class="row g-2 mb-3">@foreach([['نام کاربر',$selectedUser->name],['شماره موبایل',$selectedUser->phone ?: '—'],['تعداد نقش',$selectedUser->roles->count()],['دسترسی مؤثر',$effectiveCount],['دسترسی مستقیم',$directCount],['وضعیت',$selectedUser->is_active?'فعال':'غیرفعال']] as [$label,$value])<div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body p-3"><small class="text-muted">{{ $label }}</small><div class="fw-bold text-truncate">{{ $value }}</div></div></div></div>@endforeach</div>
- <form id="permissionForm" method="POST" action="{{ route('admin.permissions.update',$selectedUser) }}">@csrf @method('PUT')<input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
-  <div class="card mb-3"><div class="card-header fw-bold">نقش‌های کاربر</div><div class="card-body"><div class="row g-2">@foreach($roles as $role)@php $standard=collect($roleAliases)->first(fn($aliases)=>in_array($role->name,$aliases,true));$label=$roleLabels[$role->name]??($standard ? ($roleLabels[$standard]??$role->name):$role->name);@endphp<div class="col-md-4 col-xl-3"><label class="role-card border rounded p-3 d-block"><div class="d-flex gap-2"><input class="form-check-input change-input" type="checkbox" name="roles[]" value="{{ $role->name }}" @checked($selectedUser->roles->contains('name',$role->name)) @cannot('permissions.assign_roles') disabled @endcannot><div><strong>{{ $label }}</strong><div><code>{{ $role->name }}</code> @if(!array_key_exists($role->name,$roleLabels))<span class="badge text-bg-secondary">قدیمی</span>@endif</div><small class="text-muted">{{ $role->permissions_count }} دسترسی</small></div></div></label></div>@endforeach</div></div></div>
-  <div class="card mb-3"><div class="card-body d-flex flex-wrap gap-3"><strong>راهنمای منبع:</strong><span><span class="badge text-bg-primary">از نقش</span> قابل حذف مستقیم نیست</span><span><span class="badge text-bg-success">مستقیم</span> قابل ویرایش</span><span><span class="badge text-bg-info">نقش + مستقیم</span></span></div></div>
-  <div class="row g-3"><aside class="col-lg-3"><div class="permission-modules gap-2" id="moduleList"><button type="button" class="permission-module btn btn-primary text-start" data-module="all">همه ماژول‌ها <span class="badge text-bg-light">{{ collect($modules)->flatten(1)->count() }}</span></button>@foreach($modules as $module=>$items)<button type="button" class="permission-module btn btn-outline-secondary text-start" data-module="{{ $module }}">{{ $items->first()['module_label'] }} <span class="badge text-bg-light">{{ $items->where('granted',true)->count() }}/{{ $items->count() }}</span></button>@endforeach</div></aside>
-   <section class="col-lg-9"><div class="card"><div class="card-header"><label class="visually-hidden" for="permissionSearch">جستجوی دسترسی</label><input id="permissionSearch" class="form-control" placeholder="جستجو در عنوان فارسی، کلید، عملیات یا ماژول…"></div><div class="card-body p-0"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>دسترسی</th><th>وضعیت</th><th>منبع</th><th>وابستگی‌ها</th><th>حساسیت</th></tr></thead><tbody>@foreach($modules as $module=>$items)@foreach($items as $item)<tr class="permission-row {{ $item['risk']==='critical'?'risk-critical':'' }}" data-module="{{ $module }}" data-search="{{ $item['label'].' '.$item['key'].' '.$item['action'].' '.$item['module_label'] }}"><td><strong>{{ $item['label'] }}</strong><small class="technical-key d-block text-muted">{{ $item['key'] }}</small></td><td><input class="form-check-input permission-check change-input" aria-label="{{ $item['label'] }}" type="checkbox" name="direct_permissions[]" value="{{ $item['key'] }}" data-dependencies='@json($item['depends_on'])' @checked($item['source']!=='none') @disabled(in_array($item['source'],['role','both'],true)||!auth()->user()->can('permissions.edit'))></td><td>@php $source=['role'=>['primary','از نقش'],'direct'=>['success','مستقیم'],'both'=>['info','نقش + مستقیم'],'none'=>['secondary','فاقد دسترسی']][$item['source']];@endphp<span class="badge text-bg-{{ $source[0] }}">{{ $source[1] }}</span>@if($item['source']==='both')<input type="hidden" name="direct_permissions[]" value="{{ $item['key'] }}">@endif</td><td><small>{{ collect($item['depends_on'])->join('، ') ?: '—' }}</small></td><td>@php $risk=['normal'=>['secondary','عادی'],'sensitive'=>['warning','حساس'],'critical'=>['danger','بسیار حساس']][$item['risk']];@endphp<span class="badge text-bg-{{ $risk[0] }}">{{ $risk[1] }}</span></td></tr>@endforeach @endforeach</tbody></table></div></div></div></section>
-  </div>
-  @can('permissions.edit')<div class="permission-savebar rounded p-3 mt-3 d-flex justify-content-between align-items-center flex-wrap gap-2"><div><strong id="changeCount">۰ تغییر ذخیره‌نشده</strong><small id="dependencyCount" class="d-block text-muted"></small></div><div class="d-flex gap-2 flex-wrap"><a class="btn btn-outline-secondary" href="{{ route('admin.permissions.index',['user_id'=>$selectedUser->id]) }}">انصراف</a><button id="saveButton" class="btn btn-primary" type="submit">ذخیره دسترسی‌ها</button></div></div>@endcan
- </form>@endif
+    <header class="permission-page-head">
+        <div>
+            <h1>مدیریت نقش ها و دسترسی کاربران</h1>
+            <p>دسترسی مؤثر، مجموع دسترسی نقش ها و دسترسی های مستقیم افزایشی است.</p>
+        </div>
+        <span class="badge text-bg-light border">دسترسی های قدیمی قابل انتساب نیستند</span>
+    </header>
+
+    @if(session('success'))
+        <div class="alert alert-success" role="status">{{ session('success') }}</div>
+    @endif
+
+    @if($requestedUserMissing)
+        <div class="alert alert-warning" role="alert">کاربر درخواستی پیدا نشد. یک کاربر معتبر را از فهرست انتخاب کنید.</div>
+    @endif
+
+    @if($errors->any())
+        <div class="alert alert-danger" role="alert">
+            <ul class="mb-0">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    <section class="card shadow-sm mb-3" aria-labelledby="user-selection-title">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-lg-9">
+                    <label id="user-selection-title" for="userPicker" class="form-label fw-bold">انتخاب کاربر</label>
+                    <select id="userPicker" name="user_id" class="form-select" @disabled($users->isEmpty())>
+                        @forelse($users as $userOption)
+                            <option value="{{ $userOption->id }}" @selected($selectedUser?->is($userOption))>
+                                {{ $userOption->name }} — {{ $userOption->phone ?: $userOption->email }}
+                                @if($userOption->personnel_code) — {{ $userOption->personnel_code }} @endif
+                                — {{ $userOption->role_labels ?: 'بدون نقش' }}
+                                — {{ $userOption->is_active ? 'فعال' : 'غیرفعال' }}
+                            </option>
+                        @empty
+                            <option value="">هیچ کاربری در سیستم وجود ندارد</option>
+                        @endforelse
+                    </select>
+                </div>
+                <div class="col-lg-3 d-grid">
+                    <button class="btn btn-outline-primary" @disabled($users->isEmpty())>بارگذاری اطلاعات</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    @if($selectedUser)
+        <section class="permission-user-summary" aria-label="خلاصه کاربر انتخاب شده">
+            @foreach([
+                ['نام کاربر', $selectedUser->name],
+                ['شماره موبایل', $selectedUser->phone ?: '—'],
+                ['تعداد نقش', $selectedRoleCount],
+                ['دسترسی مؤثر', $effectiveCount],
+                ['دسترسی مستقیم', $directCount],
+                ['وضعیت', $selectedUser->is_active ? 'فعال' : 'غیرفعال'],
+            ] as [$label, $value])
+                <div class="card">
+                    <div class="card-body p-3">
+                        <small>{{ $label }}</small>
+                        <strong>{{ $value }}</strong>
+                    </div>
+                </div>
+            @endforeach
+        </section>
+
+        <form id="permissionForm" method="POST" action="{{ route('admin.permissions.update', $selectedUser) }}" novalidate>
+            @csrf
+            @method('PUT')
+            <input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
+            <input type="hidden" name="direct_permissions_submitted" value="1">
+            @if($canAssignRoles)
+                <input type="hidden" name="roles_submitted" value="1">
+            @endif
+
+            <section class="card mb-3" aria-labelledby="roles-title">
+                <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                    <strong id="roles-title">نقش های کاربر</strong>
+                    @unless($canAssignRoles)
+                        <small class="text-muted">شما اجازه تغییر نقش ها را ندارید.</small>
+                    @endunless
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        @forelse($roles as $role)
+                            <div class="col-md-4 col-xl-3">
+                                <label class="role-card border rounded p-3 d-block">
+                                    <span class="d-flex gap-2">
+                                        <input
+                                            class="form-check-input change-input"
+                                            type="checkbox"
+                                            name="roles[]"
+                                            value="{{ $role['name'] }}"
+                                            @checked($role['selected'])
+                                            @disabled(! $canAssignRoles)
+                                        >
+                                        <span class="role-card__body">
+                                            <span class="role-card__title">{{ $role['label'] }}</span>
+                                            <span class="role-card__key">
+                                                <code>{{ $role['name'] }}</code>
+                                                @if($role['legacy'])
+                                                    <span class="badge text-bg-secondary">قدیمی</span>
+                                                @endif
+                                            </span>
+                                            <small>{{ number_format($role['permissions_count']) }} دسترسی</small>
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+                        @empty
+                            <div class="col-12"><p class="permission-empty">هیچ نقش سازگار با Guard سیستم وجود ندارد.</p></div>
+                        @endforelse
+                    </div>
+                </div>
+            </section>
+
+            <section class="card mb-3" aria-labelledby="source-guide-title">
+                <div class="card-body permission-source-guide">
+                    <strong id="source-guide-title">راهنمای منبع:</strong>
+                    <span><span class="badge text-bg-primary">از نقش</span> با تغییر Role عوض می شود</span>
+                    <span><span class="badge text-bg-success">مستقیم</span> قابل ویرایش مستقیم</span>
+                    <span><span class="badge text-bg-info">نقش + مستقیم</span> حذف مستقیم، دسترسی Role را نگه می دارد</span>
+                    <span><span class="badge text-bg-secondary">فاقد دسترسی</span></span>
+                </div>
+            </section>
+
+            <div class="row g-3">
+                <aside class="col-lg-3">
+                    <div class="permission-modules gap-2" id="moduleList" aria-label="فیلتر ماژول ها">
+                        <button type="button" class="permission-module btn btn-primary text-start" data-module="all">
+                            همه ماژول ها <span class="badge text-bg-light">{{ collect($modules)->flatten(1)->count() }}</span>
+                        </button>
+                        @foreach($modules as $module => $items)
+                            <button type="button" class="permission-module btn btn-outline-secondary text-start" data-module="{{ $module }}">
+                                {{ $items->first()['module_label'] ?? $module }}
+                                <span class="badge text-bg-light">{{ $items->where('granted', true)->count() }}/{{ $items->count() }}</span>
+                            </button>
+                        @endforeach
+                    </div>
+                </aside>
+
+                <section class="col-lg-9" aria-labelledby="permissions-table-title">
+                    <div class="card">
+                        <div class="card-header">
+                            <label class="visually-hidden" for="permissionSearch">جستجوی دسترسی</label>
+                            <input id="permissionSearch" class="form-control" placeholder="جستجو در عنوان، کلید، عملیات یا ماژول…">
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0 permission-table">
+                                    <caption id="permissions-table-title" class="visually-hidden">دسترسی های قابل مدیریت کاربر</caption>
+                                    <thead><tr><th>دسترسی</th><th>مستقیم</th><th>منبع مؤثر</th><th>وابستگی ها</th><th>حساسیت</th></tr></thead>
+                                    <tbody>
+                                        @forelse($modules as $module => $items)
+                                            @foreach($items as $item)
+                                                <tr
+                                                    class="permission-row {{ $item['risk'] === 'critical' ? 'risk-critical' : '' }}"
+                                                    data-module="{{ $module }}"
+                                                    data-search="{{ $item['label'].' '.$item['key'].' '.$item['action'].' '.$item['module_label'] }}"
+                                                >
+                                                    <td>
+                                                        <strong>{{ $item['label'] }}</strong>
+                                                        <small class="technical-key d-block text-muted">{{ $item['key'] }}</small>
+                                                    </td>
+                                                    <td>
+                                                        @if($item['source'] === 'role')
+                                                            <input class="form-check-input" type="checkbox" checked disabled aria-label="{{ $item['label'] }} از نقش">
+                                                        @else
+                                                            <input
+                                                                class="form-check-input permission-check change-input"
+                                                                type="checkbox"
+                                                                name="direct_permissions[]"
+                                                                value="{{ $item['key'] }}"
+                                                                data-dependencies='@json($item['depends_on'])'
+                                                                @checked(in_array($item['source'], ['direct', 'both'], true))
+                                                                @disabled(! $canEditPermissions)
+                                                                aria-label="دسترسی مستقیم {{ $item['label'] }}"
+                                                            >
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge text-bg-{{ $item['source_variant'] }}">{{ $item['source_label'] }}</span>
+                                                        @if($item['source'] === 'both')
+                                                            <small class="d-block text-muted mt-1">با برداشتن تیک، دسترسی نقش باقی می ماند.</small>
+                                                        @endif
+                                                    </td>
+                                                    <td><small>{{ collect($item['depends_on'])->join('، ') ?: '—' }}</small></td>
+                                                    <td><span class="badge text-bg-{{ $item['risk_variant'] }}">{{ $item['risk_label'] }}</span></td>
+                                                </tr>
+                                            @endforeach
+                                        @empty
+                                            <tr><td colspan="5" class="text-center text-muted py-4">دسترسی فعالی برای نمایش وجود ندارد.</td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            @if($canEditPermissions)
+                <div class="permission-savebar rounded p-3 mt-3">
+                    <div>
+                        <strong id="changeCount">بدون تغییر ذخیره نشده</strong>
+                        <small id="dependencyCount" class="d-block text-muted"></small>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a class="btn btn-outline-secondary" href="{{ route('admin.permissions.index', ['user_id' => $selectedUser->id]) }}">انصراف</a>
+                        <button id="saveButton" class="btn btn-primary" type="submit" disabled>ذخیره دسترسی ها</button>
+                    </div>
+                </div>
+            @endif
+        </form>
+    @else
+        <div class="card"><div class="card-body permission-empty">کاربری برای نمایش انتخاب نشده است.</div></div>
+    @endif
 </div>
-<script>
-(()=>{const form=document.getElementById('permissionForm');if(!form)return;let dirty=false,changes=0,automatic=0;const count=document.getElementById('changeCount'),dep=document.getElementById('dependencyCount');const touch=()=>{dirty=true;changes++;if(count)count.textContent=`${changes} تغییر ذخیره‌نشده`;};document.querySelectorAll('.change-input').forEach(x=>x.addEventListener('change',e=>{touch();if(e.target.classList.contains('permission-check')&&e.target.checked){JSON.parse(e.target.dataset.dependencies||'[]').forEach(key=>{const dependency=form.querySelector(`.permission-check[value="${CSS.escape(key)}"]`);if(dependency&&!dependency.checked&&!dependency.disabled){dependency.checked=true;automatic++;}});if(dep&&automatic)dep.textContent=`${automatic} وابستگی به‌صورت خودکار افزوده شد.`;}}));document.querySelectorAll('.permission-module').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.permission-module').forEach(x=>x.classList.replace('btn-primary','btn-outline-secondary'));b.classList.replace('btn-outline-secondary','btn-primary');filter();}));const search=document.getElementById('permissionSearch');let module='all';function filter(){module=document.querySelector('.permission-module.btn-primary')?.dataset.module||'all';const q=search.value.trim().toLowerCase();document.querySelectorAll('.permission-row').forEach(r=>r.hidden=(module!=='all'&&r.dataset.module!==module)||(q&&!r.dataset.search.toLowerCase().includes(q)));}search.addEventListener('input',filter);window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});form.addEventListener('submit',()=>{dirty=false;const b=document.getElementById('saveButton');if(b){b.disabled=true;b.textContent='در حال ذخیره…';}});})();
-</script>
 @endsection

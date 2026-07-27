@@ -11,18 +11,27 @@ use Illuminate\Pagination\LengthAwarePaginator;
 class MySalesDocumentsService
 {
     public const TAB_ACTIVE = 'active';
+
     public const TAB_DRAFTS = 'drafts';
+
     public const TAB_SHIPPED = 'shipped';
+
     public const TAB_NEEDS_CORRECTION = 'needs-correction';
 
     public const BUCKET_ACTIVE = 'active';
+
     public const BUCKET_DRAFT = 'draft';
+
     public const BUCKET_SHIPPED = 'shipped';
+
     public const BUCKET_NEEDS_CORRECTION = 'needs_correction';
 
     public const TAB_NEEDS_ACTION = self::TAB_NEEDS_CORRECTION;
+
     public const TAB_DOCUMENTS = self::TAB_ACTIVE;
+
     public const BUCKET_NEEDS_ACTION = self::BUCKET_NEEDS_CORRECTION;
+
     public const BUCKET_DOCUMENT = self::BUCKET_ACTIVE;
 
     public function filters(Request $request): array
@@ -57,7 +66,11 @@ class MySalesDocumentsService
     {
         return match ($bucket) {
             self::BUCKET_NEEDS_CORRECTION => [
-                'preinvoice' => [PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE],
+                'preinvoice' => [
+                    PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+                    PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE,
+                    PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
+                ],
                 'invoice' => [Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION],
             ],
             self::BUCKET_DRAFT => [
@@ -98,6 +111,7 @@ class MySalesDocumentsService
         if ($explicitTab && in_array($explicitTab, $this->validTabs(), true)) {
             return $explicitTab;
         }
+
         return self::TAB_ACTIVE;
     }
 
@@ -106,7 +120,8 @@ class MySalesDocumentsService
         $invoiceActivitySql = "select greatest(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
 
         return PreinvoiceOrder::query()
-            ->where('created_by', $sellerId)
+            ->createdBySeller($sellerId)
+            ->withoutTemporaryAutosaves()
             ->select('preinvoice_orders.*')
             ->selectSub("coalesce(($invoiceActivitySql), preinvoice_orders.updated_at)", 'activity_at')
             ->withCount('items')
@@ -127,7 +142,7 @@ class MySalesDocumentsService
     public function applyFilters(Builder $query, array $filters, array $allowedStatuses): Builder
     {
         if ($filters['q'] !== '') {
-            $needle = '%' . $filters['q'] . '%';
+            $needle = '%'.$filters['q'].'%';
             $query->where(function ($q) use ($needle) {
                 $q->where('uuid', 'like', $needle)
                     ->orWhere('customer_name', 'like', $needle)
@@ -146,28 +161,40 @@ class MySalesDocumentsService
             });
         }
         if ($filters['customer'] !== '') {
-            $needle = '%' . $filters['customer'] . '%';
+            $needle = '%'.$filters['customer'].'%';
             $query->where(fn ($q) => $q->where('customer_name', 'like', $needle)->orWhere('customer_mobile', 'like', $needle)->orWhereHas('customer', fn ($cq) => $cq->where('first_name', 'like', $needle)->orWhere('last_name', 'like', $needle)->orWhere('mobile', 'like', $needle))->orWhereHas('invoice', fn ($iq) => $iq->where('customer_name', 'like', $needle)->orWhere('customer_mobile', 'like', $needle)));
         }
-        if ($filters['type'] === 'preinvoice') $query->doesntHave('invoice');
-        if ($filters['type'] === 'invoice') $query->has('invoice');
-        if ($filters['date_from'] !== '') $query->whereDate('preinvoice_orders.created_at', '>=', $filters['date_from']);
-        if ($filters['date_to'] !== '') $query->whereDate('preinvoice_orders.created_at', '<=', $filters['date_to']);
-        if ($filters['changed_only']) $query->whereHas('invoice', fn ($iq) => $iq->whereNotNull('items_updated_at')->orWhereColumn('invoices.total', '<>', 'preinvoice_orders.total_price'));
+        if ($filters['type'] === 'preinvoice') {
+            $query->doesntHave('invoice');
+        }
+        if ($filters['type'] === 'invoice') {
+            $query->has('invoice');
+        }
+        if ($filters['date_from'] !== '') {
+            $query->whereDate('preinvoice_orders.created_at', '>=', $filters['date_from']);
+        }
+        if ($filters['date_to'] !== '') {
+            $query->whereDate('preinvoice_orders.created_at', '<=', $filters['date_to']);
+        }
+        if ($filters['changed_only']) {
+            $query->whereHas('invoice', fn ($iq) => $iq->whereNotNull('items_updated_at')->orWhereColumn('invoices.total', '<>', 'preinvoice_orders.total_price'));
+        }
 
         if ($filters['status'] !== '' && in_array($filters['status'], array_merge($allowedStatuses['preinvoice'], $allowedStatuses['invoice']), true)) {
             $status = $filters['status'];
             $query->where(fn ($q) => $q->where(fn ($pq) => $pq->doesntHave('invoice')->where('status', $status))->orWhereHas('invoice', fn ($iq) => $iq->where('status', $status)));
         }
+
         return $query;
     }
 
     public function applyBucket(Builder $query, string $bucket): Builder
     {
         $statuses = $this->bucketStatuses($bucket);
+
         return $query->where(function ($q) use ($statuses) {
             $q->where(fn ($pq) => $pq->doesntHave('invoice')->whereIn('status', $statuses['preinvoice']))
-              ->orWhereHas('invoice', fn ($iq) => $iq->whereIn('status', $statuses['invoice']));
+                ->orWhereHas('invoice', fn ($iq) => $iq->whereIn('status', $statuses['invoice']));
         });
     }
 
@@ -177,6 +204,7 @@ class MySalesDocumentsService
         foreach ([self::TAB_ACTIVE, self::TAB_DRAFTS, self::TAB_SHIPPED, self::TAB_NEEDS_CORRECTION] as $tab) {
             $out[$tab] = (clone $this->applyBucket($this->baseQuery($sellerId), $this->tabToBucket($tab)))->toBase()->getCountForPagination();
         }
+
         return $out;
     }
 
@@ -191,6 +219,7 @@ class MySalesDocumentsService
         } else {
             $query->orderByDesc('activity_at');
         }
+
         return $query->orderByDesc('preinvoice_orders.id')->paginate(20)->withQueryString();
     }
 }

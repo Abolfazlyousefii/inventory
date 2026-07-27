@@ -1,0 +1,220 @@
+.permission-shell {
+    --permission-primary: var(--app-primary, #16354f);
+    --permission-accent: var(--app-accent, #2879a8);
+    --permission-surface: var(--app-surface, #fff);
+    --permission-bg: var(--app-bg, #f4f7f9);
+    --permission-text: var(--app-text, #172b3a);
+    --permission-muted: var(--app-muted, #71808c);
+    --permission-border: var(--app-border, #dce5ea);
+    --permission-danger: var(--app-danger, #c54b4b);
+    color: var(--permission-text);
+}
+
+.permission-page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.permission-page-head h1 {
+    margin: 0 0 .25rem;
+    color: var(--permission-primary);
+    font-size: 1.2rem;
+    font-weight: 900;
+}
+
+.permission-page-head p {
+    margin: 0;
+    color: var(--permission-muted);
+    font-size: .84rem;
+}
+
+.permission-user-summary {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: .5rem;
+    margin-bottom: 1rem;
+}
+
+.permission-user-summary .card {
+    min-width: 0;
+    border-color: var(--permission-border);
+}
+
+.permission-user-summary small,
+.role-card small {
+    display: block;
+    color: var(--permission-muted);
+    font-size: .68rem;
+}
+
+.permission-user-summary strong {
+    display: block;
+    overflow: hidden;
+    margin-top: .2rem;
+    font-size: .82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.permission-modules {
+    position: sticky;
+    top: 1rem;
+    display: grid;
+    max-height: 72vh;
+    overflow: auto;
+}
+
+.permission-module {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    cursor: pointer;
+}
+
+.permission-shell .btn-primary {
+    border-color: var(--permission-primary);
+    background: var(--permission-primary);
+}
+
+.permission-shell .btn-outline-primary {
+    border-color: var(--permission-accent);
+    color: var(--permission-accent);
+}
+
+.permission-shell .btn-outline-primary:hover {
+    background: var(--permission-accent);
+    color: #fff;
+}
+
+.permission-row[hidden] {
+    display: none !important;
+}
+
+.permission-row.risk-critical {
+    border-inline-start: 4px solid var(--permission-danger);
+}
+
+.permission-savebar {
+    position: sticky;
+    z-index: 1020;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 1px solid var(--permission-border);
+    background: var(--permission-surface);
+    box-shadow: 0 -6px 24px rgba(15, 39, 69, .12);
+}
+
+.role-card {
+    height: 100%;
+    cursor: pointer;
+    background: var(--permission-surface);
+}
+
+.role-card:has(input:checked) {
+    border-color: var(--permission-accent) !important;
+    background: color-mix(in srgb, var(--permission-accent) 8%, var(--permission-surface));
+}
+
+.role-card:has(input:disabled) {
+    cursor: default;
+}
+
+.role-card__body,
+.role-card__title,
+.role-card__key {
+    display: block;
+    min-width: 0;
+}
+
+.role-card__title {
+    font-size: .84rem;
+    font-weight: 850;
+}
+
+.role-card__key {
+    margin-block: .22rem;
+}
+
+.technical-key {
+    direction: ltr;
+    text-align: left;
+}
+
+.permission-source-guide {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .7rem 1rem;
+    align-items: center;
+    font-size: .76rem;
+}
+
+.permission-empty {
+    margin: 0;
+    padding: 1rem;
+    color: var(--permission-muted);
+    text-align: center;
+}
+
+.permission-table td,
+.permission-table th {
+    font-size: .78rem;
+}
+
+.permission-shell :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--permission-accent) 30%, transparent);
+    outline-offset: 2px;
+}
+
+@media (max-width: 1199.98px) {
+    .permission-user-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 991.98px) {
+    .permission-modules {
+        position: static;
+        display: flex;
+        max-height: none;
+        overflow-x: auto;
+    }
+
+    .permission-module {
+        min-width: 150px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .permission-page-head,
+    .permission-savebar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .permission-user-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .permission-savebar .btn,
+    .permission-savebar .d-flex {
+        width: 100%;
+    }
+
+    .permission-savebar .d-flex {
+        flex-direction: column;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .permission-shell * {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+    }
+}

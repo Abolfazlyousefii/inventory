@@ -11,251 +11,220 @@ use App\Models\InvoicePayment;
 use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\Purchase;
 use App\Models\SalesHavalehHistory;
 use App\Models\StockCountDocument;
 use App\Models\StockMovement;
+use App\Models\User;
+use App\Support\Currency;
+use App\Support\PermissionCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
 use Morilog\Jalali\Jalalian;
-use App\Support\Currency;
 
 class DashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $today = now()->startOfDay();
+        /** @var User $user */
         $user = $request->user();
-        $monthStart = now()->startOfMonth();
-        $last30DaysStart = now()->subDays(29)->startOfDay();
+        $now = now();
+        $today = $now->copy()->startOfDay();
 
-        $lowStockThreshold = (int) config('inventory.low_stock_threshold', 5);
-
-
-        $quickActions = collect([
-            ['title' => 'ثبت پیش‌فاکتور', 'description' => 'ثبت سفارش جدید مشتری', 'route_name' => 'preinvoice.create', 'icon' => 'receipt-cutoff', 'roles' => null],
-            ['title' => 'پیش‌فاکتورهای من', 'description' => 'پیگیری سفارش‌های ثبت‌شده', 'route_name' => 'preinvoice.my.index', 'icon' => 'person-check', 'roles' => null],
-            ['title' => 'حواله‌های انبار', 'description' => 'جمع‌آوری و ارسال کالا', 'route_name' => 'vouchers.index', 'icon' => 'boxes', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
-            ['title' => 'ثبت خرید کالا', 'description' => 'ورود موجودی جدید به انبار', 'route_name' => 'purchases.create', 'icon' => 'cart-plus', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
-            ['title' => 'فاکتورها', 'description' => 'مشاهده و پیگیری فاکتورهای فروش', 'route_name' => 'invoices.index', 'icon' => 'file-earmark-text', 'roles' => null],
-            ['title' => 'گردش حساب مشتری', 'description' => 'بررسی حساب و مانده مشتریان', 'route_name' => 'account-statements.index', 'icon' => 'cash-stack', 'roles' => ['admin', 'Admin', 'finance', 'Accountant']],
-            ['title' => 'نقشه انبار', 'description' => 'جانمایی و پیدا کردن کالاها', 'route_name' => 'warehouse-map.index', 'icon' => 'map', 'roles' => null],
-        ])->filter(fn (array $action) => Route::has($action['route_name']) && $this->userCanSeeDashboardLink($user, $action['roles']))
-            ->map(fn (array $action) => $action + ['route' => route($action['route_name'])])
-            ->values();
-
-        $kpis = [
-            'todayPreinvoices' => PreinvoiceOrder::query()->whereDate('created_at', $today)->count(),
-            'todayInvoices' => Invoice::query()->whereDate('created_at', $today)->count(),
-            'financeQueue' => PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)->count(),
-            'warehousePending' => Invoice::query()->where('status', Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL)->count(),
-            'lowStock' => Product::query()->where('stock', '>', 0)->where('stock', '<=', $lowStockThreshold)->count(),
-            'todayReceipts' => Currency::toRial((int) InvoicePayment::query()->whereDate('paid_at', $today)->sum('amount')),
-        ];
-
-        $outOfStockCount = $this->safeCount(fn () => Product::query()->where('stock', '<=', 0)->count());
-        $unmappedVariantCount = $this->safeCount(fn () => ProductVariant::query()
-            ->whereDoesntHave('locationStocks', fn ($query) => $query->where('quantity', '>', 0))
-            ->count());
-        $collectingVoucherCount = $this->safeCount(fn () => Invoice::query()->whereIn('status', [
-            Invoice::STATUS_COLLECTING,
-            Invoice::STATUS_CHECKING_DISCREPANCY,
-            Invoice::STATUS_FINAL_CHECK,
-            Invoice::STATUS_PACKING,
-        ])->count());
-
-        $actionItems = collect([
-            ['title' => 'در انتظار تایید مالی', 'count' => $kpis['financeQueue'], 'route_name' => 'preinvoice.draft.index', 'roles' => ['admin', 'Admin', 'finance', 'Accountant', 'Manager']],
-            ['title' => 'حواله‌های منتظر تایید انبار', 'count' => $kpis['warehousePending'], 'route_name' => 'vouchers.index', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
-            ['title' => 'حواله‌های در حال جمع‌آوری', 'count' => $collectingVoucherCount, 'route_name' => 'vouchers.sale-delivery.index', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
-            ['title' => 'چک‌های نزدیک سررسید', 'count' => $this->safeCount(fn () => Cheque::query()->where('status', 'pending')->whereBetween('due_date', [now()->toDateString(), now()->addDays(7)->toDateString()])->count()), 'route_name' => 'finance.cheques.registered', 'roles' => ['admin', 'Admin', 'finance', 'Accountant']],
-            ['title' => 'کالاهای کم‌موجودی', 'count' => $kpis['lowStock'], 'route_name' => 'products.index', 'route_params' => ['stock_status' => 'low'], 'roles' => null],
-            ['title' => 'کالاهای صفرموجودی', 'count' => $outOfStockCount, 'route_name' => 'products.index', 'route_params' => ['stock_status' => 'out'], 'roles' => null],
-            ['title' => 'تنوع‌های بدون مکان در نقشه انبار', 'count' => $unmappedVariantCount, 'route_name' => 'warehouse-map.index', 'roles' => null],
-        ])->filter(fn (array $item) => Route::has($item['route_name']) && $this->userCanSeeDashboardLink($user, $item['roles']))
-            ->map(fn (array $item) => $item + ['route' => route($item['route_name'], $item['route_params'] ?? [])])
-            ->sortByDesc('count')
-            ->values()
-            ->all();
-
-        $salesSummary = [
-            'preinvoicesThisMonth' => PreinvoiceOrder::query()->where('created_at', '>=', $monthStart)->count(),
-            'invoicesThisMonth' => Invoice::query()->where('created_at', '>=', $monthStart)->count(),
-            'salesAmountThisMonth' => (int) Invoice::query()->where('created_at', '>=', $monthStart)->sum('total'),
-            'returnFromSaleCount' => StockMovement::query()
-                ->where('type', 'in')
-                ->where('reason', 'return_from_sale')
-                ->where('created_at', '>=', $monthStart)
-                ->count(),
-            'latestPreinvoices' => PreinvoiceOrder::query()
-                ->latest()
-                ->take(5)
-                ->get(['uuid', 'customer_name', 'total_price', 'created_at']),
-        ];
-
-        $warehouseSummary = [
-            'todayHavalehCount' => Invoice::query()->whereDate('created_at', $today)->count(),
-            'pendingWarehouse' => $kpis['warehousePending'],
-            'lowStock' => $kpis['lowStock'],
-            'outOfStock' => Product::query()->where('stock', '<=', 0)->count(),
-            'latestStocktakes' => StockCountDocument::query()
-                ->with('warehouse:id,name')
-                ->latest()
-                ->take(5)
-                ->get(['id', 'warehouse_id', 'document_number', 'status', 'created_at']),
-            'latestScrapVouchers' => StockMovement::query()
-                ->where('reason', 'scrap')
-                ->latest()
-                ->take(5)
-                ->get(['reference', 'quantity', 'created_at']),
-        ];
-
-        $financeSummary = [
-            'financeQueue' => $kpis['financeQueue'],
-            'todayReceipts' => $kpis['todayReceipts'],
-            'todayCashPayments' => InvoicePayment::query()->whereDate('paid_at', $today)->where('method', 'cash')->count(),
-            'todayChequePayments' => InvoicePayment::query()->whereDate('paid_at', $today)->where('method', 'cheque')->count(),
-            'latestInvoices' => Invoice::query()
-                ->latest()
-                ->take(5)
-                ->get(['uuid', 'customer_name', 'total', 'status', 'created_at']),
-            'importantAccounts' => Customer::query()
-                ->withBalance()
-                ->get(['id', 'first_name', 'last_name', 'opening_balance'])
-                ->sortByDesc(fn (Customer $customer) => abs((int) $customer->balance))
-                ->take(5)
-                ->values(),
-        ];
-
-        $statusHistory = SalesHavalehHistory::query()
-            ->with(['invoice:id,uuid', 'actor:id,name'])
-            ->where('field_name', 'status')
-            ->latest('done_at')
-            ->first();
-
-        $recentActivity = [
-            'latestPreinvoice' => PreinvoiceOrder::query()->latest()->first(['uuid', 'customer_name', 'created_at']),
-            'latestHavaleh' => Invoice::query()->latest()->first(['uuid', 'customer_name', 'created_at']),
-            'latestStatusChange' => $statusHistory,
-            'latestAssetDocument' => AssetDocument::query()->latest()->first(['id', 'document_number', 'status', 'created_at']),
-            'latestUserActivities' => ActivityLog::query()
-                ->with('user:id,name')
-                ->latest('occurred_at')
-                ->take(6)
-                ->get(['id', 'user_id', 'description', 'occurred_at']),
-        ];
-
-        $warnings = [
-            [
-                'title' => 'کالاهای کم‌موجود',
-                'count' => $kpis['lowStock'],
-                'description' => "موجودی کمتر یا مساوی {$lowStockThreshold}",
-                'route' => route('products.index', ['stock_status' => 'low']),
-                'variant' => 'warning',
-            ],
-            [
-                'title' => 'کالاهای صفر موجودی',
-                'count' => Product::query()->where('stock', '<=', 0)->count(),
-                'description' => 'نیازمند تامین فوری',
-                'route' => route('products.index', ['stock_status' => 'out']),
-                'variant' => 'danger',
-            ],
-            [
-                'title' => 'سفارش‌های معطل مالی',
-                'count' => PreinvoiceOrder::query()
-                    ->where('status', PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE)
-                    ->where('created_at', '<=', now()->subDays(2))
-                    ->count(),
-                'description' => 'بیش از ۲ روز در صف مانده‌اند',
-                'route' => route('preinvoice.draft.index'),
-                'variant' => 'secondary',
-            ],
-            [
-                'title' => 'چک‌های نزدیک سررسید',
-                'count' => Cheque::query()
-                    ->where('status', 'pending')
-                    ->whereBetween('due_date', [now()->toDateString(), now()->addDays(7)->toDateString()])
-                    ->count(),
-                'description' => 'تا ۷ روز آینده',
-                'route' => route('invoices.index'),
-                'variant' => 'info',
-            ],
-            [
-                'title' => 'اسناد قدیمی نهایی‌نشده',
-                'count' => StockCountDocument::query()
-                    ->where('status', 'draft')
-                    ->where('created_at', '<=', now()->subDays(7))
-                    ->count()
-                    + AssetDocument::query()
-                        ->where('status', AssetDocument::STATUS_DRAFT)
-                        ->where('created_at', '<=', now()->subDays(7))
-                        ->count(),
-                'description' => 'پیش‌نویس‌های قدیمی‌تر از ۷ روز',
-                'route' => route('stocktake.index'),
-                'variant' => 'dark',
-            ],
-        ];
-
-        $jalaliNow = Jalalian::fromDateTime(now());
-        $selectedYear = (int) $request->integer('report_year', $jalaliNow->getYear());
-        $selectedMonth = (int) $request->integer('report_month', $jalaliNow->getMonth());
-
-        $monthlyReport = $this->buildMonthlyReport($selectedYear, $selectedMonth);
-
-        $rolling30Summary = [
-            'sales' => (int) Invoice::query()->where('created_at', '>=', $last30DaysStart)->sum('total'),
-            'invoices' => Invoice::query()->where('created_at', '>=', $last30DaysStart)->count(),
-            'receipts' => (int) InvoicePayment::query()->where('paid_at', '>=', $last30DaysStart->toDateString())->sum('amount'),
-        ];
-
-        $moduleShortcuts = collect([
-            ['title' => 'کالاها', 'description' => 'مدیریت کالا و موجودی', 'route_name' => 'products.index', 'icon' => 'box-seam', 'roles' => null],
-            ['title' => 'انبارداری', 'description' => 'حواله‌ها و انبارگردانی', 'route_name' => 'vouchers.index', 'icon' => 'boxes', 'roles' => ['admin', 'Admin', 'warehouse', 'StorageManager', 'Manager']],
-            ['title' => 'بازرگانی و فروش', 'description' => 'پیش‌فاکتور و مشتریان', 'route_name' => 'preinvoice.create', 'icon' => 'cart-check', 'roles' => null],
-            ['title' => 'مالی', 'description' => 'صف مالی و فاکتورها', 'route_name' => 'preinvoice.draft.index', 'icon' => 'cash-coin', 'roles' => ['admin', 'Admin', 'finance', 'Accountant', 'Manager']],
-            ['title' => 'پیکربندی', 'description' => 'تنظیمات پایه سیستم', 'route_name' => 'users.index', 'icon' => 'gear', 'roles' => ['admin', 'Admin']],
-        ])->filter(fn (array $module) => Route::has($module['route_name']) && $this->userCanSeeDashboardLink($user, $module['roles']))
-            ->map(fn (array $module) => $module + ['route' => route($module['route_name'])])
-            ->values();
-
-        $reportMonths = [
-            1 => 'فروردین', 2 => 'اردیبهشت', 3 => 'خرداد', 4 => 'تیر', 5 => 'مرداد', 6 => 'شهریور',
-            7 => 'مهر', 8 => 'آبان', 9 => 'آذر', 10 => 'دی', 11 => 'بهمن', 12 => 'اسفند',
-        ];
-
-        $reportYears = range($jalaliNow->getYear() - 3, $jalaliNow->getYear() + 1);
-
-        $todaySummary = [
-            ['title' => 'فروش امروز', 'value' => Currency::toRial((int) Invoice::query()->whereDate('created_at', $today)->sum('total')), 'suffix' => 'ریال'],
-            ['title' => 'تعداد فاکتور امروز', 'value' => $kpis['todayInvoices'], 'suffix' => 'عدد'],
-            ['title' => 'خرید امروز', 'value' => Currency::toRial((int) Purchase::query()->whereDate('purchased_at', $today)->sum('total_amount')), 'suffix' => 'ریال'],
-            ['title' => 'دریافت امروز', 'value' => $kpis['todayReceipts'], 'suffix' => 'ریال'],
-            ['title' => 'پیش‌فاکتورهای امروز', 'value' => $kpis['todayPreinvoices'], 'suffix' => 'عدد'],
-        ];
-
-        return view('dashboard.index', [
-            'todayDateLabel' => Jalalian::fromDateTime(now())->format('%A %d %B %Y'),
-            'todayDateTimeLabel' => Jalalian::fromDateTime(now())->format('Y/m/d H:i'),
-            'quickActions' => $quickActions,
-            'todaySummary' => $todaySummary,
-            'userName' => auth()->user()?->name,
-            'kpis' => $kpis,
-            'actionItems' => $actionItems,
-            'salesSummary' => $salesSummary,
-            'warehouseSummary' => $warehouseSummary,
-            'financeSummary' => $financeSummary,
-            'warnings' => $warnings,
-            'recentActivity' => $recentActivity,
-            'moduleShortcuts' => $moduleShortcuts,
-            'monthlyReport' => $monthlyReport,
-            'reportMonths' => $reportMonths,
-            'reportYears' => $reportYears,
-            'selectedReportMonth' => $selectedMonth,
-            'selectedReportYear' => $selectedYear,
-            'rolling30Summary' => $rolling30Summary,
+        $sellerDashboardEnabled = $this->userHasAnyPermission($user, [
+            'preinvoices.create',
+            'preinvoices.own.view',
         ]);
+        $canViewOwnPreinvoices = $this->canUseRoute($user, 'preinvoice.my.index');
+        $canViewManagementReports = $this->canViewManagementReports($user);
+        $canViewFinanceReports = $canViewManagementReports || $this->userHasAnyPermission($user, [
+            'finance.reports.view',
+            'account_statements.view',
+            'payments.view',
+            'preinvoices.finance.view',
+        ]);
+        $canViewWarehouseReports = $canViewManagementReports || $this->userHasAnyPermission($user, [
+            'inventory.view',
+            'inventory.count.view',
+            'warehouse.collection.queue.view',
+            'warehouse.shipping.queue.view',
+        ]);
+
+        $sellerQuickActions = collect([
+            [
+                'key' => 'create',
+                'title' => 'ثبت پیش‌فاکتور جدید',
+                'description' => 'ثبت سریع سفارش مشتری و انتخاب کالاها',
+                'route_name' => 'preinvoice.create',
+                'emphasis' => true,
+            ],
+            [
+                'key' => 'mine',
+                'title' => 'پیش‌فاکتورهای من',
+                'description' => 'ادامه پیش‌نویس‌ها و پیگیری سفارش‌های ثبت‌شده',
+                'route_name' => 'preinvoice.my.index',
+                'emphasis' => false,
+            ],
+            [
+                'key' => 'customers',
+                'title' => 'مشتریان',
+                'description' => 'جست‌وجو، مشاهده حساب و ثبت مشتری',
+                'route_name' => 'customers.index',
+                'emphasis' => false,
+            ],
+            [
+                'key' => 'invoices',
+                'title' => 'فاکتورها',
+                'description' => 'مشاهده سفارش‌های نهایی‌شده و وضعیت ارسال',
+                'route_name' => 'invoices.index',
+                'emphasis' => false,
+            ],
+        ])->filter(fn (array $action): bool => $this->canUseRoute($user, $action['route_name']))
+            ->map(fn (array $action): array => $action + ['route' => route($action['route_name'])])
+            ->values();
+
+        $sellerStatusCounts = $this->emptySellerStatusCounts();
+        $sellerTodaySummary = [
+            'preinvoices' => 0,
+            'amount' => 0,
+            'converted' => 0,
+            'returned' => 0,
+            'pending_finance' => 0,
+        ];
+        $sellerConversionRate = 0.0;
+        $sellerWorkItems = collect();
+        $sellerRecentPreinvoices = collect();
+        $sellerSupplementaryActions = collect();
+        $sellerFollowUps = collect();
+
+        if ($sellerDashboardEnabled && $canViewOwnPreinvoices) {
+            $sellerBaseQuery = PreinvoiceOrder::query()
+                ->createdBySeller((int) $user->id)
+                ->withoutTemporaryAutosaves();
+
+            $groupedCounts = (clone $sellerBaseQuery)
+                ->selectRaw('status, COUNT(*) as aggregate')
+                ->groupBy('status')
+                ->pluck('aggregate', 'status')
+                ->map(fn ($count): int => (int) $count);
+
+            $sellerStatusCounts = [
+                'drafts' => $groupedCounts->get(PreinvoiceOrder::STATUS_DRAFT, 0),
+                'pending_finance' => $groupedCounts->get(PreinvoiceOrder::STATUS_PENDING_FINANCE, 0),
+                'finance_reviewing' => $groupedCounts->get(PreinvoiceOrder::STATUS_FINANCE_REVIEWING, 0),
+                'returned_to_sales' => $groupedCounts->get(PreinvoiceOrder::STATUS_RETURNED_TO_SALES, 0),
+                'converted_to_invoice' => $groupedCounts->get(PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE, 0),
+                'cancelled_by_finance' => $groupedCounts->get(PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE, 0),
+            ];
+
+            $todayAggregate = (clone $sellerBaseQuery)
+                ->whereDate('created_at', $today)
+                ->selectRaw(
+                    'COUNT(*) as total_count,
+                    COALESCE(SUM(total_price), 0) as total_amount,
+                    SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as converted_count,
+                    SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as returned_count,
+                    SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as pending_count',
+                    [
+                        PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
+                        PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+                        PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                    ]
+                )
+                ->first();
+
+            $sellerTodaySummary = [
+                'preinvoices' => (int) ($todayAggregate?->total_count ?? 0),
+                'amount' => (int) ($todayAggregate?->total_amount ?? 0),
+                'converted' => (int) ($todayAggregate?->converted_count ?? 0),
+                'returned' => $sellerStatusCounts['returned_to_sales'],
+                'pending_finance' => $sellerStatusCounts['pending_finance'],
+            ];
+            $sellerConversionRate = $sellerTodaySummary['preinvoices'] > 0
+                ? round(($sellerTodaySummary['converted'] / $sellerTodaySummary['preinvoices']) * 100, 1)
+                : 0.0;
+
+            $sellerWorkItems = $this->buildSellerWorkItems($sellerStatusCounts, $sellerTodaySummary);
+
+            $sellerRecentPreinvoices = (clone $sellerBaseQuery)
+                ->with(['invoice:id,uuid,preinvoice_order_id'])
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit(5)
+                ->get([
+                    'id',
+                    'uuid',
+                    'customer_name',
+                    'total_price',
+                    'status',
+                    'created_at',
+                    'document_date',
+                ])
+                ->map(fn (PreinvoiceOrder $order): PreinvoiceOrder => $this->attachSellerAction($order, $user));
+
+            $sellerFollowUps = $sellerWorkItems
+                ->whereIn('key', ['returned', 'drafts', 'cancelled', 'pending'])
+                ->values();
+        }
+
+        if ($sellerDashboardEnabled) {
+            $sellerSupplementaryActions = collect([
+                [
+                    'title' => $this->canUseRoute($user, 'customers.store') ? 'ثبت یا مدیریت مشتریان' : 'مدیریت مشتریان',
+                    'description' => 'اطلاعات مشتری و سوابق حساب',
+                    'route_name' => 'customers.index',
+                ],
+                [
+                    'title' => 'جست‌وجوی کالا',
+                    'description' => 'یافتن کالا، کد یا بارکد',
+                    'route_name' => 'global-search',
+                ],
+                [
+                    'title' => 'گردش حساب مشتری',
+                    'description' => 'مشاهده مانده و گردش حساب',
+                    'route_name' => 'account-statements.index',
+                ],
+                [
+                    'title' => 'فاکتورهای فروش',
+                    'description' => 'مشاهده فاکتورها و وضعیت ارسال',
+                    'route_name' => 'invoices.index',
+                ],
+            ])->filter(fn (array $action): bool => $this->canUseRoute($user, $action['route_name']))
+                ->map(fn (array $action): array => $action + ['route' => route($action['route_name'])])
+                ->values();
+        }
+
+        $management = $this->buildOperationalReports(
+            $user,
+            $request,
+            $today,
+            $canViewManagementReports,
+            $canViewFinanceReports,
+            $canViewWarehouseReports
+        );
+
+        return view('dashboard.index', array_merge($management, [
+            'todayDateLabel' => Jalalian::fromDateTime($now)->format('%A %d %B %Y'),
+            'todayDateTimeLabel' => Jalalian::fromDateTime($now)->format('Y/m/d H:i'),
+            'userName' => $user->name,
+            'userRoleLabel' => $this->userRoleLabel($user),
+            'sellerDashboardEnabled' => $sellerDashboardEnabled,
+            'sellerCanSearch' => $this->canUseRoute($user, 'global-search'),
+            'sellerCanCreate' => $this->canUseRoute($user, 'preinvoice.create'),
+            'sellerQuickActions' => $sellerQuickActions,
+            'sellerStatusCounts' => $sellerStatusCounts,
+            'sellerTodaySummary' => $sellerTodaySummary,
+            'sellerConversionRate' => $sellerConversionRate,
+            'sellerWorkItems' => $sellerWorkItems,
+            'sellerRecentPreinvoices' => $sellerRecentPreinvoices,
+            'sellerSupplementaryActions' => $sellerSupplementaryActions,
+            'sellerFollowUps' => $sellerFollowUps,
+            'preinvoiceStatusLabels' => PreinvoiceOrder::statusLabels(),
+            'canViewManagementReports' => $canViewManagementReports,
+            'canViewFinanceReports' => $canViewFinanceReports,
+            'canViewWarehouseReports' => $canViewWarehouseReports,
+        ]));
     }
 
     public function globalSearch(Request $request)
@@ -318,35 +287,355 @@ class DashboardController extends Controller
         return view('dashboard.search', compact('q', 'results'));
     }
 
-    private function userCanSeeDashboardLink($user, ?array $roles): bool
-    {
-        if (! $roles) {
-            return true;
-        }
-
-        if (! $user || ! method_exists($user, 'hasAnyRole')) {
-            return false;
-        }
-
-        return $user->hasAnyRole(array_unique(array_merge(['admin', 'Admin'], $roles)));
-    }
-
-    private function safeCount(callable $callback): int
-    {
-        try {
-            return (int) $callback();
-        } catch (\Throwable) {
-            return 0;
-        }
-    }
-
     public function monthlyReport(Request $request): JsonResponse
     {
+        abort_unless($this->canViewManagementReports($request->user()), 403);
+
         $jalaliNow = Jalalian::fromDateTime(now());
         $year = (int) $request->integer('report_year', $jalaliNow->getYear());
         $month = (int) $request->integer('report_month', $jalaliNow->getMonth());
 
         return response()->json($this->buildMonthlyReport($year, $month));
+    }
+
+    private function buildSellerWorkItems(array $counts, array $todaySummary)
+    {
+        $items = [
+            [
+                'key' => 'returned',
+                'title' => 'برگشتی از مالی برای اصلاح',
+                'description' => 'سفارش‌هایی که باید اصلاح و دوباره ارسال شوند',
+                'count' => $counts['returned_to_sales'],
+                'variant' => 'danger',
+                'icon' => 'warning',
+                'route' => route('preinvoice.my.index', ['tab' => 'needs-correction']),
+                'action_label' => 'اصلاح',
+            ],
+            [
+                'key' => 'drafts',
+                'title' => 'پیش‌فاکتورهای پیش‌نویس',
+                'description' => 'سفارش‌های ناتمامی که می‌توانید ادامه دهید',
+                'count' => $counts['drafts'],
+                'variant' => 'warning',
+                'icon' => 'document',
+                'route' => route('preinvoice.my.index', ['tab' => 'drafts']),
+                'action_label' => 'ادامه ثبت',
+            ],
+            [
+                'key' => 'pending',
+                'title' => 'در انتظار تأیید مالی',
+                'description' => 'سفارش‌های ارسال‌شده به واحد مالی',
+                'count' => $counts['pending_finance'],
+                'variant' => 'info',
+                'icon' => 'clock',
+                'route' => route('preinvoice.my.index', ['status' => PreinvoiceOrder::STATUS_PENDING_FINANCE]),
+                'action_label' => 'مشاهده',
+            ],
+            [
+                'key' => 'reviewing',
+                'title' => 'در حال بررسی مالی',
+                'description' => 'سفارش‌هایی که مالی در حال بررسی آن‌هاست',
+                'count' => $counts['finance_reviewing'],
+                'variant' => 'info',
+                'icon' => 'clock',
+                'route' => route('preinvoice.my.index', ['status' => PreinvoiceOrder::STATUS_FINANCE_REVIEWING]),
+                'action_label' => 'مشاهده',
+            ],
+            [
+                'key' => 'converted',
+                'title' => 'تأییدشده‌های امروز',
+                'description' => 'سفارش‌های امروز که به فاکتور تبدیل شده‌اند',
+                'count' => $todaySummary['converted'],
+                'variant' => 'success',
+                'icon' => 'check',
+                'route' => route('preinvoice.my.index', ['status' => PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE]),
+                'action_label' => 'مشاهده',
+            ],
+            [
+                'key' => 'cancelled',
+                'title' => 'لغوشده توسط مالی',
+                'description' => 'سفارش‌هایی که مالی لغو کرده است',
+                'count' => $counts['cancelled_by_finance'],
+                'variant' => 'danger',
+                'icon' => 'warning',
+                'route' => route('preinvoice.my.index', ['tab' => 'needs-correction', 'status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE]),
+                'action_label' => 'مشاهده جزئیات',
+            ],
+        ];
+
+        return collect($items)->map(function (array $item): array {
+            if ($item['count'] === 0) {
+                $item['variant'] = 'muted';
+            }
+
+            return $item;
+        });
+    }
+
+    private function attachSellerAction(PreinvoiceOrder $order, User $user): PreinvoiceOrder
+    {
+        $route = route('preinvoice.my.show', $order->uuid);
+        $label = 'مشاهده جزئیات';
+
+        if ($order->status === PreinvoiceOrder::STATUS_DRAFT && $this->canUseRoute($user, 'preinvoice.draft.edit')) {
+            $route = route('preinvoice.draft.edit', $order->uuid);
+            $label = 'ادامه ثبت';
+        } elseif ($order->status === PreinvoiceOrder::STATUS_RETURNED_TO_SALES && $this->canUseRoute($user, 'preinvoice.draft.edit')) {
+            $route = route('preinvoice.draft.edit', $order->uuid);
+            $label = 'اصلاح سفارش';
+        } elseif ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE
+            && $order->invoice
+            && $this->canUseRoute($user, 'invoices.show')) {
+            $route = route('invoices.show', $order->invoice->uuid);
+            $label = 'مشاهده فاکتور';
+        } elseif (in_array($order->status, [
+            PreinvoiceOrder::STATUS_PENDING_FINANCE,
+            PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
+        ], true)) {
+            $label = 'مشاهده';
+        }
+
+        $order->setAttribute('dashboard_action_route', $route);
+        $order->setAttribute('dashboard_action_label', $label);
+
+        return $order;
+    }
+
+    private function buildOperationalReports(
+        User $user,
+        Request $request,
+        Carbon $today,
+        bool $canViewManagement,
+        bool $canViewFinance,
+        bool $canViewWarehouse
+    ): array {
+        $salesSummary = null;
+        $warehouseSummary = null;
+        $financeSummary = null;
+        $warnings = collect();
+        $recentActivity = null;
+        $moduleShortcuts = collect();
+        $monthlyReport = null;
+        $reportMonths = [];
+        $reportYears = [];
+        $selectedMonth = null;
+        $selectedYear = null;
+
+        if ($canViewManagement) {
+            $monthStart = now()->startOfMonth();
+            $salesSummary = [
+                'preinvoicesThisMonth' => PreinvoiceOrder::query()->where('created_at', '>=', $monthStart)->count(),
+                'invoicesThisMonth' => Invoice::query()->where('created_at', '>=', $monthStart)->count(),
+                'salesAmountThisMonth' => (int) Invoice::query()->where('created_at', '>=', $monthStart)->sum('total'),
+                'returnFromSaleCount' => StockMovement::query()
+                    ->where('type', 'in')
+                    ->where('reason', 'return_from_sale')
+                    ->where('created_at', '>=', $monthStart)
+                    ->count(),
+            ];
+
+            $statusHistory = SalesHavalehHistory::query()
+                ->with(['invoice:id,uuid', 'actor:id,name'])
+                ->where('field_name', 'status')
+                ->latest('done_at')
+                ->first();
+            $recentActivity = [
+                'latestPreinvoice' => PreinvoiceOrder::query()->latest('id')->first(['uuid', 'customer_name', 'created_at']),
+                'latestHavaleh' => Invoice::query()->latest('id')->first(['uuid', 'customer_name', 'created_at']),
+                'latestStatusChange' => $statusHistory,
+                'latestAssetDocument' => AssetDocument::query()->latest('id')->first(['id', 'document_number', 'status', 'created_at']),
+                'latestUserActivities' => ActivityLog::query()
+                    ->with('user:id,name')
+                    ->latest('occurred_at')
+                    ->limit(6)
+                    ->get(['id', 'user_id', 'description', 'occurred_at']),
+            ];
+
+            $jalaliNow = Jalalian::fromDateTime(now());
+            $selectedYear = (int) $request->integer('report_year', $jalaliNow->getYear());
+            $selectedMonth = (int) $request->integer('report_month', $jalaliNow->getMonth());
+            $monthlyReport = $this->buildMonthlyReport($selectedYear, $selectedMonth);
+            $reportMonths = [
+                1 => 'فروردین', 2 => 'اردیبهشت', 3 => 'خرداد', 4 => 'تیر', 5 => 'مرداد', 6 => 'شهریور',
+                7 => 'مهر', 8 => 'آبان', 9 => 'آذر', 10 => 'دی', 11 => 'بهمن', 12 => 'اسفند',
+            ];
+            $reportYears = range($jalaliNow->getYear() - 3, $jalaliNow->getYear() + 1);
+        }
+
+        if ($canViewWarehouse) {
+            $lowStockThreshold = (int) config('inventory.low_stock_threshold', 5);
+            $lowStock = Product::query()
+                ->where('stock', '>', 0)
+                ->where('stock', '<=', $lowStockThreshold)
+                ->count();
+            $outOfStock = Product::query()->where('stock', '<=', 0)->count();
+            $warehouseSummary = [
+                'todayHavalehCount' => Invoice::query()->whereDate('created_at', $today)->count(),
+                'pendingWarehouse' => Invoice::query()->where('status', Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL)->count(),
+                'lowStock' => $lowStock,
+                'outOfStock' => $outOfStock,
+                'latestStocktakes' => StockCountDocument::query()
+                    ->with('warehouse:id,name')
+                    ->latest('id')
+                    ->limit(5)
+                    ->get(['id', 'warehouse_id', 'document_number', 'status', 'created_at']),
+            ];
+
+            if ($canViewManagement) {
+                $warnings->push([
+                    'title' => 'کالاهای کم‌موجود',
+                    'count' => $lowStock,
+                    'description' => "موجودی کمتر یا مساوی {$lowStockThreshold}",
+                    'route' => $this->canUseRoute($user, 'products.index') ? route('products.index', ['stock_status' => 'low']) : null,
+                    'variant' => 'warning',
+                ], [
+                    'title' => 'کالاهای صفر موجودی',
+                    'count' => $outOfStock,
+                    'description' => 'نیازمند تأمین فوری',
+                    'route' => $this->canUseRoute($user, 'products.index') ? route('products.index', ['stock_status' => 'out']) : null,
+                    'variant' => 'danger',
+                ]);
+            }
+        }
+
+        if ($canViewFinance) {
+            $financeQueue = PreinvoiceOrder::query()
+                ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
+                ->count();
+            $financeSummary = [
+                'financeQueue' => $financeQueue,
+                'todayReceipts' => Currency::toRial((int) InvoicePayment::query()->whereDate('paid_at', $today)->sum('amount')),
+                'todayCashPayments' => InvoicePayment::query()->whereDate('paid_at', $today)->where('method', 'cash')->count(),
+                'todayChequePayments' => InvoicePayment::query()->whereDate('paid_at', $today)->where('method', 'cheque')->count(),
+                'latestInvoices' => Invoice::query()
+                    ->latest('id')
+                    ->limit(5)
+                    ->get(['uuid', 'customer_name', 'total', 'status', 'created_at']),
+                'importantAccounts' => Customer::query()
+                    ->withBalance()
+                    ->get(['id', 'first_name', 'last_name', 'opening_balance'])
+                    ->sortByDesc(fn (Customer $customer): int => abs((int) $customer->balance))
+                    ->take(5)
+                    ->values(),
+            ];
+
+            if ($canViewManagement) {
+                $warnings->push([
+                    'title' => 'چک‌های نزدیک سررسید',
+                    'count' => Cheque::query()
+                        ->where('status', 'pending')
+                        ->whereBetween('due_date', [now()->toDateString(), now()->addDays(7)->toDateString()])
+                        ->count(),
+                    'description' => 'تا ۷ روز آینده',
+                    'route' => $this->canUseRoute($user, 'finance.cheques.registered') ? route('finance.cheques.registered') : null,
+                    'variant' => 'info',
+                ], [
+                    'title' => 'سفارش‌های معطل مالی',
+                    'count' => PreinvoiceOrder::query()
+                        ->where('status', PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE)
+                        ->where('created_at', '<=', now()->subDays(2))
+                        ->count(),
+                    'description' => 'بیش از ۲ روز در صف مانده‌اند',
+                    'route' => $this->canUseRoute($user, 'preinvoice.draft.index') ? route('preinvoice.draft.index') : null,
+                    'variant' => 'warning',
+                ]);
+            }
+        }
+
+        if ($canViewManagement || $canViewFinance || $canViewWarehouse) {
+            $moduleShortcuts = collect([
+                ['title' => 'کالاها', 'description' => 'مدیریت کالا و موجودی', 'route_name' => 'products.index'],
+                ['title' => 'انبارداری', 'description' => 'حواله‌ها و انبارگردانی', 'route_name' => 'vouchers.index'],
+                ['title' => 'بازرگانی و فروش', 'description' => 'پیش‌فاکتور و مشتریان', 'route_name' => 'preinvoice.create'],
+                ['title' => 'مالی', 'description' => 'صف مالی و فاکتورها', 'route_name' => 'preinvoice.draft.index'],
+                ['title' => 'پیکربندی', 'description' => 'تنظیمات پایه سیستم', 'route_name' => 'users.index'],
+            ])->filter(fn (array $module): bool => $this->canUseRoute($user, $module['route_name']))
+                ->map(fn (array $module): array => $module + ['route' => route($module['route_name'])])
+                ->values();
+        }
+
+        return [
+            'salesSummary' => $salesSummary,
+            'warehouseSummary' => $warehouseSummary,
+            'financeSummary' => $financeSummary,
+            'warnings' => $warnings,
+            'recentActivity' => $recentActivity,
+            'moduleShortcuts' => $moduleShortcuts,
+            'monthlyReport' => $monthlyReport,
+            'reportMonths' => $reportMonths,
+            'reportYears' => $reportYears,
+            'selectedReportMonth' => $selectedMonth,
+            'selectedReportYear' => $selectedYear,
+        ];
+    }
+
+    private function canUseRoute(User $user, string $routeName): bool
+    {
+        if (! Route::has($routeName)) {
+            return false;
+        }
+
+        $permission = PermissionCatalog::routePermissions()[$routeName] ?? null;
+
+        return $permission !== null && PermissionCatalog::userHasPermission($user, $permission);
+    }
+
+    private function userHasAnyPermission(User $user, array $permissions): bool
+    {
+        foreach ($permissions as $permission) {
+            if (PermissionCatalog::userHasPermission($user, $permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function canViewManagementReports(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        $managerRoles = array_merge(
+            PermissionCatalog::administratorRoles(),
+            ['sales_manager'],
+            PermissionCatalog::roleAliases()['sales_manager'] ?? []
+        );
+
+        return $user->hasAnyRole(array_unique($managerRoles));
+    }
+
+    private function userRoleLabel(User $user): string
+    {
+        $labels = PermissionCatalog::roleLabels();
+        $aliases = PermissionCatalog::roleAliases();
+
+        foreach ($user->getRoleNames() as $roleName) {
+            if (isset($labels[$roleName])) {
+                return $labels[$roleName];
+            }
+
+            foreach ($aliases as $standardRole => $roleAliases) {
+                if (in_array($roleName, $roleAliases, true)) {
+                    return $labels[$standardRole] ?? $roleName;
+                }
+            }
+        }
+
+        return $user->position ?: 'کاربر سامانه';
+    }
+
+    private function emptySellerStatusCounts(): array
+    {
+        return [
+            'drafts' => 0,
+            'pending_finance' => 0,
+            'finance_reviewing' => 0,
+            'returned_to_sales' => 0,
+            'converted_to_invoice' => 0,
+            'cancelled_by_finance' => 0,
+        ];
     }
 
     private function buildMonthlyReport(int $jalaliYear, int $jalaliMonth): array
@@ -370,7 +659,7 @@ class DashboardController extends Controller
         ];
 
         $max = max(1, collect($metrics)->max('value'));
-        $metrics = collect($metrics)->map(fn (array $metric) => $metric + [
+        $metrics = collect($metrics)->map(fn (array $metric): array => $metric + [
             'percent' => (float) min(100, round(($metric['value'] / $max) * 100, 2)),
             'display_value' => number_format($metric['value']),
         ])->values()->all();
@@ -383,7 +672,7 @@ class DashboardController extends Controller
         return [
             'report_year' => $jalaliYear,
             'report_month' => $jalaliMonth,
-            'range_label' => ($monthNames[$jalaliMonth] ?? 'ماه') . " {$jalaliYear}",
+            'range_label' => ($monthNames[$jalaliMonth] ?? 'ماه')." {$jalaliYear}",
             'from' => $start->toDateString(),
             'to' => $end->toDateString(),
             'summary' => [

@@ -26,3 +26,24 @@ it('keeps collection and shipping permissions independent', function () {
         'warehouse.shipping.ship',
     ]);
 });
+
+it('resolves canonical and aliased role labels without using arrays as keys', function () {
+    expect(PermissionCatalog::canonicalRoleKey('Admin'))->toBe('system_admin')
+        ->and(PermissionCatalog::roleLabel('Admin'))->toBe('مدیر سیستم')
+        ->and(PermissionCatalog::canonicalRoleKey('Sales'))->toBe('sales_user')
+        ->and(PermissionCatalog::roleLabel('Sales'))->toBe('فروشنده')
+        ->and(PermissionCatalog::isLegacyRole('Admin'))->toBeTrue();
+});
+
+it('falls back safely for unknown roles', function () {
+    expect(PermissionCatalog::canonicalRoleKey('LegacyCustomRole'))->toBeNull()
+        ->and(PermissionCatalog::roleLabel('LegacyCustomRole'))->toBe('LegacyCustomRole')
+        ->and(PermissionCatalog::isLegacyRole('LegacyCustomRole'))->toBeTrue();
+});
+
+it('rejects unknown and deprecated dependencies at the backend boundary', function () {
+    $resolver = app(PermissionDependencyResolver::class);
+
+    expect(fn () => $resolver->normalize(['not.registered']))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => $resolver->normalize(['preinvoices.warehouse.view']))->toThrow(InvalidArgumentException::class);
+});

@@ -9,7 +9,7 @@ class PermissionCatalog
 {
     public static function superAdminRoles(): array
     {
-        return ['super_admin', 'super-admin', 'Super Admin', 'مدیرکل'];
+        return ['super_admin', 'super-admin', 'Super Admin', 'مدیرکل', 'Owner'];
     }
 
     public static function administratorRoles(): array
@@ -293,7 +293,6 @@ class PermissionCatalog
         ];
     }
 
-
     public static function sidebarPages(): array
     {
         return [
@@ -441,7 +440,10 @@ class PermissionCatalog
 
     public static function activeKeys(): array
     {
-        return collect(self::registry())->reject('deprecated')->pluck('key')->all();
+        return collect(self::registry())
+            ->reject(fn (array $permission): bool => (bool) ($permission['deprecated'] ?? false))
+            ->pluck('key')
+            ->all();
     }
 
     public static function roleAliases(): array
@@ -460,25 +462,85 @@ class PermissionCatalog
 
     public static function roleLabels(): array
     {
-        return ['super_admin'=>'مدیر کل','system_admin'=>'مدیر سیستم','sales_manager'=>'مدیر فروش','sales_user'=>'فروشنده','finance_manager'=>'مدیر مالی','accountant'=>'حسابدار','warehouse_manager'=>'مدیر انبار','warehouse_operator'=>'کارشناس انبار','purchasing_user'=>'کارشناس خرید','auditor'=>'مشاهده‌گر / حسابرس'];
+        return ['super_admin' => 'مدیر کل', 'system_admin' => 'مدیر سیستم', 'sales_manager' => 'مدیر فروش', 'sales_user' => 'فروشنده', 'finance_manager' => 'مدیر مالی', 'accountant' => 'حسابدار', 'warehouse_manager' => 'مدیر انبار', 'warehouse_operator' => 'کارشناس انبار', 'purchasing_user' => 'کارشناس خرید', 'auditor' => 'مشاهده‌گر / حسابرس'];
     }
 
-    public static function syncToDatabase(): void
+    public static function canonicalRoleKey(string $roleName): ?string
     {
+        if (array_key_exists($roleName, self::roleLabels())) {
+            return $roleName;
+        }
+
+        $canonical = collect(self::roleAliases())->search(
+            fn ($aliases): bool => in_array($roleName, (array) $aliases, true)
+        );
+
+        return is_string($canonical) ? $canonical : null;
+    }
+
+    public static function roleLabel(string $roleName): string
+    {
+        $canonical = self::canonicalRoleKey($roleName);
+
+        return self::roleLabels()[$roleName]
+            ?? ($canonical !== null ? (self::roleLabels()[$canonical] ?? $roleName) : $roleName);
+    }
+
+    public static function isLegacyRole(string $roleName): bool
+    {
+        return self::canonicalRoleKey($roleName) !== $roleName;
+    }
+
+    public static function guardName(): string
+    {
+        return 'web';
+    }
+
+    /** @return array{created: int, updated: int, unchanged: int} */
+    public static function syncToDatabase(): array
+    {
+        $existing = DB::table('permissions')
+            ->whereNotNull('key')
+            ->get(['key', 'name', 'group', 'guard_name'])
+            ->keyBy('key');
+        $result = ['created' => 0, 'updated' => 0, 'unchanged' => 0];
+
         foreach (self::all() as $permission) {
-            DB::table('permissions')->updateOrInsert(
-                ['key' => $permission['key']],
-                [
-                    'name' => $permission['name'],
-                    'group' => $permission['group'],
-                    'guard_name' => 'web',
-                    'updated_at' => now(),
+            $current = $existing->get($permission['key']);
+            $values = [
+                'name' => $permission['name'],
+                'group' => $permission['group'],
+                'guard_name' => self::guardName(),
+            ];
+
+            if ($current === null) {
+                DB::table('permissions')->insert($values + [
+                    'key' => $permission['key'],
                     'created_at' => now(),
-                ]
+                    'updated_at' => now(),
+                ]);
+                $result['created']++;
+
+                continue;
+            }
+
+            $changed = collect($values)->contains(
+                fn ($value, string $column): bool => (string) $current->{$column} !== (string) $value
             );
+
+            if (! $changed) {
+                $result['unchanged']++;
+
+                continue;
+            }
+
+            DB::table('permissions')->where('key', $permission['key'])->update($values + ['updated_at' => now()]);
+            $result['updated']++;
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return $result;
     }
 
     public static function permissionAliases(): array

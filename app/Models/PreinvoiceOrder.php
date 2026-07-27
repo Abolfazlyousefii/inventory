@@ -2,8 +2,9 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class PreinvoiceOrder extends Model
 {
@@ -24,17 +25,29 @@ class PreinvoiceOrder extends Model
     }
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_TRUE_DRAFT = 'draft';
+
     public const STATUS_RESERVED_WAITING_WAREHOUSE = 'reserved_waiting_warehouse';
+
     public const STATUS_WAREHOUSE_REVIEWING = 'warehouse_reviewing';
+
     public const STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE = 'warehouse_approved_waiting_finance';
+
     public const STATUS_FINANCE_REVIEWING = 'finance_reviewing';
+
     public const STATUS_PENDING_FINANCE = 'pending_finance';
+
     public const STATUS_RETURNED_TO_SALES = 'returned_to_sales';
+
     public const STATUS_RESERVATION_EXPIRED = 'reservation_expired';
+
     public const STATUS_CONVERTED_TO_INVOICE = 'converted_to_invoice';
+
     public const STATUS_CANCELLED_BY_WAREHOUSE = 'cancelled_by_warehouse';
+
     public const STATUS_CANCELLED_BY_FINANCE = 'cancelled_by_finance';
+
     public const STATUS_RETURNED_TO_WAREHOUSE = 'returned_to_warehouse';
 
     protected $fillable = [
@@ -135,6 +148,19 @@ class PreinvoiceOrder extends Model
     public function invoice()
     {
         return $this->hasOne(Invoice::class, 'preinvoice_order_id');
+    }
+
+    public function scopeCreatedBySeller(Builder $query, int $sellerId): Builder
+    {
+        return $query->where('created_by', $sellerId);
+    }
+
+    public function scopeWithoutTemporaryAutosaves(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->where('is_auto_draft', false)
+                ->orWhereNull('is_auto_draft');
+        });
     }
 
     public function warehouseReviewSnapshots()
