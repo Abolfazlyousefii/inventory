@@ -5,7 +5,7 @@
 <header class="print-header">
     <div class="brand">
         <img src="{{ asset('logo.png') }}" alt="آریا">
-        <div><div class="system-name">{{ config('app.name', 'سیستم انبار آریا جانبی') }}</div><h1>{{ $title }}</h1></div>
+        <div><div class="system-name">{{ config('app.name', 'نرم افزار داخلی آریا گستر') }}</div><h1>{{ $title }}</h1></div>
     </div>
     <div class="generated">تاریخ تولید: {{ $generatedAt }}</div>
 </header>

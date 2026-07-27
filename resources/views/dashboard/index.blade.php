@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', 'داشبورد')
+
 @php
 use Morilog\Jalali\Jalalian;
 

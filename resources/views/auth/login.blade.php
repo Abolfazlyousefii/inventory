@@ -1,4 +1,5 @@
 <x-guest-layout>
+    <x-slot name="title">ورود</x-slot>
     <!-- Session Status -->
     <x-auth-session-status class="mb-6 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" :status="session('status')" />
 

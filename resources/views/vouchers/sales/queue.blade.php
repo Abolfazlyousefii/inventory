@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', 'صف جمع‌آوری فاکتور')
+
 @php
   use App\Models\Invoice;
   use Morilog\Jalali\Jalalian;

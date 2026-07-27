@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', 'دسترسی غیرمجاز')
+
 @section('content')
 <div class="container py-5" dir="rtl">
     <div class="row justify-content-center">
