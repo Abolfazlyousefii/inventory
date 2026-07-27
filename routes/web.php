@@ -108,6 +108,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
         Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
+        Route::get('/website-products/download', [ProductExportController::class, 'downloadWebsiteProducts'])
+            ->middleware('permission:products.export')
+            ->name('website-products.download');
     });
 
     Route::post('/products/sync-crm', [ProductController::class, 'syncCrm'])->name('products.sync.crm');
@@ -535,4 +538,3 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
-

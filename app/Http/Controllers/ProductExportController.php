@@ -5,16 +5,22 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProductExportFilterRequest;
 use App\Models\Category;
 use App\Models\ModelList;
+use App\Services\Exports\WebsiteProductExportService;
 use App\Services\ProductExportService;
 use App\Services\ProductPriceListPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Illuminate\View\View;
 
 class ProductExportController extends Controller
 {
-    public function __construct(private readonly ProductExportService $service, private readonly ProductPriceListPdfService $pdfService) {}
+    public function __construct(
+        private readonly ProductExportService $service,
+        private readonly ProductPriceListPdfService $pdfService,
+        private readonly WebsiteProductExportService $websiteProductExportService,
+    ) {}
 
     public function index(ProductExportFilterRequest $request): View
     {
@@ -66,6 +72,17 @@ class ProductExportController extends Controller
     public function export(ProductExportFilterRequest $request): RedirectResponse
     {
         return redirect()->route('admin.product-exports.print', $request->query());
+    }
+
+    public function downloadWebsiteProducts(): BinaryFileResponse
+    {
+        $result = $this->websiteProductExportService->export();
+        $path = (string) $result['output_file'];
+
+        return response()->download($path, basename($path), [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     public function modelLists(ProductExportFilterRequest $request): JsonResponse
