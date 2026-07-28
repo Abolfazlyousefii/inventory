@@ -56,7 +56,8 @@ class SalesReturnService
             $first = $groupItems->first();
             $payload = $this->normalizer->normalize($first->new_product_payload ?: []);
             foreach(['name','category_id','purchase_price','sell_price'] as $k) if(!isset($payload[$k]) || $payload[$k]==='') throw ValidationException::withMessages(["items.$first->sort_order.new_product_payload.$k"=>'اطلاعات کالای جدید ناقص است.']);
-            $cat = Category::query()->lockForUpdate()->findOrFail((int) $payload['category_id']);
+            $cat = Category::query()->lockForUpdate()->find((int) $payload['category_id']);
+            if (! $cat) throw ValidationException::withMessages(["items.$first->sort_order.new_product_payload.category_id" => 'دسته‌بندی نهایی کالا معتبر نیست.']);
             $seq = $this->nextProductSeq4();
             $productCode = $this->normalizeCategory2($cat->code).$seq;
             $product = Product::create(['category_id'=>$cat->id,'name'=>trim($payload['name']),'sku'=>'SR-'.now()->format('YmdHis').'-'.random_int(100,999),'code'=>$productCode,'short_barcode'=>$seq,'barcode'=>null,'stock'=>0,'reserved'=>0,'price'=>(int)($payload['sell_price']??0),'is_sellable'=>(bool)($payload['is_sellable']??true),'unit'=>$payload['unit']??'عدد','models'=>['sales_return_inline'=>true,'schema_version'=>2,'temporary_product_uuid'=>$payload['temporary_product_uuid']??null,'use_models'=>(bool)($payload['use_models']??false),'model_list_ids'=>$payload['model_list_ids']??[],'use_designs'=>(bool)($payload['use_designs']??false),'designs'=>$payload['designs']??[]]]);
@@ -64,7 +65,8 @@ class SalesReturnService
                 if ($item->created_variant_id && $item->product_variant_id) continue;
                 $itemPayload = $this->normalizer->normalize($item->new_product_payload ?: $payload);
                 $selected = collect($itemPayload['selected_variants'] ?? [])->first() ?: [];
-                $model = !empty($selected['model_list_id']) ? ModelList::query()->lockForUpdate()->findOrFail((int) $selected['model_list_id']) : null;
+                $model = !empty($selected['model_list_id']) ? ModelList::query()->lockForUpdate()->find((int) $selected['model_list_id']) : null;
+                if (! empty($selected['model_list_id']) && ! $model) throw ValidationException::withMessages(["items.$item->sort_order.new_product_payload.model_list_ids" => 'مدل انتخاب‌شده معتبر نیست.']);
                 $designIndex = (int)($selected['design_index'] ?? 0);
                 $model3 = $model ? $this->normalizeModel3($model->code) : '000';
                 $design2 = str_pad((string) max(0, min(99, $designIndex)), 2, '0', STR_PAD_LEFT);
@@ -118,7 +120,7 @@ class SalesReturnService
     private function normalizeCategory2(?string $code): string { $c=trim((string)$code); if(!preg_match('/^\d{2}$/',$c)) throw ValidationException::withMessages(['category_id'=>'کد دسته‌بندی باید ۲ رقمی باشد.']); return $c; }
     private function normalizeModel3(?string $code): string { $c=preg_replace('/\D+/','',(string)$code); return str_pad(substr($c,0,3),3,'0',STR_PAD_LEFT); }
     private function nextProductSeq4(): string { $productMax=(int)DB::table('products')->selectRaw("MAX(CAST(COALESCE(NULLIF(short_barcode,''), SUBSTRING(code, 3, 4)) AS UNSIGNED)) as mx")->lockForUpdate()->value('mx'); $variantMax=(int)DB::table('product_variants')->whereNotNull('variant_code')->where('variant_code','<>','')->selectRaw("MAX(CAST(SUBSTRING(variant_code, 3, 4) AS UNSIGNED)) as mx")->lockForUpdate()->value('mx'); $next=max($productMax,$variantMax)+1; return str_pad((string)max(1,$next),4,'0',STR_PAD_LEFT); }
-    private function buildVariantCode11(string $productCode6,string $model3,string $design2): string { $code=$productCode6.$model3.$design2; if(ProductVariant::where('variant_code',$code)->exists()) throw ValidationException::withMessages(['new_product_payload.sku'=>'کد تنوع تولیدی تکراری است.']); return $code; }
+    private function buildVariantCode11(string $productCode6,string $model3,string $design2): string { $code=$productCode6.$model3.$design2; if(ProductVariant::where('variant_code',$code)->exists()) throw ValidationException::withMessages(['new_product_payload.sku'=>'کد یکی از تنوع‌های کالای جدید تکراری است.']); return $code; }
     private function refreshTotals(SalesReturnDocument $doc): void { $doc->load('items'); $doc->update(['items_count'=>$doc->items->count(),'total_quantity'=>$doc->items->sum('return_quantity'),'total_refund_amount'=>$doc->items->sum('refund_amount')]); }
     private function condition(?string $c): string { return in_array($c,[SalesReturnDocumentItem::CONDITION_HEALTHY,SalesReturnDocumentItem::CONDITION_DAMAGED],true)?$c:SalesReturnDocumentItem::CONDITION_HEALTHY; }
     private function conditionForWarehouse(Warehouse $warehouse): string { return $warehouse->type === 'return' ? SalesReturnDocumentItem::CONDITION_DAMAGED : SalesReturnDocumentItem::CONDITION_HEALTHY; }
