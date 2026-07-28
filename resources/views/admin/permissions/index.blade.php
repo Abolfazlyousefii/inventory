@@ -31,7 +31,7 @@
     @if($errors->any())
         <div class="alert alert-danger" role="alert">
             <ul class="mb-0">
-                @foreach($errors->all() as $error)
+                @foreach(collect($errors->all())->unique() as $error)
                     <li>{{ $error }}</li>
                 @endforeach
             </ul>
@@ -87,6 +87,8 @@
             @method('PUT')
             <input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
             <input type="hidden" name="direct_permissions_submitted" value="1">
+            <input type="hidden" id="directPermissionsChanged" name="direct_permissions_changed" value="0">
+            <input type="hidden" id="rolesChanged" name="roles_changed" value="0">
             @if($canAssignRoles)
                 <input type="hidden" name="roles_submitted" value="1">
             @endif
@@ -105,7 +107,7 @@
                                 <label class="role-card border rounded p-3 d-block">
                                     <span class="d-flex gap-2">
                                         <input
-                                            class="form-check-input change-input"
+                                            class="form-check-input role-check"
                                             type="checkbox"
                                             name="roles[]"
                                             value="{{ $role['name'] }}"
@@ -185,7 +187,7 @@
                                                             <input class="form-check-input" type="checkbox" checked disabled aria-label="{{ $item['label'] }} از نقش">
                                                         @else
                                                             <input
-                                                                class="form-check-input permission-check change-input"
+                                                                class="form-check-input permission-check"
                                                                 type="checkbox"
                                                                 name="direct_permissions[]"
                                                                 value="{{ $item['key'] }}"
@@ -217,7 +219,24 @@
                 </section>
             </div>
 
-            @if($canEditPermissions)
+            @if($legacyPermissions->isNotEmpty())
+                <section class="card mt-3" aria-labelledby="legacy-permissions-title">
+                    <div class="card-header"><strong id="legacy-permissions-title">دسترسی‌های قدیمی</strong></div>
+                    <div class="card-body">
+                        <p class="text-muted small">این دسترسی‌ها فقط خواندنی هستند و در نسخه فعلی قابل انتساب نیستند.</p>
+                        <div class="vstack gap-2">
+                            @foreach($legacyPermissions as $legacyPermission)
+                                <div class="border rounded p-2 d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                                    <div><code>{{ $legacyPermission['key'] }}</code><small class="d-block text-muted">این دسترسی در نسخه فعلی قابل انتساب نیست.</small></div>
+                                    <div><span class="badge text-bg-secondary">قدیمی</span> <span class="badge text-bg-light border">{{ in_array($legacyPermission['source'], ['direct', 'both'], true) ? 'مستقیم' : 'از نقش' }}</span></div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </section>
+            @endif
+
+            @if($canEditPermissions || $canAssignRoles)
                 <div class="permission-savebar rounded p-3 mt-3">
                     <div>
                         <strong id="changeCount">بدون تغییر ذخیره نشده</strong>

@@ -1,158 +1,108 @@
 @extends('layouts.app')
 
 @section('title', 'فاکتورهای فروش')
-@section('content_class', 'app-content-wide')
+
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('css/invoices-index.css') }}">
+@endpush
 
 @section('content')
-@php
-  use Morilog\Jalali\Jalalian;
-  use Illuminate\Support\Str;
-  $rial = fn($amount) => \App\Support\Currency::formatRial((int) $amount);
-  $statusFa = fn($s) => ($statusLabels[$s] ?? ($s ?: '—'));
-  $isLegacy = fn($s) => in_array((string) $s, $legacyStatuses ?? [], true);
-  $statusBadge = fn($s) => match($s){
-    'pending_collection','warehouse_received','collecting' => 'text-bg-primary',
-    'pending_finance_reapproval','returned_to_sales_after_collection' => 'text-bg-warning text-dark',
-    'ready_to_ship' => 'text-bg-info',
-    'shipped' => 'text-bg-success',
-    default => $isLegacy($s) ? 'text-bg-secondary' : 'text-bg-light text-dark',
-  };
-  $paymentMeta = function($paid, $total) {
-    $paid=(int)$paid; $total=(int)$total;
-    if ($paid <= 0) return ['پرداخت‌نشده','text-bg-danger'];
-    if ($paid < $total) return ['پرداخت ناقص','text-bg-warning text-dark'];
-    if ($paid > $total) return ['تسویه‌شده با هشدار پرداخت اضافه','text-bg-danger'];
-    return ['تسویه‌شده','text-bg-success'];
-  };
-  $warningsFor = function($inv) use ($isLegacy) {
-    $paid=(int)($inv->paid_total??0); $total=(int)$inv->total; $snapshot=(int)($inv->snapshot_items_total??$total); $warnings=[];
-    if ((int)($inv->zero_price_items_count??0)>0) $warnings[]=['قیمت صفر','text-bg-danger'];
-    if (abs($total-$snapshot)>1) $warnings[]=['مغایرت مبلغ','text-bg-warning text-dark'];
-    if ($paid>$total) $warnings[]=['پرداخت اضافه','text-bg-danger'];
-    if (blank($inv->uuid)) $warnings[]=['شماره نامعتبر','text-bg-danger'];
-    if ($isLegacy($inv->status)) $warnings[]=['وضعیت قدیمی','text-bg-secondary'];
-    if ((int)($inv->ledger_debit_count??0)>1) $warnings[]=['ledger مشکوک','text-bg-dark'];
-    return $warnings;
-  };
-  $canManageInvoice = fn($inv) => auth()->user()?->hasAnyRole(['admin','Admin','Manager','manager','finance','Accountant']);
-  $activeFilterCount = collect($filters ?? [])->reject(fn($v, $k) => in_array($k, ['quick_range'], true) ? blank($v) : blank($v))->count();
-  $filtersOpen = $activeFilterCount > 0 || !empty($filterErrors);
-@endphp
-
-<style>
-  .sales-wide-page{max-width:100%;overflow-x:hidden;font-size:.88rem}.sales-page-head,.sales-card{border:1px solid #e7eef8;border-radius:18px;box-shadow:0 10px 26px rgba(30,64,175,.06)}
-  .sales-page-head{background:linear-gradient(135deg,#eff6ff,#fff);padding:18px}.sales-filter-card .form-label{font-size:.78rem;color:#475569;font-weight:800}.summary-title{font-weight:900;color:#1e3a8a;margin:.3rem 0 .6rem}.summary-card{border:1px solid #e5edf8;border-radius:16px;padding:13px;background:#fff;height:100%}.summary-card .label{font-size:.77rem;color:#64748b;font-weight:800}.summary-card .value{font-size:1rem;font-weight:950;margin-top:6px}.sales-table{table-layout:fixed;width:100%}.sales-table th{font-size:.74rem;color:#64748b;white-space:nowrap}.sales-table td{font-size:.81rem;vertical-align:middle;padding:.55rem .45rem}.code-cell{direction:ltr;unicode-bidi:plaintext;display:inline-block;max-width:135px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.truncate-cell{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.money-cell{white-space:nowrap;font-variant-numeric:tabular-nums;text-align:left;direction:ltr}.invoice-mobile-card{border:1px solid #dbeafe;border-radius:16px;padding:14px;background:#fff;box-shadow:0 6px 18px rgba(30,64,175,.05)}.quick-ranges .btn{font-size:.76rem;padding:.25rem .55rem}.badge-wrap{display:flex;gap:.25rem;flex-wrap:wrap}.invoice-cancel-modal-overlay{position:fixed;inset:0;width:100%;height:100%;background:rgba(15,23,42,.62);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:16px;z-index:2055}.invoice-cancel-modal-overlay.is-open{display:flex}.invoice-cancel-modal-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);display:flex;flex-direction:column;margin:auto}.invoice-cancel-modal-content{background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.34);overflow:hidden;direction:rtl;display:flex;flex-direction:column;max-height:inherit}.invoice-cancel-modal-header{background:#dc3545;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}.invoice-cancel-modal-title{font-size:1.05rem;font-weight:900;margin:0}.invoice-cancel-modal-close{border:0;background:transparent;color:#fff;font-size:1.6rem;line-height:1;padding:0 .25rem;opacity:.9}.invoice-cancel-modal-form{display:flex;flex-direction:column;min-height:0}.invoice-cancel-modal-body{background:#fff;padding:18px 20px;overflow-y:auto;max-height:calc(100vh - 210px)}.invoice-cancel-modal-footer{background:#fff;border-top:1px solid #e5e7eb;padding:14px 20px;display:flex;gap:10px;justify-content:flex-start;flex-wrap:wrap}.invoice-cancel-modal-field{margin-bottom:14px}.invoice-cancel-modal-field label{display:block;font-weight:800;color:#334155;margin-bottom:7px}.invoice-cancel-modal-field .form-control{width:100%}.invoice-cancel-modal-error{display:none;color:#dc3545;font-size:.78rem;margin-top:5px}.invoice-cancel-modal-physical{display:none}.invoice-cancel-modal-physical.is-visible{display:block}.invoice-cancel-modal-submit:disabled{cursor:not-allowed;opacity:.65}@media (max-width:575.98px){.invoice-cancel-modal-overlay{padding:12px}.invoice-cancel-modal-dialog{width:calc(100vw - 24px);max-height:calc(100vh - 24px)}.invoice-cancel-modal-body{max-height:calc(100vh - 230px);padding:16px}.invoice-cancel-modal-footer{flex-direction:column}.invoice-cancel-modal-footer .btn{width:100%}}@media print{.no-report-print,.modal,.pagination,.invoice-cancel-modal-overlay{display:none!important}.sales-card,.sales-page-head{box-shadow:none!important;border:1px solid #ddd!important}.d-lg-none{display:none!important}}
-</style>
-
-<div class="sales-wide-page">
-  <div class="sales-page-head mb-3 d-flex justify-content-between align-items-start flex-wrap gap-3">
-    <div><div class="h4 fw-black mb-1">فاکتورهای فروش</div><div class="text-muted small">مرکز پیگیری مالی، وضعیت عملیاتی و پرداخت فاکتورهای فروش</div></div>
-    <div class="d-flex gap-2 flex-wrap align-items-center justify-content-end no-report-print">
-      <a class="btn btn-outline-danger btn-sm" href="{{ route('invoices.cancelled') }}">بایگانی فاکتورهای لغوشده</a>
-      <a class="btn btn-outline-secondary btn-sm" href="{{ route('vouchers.index', ['voucher_type' => 'sale']) }}">حواله‌های قدیمی فروش</a>
-      @if($canRegisterPayments ?? false)<a class="btn btn-outline-primary btn-sm" href="{{ request()->fullUrlWithQuery(['export' => 'excel']) }}">خروجی Excel</a><a class="btn btn-outline-primary btn-sm" href="{{ request()->fullUrlWithQuery(['export' => 'csv']) }}">خروجی CSV</a>@endif
-      <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()">چاپ گزارش</button>
-    </div>
-  </div>
-
-  @if(!empty($filterErrors))<div class="alert alert-danger no-report-print">@foreach($filterErrors as $error)<div>{{ $error }}</div>@endforeach</div>@endif
-
-  <div class="card sales-card sales-filter-card mb-3 no-report-print">
-    <div class="card-body py-3">
-      <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+<main class="invoice-live" id="invoiceLiveApp"
+      data-endpoint="{{ route('invoices.data') }}"
+      data-customers-endpoint="{{ route('invoices.customers.search') }}"
+      data-index-url="{{ route('invoices.index') }}">
+    <header class="invoice-live__header">
         <div>
-          <div class="fw-black text-primary">فیلتر و جستجوی فاکتورها</div>
-          <div class="small text-muted">برای مشاهده فیلدهای کامل، پنل فیلترها را باز کنید.</div>
+            <h1>فاکتورهای فروش</h1>
+            <p>جست‌وجو و پیگیری سریع فاکتورهای ثبت‌شده</p>
         </div>
-        <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-outline-primary btn-sm position-relative" type="button" data-bs-toggle="collapse" data-bs-target="#invoiceFiltersPanel" aria-expanded="{{ $filtersOpen ? 'true' : 'false' }}" aria-controls="invoiceFiltersPanel">
-            فیلترها
-            @if($activeFilterCount > 0)<span class="position-absolute top-0 start-0 translate-middle badge rounded-pill text-bg-primary">{{ $activeFilterCount }}</span>@endif
-          </button>
+        @if($canViewCancelled)
+            <a class="btn btn-outline-danger" href="{{ route('invoices.cancelled') }}">بایگانی لغوشده‌ها</a>
+        @endif
+    </header>
+
+    @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
+    @if(session('error'))<div class="alert alert-danger">{{ session('error') }}</div>@endif
+
+    <section class="invoice-filters" aria-label="فیلتر فاکتورها">
+        <div class="invoice-filter-field">
+            <label for="invoiceOrderCode">کد سفارش</label>
+            <input id="invoiceOrderCode" class="form-control" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="مثلاً 00481">
+            <small class="field-error" data-error-for="order_code"></small>
         </div>
-      </div>
-      <div class="collapse {{ $filtersOpen ? 'show' : '' }} mt-3" id="invoiceFiltersPanel">
-        <form class="row g-3 align-items-end" method="GET" action="{{ route('invoices.index') }}">
-          <div class="col-12 quick-ranges d-flex gap-2 flex-wrap">@foreach(['today'=>'امروز','yesterday'=>'دیروز','this_week'=>'این هفته','this_month'=>'این ماه','last_month'=>'ماه قبل'] as $key=>$label)<button class="btn btn-outline-primary" name="quick_range" value="{{ $key }}">{{ $label }}</button>@endforeach <span class="small text-muted align-self-center">ملاک تاریخ: created_at</span></div>
-          <div class="col-sm-6 col-xl-2"><label class="form-label">شماره فاکتور</label><input class="form-control" name="invoice_number" value="{{ $filters['invoice_number'] ?? '' }}"></div>
-          <div class="col-sm-6 col-xl-3"><label class="form-label">مشتری / موبایل / کد مشتری</label><input class="form-control" name="customer_name" value="{{ $filters['customer_name'] ?? '' }}" placeholder="نام مشتری"><div class="row g-1 mt-1"><div class="col"><input class="form-control form-control-sm" name="customer_mobile" value="{{ $filters['customer_mobile'] ?? '' }}" placeholder="موبایل"></div><div class="col"><input class="form-control form-control-sm" name="customer_code" value="{{ $filters['customer_code'] ?? '' }}" placeholder="کد"></div></div></div>
-          <div class="col-sm-6 col-xl-2"><label class="form-label">فروشنده</label><input class="form-control" name="seller" value="{{ $filters['seller'] ?? '' }}"></div>
-          <div class="col-sm-6 col-xl-2"><label class="form-label">وضعیت پرداخت</label><select class="form-select" name="payment_status"><option value="">همه</option><option value="paid" @selected(($filters['payment_status']??'')==='paid')>تسویه‌شده</option><option value="partial" @selected(($filters['payment_status']??'')==='partial')>پرداخت ناقص</option><option value="unpaid" @selected(($filters['payment_status']??'')==='unpaid')>پرداخت‌نشده</option><option value="overpaid" @selected(($filters['payment_status']??'')==='overpaid')>پرداخت اضافه</option></select></div>
-          <div class="col-sm-6 col-xl-3"><label class="form-label">وضعیت عملیاتی</label><select class="form-select" name="status"><option value="">همه وضعیت‌ها</option><optgroup label="Workflow جدید">@foreach($newWorkflowStatuses as $key)<option value="{{ $key }}" @selected(($filters['status']??'')===$key)>{{ $statusFa($key) }}</option>@endforeach</optgroup><optgroup label="Legacy / قدیمی">@foreach($legacyStatuses as $key)<option value="{{ $key }}" @selected(($filters['status']??'')===$key)>{{ $statusFa($key) }}</option>@endforeach</optgroup></select></div>
-          <div class="col-sm-6 col-xl-2"><label class="form-label">از تاریخ شمسی</label><input type="text" class="form-control" name="date_from" value="{{ $filters['date_from'] ?? '' }}" dir="ltr" data-jdp data-jdp-only-date></div><div class="col-sm-6 col-xl-2"><label class="form-label">تا تاریخ شمسی</label><input type="text" class="form-control" name="date_to" value="{{ $filters['date_to'] ?? '' }}" dir="ltr" data-jdp data-jdp-only-date></div>
-          <div class="col-sm-6 col-xl-2"><label class="form-label">حداقل مبلغ</label><input class="form-control" name="min_amount" value="{{ $filters['min_amount'] ?? '' }}"></div><div class="col-sm-6 col-xl-2"><label class="form-label">حداکثر مبلغ</label><input class="form-control" name="max_amount" value="{{ $filters['max_amount'] ?? '' }}"></div><div class="col-sm-6 col-xl-2"><label class="form-label">روش ارسال</label><input class="form-control" name="shipping_method" value="{{ $filters['shipping_method'] ?? '' }}" placeholder="شناسه روش ارسال"></div>
-          <div class="col-12 d-flex gap-3 flex-wrap"><label class="form-check"><input class="form-check-input" type="checkbox" name="only_remaining" value="1" @checked(($filters['only_remaining']??'')==='1')> فقط مانده‌دارها</label><label class="form-check"><input class="form-check-input" type="checkbox" name="has_cheque" value="1" @checked(($filters['has_cheque']??'')==='1')> فقط دارای چک</label><label class="form-check"><input class="form-check-input" type="checkbox" name="has_warnings" value="1" @checked(($filters['has_warnings']??'')==='1')> فقط دارای هشدار</label><label class="form-check"><input class="form-check-input" type="checkbox" name="overpaid_only" value="1" @checked(($filters['overpaid_only']??'')==='1')> فقط پرداخت بیشتر از فاکتور</label><label class="form-check"><input class="form-check-input" type="checkbox" name="legacy_only" value="1" @checked(($filters['legacy_only']??'')==='1')> فقط وضعیت‌های legacy</label></div>
-          <div class="col-12 d-flex gap-2 justify-content-end flex-wrap"><a class="btn btn-outline-secondary" href="{{ route('invoices.index') }}">پاک کردن فیلترها</a><button class="btn btn-primary px-4">اعمال فیلتر</button></div>
-        </form>
-      </div>
+        <div class="invoice-filter-field customer-picker" id="invoiceCustomerPicker">
+            <label for="invoiceCustomerSearch">مشتری</label>
+            <input id="invoiceCustomerSearch" class="form-control" autocomplete="off" placeholder="جست‌وجوی نام، موبایل یا کد مشتری" role="combobox" aria-expanded="false">
+            <input id="invoiceCustomerId" type="hidden">
+            <button type="button" class="customer-picker__clear" id="invoiceCustomerClear" aria-label="حذف مشتری انتخاب‌شده" hidden>×</button>
+            <div class="customer-picker__results" role="listbox" hidden></div>
+            <small class="field-error" data-error-for="customer_id"></small>
+        </div>
+        <div class="invoice-filter-field">
+            <label for="invoiceDateFrom">از تاریخ</label>
+            <input id="invoiceDateFrom" class="form-control" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۱/۰۱">
+            <small class="field-error" data-error-for="date_from"></small>
+        </div>
+        <div class="invoice-filter-field">
+            <label for="invoiceDateTo">تا تاریخ</label>
+            <input id="invoiceDateTo" class="form-control" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۱۲/۲۹">
+            <small class="field-error" data-error-for="date_to"></small>
+        </div>
+        <div class="invoice-filter-actions">
+            <div class="quick-ranges" role="group" aria-label="بازه سریع">
+                <button type="button" data-range="today">امروز</button>
+                <button type="button" data-range="week">این هفته</button>
+                <button type="button" data-range="month">این ماه</button>
+            </div>
+            <button type="button" class="btn btn-light" id="invoiceClearFilters">پاک کردن</button>
+        </div>
+    </section>
+
+    <div class="invoice-live__error alert alert-danger" id="invoiceLiveError" hidden>
+        <span>دریافت فاکتورها انجام نشد.</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="invoiceRetry">تلاش دوباره</button>
     </div>
-  </div>
 
-  <div class="summary-title">گزارش مالی</div><div class="row g-3 mb-3">@foreach([['جمع فروش',$summary['total_sales']??0,'text-primary','rial'],['دریافت‌شده',$summary['paid_amount']??0,'text-success','rial'],['مانده قابل دریافت',$summary['remaining_amount']??0,'text-danger','rial'],['تعداد فاکتورها',$summary['invoice_count']??0,'text-dark','count']] as [$label,$value,$class,$type])<div class="col-6 col-lg-3"><div class="summary-card"><div class="label">{{ $label }}</div><div class="value {{ $class }}">{{ $type==='rial' ? $rial($value) : number_format($value).' فاکتور' }}</div></div></div>@endforeach</div>
-  <div class="summary-title">وضعیت‌ها</div><div class="row g-3 mb-3">@foreach([['تسویه‌شده',$summary['paid_count']??0,'text-success'],['پرداخت ناقص',$summary['partial_count']??0,'text-warning'],['پرداخت‌نشده',$summary['unpaid_count']??0,'text-danger'],['پرداخت اضافه',$summary['overpaid_count']??0,'text-danger'],['آماده ارسال',$summary['ready_to_ship_count']??0,'text-info'],['ارسال‌شده',$summary['shipped_count']??0,'text-success'],['نیازمند تایید مجدد مالی',$summary['pending_finance_reapproval_count']??0,'text-warning']] as [$label,$value,$class])<div class="col-6 col-lg-3 col-xxl"><div class="summary-card"><div class="label">{{ $label }}</div><div class="value {{ $class }}">{{ number_format($value) }} فاکتور</div></div></div>@endforeach</div>
+    <section id="invoiceSummary" class="invoice-summary" aria-live="polite"></section>
 
-  <div class="card sales-card d-none d-lg-block"><div class="table-responsive invoice-table-wrap"><table class="table table-hover align-middle mb-0 sales-table"><colgroup><col style="width:13%"><col style="width:16%"><col style="width:10%"><col style="width:12%"><col style="width:11%"><col style="width:15%"><col style="width:12%"><col style="width:11%"></colgroup><thead class="table-light"><tr><th>فاکتور</th><th>مشتری</th><th>فروشنده</th><th>وضعیت عملیاتی</th><th>وضعیت پرداخت</th><th>مبلغ</th><th>هشدارها</th><th class="text-end">عملیات</th></tr></thead><tbody>
-  @forelse($invoices as $inv)@php $paid=(int)($inv->paid_total??0);$remaining=max((int)$inv->total-$paid,0);$customerCode=$inv->customer?->crm_customer_id ?: $inv->customer_id;$customerName=$inv->customer_name ?: $inv->customer?->display_name ?: '—';[$payText,$payCls]=$paymentMeta($paid,$inv->total);$warnings=$warningsFor($inv); @endphp
-    <tr><td><div class="fw-bold code-cell" title="{{ $inv->uuid }}">{{ $inv->uuid ?: '—' }}</div><div class="small text-muted">{{ $inv->created_at ? Jalalian::fromDateTime($inv->created_at)->format('Y/m/d') : '—' }}</div>@if($inv->preinvoiceOrder)<div class="small text-muted">پیش‌فاکتور: {{ $inv->preinvoiceOrder->uuid ?? $inv->preinvoice_order_id }}</div>@endif</td><td><span class="truncate-cell fw-bold" title="{{ $customerName }}">{{ $customerName }}</span><div class="small text-muted">{{ $inv->customer_mobile ?: $inv->customer?->mobile ?: '—' }}</div><div class="small text-muted">کد: {{ $customerCode ?: '—' }}</div></td><td><span class="truncate-cell">{{ $inv->preinvoiceOrder?->creator?->name ?? '—' }}</span></td><td><span class="badge {{ $statusBadge($inv->status) }}">{{ $statusFa($inv->status) }}</span>@if($isLegacy($inv->status))<span class="badge text-bg-secondary mt-1">legacy</span>@endif</td><td><span class="badge {{ $payCls }}">{{ $payText }}</span></td><td><div class="money-cell">کل: {{ $rial($inv->total) }}</div><div class="money-cell text-success">دریافت: {{ $rial($paid) }}</div><div class="money-cell {{ $remaining>0?'text-danger':'text-success' }}">مانده: {{ $rial($remaining) }}</div></td><td><div class="badge-wrap">@forelse($warnings as [$w,$c])<span class="badge {{ $c }}">{{ $w }}</span>@empty<span class="text-muted small">—</span>@endforelse</div></td><td><div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">عملیات</button><ul class="dropdown-menu"><li><a class="dropdown-item" href="{{ route('invoices.show', $inv->uuid) }}">مشاهده فاکتور</a></li><li><a class="dropdown-item" href="{{ route('invoices.print', $inv->uuid) }}" target="_blank">چاپ فاکتور</a></li>@if($canManageInvoice($inv))<li><a class="dropdown-item" href="{{ route('invoices.edit', $inv->uuid) }}">ویرایش فاکتور</a></li>@endif @if(($canCancelInvoices ?? false) && ! $inv->isCancelled())<li><hr class="dropdown-divider"></li><li><button type="button" class="js-open-invoice-cancel-modal dropdown-item text-danger fw-bold" data-invoice-uuid="{{ $inv->uuid }}" data-cancel-url="{{ route('invoices.cancel', $inv->uuid) }}" data-is-shipped="{{ $inv->status === \App\Models\Invoice::STATUS_SHIPPED ? '1' : '0' }}" data-customer-name="{{ $customerName }}">حذف / لغو فاکتور</button></li>@endif</ul></div></td></tr>
-  @empty<tr><td colspan="8" class="text-center text-muted py-4">هیچ فاکتوری با فیلترهای انتخاب‌شده یافت نشد.</td></tr>@endforelse
-  </tbody><tfoot class="table-light"><tr><th colspan="5">جمع همین صفحه ({{ number_format($pageTotals['count'] ?? 0) }} فاکتور)</th><th class="money-cell">{{ $rial($pageTotals['total'] ?? 0) }} / {{ $rial($pageTotals['paid'] ?? 0) }} / {{ $rial($pageTotals['remaining'] ?? 0) }}</th><th colspan="2"></th></tr></tfoot></table></div></div>
-
-  <div class="d-lg-none vstack gap-2">@forelse($invoices as $inv)@php $paid=(int)($inv->paid_total??0);$remaining=max((int)$inv->total-$paid,0);$customerName=$inv->customer_name ?: $inv->customer?->display_name ?: '—';[$payText,$payCls]=$paymentMeta($paid,$inv->total);$warnings=$warningsFor($inv); @endphp<div class="invoice-mobile-card"><div class="d-flex justify-content-between gap-2 mb-2"><div><div class="fw-bold">{{ $inv->uuid ?: '—' }}</div><div class="small text-muted">{{ $inv->created_at ? Jalalian::fromDateTime($inv->created_at)->format('Y/m/d') : '—' }}</div></div><span class="badge {{ $statusBadge($inv->status) }} align-self-start">{{ $statusFa($inv->status) }}</span></div><div class="fw-bold">{{ $customerName }}</div><div class="small text-muted">{{ $inv->customer_mobile ?: $inv->customer?->mobile ?: '—' }} | فروشنده: {{ $inv->preinvoiceOrder?->creator?->name ?? '—' }}</div><div class="my-2"><span class="badge {{ $payCls }}">{{ $payText }}</span></div><div class="small d-flex justify-content-between"><span>مبلغ</span><strong>{{ $rial($inv->total) }}</strong></div><div class="small d-flex justify-content-between"><span>پرداخت‌شده</span><strong>{{ $rial($paid) }}</strong></div><div class="small d-flex justify-content-between"><span>مانده</span><strong class="{{ $remaining>0?'text-danger':'text-success' }}">{{ $rial($remaining) }}</strong></div><div class="badge-wrap mt-2">@foreach($warnings as [$w,$c])<span class="badge {{ $c }}">{{ $w }}</span>@endforeach</div><div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-sm btn-outline-primary" href="{{ route('invoices.show', $inv->uuid) }}">مشاهده فاکتور</a><a class="btn btn-sm btn-outline-dark" href="{{ route('invoices.print', $inv->uuid) }}" target="_blank">چاپ فاکتور</a>@if($canManageInvoice($inv))<a class="btn btn-sm btn-primary" href="{{ route('invoices.edit', $inv->uuid) }}">ویرایش فاکتور</a>@endif @if(($canCancelInvoices ?? false) && ! $inv->isCancelled())<button type="button" class="btn btn-sm btn-outline-danger js-open-invoice-cancel-modal" data-invoice-uuid="{{ $inv->uuid }}" data-cancel-url="{{ route('invoices.cancel', $inv->uuid) }}" data-is-shipped="{{ $inv->status === \App\Models\Invoice::STATUS_SHIPPED ? '1' : '0' }}" data-customer-name="{{ $customerName }}">حذف / لغو فاکتور</button>@endif</div></div>@empty<div class="invoice-mobile-card text-center text-muted">هیچ فاکتوری یافت نشد.</div>@endforelse</div>
-  <div class="mt-3 no-report-print">{{ $invoices->links() }}</div>
-</div>
-  @if($canCancelInvoices ?? false)
-  <div id="invoiceCancelModal" class="invoice-cancel-modal-overlay no-report-print" aria-hidden="true">
-    <div class="invoice-cancel-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="invoiceCancelModalTitle">
-      <div class="invoice-cancel-modal-content">
-        <div class="invoice-cancel-modal-header">
-          <h5 id="invoiceCancelModalTitle" class="invoice-cancel-modal-title">لغو فاکتور</h5>
-          <button type="button" class="invoice-cancel-modal-close js-close-invoice-cancel-modal" aria-label="بستن">×</button>
+    <section class="invoice-results" aria-live="polite" aria-busy="true">
+        <div class="invoice-desktop">
+            <table class="table align-middle mb-0">
+                <thead><tr><th>کد و تاریخ</th><th>مشتری</th><th>فروشنده</th><th>وضعیت</th><th>مبلغ و پرداخت</th><th class="text-end">عملیات</th></tr></thead>
+                <tbody id="invoiceDesktopRows"></tbody>
+            </table>
         </div>
-        <form id="invoiceCancelForm" class="invoice-cancel-modal-form" method="POST" action="" data-default-submit-text="لغو قطعی فاکتور">
-          @csrf
-          <div class="invoice-cancel-modal-body">
-            <div class="alert alert-warning small mb-3">با لغو این فاکتور:<br>- موجودی اقلام به انبار مرکزی بازمی‌گردد.<br>- بدهکاری این فاکتور از گردش حساب مشتری حذف می‌شود.<br>- پرداخت‌ها و چک‌های ثبت‌شده مشتری حذف نمی‌شوند.<br>- فاکتور به بایگانی فاکتورهای لغوشده منتقل می‌شود.</div>
-            <div id="invoiceCancelCustomer" class="small text-muted mb-3"></div>
-            <div class="invoice-cancel-modal-field"><label for="invoiceCancellationReason">علت لغو <span class="text-danger">*</span></label><textarea id="invoiceCancellationReason" class="form-control" name="cancellation_reason" required rows="3"></textarea><div class="invoice-cancel-modal-error" data-error-for="cancellation_reason"></div></div>
-            <div class="invoice-cancel-modal-field"><label for="invoiceCancelConfirmation">تأیید شماره فاکتور <span class="text-danger">*</span></label><input id="invoiceCancelConfirmation" class="form-control" name="confirm_invoice_uuid" required autocomplete="off" dir="ltr"><div class="form-text">برای فعال‌شدن دکمه، شماره فاکتور را دقیق وارد کنید.</div><div class="invoice-cancel-modal-error" data-error-for="confirm_invoice_uuid"></div></div>
-            <div class="invoice-cancel-modal-field"><label for="invoiceCancellationNote">توضیحات تکمیلی</label><textarea id="invoiceCancellationNote" class="form-control" name="cancellation_note" rows="3"></textarea></div>
-            <div id="invoiceCancelPhysicalGroup" class="invoice-cancel-modal-physical alert alert-danger small mb-0"><div class="mb-2">این فاکتور قبلاً ارسال شده است. تنها در صورتی ادامه دهید که بازگشت فیزیکی کالا به انبار تأیید شده باشد.</div><label class="form-check mb-0"><input id="invoiceCancelPhysical" class="form-check-input" type="checkbox" name="physical_return_confirmed" value="1"> بازگشت فیزیکی کالا به انبار را تأیید می‌کنم.</label><div class="invoice-cancel-modal-error" data-error-for="physical_return_confirmed"></div></div>
-          </div>
-          <div class="invoice-cancel-modal-footer">
-            <button id="invoiceCancelSubmitButton" type="submit" class="btn btn-danger invoice-cancel-modal-submit" disabled>لغو قطعی فاکتور</button>
-            <button type="button" class="btn btn-light js-close-invoice-cancel-modal">انصراف</button>
-          </div>
-        </form>
-      </div>
+        <div class="invoice-mobile" id="invoiceMobileCards"></div>
+        <div class="invoice-skeleton" id="invoiceSkeleton" aria-label="در حال دریافت">
+            @for($i = 0; $i < 5; $i++)<div class="invoice-skeleton__row"></div>@endfor
+        </div>
+        <div class="invoice-empty" id="invoiceEmpty" hidden><strong>فاکتوری با این مشخصات پیدا نشد.</strong><p>فیلترها را پاک کنید یا کد دیگری وارد کنید.</p><button type="button" class="btn btn-sm btn-outline-primary" data-clear-filters>پاک‌کردن فیلترها</button></div>
+    </section>
+    <div id="invoiceLoadSentinel" class="invoice-load-sentinel"></div>
+    <div class="text-center text-muted small my-2" id="invoiceLoadStatus"></div>
+    <button type="button" class="btn btn-outline-primary invoice-load-more" id="invoiceLoadMore" hidden>نمایش موارد بیشتر</button>
+
+    <div class="modal fade" id="invoiceCancelModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h2 class="modal-title fs-5">لغو فاکتور <span data-cancel-number></span></h2><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" id="invoiceCancelForm">@csrf
+                <div class="modal-body">
+                    <div class="alert alert-warning small">موجودی اقلام به انبار مرکزی بازمی‌گردد و بدهکاری این فاکتور از گردش حساب حذف می‌شود. پرداخت‌ها و چک‌های مشتری حذف نمی‌شوند.</div>
+                    <div class="alert alert-danger small" data-shipped-warning hidden><div>این فاکتور ارسال شده است؛ بازگشت فیزیکی کالا باید تأیید شود.</div><label class="form-check mt-2"><input class="form-check-input" type="checkbox" name="physical_return_confirmed" value="1" id="invoicePhysicalReturn"> بازگشت فیزیکی کالا را تأیید می‌کنم.</label></div>
+                    <label class="form-label" for="invoiceCancellationReason">دلیل لغو</label>
+                    <textarea class="form-control" id="invoiceCancellationReason" name="cancellation_reason" rows="3" required></textarea>
+                    <label class="form-label mt-3" for="invoiceCancelConfirmation">تأیید شماره فاکتور</label><input class="form-control" id="invoiceCancelConfirmation" name="confirm_invoice_uuid" required dir="ltr" autocomplete="off"><div class="form-text">شماره فاکتور را دقیق وارد کنید.</div>
+                    <label class="form-label mt-3" for="invoiceCancellationNote">توضیحات</label><textarea class="form-control" id="invoiceCancellationNote" name="cancellation_note" rows="3" maxlength="1000"></textarea>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">انصراف</button><button class="btn btn-danger" id="invoiceCancelSubmit" disabled>لغو قطعی فاکتور</button></div>
+            </form>
+        </div></div>
     </div>
-  </div>
-  @endif
 
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  var overlay = document.getElementById('invoiceCancelModal');
-  if (!overlay) return;
-  var form = document.getElementById('invoiceCancelForm');
-  var title = document.getElementById('invoiceCancelModalTitle');
-  var reason = document.getElementById('invoiceCancellationReason');
-  var confirmation = document.getElementById('invoiceCancelConfirmation');
-  var physicalGroup = document.getElementById('invoiceCancelPhysicalGroup');
-  var physical = document.getElementById('invoiceCancelPhysical');
-  var submit = document.getElementById('invoiceCancelSubmitButton');
-  var customer = document.getElementById('invoiceCancelCustomer');
-  var activeButton = null, expectedUuid = '', requiresPhysical = false, submitted = false, previousOverflow = '';
-  function resetModal(){ form.reset(); form.action=''; expectedUuid=''; requiresPhysical=false; submitted=false; title.textContent='لغو فاکتور'; customer.textContent=''; confirmation.placeholder=''; physicalGroup.classList.remove('is-visible'); submit.disabled=true; submit.textContent=form.dataset.defaultSubmitText; submit.removeAttribute('aria-busy'); document.querySelectorAll('.invoice-cancel-modal-error').forEach(function(el){ el.textContent=''; el.style.display='none'; }); }
-  function validate(){ var ok=reason.value.trim().length>0 && confirmation.value.trim()===expectedUuid && (!requiresPhysical || physical.checked); submit.disabled=!ok || submitted; }
-  function openModal(button){ activeButton=button; var dropdown=button.closest('.dropdown-menu'); if(dropdown && window.bootstrap){ var toggle=dropdown.parentElement.querySelector('[data-bs-toggle="dropdown"]'); window.bootstrap.Dropdown.getInstance(toggle)?.hide(); } resetModal(); expectedUuid=button.dataset.invoiceUuid || ''; requiresPhysical=button.dataset.isShipped==='1'; title.textContent='لغو فاکتور '+expectedUuid; form.action=button.dataset.cancelUrl || ''; confirmation.placeholder=expectedUuid; customer.textContent=button.dataset.customerName ? 'مشتری: '+button.dataset.customerName : ''; physicalGroup.classList.toggle('is-visible', requiresPhysical); overlay.classList.add('is-open'); overlay.setAttribute('aria-hidden','false'); previousOverflow=document.body.style.overflow; document.body.style.overflow='hidden'; setTimeout(function(){ reason.focus(); }, 50); validate(); }
-  function closeModal(){ overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden','true'); document.body.style.overflow=previousOverflow; resetModal(); if(activeButton){ activeButton.focus(); activeButton=null; } }
-  document.addEventListener('click', function(e){ var opener=e.target.closest('.js-open-invoice-cancel-modal'); if(opener){ e.preventDefault(); e.stopPropagation(); openModal(opener); } });
-  document.querySelectorAll('.js-close-invoice-cancel-modal').forEach(function(btn){ btn.addEventListener('click', closeModal); });
-  overlay.addEventListener('click', function(e){ if(e.target === overlay){ e.preventDefault(); } });
-  [reason, confirmation, physical].forEach(function(el){ el.addEventListener('input', validate); el.addEventListener('change', validate); });
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && overlay.classList.contains('is-open')) closeModal(); });
-  form.addEventListener('submit', function(e){ validate(); if(submit.disabled || submitted){ e.preventDefault(); return; } submitted=true; submit.disabled=true; submit.textContent='در حال لغو...'; submit.setAttribute('aria-busy','true'); });
-});
-</script>
-
+    <script type="application/json" id="invoiceInitialState">{!! json_encode(['filters' => $initialFilters, 'customer' => $initialCustomer], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+</main>
 @endsection
+
+@push('scripts')
+    <script src="{{ asset('js/invoices-index.js') }}" defer></script>
+@endpush

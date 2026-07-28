@@ -67,6 +67,8 @@ class UserPermissionManagementTest extends TestCase
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
+            'roles_changed' => 0,
+            'direct_permissions_changed' => 1,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => ['products.view'],
         ])->assertForbidden();
@@ -89,6 +91,8 @@ class UserPermissionManagementTest extends TestCase
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
+            'roles_changed' => 1,
+            'direct_permissions_changed' => 0,
             'roles_submitted' => 1,
             'roles' => [$forged->name],
             'direct_permissions_submitted' => 1,
@@ -107,6 +111,8 @@ class UserPermissionManagementTest extends TestCase
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
+            'roles_changed' => 1,
+            'direct_permissions_changed' => 0,
             'roles_submitted' => 1,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => [],
@@ -124,6 +130,8 @@ class UserPermissionManagementTest extends TestCase
 
         $payload = [
             'user_id' => $first->id,
+            'roles_changed' => 1,
+            'direct_permissions_changed' => 0,
             'roles_submitted' => 1,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => [],
@@ -146,6 +154,8 @@ class UserPermissionManagementTest extends TestCase
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
+            'roles_changed' => 0,
+            'direct_permissions_changed' => 1,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => ['products.edit'],
         ])->assertRedirect();
@@ -155,6 +165,8 @@ class UserPermissionManagementTest extends TestCase
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
+            'roles_changed' => 0,
+            'direct_permissions_changed' => 1,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => [],
         ])->assertRedirect();
@@ -217,11 +229,103 @@ class UserPermissionManagementTest extends TestCase
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
+            'roles_changed' => 0,
+            'direct_permissions_changed' => 0,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => [],
         ])->assertSessionHas('success', 'تغییری برای ذخیره وجود نداشت.');
 
         $this->assertSame(0, ActivityLog::query()->where('action', 'permissions.updated')->count());
+    }
+
+    public function test_role_only_update_preserves_active_and_legacy_direct_permissions(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit', 'permissions.assign_roles']);
+        $target = User::factory()->create();
+        $target->assignRole(Role::findOrCreate('Sales', 'web'));
+        $newRole = Role::findOrCreate('Manager', 'web');
+        $target->permissions()->attach([$this->permissionId('products.view'), $this->legacyPermissionId('legacy.direct.one'), $this->legacyPermissionId('legacy.direct.two')]);
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'roles_submitted' => 1,
+            'roles_changed' => 1,
+            'roles' => [$newRole->name],
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 0,
+            'direct_permissions' => ['forged.legacy.value'],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $fresh = $target->fresh();
+        $this->assertTrue($fresh->hasRole('Manager'));
+        expect($fresh->permissions()->pluck('key')->all())
+            ->toContain('products.view', 'legacy.direct.one', 'legacy.direct.two');
+    }
+
+    public function test_role_with_legacy_permission_can_be_assigned(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit', 'permissions.assign_roles']);
+        $target = User::factory()->create();
+        $role = Role::findOrCreate('LegacyPermissionRole', 'web');
+        DB::table('role_has_permissions')->insert(['role_id' => $role->id, 'permission_id' => $this->legacyPermissionId('legacy.inside.role')]);
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'roles_submitted' => 1,
+            'roles_changed' => 1,
+            'roles' => [$role->name],
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 0,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertTrue($target->fresh()->hasRole($role));
+    }
+
+    public function test_active_direct_update_preserves_roles_and_legacy_direct_permissions(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit']);
+        $target = User::factory()->create();
+        $role = Role::findOrCreate('Sales', 'web');
+        $target->assignRole($role);
+        $target->permissions()->attach($this->legacyPermissionId('legacy.keep.me'));
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'roles_changed' => 0,
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 1,
+            'direct_permissions' => ['customers.view'],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $fresh = $target->fresh();
+        $this->assertTrue($fresh->hasRole($role));
+        expect($fresh->permissions()->pluck('key')->all())->toContain('customers.view', 'legacy.keep.me');
+    }
+
+    public function test_unknown_direct_permission_is_ignored_when_unchanged_and_rejected_once_when_changed(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit', 'permissions.assign_roles']);
+        $target = User::factory()->create();
+        $role = Role::findOrCreate('Sales', 'web');
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'roles_submitted' => 1,
+            'roles_changed' => 1,
+            'roles' => [$role->name],
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 0,
+            'direct_permissions' => ['unknown.permission'],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->actingAs($actor)->from(route('admin.permissions.index', ['user_id' => $target->id]))
+            ->put(route('admin.permissions.update', $target), [
+                'user_id' => $target->id,
+                'roles_changed' => 0,
+                'direct_permissions_submitted' => 1,
+                'direct_permissions_changed' => 1,
+                'direct_permissions' => ['unknown.permission'],
+            ])->assertSessionHasErrors(['direct_permissions']);
     }
 
     private function actor(array $permissions): User
@@ -242,6 +346,18 @@ class UserPermissionManagementTest extends TestCase
         DB::table('role_has_permissions')->updateOrInsert([
             'role_id' => $role->id,
             'permission_id' => $this->permissionId($key),
+        ]);
+    }
+
+    private function legacyPermissionId(string $key): int
+    {
+        return (int) DB::table('permissions')->insertGetId([
+            'name' => $key,
+            'key' => $key,
+            'group' => 'legacy',
+            'guard_name' => PermissionCatalog::guardName(),
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

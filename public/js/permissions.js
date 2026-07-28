@@ -11,20 +11,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const search = document.getElementById('permissionSearch');
     const moduleButtons = [...document.querySelectorAll('.permission-module')];
     const permissionRows = [...document.querySelectorAll('.permission-row')];
+    const roleInputs = [...form.querySelectorAll('.role-check')];
+    const permissionInputs = [...form.querySelectorAll('.permission-check')];
+    const rolesChanged = document.getElementById('rolesChanged');
+    const directPermissionsChanged = document.getElementById('directPermissionsChanged');
     let submitting = false;
 
-    const serialize = () => {
-        const entries = [...new FormData(form).entries()]
-            .map(([key, value]) => `${key}=${String(value)}`)
-            .sort();
+    const serializeRoles = () => roleInputs.filter((input) => input.checked).map((input) => input.value).sort();
+    const serializeDirectPermissions = () => permissionInputs.filter((input) => input.checked).map((input) => input.value).sort();
+    const initialRoles = JSON.stringify(serializeRoles());
+    const initialDirectPermissions = JSON.stringify(serializeDirectPermissions());
 
-        return JSON.stringify(entries);
-    };
-
-    const initialState = serialize();
-
-    const updateDirtyState = () => {
-        const dirty = serialize() !== initialState;
+    const refreshChangedFlags = () => {
+        const rolesDirty = JSON.stringify(serializeRoles()) !== initialRoles;
+        const permissionsDirty = JSON.stringify(serializeDirectPermissions()) !== initialDirectPermissions;
+        if (rolesChanged) rolesChanged.value = rolesDirty ? '1' : '0';
+        if (directPermissionsChanged) directPermissionsChanged.value = permissionsDirty ? '1' : '0';
+        const dirty = rolesDirty || permissionsDirty;
 
         if (changeCount) {
             changeCount.textContent = dirty ? 'تغییر ذخیره نشده دارید' : 'بدون تغییر ذخیره نشده';
@@ -63,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return added;
     };
 
-    form.querySelectorAll('.change-input').forEach((input) => {
+    permissionInputs.forEach((input) => {
         input.addEventListener('change', () => {
             const added = normalizeDependencies(input);
             if (dependencyCount) {
@@ -71,9 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `${new Intl.NumberFormat('fa-IR').format(added)} وابستگی به صورت خودکار افزوده شد.`
                     : '';
             }
-            updateDirtyState();
+            refreshChangedFlags();
         });
     });
+
+    roleInputs.forEach((input) => input.addEventListener('change', refreshChangedFlags));
 
     const filterRows = () => {
         const activeModule = document.querySelector('.permission-module.btn-primary')?.dataset.module || 'all';
@@ -101,13 +106,17 @@ document.addEventListener('DOMContentLoaded', () => {
     search?.addEventListener('input', filterRows);
 
     window.addEventListener('beforeunload', (event) => {
-        if (!submitting && updateDirtyState()) {
+        if (!submitting && refreshChangedFlags()) {
             event.preventDefault();
             event.returnValue = '';
         }
     });
 
     form.addEventListener('submit', (event) => {
+        if (!refreshChangedFlags()) {
+            event.preventDefault();
+            return;
+        }
         if (submitting) {
             event.preventDefault();
             return;
@@ -120,5 +129,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    updateDirtyState();
+    refreshChangedFlags();
 });

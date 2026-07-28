@@ -427,6 +427,8 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     // Invoices
     Route::prefix('invoices')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('/data', [InvoiceController::class, 'data'])->middleware('permission:invoices.view')->name('invoices.data');
+        Route::get('/customers/search', [InvoiceController::class, 'customersSearch'])->middleware('permission:invoices.view')->name('invoices.customers.search');
         Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->middleware('permission:invoices.cancel')->name('invoices.cancelled');
         Route::get('/{uuid}/print', [InvoiceController::class, 'print'])->name('invoices.print');
         Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.edit');
@@ -536,4 +538,3 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
-

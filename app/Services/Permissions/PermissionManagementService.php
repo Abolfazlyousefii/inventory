@@ -101,19 +101,31 @@ class PermissionManagementService
             }
 
             if ($changePermissions) {
-                $permissionIds = DB::table('permissions')
+                $activeKeys = PermissionCatalog::activeKeys();
+                $activePermissionIds = DB::table('permissions')
                     ->where('guard_name', PermissionCatalog::guardName())
                     ->whereIn('key', $directKeys)
                     ->pluck('id')
                     ->all();
 
-                if (count($permissionIds) !== count($directKeys)) {
+                if (count($activePermissionIds) !== count($directKeys)) {
                     throw ValidationException::withMessages([
                         'direct_permissions' => 'یک یا چند دسترسی در پایگاه داده موجود نیست. ابتدا دستور همگام سازی دسترسی ها را اجرا کنید.',
                     ]);
                 }
 
-                $lockedTarget->permissions()->sync($permissionIds);
+                $legacyPermissionIds = $lockedTarget->permissions()
+                    ->where('guard_name', PermissionCatalog::guardName())
+                    ->where(function ($query) use ($activeKeys): void {
+                        $query->whereNull('key')->orWhereNotIn('key', $activeKeys);
+                    })
+                    ->pluck('permissions.id')
+                    ->all();
+
+                $lockedTarget->permissions()->sync(array_values(array_unique(array_merge(
+                    $activePermissionIds,
+                    $legacyPermissionIds
+                ))));
             }
 
             $lockedTarget->unsetRelation('roles');
@@ -161,7 +173,7 @@ class PermissionManagementService
             return $this->dependencies->normalize($directKeys);
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages([
-                'direct_permissions' => 'دسترسی ناشناخته یا قدیمی قابل انتساب نیست.',
+                'direct_permissions' => 'یک یا چند دسترسی ارسال‌شده در نسخه فعلی معتبر نیستند. صفحه را تازه‌سازی کنید و دوباره تلاش کنید.',
             ]);
         }
     }

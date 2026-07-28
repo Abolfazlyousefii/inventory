@@ -38,18 +38,29 @@ class UserPermissionController extends Controller
                 : null;
         }
 
-        $oldDirectPermissions = $request->old('direct_permissions_submitted')
-            ? array_values(array_filter((array) $request->old('direct_permissions', []), 'is_string'))
-            : null;
+        $oldDirectPermissions = null;
+        if ($request->old('direct_permissions_submitted') && $request->old('direct_permissions_changed') && $selectedUser) {
+            $submittedActive = array_values(array_filter((array) $request->old('direct_permissions', []), 'is_string'));
+            $existingLegacy = $selectedUser->permissions
+                ->where('guard_name', PermissionCatalog::guardName())
+                ->pluck('key')
+                ->filter(fn ($key): bool => is_string($key) && ! in_array($key, PermissionCatalog::activeKeys(), true))
+                ->all();
+            $oldDirectPermissions = array_values(array_unique(array_merge($submittedActive, $existingLegacy)));
+        }
         $effective = $selectedUser ? $this->service->effective($selectedUser, $oldDirectPermissions) : [];
         $effective = $this->normalizeEffectiveItems($effective);
         $modules = collect($effective)->reject('deprecated')->groupBy('module');
+        $legacyPermissions = collect($effective)
+            ->where('deprecated', true)
+            ->where('granted', true)
+            ->values();
 
         $selectedRoleNames = $selectedUser?->roles
             ->where('guard_name', PermissionCatalog::guardName())
             ->pluck('name')
             ->all() ?? [];
-        if ($request->old('roles_submitted')) {
+        if ($request->old('roles_submitted') && $request->old('roles_changed')) {
             $selectedRoleNames = array_values(array_filter((array) $request->old('roles', []), 'is_string'));
         }
 
@@ -82,6 +93,7 @@ class UserPermissionController extends Controller
             'directCount',
             'selectedRoleCount',
             'modules',
+            'legacyPermissions',
             'roles',
             'canEditPermissions',
             'canAssignRoles'
@@ -96,8 +108,9 @@ class UserPermissionController extends Controller
         $actor = $request->user();
         $canEditPermissions = PermissionCatalog::userHasPermission($actor, 'permissions.edit');
         $canAssignRoles = PermissionCatalog::userHasPermission($actor, 'permissions.assign_roles');
-        $rolesSubmitted = $request->boolean('roles_submitted');
-        $roles = $canAssignRoles && $rolesSubmitted
+        $changeRoles = $canAssignRoles && $request->boolean('roles_changed');
+        $changePermissions = $canEditPermissions && $request->boolean('direct_permissions_changed');
+        $roles = $changeRoles
             ? array_values($data['roles'] ?? [])
             : $user->roles()->where('guard_name', PermissionCatalog::guardName())->pluck('name')->all();
 
@@ -106,8 +119,8 @@ class UserPermissionController extends Controller
             array_values($data['direct_permissions'] ?? []),
             $roles,
             $actor,
-            $canEditPermissions,
-            $canAssignRoles && $rolesSubmitted,
+            $changePermissions,
+            $changeRoles,
             $request->ip(),
         );
 

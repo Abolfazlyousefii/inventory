@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\InvoiceLiveFilterRequest;
 use App\Models\Category;
+use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Support\PermissionCatalog;
+use App\Support\Currency;
 use App\Services\SalesHavalehStatusService;
 use App\Services\SalesHavalehService;
 use App\Services\SalesDocumentAccessService;
@@ -40,6 +43,23 @@ class InvoiceController extends Controller
 
     public function index(Request $request)
     {
+        $customer = Customer::query()
+            ->select(['id', 'crm_customer_id', 'first_name', 'last_name', 'mobile'])
+            ->find($request->integer('customer_id'));
+
+        return view('invoices.index', [
+            'initialCustomer' => $customer ? $this->customerSearchPayload($customer) : null,
+            'initialFilters' => [
+                'order_code' => InvoiceLiveFilterRequest::normalizeDigits(trim((string) $request->query('order_code', ''))),
+                'customer_id' => $customer?->id,
+                'date_from' => trim((string) $request->query('date_from', '')),
+                'date_to' => trim((string) $request->query('date_to', '')),
+                'quick_range' => trim((string) $request->query('quick_range', '')),
+            ],
+            'canViewCancelled' => PermissionCatalog::userHasPermission($request->user(), 'invoices.cancel'),
+        ]);
+
+        /* Legacy report implementation retained below temporarily for reference. */
         $allowedPaymentStatuses = ['paid', 'partial', 'unpaid', 'overpaid'];
         $newWorkflowStatuses = $this->invoiceNewWorkflowStatuses();
         $legacyStatuses = $this->invoiceLegacyStatuses();
@@ -134,6 +154,86 @@ class InvoiceController extends Controller
         $canCancelInvoices = $this->canCancelInvoices();
 
         return view('invoices.index', compact('invoices', 'q', 'statusLabels', 'dateInput', 'filters', 'reportDateInput', 'canRegisterPayments', 'canCancelInvoices', 'summary', 'pageTotals', 'filterErrors', 'allowedStatuses', 'newWorkflowStatuses', 'legacyStatuses'));
+    }
+
+    public function data(InvoiceLiveFilterRequest $request)
+    {
+        $filters = $request->validated();
+        [$dateFrom, $dateTo] = $this->liveInvoiceDateRange($request);
+        $query = $this->liveInvoiceQuery($filters, $dateFrom, $dateTo);
+        $summary = $request->boolean('include_summary') ? $this->liveInvoiceSummary(clone $query) : null;
+
+        $query->with([
+            'customer:id,crm_customer_id,first_name,last_name,mobile',
+            'preinvoiceOrder:id,uuid,created_by',
+            'preinvoiceOrder.creator:id,name',
+        ])->withSum('payments as paid_total', 'amount');
+
+        $orderCode = (string) ($filters['order_code'] ?? '');
+        if ($orderCode !== '') {
+            $query->select('invoices.*')->selectRaw(
+                'case when invoices.uuid = ? then 0 when exists (select 1 from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id and preinvoice_orders.uuid = ?) then 1 when invoices.uuid like ? then 2 when exists (select 1 from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id and preinvoice_orders.uuid like ?) then 3 else 4 end as code_match_priority',
+                [$orderCode, $orderCode, $orderCode.'%', $orderCode.'%']
+            )->orderBy('code_match_priority');
+        }
+
+        $paginator = $query->orderByDesc('invoices.created_at')->orderByDesc('invoices.id')
+            ->cursorPaginate((int) ($filters['limit'] ?? 40));
+        $permissions = $this->invoiceListPermissions($request);
+        foreach ($paginator->items() as $invoice) {
+            $invoice->setAttribute('live_meta', $this->invoiceLiveMeta($invoice, $permissions));
+        }
+        $viewData = ['invoices' => collect($paginator->items())];
+
+        $effectiveDateFrom = $dateFrom ? Jalalian::fromCarbon($dateFrom)->format('Y/m/d') : ($filters['date_from'] ?? null);
+        $effectiveDateTo = $dateTo ? Jalalian::fromCarbon($dateTo)->format('Y/m/d') : ($filters['date_to'] ?? null);
+
+        return response()->json([
+            'desktop_html' => view('invoices.partials.table-rows', $viewData)->render(),
+            'mobile_html' => view('invoices.partials.mobile-cards', $viewData)->render(),
+            'summary_html' => $summary === null ? null : view('invoices.partials.summary', compact('summary'))->render(),
+            'next_cursor' => $paginator->nextCursor()?->encode(),
+            'has_more' => $paginator->hasMorePages(),
+            'filters' => array_filter([
+                'order_code' => $orderCode,
+                'customer_id' => $filters['customer_id'] ?? null,
+                'date_from' => $effectiveDateFrom,
+                'date_to' => $effectiveDateTo,
+                'quick_range' => $filters['quick_range'] ?? null,
+            ], fn ($value) => $value !== null && $value !== ''),
+        ]);
+    }
+
+    public function customersSearch(Request $request)
+    {
+        $data = Validator::make(['q' => trim((string) $request->query('q', ''))], [
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+        ])->validate();
+        $term = $data['q'];
+        $digits = InvoiceLiveFilterRequest::normalizeDigits($term);
+        $nameParts = array_values(array_filter(preg_split('/\s+/u', $term) ?: []));
+        $customers = Customer::query()->select(['id', 'crm_customer_id', 'first_name', 'last_name', 'mobile'])
+            ->where(function ($query) use ($term, $digits, $nameParts) {
+                $query->where('first_name', 'like', "%{$term}%")
+                    ->orWhere('last_name', 'like', "%{$term}%")
+                    ->orWhere('crm_customer_id', 'like', "%{$digits}%")
+                    ->orWhere('mobile', 'like', "%{$digits}%");
+                if (count($nameParts) > 1) {
+                    $query->orWhere(function ($fullNameQuery) use ($nameParts) {
+                        foreach ($nameParts as $part) {
+                            $fullNameQuery->where(fn ($partQuery) => $partQuery
+                                ->where('first_name', 'like', "%{$part}%")
+                                ->orWhere('last_name', 'like', "%{$part}%"));
+                        }
+                    });
+                }
+                if (ctype_digit($digits)) {
+                    $query->orWhere('id', (int) $digits);
+                }
+            })->orderBy('last_name')->orderBy('first_name')->orderBy('id')->limit(20)->get()
+            ->map(fn (Customer $customer) => $this->customerSearchPayload($customer));
+
+        return response()->json(['items' => $customers]);
     }
 
     public function salesVouchers(Request $request)
@@ -776,6 +876,142 @@ class InvoiceController extends Controller
         $this->salesHavalehService->undoCancelAndReserve($invoice, $data['note'] ?? null, auth()->id());
 
         return back()->with('success', '✅ کنسلی فاکتور لغو شد و سند دوباره به صف تایید انبار برگشت.');
+    }
+
+    private function liveInvoiceQuery(array $filters, ?Carbon $dateFrom, ?Carbon $dateTo)
+    {
+        $query = Invoice::query()->active()
+            ->select('invoices.*')
+            ->selectSub('select count(*) from invoice_items where invoice_items.invoice_id = invoices.id and invoice_items.quantity > 0 and invoice_items.price <= 0', 'zero_price_items_count')
+            ->selectSub('select coalesce(sum(case when (quantity * price) - coalesce(line_discount_amount, 0) > 0 then (quantity * price) - coalesce(line_discount_amount, 0) else 0 end), 0) from invoice_items where invoice_items.invoice_id = invoices.id', 'snapshot_items_total')
+            ->selectSub("select count(*) from customer_ledgers where customer_ledgers.reference_type = 'App\\Models\\Invoice' and customer_ledgers.reference_id = invoices.id and customer_ledgers.type = 'debit'", 'ledger_debit_count');
+
+        if (($filters['customer_id'] ?? null) !== null) {
+            $query->where('invoices.customer_id', (int) $filters['customer_id']);
+        }
+        if ($dateFrom) {
+            $query->where('invoices.created_at', '>=', $dateFrom->copy()->startOfDay());
+        }
+        if ($dateTo) {
+            $query->where('invoices.created_at', '<=', $dateTo->copy()->endOfDay());
+        }
+
+        $orderCode = (string) ($filters['order_code'] ?? '');
+        if ($orderCode !== '') {
+            $query->where(function ($codeQuery) use ($orderCode) {
+                $codeQuery->where('invoices.uuid', 'like', "%{$orderCode}%")
+                    ->orWhereHas('preinvoiceOrder', fn ($preinvoiceQuery) => $preinvoiceQuery->where('uuid', 'like', "%{$orderCode}%"));
+            });
+        }
+
+        return $query;
+    }
+
+    private function liveInvoiceDateRange(InvoiceLiveFilterRequest $request): array
+    {
+        $quickRange = (string) $request->input('quick_range', '');
+        if ($quickRange === 'today') {
+            return [now()->startOfDay(), now()->endOfDay()];
+        }
+        if ($quickRange === 'week') {
+            return [now()->startOfWeek(Carbon::SATURDAY)->startOfDay(), now()->endOfDay()];
+        }
+        if ($quickRange === 'month') {
+            $today = Jalalian::now();
+            $start = new Jalalian($today->getYear(), $today->getMonth(), 1);
+            $nextYear = $today->getMonth() === 12 ? $today->getYear() + 1 : $today->getYear();
+            $nextMonth = $today->getMonth() === 12 ? 1 : $today->getMonth() + 1;
+
+            return [$start->toCarbon()->startOfDay(), (new Jalalian($nextYear, $nextMonth, 1))->toCarbon()->subSecond()];
+        }
+
+        return [$request->jalaliDate('date_from'), $request->jalaliDate('date_to')];
+    }
+
+    private function liveInvoiceSummary($query): array
+    {
+        $paidExpression = '(select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id)';
+        $summaryQuery = clone $query;
+        $summaryQuery->getQuery()->columns = null;
+        $row = $summaryQuery->reorder()->selectRaw("count(*) as invoice_count, coalesce(sum(invoices.total), 0) as total_sales, coalesce(sum({$paidExpression}), 0) as paid_amount, coalesce(sum(case when invoices.total - {$paidExpression} > 0 then invoices.total - {$paidExpression} else 0 end), 0) as remaining_amount")->first();
+
+        return [
+            'invoice_count' => (int) ($row->invoice_count ?? 0),
+            'total_sales' => (int) ($row->total_sales ?? 0),
+            'paid_amount' => (int) ($row->paid_amount ?? 0),
+            'remaining_amount' => (int) ($row->remaining_amount ?? 0),
+        ];
+    }
+
+    private function invoiceListPermissions(Request $request): array
+    {
+        $user = $request->user();
+
+        return [
+            'show' => PermissionCatalog::userHasPermission($user, 'invoices.show'),
+            'print' => PermissionCatalog::userHasPermission($user, 'invoices.print'),
+            'edit' => PermissionCatalog::userHasPermission($user, 'invoices.edit'),
+            'cancel' => PermissionCatalog::userHasPermission($user, 'invoices.cancel'),
+        ];
+    }
+
+    private function invoiceLiveMeta(Invoice $invoice, array $permissions): array
+    {
+        $paid = (int) ($invoice->paid_total ?? 0);
+        $total = (int) $invoice->total;
+        $remaining = max($total - $paid, 0);
+        $customerName = $invoice->customer_name ?: $invoice->customer?->display_name ?: '—';
+        $payment = $paid <= 0
+            ? ['پرداخت‌نشده', 'danger']
+            : ($paid < $total ? ['پرداخت ناقص', 'warning'] : ($paid > $total ? ['پرداخت اضافه', 'danger'] : ['تسویه‌شده', 'success']));
+        $status = (string) $invoice->status;
+        $statusTone = match ($status) {
+            Invoice::STATUS_SHIPPED => 'success',
+            Invoice::STATUS_READY_TO_SHIP => 'info',
+            Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION => 'warning',
+            default => 'secondary',
+        };
+        $warnings = collect($this->invoiceWarningLabels($invoice))->map(fn ($label) => [
+            'label' => $label,
+            'tone' => str_contains($label, 'اضافه') || str_contains($label, 'صفر') || str_contains($label, 'نامعتبر') ? 'danger' : 'warning',
+        ])->all();
+
+        return [
+            'number' => $invoice->uuid ?: '—',
+            'date' => $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '—',
+            'preinvoice' => $invoice->preinvoiceOrder?->uuid,
+            'customer_name' => $customerName,
+            'customer_mobile' => $invoice->customer_mobile ?: $invoice->customer?->mobile ?: '—',
+            'customer_code' => $invoice->customer?->crm_customer_id ?: $invoice->customer_id ?: '—',
+            'seller' => $invoice->preinvoiceOrder?->creator?->name ?? '—',
+            'status_label' => $this->statusService->labels()[$status] ?? ($status ?: '—'),
+            'status_tone' => $statusTone,
+            'legacy' => in_array($status, $this->invoiceLegacyStatuses(), true),
+            'payment_label' => $payment[0],
+            'payment_tone' => $payment[1],
+            'total' => Currency::formatRial($total),
+            'paid' => Currency::formatRial($paid),
+            'remaining' => Currency::formatRial($remaining),
+            'remaining_value' => $remaining,
+            'warnings' => $warnings,
+            'actions' => [
+                'show' => $permissions['show'] ? route('invoices.show', $invoice->uuid) : null,
+                'print' => $permissions['print'] ? route('invoices.print', $invoice->uuid) : null,
+                'edit' => $permissions['edit'] ? route('invoices.edit', $invoice->uuid) : null,
+                'cancel' => $permissions['cancel'] && ! $invoice->isCancelled() ? route('invoices.cancel', $invoice->uuid) : null,
+            ],
+            'is_shipped' => $status === Invoice::STATUS_SHIPPED,
+        ];
+    }
+
+    private function customerSearchPayload(Customer $customer): array
+    {
+        return [
+            'id' => $customer->id,
+            'name' => $customer->display_name ?: 'بدون نام',
+            'mobile' => $customer->mobile,
+            'code' => $customer->crm_customer_id,
+        ];
     }
 
     private function invoiceReportQuery(array $filters, ?Carbon $dateFrom, ?Carbon $dateTo)
