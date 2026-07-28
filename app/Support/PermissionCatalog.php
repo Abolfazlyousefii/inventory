@@ -441,9 +441,19 @@ class PermissionCatalog
     public static function activeKeys(): array
     {
         return collect(self::registry())
-            ->reject(fn (array $permission): bool => (bool) ($permission['deprecated'] ?? false))
+            ->filter(fn (array $permission): bool => ($permission['active'] ?? false) === true
+                && ($permission['deprecated'] ?? false) === false)
             ->pluck('key')
+            ->values()
             ->all();
+    }
+
+    public static function versionHash(): string
+    {
+        $keys = self::activeKeys();
+        sort($keys, SORT_STRING);
+
+        return hash('sha256', implode("\n", $keys));
     }
 
     public static function roleAliases(): array
@@ -684,7 +694,7 @@ class PermissionCatalog
             'payments.view' => 'payments.view', 'account-statements.index' => 'account_statements.view', 'account-statements.payments.store' => 'account_statements.payments.create', 'account-statements.documents.invoices.show' => 'account_statements.view', 'account-statements.documents.returns.show' => 'account_statements.view', 'account-statements.documents.payments.show' => 'account_statements.view', 'account-statements.show' => 'account_statements.view',
             'activity-logs.index' => 'logs.view',
             'users.index' => 'users.view', 'users.sync' => 'users.sync',
-            'admin.permissions.index' => 'permissions.view', 'admin.permissions.update' => 'permissions.sync',
+            'admin.permissions.index' => 'permissions.view', 'admin.permissions.update' => 'permissions.edit',
             'admin.roles.index' => 'roles.view', 'admin.roles.create' => 'roles.create', 'admin.roles.store' => 'roles.create', 'admin.roles.edit' => 'roles.edit', 'admin.roles.update' => 'roles.edit', 'admin.roles.destroy' => 'roles.delete',
         ];
     }

@@ -294,15 +294,18 @@ class UserPermissionManagementTest extends TestCase
             'roles_changed' => 0,
             'direct_permissions_submitted' => 1,
             'direct_permissions_changed' => 1,
-            'direct_permissions' => ['customers.view'],
-        ])->assertRedirect()->assertSessionHasNoErrors();
+            'direct_permissions' => ['customers.view', 'legacy.new.cannot'],
+        ])->assertRedirect()->assertSessionHasNoErrors()
+            ->assertSessionHas('warning');
 
         $fresh = $target->fresh();
         $this->assertTrue($fresh->hasRole($role));
-        expect($fresh->permissions()->pluck('key')->all())->toContain('customers.view', 'legacy.keep.me');
+        expect($fresh->permissions()->pluck('key')->all())
+            ->toContain('customers.view', 'legacy.keep.me')
+            ->not->toContain('legacy.new.cannot');
     }
 
-    public function test_unknown_direct_permission_is_ignored_when_unchanged_and_rejected_once_when_changed(): void
+    public function test_unknown_direct_permission_is_ignored_without_blocking_safe_changes(): void
     {
         $actor = $this->actor(['permissions.view', 'permissions.edit', 'permissions.assign_roles']);
         $target = User::factory()->create();
@@ -321,11 +324,34 @@ class UserPermissionManagementTest extends TestCase
         $this->actingAs($actor)->from(route('admin.permissions.index', ['user_id' => $target->id]))
             ->put(route('admin.permissions.update', $target), [
                 'user_id' => $target->id,
+                'permission_catalog_version' => PermissionCatalog::versionHash(),
                 'roles_changed' => 0,
                 'direct_permissions_submitted' => 1,
                 'direct_permissions_changed' => 1,
                 'direct_permissions' => ['unknown.permission'],
-            ])->assertSessionHasErrors(['direct_permissions']);
+            ])->assertRedirect()->assertSessionHasNoErrors()
+            ->assertSessionHas('warning', 'تعدادی دسترسی قدیمی از فرم کنار گذاشته شد و سایر تغییرات ذخیره شدند.');
+
+        $this->assertFalse($target->fresh()->permissions()->where('key', 'unknown.permission')->exists());
+    }
+
+    public function test_stale_catalog_version_keeps_safe_permissions_and_returns_warning(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit']);
+        $target = User::factory()->create();
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'permission_catalog_version' => str_repeat('0', 64),
+            'roles_changed' => 0,
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 1,
+            'direct_permissions' => ['customers.view', 'stale.cached.permission'],
+        ])->assertRedirect()->assertSessionHasNoErrors()
+            ->assertSessionHas('warning', 'فهرست دسترسی‌ها پس از بازشدن صفحه به‌روزرسانی شده بود؛ موارد قدیمی کنار گذاشته شدند.');
+
+        expect($target->fresh()->permissions()->pluck('key')->all())->toContain('customers.view')
+            ->not->toContain('stale.cached.permission');
     }
 
     private function actor(array $permissions): User

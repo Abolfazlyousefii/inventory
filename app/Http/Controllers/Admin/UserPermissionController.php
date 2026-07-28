@@ -50,9 +50,13 @@ class UserPermissionController extends Controller
         }
         $effective = $selectedUser ? $this->service->effective($selectedUser, $oldDirectPermissions) : [];
         $effective = $this->normalizeEffectiveItems($effective);
-        $modules = collect($effective)->reject('deprecated')->groupBy('module');
+        $modules = collect($effective)
+            ->where('active', true)
+            ->where('deprecated', false)
+            ->groupBy('module');
         $legacyPermissions = collect($effective)
-            ->where('deprecated', true)
+            ->reject(fn (array $permission): bool => ($permission['active'] ?? false) === true
+                && ($permission['deprecated'] ?? false) === false)
             ->where('granted', true)
             ->values();
 
@@ -128,7 +132,14 @@ class UserPermissionController extends Controller
             ? 'نقش ها و دسترسی ها با موفقیت ذخیره شد.'
             : 'تغییری برای ذخیره وجود نداشت.';
 
-        return to_route('admin.permissions.index', ['user_id' => $user->id])->with('success', $message);
+        $redirect = to_route('admin.permissions.index', ['user_id' => $user->id])->with('success', $message);
+        if ($request->catalogVersionChanged()) {
+            $redirect->with('warning', 'فهرست دسترسی‌ها پس از بازشدن صفحه به‌روزرسانی شده بود؛ موارد قدیمی کنار گذاشته شدند.');
+        } elseif ($request->ignoredDirectPermissions() !== []) {
+            $redirect->with('warning', 'تعدادی دسترسی قدیمی از فرم کنار گذاشته شد و سایر تغییرات ذخیره شدند.');
+        }
+
+        return $redirect;
     }
 
     private function normalizeEffectiveItems(array $effective): array

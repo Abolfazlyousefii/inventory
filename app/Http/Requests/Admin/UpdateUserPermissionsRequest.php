@@ -9,6 +9,11 @@ use Illuminate\Validation\Rule;
 
 class UpdateUserPermissionsRequest extends FormRequest
 {
+    /** @var array<int, string> */
+    private array $ignoredDirectPermissions = [];
+
+    private bool $catalogVersionChanged = false;
+
     public function authorize(): bool
     {
         return PermissionCatalog::userHasPermission($this->user(), 'permissions.edit')
@@ -24,12 +29,31 @@ class UpdateUserPermissionsRequest extends FormRequest
         $changePermissions = PermissionCatalog::userHasPermission($this->user(), 'permissions.edit')
             && $this->boolean('direct_permissions_changed');
 
+        $this->catalogVersionChanged = ! hash_equals(
+            PermissionCatalog::versionHash(),
+            (string) $this->input('permission_catalog_version', '')
+        );
+
         if ($changeRoles && $this->boolean('roles_submitted') && ! $this->has('roles')) {
             $prepared['roles'] = [];
         }
 
-        if ($changePermissions && $this->boolean('direct_permissions_submitted') && ! $this->has('direct_permissions')) {
-            $prepared['direct_permissions'] = [];
+        if ($changePermissions) {
+            $submitted = array_values(array_unique(array_filter(
+                (array) $this->input('direct_permissions', []),
+                'is_string'
+            )));
+            $activeKeys = PermissionCatalog::activeKeys();
+            $prepared['direct_permissions'] = array_values(array_intersect($submitted, $activeKeys));
+            $this->ignoredDirectPermissions = array_values(array_diff($submitted, $activeKeys));
+
+            if ($this->ignoredDirectPermissions !== []) {
+                Log::warning('Stale or invalid direct permissions ignored', [
+                    'actor_id' => $this->user()?->id,
+                    'target_user_id' => $this->integer('user_id'),
+                    'invalid_keys' => $this->ignoredDirectPermissions,
+                ]);
+            }
         }
 
         if ($prepared !== []) {
@@ -46,6 +70,7 @@ class UpdateUserPermissionsRequest extends FormRequest
 
         return [
             'user_id' => ['required', 'integer', 'exists:users,id'],
+            'permission_catalog_version' => ['nullable', 'string', 'max:128'],
             'roles_submitted' => ['sometimes', 'accepted'],
             'roles_changed' => ['required', 'boolean'],
             'roles' => [Rule::excludeIf(! $changeRoles), 'present', 'array'],
@@ -63,31 +88,15 @@ class UpdateUserPermissionsRequest extends FormRequest
         ];
     }
 
-    public function after(): array
+    /** @return array<int, string> */
+    public function ignoredDirectPermissions(): array
     {
-        return [function ($validator): void {
-            $changePermissions = PermissionCatalog::userHasPermission($this->user(), 'permissions.edit')
-                && $this->boolean('direct_permissions_changed');
-            if (! $changePermissions || ! is_array($this->input('direct_permissions'))) {
-                return;
-            }
+        return $this->ignoredDirectPermissions;
+    }
 
-            $submitted = array_values(array_filter($this->input('direct_permissions', []), 'is_string'));
-            $invalid = array_values(array_diff(array_unique($submitted), PermissionCatalog::activeKeys()));
-            if ($invalid === []) {
-                return;
-            }
-
-            Log::warning('Invalid direct permissions submitted', [
-                'actor_id' => $this->user()?->id,
-                'target_user_id' => $this->integer('user_id'),
-                'invalid_keys' => $invalid,
-            ]);
-            $validator->errors()->add(
-                'direct_permissions',
-                'یک یا چند دسترسی ارسال‌شده در نسخه فعلی معتبر نیستند. صفحه را تازه‌سازی کنید و دوباره تلاش کنید.'
-            );
-        }];
+    public function catalogVersionChanged(): bool
+    {
+        return $this->catalogVersionChanged;
     }
 
     public function messages(): array

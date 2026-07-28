@@ -37,4 +37,15 @@ class PermissionIndependentChangeTrackingTest extends TestCase
         $this->assertStringContainsString('$legacyPermissionIds', $service);
         $this->assertStringContainsString('array_merge(', $service);
     }
+
+    public function test_permission_assets_are_cache_busted_and_catalog_version_is_submitted(): void
+    {
+        $view = file_get_contents(__DIR__.'/../../../resources/views/admin/permissions/index.blade.php');
+
+        $this->assertStringContainsString('filemtime(', $view);
+        $this->assertStringContainsString('permissions.css', $view);
+        $this->assertStringContainsString('permissions.js', $view);
+        $this->assertStringContainsString('permission_catalog_version', $view);
+        $this->assertStringContainsString('PermissionCatalog::versionHash()', $view);
+    }
 }

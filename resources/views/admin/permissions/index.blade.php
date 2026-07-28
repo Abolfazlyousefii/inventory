@@ -2,12 +2,19 @@
 
 @section('title', 'مدیریت نقش ها و دسترسی ها')
 
+@php
+    $permissionsCssPath = public_path('css/permissions.css');
+    $permissionsJsPath = public_path('js/permissions.js');
+    $permissionsCssVersion = is_file($permissionsCssPath) ? filemtime($permissionsCssPath) : '1';
+    $permissionsJsVersion = is_file($permissionsJsPath) ? filemtime($permissionsJsPath) : '1';
+@endphp
+
 @push('styles')
-    <link rel="stylesheet" href="{{ asset('css/permissions.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/permissions.css') }}?v={{ $permissionsCssVersion }}">
 @endpush
 
 @push('scripts')
-    <script src="{{ asset('js/permissions.js') }}" defer></script>
+    <script src="{{ asset('js/permissions.js') }}?v={{ $permissionsJsVersion }}" defer></script>
 @endpush
 
 @section('content')
@@ -22,6 +29,10 @@
 
     @if(session('success'))
         <div class="alert alert-success" role="status">{{ session('success') }}</div>
+    @endif
+
+    @if(session('warning'))
+        <div class="alert alert-warning" role="status">{{ session('warning') }}</div>
     @endif
 
     @if($requestedUserMissing)
@@ -86,6 +97,7 @@
             @csrf
             @method('PUT')
             <input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
+            <input type="hidden" name="permission_catalog_version" value="{{ \App\Support\PermissionCatalog::versionHash() }}">
             <input type="hidden" name="direct_permissions_submitted" value="1">
             <input type="hidden" id="directPermissionsChanged" name="direct_permissions_changed" value="0">
             <input type="hidden" id="rolesChanged" name="roles_changed" value="0">

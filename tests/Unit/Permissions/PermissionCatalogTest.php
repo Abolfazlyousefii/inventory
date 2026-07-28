@@ -19,6 +19,20 @@ it('keeps legacy permissions out of assignable keys', function () {
         ->and(PermissionCatalog::registry()['preinvoices.warehouse.view']['deprecated'])->toBeTrue();
 });
 
+it('only exposes explicitly active non deprecated keys and has a stable version', function () {
+    $activeKeys = PermissionCatalog::activeKeys();
+
+    expect($activeKeys)->not->toBeEmpty()
+        ->and(collect($activeKeys)->every(function (string $key): bool {
+            $permission = PermissionCatalog::registry()[$key];
+
+            return ($permission['active'] ?? false) === true
+                && ($permission['deprecated'] ?? false) === false;
+        }))->toBeTrue()
+        ->and(PermissionCatalog::versionHash())->toHaveLength(64)
+        ->and(PermissionCatalog::versionHash())->toBe(PermissionCatalog::versionHash());
+});
+
 it('keeps collection and shipping permissions independent', function () {
     expect(PermissionCatalog::registry())->toHaveKeys([
         'warehouse.collection.queue.view',
