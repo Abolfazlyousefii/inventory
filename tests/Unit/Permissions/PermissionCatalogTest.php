@@ -33,6 +33,13 @@ it('only exposes explicitly active non deprecated keys and has a stable version'
         ->and(PermissionCatalog::versionHash())->toBe(PermissionCatalog::versionHash());
 });
 
+it('declares typed catalog synchronization inspection methods', function () {
+    $reflection = new ReflectionClass(PermissionCatalog::class);
+
+    expect($reflection->getMethod('missingActiveKeys')->getReturnType()?->getName())->toBe('array')
+        ->and($reflection->getMethod('activePermissionsAreSynced')->getReturnType()?->getName())->toBe('bool');
+});
+
 it('keeps collection and shipping permissions independent', function () {
     expect(PermissionCatalog::registry())->toHaveKeys([
         'warehouse.collection.queue.view',

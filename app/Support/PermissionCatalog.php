@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\PermissionRegistrar;
 
 class PermissionCatalog
@@ -454,6 +455,37 @@ class PermissionCatalog
         sort($keys, SORT_STRING);
 
         return hash('sha256', implode("\n", $keys));
+    }
+
+    /** @return array<int, string> */
+    public static function missingActiveKeys(): array
+    {
+        $activeKeys = self::activeKeys();
+        if ($activeKeys === []) {
+            return [];
+        }
+
+        if (! Schema::hasTable('permissions')
+            || ! Schema::hasColumn('permissions', 'key')
+            || ! Schema::hasColumn('permissions', 'guard_name')) {
+            return $activeKeys;
+        }
+
+        $existingKeys = DB::table('permissions')
+            ->where('guard_name', self::guardName())
+            ->whereNotNull('key')
+            ->whereIn('key', $activeKeys)
+            ->pluck('key')
+            ->filter(fn ($key): bool => is_string($key) && $key !== '')
+            ->unique()
+            ->all();
+
+        return array_values(array_diff($activeKeys, $existingKeys));
+    }
+
+    public static function activePermissionsAreSynced(): bool
+    {
+        return self::missingActiveKeys() === [];
     }
 
     public static function roleAliases(): array

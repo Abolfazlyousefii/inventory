@@ -39,6 +39,15 @@
         <div class="alert alert-warning" role="alert">کاربر درخواستی پیدا نشد. یک کاربر معتبر را از فهرست انتخاب کنید.</div>
     @endif
 
+    @if($missingActivePermissionKeys !== [])
+        <div class="alert alert-warning" role="alert">
+            <strong>فهرست دسترسی‌های پایگاه داده با نسخه نرم‌افزار هماهنگ نیست.</strong>
+            @if($canSyncPermissions)
+                <div class="mt-1">دستور لازم: <code dir="ltr">php artisan permissions:sync</code></div>
+            @endif
+        </div>
+    @endif
+
     @if($errors->any())
         <div class="alert alert-danger" role="alert">
             <ul class="mb-0">

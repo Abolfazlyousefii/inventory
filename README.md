@@ -7,6 +7,23 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Deployment
+
+بعد از دریافت نسخه جدید، فهرست دسترسی‌های کد را پیش از ساخت Cache نهایی با دیتابیس هماهنگ کنید:
+
+```bash
+git pull github main
+composer install --no-dev --optimize-autoloader
+php artisan optimize:clear
+php artisan migrate --force
+php artisan permissions:sync
+php artisan permission:cache-reset
+php artisan config:cache
+php artisan view:cache
+```
+
+دستور `permissions:sync` فقط Catalog را ایجاد یا به‌روزرسانی می‌کند و Roleها، انتساب مستقیم کاربران و Permissionهای قدیمی را حذف نمی‌کند.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

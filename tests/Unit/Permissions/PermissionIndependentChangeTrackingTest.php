@@ -48,4 +48,15 @@ class PermissionIndependentChangeTrackingTest extends TestCase
         $this->assertStringContainsString('permission_catalog_version', $view);
         $this->assertStringContainsString('PermissionCatalog::versionHash()', $view);
     }
+
+    public function test_self_healing_is_guarded_by_direct_permission_change_and_logs_failure(): void
+    {
+        $service = file_get_contents(__DIR__.'/../../../app/Services/Permissions/PermissionManagementService.php');
+
+        $this->assertStringContainsString('if ($changePermissions)', $service);
+        $this->assertStringContainsString('ensurePermissionCatalogIsSynced', $service);
+        $this->assertStringContainsString('PermissionCatalog::syncToDatabase()', $service);
+        $this->assertStringContainsString('Permission catalog synchronization failed', $service);
+        $this->assertStringContainsString("'missing_keys'", $service);
+    }
 }

@@ -9,7 +9,7 @@ class SyncPermissionsCommand extends Command
 {
     protected $signature = 'permissions:sync';
 
-    protected $description = 'همگام سازی فهرست دسترسی ها بدون تغییر نقش یا دسترسی کاربران';
+    protected $description = 'همگام‌سازی فهرست دسترسی‌های نرم‌افزار با پایگاه داده';
 
     public function handle(): int
     {

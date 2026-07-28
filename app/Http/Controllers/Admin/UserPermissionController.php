@@ -84,6 +84,8 @@ class UserPermissionController extends Controller
 
         $canEditPermissions = PermissionCatalog::userHasPermission($request->user(), 'permissions.edit');
         $canAssignRoles = PermissionCatalog::userHasPermission($request->user(), 'permissions.assign_roles');
+        $canSyncPermissions = PermissionCatalog::userHasPermission($request->user(), 'permissions.sync');
+        $missingActivePermissionKeys = PermissionCatalog::missingActiveKeys();
         $effectiveCount = collect($effective)->where('granted', true)->count();
         $directCount = collect($effective)->whereIn('source', ['direct', 'both'])->count();
         $selectedRoleCount = count($selectedRoleNames);
@@ -100,7 +102,9 @@ class UserPermissionController extends Controller
             'legacyPermissions',
             'roles',
             'canEditPermissions',
-            'canAssignRoles'
+            'canAssignRoles',
+            'canSyncPermissions',
+            'missingActivePermissionKeys'
         ));
     }
 

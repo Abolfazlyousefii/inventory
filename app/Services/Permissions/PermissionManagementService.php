@@ -6,9 +6,11 @@ use App\Models\ActivityLog;
 use App\Models\User;
 use App\Support\PermissionCatalog;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Spatie\Permission\PermissionRegistrar;
+use Throwable;
 
 class PermissionManagementService
 {
@@ -82,6 +84,10 @@ class PermissionManagementService
     ): bool {
         $directKeys = $changePermissions ? $this->normalizeDirectPermissions($directKeys) : [];
         $roles = $changeRoles ? $this->validateRoles($roles) : [];
+
+        if ($changePermissions) {
+            $this->ensurePermissionCatalogIsSynced($target, $actor);
+        }
 
         $changed = DB::transaction(function () use (
             $target,
@@ -174,6 +180,40 @@ class PermissionManagementService
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages([
                 'direct_permissions' => 'یک یا چند دسترسی ارسال‌شده در نسخه فعلی معتبر نیستند. صفحه را تازه‌سازی کنید و دوباره تلاش کنید.',
+            ]);
+        }
+    }
+
+    private function ensurePermissionCatalogIsSynced(User $target, User $actor): void
+    {
+        $missingKeys = PermissionCatalog::missingActiveKeys();
+        if ($missingKeys === []) {
+            return;
+        }
+
+        try {
+            PermissionCatalog::syncToDatabase();
+            $missingKeys = PermissionCatalog::missingActiveKeys();
+        } catch (Throwable $exception) {
+            Log::error('Permission catalog synchronization failed', [
+                'actor_id' => $actor->id,
+                'target_user_id' => $target->id,
+                'missing_keys' => $missingKeys,
+                'exception' => $exception->getMessage(),
+            ]);
+            throw ValidationException::withMessages([
+                'direct_permissions' => 'همگام‌سازی دسترسی‌های نرم‌افزار کامل نشد. لطفاً گزارش خطا را به مدیر سیستم ارسال کنید.',
+            ]);
+        }
+
+        if ($missingKeys !== []) {
+            Log::error('Permission catalog synchronization failed', [
+                'actor_id' => $actor->id,
+                'target_user_id' => $target->id,
+                'missing_keys' => $missingKeys,
+            ]);
+            throw ValidationException::withMessages([
+                'direct_permissions' => 'همگام‌سازی دسترسی‌های نرم‌افزار کامل نشد. لطفاً گزارش خطا را به مدیر سیستم ارسال کنید.',
             ]);
         }
     }

@@ -354,6 +354,81 @@ class UserPermissionManagementTest extends TestCase
             ->not->toContain('stale.cached.permission');
     }
 
+    public function test_missing_active_permission_is_self_healed_before_direct_assignment(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit']);
+        $target = User::factory()->create();
+        DB::table('permissions')->where('key', 'products.edit')->delete();
+        $this->assertContains('products.edit', PermissionCatalog::missingActiveKeys());
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'permission_catalog_version' => PermissionCatalog::versionHash(),
+            'roles_changed' => 0,
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 1,
+            'direct_permissions' => ['products.edit'],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame([], PermissionCatalog::missingActiveKeys());
+        expect($target->fresh()->permissions()->pluck('key')->all())
+            ->toContain('products.edit', 'products.show', 'products.view');
+    }
+
+    public function test_role_only_update_does_not_self_heal_missing_direct_permission(): void
+    {
+        $actor = $this->actor(['permissions.view', 'permissions.edit', 'permissions.assign_roles']);
+        $target = User::factory()->create();
+        $role = Role::findOrCreate('Sales', 'web');
+        DB::table('permissions')->where('key', 'products.export')->delete();
+
+        $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
+            'user_id' => $target->id,
+            'permission_catalog_version' => PermissionCatalog::versionHash(),
+            'roles_submitted' => 1,
+            'roles_changed' => 1,
+            'roles' => [$role->name],
+            'direct_permissions_submitted' => 1,
+            'direct_permissions_changed' => 0,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertTrue($target->fresh()->hasRole($role));
+        $this->assertContains('products.export', PermissionCatalog::missingActiveKeys());
+    }
+
+    public function test_get_page_reports_missing_permissions_without_writing(): void
+    {
+        $actor = $this->actor(['permissions.view']);
+        DB::table('permissions')->where('key', 'products.export')->delete();
+        $writes = [];
+        DB::listen(function ($query) use (&$writes): void {
+            if (preg_match('/^(insert|update|delete)/i', ltrim($query->sql))) {
+                $writes[] = $query->sql;
+            }
+        });
+
+        $this->actingAs($actor)->get(route('admin.permissions.index'))
+            ->assertOk()->assertSee('فهرست دسترسی‌های پایگاه داده با نسخه نرم‌افزار هماهنگ نیست.');
+
+        $this->assertSame([], $writes);
+        $this->assertContains('products.export', PermissionCatalog::missingActiveKeys());
+    }
+
+    public function test_catalog_sync_is_idempotent_and_repairs_the_real_guard(): void
+    {
+        DB::table('permissions')->where('key', 'products.export')->update(['guard_name' => 'stale-guard']);
+        $this->assertContains('products.export', PermissionCatalog::missingActiveKeys());
+
+        $first = PermissionCatalog::syncToDatabase();
+        $second = PermissionCatalog::syncToDatabase();
+
+        $this->assertSame([], PermissionCatalog::missingActiveKeys());
+        $this->assertSame('web', DB::table('permissions')->where('key', 'products.export')->value('guard_name'));
+        $this->assertGreaterThanOrEqual(1, $first['updated']);
+        $this->assertSame(0, $second['created']);
+        $this->assertSame(1, DB::table('permissions')->where('key', 'products.export')->count());
+    }
+
     private function actor(array $permissions): User
     {
         $user = User::factory()->create();
