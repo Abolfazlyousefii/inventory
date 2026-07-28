@@ -106,6 +106,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/print', [ProductExportController::class, 'print'])->name('print');
         Route::get('/download', [ProductExportController::class, 'download'])->name('download');
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
+        Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->middleware('permission:products.export')->name('products.search');
         Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
     });
@@ -170,20 +171,20 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
 
 Route::get('/vouchers/sales', [InvoiceController::class, 'salesVouchers'])->name('vouchers.sales.index');
-Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue');
-Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.data');
-Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.shipped');
-Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('warehouse.shipping.index');
-Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('warehouse.shipping.ship');
-Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.receive');
-Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.start-collection');
-Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.complete-collection');
-Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'updateSalesQueueItems'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.queue.items');
-Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.products.categories');
-Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.products.by-category');
-Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.products.variants');
-Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.collection.edit');
-Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.collection.update');
+Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->middleware('permission:warehouse.collection.queue.view')->name('vouchers.sales.queue');
+Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->middleware('permission:warehouse.collection.queue.view')->name('vouchers.sales.queue.data');
+Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->middleware('permission:warehouse.shipping.queue.view')->name('vouchers.sales.shipped');
+Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->middleware('permission:warehouse.shipping.queue.view')->name('warehouse.shipping.index');
+Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->middleware('permission:warehouse.shipping.ship')->name('warehouse.shipping.ship');
+Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->middleware('permission:warehouse.collection.receive')->name('vouchers.sales.queue.receive');
+Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->middleware('permission:warehouse.collection.start')->name('vouchers.sales.queue.start-collection');
+Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->middleware('permission:warehouse.collection.submit_reapproval')->name('vouchers.sales.queue.complete-collection');
+Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'updateSalesQueueItems'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.queue.items');
+Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.products.categories');
+Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.products.by-category');
+Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.products.variants');
+Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.collection.edit');
+Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.collection.update');
 Route::get('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherEdit'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.edit');
 Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVoucherShow'])->name('vouchers.sales.show');
 Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
@@ -426,13 +427,14 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     // Invoices
     Route::prefix('invoices')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->middleware('permission:invoices.cancel')->name('invoices.cancelled');
         Route::get('/{uuid}/print', [InvoiceController::class, 'print'])->name('invoices.print');
         Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.edit');
         Route::put('/{uuid}', [InvoiceController::class, 'update'])->name('invoices.update');
         Route::get('/{uuid}/history', [InvoiceController::class, 'history'])->name('invoices.history');
         Route::get('/{uuid}', [InvoiceController::class, 'show'])->name('invoices.show');
         Route::post('/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.status');
-        Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
+        Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->middleware('permission:invoices.cancel')->name('invoices.cancel');
         Route::post('/{uuid}/cancel/undo', [InvoiceController::class, 'undoCancel'])->name('invoices.cancel.undo');
         Route::post('/{uuid}/payments', [InvoicePaymentController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager')->name('invoices.payments.store');
         Route::post('/{uuid}/notes', [InvoiceNoteController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.notes.store');
@@ -462,8 +464,8 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/{bugCase}', [BugInvestigatorController::class, 'show'])->name('show');
     });
 
-    Route::get('/admin/permissions', [UserPermissionController::class, 'index'])->name('admin.permissions.index');
-    Route::put('/admin/permissions/{user}', [UserPermissionController::class, 'update'])->name('admin.permissions.update');
+    Route::get('/admin/permissions', [UserPermissionController::class, 'index'])->middleware('permission:permissions.view')->name('admin.permissions.index');
+    Route::put('/admin/permissions/{user}', [UserPermissionController::class, 'update'])->middleware('permission:permissions.edit')->name('admin.permissions.update');
     Route::resource('/admin/roles', RoleController::class)->except(['show'])->names('admin.roles');
 });
 Route::post('model-lists/import-phone-catalog', [ModelListController::class, 'importPhoneCatalog'])
@@ -535,7 +537,3 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
 
-
-Route::get('/test', function () {
-   return app(\App\Services\InventorySyncService::class)->syncAll();
-});

@@ -12,12 +12,14 @@ use Illuminate\Support\Facades\Log;
 
 class InventorySyncService {
     public function __construct() {
-        $this->apiUrl   = Config::get('services.sales_server.api_url');
+        $this->apiUrl = Config::get('services.sales_server.api_url');
         $this->apiToken = Config::get('services.sales_server.api_token');
+        $this->syncEnabled = (bool) Config::get('services.sales_server.sync_enabled', false);
     }
 
-    protected string $apiUrl;
-    protected string $apiToken;
+    protected ?string $apiUrl;
+    protected ?string $apiToken;
+    protected bool $syncEnabled;
     protected int    $batchSize          = 25;
     protected int    $maxRetries         = 2;
     protected int    $initialRetryDelay  = 1;
@@ -27,6 +29,13 @@ class InventorySyncService {
     protected string $timeout            = '7';
 
     public function syncAll(): array {
+        if (! $this->isConfiguredForSync()) {
+            return [
+                'skipped' => true,
+                'reason' => 'inventory_sync_disabled_or_not_configured',
+            ];
+        }
+
         $totalChunks  = 0;
         $successCount = 0;
         $failedChunks = [];
@@ -63,6 +72,12 @@ class InventorySyncService {
             'success_count' => $successCount,
             'failed_chunks' => $failedChunks,
         ];
+    }
+
+    protected function isConfiguredForSync(): bool {
+        return $this->syncEnabled
+            && filled($this->apiUrl)
+            && filled($this->apiToken);
     }
 
     protected function buildPayload( Collection $products ): array {

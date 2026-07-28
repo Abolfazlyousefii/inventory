@@ -19,7 +19,7 @@ class SalesReturnAppliedAdjustmentService
             Customer::whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
             $before = $this->snapshot($doc);
             $revision = $this->revision($doc, 'applied_updated', $reason, $before, $actorId, (int) $doc->total_refund_amount);
-            $this->reverseInventory($doc, $actorId, 'sales_return_adjustment_reversal', $revision->id);
+            $previousInventory = $this->inventoryGroups($doc);
             $this->reverseLedger($doc, $actorId, 'sales_return_reversal', $revision->id);
 
             $immutable = $doc->only(['document_number','source_type','customer_id','invoice_id','external_invoice_number','external_invoice_date','created_by','applied_by','applied_at','created_at']);
@@ -35,7 +35,7 @@ class SalesReturnAppliedAdjustmentService
             $items = $doc->isInternal() ? $this->salesReturns->prepareInternalItems($doc, $data + $immutable) : $this->salesReturns->prepareSazehItems($doc, $data + $immutable);
             foreach ($items as $i => $attrs) { $attrs['sort_order'] = $i + 1; $doc->items()->create($attrs); }
             $doc->load('items');
-            foreach ($doc->items as $item) { $this->applyInventory($item, $actorId, 'sales_return_adjustment_apply', $revision->id); }
+            $this->applyInventoryDelta($previousInventory, $this->inventoryGroups($doc), $actorId, $revision->id);
             $this->refreshTotals($doc);
             $this->creditLedger($doc, 'sales_return_adjustment', $revision->id);
             $doc->forceFill($immutable + ['status' => SalesReturnDocument::STATUS_APPLIED])->save();
@@ -93,6 +93,56 @@ class SalesReturnAppliedAdjustmentService
             ->value('quantity');
         $result = WarehouseStockService::change((int) $item->destination_warehouse_id, (int) $item->product_id, (int) $item->return_quantity, (int) $item->product_variant_id);
         $this->movement($item, $actorId, 'in', $reason, (int)$item->return_quantity, $before, (int) $result->quantity, $revisionId);
+    }
+
+    private function applyInventoryDelta(array $beforeGroups, array $afterGroups, int $actorId, int $revisionId): void
+    {
+        $key = fn (array $group) => implode(':', [
+            $group['warehouse_id'],
+            $group['product_id'],
+            $group['variant_id'],
+        ]);
+        $before = collect($beforeGroups)->keyBy($key);
+        $after = collect($afterGroups)->keyBy($key);
+        $keys = $before->keys()->merge($after->keys())->unique()->sort()->values();
+
+        foreach ($keys as $groupKey) {
+            $old = $before->get($groupKey);
+            $new = $after->get($groupKey);
+            $delta = (int) ($new['quantity'] ?? 0) - (int) ($old['quantity'] ?? 0);
+            if ($delta === 0) {
+                continue;
+            }
+
+            $group = $new ?? $old;
+            $current = (int) WarehouseStock::where('warehouse_id', $group['warehouse_id'])
+                ->where('product_variant_id', $group['variant_id'])
+                ->lockForUpdate()
+                ->value('quantity');
+
+            if ($delta < 0 && $current < abs($delta)) {
+                throw ValidationException::withMessages([
+                    'stock' => 'موجودی فعلی برای کاهش مقدار سند برگشت از فروش کافی نیست.',
+                ]);
+            }
+
+            $result = WarehouseStockService::change(
+                $group['warehouse_id'],
+                $group['product_id'],
+                $delta,
+                $group['variant_id']
+            );
+            $this->movement(
+                $group['item'],
+                $actorId,
+                $delta > 0 ? 'in' : 'out',
+                'sales_return_adjustment_delta',
+                abs($delta),
+                $current,
+                (int) $result->quantity,
+                $revisionId
+            );
+        }
     }
 
     private function assertReturnInventoryAvailable(SalesReturnDocument $doc): void

@@ -17,7 +17,7 @@ class StoreSalesReturnRequest extends FormRequest
             'customer_id' => ['required', 'exists:customers,id'],
             'invoice_id' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_INTERNAL_INVOICE, 'nullable', 'exists:invoices,id'],
             'external_invoice_number' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_SAZEH_HESAB, 'nullable', 'string', 'max:100'],
-            'external_invoice_date' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_SAZEH_HESAB, 'nullable', 'date'],
+            'external_invoice_date' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_SAZEH_HESAB, 'nullable', 'date_format:Y-m-d'],
             'default_destination_warehouse_id' => ['required', Rule::exists('warehouses', 'id')->where(fn ($query) => $query->where('is_active', true)->whereIn('type', ['central', 'return']))],
             'return_reason' => ['required', Rule::in(array_keys(SalesReturnDocument::returnReasonLabels()))],
             'reference_number' => ['nullable', 'string', 'max:100'],
@@ -70,6 +70,14 @@ class StoreSalesReturnRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $externalInvoiceDate = $this->input('external_invoice_date');
+        if (is_string($externalInvoiceDate)) {
+            $externalInvoiceDate = trim($externalInvoiceDate);
+            if (preg_match('/^(\d{4}-\d{2}-\d{2})(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)$/', $externalInvoiceDate, $matches) === 1) {
+                $externalInvoiceDate = $matches[1];
+            }
+        }
+
         $defaultWarehouse = $this->input('default_destination_warehouse_id');
         $items = collect($this->input('items', []))->map(function ($row) use ($defaultWarehouse) {
             $row = (array) $row;
@@ -84,7 +92,10 @@ class StoreSalesReturnRequest extends FormRequest
             }
             return $row;
         })->all();
-        $this->merge(['items' => $items]);
+        $this->merge([
+            'external_invoice_date' => $externalInvoiceDate,
+            'items' => $items,
+        ]);
     }
 
     public function withValidator($validator): void
@@ -107,7 +118,13 @@ class StoreSalesReturnRequest extends FormRequest
                     $ids[$id] = true;
                     if (! InvoiceItem::where('invoice_id', $invoice->id)->whereKey($id)->exists()) $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم متعلق به این فاکتور نیست.');
                 }
-                $preview = app(SalesReturnCalculationService::class)->calculateInternalPreview($invoice, $items->all());
+                $routeDocument = $this->route('document');
+                $excludeDocumentId = $routeDocument?->isApplied() ? (int) $routeDocument->id : null;
+                $preview = app(SalesReturnCalculationService::class)->calculateInternalPreview(
+                    $invoice,
+                    $items->all(),
+                    $excludeDocumentId
+                );
                 $byId = collect($preview)->keyBy(fn ($row) => (int) $row['invoice_item']->id);
                 foreach ($items as $idx => $row) {
                     $id = (int) ($row['invoice_item_id'] ?? 0); $qty = (int) ($row['return_quantity'] ?? 0);

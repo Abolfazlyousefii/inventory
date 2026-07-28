@@ -16,6 +16,7 @@ use App\Services\ProductVariantStructureService;
 use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -203,28 +204,36 @@ class PurchaseController extends Controller
     public function store(Request $request)
     {
         $data = $this->validatePayload($request);
+        $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
-        DB::transaction(function () use ($data) {
-            $centralWarehouseId = WarehouseStockService::centralWarehouseId();
+        try {
+            DB::transaction(function () use ($data) {
+                $centralWarehouseId = WarehouseStockService::centralWarehouseId();
+                $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
 
-            $purchase = Purchase::create($this->purchaseTablePayload([
-                'supplier_id' => $data['supplier_id'],
-                'warehouse_id' => $centralWarehouseId,
-                'user_id' => auth()->id(),
-                'purchased_at' => now(),
-                'note' => $data['note'] ?? null,
-                'subtotal_amount' => 0,
-                'discount_type' => $data['invoice_discount_type'] ?? null,
-                'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
-                'total_discount' => 0,
-                'total_amount' => 0,
-            ]));
+                $purchase = Purchase::create($this->purchaseTablePayload([
+                    'supplier_id' => $supplierId,
+                    'warehouse_id' => $centralWarehouseId,
+                    'user_id' => auth()->id(),
+                    'purchased_at' => now(),
+                    'note' => $data['note'] ?? null,
+                    'subtotal_amount' => 0,
+                    'discount_type' => $data['invoice_discount_type'] ?? null,
+                    'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
+                    'total_discount' => 0,
+                    'total_amount' => 0,
+                ]));
 
-            $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
-            $purchase->update($this->purchaseTablePayload($summary));
+                $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
+                $purchase->update($this->purchaseTablePayload($summary));
 
-            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
-        });
+                app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
+            });
+        } catch (\Throwable $exception) {
+            Cache::forget($submissionCacheKey);
+
+            throw $exception;
+        }
 
         return redirect()->route('purchases.index')->with('success', 'خرید کالا با موفقیت ثبت شد.');
     }
@@ -236,27 +245,35 @@ class PurchaseController extends Controller
         }
 
         $data = $this->validatePayload($request, true);
+        $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
-        DB::transaction(function () use ($purchase, $data) {
-            $purchase = Purchase::whereKey($purchase->id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        try {
+            DB::transaction(function () use ($purchase, $data) {
+                $purchase = Purchase::whereKey($purchase->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
 
-            $purchase->update($this->purchaseTablePayload([
-                'supplier_id' => $data['supplier_id'],
-                'warehouse_id' => (int) $data['warehouse_id'],
-                'purchased_at' => $data['purchased_at'] ?? $purchase->purchased_at,
-                'note' => $data['note'] ?? null,
-                'user_id' => auth()->id(),
-                'discount_type' => $data['invoice_discount_type'] ?? null,
-                'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
-            ]));
+                $purchase->update($this->purchaseTablePayload([
+                    'supplier_id' => $supplierId,
+                    'warehouse_id' => (int) $data['warehouse_id'],
+                    'purchased_at' => $data['purchased_at'] ?? $purchase->purchased_at,
+                    'note' => $data['note'] ?? null,
+                    'user_id' => auth()->id(),
+                    'discount_type' => $data['invoice_discount_type'] ?? null,
+                    'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
+                ]));
 
-            $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
-            $purchase->update($this->purchaseTablePayload($summary));
+                $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
+                $purchase->update($this->purchaseTablePayload($summary));
 
-            app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
-        });
+                app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
+            });
+        } catch (\Throwable $exception) {
+            Cache::forget($submissionCacheKey);
+
+            throw $exception;
+        }
 
         return redirect()->route('purchases.index')->with('success', 'سند خرید با موفقیت ویرایش شد.');
     }
@@ -447,6 +464,8 @@ class PurchaseController extends Controller
 
     private function validatePayload(Request $request, bool $allowZeroExistingItems = false): array
     {
+        $this->mergeJsonPurchaseItems($request);
+
         $invoiceDiscountType = $request->input('invoice_discount_type', $request->input('discount_type'));
         $invoiceDiscountRaw = $request->input('invoice_discount_value', $request->input('discount_value'));
         $invoiceDiscountValue = $this->filledNumber($invoiceDiscountRaw) ? $this->normalizeNumber($invoiceDiscountRaw) : null;
@@ -483,12 +502,22 @@ class PurchaseController extends Controller
             'invoice_discount_type' => $invoiceDiscountType,
             'invoice_discount_value' => $invoiceDiscountValue,
             'note' => $note,
-            'warehouse_id' => WarehouseStockService::centralWarehouseId(),
+            'warehouse_id' => $this->centralWarehouseIdForPurchaseValidation(),
             'items' => $items,
         ]);
 
         $data = $request->validate([
-            'supplier_id' => ['required', 'string', 'max:100'],
+            'submission_token' => ['required', 'uuid'],
+            'supplier_id' => [
+                'required',
+                'string',
+                'max:100',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! $this->purchaseSupplierSelectionExists((string) $value)) {
+                        $fail('تأمین‌کننده را انتخاب کنید.');
+                    }
+                },
+            ],
             'warehouse_id' => ['required', 'exists:warehouses,id'],
             'purchased_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string', 'max:1000'],
@@ -515,11 +544,10 @@ class PurchaseController extends Controller
             'items.*.discount_type' => ['nullable', 'in:amount,percent'],
             'items.*.discount_value' => ['nullable', 'integer', 'min:0'],
         ], [
+            'supplier_id.required' => 'تأمین‌کننده را انتخاب کنید.',
             'items.required' => 'حداقل یک تنوع را برای خرید انتخاب کنید.',
             'items.min' => 'حداقل یک تنوع را برای خرید انتخاب کنید.',
         ]);
-
-        $data['supplier_id'] = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
 
         $data['items'] = array_values(array_map(function ($item, $index) use ($allowZeroExistingItems) {
             $qty = $this->normalizeNumber($item['quantity'] ?? $item['qty'] ?? 0);
@@ -600,6 +628,64 @@ class PurchaseController extends Controller
         }
 
         return $data;
+    }
+
+    private function acquirePurchaseSubmission(string $token): string
+    {
+        $cacheKey = 'purchase-submission:'.$token;
+
+        if (! Cache::add($cacheKey, true, now()->addMinutes(30))) {
+            throw ValidationException::withMessages([
+                'purchase' => 'این فرم خرید قبلاً ثبت شده یا در حال ثبت است.',
+            ]);
+        }
+
+        return $cacheKey;
+    }
+
+    private function mergeJsonPurchaseItems(Request $request): void
+    {
+        if (! $request->filled('items_json')) {
+            return;
+        }
+
+        try {
+            $items = json_decode((string) $request->input('items_json'), true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw ValidationException::withMessages([
+                'items' => 'اطلاعات ردیف‌های خرید نامعتبر است؛ لطفاً دوباره تلاش کنید.',
+            ]);
+        }
+
+        if (! is_array($items)) {
+            throw ValidationException::withMessages([
+                'items' => 'اطلاعات ردیف‌های خرید نامعتبر است؛ لطفاً دوباره تلاش کنید.',
+            ]);
+        }
+
+        $request->merge(['items' => $items]);
+    }
+
+    private function purchaseSupplierSelectionExists(string $value): bool
+    {
+        if (ctype_digit($value)) {
+            return Supplier::query()->whereKey((int) $value)->exists();
+        }
+
+        if (preg_match('/^customer:(\d+)$/', $value, $matches) !== 1) {
+            return false;
+        }
+
+        return Customer::query()->whereKey((int) $matches[1])->exists();
+    }
+
+    private function centralWarehouseIdForPurchaseValidation(): ?int
+    {
+        $warehouseId = Warehouse::query()
+            ->where('type', 'central')
+            ->value('id');
+
+        return $warehouseId === null ? null : (int) $warehouseId;
     }
 
 

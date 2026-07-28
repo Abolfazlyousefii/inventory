@@ -5,12 +5,13 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProductExportFilterRequest;
 use App\Models\Category;
 use App\Models\ModelList;
+use App\Models\Product;
 use App\Services\ProductExportService;
 use App\Services\ProductPriceListPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
-use Symfony\Component\HttpFoundation\Response;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class ProductExportController extends Controller
 {
@@ -31,8 +32,9 @@ class ProductExportController extends Controller
             ->orderBy('brand')
             ->pluck('brand');
         $products = $this->service->paginate($filters, 24);
+        $selectedProducts = $this->service->selectedProducts($filters['product_ids']);
 
-        return view('product-exports.index', compact('rootCategories', 'subcategories', 'modelBrands', 'filters', 'products'));
+        return view('product-exports.index', compact('rootCategories', 'subcategories', 'modelBrands', 'filters', 'products', 'selectedProducts'));
     }
 
     public function filter(ProductExportFilterRequest $request): string
@@ -91,6 +93,24 @@ class ProductExportController extends Controller
             ->values();
 
         return response()->json(['items' => $items]);
+    }
+
+    public function searchProducts(ProductExportFilterRequest $request): JsonResponse
+    {
+        $filters = $request->filters();
+        $selectedIds = $this->service->productIds($filters);
+        $matchingIds = $this->service->matchingSelectedProductIds($filters, $selectedIds);
+        $invalidSelectedIds = array_values(array_diff($selectedIds, $matchingIds));
+        $term = (string) $request->query('q', '');
+        $limit = $this->service->searchLimit($term);
+        $items = $this->service->searchProducts($filters, $term, $limit)
+            ->map(fn (Product $product) => $this->service->productSearchPayload($product, $term));
+
+        return response()->json([
+            'items' => $items->values(),
+            'invalid_selected_ids' => $invalidSelectedIds,
+            'limit' => $limit,
+        ]);
     }
 
     public function children(Category $category): JsonResponse

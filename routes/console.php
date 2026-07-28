@@ -16,7 +16,9 @@ use Illuminate\Support\Facades\Schedule;
 
 Schedule::call(function () {
     app(InventorySyncService::class)->syncAll();
-})->everyMinute()
+})
+    ->when(fn () => (bool) config('services.sales_server.sync_enabled', false))
+    ->everyMinute()
     ->name('sync_inventory_to_sales_server')
     ->withoutOverlapping();
 

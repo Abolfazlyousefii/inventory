@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', 'نمایش کالاها')
+
 @section('content')
 @php
     $filters = request()->only(['q','category_id','subcategory_id','stock_status','sellable_status','min_price','max_price','has_variants','without_price','sort','direction']);

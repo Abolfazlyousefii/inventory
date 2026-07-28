@@ -1,189 +1,237 @@
 @extends('layouts.app')
 
+@section('title', 'مدیریت نقش ها و دسترسی ها')
+
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('css/permissions.css') }}">
+@endpush
+
+@push('scripts')
+    <script src="{{ asset('js/permissions.js') }}" defer></script>
+@endpush
+
 @section('content')
-<div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
-    <div>
-        <h4 class="mb-0">🔐 مدیریت دسترسی کاربران</h4>
-        <div class="text-muted small">برای هر کاربر، دسترسی صفحات سایدبار و عملیات هر بخش را تک‌به‌تک انتخاب و ذخیره کنید.</div>
-    </div>
-</div>
-
-@if(session('error'))
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        {{ session('error') }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-@endif
-
-<div class="card shadow-sm mb-4">
-    <div class="card-body">
-        <form method="GET" action="{{ route('admin.permissions.index') }}" class="row g-3 align-items-end">
-            <div class="col-md-8">
-                <label class="form-label fw-bold">انتخاب کاربر</label>
-                <select name="user_id" class="form-select" onchange="this.form.submit()">
-                    @foreach($users as $user)
-                        <option value="{{ $user->id }}" @selected($selectedUser?->id === $user->id)>
-                            {{ $user->name }} — {{ $user->phone ?? $user->email ?? 'بدون اطلاعات تماس' }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-md-4 d-grid">
-                <button class="btn btn-outline-primary">نمایش دسترسی‌ها</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-@if($selectedUser)
-    <form method="POST" action="{{ route('admin.permissions.update', $selectedUser) }}">
-        @csrf
-        @method('PUT')
-
-        <div class="alert alert-info">
-            در حال ویرایش دسترسی‌های <strong>{{ $selectedUser->name }}</strong> هستید.
-            @if($selectedUser->hasAnyRole(['admin', 'Admin', 'ادمین']))
-                <div class="small mt-1">این کاربر نقش ادمین دارد و همیشه به همه بخش‌ها دسترسی کامل خواهد داشت.</div>
-            @endif
+<div class="permission-shell pb-4">
+    <header class="permission-page-head">
+        <div>
+            <h1>مدیریت نقش ها و دسترسی کاربران</h1>
+            <p>دسترسی مؤثر، مجموع دسترسی نقش ها و دسترسی های مستقیم افزایشی است.</p>
         </div>
+        <span class="badge text-bg-light border">دسترسی های قدیمی قابل انتساب نیستند</span>
+    </header>
 
+    @if(session('success'))
+        <div class="alert alert-success" role="status">{{ session('success') }}</div>
+    @endif
 
-        @canPermission('permissions.assign_roles')
-        <div class="card shadow-sm border-success mb-4">
-            <div class="card-header bg-success text-white">
-                <div class="fw-bold">نقش‌های کاربر</div>
-                <div class="small opacity-75">برای جلوگیری از قفل شدن پنل، تنها مدیرکل نمی‌تواند نقش super_admin خودش را حذف کند.</div>
-            </div>
-            <div class="card-body">
-                <div class="row g-2">
-                    @foreach($roles as $role)
-                        <div class="col-md-4 col-xl-3">
-                            <label class="form-check d-flex align-items-center gap-2 m-0 p-2 rounded border bg-light">
-                                <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" @checked(in_array($role->name, $selectedRoleNames, true))>
-                                <code dir="ltr">{{ $role->name }}</code>
-                            </label>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
+    @if($requestedUserMissing)
+        <div class="alert alert-warning" role="alert">کاربر درخواستی پیدا نشد. یک کاربر معتبر را از فهرست انتخاب کنید.</div>
+    @endif
+
+    @if($errors->any())
+        <div class="alert alert-danger" role="alert">
+            <ul class="mb-0">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
         </div>
-        @endcanPermission
+    @endif
 
-        <div class="card shadow-sm border-primary mb-4">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                <div>
-                    <div class="fw-bold">صفحات داخل سایدبار</div>
-                    <div class="small opacity-75">دسترسی نمایش هر لینک منوی کناری را جداگانه فعال یا غیرفعال کنید.</div>
+    <section class="card shadow-sm mb-3" aria-labelledby="user-selection-title">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-lg-9">
+                    <label id="user-selection-title" for="userPicker" class="form-label fw-bold">انتخاب کاربر</label>
+                    <select id="userPicker" name="user_id" class="form-select" @disabled($users->isEmpty())>
+                        @forelse($users as $userOption)
+                            <option value="{{ $userOption->id }}" @selected($selectedUser?->is($userOption))>
+                                {{ $userOption->name }} — {{ $userOption->phone ?: $userOption->email }}
+                                @if($userOption->personnel_code) — {{ $userOption->personnel_code }} @endif
+                                — {{ $userOption->role_labels ?: 'بدون نقش' }}
+                                — {{ $userOption->is_active ? 'فعال' : 'غیرفعال' }}
+                            </option>
+                        @empty
+                            <option value="">هیچ کاربری در سیستم وجود ندارد</option>
+                        @endforelse
+                    </select>
                 </div>
-                <span class="d-flex gap-1">
-                    <button type="button" class="btn btn-sm btn-light js-select-sidebar">انتخاب همه صفحات</button>
-                    <button type="button" class="btn btn-sm btn-outline-light js-clear-sidebar">حذف همه صفحات</button>
-                </span>
-            </div>
-            <div class="card-body">
-                <div class="row g-3" id="sidebarPermissionCards">
-                    @foreach($sidebarPages as $section => $pages)
-                        <div class="col-md-6 col-xl-4">
-                            <div class="border rounded h-100 p-3 bg-light">
-                                <div class="fw-bold mb-2">{{ $section }}</div>
-                                <div class="d-grid gap-2">
-                                    @foreach($pages as $page)
-                                        @php($permission = $page['model'])
-                                        <label class="form-check d-flex align-items-start gap-2 m-0 p-2 rounded border bg-white">
-                                            <input class="form-check-input mt-1" type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-id="{{ $permission->id }}" @checked(in_array($permission->id, $selectedPermissionIds))>
-                                            <span>
-                                                <span class="d-block fw-semibold">{{ $page['label'] }}</span>
-                                                <code dir="ltr" class="small">{{ $permission->key }}</code>
-                                            </span>
-                                        </label>
-                                    @endforeach
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
+                <div class="col-lg-3 d-grid">
+                    <button class="btn btn-outline-primary" @disabled($users->isEmpty())>بارگذاری اطلاعات</button>
                 </div>
-            </div>
+            </form>
         </div>
+    </section>
 
-        <h5 class="fw-bold mb-3">همه دسترسی‌های عملیاتی</h5>
-        <div class="row g-3">
-            @foreach($permissions as $group => $groupPermissions)
-                <div class="col-lg-6 col-xl-4">
-                    <div class="card h-100 border-0 shadow-sm permission-group-card">
-                        <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                            <span class="fw-bold">{{ $group ?: 'سایر' }}</span>
-                            <span class="d-flex gap-1">
-                                <button type="button" class="btn btn-sm btn-outline-success js-select-group">انتخاب همه</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary js-clear-group">حذف همه</button>
-                            </span>
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-2">
-                                @foreach($groupPermissions as $permission)
-                                    <div class="col-12">
-                                        <label class="form-check d-flex align-items-start gap-2 m-0 p-2 rounded border bg-light">
-                                            <input class="form-check-input mt-1" type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-id="{{ $permission->id }}" @checked(in_array($permission->id, $selectedPermissionIds))>
-                                            <span>
-                                                <span class="d-block fw-semibold">{{ $permission->name }}</span>
-                                                <code dir="ltr" class="small">{{ $permission->key }}</code>
-                                            </span>
-                                        </label>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
+    @if($selectedUser)
+        <section class="permission-user-summary" aria-label="خلاصه کاربر انتخاب شده">
+            @foreach([
+                ['نام کاربر', $selectedUser->name],
+                ['شماره موبایل', $selectedUser->phone ?: '—'],
+                ['تعداد نقش', $selectedRoleCount],
+                ['دسترسی مؤثر', $effectiveCount],
+                ['دسترسی مستقیم', $directCount],
+                ['وضعیت', $selectedUser->is_active ? 'فعال' : 'غیرفعال'],
+            ] as [$label, $value])
+                <div class="card">
+                    <div class="card-body p-3">
+                        <small>{{ $label }}</small>
+                        <strong>{{ $value }}</strong>
                     </div>
                 </div>
             @endforeach
-        </div>
+        </section>
 
-        <div class="position-sticky bottom-0 bg-white border rounded shadow-sm p-3 mt-4 d-flex justify-content-end">
-            <button class="btn btn-primary px-4">ذخیره دسترسی‌ها</button>
-        </div>
-    </form>
-@else
-    <div class="alert alert-warning">هیچ کاربری برای مدیریت دسترسی‌ها یافت نشد.</div>
-@endif
+        <form id="permissionForm" method="POST" action="{{ route('admin.permissions.update', $selectedUser) }}" novalidate>
+            @csrf
+            @method('PUT')
+            <input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
+            <input type="hidden" name="direct_permissions_submitted" value="1">
+            @if($canAssignRoles)
+                <input type="hidden" name="roles_submitted" value="1">
+            @endif
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    function setPermissionChecked(permissionId, checked) {
-        document.querySelectorAll('input[data-permission-id="' + permissionId + '"]').forEach(function (checkbox) {
-            checkbox.checked = checked;
-        });
-    }
+            <section class="card mb-3" aria-labelledby="roles-title">
+                <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                    <strong id="roles-title">نقش های کاربر</strong>
+                    @unless($canAssignRoles)
+                        <small class="text-muted">شما اجازه تغییر نقش ها را ندارید.</small>
+                    @endunless
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        @forelse($roles as $role)
+                            <div class="col-md-4 col-xl-3">
+                                <label class="role-card border rounded p-3 d-block">
+                                    <span class="d-flex gap-2">
+                                        <input
+                                            class="form-check-input change-input"
+                                            type="checkbox"
+                                            name="roles[]"
+                                            value="{{ $role['name'] }}"
+                                            @checked($role['selected'])
+                                            @disabled(! $canAssignRoles)
+                                        >
+                                        <span class="role-card__body">
+                                            <span class="role-card__title">{{ $role['label'] }}</span>
+                                            <span class="role-card__key">
+                                                <code>{{ $role['name'] }}</code>
+                                                @if($role['legacy'])
+                                                    <span class="badge text-bg-secondary">قدیمی</span>
+                                                @endif
+                                            </span>
+                                            <small>{{ number_format($role['permissions_count']) }} دسترسی</small>
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+                        @empty
+                            <div class="col-12"><p class="permission-empty">هیچ نقش سازگار با Guard سیستم وجود ندارد.</p></div>
+                        @endforelse
+                    </div>
+                </div>
+            </section>
 
-    document.querySelectorAll('input[data-permission-id]').forEach(function (checkbox) {
-        checkbox.addEventListener('change', function () {
-            setPermissionChecked(checkbox.dataset.permissionId, checkbox.checked);
-        });
-    });
+            <section class="card mb-3" aria-labelledby="source-guide-title">
+                <div class="card-body permission-source-guide">
+                    <strong id="source-guide-title">راهنمای منبع:</strong>
+                    <span><span class="badge text-bg-primary">از نقش</span> با تغییر Role عوض می شود</span>
+                    <span><span class="badge text-bg-success">مستقیم</span> قابل ویرایش مستقیم</span>
+                    <span><span class="badge text-bg-info">نقش + مستقیم</span> حذف مستقیم، دسترسی Role را نگه می دارد</span>
+                    <span><span class="badge text-bg-secondary">فاقد دسترسی</span></span>
+                </div>
+            </section>
 
-    document.querySelector('.js-select-sidebar')?.addEventListener('click', function () {
-        document.querySelectorAll('#sidebarPermissionCards input[data-permission-id]').forEach(function (checkbox) {
-            setPermissionChecked(checkbox.dataset.permissionId, true);
-        });
-    });
+            <div class="row g-3">
+                <aside class="col-lg-3">
+                    <div class="permission-modules gap-2" id="moduleList" aria-label="فیلتر ماژول ها">
+                        <button type="button" class="permission-module btn btn-primary text-start" data-module="all">
+                            همه ماژول ها <span class="badge text-bg-light">{{ collect($modules)->flatten(1)->count() }}</span>
+                        </button>
+                        @foreach($modules as $module => $items)
+                            <button type="button" class="permission-module btn btn-outline-secondary text-start" data-module="{{ $module }}">
+                                {{ $items->first()['module_label'] ?? $module }}
+                                <span class="badge text-bg-light">{{ $items->where('granted', true)->count() }}/{{ $items->count() }}</span>
+                            </button>
+                        @endforeach
+                    </div>
+                </aside>
 
-    document.querySelector('.js-clear-sidebar')?.addEventListener('click', function () {
-        document.querySelectorAll('#sidebarPermissionCards input[data-permission-id]').forEach(function (checkbox) {
-            setPermissionChecked(checkbox.dataset.permissionId, false);
-        });
-    });
+                <section class="col-lg-9" aria-labelledby="permissions-table-title">
+                    <div class="card">
+                        <div class="card-header">
+                            <label class="visually-hidden" for="permissionSearch">جستجوی دسترسی</label>
+                            <input id="permissionSearch" class="form-control" placeholder="جستجو در عنوان، کلید، عملیات یا ماژول…">
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0 permission-table">
+                                    <caption id="permissions-table-title" class="visually-hidden">دسترسی های قابل مدیریت کاربر</caption>
+                                    <thead><tr><th>دسترسی</th><th>مستقیم</th><th>منبع مؤثر</th><th>وابستگی ها</th><th>حساسیت</th></tr></thead>
+                                    <tbody>
+                                        @forelse($modules as $module => $items)
+                                            @foreach($items as $item)
+                                                <tr
+                                                    class="permission-row {{ $item['risk'] === 'critical' ? 'risk-critical' : '' }}"
+                                                    data-module="{{ $module }}"
+                                                    data-search="{{ $item['label'].' '.$item['key'].' '.$item['action'].' '.$item['module_label'] }}"
+                                                >
+                                                    <td>
+                                                        <strong>{{ $item['label'] }}</strong>
+                                                        <small class="technical-key d-block text-muted">{{ $item['key'] }}</small>
+                                                    </td>
+                                                    <td>
+                                                        @if($item['source'] === 'role')
+                                                            <input class="form-check-input" type="checkbox" checked disabled aria-label="{{ $item['label'] }} از نقش">
+                                                        @else
+                                                            <input
+                                                                class="form-check-input permission-check change-input"
+                                                                type="checkbox"
+                                                                name="direct_permissions[]"
+                                                                value="{{ $item['key'] }}"
+                                                                data-dependencies='@json($item['depends_on'])'
+                                                                @checked(in_array($item['source'], ['direct', 'both'], true))
+                                                                @disabled(! $canEditPermissions)
+                                                                aria-label="دسترسی مستقیم {{ $item['label'] }}"
+                                                            >
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge text-bg-{{ $item['source_variant'] }}">{{ $item['source_label'] }}</span>
+                                                        @if($item['source'] === 'both')
+                                                            <small class="d-block text-muted mt-1">با برداشتن تیک، دسترسی نقش باقی می ماند.</small>
+                                                        @endif
+                                                    </td>
+                                                    <td><small>{{ collect($item['depends_on'])->join('، ') ?: '—' }}</small></td>
+                                                    <td><span class="badge text-bg-{{ $item['risk_variant'] }}">{{ $item['risk_label'] }}</span></td>
+                                                </tr>
+                                            @endforeach
+                                        @empty
+                                            <tr><td colspan="5" class="text-center text-muted py-4">دسترسی فعالی برای نمایش وجود ندارد.</td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
 
-    document.querySelectorAll('.permission-group-card').forEach(function (card) {
-        card.querySelector('.js-select-group')?.addEventListener('click', function () {
-            card.querySelectorAll('input[type="checkbox"]').forEach(function (checkbox) {
-                setPermissionChecked(checkbox.dataset.permissionId, true);
-            });
-        });
-
-        card.querySelector('.js-clear-group')?.addEventListener('click', function () {
-            card.querySelectorAll('input[type="checkbox"]').forEach(function (checkbox) {
-                setPermissionChecked(checkbox.dataset.permissionId, false);
-            });
-        });
-    });
-});
-</script>
+            @if($canEditPermissions)
+                <div class="permission-savebar rounded p-3 mt-3">
+                    <div>
+                        <strong id="changeCount">بدون تغییر ذخیره نشده</strong>
+                        <small id="dependencyCount" class="d-block text-muted"></small>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a class="btn btn-outline-secondary" href="{{ route('admin.permissions.index', ['user_id' => $selectedUser->id]) }}">انصراف</a>
+                        <button id="saveButton" class="btn btn-primary" type="submit" disabled>ذخیره دسترسی ها</button>
+                    </div>
+                </div>
+            @endif
+        </form>
+    @else
+        <div class="card"><div class="card-body permission-empty">کاربری برای نمایش انتخاب نشده است.</div></div>
+    @endif
+</div>
 @endsection

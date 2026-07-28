@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', 'خرید کالا')
+
 @section('content')
 @php
     $toRial = fn($rial) => \App\Support\Currency::formatRial($rial);

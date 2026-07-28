@@ -8,6 +8,7 @@ use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
+use App\Models\SalesReturnDocument;
 use App\Models\WarehouseStock;
 use App\Support\DocumentCodeGenerator;
 use App\Support\ActivityLogger;
@@ -722,7 +723,7 @@ class SalesHavalehService
                 return $existing;
             }
 
-            $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::fromDocument($order);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
 
@@ -777,6 +778,7 @@ class SalesHavalehService
     {
         return DB::transaction(function () use ($invoice, $userId) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
 
             if ((string) $invoice->collection_status === Invoice::COLLECTION_STATUS_COMPLETED) {
                 return $invoice->fresh();
@@ -824,6 +826,7 @@ class SalesHavalehService
             $user = auth()->user();
 
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
             $oldStatus = (string) $invoice->status;
             $this->statusService->assertValidTransition($invoice, $newStatus, $user);
 
@@ -847,31 +850,61 @@ class SalesHavalehService
         });
     }
 
-    public function cancelAndRestore(Invoice $invoice, ?string $note = null, ?int $userId = null): Invoice
+    public function cancelAndRestore(Invoice $invoice, ?string $reason = null, ?int $userId = null, ?string $note = null): Invoice
     {
-        return DB::transaction(function () use ($invoice, $note, $userId) {
+        return DB::transaction(function () use ($invoice, $reason, $userId, $note) {
             $invoice = Invoice::query()->with('items')->lockForUpdate()->findOrFail($invoice->id);
             $oldStatus = (string) $invoice->status;
-            if ((string) $invoice->status === SalesHavalehStatusService::NOT_SHIPPED) {
+            if ($invoice->isCancelled()) {
                 return $invoice;
             }
 
+            $hasAppliedReturn = SalesReturnDocument::query()
+                ->where('invoice_id', (int) $invoice->id)
+                ->where('status', SalesReturnDocument::STATUS_APPLIED)
+                ->lockForUpdate()
+                ->exists();
+            if ($hasAppliedReturn) {
+                throw ValidationException::withMessages([
+                    'invoice' => 'برای این فاکتور سند برگشت از فروش ثبت نهایی شده است. ابتدا سند برگشت از فروش را ابطال کنید و سپس فاکتور را لغو نمایید.',
+                ]);
+            }
+
+            $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
+            $invoice->setRelation('items', $lockedItems);
+            $returnedQuantity = 0;
             if (! $this->hasCancellationStockReturn($invoice)) {
                 foreach ($invoice->items as $item) {
-                    $this->adjustSaleItemStock($invoice, $item, (int) $item->quantity, StockMovement::REASON_RETURN, 'برگشت موجودی بابت کنسلی حواله فروش', null, $note, StockMovement::TRANSACTION_SALES_HAVALEH_ADJUSTMENT . '_cancel');
+                    $qty = (int) $item->quantity;
+                    $returnedQuantity += max($qty, 0);
+                    $this->adjustSaleItemStock($invoice, $item, $qty, StockMovement::REASON_RETURN, 'برگشت موجودی بابت کنسلی حواله فروش', $reason ?: 'invoice_cancel', $note, StockMovement::TRANSACTION_SALES_HAVALEH_ADJUSTMENT . '_cancel');
                 }
             }
 
-            $this->ledgerService->voidInvoiceDebit($invoice, $note);
+            $this->ledgerService->voidInvoiceDebit($invoice, $reason ?: 'لغو فاکتور');
 
             $invoice->update([
                 'status' => SalesHavalehStatusService::NOT_SHIPPED,
                 'status_changed_at' => now(),
                 'status_changed_by' => $userId,
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
+                'cancellation_reason' => $reason,
+                'cancellation_note' => $note,
             ]);
 
-            $this->historyService->log($invoice, 'cancelled', 'status', $oldStatus, SalesHavalehStatusService::NOT_SHIPPED, $note ?: 'کنسلی فاکتور و برگشت موجودی', $userId);
-            $this->markLinkedPreinvoiceCancelled($invoice, $note, $userId);
+            $description = 'کنسلی فاکتور ' . $invoice->uuid . ' و برگشت ' . number_format($returnedQuantity) . ' عدد به انبار مرکزی. علت: ' . ($reason ?: 'ثبت نشده') . ($note ? ' | توضیحات: ' . $note : '');
+            $this->historyService->log($invoice, 'cancelled', 'status', $oldStatus, SalesHavalehStatusService::NOT_SHIPPED, $description, $userId);
+            ActivityLogger::log('invoice_cancelled', $invoice->fresh(), 'فاکتور لغو شد و موجودی به انبار مرکزی برگشت.', [
+                'invoice_id' => $invoice->id,
+                'invoice_uuid' => $invoice->uuid,
+                'old_status' => $oldStatus,
+                'new_status' => SalesHavalehStatusService::NOT_SHIPPED,
+                'reason' => $reason,
+                'note' => $note,
+                'returned_quantity' => $returnedQuantity,
+            ]);
+            $this->markLinkedPreinvoiceCancelled($invoice, $reason ?: $note, $userId);
 
             $order = $invoice->preinvoiceOrder()
                 ->lockForUpdate()
@@ -900,7 +933,7 @@ class SalesHavalehService
                     'invoice_uuid' => $invoice->uuid,
                     'old_status' => $oldPreinvoiceStatus,
                     'new_status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
-                    'reason' => $note,
+                    'reason' => $reason ?? $note,
                 ]);
             }
 
@@ -977,7 +1010,7 @@ class SalesHavalehService
             'invoice_uuid' => $invoice->uuid,
             'old_status' => $oldPreinvoiceStatus,
             'new_status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
-            'reason' => $note,
+            'reason' => $reason ?? $note,
         ]);
     }
 
@@ -1015,7 +1048,7 @@ class SalesHavalehService
             'invoice_uuid' => $invoice->uuid,
             'old_status' => $oldPreinvoiceStatus,
             'new_status' => PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
-            'reason' => $note,
+            'reason' => $reason ?? $note,
         ]);
     }
 }

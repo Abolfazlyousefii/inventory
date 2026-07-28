@@ -18,7 +18,7 @@ class SalesPrintDocumentService
         $invoice->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'payments', 'preinvoiceOrder', 'shippingMethod', 'customer']);
 
         $paid = $invoice->relationLoaded('payments') ? (int) $invoice->payments->sum('amount') : (int) $invoice->paid_amount;
-        $totals = SalesDocumentTotals::calculate($invoice->items, (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+        $totals = SalesDocumentTotals::fromDocument($invoice);
 
         return [
             'documentType' => 'invoice',
@@ -45,6 +45,7 @@ class SalesPrintDocumentService
                 'subtotal' => $totals['subtotal_before_discount'],
                 'discount' => $totals['total_discount'],
                 'itemsDiscount' => $totals['items_discount'],
+                'itemsNetSubtotal' => $totals['subtotal_after_product_discount'],
                 'invoiceDiscount' => $totals['invoice_discount'],
                 'subtotalAfterDiscount' => $totals['subtotal_after_discount'],
                 'shipping' => $totals['shipping'],
@@ -62,7 +63,7 @@ class SalesPrintDocumentService
     public function preinvoiceData(PreinvoiceOrder $order, string $mode = 'warehouse'): array
     {
         $order->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'shippingMethod', 'customer', 'invoice']);
-        $totals = SalesDocumentTotals::calculate($order->items, (int) $order->discount_amount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $totals = SalesDocumentTotals::fromDocument($order);
 
         return [
             'documentType' => 'preinvoice',
@@ -89,6 +90,7 @@ class SalesPrintDocumentService
                 'subtotal' => $totals['subtotal_before_discount'],
                 'discount' => $totals['total_discount'],
                 'itemsDiscount' => $totals['items_discount'],
+                'itemsNetSubtotal' => $totals['subtotal_after_product_discount'],
                 'invoiceDiscount' => $totals['invoice_discount'],
                 'subtotalAfterDiscount' => $totals['subtotal_after_discount'],
                 'shipping' => $totals['shipping'],

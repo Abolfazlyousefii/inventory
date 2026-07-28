@@ -1,6 +1,9 @@
 @extends('layouts.app')
 
 @section('content')
+@if(method_exists($invoice, 'isCancelled') && $invoice->isCancelled())
+  <div class="alert alert-danger">این فاکتور لغو شده و فقط برای سوابق مالی و انبار نگهداری می‌شود.</div>
+@endif
 
 @php
   $rial = fn($a) => \App\Support\Currency::formatRial($a);
@@ -36,7 +39,7 @@
   };
 
   $itemsCount = $invoice->items?->sum('quantity') ?? 0;
-  $totals = \App\Support\SalesDocumentTotals::calculate($invoice->items ?? collect(), (int) $invoice->discount_amount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+  $totals = \App\Support\SalesDocumentTotals::fromDocument($invoice);
   $paymentsTotal = $invoice->payments?->sum('amount') ?? 0;
   $logLabels = ['attributes' => 'مقادیر ثبت‌شده', 'changes' => 'مقادیر جدید', 'old' => 'مقادیر قبلی', 'original' => 'مقادیر قبلی'];
 @endphp

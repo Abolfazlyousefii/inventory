@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', 'صف جمع‌آوری فاکتور')
+
 @php
   use App\Models\Invoice;
   use Morilog\Jalali\Jalalian;
@@ -113,7 +115,7 @@
         <h4 class="collection-title">{{ $isShippedPage ? 'آماده ارسال' : 'صف جمع‌آوری فاکتورها' }}</h4>
         <div class="collection-subtitle">{{ $subtitle ?? 'فاکتورهای تاییدشده مالی که باید توسط انبار جمع‌آوری شوند.' }}</div>
       </div>
-      <span class="collection-count-badge">{{ number_format($invoices->total()) }} فاکتور در صف</span>
+      <span class="collection-count-badge" id="collectionQueueCount">{{ number_format($invoices->total()) }} فاکتور در صف</span>
     </div>
     <div class="collection-nav">
       <a class="btn btn-outline-primary {{ !$isShippedPage ? 'active' : '' }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری</a>
@@ -245,6 +247,9 @@
 <script>
 (() => {
   const csrfToken = @json(csrf_token());
+  const queueDataUrl = @json(route('vouchers.sales.queue.data'));
+  const currentPage = @json($invoices->currentPage());
+  const perPage = @json($invoices->perPage());
   const emptyDesktop = '<tr><td colspan="6"><div class="collection-empty">فعلاً فاکتوری برای جمع‌آوری وجود ندارد.</div></td></tr>';
   const emptyMobile = '<div class="collection-empty">فعلاً فاکتوری برای جمع‌آوری وجود ندارد.</div>';
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;'}[char]));
@@ -300,14 +305,21 @@
 
   setInterval(async () => {
     try {
-      const res = await fetch(@json(route('vouchers.sales.queue.data')), {headers: {'Accept': 'application/json'}});
+      const refreshUrl = new URL(queueDataUrl, window.location.origin);
+      refreshUrl.searchParams.set('page', currentPage);
+      refreshUrl.searchParams.set('per_page', perPage);
+      const res = await fetch(refreshUrl.toString(), {headers: {'Accept': 'application/json'}});
       if (!res.ok) return;
       const data = await res.json();
       const rows = Array.isArray(data.rows) ? data.rows : [];
       const desktop = document.getElementById('collectionDesktopRows');
       const mobile = document.getElementById('collectionMobileRows');
+      const countBadge = document.getElementById('collectionQueueCount');
       if (desktop) desktop.innerHTML = rows.length ? rows.map(renderCollectionDesktopRow).join('') : emptyDesktop;
       if (mobile) mobile.innerHTML = rows.length ? rows.map(renderCollectionMobileCard).join('') : emptyMobile;
+      if (countBadge && Number.isFinite(Number(data.total))) {
+        countBadge.textContent = `${Number(data.total).toLocaleString()} فاکتور در صف`;
+      }
     } catch (e) {}
   }, 30000);
 })();

@@ -23,6 +23,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
 
             if ($invoice->status === Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL) {
                 throw ValidationException::withMessages(['status' => 'این فاکتور مربوط به روند قدیمی است و از صف جمع‌آوری جدید قابل دریافت نیست.']);
@@ -40,6 +41,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
             $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED]);
             return $this->mark($invoice, Invoice::STATUS_COLLECTING, [
                 'collection_started_at' => now(),
@@ -52,6 +54,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user, $note) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
             $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
             return $this->mark($invoice, Invoice::STATUS_READY_TO_SHIP, [
                 'collected_at' => now(),
@@ -70,6 +73,7 @@ class WarehouseCollectionService
     {
         $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $note, $canEditPrices, $reason, $openedAt) {
             $invoice = Invoice::query()->with(['payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice->assertNotCancelled();
             $lockedItems = InvoiceItem::query()->with(['product', 'variant'])->where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
             $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
@@ -202,7 +206,7 @@ class WarehouseCollectionService
             if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
                 $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
             }
-            $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];
@@ -397,7 +401,7 @@ class WarehouseCollectionService
             if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
                 $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
             }
-            $totals = SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price, ['discount_allocation_mode' => $invoice->discount_allocation_mode]);
+            $totals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];

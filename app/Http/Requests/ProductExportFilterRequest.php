@@ -15,13 +15,21 @@ class ProductExportFilterRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $input = $this->all();
-        foreach (['root_category_id','subcategory_id','category_id','model_list_id','model_brand','stock_status','page'] as $key) {
+        foreach (['root_category_id','subcategory_id','category_id','model_list_id','model_brand','stock_status','page','q'] as $key) {
             if (array_key_exists($key, $input) && $input[$key] === '') $input[$key] = null;
         }
         $modelListIds = $input['model_list_ids'] ?? [];
         if (! is_array($modelListIds)) $modelListIds = [$modelListIds];
         if (! empty($input['model_list_id'])) $modelListIds[] = $input['model_list_id'];
         $input['model_list_ids'] = collect($modelListIds)->filter(fn($v)=>$v!==null && $v!=='')->map(fn($v)=>(int)$v)->filter(fn($v)=>$v>0)->unique()->values()->all();
+        $productIds = $input['product_ids'] ?? [];
+        if (! is_array($productIds)) $productIds = [$productIds];
+        $input['product_ids'] = collect($productIds)
+            ->filter(fn ($value) => $value !== null && $value !== '')
+            ->map(fn ($value) => is_string($value) && preg_match('/^\d+$/', $value) ? (int) $value : $value)
+            ->unique(fn ($value) => is_scalar($value) ? (string) $value : serialize($value))
+            ->values()
+            ->all();
         if (! empty($input['category_id']) && empty($input['root_category_id']) && empty($input['subcategory_id'])) {
             $category = Category::query()->find((int) $input['category_id'], ['id','parent_id']);
             if ($category && $category->parent_id) { $input['subcategory_id']=$category->id; $input['root_category_id']=$category->parent_id; }
@@ -41,8 +49,11 @@ class ProductExportFilterRequest extends FormRequest
             'model_brand' => ['nullable','string','max:100'],
             'model_list_ids' => ['nullable','array','max:200'],
             'model_list_ids.*' => ['integer','distinct','exists:model_lists,id'],
+            'product_ids' => ['nullable','array','max:200'],
+            'product_ids.*' => ['integer','distinct','exists:products,id'],
             'stock_status' => ['nullable', Rule::in(['all','in_stock','out_of_stock'])],
             'include_without_price' => ['nullable','boolean'],
+            'q' => ['nullable','string','max:100'],
             'page' => ['nullable','integer','min:1'],
         ];
     }
@@ -67,9 +78,21 @@ class ProductExportFilterRequest extends FormRequest
             'subcategory_id' => $v['subcategory_id'] ?? null,
             'model_brand' => $v['model_brand'] ?? null,
             'model_list_ids' => $v['model_list_ids'] ?? [],
+            'product_ids' => $v['product_ids'] ?? [],
             'stock_status' => $v['stock_status'] ?? 'all',
             'include_without_price' => (bool) ($v['include_without_price'] ?? false),
             'page' => $v['page'] ?? 1,
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'product_ids.array' => 'فهرست محصولات انتخابی نامعتبر است.',
+            'product_ids.max' => 'حداکثر ۲۰۰ محصول را می‌توان انتخاب کرد.',
+            'product_ids.*.integer' => 'شناسه محصول انتخابی نامعتبر است.',
+            'product_ids.*.distinct' => 'محصول تکراری در فهرست انتخابی وجود دارد.',
+            'product_ids.*.exists' => 'یکی از محصولات انتخاب‌شده دیگر در سامانه وجود ندارد.',
         ];
     }
 }

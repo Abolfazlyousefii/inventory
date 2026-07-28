@@ -1,0 +1,70 @@
+:root {
+    --app-primary: #16354f;
+    --app-primary-strong: #102a43;
+    --app-primary-hover: #0d2a40;
+    --app-accent: #2879a8;
+    --app-accent-hover: #1f648c;
+    --app-accent-soft: #eaf4f8;
+
+    --app-bg: #f4f7f9;
+    --app-surface: #ffffff;
+    --app-surface-soft: #f8fafb;
+    --app-surface-muted: #eef3f6;
+
+    --app-text: #172b3a;
+    --app-text-soft: #3f5361;
+    --app-muted: #71808c;
+    --app-border: #dce5ea;
+    --app-border-strong: #c8d6de;
+
+    --app-success: #16805c;
+    --app-success-soft: #e8f6f0;
+    --app-warning: #c98216;
+    --app-warning-soft: #fff6e5;
+    --app-danger: #c54b4b;
+    --app-danger-soft: #fff0f0;
+    --app-info: #2879a8;
+    --app-info-soft: #eaf4f8;
+
+    --app-radius-xs: 6px;
+    --app-radius-sm: 8px;
+    --app-radius-md: 11px;
+    --app-radius-lg: 15px;
+
+    --app-shadow-xs: 0 2px 8px rgba(16, 42, 67, .035);
+    --app-shadow-sm: 0 5px 16px rgba(16, 42, 67, .055);
+    --app-shadow-md: 0 12px 32px rgba(16, 42, 67, .08);
+
+    --app-sidebar-width: 264px;
+    --app-sidebar-collapsed-width: 76px;
+    --app-topbar-height: 62px;
+    --app-control-height: 41px;
+    --app-focus-ring: 0 0 0 3px rgba(40, 121, 168, .16);
+    --app-transition: 160ms ease;
+
+    /* Compatibility aliases for existing scoped page styles. */
+    --bg: var(--app-bg);
+    --card: var(--app-surface);
+    --text: var(--app-text);
+    --muted: var(--app-muted);
+    --border: var(--app-border);
+    --primary: var(--app-primary);
+    --primary-2: var(--app-accent);
+    --primary-soft: var(--app-accent-soft);
+    --success: var(--app-success);
+    --success-soft: var(--app-success-soft);
+    --warning: var(--app-warning);
+    --warning-soft: var(--app-warning-soft);
+    --danger: var(--app-danger);
+    --danger-soft: var(--app-danger-soft);
+    --shadow-sm: var(--app-shadow-sm);
+    --shadow-md: var(--app-shadow-md);
+    --radius: var(--app-radius-md);
+    --radius-sm: var(--app-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --app-transition: 0ms;
+    }
+}

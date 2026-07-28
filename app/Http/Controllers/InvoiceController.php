@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Support\PermissionCatalog;
 use App\Services\SalesHavalehStatusService;
 use App\Services\SalesHavalehService;
 use App\Services\SalesDocumentAccessService;
@@ -101,7 +102,7 @@ class InvoiceController extends Controller
             }
         }
 
-        $baseQuery = $this->invoiceReportQuery($filters, $dateFrom, $dateTo);
+        $baseQuery = $this->invoiceReportQuery($filters, $dateFrom, $dateTo)->active();
 
         if ($request->input('export') === 'csv' || $request->input('export') === 'excel' || $request->input('export') === 'daily_csv') {
             abort_unless($this->canHandleFinanceActions(), 403);
@@ -130,7 +131,9 @@ class InvoiceController extends Controller
         $reportDateInput = $filters['date_from'];
         $canRegisterPayments = $this->canHandleFinanceActions();
 
-        return view('invoices.index', compact('invoices', 'q', 'statusLabels', 'dateInput', 'filters', 'reportDateInput', 'canRegisterPayments', 'summary', 'pageTotals', 'filterErrors', 'allowedStatuses', 'newWorkflowStatuses', 'legacyStatuses'));
+        $canCancelInvoices = $this->canCancelInvoices();
+
+        return view('invoices.index', compact('invoices', 'q', 'statusLabels', 'dateInput', 'filters', 'reportDateInput', 'canRegisterPayments', 'canCancelInvoices', 'summary', 'pageTotals', 'filterErrors', 'allowedStatuses', 'newWorkflowStatuses', 'legacyStatuses'));
     }
 
     public function salesVouchers(Request $request)
@@ -166,8 +169,8 @@ class InvoiceController extends Controller
     public function salesQueue(Request $request)
     {
         $invoices = $this->salesQueueQuery(false)
-            ->orderBy('status_changed_at')
-            ->orderBy('id')
+            ->orderByDesc('invoices.created_at')
+            ->orderByDesc('invoices.id')
             ->paginate(20)
             ->withQueryString();
 
@@ -201,10 +204,15 @@ class InvoiceController extends Controller
 
     public function salesQueueData(Request $request)
     {
-        $invoices = $this->salesQueueQuery(false)->orderBy('status_changed_at')->orderBy('id')->limit(100)->get();
+        $perPage = max(1, min($request->integer('per_page', 20), 50));
+        $page = max(1, $request->integer('page', 1));
+        $invoices = $this->salesQueueQuery(false)
+            ->orderByDesc('invoices.created_at')
+            ->orderByDesc('invoices.id')
+            ->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
-            'rows' => $invoices->map(fn (Invoice $invoice) => [
+            'rows' => $invoices->getCollection()->map(fn (Invoice $invoice) => [
                 'uuid' => $invoice->uuid,
                 'customer_name' => $invoice->customer_name,
                 'customer_mobile' => $invoice->customer_mobile,
@@ -226,6 +234,10 @@ class InvoiceController extends Controller
                 'start_collection_url' => $invoice->status === Invoice::STATUS_WAREHOUSE_RECEIVED ? route('vouchers.sales.queue.start-collection', $invoice->uuid) : null,
                 'complete_collection_url' => in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true) ? route('vouchers.sales.queue.complete-collection', $invoice->uuid) : null,
             ])->values(),
+            'total' => $invoices->total(),
+            'current_page' => $invoices->currentPage(),
+            'per_page' => $invoices->perPage(),
+            'last_page' => $invoices->lastPage(),
         ]);
     }
 
@@ -682,7 +694,14 @@ class InvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve'));
+        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve') || PermissionCatalog::userHasPermission($user, 'payments.create'));
+    }
+
+    private function canCancelInvoices(): bool
+    {
+        $user = auth()->user();
+
+        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || PermissionCatalog::userHasPermission($user, 'invoices.cancel') || $user->can('finance.approve'));
     }
 
     public function updateStatus(string $uuid, Request $request)
@@ -694,13 +713,56 @@ class InvoiceController extends Controller
 
     public function cancel(string $uuid, Request $request)
     {
-        $invoice = Invoice::where('uuid', $uuid)->firstOrFail();
-        $data = $request->validate([
-            'note' => 'nullable|string|max:1000',
-        ]);
-        $this->salesHavalehService->cancelAndRestore($invoice, $data['note'] ?? null, auth()->id());
+        abort_unless($this->canCancelInvoices(), 403);
 
-        return back()->with('success', '✅ فاکتور کنسل شد و موجودی به انبار برگشت.');
+        $invoice = Invoice::where('uuid', $uuid)->firstOrFail();
+        $rules = [
+            'cancellation_reason' => 'required|string|max:1000',
+            'cancellation_note' => 'nullable|string|max:2000',
+            'confirm_invoice_uuid' => ['required', 'string', Rule::in([(string) $invoice->uuid])],
+        ];
+        if ((string) $invoice->status === Invoice::STATUS_SHIPPED) {
+            $rules['physical_return_confirmed'] = 'accepted';
+        }
+        $data = $request->validate($rules, [
+            'confirm_invoice_uuid.in' => 'شماره فاکتور واردشده با فاکتور انتخاب‌شده مطابقت ندارد.',
+            'physical_return_confirmed.accepted' => 'برای لغو فاکتور ارسال‌شده، تأیید بازگشت فیزیکی کالا به انبار الزامی است.',
+        ]);
+
+        $this->salesHavalehService->cancelAndRestore($invoice, $data['cancellation_reason'], auth()->id(), $data['cancellation_note'] ?? null);
+
+        return redirect()->route('invoices.index')->with('success', 'فاکتور با موفقیت لغو شد، موجودی به انبار مرکزی بازگشت و سند فاکتور از گردش حساب مشتری حذف شد. پرداخت‌های مشتری بدون تغییر باقی ماندند.');
+    }
+
+    public function cancelled(Request $request)
+    {
+        abort_unless($this->canCancelInvoices(), 403);
+
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'date_from' => trim((string) $request->query('date_from', '')),
+            'date_to' => trim((string) $request->query('date_to', '')),
+        ];
+        $dateFrom = $this->parseInvoiceFilterDate($filters['date_from']);
+        $dateTo = $this->parseInvoiceFilterDate($filters['date_to']);
+
+        $invoices = Invoice::query()->cancelled()
+            ->select('invoices.*')
+            ->selectSub('select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id', 'paid_total')
+            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'preinvoiceOrder.creator:id,name', 'canceller:id,name'])
+            ->when($filters['q'] !== '', function ($query) use ($filters) {
+                $q = $filters['q'];
+                $query->where(function ($qq) use ($q) {
+                    $qq->where('uuid', 'like', "%{$q}%")
+                        ->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('customer_mobile', 'like', "%{$q}%");
+                });
+            })
+            ->when($dateFrom, fn ($q) => $q->where('cancelled_at', '>=', $dateFrom->copy()->startOfDay()))
+            ->when($dateTo, fn ($q) => $q->where('cancelled_at', '<=', $dateTo->copy()->endOfDay()))
+            ->orderByDesc('cancelled_at')->orderByDesc('id')->paginate(20)->withQueryString();
+
+        return view('invoices.cancelled', ['invoices' => $invoices, 'filters' => $filters]);
     }
 
     public function undoCancel(string $uuid, Request $request)

@@ -8,7 +8,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use App\Support\PermissionCatalog;
 use Illuminate\View\View;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -20,14 +19,13 @@ class RoleController extends Controller
     public function index(): View
     {
         $roles = Role::with('permissions')->orderBy('name')->get();
+
         return view('admin.roles.index', compact('roles'));
     }
 
     public function create(): View
     {
-        $this->syncCatalogPermissions();
-
-        return view('admin.roles.form', ['role' => new Role(), 'permissions' => $this->permissions(), 'selectedPermissionIds' => []]);
+        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'selectedPermissionIds' => []]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -35,13 +33,12 @@ class RoleController extends Controller
         $data = $this->validated($request);
         $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
         $this->syncPermissions($role, $data['permissions'] ?? []);
+
         return redirect()->route('admin.roles.index')->with('success', 'نقش با موفقیت ایجاد شد.');
     }
 
     public function edit(Role $role): View
     {
-        $this->syncCatalogPermissions();
-
         return view('admin.roles.form', [
             'role' => $role,
             'permissions' => $this->permissions(),
@@ -56,6 +53,7 @@ class RoleController extends Controller
             $role->update(['name' => $data['name']]);
         }
         $this->syncPermissions($role, $data['permissions'] ?? []);
+
         return redirect()->route('admin.roles.index')->with('success', 'نقش با موفقیت ویرایش شد.');
     }
 
@@ -64,17 +62,13 @@ class RoleController extends Controller
         abort_if(in_array($role->name, $this->systemRoles, true), 403, 'نقش‌های سیستمی قابل حذف نیستند.');
         $role->delete();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+
         return redirect()->route('admin.roles.index')->with('success', 'نقش حذف شد.');
     }
 
     private function permissions()
     {
         return AccessPermission::query()->whereNotNull('key')->orderBy('group')->orderBy('name')->get()->groupBy('group');
-    }
-
-    private function syncCatalogPermissions(): void
-    {
-        PermissionCatalog::syncToDatabase();
     }
 
     private function validated(Request $request, ?Role $role = null): array

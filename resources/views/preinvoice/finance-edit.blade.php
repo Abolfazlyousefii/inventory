@@ -12,7 +12,7 @@
   $currentInvoiceDiscountValue = old('invoice_discount_value', (int)($hydratedInvoiceDiscount['value'] ?? $order->invoice_discount_value ?? 0));
   $breakdownGroups = collect($discountEditorState['product_groups'] ?? [])->keyBy(fn($g)=>(int)($g['product_id'] ?? 0));
   $productGroups = $order->items->groupBy('product_id');
-  $totals = SalesDocumentTotals::calculate($order->items, (int)($order->invoice_discount_amount ?? 0), (int)$order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+  $totals = SalesDocumentTotals::fromDocument($order);
   $legacyDiscount = (bool)($discountEditorState['is_legacy_unstructured'] ?? (empty($order->discount_breakdown) && (int)($order->discount_amount ?? 0) > 0));
 @endphp
 @section('content')

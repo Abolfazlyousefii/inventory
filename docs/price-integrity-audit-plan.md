@@ -1,0 +1,128 @@
+# خلاصه مدیریتی
+
+این مرحله فقط ابزار ممیزی Read Only برای شناسایی قیمت‌های صفر، قیمت‌های ناسازگار Product/Variant، ردیف‌های سند با قیمت صفر و پیشنهاد قیمت قابل بازیابی می‌سازد. Command هیچ مسیر apply/fix ندارد و روی دیتابیس فقط Queryهای خواندنی اجرا می‌کند.
+
+# ساختار قیمت پروژه
+
+- محصول بدون تنوع از `products.price` به‌عنوان قیمت فروش جاری استفاده می‌کند.
+- محصول تنوع‌دار از `product_variants.sell_price` به‌عنوان قیمت فروش مؤثر هر تنوع استفاده می‌کند.
+- `products.price` در چند مسیر به‌صورت Summary/Legacy نگهداری می‌شود و ممکن است با تنوع‌ها Desync شود.
+- `product_variants.buy_price` بهای خرید جاری تنوع و `purchase_items.buy_price` Snapshot خرید است.
+- `invoice_items.price` و `preinvoice_order_items.price` Snapshot تاریخی قیمت خط هستند و نباید خودکار تغییر کنند.
+
+# تعریف قیمت مؤثر
+
+- بدون تنوع معتبر: `products.price`.
+- با تنوع معتبر: `product_variants.sell_price`.
+- سابقه خرید فقط قرینه است و بدون Margin Rule رسمی قیمت فروش پیشنهادی قطعی نمی‌سازد.
+
+# تعداد قیمت‌های صفر
+
+Command در `price-integrity-summary-YYYYMMDD-HHmm.json` تعداد `product_zero_prices` و `variant_zero_sell_prices` را گزارش می‌کند.
+
+# موارد Critical
+
+A01، A02، A03، A09، A10، A11، A12 و A15 با شدت Critical گزارش می‌شوند.
+
+# موارد High
+
+A06 برای `buy_price` صفر همراه با موجودی یا سابقه خرید با شدت High گزارش می‌شود.
+
+# موارد Medium
+
+A04، A05، A08 و A16 با شدت Medium گزارش می‌شوند.
+
+# موارد طبیعی
+
+تنوع غیرفعال و بدون موجودی با قیمت صفر با A07/Low یا برای اصلاح دستی کم‌اولویت گزارش می‌شود.
+
+# محصولات دارای موجودی و قیمت صفر
+
+با موجودی واقعی از `warehouse_stocks`، نه Cacheهای `products.stock` یا `product_variants.stock`، محاسبه می‌شود.
+
+# محصولات دارای خرید و قیمت صفر
+
+از جدول واقعی `purchase_items` و ستون‌های `product_id` / `product_variant_id` محاسبه می‌شود.
+
+# اسناد تاریخی قیمت صفر
+
+- A11: ردیف پیش‌فاکتور با `price <= 0` و `quantity > 0`.
+- A12: ردیف فاکتور با `price <= 0` و `quantity > 0`.
+- این اسناد فقط برای حسابداری گزارش می‌شوند و نباید خودکار تغییر کنند.
+
+# اختلاف موجودی Summary و Warehouse
+
+موجودی واقعی از `SUM(warehouse_stocks.quantity)` محاسبه می‌شود و Cacheهای Product/Variant فقط برای مقایسه در خروجی می‌آیند.
+
+# علت‌های ریشه‌ای احتمالی
+
+1. ساخت تنوع جدید با `sell_price = 0` یا مقدار خالی تبدیل‌شده به صفر.
+2. Summary محصول از تنوع صفر محاسبه/نگهداری شده است.
+3. خرید یا ویرایش محصول فیلد فروش را ناخواسته با مقدار صفر جایگزین کرده است.
+4. Sync/Import فیلد قیمت ارسال‌نشده را صفر در نظر گرفته است.
+5. Client در پیش‌فاکتور قیمت را ارسال کرده و Backend همان Snapshot را ثبت کرده است.
+
+# مسیرهای کد مشکوک
+
+- `app/Http/Controllers/ProductController.php`: ساخت/ویرایش Product و Variant و مقداردهی `sell_price`/`buy_price`.
+- `app/Http/Controllers/PurchaseController.php`: ثبت خرید، دریافت قیمت خرید/فروش از فرم و به‌روزرسانی قیمت Variant.
+- `app/Http/Controllers/PreinvoiceController.php`: قیمت خط پیش‌فاکتور و تعامل Client/Backend.
+- `app/Http/Controllers/PreinvoiceApiController.php`: قیمت‌های API پیش‌فاکتور.
+- `app/Http/Controllers/PriceChangeDocumentController.php`: تغییر قیمت برنامه‌ریزی‌شده و Snapshot قدیم/جدید.
+- `app/Services/CrmProductSyncService.php` و Webhook/Job/Commandهای Sync در صورت وجود.
+
+# روش پیشنهاد قیمت
+
+اولویت پیشنهاد: آخرین فروش مثبت همان Variant، آخرین Price Change مثبت، Median فروش‌های اخیر، قیمت Product، تنوع مشابه/خواهر، پیش‌فاکتور معتبر. قیمت خرید بدون Margin Rule رسمی فقط به‌عنوان قرینه گزارش می‌شود و Suggested Price تولید نمی‌کند.
+
+# موارد بدون قیمت قابل بازیابی
+
+اگر فروش مثبت، Price Change مثبت یا پیش‌فاکتور مثبت پیدا نشود، `confidence=None` و `requires_manual_review=true` ثبت می‌شود.
+
+# موارد نیازمند قیمت‌گذاری دستی
+
+هر رکورد Critical بدون Suggested Price معتبر باید در مرحله دوم دستی قیمت‌گذاری شود.
+
+# پلن اصلاح مرحله دوم
+
+1. بررسی Backup تأییدشده.
+2. بازبینی CSV anomalies و suggestions.
+3. تأیید قیمت‌های High Confidence توسط مسئول فروش/مالی.
+4. تهیه اسکریپت اصلاح جداگانه با dry-run و transaction.
+5. گزارش جداگانه اسناد تاریخی صفر برای حسابداری بدون تغییر خودکار آنها.
+
+# Patch ایمن ممیزی قیمت
+
+- ثبت Command در Laravel 12 از مسیر `bootstrap/app.php` و `withCommands([__DIR__.'/../app/Console/Commands'])` انجام می‌شود؛ `app/Console/Kernel.php` در این ساختار لازم نیست.
+- Guard با hook پیش از اجرا (`DB::connection()->beforeExecuting`) و ثبت به‌ازای هر Connection با `WeakMap` فقط ابتدای Statement را پس از حذف whitespace/comment بررسی می‌کند و Write verbهای `INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, `RENAME`, `GRANT`, `REVOKE` را Block می‌کند؛ بنابراین Alias یا متن داخل SELECT/CTE خواندنی که شامل این کلمات باشد خطای مثبت کاذب نمی‌سازد و CTE منتهی به Write پیش از اجرا Block می‌شود؛ commentهای میانی داخل CTE نیز در parser نادیده گرفته می‌شوند.
+- خروجی پیش‌فرض روی دیسک local در `storage/app/reports/price-integrity/` نوشته می‌شود و فایل‌های ثابت `summary.json`، `anomalies.csv|json` و `suggestions.csv|json` تولید می‌شوند.
+- این Patch هیچ مسیر apply/repair ندارد، هیچ Migration یا جدول موقتی ایجاد نمی‌کند و `data_changed` همیشه `false` است.
+- پیشنهاد قیمت فروش فقط از منابع فروش/تغییر قیمت/پیش‌فاکتور مثبت ساخته می‌شود؛ `buy_price` بدون قانون رسمی حاشیه سود فقط در گزارش دیده می‌شود و Suggested Price تولید نمی‌کند.
+- ردیف‌های گزارش با semantics جایگزینی امن ساخته می‌شوند تا مقادیر واقعی مانند نام محصول/تنوع، موجودی انبار، قیمت فروش صفر واقعی، سابقه فروش مثبت و `updated_at` اسناد روی مقدارهای خالی پیش‌فرض حفظ شوند.
+
+## دستور امن اجرا روی سرور
+
+```bash
+php artisan inventory:audit-price-integrity --format=csv --summary
+```
+
+برای خروجی JSON:
+
+```bash
+php artisan inventory:audit-price-integrity --format=json --summary
+```
+
+برای محدودکردن دامنه بررسی:
+
+```bash
+php artisan inventory:audit-price-integrity --product=123 --variant=456 --severity=Critical --format=csv --summary
+```
+
+## Indexهای پیشنهادی برای بررسی آینده، بدون Migration در این Patch
+
+- `warehouse_stocks(product_variant_id, quantity)` و `warehouse_stocks(product_id, product_variant_id)`
+- `product_variants(product_id, is_active, sales_enabled, sell_price)`
+- `invoice_items(variant_id, price, created_at)` و `invoice_items(product_id, price, created_at)`
+- `preinvoice_order_items(variant_id, price, created_at)`
+- `purchase_items(product_variant_id, created_at)`
+- `price_change_document_items(product_variant_id, applied_at, new_price)`

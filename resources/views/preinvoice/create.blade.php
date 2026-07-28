@@ -33,6 +33,7 @@ return [
 'quantity' => (int) $it->quantity,
 'price' => (int) $it->price,
 'item_id' => (int) $it->id,
+'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
 ];
 })->values();
 }
@@ -1489,16 +1490,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         </div>
 
         <div class="soft-card final-card">
-            <input type="hidden" name="discount_amount" id="discount" value="{{ \App\Support\Currency::toRial(old('discount_amount', $order->discount_amount ?? 0)) }}">
+            <input type="hidden" name="discount_amount" id="discount" value="{{ old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) }}">
             <div class="final-grid">
                 <div>
                     <label class="label-sm">تخفیف کلی</label>
                     <div class="discount-control">
                         <select id="orderDiscountType" class="form-select form-select-sm">
-                            <option value="amount">ریال</option>
-                            <option value="percent">درصد</option>
+                            <option value="amount" @selected(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')) === 'amount')>ریال</option>
+                            <option value="percent" @selected(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')) === 'percent')>درصد</option>
                         </select>
-                        <input type="number" id="orderDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="{{ \App\Support\Currency::toRial(old('discount_amount', $order->discount_amount ?? 0)) }}" placeholder="مقدار">
+                        <input type="number" id="orderDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="{{ old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) }}" placeholder="مقدار">
                     </div>
                     <div class="discount-line" id="orderDiscountPreview">تخفیف کلی: 0 ریال</div>
                 </div>
@@ -1596,6 +1597,19 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     </div>
 </div>
 
+@php
+    $oldDiscountAmount = old('discount_amount', ($order->invoice_discount_amount ?? $order->discount_amount ?? 0));
+    $oldInvoiceDiscountType = old(
+        'invoice_discount_type',
+        $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')
+    );
+    $oldInvoiceDiscountValue = old(
+        'invoice_discount_value',
+        $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)
+    );
+    $oldDiscountBreakdown = old('discount_breakdown', $order->discount_breakdown ?? null);
+@endphp
+
 <script>
     window.PREINVOICE_BOOT = {
         api: {
@@ -1617,7 +1631,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         oldCustomerName: @json(old('customer_name', $order->customer_name ?? '')),
         oldCustomerMobile: @json(old('customer_mobile', $order->customer_mobile ?? '')),
         oldPaymentTermsNote: @json($oldPaymentTermsNote),
-        oldDiscountAmount: @json(old('discount_amount', $order->discount_amount ?? 0)),
+        oldDiscountAmount: @json($oldDiscountAmount),
+        oldInvoiceDiscountType: @json($oldInvoiceDiscountType),
+        oldInvoiceDiscountValue: @json($oldInvoiceDiscountValue),
+        oldDiscountBreakdown: @json($oldDiscountBreakdown),
         isEdit: @json($isEdit),
         orderUuid: @json($order->uuid ?? null)
     };
@@ -1628,6 +1645,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const OLD_CUSTOMER_NAME = window.PREINVOICE_BOOT.oldCustomerName;
     const OLD_CUSTOMER_MOBILE = window.PREINVOICE_BOOT.oldCustomerMobile;
     const OLD_DISCOUNT_AMOUNT = window.PREINVOICE_BOOT.oldDiscountAmount;
+    const OLD_INVOICE_DISCOUNT_TYPE = window.PREINVOICE_BOOT.oldInvoiceDiscountType || 'amount';
+    const OLD_INVOICE_DISCOUNT_VALUE = Number(window.PREINVOICE_BOOT.oldInvoiceDiscountValue || 0);
+    const OLD_DISCOUNT_BREAKDOWN = window.PREINVOICE_BOOT.oldDiscountBreakdown || {};
     const IS_EDIT = !!window.PREINVOICE_BOOT.isEdit;
     const EDIT_ORDER_UUID = window.PREINVOICE_BOOT.orderUuid || null;
     const SUBMIT_SUCCEEDED = @json(session()->pull('preinvoice_submit_succeeded', false));
@@ -2060,7 +2080,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                     variety_id: Number(item.variant_id || 0),
                     quantity: Number(item.quantity || 0),
                     price: Number(item.price || 0),
-                    line_discount_amount: 0
+                    line_discount_amount: Number(item.line_discount_amount || 0)
                 });
             });
         });
@@ -2086,7 +2106,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 customer_mobile: document.getElementById('customer_mobile')?.value || '',
                 payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
                 is_in_person: currentIsInPerson() ? 1 : 0,
-                discount_amount: toInt(document.getElementById('discount')?.value || document.getElementById('orderDiscountValue')?.value || 0),
+                discount_amount: toInt(document.getElementById('discount')?.value || 0),
+                invoice_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
+                invoice_discount_value: Number(document.getElementById('orderDiscountValue')?.value || 0),
+                discount_breakdown: document.getElementById('discount_breakdown')?.value || '',
                 products: collectProductsForAutosave()
             })
         });
@@ -3072,8 +3095,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                     title: productTitle(product) || rows[0]?.product_name || ('محصول #' + productId),
                     code: productCode(product) || rows[0]?.product_code || ''
                 },
-                discount_type: 'amount',
-                discount_value: 0,
+                discount_type: (OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_type || 'amount',
+                discount_value: Number((OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_value || 0),
                 items: rows.map(row => {
                     const vid = Number(row.variety_id || row.variant_id || 0);
                     const v = varieties.find(item => variantId(item) === vid);
@@ -3085,7 +3108,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                         model: v ? variantModel(v) : '—',
                         design: v ? variantDesign(v) : '—',
                         variant: v ? variantName(v) : (row.variant_name || '—'),
-                        label: v ? buildVariantTitle(v) : (row.variant_name || 'تنوع پیش‌فرض')
+                        label: v ? buildVariantTitle(v) : (row.variant_name || 'تنوع پیش‌فرض'),
+                        line_discount_amount: Number(row.line_discount_amount || 0)
                     };
                 }).filter(item => item.variant_id && item.quantity > 0)
             };
