@@ -12,30 +12,20 @@ use Illuminate\Support\Facades\Log;
 
 class InventorySyncService {
     public function __construct() {
-        $this->apiUrl = Config::get('services.sales_server.api_url');
-        $this->apiToken = Config::get('services.sales_server.api_token');
-        $this->syncEnabled = (bool) Config::get('services.sales_server.sync_enabled', false);
+        $this->apiUrl = Config::get('services.site.base_url') . $this->Url;
     }
 
     protected ?string $apiUrl;
-    protected ?string $apiToken;
-    protected bool $syncEnabled;
-    protected int    $batchSize          = 25;
-    protected int    $maxRetries         = 2;
-    protected int    $initialRetryDelay  = 1;
+    protected string  $Url               = "/api/v2/sync/products";
+    protected int     $batchSize         = 30;
+    protected int     $maxRetries        = 2;
+    protected int     $initialRetryDelay = 1;
 
-    protected int    $delayBetweenChunks = 1;
+    protected int $delayBetweenChunks = 1;
 
-    protected string $timeout            = '7';
+    protected string $timeout = '9';
 
     public function syncAll(): array {
-        if (! $this->isConfiguredForSync()) {
-            return [
-                'skipped' => true,
-                'reason' => 'inventory_sync_disabled_or_not_configured',
-            ];
-        }
-
         $totalChunks  = 0;
         $successCount = 0;
         $failedChunks = [];
@@ -54,7 +44,7 @@ class InventorySyncService {
                 if ( $success ) {
                     $successCount ++;
                     Log::info("Chunk {$totalChunks} synced successfully.");
-                    usleep($this->delayBetweenChunks * 1000);
+                    usleep($this->delayBetweenChunks);
                 }
                 else {
                     $failedChunks[] = [
@@ -72,12 +62,6 @@ class InventorySyncService {
             'success_count' => $successCount,
             'failed_chunks' => $failedChunks,
         ];
-    }
-
-    protected function isConfiguredForSync(): bool {
-        return $this->syncEnabled
-            && filled($this->apiUrl)
-            && filled($this->apiToken);
     }
 
     protected function buildPayload( Collection $products ): array {
@@ -112,8 +96,6 @@ class InventorySyncService {
                         'id'                 => $variant->id,
                         'variant_name'       => $variant->variant_name,
                         'variant_code'       => $variant->variant_code,
-                        'variety_name'       => $variant->variety_name,
-                        'variety_code'       => $variant->variety_code,
                         'sell_price'         => (int) ( $variant->sell_price ?? 0 ),
                         'buy_price'          => (int) ( $variant->buy_price ?? 0 ),
                         'regular_price'      => (int) ( $variant->regular_price ?? $variant->sell_price ?? 0 ),
@@ -142,22 +124,13 @@ class InventorySyncService {
 
             try {
                 $response = Http::withoutVerifying()
-                    ->withToken($this->apiToken)
-                    ->timeout((int) $this->timeout) // استفاده از پراپرتی timeout
+                    ->timeout($this->timeout)
                     ->post($this->apiUrl, $payload);
 
                 if ( $response->successful() ) {
                     return true;
                 }
-
                 $status = $response->status();
-
-                if ( $status === 503 ) {
-                    Log::warning("Chunk {$chunkNumber} received 503, will retry with longer delay.");
-                    $backoff = min(5 * pow(2, $attempt - 1), 60);
-                    $this->sleepSeconds($backoff);
-                    continue;
-                }
 
                 if ( $status >= 500 ) {
                     Log::warning("Chunk {$chunkNumber} attempt {$attempt} failed with status {$status}.", [
@@ -178,7 +151,7 @@ class InventorySyncService {
             } catch ( \Exception $e ) {
                 Log::warning("Chunk {$chunkNumber} attempt {$attempt} threw exception: " . $e->getMessage());
                 if ( str_contains($e->getMessage(), 'timed out') ) {
-                    $this->sleepSeconds(10);
+                    $this->sleepSeconds(1);
                 }
             }
 
@@ -193,7 +166,7 @@ class InventorySyncService {
 
     protected function sleepMilliseconds( int $milliseconds ): void {
         if ( $milliseconds > 0 ) {
-            usleep($milliseconds * 1000);
+            usleep($milliseconds);
         }
     }
 

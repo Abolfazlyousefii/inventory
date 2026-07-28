@@ -15,8 +15,7 @@ return [
     */
 
     'sales_server' => [
-        'api_url' => env('SALES_SERVER_API_URL'),
-        'api_token' => env('SALES_SERVER_API_TOKEN'),
+        'api_url'      => env('SALES_SERVER_API_URL'),
         'sync_enabled' => env('SALES_SERVER_SYNC_ENABLED', false),
     ],
 
@@ -29,42 +28,39 @@ return [
     ],
 
     'ses' => [
-        'key' => env('AWS_ACCESS_KEY_ID'),
+        'key'    => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
-    'slack' => [
+    'slack'     => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+            'channel'              => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
     'ariya_crm' => [
-    'base_url' => env('ARIYA_CRM_BASE_URL', 'https://crm.ariyajanebi.ir/public'),
-    'token'    => env('ARIYA_CRM_TOKEN'),
+        'base_url' => env('ARIYA_CRM_BASE_URL', 'https://crm.ariyajanebi.ir/public'),
+        'token'    => env('ARIYA_CRM_TOKEN'),
     ],
 
     'external_sync' => [
         'base_url' => env('EXTERNAL_SYNC_BASE_URL', 'https://crm.ariyajanebi.ir'),
-        'token' => env('EXTERNAL_SYNC_TOKEN'),
+        'token'    => env('EXTERNAL_SYNC_TOKEN'),
     ],
 
-    'crm' => [
-        'base_url' => env('CRM_BASE_URL'),
-        'users_endpoint' => env('CRM_USERS_ENDPOINT', '/external/users'),
-        'api_token' => env('CRM_API_TOKEN'),
-        'sync_enabled' => env('CRM_SYNC_ENABLED', true),
-        'timeout' => env('CRM_SYNC_TIMEOUT', 30),
-        'connect_timeout' => env('CRM_CONNECT_TIMEOUT', 10),
-        'verify_ssl' => env('CRM_SYNC_VERIFY_SSL', true),
-        'client_token_url' => env('CRM_CLIENT_TOKEN_URL', 'https://crm.ariyajanebi.ir/api/token-for-client'),
-        'client_secret' => env('CRM_CLIENT_SECRET'),
+    'site' => [
+        'base_url' => env('SITE_BASE_URL'),
     ],
-'ariya_crm' => [
-    'base_url'            => env('ARIYA_CRM_BASE_URL', 'https://api.ariyajanebi.ir'),
-    'products_url'        => env('ARIYA_CRM_PRODUCTS_URL', 'https://api.ariyajanebi.ir/v1/front/products'),
-    'token'               => env('ARIYA_CRM_TOKEN'),
-    'default_category_id' => env('ARIYA_DEFAULT_CATEGORY_ID', 1),
-],
+    'crm'  => [
+        'base_url'         => env('CRM_BASE_URL'),
+        'users_endpoint'   => env('CRM_USERS_ENDPOINT', '/external/users'),
+        'api_token'        => env('CRM_API_TOKEN'),
+        'sync_enabled'     => env('CRM_SYNC_ENABLED', true),
+        'timeout'          => env('CRM_SYNC_TIMEOUT', 30),
+        'connect_timeout'  => env('CRM_CONNECT_TIMEOUT', 10),
+        'verify_ssl'       => env('CRM_SYNC_VERIFY_SSL', true),
+        'client_token_url' => env('CRM_CLIENT_TOKEN_URL', 'https://crm.ariyajanebi.ir/api/token-for-client'),
+        'client_secret'    => env('CRM_CLIENT_SECRET'),
+    ],
 ];
