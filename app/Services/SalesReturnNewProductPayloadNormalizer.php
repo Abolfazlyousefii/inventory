@@ -11,7 +11,14 @@ class SalesReturnNewProductPayloadNormalizer
     public function normalize(?array $payload): array
     {
         $payload = $payload ?: [];
-        if (($payload['schema_version'] ?? null) === 2) {
+        if ((int) ($payload['schema_version'] ?? 0) === 2) {
+            $payload['schema_version'] = 2;
+            $payload['is_sellable'] = array_key_exists('is_sellable', $payload)
+                ? ($this->normalizeBoolean($payload['is_sellable']) ?? false)
+                : true;
+            $payload['use_models'] = $this->normalizeBoolean($payload['use_models'] ?? null) ?? false;
+            $payload['use_designs'] = $this->normalizeBoolean($payload['use_designs'] ?? null) ?? false;
+            $payload['sales_enabled'] = $payload['is_sellable'];
             return $this->hydrateSnapshots($payload);
         }
 
@@ -77,5 +84,22 @@ class SalesReturnNewProductPayloadNormalizer
         }
 
         return $payload;
+    }
+
+    private function normalizeBoolean(mixed $value): ?bool
+    {
+        if ($value === null || $value === '') return null;
+        if (is_bool($value)) return $value;
+        if ($value === 1 || $value === '1') return true;
+        if ($value === 0 || $value === '0') return false;
+        if (is_string($value)) {
+            return match (strtolower(trim($value))) {
+                'true', 'yes', 'on' => true,
+                'false', 'no', 'off' => false,
+                default => null,
+            };
+        }
+
+        return null;
     }
 }

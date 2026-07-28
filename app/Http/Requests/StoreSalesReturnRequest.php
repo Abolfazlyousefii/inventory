@@ -90,6 +90,20 @@ class StoreSalesReturnRequest extends FormRequest
             if (isset($row['refund_unit_price'])) {
                 $row['refund_unit_price'] = (int) preg_replace('/[^0-9]/', '', strtr((string) $row['refund_unit_price'], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']));
             }
+            if (is_array($row['new_product_payload'] ?? null)) {
+                $payload = $row['new_product_payload'];
+                $schemaVersion = (int) ($payload['schema_version'] ?? 0);
+                if ($schemaVersion === 2) {
+                    $payload['schema_version'] = 2;
+                    $payload['is_sellable'] = array_key_exists('is_sellable', $payload)
+                        ? ($this->normalizeNullableBoolean($payload['is_sellable']) ?? false)
+                        : true;
+                    $payload['use_models'] = $this->normalizeNullableBoolean($payload['use_models'] ?? null) ?? false;
+                    $payload['use_designs'] = $this->normalizeNullableBoolean($payload['use_designs'] ?? null) ?? false;
+                    $payload['sales_enabled'] = $payload['is_sellable'];
+                }
+                $row['new_product_payload'] = $payload;
+            }
             return $row;
         })->all();
         $this->merge([
@@ -144,13 +158,15 @@ class StoreSalesReturnRequest extends FormRequest
                         $p = $row['new_product_payload'] ?? [];
                         foreach ([($p['schema_version'] ?? null) == 2 ? 'name' : 'product_name','category_id','purchase_price','sell_price'] as $field) if (blank($p[$field] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
                         if (($p['schema_version'] ?? null) == 2) {
-                            if (!empty($p['use_models']) && empty($p['model_list_ids'])) $validator->errors()->add("items.$idx.new_product_payload.model_list_ids", 'حداقل یک مدل انتخاب کنید.');
-                            if (!empty($p['use_models']) && filled($p['model_brand_group'] ?? null)) {
+                            $useModels = ($p['use_models'] ?? false) === true;
+                            $useDesigns = ($p['use_designs'] ?? false) === true;
+                            if ($useModels && empty($p['model_list_ids'])) $validator->errors()->add("items.$idx.new_product_payload.model_list_ids", 'حداقل یک مدل انتخاب کنید.');
+                            if ($useModels && filled($p['model_brand_group'] ?? null)) {
                                 $badBrand = \App\Models\ModelList::whereIn('id', $p['model_list_ids'] ?? [])->where('brand', '<>', $p['model_brand_group'])->exists();
                                 if ($badBrand) $validator->errors()->add("items.$idx.new_product_payload.model_brand_group", 'مدل‌ها متعلق به برند انتخاب‌شده نیستند.');
                             }
-                            if (!empty($p['use_designs']) && empty($p['designs'])) $validator->errors()->add("items.$idx.new_product_payload.designs", 'طرح‌ها کامل نیستند.');
-                            if (empty($p['selected_variants'])) $validator->errors()->add("items.$idx.new_product_payload.selected_variants", 'حداقل یک تنوع انتخاب کنید.');
+                            if ($useDesigns && empty($p['designs'])) $validator->errors()->add("items.$idx.new_product_payload.designs", 'حداقل یک طرح کامل وارد کنید.');
+                            if (empty($p['selected_variants'])) $validator->errors()->add("items.$idx.new_product_payload.selected_variants", 'حداقل یک تنوع برای کالا انتخاب کنید.');
                         } else {
                             if (blank($p['variant_name'] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.variant_name", 'این فیلد الزامی است.');
                         }
@@ -159,5 +175,34 @@ class StoreSalesReturnRequest extends FormRequest
                 }
             }
         });
+    }
+
+    public function messages(): array
+    {
+        return [
+            'items.*.new_product_payload.is_sellable.boolean' => 'وضعیت قابل فروش کالا نامعتبر است.',
+            'items.*.new_product_payload.use_models.boolean' => 'وضعیت مدل‌لیست کالا نامعتبر است.',
+            'items.*.new_product_payload.use_designs.boolean' => 'وضعیت طرح‌بندی کالا نامعتبر است.',
+            'items.*.new_product_payload.model_list_ids.required' => 'حداقل یک مدل انتخاب کنید.',
+            'items.*.new_product_payload.designs.required' => 'حداقل یک طرح کامل وارد کنید.',
+            'items.*.new_product_payload.selected_variants.required' => 'حداقل یک تنوع برای کالا انتخاب کنید.',
+        ];
+    }
+
+    private function normalizeNullableBoolean(mixed $value): ?bool
+    {
+        if ($value === null || $value === '') return null;
+        if (is_bool($value)) return $value;
+        if ($value === 1 || $value === '1') return true;
+        if ($value === 0 || $value === '0') return false;
+        if (is_string($value)) {
+            return match (strtolower(trim($value))) {
+                'true', 'yes', 'on' => true,
+                'false', 'no', 'off' => false,
+                default => null,
+            };
+        }
+
+        return null;
     }
 }
