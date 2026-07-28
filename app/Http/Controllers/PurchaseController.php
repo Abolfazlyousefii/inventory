@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\PurchasesExport;
+use App\Http\Requests\PurchaseIndexRequest;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
@@ -15,6 +16,8 @@ use App\Models\Warehouse;
 use App\Services\ProductVariantStructureService;
 use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
+use App\Support\JalaliDate;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -25,17 +28,18 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PurchaseController extends Controller
 {
-    public function index(Request $request)
+    public function index(PurchaseIndexRequest $request)
     {
-        $supplierId = $request->integer('supplier_id');
-        $dateFrom = $request->get('date_from');
-        $dateTo = $request->get('date_to');
+        $filters = $request->validated();
+        $supplierId = (int) ($filters['supplier_id'] ?? 0);
+        $dateFrom = $filters['date_from'] ?? null;
+        $dateTo = $filters['date_to'] ?? null;
 
         $query = Purchase::with('supplier')
             ->withCount('items')
             ->when($supplierId, fn ($q) => $q->where('supplier_id', $supplierId))
-            ->when($dateFrom, fn ($q) => $q->whereDate('purchased_at', '>=', $dateFrom))
-            ->when($dateTo, fn ($q) => $q->whereDate('purchased_at', '<=', $dateTo));
+            ->when($dateFrom, fn ($q) => $q->where('purchased_at', '>=', Carbon::parse($dateFrom)->startOfDay()))
+            ->when($dateTo, fn ($q) => $q->where('purchased_at', '<=', Carbon::parse($dateTo)->endOfDay()));
 
         $totalAllAmount = (int) Purchase::sum('total_amount');
         $totalAllCount = (int) Purchase::count();
@@ -45,22 +49,29 @@ class PurchaseController extends Controller
             ->withQueryString();
 
         $suppliers = Supplier::orderBy('name')->get();
+        $dateFromFa = $dateFrom ? JalaliDate::date($dateFrom, '') : '';
+        $dateToFa = $dateTo ? JalaliDate::date($dateTo, '') : '';
 
         return view('purchases.index', compact(
             'purchases',
             'suppliers',
             'totalAllAmount',
-            'totalAllCount'
+            'totalAllCount',
+            'dateFrom',
+            'dateTo',
+            'dateFromFa',
+            'dateToFa'
         ));
     }
 
 
-    public function exportExcel(Request $request): BinaryFileResponse
+    public function exportExcel(PurchaseIndexRequest $request): BinaryFileResponse
     {
+        $validated = $request->validated();
         $filters = [
-            'supplier_id' => $request->integer('supplier_id'),
-            'date_from' => trim((string) $request->query('date_from', '')),
-            'date_to' => trim((string) $request->query('date_to', '')),
+            'supplier_id' => (int) ($validated['supplier_id'] ?? 0),
+            'date_from' => $validated['date_from'] ?? '',
+            'date_to' => $validated['date_to'] ?? '',
         ];
 
         $filename = 'purchases-' . now()->format('Ymd-His') . '.xlsx';

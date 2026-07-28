@@ -42,11 +42,13 @@
             <div class="row g-2 align-items-end">
                 <div class="col-md-3">
                     <label class="form-label">از تاریخ</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ request('date_from') }}">
+                    <input type="text" id="purchaseDateFromFa" name="date_from_fa" class="form-control purchase-jalali-date" value="{{ $dateFromFa }}" data-jdp data-jdp-only-date inputmode="numeric" autocomplete="off" placeholder="1405/04/28" dir="ltr">
+                    <input type="hidden" id="purchaseDateFrom" name="date_from" value="{{ $dateFrom }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">تا تاریخ</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ request('date_to') }}">
+                    <input type="text" id="purchaseDateToFa" name="date_to_fa" class="form-control purchase-jalali-date" value="{{ $dateToFa }}" data-jdp data-jdp-only-date inputmode="numeric" autocomplete="off" placeholder="1405/04/28" dir="ltr">
+                    <input type="hidden" id="purchaseDateTo" name="date_to" value="{{ $dateTo }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">تامین‌کننده</label>
@@ -90,7 +92,7 @@
                             <td class="fw-bold">
                                 {{ $loop->iteration + (($purchases->currentPage() - 1) * $purchases->perPage()) }}
                             </td>
-                            <td>{{ $purchase->purchased_at?->format('Y/m/d H:i') }}</td>
+                            <td>{{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}</td>
                             <td>{{ $purchase->supplier?->name }}</td>
                             <td class="text-muted" style="min-width: 180px; max-width: 320px; white-space: normal;">{{ $purchase->note ?: '-' }}</td>
                             <td>{{ $toRial($purchase->total_discount ?? 0) }}</td>

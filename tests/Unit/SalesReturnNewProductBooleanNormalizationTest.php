@@ -79,6 +79,8 @@ it('keeps the frontend base model and design cartesian fallbacks', function () {
     expect($view)->toContain("const models=useM?[...np.selectedModels].map(id=>npModelById(id)).filter(Boolean):[null]")
         ->and($view)->toContain("const designs=useD?npDesigns():[{index:0,name:''}]")
         ->and($view)->toContain("is_sellable:$('#npSales').value==='1'?1:0")
-        ->and($view)->toContain("use_models:$('#npUseModels').checked?1:0")
-        ->and($view)->toContain("use_designs:$('#npUseDesigns').checked?1:0");
+        ->and($view)->toContain("use_models:useModels?1:0")
+        ->and($view)->toContain("use_designs:useDesigns?1:0")
+        ->and($view)->toContain("model_list_ids:useModels?")
+        ->and($view)->toContain("designs:useDesigns?npDesigns():[]");
 });

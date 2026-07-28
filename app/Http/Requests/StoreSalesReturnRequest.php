@@ -3,6 +3,7 @@ namespace App\Http\Requests;
 
 use App\Models\{Invoice,InvoiceItem,ProductVariant,SalesReturnDocument,SalesReturnDocumentItem};
 use App\Services\SalesReturnCalculationService;
+use App\Services\SalesReturnNewProductPayloadNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -58,7 +59,7 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.new_product_payload.designs' => ['nullable', 'array'],
             'items.*.new_product_payload.designs.*.index' => ['required_with:items.*.new_product_payload.designs', 'integer', 'min:1', 'max:99'],
             'items.*.new_product_payload.designs.*.name' => ['required_with:items.*.new_product_payload.designs', 'string', 'max:120'],
-            'items.*.new_product_payload.refund_unit_price_default' => ['nullable', 'integer', 'min:0'],
+            'items.*.new_product_payload.refund_unit_price_default' => ['nullable', 'integer', 'min:1'],
             'items.*.new_product_payload.selected_variants' => ['nullable', 'array', 'min:1'],
             'items.*.new_product_payload.selected_variants.*.temporary_variant_uuid' => ['nullable', 'uuid'],
             'items.*.new_product_payload.selected_variants.*.model_list_id' => ['nullable', 'exists:model_lists,id'],
@@ -91,18 +92,8 @@ class StoreSalesReturnRequest extends FormRequest
                 $row['refund_unit_price'] = (int) preg_replace('/[^0-9]/', '', strtr((string) $row['refund_unit_price'], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']));
             }
             if (is_array($row['new_product_payload'] ?? null)) {
-                $payload = $row['new_product_payload'];
-                $schemaVersion = (int) ($payload['schema_version'] ?? 0);
-                if ($schemaVersion === 2) {
-                    $payload['schema_version'] = 2;
-                    $payload['is_sellable'] = array_key_exists('is_sellable', $payload)
-                        ? ($this->normalizeNullableBoolean($payload['is_sellable']) ?? false)
-                        : true;
-                    $payload['use_models'] = $this->normalizeNullableBoolean($payload['use_models'] ?? null) ?? false;
-                    $payload['use_designs'] = $this->normalizeNullableBoolean($payload['use_designs'] ?? null) ?? false;
-                    $payload['sales_enabled'] = $payload['is_sellable'];
-                }
-                $row['new_product_payload'] = $payload;
+                $row['new_product_payload'] = app(SalesReturnNewProductPayloadNormalizer::class)
+                    ->normalize($row['new_product_payload']);
             }
             return $row;
         })->all();
@@ -156,7 +147,7 @@ class StoreSalesReturnRequest extends FormRequest
                     if ($src === SalesReturnDocumentItem::SOURCE_NEW_PRODUCT) {
                         if (! ($this->user()?->can('sales_returns.create_product') ?? false)) $validator->errors()->add("items.$idx.new_product_payload", 'مجوز تعریف کالای جدید را ندارید.');
                         $p = $row['new_product_payload'] ?? [];
-                        foreach ([($p['schema_version'] ?? null) == 2 ? 'name' : 'product_name','category_id','purchase_price','sell_price'] as $field) if (blank($p[$field] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
+                        foreach (['name', 'category_id'] as $field) if (blank($p[$field] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
                         if (($p['schema_version'] ?? null) == 2) {
                             $useModels = ($p['use_models'] ?? false) === true;
                             $useDesigns = ($p['use_designs'] ?? false) === true;
@@ -189,20 +180,4 @@ class StoreSalesReturnRequest extends FormRequest
         ];
     }
 
-    private function normalizeNullableBoolean(mixed $value): ?bool
-    {
-        if ($value === null || $value === '') return null;
-        if (is_bool($value)) return $value;
-        if ($value === 1 || $value === '1') return true;
-        if ($value === 0 || $value === '0') return false;
-        if (is_string($value)) {
-            return match (strtolower(trim($value))) {
-                'true', 'yes', 'on' => true,
-                'false', 'no', 'off' => false,
-                default => null,
-            };
-        }
-
-        return null;
-    }
 }

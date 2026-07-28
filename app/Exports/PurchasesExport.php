@@ -4,6 +4,7 @@ namespace App\Exports;
 
 use App\Models\Purchase;
 use App\Support\JalaliDate;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -26,8 +27,8 @@ class PurchasesExport implements FromQuery, ShouldAutoSize, WithEvents, WithHead
         return Purchase::query()
             ->with('supplier:id,name')
             ->when(($this->filters['supplier_id'] ?? 0) > 0, fn ($q) => $q->where('supplier_id', (int) $this->filters['supplier_id']))
-            ->when(($this->filters['date_from'] ?? '') !== '', fn ($q) => $q->whereDate('purchased_at', '>=', $this->filters['date_from']))
-            ->when(($this->filters['date_to'] ?? '') !== '', fn ($q) => $q->whereDate('purchased_at', '<=', $this->filters['date_to']))
+            ->when(($this->filters['date_from'] ?? '') !== '', fn ($q) => $q->where('purchased_at', '>=', Carbon::parse($this->filters['date_from'])->startOfDay()))
+            ->when(($this->filters['date_to'] ?? '') !== '', fn ($q) => $q->where('purchased_at', '<=', Carbon::parse($this->filters['date_to'])->endOfDay()))
             ->orderBy('purchased_at')
             ->orderBy('id');
     }

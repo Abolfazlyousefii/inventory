@@ -240,7 +240,7 @@
                 <div class="col-md-4">
                     <div class="kv">
                         <div class="k">تاریخ</div>
-                        <div class="v">{{ $purchase->purchased_at?->format('Y/m/d H:i') ?: '-' }}</div>
+                        <div class="v">{{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}</div>
                     </div>
                 </div>
 
