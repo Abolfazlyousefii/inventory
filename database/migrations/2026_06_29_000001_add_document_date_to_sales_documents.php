@@ -25,12 +25,27 @@ return new class extends Migration
             ->whereNull('document_date')
             ->update(['document_date' => DB::raw('created_at')]);
 
-        DB::statement(<<<'SQL'
-            UPDATE invoices i
-            LEFT JOIN preinvoice_orders p ON p.id = i.preinvoice_order_id
-            SET i.document_date = COALESCE(p.document_date, p.created_at, i.created_at)
-            WHERE i.document_date IS NULL
-        SQL);
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement(<<<'SQL'
+                UPDATE invoices i
+                LEFT JOIN preinvoice_orders p ON p.id = i.preinvoice_order_id
+                SET i.document_date = COALESCE(p.document_date, p.created_at, i.created_at)
+                WHERE i.document_date IS NULL
+            SQL);
+        } else {
+            DB::statement(<<<'SQL'
+                UPDATE invoices
+                SET document_date = COALESCE(
+                    (
+                        SELECT COALESCE(p.document_date, p.created_at)
+                        FROM preinvoice_orders p
+                        WHERE p.id = invoices.preinvoice_order_id
+                    ),
+                    invoices.created_at
+                )
+                WHERE document_date IS NULL
+            SQL);
+        }
     }
 
     public function down(): void

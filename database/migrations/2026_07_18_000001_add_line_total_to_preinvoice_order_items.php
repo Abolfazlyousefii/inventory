@@ -17,7 +17,13 @@ return new class extends Migration
 
         if (Schema::hasColumn('preinvoice_order_items', 'line_total')) {
             DB::table('preinvoice_order_items')->update([
-                'line_total' => DB::raw('GREATEST((quantity * price) - COALESCE(line_discount_amount, 0), 0)'),
+                'line_total' => DB::raw(
+                    'CASE
+                        WHEN (quantity * price) - COALESCE(line_discount_amount, 0) > 0
+                        THEN (quantity * price) - COALESCE(line_discount_amount, 0)
+                        ELSE 0
+                    END'
+                ),
             ]);
         }
     }

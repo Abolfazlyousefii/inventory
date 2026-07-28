@@ -18,8 +18,7 @@ return new class extends Migration
             }
         });
 
-        DB::statement('SET @rn := 0, @oid := 0');
-        DB::statement('UPDATE preinvoice_order_items p JOIN (SELECT id, (@rn := IF(@oid = preinvoice_order_id, @rn + 1, 1)) AS rn, (@oid := preinvoice_order_id) FROM preinvoice_order_items ORDER BY preinvoice_order_id, id) x ON x.id = p.id SET p.sort_order = IF(p.sort_order = 0, x.rn, p.sort_order)');
+        $this->backfillSortOrder('preinvoice_order_items', 'preinvoice_order_id', 'oid');
 
         Schema::table('preinvoice_order_items', function (Blueprint $table) {
             $table->index(['preinvoice_order_id', 'sort_order'], 'preinvoice_items_order_idx');
@@ -34,8 +33,7 @@ return new class extends Migration
             }
         });
 
-        DB::statement('SET @rn := 0, @iid := 0');
-        DB::statement('UPDATE invoice_items i JOIN (SELECT id, (@rn := IF(@iid = invoice_id, @rn + 1, 1)) AS rn, (@iid := invoice_id) FROM invoice_items ORDER BY invoice_id, id) x ON x.id = i.id SET i.sort_order = IF(i.sort_order = 0, x.rn, i.sort_order)');
+        $this->backfillSortOrder('invoice_items', 'invoice_id', 'iid');
 
         Schema::table('invoice_items', function (Blueprint $table) {
             $table->index(['invoice_id', 'sort_order'], 'invoice_items_order_idx');
@@ -70,5 +68,42 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('invoice_edit_audits');
+    }
+
+    private function backfillSortOrder(string $table, string $parentColumn, string $mysqlVariable): void
+    {
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("SET @rn := 0, @{$mysqlVariable} := 0");
+            DB::statement(
+                "UPDATE {$table} target
+                 JOIN (
+                    SELECT id,
+                           (@rn := IF(@{$mysqlVariable} = {$parentColumn}, @rn + 1, 1)) AS rn,
+                           (@{$mysqlVariable} := {$parentColumn})
+                    FROM {$table}
+                    ORDER BY {$parentColumn}, id
+                 ) numbered ON numbered.id = target.id
+                 SET target.sort_order = IF(target.sort_order = 0, numbered.rn, target.sort_order)"
+            );
+
+            return;
+        }
+
+        $nextByParent = [];
+
+        DB::table($table)
+            ->orderBy($parentColumn)
+            ->orderBy('id')
+            ->get(['id', $parentColumn, 'sort_order'])
+            ->each(function (object $row) use ($table, $parentColumn, &$nextByParent): void {
+                $parentId = (string) $row->{$parentColumn};
+                $nextByParent[$parentId] = ($nextByParent[$parentId] ?? 0) + 1;
+
+                if ((int) $row->sort_order === 0) {
+                    DB::table($table)
+                        ->where('id', $row->id)
+                        ->update(['sort_order' => $nextByParent[$parentId]]);
+                }
+            });
     }
 };
