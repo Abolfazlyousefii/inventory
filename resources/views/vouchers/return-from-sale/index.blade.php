@@ -20,8 +20,8 @@
         <div class="sr-filter-grid">
             <div><label class="form-label">شماره سند یا حواله</label><input class="form-control" name="document_number" value="{{ $filters['document_number'] ?? '' }}" autocomplete="off"></div>
             <div><label class="form-label">انتخاب مشتری</label>@include('vouchers.return-from-sale.partials.customer-filter-picker')</div>
-            <div><label class="form-label">از تاریخ</label><input type="text" id="salesReturnDateFrom" class="form-control" name="date_from" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸" value="{{ $filters['date_from'] ?? '' }}"></div>
-            <div><label class="form-label">تا تاریخ</label><input type="text" id="salesReturnDateTo" class="form-control" name="date_to" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸" value="{{ $filters['date_to'] ?? '' }}"></div>
+            <div><label class="form-label">از تاریخ و ساعت</label><input type="text" id="salesReturnDateFrom" class="form-control" name="date_from" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸ ۰۹:۳۰:۰۰" value="{{ $filters['date_from'] ?? '' }}"></div>
+            <div><label class="form-label">تا تاریخ و ساعت</label><input type="text" id="salesReturnDateTo" class="form-control" name="date_to" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸ ۱۰:۳۰:۰۰" value="{{ $filters['date_to'] ?? '' }}"></div>
             <div><button class="btn btn-outline-secondary w-100" type="button" id="salesReturnClearFilters">پاک‌کردن</button></div>
         </div>
         <div class="sr-live-status small mt-2" id="salesReturnLiveStatus" aria-live="polite"></div>
@@ -45,7 +45,7 @@ form.querySelector('[name="document_number"]')?.addEventListener('input',()=>deb
 ['salesReturnDateFrom','salesReturnDateTo'].forEach(id=>{const el=document.getElementById(id);el?.addEventListener('input',()=>debounce(id,350));el?.addEventListener('change',()=>liveFetch());el?.addEventListener('jdp:change',()=>liveFetch());});
 form.addEventListener('submit',e=>{}); window.salesReturnLiveFetch=liveFetch;
 results.addEventListener('click',e=>{const a=e.target.closest('.pagination a');if(!a)return;e.preventDefault();liveFetch(a.href.replace(indexUrl,dataUrl))});
-document.addEventListener('click',e=>{if(e.target.matches('[data-sr-retry]'))liveFetch();const print=e.target.closest('[data-print-base-url]');if(print){const qs=window.location.search||'';window.open(print.dataset.printBaseUrl+qs,'_blank','noopener');}});
+document.addEventListener('click',e=>{if(e.target.matches('[data-sr-retry]'))liveFetch();const print=e.target.closest('[data-print-base-url]');if(print){const qs=cleanParams().toString();window.open(print.dataset.printBaseUrl+(qs?`?${qs}`:''),'_blank','noopener');}});
 document.getElementById('salesReturnClearFilters')?.addEventListener('click',()=>{form.querySelector('[name="document_number"]').value='';form.querySelector('[name="customer_id"]').value='';form.querySelector('[data-customer-search]').value='';form.querySelector('[data-customer-selected] span').textContent='مشتری انتخاب نشده است.';form.querySelector('[data-customer-clear]')?.classList.add('d-none');document.getElementById('salesReturnDateFrom').value='';document.getElementById('salesReturnDateTo').value='';syncUrl(indexUrl);liveFetch(dataUrl);form.querySelector('[name="document_number"]').focus();});
 window.addEventListener('popstate',()=>{const params=new URLSearchParams(location.search);['document_number','customer_id','date_from','date_to'].forEach(n=>{const el=form.querySelector(`[name="${n}"]`);if(el)el.value=params.get(n)||''});liveFetch(`${dataUrl}${location.search}`)});
 

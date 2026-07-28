@@ -40,13 +40,16 @@ class SalesReturnLiveIndexTest extends TestCase
         $this->assertStringContainsString("where('w.customer_id'", $service);
     }
 
-    public function test_persian_jalali_date_range_is_inclusive(): void
+    public function test_persian_jalali_date_and_time_range_is_inclusive(): void
     {
         $request = file_get_contents(app_path('Http/Requests/SalesReturnIndexRequest.php'));
-        $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
+        $queryService = file_get_contents(app_path('Services/SalesReturnQueryService.php'));
+        $reportService = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $this->assertStringContainsString('normalizeJalaliDate', $request);
-        $this->assertStringContainsString('startOfDay', $service);
-        $this->assertStringContainsString('endOfDay', $service);
+        $this->assertStringContainsString('H:i:s', $request);
+        $this->assertStringContainsString('dateBoundary', $reportService);
+        $this->assertStringContainsString('startOfDay', $queryService);
+        $this->assertStringContainsString('endOfDay', $queryService);
     }
 
     public function test_invalid_date_has_persian_error(): void

@@ -21,11 +21,12 @@ class SalesReturnReportService extends SalesReturnQueryService
         $perPage = max(20, $perPage);
         $docTerm = trim((string) ($filters['document_number'] ?? ''));
         $like = $docTerm !== '' ? '%'.str_replace(['\\','%','_'], ['\\\\','\\%','\\_'], $docTerm).'%' : null;
-        $from = $this->filterDate($filters['date_from'] ?? null)?->startOfDay();
-        $to = $this->filterDate($filters['date_to'] ?? null)?->endOfDay();
+        $from = $this->dateBoundary($filters['date_from'] ?? null);
+        $to = $this->dateBoundary($filters['date_to'] ?? null, true);
 
         $new = DB::table('sales_return_documents as d')
             ->leftJoin('customers as c', 'c.id', '=', 'd.customer_id')
+            ->where('d.status', '!=', SalesReturnDocument::STATUS_CANCELLED)
             ->selectRaw("'new' as source, d.id as source_id, d.document_number, d.customer_id, '' as customer_name, COALESCE(d.applied_at, d.created_at) as canonical_date, d.status, d.total_quantity, d.total_refund_amount as total_amount, CASE WHEN d.document_number = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm])
             ->when($like, fn($q) => $q->where('d.document_number', 'like', $like))
             ->when(($filters['status'] ?? null) && ($filters['status'] ?? 'all') !== 'all', fn($q) => $q->where('d.status', $filters['status']))
@@ -242,8 +243,8 @@ class SalesReturnReportService extends SalesReturnQueryService
     {
         $docTerm = trim((string) ($filters['document_number'] ?? ''));
         $like = $docTerm !== '' ? '%'.str_replace(['\\','%','_'], ['\\\\','\\%','\\_'], $docTerm).'%' : null;
-        $from = $this->filterDate($filters['date_from'] ?? null)?->startOfDay();
-        $to = $this->filterDate($filters['date_to'] ?? null)?->endOfDay();
+        $from = $this->dateBoundary($filters['date_from'] ?? null);
+        $to = $this->dateBoundary($filters['date_to'] ?? null, true);
         $legacyCondition = $this->legacyConditionSql();
 
         $new = DB::table('sales_return_document_items as i')
@@ -279,8 +280,8 @@ class SalesReturnReportService extends SalesReturnQueryService
     {
         $docTerm = trim((string) ($filters['document_number'] ?? ''));
         $like = $docTerm !== '' ? '%'.str_replace(['\\','%','_'], ['\\\\','\\%','\\_'], $docTerm).'%' : null;
-        $from = $this->filterDate($filters['date_from'] ?? null)?->startOfDay();
-        $to = $this->filterDate($filters['date_to'] ?? null)?->endOfDay();
+        $from = $this->dateBoundary($filters['date_from'] ?? null);
+        $to = $this->dateBoundary($filters['date_to'] ?? null, true);
 
         $new = DB::table('sales_return_document_items as i')
             ->join('sales_return_documents as d', 'd.id', '=', 'i.document_id')
@@ -345,13 +346,7 @@ class SalesReturnReportService extends SalesReturnQueryService
         $query->when($filters['document_number'] ?? null, fn ($q, $v) => $q->where('reference', 'like', "%{$v}%"))
             ->when($filters['customer_id'] ?? null, fn ($q, $v) => $q->where('customer_id', $v))
             ->when($filters['destination_warehouse_id'] ?? null, fn ($q, $v) => $q->where('to_warehouse_id', $v))
-            ->when($this->filterDate($filters['date_from'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) >= ?', [$d->startOfDay()]))
-            ->when($this->filterDate($filters['date_to'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) <= ?', [$d->endOfDay()]));
-    }
-
-    private function filterDate(?string $value): ?Carbon
-    {
-        if (!$value) return null;
-        try { return preg_match('/^\d{4}\/\d{1,2}\/\d{1,2}$/', $value) ? Jalalian::fromFormat('Y/m/d', $value)->toCarbon() : Carbon::parse($value); } catch (\Throwable) { return null; }
+            ->when($this->dateBoundary($filters['date_from'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) >= ?', [$d]))
+            ->when($this->dateBoundary($filters['date_to'] ?? null, true), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) <= ?', [$d]));
     }
 }

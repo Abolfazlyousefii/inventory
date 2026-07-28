@@ -12,7 +12,16 @@ class SalesReturnCustomerPrintTest extends TestCase
     public function test_customer_print_excludes_drafts(): void { $this->assertStringContainsString("'official_only'", file_get_contents(app_path('Services/SalesReturnReportService.php'))); }
     public function test_customer_print_excludes_cancelled_documents(): void { $this->assertStringContainsString("where('d.status', SalesReturnDocument::STATUS_APPLIED)", file_get_contents(app_path('Services/SalesReturnReportService.php'))); }
     public function test_customer_print_respects_customer_filter(): void { $this->assertStringContainsString("where('d.customer_id'", file_get_contents(app_path('Services/SalesReturnReportService.php'))); }
-    public function test_customer_print_respects_jalali_date_range(): void { $s=file_get_contents(app_path('Services/SalesReturnReportService.php')); $this->assertStringContainsString('startOfDay', $s); $this->assertStringContainsString('endOfDay', $s); }
+    public function test_customer_print_respects_jalali_date_and_time_range(): void
+    {
+        $queryService = file_get_contents(app_path('Services/SalesReturnQueryService.php'));
+        $reportService = file_get_contents(app_path('Services/SalesReturnReportService.php'));
+
+        $this->assertStringContainsString('dateBoundary', $reportService);
+        $this->assertStringContainsString("'Y/m/d H:i:s'", $queryService);
+        $this->assertStringContainsString('startOfDay', $queryService);
+        $this->assertStringContainsString('endOfDay', $queryService);
+    }
     public function test_customer_print_respects_document_number(): void { $this->assertStringContainsString('document_number', file_get_contents(app_path('Services/SalesReturnReportService.php'))); }
     public function test_customer_print_has_print_button(): void { $this->assertStringContainsString('window.print()', file_get_contents(resource_path('views/vouchers/return-from-sale/partials/print-header.blade.php'))); }
     public function test_old_print_route_remains_compatible(): void { $this->assertStringContainsString("name('print-report')", file_get_contents(base_path('routes/web.php'))); }

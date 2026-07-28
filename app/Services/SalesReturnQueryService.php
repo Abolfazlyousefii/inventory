@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\{CustomerLedger, SalesReturnDocument, SalesReturnDocumentItem, StockMovement};
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Morilog\Jalali\Jalalian;
 
@@ -56,8 +56,8 @@ class SalesReturnQueryService
             ->when($filters['applied_by'] ?? null, fn ($q, $v) => $q->where('applied_by', $v))
             ->when($filters['min_amount'] ?? null, fn ($q, $v) => $q->where('total_refund_amount', '>=', $v))
             ->when($filters['max_amount'] ?? null, fn ($q, $v) => $q->where('total_refund_amount', '<=', $v))
-            ->when($this->date($filters['date_from'] ?? null), fn ($q, $d) => $q->where('created_at', '>=', $d->startOfDay()))
-            ->when($this->date($filters['date_to'] ?? null), fn ($q, $d) => $q->where('created_at', '<=', $d->endOfDay()));
+            ->when($this->dateBoundary($filters['date_from'] ?? null), fn ($q, $d) => $q->where('created_at', '>=', $d))
+            ->when($this->dateBoundary($filters['date_to'] ?? null, true), fn ($q, $d) => $q->where('created_at', '<=', $d));
     }
 
     private function applyItemFilters(Builder $query, array $filters): Builder
@@ -119,5 +119,28 @@ class SalesReturnQueryService
 
     private function applySort(Builder $query, string $sort): void { match($sort){ 'oldest'=>$query->oldest('created_at')->orderBy('id'), 'amount_desc'=>$query->orderByDesc('total_refund_amount')->orderByDesc('id'), 'amount_asc'=>$query->orderBy('total_refund_amount')->orderBy('id'), 'customer'=>$query->join('customers','sales_return_documents.customer_id','=','customers.id')->orderBy('customers.last_name')->orderBy('customers.first_name')->select('sales_return_documents.*'), default=>$query->orderByRaw('COALESCE(applied_at, created_at) DESC')->orderByDesc('id') }; }
     private function hasItemFilters(array $filters): bool { return (bool) array_filter([$filters['destination_warehouse_id']??null, ($filters['item_condition']??'all') !== 'all' ? $filters['item_condition'] : null, $filters['product_id']??null, $filters['product_variant_id']??null]); }
-    private function date(?string $value): ?Carbon { if(!$value)return null; return Jalalian::fromFormat('Y/m/d',$value)->toCarbon(); }
+    protected function dateBoundary(?string $value, bool $endOfRange = false): ?Carbon
+    {
+        if (! $value) return null;
+
+        try {
+            if (preg_match('/^\d{4}\/\d{2}\/\d{2}$/', $value)) {
+                $date = Jalalian::fromFormat('Y/m/d', $value)->toCarbon();
+                return $endOfRange ? $date->endOfDay() : $date->startOfDay();
+            }
+
+            if (preg_match('/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/', $value)) {
+                $date = Jalalian::fromFormat('Y/m/d H:i', $value)->toCarbon();
+                return $endOfRange ? $date->endOfMinute() : $date->startOfMinute();
+            }
+
+            if (preg_match('/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/', $value)) {
+                return Jalalian::fromFormat('Y/m/d H:i:s', $value)->toCarbon();
+            }
+
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 }

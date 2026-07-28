@@ -30,13 +30,15 @@ class SalesReturnIndexRequest extends FormRequest
             return $value;
         }
 
-        return strtr((string) $value, [
+        $value = strtr((string) $value, [
             '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
             '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
             '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
             '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
-            '-' => '/', ' ' => '', "\t" => '', "\n" => '', "\r" => '',
+            '-' => '/', 'T' => ' ',
         ]);
+
+        return preg_replace('/\s+/u', ' ', trim($value));
     }
 
     public function rules(): array
@@ -55,8 +57,8 @@ class SalesReturnIndexRequest extends FormRequest
             'return_reason' => ['nullable','string','max:150'],
             'created_by' => ['nullable','integer','exists:users,id'],
             'applied_by' => ['nullable','integer','exists:users,id'],
-            'date_from' => ['nullable','regex:/^\d{4}\/\d{2}\/\d{2}$/', function($attribute,$value,$fail){ if(! $this->validJalaliDate($value)) $fail('تاریخ را به‌شکل ۱۴۰۵/۰۴/۲۸ وارد کنید.'); }],
-            'date_to' => ['nullable','regex:/^\d{4}\/\d{2}\/\d{2}$/', function($attribute,$value,$fail){ if(! $this->validJalaliDate($value)) $fail('تاریخ را به‌شکل ۱۴۰۵/۰۴/۲۸ وارد کنید.'); }],
+            'date_from' => ['nullable','regex:/^\d{4}\/\d{2}\/\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?$/', function($attribute,$value,$fail){ if(! $this->validJalaliDate($value)) $fail('تاریخ را به‌شکل ۱۴۰۵/۰۴/۲۸ وارد کنید.'); }],
+            'date_to' => ['nullable','regex:/^\d{4}\/\d{2}\/\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?$/', function($attribute,$value,$fail){ if(! $this->validJalaliDate($value)) $fail('تاریخ را به‌شکل ۱۴۰۵/۰۴/۲۸ وارد کنید.'); }],
             'min_amount' => ['nullable','integer','min:0'],
             'max_amount' => ['nullable','integer','min:0','gte:min_amount'],
             'sort' => ['nullable', Rule::in(['newest','oldest','amount_desc','amount_asc','customer'])],
@@ -68,8 +70,11 @@ class SalesReturnIndexRequest extends FormRequest
     {
         if (! $value) return true;
         try {
-            $date = \Morilog\Jalali\Jalalian::fromFormat('Y/m/d', $value);
-            return $date->format('Y/m/d') === $value;
+            $format = str_contains($value, ':')
+                ? (substr_count($value, ':') === 2 ? 'Y/m/d H:i:s' : 'Y/m/d H:i')
+                : 'Y/m/d';
+            $date = \Morilog\Jalali\Jalalian::fromFormat($format, $value);
+            return $date->format($format) === $value;
         } catch (\Throwable) { return false; }
     }
 

@@ -24,6 +24,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'uuid','customer_id','preinvoice_order_id',
+        'document_date',
         'customer_name','customer_mobile','customer_address',
         'province_id','city_id','shipping_id','shipping_price',
         'shipping_method_id','shipping_cost',
@@ -35,6 +36,7 @@ class Invoice extends Model
     ];
 
     protected $casts = [
+        'document_date' => 'datetime',
         'shipping_status' => 'string',
         'shipping_cost' => 'integer',
         'discount_breakdown' => 'array',
