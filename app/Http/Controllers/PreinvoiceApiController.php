@@ -2,30 +2,46 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\PreinvoiceProductFinderRequest;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ShippingMethod;
 use App\Models\WarehouseStock;
-use App\Services\WarehouseStockService;
 use App\Services\PreinvoiceDraftReservationService;
+use App\Services\PreinvoiceProductFinderService;
+use App\Services\WarehouseStockService;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use App\Support\ProductFinderSearchNormalizer;
 
 class PreinvoiceApiController extends Controller
 {
     public function __construct(
         private readonly PreinvoiceDraftReservationService $draftReservationService,
+        private readonly PreinvoiceProductFinderService $productFinderService,
     ) {}
+
+    public function productFinder(PreinvoiceProductFinderRequest $request)
+    {
+        return response()->json($this->productFinderService->search($request->validated()));
+    }
+
+    public function productFinderCategories(Request $request)
+    {
+        $data = $request->validate(['parent_id' => ['nullable', 'integer', 'exists:categories,id']]);
+
+        return response()->json(['data' => $this->productFinderService->categories(isset($data['parent_id']) ? (int) $data['parent_id'] : null)]);
+    }
 
     public function products(Request $request)
     {
-        $q = trim((string) $request->query('q', ''));
-        $qDigits = preg_replace('/\D+/', '', $q); // فقط عدد
+        $q = ProductFinderSearchNormalizer::normalize($request->query('q'));
+        $isPureNumeric = $q !== '' && ctype_digit($q);
 
         $centralWarehouseId = WarehouseStockService::centralWarehouseId();
 
@@ -33,18 +49,20 @@ class PreinvoiceApiController extends Controller
             ->select(['id', 'name', 'sku', 'short_barcode', 'code', 'price'])
             ->where('is_sellable', true)
             ->whereHas('variants', fn ($q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0))
-            ->when($q !== '', function ($query) use ($q, $qDigits) {
+            ->when($q !== '', function ($query) use ($q, $isPureNumeric) {
 
                 // ✅ اگر عدد وارد شد و طولش <= 4 یعنی PPPP
-                if ($qDigits !== '' && strlen($qDigits) <= 4) {
-                    $pppp = str_pad($qDigits, 4, '0', STR_PAD_LEFT);
+                if ($isPureNumeric && strlen($q) <= 4) {
+                    $pppp = str_pad($q, 4, '0', STR_PAD_LEFT);
                     $query->where('short_barcode', $pppp);
+
                     return;
                 }
 
                 // ✅ اگر طولش 6 بود احتمالاً code محصول (CCPPPP) است
-                if ($qDigits !== '' && strlen($qDigits) === 6) {
-                    $query->where('code', $qDigits);
+                if ($isPureNumeric && strlen($q) === 6) {
+                    $query->where('code', $q);
+
                     return;
                 }
 
@@ -103,6 +121,7 @@ class PreinvoiceApiController extends Controller
 
     public function product(Request $request, Product $product)
     {
+        $includeUnavailable = $request->boolean('include_unavailable') && auth()->check();
         $editOrderUuid = trim((string) $request->query('preinvoice_uuid', ''));
         $currentPreinvoiceItemVariantIds = [];
 
@@ -128,40 +147,33 @@ class PreinvoiceApiController extends Controller
         $reservedByVariant = $this->activeReservationQuantities($reservationToken);
         $reservedVariantIds = array_keys($reservedByVariant);
 
-        $hasAvailableOrReservedVariant = $product->variants()
-            ->where(function ($outerQuery) use ($reservedVariantIds, $currentPreinvoiceItemVariantIds) {
-                $outerQuery->where(function ($query) use ($reservedVariantIds) {
-                    $query->active()->where('sales_enabled', true)->where(function ($stockQuery) use ($reservedVariantIds) {
-                        $stockQuery->where('stock', '>', 0);
-                        if (! empty($reservedVariantIds)) {
-                            $stockQuery->orWhereIn('id', $reservedVariantIds);
-                        }
-                    });
-                });
+        $applyVariantVisibility = function ($outerQuery) use ($reservedVariantIds, $currentPreinvoiceItemVariantIds, $includeUnavailable) {
+            if ($includeUnavailable) {
+                return;
+            }
 
-                if (! empty($currentPreinvoiceItemVariantIds)) {
-                    $outerQuery->orWhereIn('id', $currentPreinvoiceItemVariantIds);
-                }
-            })
+            $outerQuery->where(function ($query) use ($reservedVariantIds) {
+                $query->active()->where('sales_enabled', true)->where(function ($stockQuery) use ($reservedVariantIds) {
+                    $stockQuery->where('stock', '>', 0);
+                    if (! empty($reservedVariantIds)) {
+                        $stockQuery->orWhereIn('id', $reservedVariantIds);
+                    }
+                });
+            });
+
+            if (! empty($currentPreinvoiceItemVariantIds)) {
+                $outerQuery->orWhereIn('id', $currentPreinvoiceItemVariantIds);
+            }
+        };
+
+        $hasAvailableOrReservedVariant = $product->variants()
+            ->where($applyVariantVisibility)
             ->exists();
 
         abort_unless($hasAvailableOrReservedVariant, 404);
 
         $product->load(['variants' => fn ($q) => $q
-            ->where(function ($outerQuery) use ($reservedVariantIds, $currentPreinvoiceItemVariantIds) {
-                $outerQuery->where(function ($query) use ($reservedVariantIds) {
-                    $query->active()->where('sales_enabled', true)->where(function ($stockQuery) use ($reservedVariantIds) {
-                        $stockQuery->where('stock', '>', 0);
-                        if (! empty($reservedVariantIds)) {
-                            $stockQuery->orWhereIn('id', $reservedVariantIds);
-                        }
-                    });
-                });
-
-                if (! empty($currentPreinvoiceItemVariantIds)) {
-                    $outerQuery->orWhereIn('id', $currentPreinvoiceItemVariantIds);
-                }
-            })
+            ->where($applyVariantVisibility)
             ->with('modelList')
             ->orderBy('variant_name')]);
 
@@ -187,11 +199,12 @@ class PreinvoiceApiController extends Controller
             'quantity' => $centralStock,
 
             'varieties' => $product->variants->map(function ($v) use ($reservedByVariant, $currentPreinvoiceItemVariantIds) {
-                $freeStock = max(0, (int) ($v->stock ?? 0));
+                $isSellableVariant = (bool) ($v->is_active ?? false) && (bool) ($v->sales_enabled ?? false);
+                $freeStock = $isSellableVariant ? max(0, (int) ($v->stock ?? 0)) : 0;
                 $totalReservedIncludingCurrent = max(0, (int) ($v->reserved ?? 0));
                 $currentTokenReserved = max(0, (int) ($reservedByVariant[(int) $v->id] ?? 0));
                 $reservedByOthers = max(0, $totalReservedIncludingCurrent - $currentTokenReserved);
-                $maxSelectableForCurrentForm = $freeStock + $currentTokenReserved;
+                $maxSelectableForCurrentForm = $isSellableVariant ? $freeStock + $currentTokenReserved : 0;
                 $totalStock = $freeStock + $totalReservedIncludingCurrent;
 
                 return [
@@ -213,6 +226,7 @@ class PreinvoiceApiController extends Controller
 
                     'is_current_preinvoice_item' => in_array((int) $v->id, $currentPreinvoiceItemVariantIds, true),
                     'is_active' => (bool) ($v->is_active ?? false),
+                    'sales_enabled' => (bool) ($v->sales_enabled ?? false),
                     'variant_name' => (string) ($v->variant_name ?? ''),
                     'variety_name' => (string) ($v->variety_name ?? ''),
                     'variety_code' => (string) ($v->variety_code ?? ''),
@@ -474,7 +488,7 @@ class PreinvoiceApiController extends Controller
 
     private function reservationKey(int $productId, int $variantId): string
     {
-        return $productId . ':' . $variantId;
+        return $productId.':'.$variantId;
     }
 
     public function area()

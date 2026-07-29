@@ -76,7 +76,7 @@ class PriceIntegrityAuditCommandTest extends TestCase
     {
         $this->seedBase();
         $this->artisan('inventory:audit-price-integrity --format=json')->assertExitCode(0);
-        $codes = collect($this->json('reports/price-integrity/anomalies.json'))->keyBy('anomaly_code');
+        $codes = collect($this->readJsonReport('reports/price-integrity/anomalies.json'))->keyBy('anomaly_code');
         $this->assertSame('Critical', $codes['A05']['severity']);
         $this->assertSame('Critical', $codes['A06']['severity']);
         $this->assertSame('2026-01-02 03:04:05', $codes['A05']['updated_at']);
@@ -234,6 +234,7 @@ class PriceIntegrityAuditCommandTest extends TestCase
             ['id' => 10, 'product_id' => 1, 'variant_name' => 'Good', 'variant_code' => 'V10', 'sell_price' => 500, 'buy_price' => 300, 'stock' => 0, 'reserved' => 0, 'is_active' => 1, 'sales_enabled' => 1, 'created_at' => now(), 'updated_at' => now()],
             ['id' => 20, 'product_id' => 2, 'variant_name' => 'Bad', 'variant_code' => 'V20', 'sell_price' => 0, 'buy_price' => 200, 'stock' => 1, 'reserved' => 0, 'is_active' => 1, 'sales_enabled' => 1, 'created_at' => now(), 'updated_at' => now()],
             ['id' => 21, 'product_id' => 2, 'variant_name' => 'Off', 'variant_code' => 'V21', 'sell_price' => 0, 'buy_price' => 0, 'stock' => 0, 'reserved' => 0, 'is_active' => 0, 'sales_enabled' => 0, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 22, 'product_id' => 2, 'variant_name' => 'Positive', 'variant_code' => 'V22', 'sell_price' => 1000, 'buy_price' => 700, 'stock' => 0, 'reserved' => 0, 'is_active' => 1, 'sales_enabled' => 1, 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('warehouse_stocks')->insert(['product_id' => 2, 'product_variant_id' => 20, 'quantity' => 5]);
         DB::table('invoices')->insert(['id' => 1, 'uuid' => '11111111-1111-1111-1111-111111111111', 'status' => 'shipped', 'total' => 900, 'created_at' => now(), 'updated_at' => now()]);
@@ -247,7 +248,7 @@ class PriceIntegrityAuditCommandTest extends TestCase
 
     private function schema(): void
     {
-        Schema::create('categories', fn (Blueprint $t) => $t->id());
+        Schema::create('categories', function (Blueprint $t): void { $t->id(); $t->string('name')->nullable(); });
         Schema::create('products', function (Blueprint $t): void { $t->id(); $t->string('name'); $t->string('sku')->nullable(); $t->string('code')->nullable(); $t->unsignedBigInteger('category_id')->nullable(); $t->bigInteger('price')->nullable(); $t->integer('stock')->default(0); $t->integer('reserved')->default(0); $t->boolean('is_sellable')->default(true); $t->timestamp('synced_at')->nullable(); $t->timestamps(); });
         Schema::create('product_variants', function (Blueprint $t): void { $t->id(); $t->unsignedBigInteger('product_id'); $t->string('variant_name')->nullable(); $t->string('variant_code')->nullable(); $t->bigInteger('sell_price')->nullable(); $t->bigInteger('buy_price')->nullable(); $t->integer('stock')->default(0); $t->integer('reserved')->default(0); $t->boolean('is_active')->default(true); $t->boolean('sales_enabled')->default(true); $t->timestamp('synced_at')->nullable(); $t->timestamps(); });
         Schema::create('warehouse_stocks', function (Blueprint $t): void { $t->id(); $t->unsignedBigInteger('product_id'); $t->unsignedBigInteger('product_variant_id')->nullable(); $t->integer('quantity')->default(0); });
@@ -279,8 +280,8 @@ class PriceIntegrityAuditCommandTest extends TestCase
     private function where(array $rows, string $key, string $value): array
     { return array_values(array_filter($rows, fn ($r) => $r[$key] === $value)); }
 
-    private function json(string $path): array
-    { return json_decode(Storage::disk('local')->get($path), true); }
+    private function readJsonReport(string $path): array
+    { return json_decode(Storage::disk('local')->get($path), true, 512, JSON_THROW_ON_ERROR); }
 
     private function summary(): array
     { return json_decode(Storage::disk('local')->get('reports/price-integrity/summary.json'), true); }

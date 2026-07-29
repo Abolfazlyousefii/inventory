@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ModelList;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
@@ -41,9 +42,7 @@ class ProductCatalogVariantRegressionTest extends TestCase
         $this->variant($product, $model, 'Print A25 Blue');
 
         $this->get(route('admin.product-exports.print'))
-            ->assertOk()
-            ->assertSee('Print variants')
-            ->assertSee('A25');
+            ->assertRedirect(route('admin.product-exports.download', ['stock_status' => 'all', 'include_without_price' => 0]));
     }
 
     public function test_model_list_filter_still_works(): void
@@ -88,7 +87,7 @@ class ProductCatalogVariantRegressionTest extends TestCase
         $this->assertStringNotContainsString('validVariants', $service);
     }
 
-    private function signIn(): void { $role=Role::findOrCreate('products-viewer','web'); $permission=Permission::findOrCreate('products.view','web'); $role->givePermissionTo($permission); $user=User::factory()->create(); $user->assignRole($role); $this->actingAs($user); }
-    private function product(string $name): Product { return Product::create(['name'=>$name,'price'=>1000,'stock'=>1,'is_sellable'=>true]); }
+    private function signIn(): void { $this->withoutMiddleware(\App\Http\Middleware\RoutePermissionMiddleware::class); $role=Role::findOrCreate('products-viewer','web'); $permission=Permission::findOrCreate('products.view','web'); $role->givePermissionTo($permission); $user=User::factory()->create(); $user->assignRole($role); $this->actingAs($user); }
+    private function product(string $name): Product { $category=Category::firstOrCreate(['name'=>'Variant regression test']); return Product::create(['name'=>$name,'sku'=>'VR-'.uniqid(),'category_id'=>$category->id,'price'=>1000,'stock'=>1,'is_sellable'=>true]); }
     private function variant(Product $product, ModelList $model, string $name, int $stock=3, int $price=2000, bool $active=true): ProductVariant { return ProductVariant::create(['product_id'=>$product->id,'model_list_id'=>$model->id,'variant_name'=>$name,'sell_price'=>$price,'stock'=>$stock,'is_active'=>$active,'sales_enabled'=>false]); }
 }

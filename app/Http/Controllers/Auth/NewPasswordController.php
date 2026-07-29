@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class NewPasswordController extends Controller
@@ -26,7 +27,7 @@ class NewPasswordController extends Controller
     /**
      * Handle an incoming new password request.
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function store(Request $request): RedirectResponse
     {
@@ -35,6 +36,10 @@ class NewPasswordController extends Controller
             'email' => ['required', 'email'],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
+
+        if (User::query()->where('email', $request->string('email')->toString())->whereNotNull('crm_user_id')->exists()) {
+            return back()->withErrors(['email' => 'بازیابی رمز این حساب از طریق CRM انجام می‌شود.']);
+        }
 
         // Here we will attempt to reset the user's password. If it is successful we
         // will update the password on an actual user model and persist it to the

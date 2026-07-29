@@ -8,11 +8,18 @@ use App\Models\PreinvoiceOrderItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Models\WarehouseStock;
 use App\Services\MySalesDocumentsService;
 use App\Services\PreinvoiceReservationService;
+use App\Services\WarehouseStockService;
+use App\Http\Middleware\RoutePermissionMiddleware;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->withoutMiddleware(RoutePermissionMiddleware::class);
+});
 
 function mySalesExpiryProduct(int $stock = 10): array
 {
@@ -35,6 +42,12 @@ function mySalesExpiryProduct(int $stock = 10): array
         'sell_price' => 100000,
         'stock' => $stock,
         'reserved' => 0,
+    ]);
+    WarehouseStock::query()->create([
+        'warehouse_id' => WarehouseStockService::centralWarehouseId(),
+        'product_id' => $product->id,
+        'product_variant_id' => $variant->id,
+        'quantity' => $stock,
     ]);
 
     return compact('product', 'variant');
@@ -154,19 +167,26 @@ it('expiration_notification_links_to_active_tab', function () {
 it('seller_can_recheck_and_resubmit_expired_preinvoice', function () {
     $seller = User::factory()->create();
     ['order' => $order, 'product' => $product, 'variant' => $variant, 'item' => $item] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, null, now()->subMinute());
+    $row = [
+        'id' => $product->id,
+        'variety_id' => $variant->id,
+        'quantity' => 2,
+        'price' => 100000,
+        'item_id' => $item->id,
+    ];
 
-    $this->actingAs($seller)->put(route('preinvoice.draft.update', $order->uuid), [
+    $response = $this->actingAs($seller)->put(route('preinvoice.draft.update', $order->uuid), [
         'intent' => 'submit',
         'customer_name' => 'مشتری تست',
         'customer_mobile' => '09120000000',
-        'products' => [[
-            'id' => $product->id,
-            'variety_id' => $variant->id,
-            'quantity' => 2,
-            'price' => 100000,
-            'item_id' => $item->id,
-        ]],
-    ])->assertRedirect();
+        'products_payload' => json_encode([$row], JSON_THROW_ON_ERROR),
+        'products_payload_count' => 1,
+        'products_payload_version' => 1,
+        'products_payload_complete' => 1,
+        'products_payload_total_quantity' => 2,
+        'products_payload_gross_total' => 200000,
+    ]);
+    $response->assertRedirect();
 
     $order->refresh();
     expect($order->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)

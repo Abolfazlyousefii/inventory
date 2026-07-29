@@ -1035,7 +1035,7 @@ class ProductController extends Controller
 
         $products = $query->orderBy('name')->paginate(50)->withQueryString();
 
-        return view('products.pricelist', compact('products'));
+        return redirect()->route('admin.product-exports.index', request()->query());
     }
 
     public function syncCrm(CrmProductSyncService $service)

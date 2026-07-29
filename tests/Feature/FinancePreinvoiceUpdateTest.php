@@ -12,9 +12,14 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Http\Middleware\RoutePermissionMiddleware;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->withoutMiddleware(RoutePermissionMiddleware::class);
+});
 
 function financeEditorUser(): User
 {
@@ -53,6 +58,7 @@ function financeEditableOrderFixture(): array
         'uuid' => 'finance-edit-'.uniqid(),
         'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
         'customer_name' => 'مشتری مالی',
+        'customer_mobile' => '09120000000',
         'shipping_price' => 0,
         'discount_amount' => 500_000,
         'total_price' => 19_500_000,

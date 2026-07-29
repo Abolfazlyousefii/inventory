@@ -117,7 +117,8 @@ class MySalesDocumentsService
 
     public function baseQuery(int $sellerId): Builder
     {
-        $invoiceActivitySql = "select greatest(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
+        $greatest = $this->greatestFunction();
+        $invoiceActivitySql = "select {$greatest}(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
 
         return PreinvoiceOrder::query()
             ->createdBySeller($sellerId)
@@ -214,12 +215,18 @@ class MySalesDocumentsService
         $query = $this->applyBucket($this->baseQuery($sellerId), $bucket);
         $this->applyFilters($query, $filters, $this->bucketStatuses($bucket));
         if ($bucket === self::BUCKET_NEEDS_CORRECTION) {
-            $query->selectRaw("greatest(coalesce((select invoices.status_changed_at from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1), '1000-01-01'), coalesce(preinvoice_orders.stock_released_at, '1000-01-01'), coalesce(preinvoice_orders.items_updated_at, '1000-01-01'), coalesce(preinvoice_orders.updated_at, '1000-01-01')) as action_required_at")
+            $greatest = $this->greatestFunction();
+            $query->selectRaw("{$greatest}(coalesce((select invoices.status_changed_at from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1), '1000-01-01'), coalesce(preinvoice_orders.stock_released_at, '1000-01-01'), coalesce(preinvoice_orders.items_updated_at, '1000-01-01'), coalesce(preinvoice_orders.updated_at, '1000-01-01')) as action_required_at")
                 ->orderByDesc('action_required_at');
         } else {
             $query->orderByDesc('activity_at');
         }
 
         return $query->orderByDesc('preinvoice_orders.id')->paginate(20)->withQueryString();
+    }
+
+    private function greatestFunction(): string
+    {
+        return PreinvoiceOrder::query()->getConnection()->getDriverName() === 'sqlite' ? 'max' : 'greatest';
     }
 }

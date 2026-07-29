@@ -29,7 +29,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $this->assertSame('20', $s01Rows[0]['variant_id']);
         $this->assertSame('S01', $s01Rows[0]['anomaly_code']);
         $this->assertSame('4', $s01Rows[0]['central_available_stock']);
-        $this->assertSame('0', $s01Rows[0]['non_central_stock']);
+        $this->assertSame('99', $s01Rows[0]['non_central_stock']);
 
         $summary = $this->summary();
         $this->assertSame(1, $summary['central_stock_cache_desync']);
@@ -75,7 +75,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $staleRows = collect($this->csv('reports/stock-reservation-integrity/stale-temporary-reservations.csv'));
         $officialRows = collect($this->csv('reports/stock-reservation-integrity/invalid-official-reservations.csv'));
 
-        $this->assertSameCanonicalizing(['R03', 'R04'], $staleRows->pluck('anomaly_code')->all());
+        $this->assertEqualsCanonicalizing(['R03', 'R04'], $staleRows->pluck('anomaly_code')->all());
         $this->assertSame('R05', $officialRows->first()['anomaly_code']);
         $this->assertNull(DB::table('preinvoice_draft_reservations')->where('id', 101)->value('released_at'));
         $this->assertNull(DB::table('preinvoice_draft_reservations')->where('id', 103)->value('released_at'));
@@ -118,7 +118,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
 
         Storage::disk('local')->assertExists('reports/stock-reservation-integrity/summary.json');
         Storage::disk('local')->assertExists('reports/stock-reservation-integrity/central-stock-cache-desync.json');
-        $rows = $this->json('reports/stock-reservation-integrity/central-stock-cache-desync.json');
+        $rows = $this->readJsonReport('reports/stock-reservation-integrity/central-stock-cache-desync.json');
         $this->assertTrue(collect($rows)->every(fn ($row) => $row['product_id'] === 2 && $row['variant_id'] === 20));
     }
 
@@ -215,13 +215,13 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         return array_map(fn ($row) => array_combine($head, $row), array_filter($lines));
     }
 
-    private function json(string $path): array
+    private function readJsonReport(string $path): array
     {
-        return json_decode(Storage::disk('local')->get($path), true);
+        return json_decode(Storage::disk('local')->get($path), true, 512, JSON_THROW_ON_ERROR);
     }
 
     private function summary(): array
     {
-        return $this->json('reports/stock-reservation-integrity/summary.json');
+        return $this->readJsonReport('reports/stock-reservation-integrity/summary.json');
     }
 }

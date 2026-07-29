@@ -40,7 +40,7 @@ class ProductCatalogGroupingServiceTest extends TestCase
     {
         $result = $this->service->group($this->product(), new Collection([$this->variant('A05', 'مشکی', 1280000), $this->variant('A06', 'مشکی', 1490000)]));
         $this->assertCount(2, $result['groups']);
-        $this->assertSame('از 1,280,000 ریال تا 1,490,000 ریال', $result['price_summary']);
+        $this->assertSame('از 1,280,000 تا 1,490,000 ریال', $result['price_summary']);
     }
 
     public function test_deduplicates_identical_variants(): void

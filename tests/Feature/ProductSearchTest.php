@@ -48,8 +48,8 @@ class ProductSearchTest extends TestCase
         $response->assertSee('id="productSearch"', false);
         $response->assertSee('data-products-url="' . route('products.data') . '"', false);
         $response->assertSee('data-initial-filters', false);
-        $response->assertSee('&quot;q&quot;:&quot;کیفی مگنتی سامسون&quot;', false);
-        $response->assertSee('&quot;category_id&quot;:&quot;' . $category->id . '&quot;', false);
+        $response->assertSee('"q":"کیفی مگنتی سامسون"', false);
+        $response->assertSee('"category_id":"' . $category->id . '"', false);
         $response->assertDontSee('کاور کیفی مگنتی سامسونگ');
     }
 

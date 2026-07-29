@@ -32,7 +32,7 @@ class UserController extends Controller
 
     public function sync(CrmUserService $crmUserService)
     {
-        $result = $crmUserService->syncUsers();
+        $result = $crmUserService->syncUsers(full: false);
 
         if (!empty($result['error'])) {
             return redirect()->route('users.index')->with('sync_error', $result['error']);

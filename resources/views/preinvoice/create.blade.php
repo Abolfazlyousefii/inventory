@@ -46,12 +46,6 @@ $oldCustomerMobile = trim((string) old('customer_mobile', $order->customer_mobil
 $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '');
 @endphp
 
-<link rel="stylesheet" href="{{ asset('lib/select2.min.css') }}">
-<link rel="stylesheet" href="{{ asset('lib/bootstrap.rtl.min.css') }}">
-<script src="{{ asset('lib/jquery.min.js') }}"></script>
-<script src="{{ asset('lib/select2.min.js') }}"></script>
-<script src="{{ asset('lib/bootstrap.bundle.min.js') }}"></script>
-
 <style>
     :root {
         --brand: #33c7c0;
@@ -1461,8 +1455,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                         <button type="button" id="findMotherBtn" class="find-btn w-100">مشاهده</button>
                     </div>
                     <div class="col-lg-6 col-sm-4">
-                        <label class="label-sm d-lg-none mt-2">جستجوی نام محصول</label>
-                        <select id="motherProductAjaxSelect" class="form-select mb-2" aria-label="جستجوی محصول"></select>
+                        <label class="label-sm d-lg-none mt-2">جست‌وجوی حرفه‌ای کالا</label>
+                        <button type="button" id="openProductFinderBtn" class="btn btn-outline-primary finder-trigger w-100 mb-2 d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#productFinderModal">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                            <span>یافتن کالا</span>
+                        </button>
                        
                         <div id="motherProductBox" style="display:none">
                             <div class="customer-box is-selected d-flex justify-content-between align-items-center gap-2">
@@ -1524,6 +1521,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         </div>
     </form>
 </div>
+
+@include('preinvoice.partials.product-finder-modal')
 
 <div class="modal fade" id="groupPickerModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl variant-modal-dialog">
@@ -1671,6 +1670,33 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     let isHydratingLocalDraft = false;
     let isBootingPage = true;
     let localDraftSaveTimer = null;
+    let isSavingGroupSelection = false;
+    let isSwitchingBetweenProductModals = false;
+
+    const groupPickerElement = document.getElementById('groupPickerModal');
+    const groupPickerModal = bootstrap.Modal.getOrCreateInstance(groupPickerElement);
+
+    function cleanupOrphanedProductModalArtifacts() {
+        if (isSwitchingBetweenProductModals || document.querySelector('.modal.show')) return;
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+    }
+
+    function scheduleProductModalCleanup() {
+        requestAnimationFrame(() => {
+            if (!isSwitchingBetweenProductModals && !document.querySelector('.modal.show')) {
+                cleanupOrphanedProductModalArtifacts();
+            }
+        });
+    }
+
+    window.PreinvoiceProductModalLifecycle = {
+        beginSwitch() { isSwitchingBetweenProductModals = true; },
+        endSwitch() { isSwitchingBetweenProductModals = false; },
+        scheduleCleanup: scheduleProductModalCleanup,
+    };
 
     const RECENT_PRODUCTS_KEY = 'aria_preinvoice_recent_mothers_v3';
     const LOCAL_DRAFT_VERSION = 1;
@@ -2459,11 +2485,13 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const id = String(productId || '');
         if (!id) return null;
         const token = ensureReservationToken();
-        const cacheKey = id + ':' + token + ':' + (IS_EDIT ? (EDIT_ORDER_UUID || '') : '');
+        const availabilityScope = selectedMotherProduct?._finder_include_unavailable ? 'all' : 'available';
+        const cacheKey = id + ':' + token + ':' + (IS_EDIT ? (EDIT_ORDER_UUID || '') : '') + ':' + availabilityScope;
         if (!fresh && productCache.has(cacheKey)) return productCache.get(cacheKey);
         const params = new URLSearchParams();
         if (token) params.set('reservation_token', token);
         if (IS_EDIT && EDIT_ORDER_UUID) params.set('preinvoice_uuid', EDIT_ORDER_UUID);
+        if (selectedMotherProduct?._finder_include_unavailable) params.set('include_unavailable', '1');
         if (fresh) params.set('_', Date.now());
         const qs = params.toString();
         const url = API.product + '/' + encodeURIComponent(id) + (qs ? '?' + qs : '');
@@ -2488,13 +2516,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         return json?.data?.products?.data || [];
     }
 
-    function productAjaxText(product) {
-        if (!product) return '';
-        const code = productCode(product);
-        const stock = Number(product.quantity ?? product.stock ?? 0) || 0;
-        return [productTitle(product), code ? 'کد: ' + code : '', 'موجودی: ' + formatNum(stock)].filter(Boolean).join(' | ');
-    }
-
     function applyMotherProduct(product, autoOpen = true) {
         if (!product) return;
         selectedMotherProduct = product;
@@ -2506,46 +2527,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         if (codeInput && productCode(product)) codeInput.value = String(productCode(product)).replace(/\D/g, '').slice(-4);
         saveRecentProduct(product);
         if (autoOpen) openGroupPicker(product.id);
-    }
-
-    function initMotherAjaxSearch() {
-        const selectEl = document.getElementById('motherProductAjaxSelect');
-        if (!window.jQuery || !window.jQuery.fn?.select2 || !selectEl) return;
-        const $el = $(selectEl);
-        $el.select2({
-            width: '100%',
-            dir: 'rtl',
-            placeholder: 'جستجوی  محصول با نام، کد، SKU یا بارکد...',
-            allowClear: true,
-            minimumInputLength: 1,
-            ajax: {
-                url: API.products,
-                dataType: 'json',
-                delay: 250,
-                data: params => ({ q: params.term || '' }),
-                processResults: resp => {
-                    const items = resp?.data?.products?.data || [];
-                    return {
-                        results: items.map(p => ({
-                            id: p.id,
-                            text: productAjaxText(p),
-                            product: p
-                        }))
-                    };
-                }
-            },
-            templateResult: item => item.loading ? item.text : $('<span>').text(item.text),
-            templateSelection: item => item.text || 'جستجوی محصول'
-        });
-        $el.on('select2:select', function(e) {
-            const product = e?.params?.data?.product || null;
-            applyMotherProduct(product, true);
-        });
-        $el.on('select2:clear', function() {
-            if (selectedMotherProduct) return;
-            document.getElementById('motherProductBox').style.display = 'none';
-            setMotherSearchHintVisible(true);
-        });
     }
 
     function initSelect2Basic(selectEl, placeholder) {
@@ -2739,8 +2720,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     async function openGroupPicker(productId = null) {
         const targetId = productId || selectedMotherProduct?.id;
         if (!targetId) return;
-        const modalEl = document.getElementById('groupPickerModal');
-        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         activeProductId = Number(targetId);
         activeProduct = groupedSelections[activeProductId]?.product || selectedMotherProduct || null;
         document.getElementById('pickerLoading').classList.remove('d-none');
@@ -2749,12 +2728,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('pickerSearchInput').value = '';
         document.getElementById('onlyInStockToggle').checked = false;
         modalOnlyInStock = false;
-        modal.show();
+        groupPickerModal.show();
         try {
             const product = await getProductDetails(activeProductId);
             if (!product) {
                 alert('اطلاعات محصول دریافت نشد.');
-                modal.hide();
+                groupPickerModal.hide();
                 return;
             }
             activeProduct = product;
@@ -2776,7 +2755,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             setTimeout(() => document.getElementById('pickerSearchInput').focus(), 200);
         } catch (e) {
             alert('خطا در باز کردن لیست.');
-            modal.hide();
+            groupPickerModal.hide();
         }
     }
 
@@ -2939,6 +2918,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             alert('حداقل یک کالا را انتخاب کنید.');
             return;
         }
+        if (isSavingGroupSelection) return;
+        isSavingGroupSelection = true;
         const discountType = document.getElementById('modalGroupDiscountType')?.value || 'amount';
         const discountValue = normalizeDiscountInput(discountType, document.getElementById('modalGroupDiscountValue')?.value || 0);
         const previousSelections = JSON.parse(JSON.stringify(groupedSelections || {}));
@@ -2965,6 +2946,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         } catch (e) {
             groupedSelections = previousSelections;
             alert(e.message || 'موجودی برای این انتخاب کافی نیست.');
+            isSavingGroupSelection = false;
             if (saveBtn) {
                 saveBtn.disabled = false;
                 saveBtn.textContent = oldSaveText;
@@ -2980,11 +2962,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         renderGroupSummary();
         updateTotal();
         scheduleLocalDraftSave();
-        bootstrap.Modal.getInstance(document.getElementById('groupPickerModal'))?.hide();
+        groupPickerModal.hide();
         document.getElementById('motherCodeInput').value = '';
         document.getElementById('motherProductBox').style.display = 'none';
         setMotherSearchHintVisible(true);
-        if (window.jQuery) $('#motherProductAjaxSelect').val(null).trigger('change');
         selectedMotherProduct = null;
         lastMotherAutoCode = '';
         setTimeout(() => document.getElementById('motherCodeInput').focus(), 100);
@@ -3389,7 +3370,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
 
         initCustomerSearch();
-        initMotherAjaxSearch();
         await loadOldCustomer();
         renderRecentProducts();
 
@@ -3420,6 +3400,21 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             findMotherProductByCode(true);
         });
         document.getElementById('openGroupPickerBtn')?.addEventListener('click', () => openGroupPicker());
+        document.addEventListener('preinvoice:product-selected', function(event) {
+            const product = event.detail?.product || {id: event.detail?.productId};
+            if (!product?.id) return;
+            product._finder_include_unavailable = true;
+            window.PreinvoiceProductModalLifecycle.beginSwitch();
+            applyMotherProduct(product, true);
+        });
+        groupPickerElement.addEventListener('shown.bs.modal', () => {
+            window.PreinvoiceProductModalLifecycle.endSwitch();
+        });
+        groupPickerElement.addEventListener('hidden.bs.modal', () => {
+            window.PreinvoiceProductModalLifecycle.endSwitch();
+            isSavingGroupSelection = false;
+            scheduleProductModalCleanup();
+        });
         document.getElementById('pickerSearchInput')?.addEventListener('input', renderPickerRows);
         document.getElementById('clearPickerSearchBtn')?.addEventListener('click', function() {
             const input = document.getElementById('pickerSearchInput');

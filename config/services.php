@@ -16,6 +16,7 @@ return [
 
     'sales_server' => [
         'api_url'      => env('SALES_SERVER_API_URL'),
+        'api_token'    => env('SALES_SERVER_API_TOKEN'),
         'sync_enabled' => env('SALES_SERVER_SYNC_ENABLED', false),
     ],
 
@@ -51,16 +52,5 @@ return [
 
     'site' => [
         'base_url' => env('SITE_BASE_URL'),
-    ],
-    'crm'  => [
-        'base_url'         => env('CRM_BASE_URL'),
-        'users_endpoint'   => env('CRM_USERS_ENDPOINT', '/external/users'),
-        'api_token'        => env('CRM_API_TOKEN'),
-        'sync_enabled'     => env('CRM_SYNC_ENABLED', true),
-        'timeout'          => env('CRM_SYNC_TIMEOUT', 30),
-        'connect_timeout'  => env('CRM_CONNECT_TIMEOUT', 10),
-        'verify_ssl'       => env('CRM_SYNC_VERIFY_SSL', true),
-        'client_token_url' => env('CRM_CLIENT_TOKEN_URL', 'https://crm.ariyajanebi.ir/api/token-for-client'),
-        'client_secret'    => env('CRM_CLIENT_SECRET'),
     ],
 ];

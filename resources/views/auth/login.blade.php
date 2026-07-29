@@ -44,4 +44,18 @@
             </x-primary-button>
         </div>
     </form>
+
+    @if(config('crm.sso.enabled'))
+        <div class="my-5 flex items-center gap-3" aria-hidden="true">
+            <span class="h-px flex-1 bg-slate-200"></span>
+            <span class="text-xs text-slate-400">یا</span>
+            <span class="h-px flex-1 bg-slate-200"></span>
+        </div>
+        <a href="{{ route('auth.crm.redirect') }}"
+           class="flex w-full items-center justify-center rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+            ورود از طریق CRM آریا گستر
+        </a>
+    @endif
+
+    <x-input-error :messages="$errors->get('crm')" class="mt-4 text-sm" />
 </x-guest-layout>
