@@ -125,6 +125,14 @@ class WarehouseCollectionService
 
                 $price = $canEditPrices && $requestedPrice !== null ? $requestedPrice : ($existing ? (int) $existing->price : (int) $variant->sell_price);
                 $discount = $canEditPrices && $requestedDiscount !== null ? $requestedDiscount : ($existing ? (int) ($existing->line_discount_amount ?? 0) : 0);
+                if ($existing && $qty !== (int) $existing->quantity && (! $canEditPrices || $requestedDiscount === null)) {
+                    $discount = SalesDocumentTotals::proportionalLineDiscount(
+                        (int) $existing->quantity,
+                        (int) ($existing->line_discount_amount ?? 0),
+                        $qty,
+                        $price,
+                    );
+                }
                 if ($qty > 0 && $price <= 0) {
                     throw ValidationException::withMessages(['price' => 'قیمت واحد باید بزرگ‌تر از صفر باشد.']);
                 }
@@ -215,7 +223,8 @@ class WarehouseCollectionService
             }
 
             $oldStatus = (string) $invoice->status;
-            $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
+            $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
+            $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
             $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
 
@@ -310,6 +319,14 @@ class WarehouseCollectionService
 
                 $price = $canEditPrices && $requestedPrice !== null ? $requestedPrice : ($existing ? (int) $existing->price : (int) $variant->sell_price);
                 $discount = $canEditPrices && $requestedDiscount !== null ? $requestedDiscount : ($existing ? (int) ($existing->line_discount_amount ?? 0) : 0);
+                if ($existing && $qty !== (int) $existing->quantity && (! $canEditPrices || $requestedDiscount === null)) {
+                    $discount = SalesDocumentTotals::proportionalLineDiscount(
+                        (int) $existing->quantity,
+                        (int) ($existing->line_discount_amount ?? 0),
+                        $qty,
+                        $price,
+                    );
+                }
 
                 if ($qty > 0 && $price <= 0) {
                     throw ValidationException::withMessages(['price' => 'قیمت واحد باید بزرگ‌تر از صفر باشد.']);
@@ -408,7 +425,7 @@ class WarehouseCollectionService
             if ($total < (int) $invoice->payments->sum('amount')) {
                 throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است. ابتدا پرداخت‌ها را اصلاح کنید یا مبلغ فاکتور را بررسی کنید.']);
             }
-            $invoice->update(['subtotal' => $subtotal, 'discount_amount' => $discount, 'total' => $total, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
+            $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
             $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
             $description = trim(($reason ? 'دلیل: ' . $reason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
             $this->historyService->log($invoice, 'invoice_items_updated', 'items', null, null, $description, $user->id);

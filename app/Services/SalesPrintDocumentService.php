@@ -120,7 +120,7 @@ class SalesPrintDocumentService
                 'quantity' => (int) $item->quantity,
                 'unitPrice' => (int) $item->price,
                 'lineDiscount' => (int) ($item->line_discount_amount ?? 0),
-                'netUnitPrice' => max((int) $item->price - (int) floor(((int) ($item->line_discount_amount ?? 0)) / max((int) $item->quantity, 1)), 0),
+                'netUnitPrice' => SalesDocumentTotals::netUnitPrice($item),
                 'lineTotal' => SalesDocumentTotals::lineTotal($item),
             ];
         });

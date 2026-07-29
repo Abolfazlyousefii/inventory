@@ -124,10 +124,12 @@ class SalesHavalehService
                     $this->historyService->log($invoice, 'item_price_changed', 'price', (string) $oldPrice, (string) $newPrice, $this->itemChangeDescription('قیمت آیتم ' . $this->itemLabel($item) . ' از ' . number_format($oldPrice) . ' به ' . number_format($newPrice) . ' تغییر کرد.', $changeReason, $changeNote), $userId);
                 }
 
-                $lineTotal = max(($newQty * $newPrice) - (int) ($item->line_discount_amount ?? 0), 0);
+                $lineDiscount = SalesDocumentTotals::proportionalLineDiscount($oldQty, (int) ($item->line_discount_amount ?? 0), $newQty, $newPrice);
+                $lineTotal = max(($newQty * $newPrice) - $lineDiscount, 0);
                 $item->update([
                     'quantity' => $newQty,
                     'price' => $newPrice,
+                    'line_discount_amount' => $lineDiscount,
                     'line_total' => $lineTotal,
                 ]);
             }
@@ -528,10 +530,12 @@ class SalesHavalehService
                 $this->historyService->log($invoice, 'item_price_changed', 'price', (string) $oldPrice, (string) $price, $this->itemChangeDescription('قیمت آیتم ' . $this->itemLabel($existingItem) . ' از ' . number_format($oldPrice) . ' به ' . number_format($price) . ' تغییر کرد.', $reason, $note), $userId);
             }
 
+            $lineDiscount = SalesDocumentTotals::proportionalLineDiscount($oldQty, (int) ($existingItem->line_discount_amount ?? 0), $newQty, $price);
             $existingItem->update([
                 'quantity' => $newQty,
                 'price' => $price,
-                'line_total' => max(($newQty * $price) - (int) ($existingItem->line_discount_amount ?? 0), 0),
+                'line_discount_amount' => $lineDiscount,
+                'line_total' => max(($newQty * $price) - $lineDiscount, 0),
             ]);
 
             $this->historyService->log($invoice, 'item_quantity_increased', 'quantity', (string) $oldQty, (string) $newQty, $this->itemChangeDescription('آیتم ' . $this->itemLabel($existingItem) . ' قبلاً در حواله وجود داشت؛ تعداد از ' . number_format($oldQty) . ' به ' . number_format($newQty) . ' افزایش یافت و ' . number_format($quantity) . ' عدد از موجودی مرکزی کم شد.', $reason, $note), $userId);

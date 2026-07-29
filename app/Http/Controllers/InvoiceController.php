@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Support\PermissionCatalog;
 use App\Support\Currency;
+use App\Support\SalesDocumentTotals;
 use App\Services\SalesHavalehStatusService;
 use App\Services\SalesHavalehService;
 use App\Services\SalesDocumentAccessService;
@@ -23,6 +24,7 @@ use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -601,8 +603,21 @@ class InvoiceController extends Controller
             abort_if($invoice->items->sum('quantity') <= 0, 422, 'فاکتور باید حداقل یک قلم کالا داشته باشد.');
             abort_if($invoice->items->contains(fn ($item) => (int) $item->quantity <= 0), 422, 'تعداد همه ردیف‌ها باید بیشتر از صفر باشد.');
             abort_if($invoice->items->contains(fn ($item) => (int) $item->price <= 0), 422, 'قیمت snapshot همه ردیف‌ها باید بیشتر از صفر باشد.');
-            $subtotal = (int) $invoice->items->sum(fn ($item) => (int) $item->quantity * (int) $item->price);
-            $discount = max((int) ($invoice->discount_amount ?? 0), (int) $invoice->items->sum(fn ($item) => (int) ($item->line_discount_amount ?? 0)));
+            $integrityIssues = SalesDocumentTotals::integrityIssues($invoice);
+            if ($integrityIssues !== []) {
+                Log::warning('Invoice finance reapproval blocked by pricing integrity check.', [
+                    'document_type' => 'invoice',
+                    'document_id' => (int) $invoice->id,
+                    'document_number' => (string) $invoice->uuid,
+                    'user_id' => auth()->id(),
+                    'issues' => $integrityIssues,
+                    'calculation_version' => SalesDocumentTotals::CALCULATION_VERSION,
+                ]);
+                abort(422, 'Invoice financial totals do not match its stored line snapshots. Run the sales discount integrity audit first.');
+            }
+            $canonicalTotals = SalesDocumentTotals::fromDocument($invoice);
+            $subtotal = (int) $canonicalTotals['subtotal_before_discount'] + (int) $canonicalTotals['shipping'];
+            $discount = (int) $canonicalTotals['total_discount'];
             abort_if((int) $invoice->total !== max($subtotal - $discount, 0), 422, 'جمع فاکتور با اقلام snapshot همخوانی ندارد.');
             $this->customerLedgerService->syncInvoiceDebit($invoice);
             $invoice->update(['status' => Invoice::STATUS_READY_TO_SHIP, 'status_changed_at' => now(), 'status_changed_by' => auth()->id()]);

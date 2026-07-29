@@ -99,6 +99,7 @@ class Invoice extends Model
             'discount_amount' => (int) $totals['total_discount'],
             'invoice_discount_amount' => (int) $totals['invoice_discount'],
             'product_discount_amount' => (int) $totals['items_discount'],
+            'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($this, $totals),
             'total' => (int) $totals['grand_total'],
         ])->save();
     }

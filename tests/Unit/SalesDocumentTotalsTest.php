@@ -101,4 +101,45 @@ class SalesDocumentTotalsTest extends TestCase
         $this->assertSame(8_000_000, $totals['total_discount']);
         $this->assertSame(92_000_000, $totals['grand_total']);
     }
+
+    public function test_warehouse_quantity_reduction_preserves_effective_unit_discount(): void
+    {
+        $this->assertSame(2_600_000, SalesDocumentTotals::proportionalLineDiscount(100, 13_000_000, 20, 780_000));
+        $this->assertSame(270_000, SalesDocumentTotals::proportionalLineDiscount(10, 900_000, 3, 1_290_000));
+    }
+
+    public function test_proportional_discount_uses_deterministic_integer_half_up_rounding(): void
+    {
+        $this->assertSame(1, SalesDocumentTotals::proportionalLineDiscount(2, 1, 1, 100));
+        $this->assertSame(1, SalesDocumentTotals::proportionalLineDiscount(3, 2, 2, 100));
+        $this->assertSame(2, SalesDocumentTotals::proportionalLineDiscount(2, 3, 1, 100));
+    }
+
+    public function test_proportional_discount_supports_zero_and_increased_quantities_and_caps_at_gross(): void
+    {
+        $this->assertSame(0, SalesDocumentTotals::proportionalLineDiscount(10, 900_000, 0, 1_290_000));
+        $this->assertSame(1_800_000, SalesDocumentTotals::proportionalLineDiscount(10, 900_000, 20, 1_290_000));
+        $this->assertSame(300, SalesDocumentTotals::proportionalLineDiscount(1, 1_000, 3, 100));
+    }
+
+    public function test_proportional_discount_rejects_an_ambiguous_zero_historical_quantity(): void
+    {
+        $this->expectException(\DomainException::class);
+        SalesDocumentTotals::proportionalLineDiscount(0, 100, 1, 100);
+    }
+
+    public function test_invoice_00614_regression_totals_match_the_preserved_commercial_snapshot(): void
+    {
+        $changedLines = [
+            (object) ['quantity' => 20, 'price' => 780_000, 'line_discount_amount' => SalesDocumentTotals::proportionalLineDiscount(100, 13_000_000, 20, 780_000)],
+            (object) ['quantity' => 3, 'price' => 1_290_000, 'line_discount_amount' => SalesDocumentTotals::proportionalLineDiscount(10, 900_000, 3, 1_290_000)],
+            (object) ['quantity' => 1, 'price' => 1_294_700_000, 'line_discount_amount' => 127_300_000],
+        ];
+
+        $totals = SalesDocumentTotals::calculate($changedLines, 0, 0, ['discount_allocation_mode' => 'product_lines']);
+
+        $this->assertSame(1_314_170_000, $totals['subtotal_before_discount']);
+        $this->assertSame(130_170_000, $totals['items_discount']);
+        $this->assertSame(1_184_000_000, $totals['grand_total']);
+    }
 }

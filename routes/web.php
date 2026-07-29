@@ -52,6 +52,13 @@ use App\Http\Controllers\Admin\BugInvestigatorController;
 
 Route::get('/', fn () => redirect()->route('dashboard'));
 
+Route::get('/session/csrf-token', function () {
+    return response()->json([
+        'ok' => true,
+        'csrf_token' => csrf_token(),
+    ]);
+})->middleware('auth')->name('session.csrf-token');
+
 Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::get('/locations/provinces', [PreinvoiceApiController::class, 'provinces'])->name('locations.provinces.index');

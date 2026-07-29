@@ -43,7 +43,9 @@ class WarehouseCollectionItemAdjustmentTest extends TestCase
         $this->assertStringContainsString('$delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0)', $service);
         $this->assertStringContainsString('WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta', $service);
         $this->assertStringContainsString("'line_total' => max", $service);
-        $this->assertStringContainsString('SalesDocumentTotals::calculate($invoice->items, $documentDiscount, (int) $invoice->shipping_price', $service);
+        $this->assertStringContainsString('SalesDocumentTotals::fromDocument($invoice)', $service);
+        $this->assertStringContainsString('SalesDocumentTotals::proportionalLineDiscount(', $service);
+        $this->assertStringContainsString('SalesDocumentTotals::canonicalBreakdown($invoice, $totals)', $service);
         $this->assertStringContainsString("'invoice_item_id' => ", $service);
         $this->assertStringContainsString('فاکتور باید حداقل یک قلم کالا داشته باشد.', $service);
         $this->assertStringContainsString('مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است.', $service);

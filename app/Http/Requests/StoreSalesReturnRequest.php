@@ -3,6 +3,7 @@ namespace App\Http\Requests;
 
 use App\Models\{Invoice,InvoiceItem,ProductVariant,SalesReturnDocument,SalesReturnDocumentItem};
 use App\Services\SalesReturnCalculationService;
+use App\Services\SalesReturnItemsPayloadDecoder;
 use App\Services\SalesReturnNewProductPayloadNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -14,6 +15,7 @@ class StoreSalesReturnRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'items_payload' => ['nullable', 'string', 'max:8388608'],
             'source_type' => ['required', Rule::in([SalesReturnDocument::SOURCE_INTERNAL_INVOICE, SalesReturnDocument::SOURCE_SAZEH_HESAB])],
             'customer_id' => ['required', 'exists:customers,id'],
             'invoice_id' => ['required_if:source_type,'.SalesReturnDocument::SOURCE_INTERNAL_INVOICE, 'nullable', 'exists:invoices,id'],
@@ -71,6 +73,13 @@ class StoreSalesReturnRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if ($this->filled('items_payload')) {
+            $this->merge([
+                'items' => app(SalesReturnItemsPayloadDecoder::class)
+                    ->decode((string) $this->input('items_payload')),
+            ]);
+        }
+
         $externalInvoiceDate = $this->input('external_invoice_date');
         if (is_string($externalInvoiceDate)) {
             $externalInvoiceDate = trim($externalInvoiceDate);

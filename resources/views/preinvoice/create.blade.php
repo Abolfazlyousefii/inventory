@@ -3,7 +3,7 @@
 @section('content')
 @php
 $order = $order ?? null;
-$customersPageUrl = $customersPageUrl ?? url('/customers');
+$customersPageUrl = $customersPageUrl ?? '/customers';
 
 $initRows = old('products');
 $oldProductsPayload = old('products_payload');
@@ -1357,7 +1357,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     </div>
     @endif
 
-    <form action="{{ $isEdit ? route('preinvoice.draft.update', $order->uuid) : route('preinvoice.draft.save') }}" method="POST" id="orderForm" autocomplete="off">
+    <form action="{{ $isEdit ? route('preinvoice.draft.update', [$order->uuid], false) : route('preinvoice.draft.save', absolute: false) }}" method="POST" id="orderForm" autocomplete="off">
         @csrf
         @if($isEdit) @method('PUT') @endif
 
@@ -1613,18 +1613,19 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 <script>
     window.PREINVOICE_BOOT = {
         api: {
-            products: @json(url('/preinvoice/api/products')),
-            product: @json(url('/preinvoice/api/products')),
-            reservationsSync: @json(route('preinvoice.api.reservations.sync')),
-            reservationsRelease: @json(route('preinvoice.api.reservations.release')),
-            autosave: @json(route('preinvoice.autosave')),
-            autosaveLatest: @json(route('preinvoice.autosave.latest')),
-            autosaveDiscardBase: @json(url('/preinvoice/autosave')),
-            reservationsHeartbeat: @json(route('preinvoice.reservations.heartbeat')),
-            reservationsReleaseToken: @json(route('preinvoice.reservations.release-token')),
-            area: @json(url('/preinvoice/api/area')),
-            customers: @json(url('/preinvoice/api/customers')),
-            customer: @json(url('/preinvoice/api/customers'))
+            products: '/preinvoice/api/products',
+            product: '/preinvoice/api/products',
+            reservationsSync: @json(route('preinvoice.api.reservations.sync', absolute: false)),
+            reservationsRelease: @json(route('preinvoice.api.reservations.release', absolute: false)),
+            autosave: @json(route('preinvoice.autosave', absolute: false)),
+            autosaveLatest: @json(route('preinvoice.autosave.latest', absolute: false)),
+            autosaveDiscardBase: '/preinvoice/autosave',
+            reservationsHeartbeat: @json(route('preinvoice.reservations.heartbeat', absolute: false)),
+            reservationsReleaseToken: @json(route('preinvoice.reservations.release-token', absolute: false)),
+            csrfToken: @json(route('session.csrf-token', absolute: false)),
+            area: '/preinvoice/api/area',
+            customers: '/preinvoice/api/customers',
+            customer: '/preinvoice/api/customers'
         },
         initRows: @json($initRows),
         oldCustomerId: @json(old('customer_id', $order->customer_id ?? '')),
@@ -1677,6 +1678,59 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const RESERVATION_TOKEN_KEY = 'aria_preinvoice_reservation_token_v1';
 
     const SERVER_ITEM_ERRORS = @json(session('preinvoice_item_errors', []));
+
+    class SessionChangedError extends Error {}
+
+    function currentCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.content || '';
+    }
+
+    function preserveDraftAfterSessionChange() {
+        try {
+            if (hasAnyFormData()) {
+                localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(collectLocalDraftPayload()));
+            }
+        } catch (e) {
+            // Keep the visible form untouched even when browser storage is unavailable.
+        }
+        updateLocalDraftStatus('نشست منقضی شده؛ اطلاعات فرم محفوظ است', false);
+    }
+
+    function sessionChangedMessage() {
+        return 'نشست کاربری شما تغییر کرده یا منقضی شده است. اطلاعات فرم محفوظ است؛ صفحه را دوباره بارگذاری و وارد حساب شوید.';
+    }
+
+    async function fetchJson(url, options = {}) {
+        const headers = new Headers(options.headers || {});
+        headers.set('Accept', 'application/json');
+        if (options.method && options.method.toUpperCase() !== 'GET') {
+            headers.set('X-CSRF-TOKEN', currentCsrfToken());
+        }
+        const response = await fetch(url, {...options, headers, credentials: 'same-origin'});
+        const contentType = response.headers.get('content-type') || '';
+        if ([401, 403, 419].includes(response.status) || response.redirected || !contentType.includes('application/json')) {
+            preserveDraftAfterSessionChange();
+            throw new SessionChangedError(sessionChangedMessage());
+        }
+        const json = await response.json();
+        if (!response.ok || json?.ok === false) {
+            throw new Error(Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در ارتباط با سرور.');
+        }
+        return {response, json};
+    }
+
+    async function refreshCsrfToken() {
+        const {json} = await fetchJson(API.csrfToken);
+        if (!json?.csrf_token) {
+            preserveDraftAfterSessionChange();
+            throw new SessionChangedError(sessionChangedMessage());
+        }
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        const input = document.querySelector('#orderForm input[name="_token"]');
+        if (meta) meta.content = json.csrf_token;
+        if (input) input.value = json.csrf_token;
+        return json.csrf_token;
+    }
 
     function applyServerItemErrors() {
         if (!Array.isArray(SERVER_ITEM_ERRORS) || !SERVER_ITEM_ERRORS.length) return;
@@ -1768,7 +1822,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     async function postReservation(url, body) {
-        const res = await fetch(url, {
+        const {response: res, json} = await fetchJson(url, {
+            credentials: 'same-origin',
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -1777,7 +1832,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             },
             body: JSON.stringify(body)
         });
-        const json = await res.json().catch(() => ({}));
         if (!res.ok || json?.ok === false) {
             const message = Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در فریز موجودی پیش‌فاکتور.';
             throw new Error(message);
@@ -2091,7 +2145,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically || !hasAnyFormData()) return;
         autosaveDirty = false;
         updateLocalDraftStatus('در حال ذخیره...', false);
-        const res = await fetch(API.autosave, {
+        const {response: res, json} = await fetchJson(API.autosave, {
+            credentials: 'same-origin',
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -2113,7 +2168,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 products: collectProductsForAutosave()
             })
         });
-        const json = await res.json().catch(() => ({}));
         if (!res.ok || json?.ok === false) throw new Error(json?.message || 'خطا در ذخیره خودکار');
         currentAutosaveUuid = json.uuid || currentAutosaveUuid;
         const autosaveInput = document.getElementById('autosave_uuid');
@@ -2296,8 +2350,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     async function loadLatestDbAutosaveBanner() {
         if (IS_EDIT) return;
         try {
-            const res = await fetch(API.autosaveLatest, {headers: {'Accept': 'application/json'}});
-            const json = await res.json();
+            const {json} = await fetchJson(API.autosaveLatest);
             if (!json?.draft) return;
             const banner = document.getElementById('localDraftBanner');
             document.getElementById('localDraftBannerText').textContent = 'یک پیش‌نویس ذخیره‌شده پیدا شد. این پیش‌نویس بدون رزرو موجودی بازیابی می‌شود و موجودی کالاها هنگام ادامه کار دوباره بررسی خواهد شد.';
@@ -2305,9 +2358,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             document.getElementById('loadLocalDraftBtn').onclick = () => applyDbAutosaveDraft(json.draft);
             document.getElementById('discardLocalDraftBtn').onclick = async () => {
                 if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
-                await fetch(API.autosaveDiscardBase + '/' + encodeURIComponent(json.draft.uuid) + '/discard', {
+                await fetchJson(API.autosaveDiscardBase + '/' + encodeURIComponent(json.draft.uuid) + '/discard', {
                     method: 'POST',
-                    headers: {'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''}
                 });
                 banner.classList.remove('is-visible');
             };
@@ -3254,6 +3306,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const btn = intent === 'draft' ? document.getElementById('saveDraftBtn') : document.getElementById('submitOrderBtn');
         const oldText = btn.textContent;
         btn.disabled = true;
+        saveLocalDraftNow();
+        try {
+            await saveDbAutosaveNow();
+            await refreshCsrfToken();
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = oldText;
+            alert(err.message || sessionChangedMessage());
+            return false;
+        }
         if (intent === 'draft') {
             normalizeBeforeSubmit();
             try {
