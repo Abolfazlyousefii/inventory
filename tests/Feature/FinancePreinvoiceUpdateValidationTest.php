@@ -8,11 +8,16 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Http\Middleware\RoutePermissionMiddleware;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Support\MessageBag;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->withoutMiddleware(RoutePermissionMiddleware::class);
+});
 
 function financeValidationUser(): User
 {
@@ -51,6 +56,7 @@ function financeValidationOrderFixture(): PreinvoiceOrder
         'uuid' => 'finance-validation-'.uniqid(),
         'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
         'customer_name' => 'مشتری اعتبارسنجی',
+        'customer_mobile' => '09120000000',
         'shipping_price' => 0,
         'discount_allocation_mode' => 'product_lines',
         'total_price' => 1_000_000,
@@ -97,7 +103,7 @@ it('renders edit reason field attributes old input and one validation message', 
         ->assertSee('علت قبلی تست', false)
         ->assertSee('لطفاً دلیل ویرایش مالی را وارد کنید.', false);
 
-    expect(substr_count($response->getContent(), 'لطفاً دلیل ویرایش مالی را وارد کنید.'))->toBe(1);
+    expect(substr_count($response->getContent(), '<div class="invalid-feedback">لطفاً دلیل ویرایش مالی را وارد کنید.</div>'))->toBe(1);
 });
 
 it('redirects a successful finance edit back to the finance edit page without finalize coupling', function () {

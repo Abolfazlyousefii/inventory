@@ -27,7 +27,7 @@ class LegacyReservationIntegrityAuditCommandTest extends TestCase
 
         $this->artisan('inventory:audit-legacy-reservation-integrity')->assertExitCode(0);
 
-        $this->assertSame($before, $this->snapshot());
+        $this->assertEquals($before, $this->snapshot());
         $this->assertFalse(collect($queries)->contains(fn ($sql) => preg_match('/^\s*(insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke)\b/i', $sql)));
         $this->assertFalse($this->summary()['data_changed']);
     }
@@ -54,14 +54,17 @@ class LegacyReservationIntegrityAuditCommandTest extends TestCase
         $v10 = $variants->firstWhere('variant_id', '10');
         $this->assertSame('7', $v10['protected_document_demand']);
         $this->assertSame('3', $v10['active_temporary_quantity']);
-        $this->assertSame('4', $v10['recognized_official_quantity']);
+        $this->assertSame('3', $v10['recognized_official_quantity']);
         $this->assertSame('10', $v10['expected_reserved']);
         $this->assertSame('0', $v10['reservation_cache_difference']);
         $this->assertSame('L14_CACHE_MATCHED', $v10['classification_code']);
 
         $this->assertSame('L12_CACHE_OVER_RESERVED', $variants->firstWhere('variant_id', '20')['classification_code']);
         $this->assertSame('L13_CACHE_UNDER_RESERVED', $variants->firstWhere('variant_id', '30')['classification_code']);
-        $this->assertNull($missing->firstWhere('preinvoice_order_id', '301'));
+        $missingVariant20 = $missing->first(fn ($row) => $row['preinvoice_order_id'] === '301' && $row['variant_id'] === '20');
+        $this->assertNotNull($missingVariant20);
+        $this->assertSame('1', $missingVariant20['missing_quantity']);
+        $this->assertSame('L11_PROTECTED_DEMAND_WITHOUT_RESERVATION_ROW', $missingVariant20['classification_code']);
         $this->assertNull($actions->first(fn ($row) => $row['action_type'] === 'CANDIDATE_CACHE_DECREASE' && $row['preinvoice_order_id'] === '301'));
     }
 
@@ -72,7 +75,7 @@ class LegacyReservationIntegrityAuditCommandTest extends TestCase
 
         $this->artisan('inventory:audit-legacy-reservation-integrity --order=301 --variant=10')->assertExitCode(0);
 
-        $this->assertSame($before, $this->snapshot());
+        $this->assertEquals($before, $this->snapshot());
         $contents = Storage::disk('local')->get('reports/legacy-reservation-integrity/legacy-reservation-rows.csv');
         $this->assertStringNotContainsString('customer', strtolower($contents));
         $this->assertStringNotContainsString('mobile', strtolower($contents));

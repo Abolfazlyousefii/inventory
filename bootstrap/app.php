@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\ConvertRialCurrencyInputs;
+use App\Http\Middleware\EnsureActiveUser;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Http\Middleware\CheckRoleOrRoutePermission;
@@ -23,7 +24,19 @@ return Application::configure(basePath: dirname(__DIR__))
         __DIR__.'/../app/Console/Commands',
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        $trustedProxies = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '')))));
+        if ($trustedProxies !== []) {
+            $middleware->trustProxies(
+                at: $trustedProxies,
+                headers: Request::HEADER_X_FORWARDED_FOR
+                    | Request::HEADER_X_FORWARDED_HOST
+                    | Request::HEADER_X_FORWARDED_PORT
+                    | Request::HEADER_X_FORWARDED_PROTO,
+            );
+        }
+
         $middleware->appendToGroup('web', ConvertRialCurrencyInputs::class);
+        $middleware->appendToGroup('web', EnsureActiveUser::class);
 
         $middleware->alias([
             'role' => CheckRoleOrRoutePermission::class,

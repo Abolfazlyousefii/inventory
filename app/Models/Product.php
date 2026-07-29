@@ -266,13 +266,17 @@ class Product extends Model
         }
 
         $query->orWhereHas('category', function (Builder $categoryQuery) use ($patterns) {
-            static::orWhereNormalizedLikeAny($categoryQuery, 'categories.name', $patterns);
+            $categoryQuery->where(function (Builder $matchQuery) use ($patterns) {
+                static::orWhereNormalizedLikeAny($matchQuery, 'categories.name', $patterns);
+            });
         });
 
         $query->orWhereHas('variants', function (Builder $variantQuery) use ($patterns) {
-            foreach (static::variantSearchableColumns() as $column) {
-                static::orWhereNormalizedLikeAny($variantQuery, 'product_variants.' . $column, $patterns);
-            }
+            $variantQuery->where(function (Builder $matchQuery) use ($patterns) {
+                foreach (static::variantSearchableColumns() as $column) {
+                    static::orWhereNormalizedLikeAny($matchQuery, 'product_variants.' . $column, $patterns);
+                }
+            });
         });
 
         return $query;

@@ -10,7 +10,7 @@ class SalesReturnFirstPatchTest extends TestCase
 {
     public function test_index_customer_filter_uses_remote_picker(): void
     {
-        $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/index.blade.php'));
+        $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
         $partial = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/customer-filter-picker.blade.php'));
 
         $this->assertStringNotContainsString('type="number" class="form-control form-control-sm" name="customer_id"', $blade);
@@ -22,7 +22,7 @@ class SalesReturnFirstPatchTest extends TestCase
     public function test_index_shows_drafts_with_edit_and_cancel_actions(): void
     {
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
-        $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/index.blade.php'));
+        $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
 
         $this->assertStringContainsString("'can_edit' => \$document->isDraft() ?", $service);
         $this->assertStringContainsString("'can_cancel' => \$document->isDraft() ?", $service);

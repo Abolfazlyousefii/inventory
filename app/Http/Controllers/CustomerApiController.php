@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -26,17 +27,20 @@ class CustomerApiController extends Controller
             ->filter()
             ->unique()
             ->values();
+        $fullNameExpression = DB::connection()->getDriverName() === 'sqlite'
+            ? "TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))"
+            : "TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')))";
 
         $items = Customer::query()
             ->withBalance()
-            ->where(function($qq) use ($terms){
+            ->where(function($qq) use ($terms, $fullNameExpression){
                 foreach ($terms as $term) {
                     $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
                     $compactLike = '%' . str_replace(['%', '_'], ['\%', '\_'], preg_replace('/[\s\-()]+/u', '', $term)) . '%';
 
                     $qq->orWhere('first_name', 'like', $like)
                        ->orWhere('last_name', 'like', $like)
-                       ->orWhereRaw("TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE ?", [$like])
+                       ->orWhereRaw("{$fullNameExpression} LIKE ?", [$like])
                        ->orWhere('mobile', 'like', $like);
 
                     if ($compactLike !== '%%') {

@@ -22,13 +22,15 @@ it('previews percent product discounts with backend allocation contract', functi
 
 it('persists percent product discounts and reloads discount breakdown fields', function () {
     $service = File::get(app_path('Services/FinancePreinvoiceEditorService.php'));
+    $allocator = File::get(app_path('Services/ProductDiscountAllocator.php'));
     $hydrator = File::get(app_path('Services/PreinvoiceDiscountHydrator.php'));
 
-    expect($service)->toContain("'discount_type' => $".'input' . "['type'] ?? 'amount'")
-        ->and($service)->toContain("'discount_value' => (int) ($".'input' . "['value'] ?? 0)")
+    expect($service)->toContain('productDiscountAllocator->allocate')
+        ->and($service)->toContain("'type' => (string) ($".'group' . "['discount_type'] ?? 'amount')")
+        ->and($service)->toContain("'value' => (int) ($".'group' . "['discount_value'] ?? 0)")
         ->and($service)->toContain("'discount_amount'")
-        ->and($service)->toContain("'raw_subtotal' => $".'gross')
-        ->and($service)->toContain("'final_amount' => max($".'gross' . " - $".'amount' . ", 0)")
+        ->and($allocator)->toContain("'raw_subtotal' => $".'gross')
+        ->and($allocator)->toContain("'final_amount' => max($".'gross' . " - $".'actual' . ", 0)")
         ->and($service)->toContain("'product_discount_amount'")
         ->and($service)->toContain("'line_discount_amount' => $".'lineDiscount')
         ->and($service)->toContain("'line_total' => max(((int) $".'item' . '->quantity * (int) $' . 'item' . '->price) - $' . 'lineDiscount' . ', 0)')

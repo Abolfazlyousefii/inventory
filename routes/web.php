@@ -1,6 +1,5 @@
 <?php
 
-use App\Services\InventorySyncService;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\ActivityLogController;
@@ -321,7 +320,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/products/{product}/variants', [WarehouseMapController::class, 'productVariants'])->name('products.variants');
         Route::get('/history', [WarehouseMapController::class, 'history'])->name('history');
 
-        Route::middleware('role:admin|Admin|ادمین|Manager|manager|مدیر|warehouse|انباردار|StorageUser|StorageManager')->group(function () {
+        Route::middleware('role:super_admin|admin|Admin|ادمین|Manager|manager|مدیر|warehouse|انباردار|StorageUser|StorageManager')->group(function () {
             Route::post('/locations', [WarehouseMapController::class, 'storeLocation'])->name('locations.store');
             Route::put('/locations/{location}', [WarehouseMapController::class, 'updateLocation'])->name('locations.update');
             Route::post('/assign', [WarehouseMapController::class, 'assign'])->name('assign');
@@ -412,6 +411,8 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
 
     // Preinvoice APIs
     Route::prefix('preinvoice/api')->group(function () {
+        Route::get('/product-finder', [PreinvoiceApiController::class, 'productFinder'])->name('preinvoice.api.product-finder');
+        Route::get('/product-finder/categories', [PreinvoiceApiController::class, 'productFinderCategories'])->name('preinvoice.api.product-finder.categories');
         Route::get('/products', [PreinvoiceApiController::class, 'products']);
         Route::get('/products/{product}', [PreinvoiceApiController::class, 'product']);
         Route::post('/reservations/sync', [PreinvoiceApiController::class, 'syncDraftReservation'])->name('preinvoice.api.reservations.sync');
@@ -495,59 +496,7 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
     ->middleware(['auth', 'route.permission'])
     ->name('vouchers.invoice.products');
 
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Http;
-
-use Illuminate\Http\Request;
-
-Route::get('/auto-login', function (Request $request) {
-    $phone = $request->query('phone'); // شماره تماس واقعی کاربر
-
-    if (!$phone) {
-        abort(400, 'Phone required');
-    }
-
-    try {
-        $response = Http::withOptions([
-            'verify' => (bool) config('services.crm.verify_ssl', false),
-            'connect_timeout' => (int) config('services.crm.connect_timeout', 5),
-            'timeout' => (int) config('services.crm.timeout', 10),
-        ])->post(config('services.crm.client_token_url', 'https://crm.ariyajanebi.ir/api/token-for-client'), [
-            'phone' => $phone,
-            'secret' => config('services.crm.client_secret', env('CRM_CLIENT_SECRET')),
-        ]);
-    } catch (\Illuminate\Http\Client\ConnectionException|\Illuminate\Http\Client\RequestException $exception) {
-        \Illuminate\Support\Facades\Log::warning('CRM auto-login service unavailable.', [
-            'exception' => $exception::class,
-        ]);
-
-        abort(503, 'CRM service unavailable');
-    }
-
-    if ($response->failed()) {
-        abort(401, 'Unauthorized');
-    }
-
-    $data = json_decode(base64_decode($response['token']), true);
-
-    // لاگین در Laravel
-    $user = \App\Models\User::updateOrCreate(
-        ['phone' => $data['phone']],
-        ['name' => $data['name']]
-    );
-
-    Auth::login($user);
-
-    return redirect('/dashboard');
-});
-
-
 Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
-
-
-Route::get('/test',function (){
-    return    app(InventorySyncService::class)->syncAll();
-});

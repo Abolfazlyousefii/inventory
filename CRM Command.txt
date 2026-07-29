@@ -1,3 +1,0 @@
-php artisan products:sync-crm
-php artisan schedule:work
-php artisan ariya:import-orders

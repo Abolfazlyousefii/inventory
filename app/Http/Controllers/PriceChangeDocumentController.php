@@ -118,7 +118,7 @@ class PriceChangeDocumentController extends Controller
     {
         $payload = $this->validatedPayload($request, requireChange: false, partial: true);
         $term = trim((string) $request->query('q', ''));
-        $categoryId = (int) ($payload['subcategory_id'] ?: $payload['category_id']);
+        $categoryId = (int) ($payload['subcategory_id'] ?? $payload['category_id'] ?? 0);
         $categoryIds = Category::selfAndDescendantIds($categoryId);
         $products = Product::query()->with('category:id,name,parent_id')->whereIn('category_id', $categoryIds)
             ->when($payload['include_active_products_only'] ?? true, fn ($q) => $q->where('is_sellable', true))

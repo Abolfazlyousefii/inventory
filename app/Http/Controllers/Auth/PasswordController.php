@@ -15,6 +15,12 @@ class PasswordController extends Controller
      */
     public function update(Request $request): RedirectResponse
     {
+        if ($request->user()?->crm_user_id) {
+            return back()->withErrors([
+                'current_password' => 'رمز کاربران متصل به CRM فقط در CRM تغییر می‌کند.',
+            ], 'updatePassword');
+        }
+
         $validated = $request->validateWithBag('updatePassword', [
             'current_password' => ['required', 'current_password'],
             'password' => ['required', Password::defaults(), 'confirmed'],

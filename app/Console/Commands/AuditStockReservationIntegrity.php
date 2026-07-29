@@ -302,6 +302,16 @@ class AuditStockReservationIntegrity extends Command
             ->where('quantity', '>', 0)
             ->whereNull('released_at')
             ->whereNull('release_reason')
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('preinvoice_orders as consumed_orders')
+                    ->whereColumn('consumed_orders.id', 'preinvoice_draft_reservations.preinvoice_order_id')
+                    ->where('preinvoice_draft_reservations.reservation_scope', 'official')
+                    ->where(function ($order): void {
+                        $order->where('consumed_orders.status', 'converted_to_invoice')
+                            ->orWhereNotNull('consumed_orders.stock_released_at');
+                    });
+            })
             ->select('variant_id', 'reservation_scope', DB::raw('sum(quantity) as quantity'), DB::raw('group_concat(id) as reservation_ids'), DB::raw('group_concat(preinvoice_order_id) as preinvoice_order_ids'))
             ->groupBy('variant_id', 'reservation_scope')
             ->get();

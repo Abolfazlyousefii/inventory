@@ -1,20 +1,79 @@
 <?php
 
 return [
-    'sync_enabled' => (bool) env('CRM_SYNC_ENABLED', true),
+    'sync_enabled' => (bool) env('CRM_SYNC_ENABLED', false),
     'base_url' => env('CRM_BASE_URL'),
-    'users_endpoint' => env('CRM_USERS_ENDPOINT', '/external/users'),
+    'users_endpoint' => env('CRM_USERS_ENDPOINT', '/api/integrations/erp/users'),
+    'customers_endpoint' => env('CRM_CUSTOMERS_ENDPOINT', '/external/customers'),
+    'customer_endpoint_template' => env('CRM_CUSTOMER_ENDPOINT_TEMPLATE'),
     'api_token' => env('CRM_API_TOKEN'),
     'timeout' => (int) env('CRM_SYNC_TIMEOUT', 30),
+    'sync_limit' => (int) env('CRM_SYNC_LIMIT', 100),
+    'sync_overlap_seconds' => (int) env('CRM_SYNC_OVERLAP_SECONDS', 120),
+    'connect_timeout' => (int) env('CRM_CONNECT_TIMEOUT', 10),
     'verify_ssl' => (bool) env('CRM_SYNC_VERIFY_SSL', true),
     'sync_interval_minutes' => (int) env('CRM_SYNC_INTERVAL_MINUTES', 15),
     'sync_missing_users_strategy' => env('CRM_SYNC_MISSING_USERS_STRATEGY', 'deactivate'),
+    'sync_missing_customers_strategy' => env('CRM_SYNC_MISSING_CUSTOMERS_STRATEGY', 'delete'),
+    'customer_push_batch_size' => (int) env('CRM_CUSTOMER_PUSH_BATCH_SIZE', 100),
+
+    'sso' => [
+        'enabled' => (bool) env('CRM_SSO_ENABLED', false),
+        'local_login_for_managed_users' => (bool) env('CRM_LOCAL_LOGIN_FOR_MANAGED_USERS', true),
+        'client_id' => env('CRM_OAUTH_CLIENT_ID'),
+        'client_secret' => env('CRM_OAUTH_CLIENT_SECRET'),
+        'redirect_uri' => env('CRM_OAUTH_REDIRECT_URI'),
+        'authorize_url' => env('CRM_OAUTH_AUTHORIZE_URL'),
+        'token_url' => env('CRM_OAUTH_TOKEN_URL'),
+        'user_url' => env('CRM_OAUTH_USER_URL'),
+        'scope' => env('CRM_OAUTH_SCOPE', 'erp.user.read'),
+        'pkce_enabled' => (bool) env('CRM_OAUTH_PKCE_ENABLED', true),
+    ],
+
+    'sync' => [
+        'users_url' => env('CRM_USERS_URL', env('CRM_USERS_ENDPOINT', '/api/integrations/erp/users')),
+        'changes_url' => env('CRM_USERS_CHANGES_URL'),
+        'integration_token' => env('CRM_SYNC_TOKEN', env('CRM_INTEGRATION_TOKEN')),
+        'batch_size' => (int) env('CRM_USERS_SYNC_BATCH_SIZE', 100),
+        'max_pages' => (int) env('CRM_USERS_SYNC_MAX_PAGES', 1000),
+        'allow_initial_phone_link' => (bool) env('CRM_ALLOW_INITIAL_PHONE_LINK', false),
+    ],
+
+    'roles' => [
+        'mapping' => [
+            'Admin' => ['admin'],
+            'admin' => ['admin'],
+            'Sales' => ['sales_user'],
+            'sales' => ['sales_user'],
+            'SaleManager' => ['sales_manager'],
+            'salemanager' => ['sales_manager'],
+            'StorageUser' => ['warehouse_operator'],
+            'storageuser' => ['warehouse_operator'],
+            'StorageManager' => ['warehouse_manager'],
+            'storagemanager' => ['warehouse_manager'],
+            'Accountant' => ['accountant'],
+            'accountant' => ['accountant'],
+            'FinanceManager' => ['finance_manager'],
+            'financemanager' => ['finance_manager'],
+            'Purchasing' => ['purchasing_user'],
+            'purchasing' => ['purchasing_user'],
+        ],
+        'managed' => [
+            'admin', 'sales_user', 'sales_manager', 'warehouse_operator',
+            'warehouse_manager', 'accountant', 'finance_manager', 'purchasing_user',
+        ],
+        'local_only' => ['super_admin', 'system_admin', 'auditor'],
+        'seller' => ['sales_user', 'sales_manager'],
+    ],
     'response' => [
         'users_path_candidates' => [
             'data',
+            'users.data',
             'users',
             'items',
         ],
+        'user_path_candidates' => ['data', 'user', 'data.user'],
+        'customers_path_candidates' => ['data', 'customers.data', 'customers', 'items'],
         'field_map' => [
             'id' => ['crm_user_id', 'id', 'user_id'],
             'name' => ['name', 'full_name', 'display_name'],
@@ -34,4 +93,3 @@ return [
         ],
     ],
 ];
-

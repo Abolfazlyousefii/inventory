@@ -2,221 +2,98 @@
 
 namespace App\Services;
 
+use App\Models\IntegrationSyncState;
 use App\Models\User;
+use App\Services\Crm\CrmUserMapper;
+use App\Services\Crm\CrmUserSynchronizer;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Carbon;
-use Spatie\Permission\Models\Role;
+use RuntimeException;
 
 class CrmUserService
 {
     public function __construct(
         private readonly CrmClient $crmClient,
+        private readonly CrmUserMapper $mapper,
+        private readonly CrmUserSynchronizer $synchronizer,
     ) {}
 
-    public function syncUsers(): array
+    public function syncUsers(bool $dryRun = false, bool $full = true, ?string $crmUserId = null, ?int $requestedLimit = null): array
     {
-        $response = $this->crmClient->fetchUsersResponse();
+        if ($crmUserId !== null) throw new RuntimeException('Single-user reconciliation is not part of the users integration contract.');
+        $started = CarbonImmutable::now('UTC');
+        $state = IntegrationSyncState::query()->firstOrNew(['integration' => 'crm', 'stream' => 'users']);
+        $updatedSince = null;
+        if (! $full && $state->last_succeeded_at) {
+            $updatedSince = CarbonImmutable::parse($state->last_succeeded_at)->subSeconds((int) config('crm.sync_overlap_seconds', 120))->utc()->toIso8601String();
+        } elseif (! $full) {
+            $full = true;
+        }
+        $stats = $this->stats($full ? 'full' : 'incremental', $started, $updatedSince, $dryRun);
+        $limit = min(max($requestedLimit ?? (int) config('crm.sync_limit', 100), 1), 500);
+        $cursor = '0';
+        $seenCursors = [];
+        $seenUsers = [];
+        $maxPages = max(1, (int) config('crm.sync.max_pages', 1000));
 
-        if (!($response['ok'] ?? false)) {
-            return [
-                'synced_count' => 0,
-                'deactivated_count' => 0,
-                'error' => $response['error'] ?? 'Unknown error',
-            ];
+        if (! $dryRun) {
+            $state->fill(['last_started_at' => $started, 'last_error' => null])->save();
         }
 
-        $users = $this->extractUsers($response['payload'] ?? []);
+        try {
+            do {
+                if ($stats['pages'] >= $maxPages || isset($seenCursors[$cursor])) throw new RuntimeException('crm_invalid_pagination');
+                $seenCursors[$cursor] = true;
+                $payload = $this->crmClient->fetchIntegrationUsers($cursor, $limit, $updatedSince, true);
+                $rows = $this->mapper->extractUsers($payload);
+                $stats['pages']++;
+                $stats['received'] += count($rows);
 
-        $syncedIds = [];
-        $count = 0;
-
-        foreach ($users as $raw) {
-            try {
-                $data = $this->normalize($raw);
-
-                if (!$data['crm_user_id']) {
-                    continue;
+                foreach ($rows as $row) {
+                    $data = $this->mapper->map($row); // Invalid data fails the cycle deliberately.
+                    $exists = User::query()->where('crm_user_id', $data->crmUserId)->exists();
+                    $result = $this->synchronizer->sync($data, $dryRun);
+                    $stats[$exists ? 'updated' : 'created']++;
+                    $stats['unknown_roles'] += count($result['unknown_roles'] ?? []);
+                    $seenUsers[] = $data->crmUserId;
+                    if (! $data->isActive) $stats['disabled']++;
+                    if (! $data->canAccessErp) $stats['access_revoked']++;
+                    $stats[$data->isSeller ? 'sellers_enabled' : 'sellers_disabled']++;
                 }
 
-                $user = $this->upsert($data, $raw);
+                $hasMore = $payload['has_more'] ?? null;
+                $next = $payload['next_cursor'] ?? null;
+                if (! is_bool($hasMore)) throw new RuntimeException('crm_invalid_response');
+                if ($hasMore && (! is_int($next) && ! ctype_digit((string) $next))) throw new RuntimeException('crm_invalid_pagination');
+                if ($hasMore && (string) $next === $cursor) throw new RuntimeException('crm_invalid_pagination');
+                $cursor = (string) ($next ?? $cursor);
+            } while ($hasMore);
 
-                $this->syncRoles($user, $data['roles']);
-
-                $syncedIds[] = $data['crm_user_id'];
-                $count++;
-
-            } catch (\Throwable $e) {
-                Log::warning('CRM sync failed', [
-                    'error' => $e->getMessage(),
-                    'user' => $raw,
-                ]);
+            if (! $dryRun) {
+                $stats['managers_resolved'] = $this->synchronizer->reconcileManagers(array_unique($seenUsers));
+                $stats['managers_unresolved'] = User::query()->whereIn('crm_user_id', array_unique($seenUsers))
+                    ->whereNotNull('manager_crm_user_id')->whereNull('manager_id')->count();
+                $state->fill(['last_succeeded_at' => $started, 'last_error' => null, 'metadata' => $stats])->save();
             }
-        }
-
-        $deactivated = $this->deactivateMissing($syncedIds);
-
-        return [
-            'synced_count' => $count,
-            'deactivated_count' => $deactivated,
-            'error' => null,
-        ];
-    }
-
-    /**
-     * استخراج users از ساختار CRM
-     * supports: users.data (pagination)
-     */
-    private function extractUsers(array $payload): array
-    {
-        return array_values(
-            array_filter($payload['users']['data'] ?? [], fn ($u) => is_array($u))
-        );
-    }
-
-    /**
-     * نرمال‌سازی داده CRM
-     */
-    private function normalize(array $u): array
-    {
-        return [
-            'crm_user_id' => $u['id'] ?? null,
-            'name' => $u['name'] ?? 'بدون نام',
-            'mobile' => $u['phone'] ?? null,
-            'email' => $u['email'] ?? null,
-            'username' => $u['username'] ?? null,
-            'is_active' => $this->toBool($u['status'] ?? true),
-            'roles' => $this->normalizeRoles($u['roles'] ?? []),
-
-            'crm_created_at' => $this->toDate($u['created_at'] ?? null),
-            'crm_updated_at' => $this->toDate($u['updated_at'] ?? null),
-
-            'avatar' => $u['avatar'] ?? null,
-            'department' => $u['department'] ?? null,
-            'position' => $u['position'] ?? null,
-            'personnel_code' => $u['personnel_code'] ?? null,
-            'branch' => $u['branch'] ?? null,
-
-            'manager_id' => $u['manager_id'] ?? null,
-
-            // 🔐 IMPORTANT: hash آماده از CRM
-            'password_hash' => $u['password_hash'] ?? null,
-        ];
-    }
-
-    /**
-     * ایجاد یا آپدیت کاربر
-     */
-    private function upsert(array $data, array $raw): User
-    {
-        $crmId = (string) $data['crm_user_id'];
-
-        $user = User::firstOrNew([
-            'crm_user_id' => $crmId,
-        ]);
-
-        $user->fill([
-            'external_crm_id' => is_numeric($crmId) ? (int) $crmId : null,
-            'name' => $data['name'],
-            'email' => $data['email'] ?: ($user->email ?: "crm_{$crmId}@local.test"),
-            'phone' => $data['mobile'],
-            'username' => $data['username'],
-            'is_active' => $data['is_active'],
-            'sync_source' => 'crm',
-            'crm_role_raw' => $data['roles'],
-            'synced_at' => now(),
-            'last_crm_payload' => $raw,
-
-            'crm_created_at' => $data['crm_created_at'],
-            'crm_updated_at' => $data['crm_updated_at'],
-
-            'avatar' => $data['avatar'],
-            'department' => $data['department'],
-            'position' => $data['position'],
-            'personnel_code' => $data['personnel_code'],
-            'branch' => $data['branch'],
-
-            'manager_id' => null,
-        ]);
-
-        /**
-         * 🔐 مهم‌ترین بخش:
-         * اگر CRM hash داده → دقیقاً همونو ذخیره کن
-         * بدون bcrypt / بدون Hash::make
-         */
-        if (!empty($data['password_hash'])) {
-            $user->password = $data['password_hash'];
-        }
-
-        $user->save();
-
-        // manager sync
-        if (!empty($data['manager_id'])) {
-            $manager = User::where('crm_user_id', (string) $data['manager_id'])->first();
-
-            $user->update([
-                'manager_id' => $manager?->id,
-            ]);
-        }
-
-        return $user;
-    }
-
-    /**
-     * Sync roles
-     */
-    private function syncRoles(User $user, array $roles): void
-    {
-        $roles = $roles ?: ['crm_user'];
-
-        $roleNames = collect($roles)
-            ->map(fn ($r) => trim($r))
-            ->filter()
-            ->values();
-
-        $user->syncRoles($roleNames->all());
-    }
-
-    /**
-     * deactivate missing users
-     */
-    private function deactivateMissing(array $ids): int
-    {
-        if (config('crm.sync_missing_users_strategy') !== 'deactivate') {
-            return 0;
-        }
-
-        return User::where('sync_source', 'crm')
-            ->whereNotNull('crm_user_id')
-            ->whereNotIn('crm_user_id', $ids)
-            ->update(['is_active' => false]);
-    }
-
-    /**
-     * helpers
-     */
-    private function toBool(mixed $v): bool
-    {
-        if (is_bool($v)) return $v;
-        if (is_numeric($v)) return (int)$v === 1;
-        if (is_string($v)) {
-            return in_array(strtolower($v), ['1','true','active','enabled']);
-        }
-        return true;
-    }
-
-    private function toDate(mixed $v): ?Carbon
-    {
-        try {
-            return $v ? Carbon::parse($v) : null;
-        } catch (\Throwable) {
-            return null;
+            $stats['finished_at'] = CarbonImmutable::now('UTC')->toIso8601String();
+            return $stats + ['error' => null];
+        } catch (\Throwable $e) {
+            Log::error('CRM users sync failed', ['error_code' => $e->getMessage(), 'error_category' => $e::class]);
+            if (! $dryRun) $state->fill(['last_failed_at' => now('UTC'), 'last_error' => mb_substr($e->getMessage(), 0, 500), 'metadata' => $stats])->save();
+            return $stats + ['error' => $e->getMessage()];
         }
     }
 
-    private function normalizeRoles(mixed $roles): array
+    public function syncOnePayload(array $payload): array
     {
-        if (is_string($roles)) return [$roles];
-        if (!is_array($roles)) return [];
-        return array_values(array_filter($roles));
+        return $this->synchronizer->sync($this->mapper->map($payload));
+    }
+
+    private function stats(string $mode, CarbonImmutable $started, ?string $since, bool $dryRun): array
+    {
+        return ['mode' => $mode, 'dry_run' => $dryRun, 'started_at' => $started->toIso8601String(), 'updated_since' => $since,
+            'pages' => 0, 'received' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'disabled' => 0,
+            'access_revoked' => 0, 'sellers_enabled' => 0, 'sellers_disabled' => 0, 'skipped' => 0, 'ambiguous' => 0,
+            'failed' => 0, 'unknown_roles' => 0, 'managers_resolved' => 0, 'managers_unresolved' => 0];
     }
 }

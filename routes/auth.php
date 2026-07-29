@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
+use App\Http\Controllers\Auth\CrmSsoController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -10,17 +11,10 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\StockMovementReportController;
-
-Route::get('/movements', [StockMovementReportController::class, 'index'])
-    ->name('movements.index');
-
-Route::get('/dashboard', [DashboardController::class, 'index'])
-    ->middleware(['auth'])
-    ->name('dashboard');
-
 Route::middleware('guest')->group(function () {
+    Route::get('auth/crm/redirect', [CrmSsoController::class, 'redirect'])->name('auth.crm.redirect');
+    Route::get('auth/crm/callback', [CrmSsoController::class, 'callback'])->name('auth.crm.callback');
+
     Route::get('register', [RegisteredUserController::class, 'create'])
         ->name('register');
 

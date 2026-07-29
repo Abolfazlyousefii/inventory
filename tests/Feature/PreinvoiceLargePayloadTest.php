@@ -7,10 +7,17 @@ use App\Models\PreinvoiceOrderItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Models\WarehouseStock;
+use App\Http\Middleware\RoutePermissionMiddleware;
+use App\Services\WarehouseStockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->withoutMiddleware(RoutePermissionMiddleware::class);
+});
 
 function largePayloadUser(): User
 {
@@ -41,6 +48,12 @@ function largePayloadProducts(int $count): array
             'sell_price' => 1000 + $i,
             'stock' => 1000,
             'reserved' => 0,
+        ]);
+        WarehouseStock::query()->create([
+            'warehouse_id' => WarehouseStockService::centralWarehouseId(),
+            'product_id' => $product->id,
+            'product_variant_id' => $variant->id,
+            'quantity' => 1000,
         ]);
         $rows[] = [
             'item_id' => null,
@@ -106,6 +119,7 @@ it('submits 220 products through a complete json payload without products 198 va
 
     $response = $this->actingAs($user)->post(route('preinvoice.draft.save'), largePayloadPost($rows));
 
+    $response->assertSessionHasNoErrors();
     $response->assertSessionDoesntHaveErrors(['products.198.id', 'products.198.variety_id', 'products.198.quantity']);
     $order = PreinvoiceOrder::query()->where('created_by', $user->id)->latest('id')->firstOrFail();
     expect($order->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)

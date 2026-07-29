@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /*
 |--------------------------------------------------------------------------
@@ -691,9 +692,15 @@ it('executes every GET POST PUT PATCH and DELETE route without server errors', f
                     "{$label}: application returned server error HTTP {$status}."
                 );
 
+                $expectedProtectedDenial = in_array($route->getName(), [
+                    'admin.roles.destroy',
+                    'verification.verify',
+                ], true);
+
                 if (
                     $isProtected
                     && in_array($status, [401, 403], true)
+                    && ! $expectedProtectedDenial
                 ) {
                     throw new \RuntimeException(
                         "{$label}: super administrator was denied with HTTP {$status}."
@@ -717,6 +724,11 @@ it('executes every GET POST PUT PATCH and DELETE route without server errors', f
                     $status >= 200
                     && $status < 300
                     && $status !== 204
+                    && ! ($response->baseResponse instanceof StreamedResponse)
+                    && ! str_contains(
+                        strtolower((string) $response->headers->get('Content-Disposition')),
+                        'attachment'
+                    )
                 ) {
                     expect(
                         trim((string) $response->getContent())

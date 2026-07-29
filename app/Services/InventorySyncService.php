@@ -11,12 +11,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class InventorySyncService {
-    public function __construct() {
-        $this->apiUrl = Config::get('services.site.base_url') . $this->Url;
-    }
-
     protected ?string $apiUrl;
-    protected string  $Url               = "/api/v2/sync/products";
+    protected ?string $apiToken;
     protected int     $batchSize         = 30;
     protected int     $maxRetries        = 2;
     protected int     $initialRetryDelay = 1;
@@ -26,6 +22,12 @@ class InventorySyncService {
     protected string $timeout = '9';
 
     public function syncAll(): array {
+        $this->apiUrl = trim((string) Config::get('services.sales_server.api_url'));
+        $this->apiToken = trim((string) Config::get('services.sales_server.api_token'));
+        if (! Config::get('services.sales_server.sync_enabled') || $this->apiUrl === '' || $this->apiToken === '') {
+            return ['skipped' => true, 'reason' => 'inventory_sync_disabled_or_not_configured'];
+        }
+
         $totalChunks  = 0;
         $successCount = 0;
         $failedChunks = [];
@@ -124,6 +126,7 @@ class InventorySyncService {
 
             try {
                 $response = Http::withoutVerifying()
+                    ->withToken($this->apiToken)
                     ->timeout($this->timeout)
                     ->post($this->apiUrl, $payload);
 

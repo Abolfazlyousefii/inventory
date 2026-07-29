@@ -41,6 +41,7 @@ class PreinvoiceReservationSyncTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('product_id');
             $table->boolean('is_active')->default(true);
+            $table->boolean('sales_enabled')->default(true);
             $table->string('variant_name');
             $table->unsignedBigInteger('sell_price')->default(0);
             $table->unsignedInteger('stock')->default(0);
@@ -81,6 +82,12 @@ class PreinvoiceReservationSyncTest extends TestCase
             $table->unsignedInteger('quantity')->default(0);
             $table->timestamp('expires_at')->nullable();
             $table->timestamp('converted_at')->nullable();
+            $table->timestamp('released_at')->nullable();
+            $table->unsignedBigInteger('released_by')->nullable();
+            $table->string('release_reason')->nullable();
+            $table->text('release_note')->nullable();
+            $table->string('reservation_scope')->nullable();
+            $table->string('reservation_tier')->nullable();
             $table->timestamps();
         });
     }

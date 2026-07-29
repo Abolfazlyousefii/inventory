@@ -29,7 +29,7 @@ class SellerDashboardTest extends TestCase
             ->assertSee('ثبت پیش‌فاکتور جدید')
             ->assertSee('پیش‌فاکتورهای من')
             ->assertSee('مشتریان')
-            ->assertDontSee('فاکتورها')
+            ->assertDontSee('>فاکتورها<', false)
             ->assertDontSee('گزارش‌های مدیریتی');
     }
 

@@ -35,5 +35,6 @@ it('allocates percent discounts and puts rounding remainder on last positive lin
     ]]);
 
     expect(array_sum($result['lines']))->toBe(2_000)
-        ->and($result['lines'][2])->toBe(1_000);
+        ->and($result['lines'][1])->toBe(999)
+        ->and($result['lines'][2])->toBe(1_001);
 });

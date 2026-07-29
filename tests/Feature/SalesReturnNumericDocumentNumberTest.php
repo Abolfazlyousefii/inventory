@@ -45,13 +45,13 @@ class SalesReturnNumericDocumentNumberTest extends TestCase
     {
         $service = $this->serviceSource();
         $this->assertStringContainsString('lockForUpdate()', $service);
-        $this->assertStringContainsString("'last_number' => \\$next", $service);
+        $this->assertStringContainsString("'last_number' => \$next", $service);
     }
 
     public function test_stale_sequence_recovers_from_documents(): void
     {
         $service = $this->serviceSource();
         $this->assertStringContainsString('pluck(\'document_number\')', $service);
-        $this->assertStringContainsString("return (string) \\$next;", $service);
+        $this->assertStringContainsString("return (string) \$next;", $service);
     }
 }

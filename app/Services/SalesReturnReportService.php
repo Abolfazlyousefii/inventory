@@ -31,6 +31,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->when($like, fn($q) => $q->where('d.document_number', 'like', $like))
             ->when(($filters['status'] ?? null) && ($filters['status'] ?? 'all') !== 'all', fn($q) => $q->where('d.status', $filters['status']))
             ->when(($filters['official_only'] ?? false), fn($q) => $q->where('d.status', SalesReturnDocument::STATUS_APPLIED)->whereNotExists(function($sub){ $sub->selectRaw('1')->from('warehouse_transfers as dup')->whereColumn('dup.reference', 'd.reference_number')->whereNotNull('d.reference_number')->where('dup.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN); }))
+            ->when($filters['customer_name'] ?? null, fn($q,$v) => $q->where(fn($name) => $name->where('c.first_name', 'like', "%{$v}%")->orWhere('c.last_name', 'like', "%{$v}%")))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('d.customer_id', $v))
             ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
             ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]));
@@ -42,6 +43,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->selectRaw("'legacy' as source, w.id as source_id, COALESCE(w.reference, CAST(w.id as CHAR)) as document_number, w.customer_id, COALESCE(w.beneficiary_name, '') as customer_name, COALESCE(w.transferred_at, w.created_at) as canonical_date, 'legacy' as status, COALESCE(SUM(wi.quantity),0) as total_quantity, COALESCE(w.total_amount, SUM(wi.line_total),0) as total_amount, CASE WHEN w.reference = ? OR CAST(w.id as CHAR) = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm, $docTerm])
             ->when($like, fn($q) => $q->where(function($qq) use ($like) { $qq->where('w.reference', 'like', $like)->orWhere('w.id', 'like', $like); }))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('w.customer_id', $v))
+            ->when($filters['customer_name'] ?? null, fn($q,$v) => $q->where(fn($name) => $name->where('c.first_name', 'like', "%{$v}%")->orWhere('c.last_name', 'like', "%{$v}%")->orWhere('w.beneficiary_name', 'like', "%{$v}%")))
             ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
             ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
             ->groupBy('w.id','w.reference','w.customer_id','w.beneficiary_name','w.transferred_at','w.created_at','w.total_amount');
@@ -80,7 +82,13 @@ class SalesReturnReportService extends SalesReturnQueryService
     public function normalizeLegacyRow(WarehouseTransfer $transfer): array
     {
         $amount = (int) ($transfer->total_amount ?: $transfer->items->sum('line_total'));
+        $healthyAmount = (int) $transfer->items->where('return_kind', 'healthy')->sum('line_total');
+        $damagedAmount = (int) $transfer->items->where('return_kind', 'damaged')->sum('line_total');
         $warehouseName = $transfer->toWarehouse?->name ?: '—';
+        if ($healthyAmount + $damagedAmount === 0) {
+            $damagedAmount = $warehouseName !== '—' && str_contains($warehouseName, 'مرجوع') ? $amount : 0;
+            $healthyAmount = $damagedAmount === 0 ? $amount : 0;
+        }
         $returnedAt = $transfer->transferred_at ?: $transfer->created_at;
 
         return [
@@ -101,9 +109,9 @@ class SalesReturnReportService extends SalesReturnQueryService
             'returned_at' => $returnedAt,
             'returned_at_display' => $this->jalaliDateTime($returnedAt),
             'returned_at_sort' => $returnedAt?->format('Y-m-d H:i:s'),
-            'return_type' => $this->legacyReturnType($transfer),
-            'healthy_amount' => $warehouseName !== '—' && str_contains($warehouseName, 'مرجوع') ? 0 : $amount,
-            'damaged_amount' => $warehouseName !== '—' && str_contains($warehouseName, 'مرجوع') ? $amount : 0,
+            'return_type' => $healthyAmount && $damagedAmount ? 'ترکیبی' : ($damagedAmount ? 'مرجوعی' : 'سالم'),
+            'healthy_amount' => $healthyAmount,
+            'damaged_amount' => $damagedAmount,
             'total_amount' => $amount,
             'destination_warehouse_name' => $warehouseName,
             'destination_warehouse_label' => 'انبار مقصد: '.$warehouseName,
@@ -112,7 +120,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             'print_url' => route('vouchers.return-from-sale.legacy.print', $transfer),
             'items_summary' => $transfer->items->map(fn ($item) => trim(($item->product?->name ?: '—').' / '.($item->variant?->variant_name ?: ($item->variant_name ?: '—')).' × '.number_format((int) $item->quantity)))->filter()->implode('، ') ?: ($transfer->note ?: '—'),
             'quantity' => (int) $transfer->items->sum('quantity'),
-            'condition_label' => $warehouseName !== '—' && str_contains($warehouseName, 'مرجوع') ? 'معیوب' : 'سالم',
+            'condition_label' => $healthyAmount && $damagedAmount ? 'سالم و مرجوعی' : ($damagedAmount ? 'معیوب' : 'سالم'),
             'destination_warehouse_details' => $warehouseName.': '.number_format((int) $transfer->items->sum('quantity')),
         ];
     }

@@ -29,7 +29,10 @@ class User extends Authenticatable
         'phone',
         'username',
         'is_active',
+        'can_access_erp',
+        'is_seller',
         'sync_source',
+        'is_crm_managed',
         'crm_role_raw',
         'synced_at',
         'last_crm_payload',
@@ -42,6 +45,7 @@ class User extends Authenticatable
         'branch',
         'password',
         'manager_id',
+        'manager_crm_user_id',
     ];
 
     /**
@@ -65,6 +69,9 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'can_access_erp' => 'boolean',
+            'is_seller' => 'boolean',
+            'is_crm_managed' => 'boolean',
             'synced_at' => 'datetime',
             'crm_created_at' => 'datetime',
             'crm_updated_at' => 'datetime',
@@ -76,6 +83,11 @@ class User extends Authenticatable
     public function manager(): BelongsTo
     {
         return $this->belongsTo(self::class, 'manager_id');
+    }
+
+    public function scopeActiveSellers($query)
+    {
+        return $query->where('is_active', true)->where('can_access_erp', true)->where('is_seller', true);
     }
 
     public function permissions(): BelongsToMany

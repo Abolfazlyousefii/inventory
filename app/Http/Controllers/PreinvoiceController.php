@@ -2040,11 +2040,12 @@ class PreinvoiceController extends Controller
             ->whereNull('release_reason')
             ->lockForUpdate()
             ->get()
-            ->keyBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
+            ->groupBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
 
         foreach ($required as $key => $row) {
-            $reservation = $rows->get($key);
-            $currentQty = (int) ($reservation?->quantity ?? 0);
+            $reservations = $rows->get($key, collect());
+            $reservation = $reservations->first();
+            $currentQty = (int) $reservations->sum('quantity');
             $requiredQty = (int) $row['quantity'];
             $delta = $requiredQty - $currentQty;
 
@@ -2061,6 +2062,8 @@ class PreinvoiceController extends Controller
                 $reservation->reservation_tier = $reservationMeta['tier'];
                 $reservation->reservation_scope = 'official';
                 $reservation->save();
+
+                $reservations->skip(1)->each->delete();
             } else {
                 PreinvoiceDraftReservation::query()->create([
                     'token' => (string) Str::uuid(),
@@ -2077,20 +2080,23 @@ class PreinvoiceController extends Controller
             }
         }
 
-        foreach ($rows as $key => $reservation) {
+        foreach ($rows as $key => $reservations) {
             if (isset($required[$key])) {
                 continue;
             }
 
             if (! $stockAlreadyAdjusted) {
-                $this->releaseStockForItem((int) $reservation->product_id, (int) $reservation->variant_id, (int) $reservation->quantity);
+                $first = $reservations->first();
+                $this->releaseStockForItem((int) $first->product_id, (int) $first->variant_id, (int) $reservations->sum('quantity'));
             }
-            $reservation->forceFill([
+            foreach ($reservations as $reservation) {
+                $reservation->forceFill([
                 'released_at' => now(),
                 'released_by' => auth()->id(),
                 'release_reason' => 'preinvoice_item_removed',
                 'release_note' => 'ردیف پیش‌فاکتور حذف شد یا مقدار آن صفر شد.',
-            ])->save();
+                ])->save();
+            }
         }
     }
 

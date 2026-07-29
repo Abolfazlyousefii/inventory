@@ -17,3 +17,11 @@ Schedule::call(function () {
     app(InventorySyncService::class)->syncAll();
 })
     ->everyMinute();
+
+Schedule::command('crm:sync-users --incremental')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10);
+
+Schedule::command('crm:sync-users --full')
+    ->dailyAt('02:00')
+    ->withoutOverlapping(180);

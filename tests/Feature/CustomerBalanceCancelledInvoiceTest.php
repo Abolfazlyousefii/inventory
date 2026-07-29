@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\CheckPermission;
+use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Auth\Middleware\Authenticate;
 use Tests\TestCase;
 
 class CustomerBalanceCancelledInvoiceTest extends TestCase
@@ -74,7 +77,11 @@ class CustomerBalanceCancelledInvoiceTest extends TestCase
             'opening_balance' => 0,
         ]);
 
-        $this->withoutMiddleware();
+        $this->withoutMiddleware([
+            Authenticate::class,
+            RoutePermissionMiddleware::class,
+            CheckPermission::class,
+        ]);
 
         $this->get('/customers')->assertOk();
         $this->get('/preinvoice/api/customers?q=سارا')

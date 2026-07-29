@@ -5,14 +5,14 @@ namespace App\Http\Controllers;
 use App\Exports\SalesReturnsExport;
 use App\Http\Requests\{ApplySalesReturnRequest,SalesReturnIndexRequest,StoreSalesReturnRequest,UpdateSalesReturnRequest};
 use App\Models\{Category,Customer,Product,ProductVariant,SalesReturnDocument,User,Warehouse,WarehouseTransfer};
-use App\Services\{SalesReturnQueryService,SalesReturnService};
+use App\Services\{SalesReturnReportService,SalesReturnService};
 use Dompdf\Dompdf;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 
 class SalesReturnController extends Controller
 {
- public function __construct(private SalesReturnService $service, private SalesReturnQueryService $reports) {}
+ public function __construct(private SalesReturnService $service, private SalesReturnReportService $reports) {}
  public function index(SalesReturnIndexRequest $request){ $filters=$request->filters()+['status'=>$request->input('status','all')]; $documents=$this->reports->buildDocumentQuery($filters)->with(['items.destinationWarehouse:id,name,type'])->paginate((int)($filters['per_page']??30))->withQueryString(); return view('sales-returns.index',['documents'=>$documents,'filters'=>$filters,'summary'=>$this->reports->summary($filters),'tabCounts'=>$this->reports->tabCounts($filters),'warehouses'=>Warehouse::query()->whereIn('type',['central','return'])->orderBy('name')->get(['id','name','type']),'customers'=>Customer::query()->when($filters['customer_id']??null,fn($q,$id)=>$q->whereKey($id))->get(['id','first_name','last_name','mobile']),'products'=>Product::query()->when($filters['product_id']??null,fn($q,$id)=>$q->whereKey($id))->get(['id','name']),'variants'=>ProductVariant::query()->when($filters['product_variant_id']??null,fn($q,$id)=>$q->whereKey($id))->get(['id','variant_name','variant_code']),'users'=>User::query()->whereIn('id',array_filter([$filters['created_by']??null,$filters['applied_by']??null]))->get(['id','name']),'reportService'=>$this->reports]); }
  public function exportExcel(SalesReturnIndexRequest $request){ $filters=$request->filters(); $file='sales-returns-'.now()->format('Ymd-His').'.xlsx'; return Excel::download(new SalesReturnsExport($filters,$this->reports),$file); }
  public function exportPdf(SalesReturnIndexRequest $request){ return $this->pdfResponse('sales-returns.report-pdf',$this->reportData($request),'sales-returns-report-'.now()->format('Ymd-His').'.pdf', 'landscape'); }

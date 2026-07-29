@@ -1,0 +1,1636 @@
+﻿
+   PASS  Tests\Unit\AppShellLayoutTest
+  ✓ layout loads theme assets in the required order without inline styles                                        0.43s  
+  ✓ design tokens and shared components use the corporate palette                                                0.04s  
+  ✓ sidebar keeps permissions and active routes while moving interaction to shell script                         0.04s  
+  ✓ sidebar visibility and active accordion remain role aware                                                    0.64s  
+
+   PASS  Tests\Unit\ApplicationNameAndNotificationFrontendTest
+  ✓ application name is consistent in config layouts and visible views                                           0.10s  
+  ✓ page and login titles append the application name once                                                       1.24s  
+  ✓ notification frontend has badge only polling and no automatic toasts                                         0.04s  
+
+   PASS  Tests\Unit\Architecture\ApplicationFunctionCoverageTest
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.06s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.06s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.06s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.04s  
+  ✓ it keeps every application php file syntactically loadable for function-level testing with ('E:\laragon\www… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.09s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.06s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.05s  
+  ✓ it rejects debug side effects from all application functions and controllers with ('E:\laragon\www\inventor… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ls.php') #1  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ty.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ty.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ts.php') #1  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ty.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ty.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #6  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #7  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ow.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #8  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #9  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ts.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ns.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…he.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ts.php') #3  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…es.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nd.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ta.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rt.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rt.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rt.php') #3  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #9  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #3… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.07s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #5… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ts.php') #4  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #5  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…re.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #6  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #7  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #8  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #9  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rt.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rt.php') #5  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ob.php')     0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #6  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…og.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ry.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #1  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…de.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…el.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…se.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rt.php') #6  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ry.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ue.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ty.php') #5  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #1  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ch.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…te.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…og.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ng.php')     0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #2  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…te.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…st.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #7  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ew.php')     0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #5  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ct.php')     0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #5  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #6  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #6  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…se.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #7  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ry.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #7  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #8  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #8  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…od.php')     0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #8  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ry.php') #4  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #9  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #9  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #6… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #9  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…se.php') #3  0.06s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…on.php') #1… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ck.php') #1  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…og.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…og.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ot.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ck.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…em.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #7… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #6  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #7  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #8  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #9  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…nt.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #2… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #3… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #4… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…rd.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ce.php') #5… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #4  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #8… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #9… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #6  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #7  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #8  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #9  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…es.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…es.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…es.php') #4  0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…es.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…cy.php')     0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…or.php') #1… 0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ns.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…te.php') #3  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…og.php') #5  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…og.php') #6  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…er.php') #9… 0.05s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ls.php') #2  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ut.php') #1  0.04s  
+  ✓ it can reflect every declared public method in app classes with ('E:\laragon\www\inventory\app\…ut.php') #2  0.04s  
+
+   PASS  Tests\Unit\Architecture\FinancialInventoryStructureTest
+  ✓ it keeps critical financial and inventory models guarded by expected relationships and casts                 0.63s  
+  ✓ it keeps critical workflow services exposing the business methods that route tests depend on                 0.06s  
+
+   PASS  Tests\Unit\InvoiceLiveFilterRequestTest
+  ✓ persian arabic and english order codes normalize equally
+  ✓ leading zero is preserved as a string
+
+   PASS  Tests\Unit\Models\ModelPersistenceCapabilitiesTest
+  ✓ it keeps every application model ready for persistence operations                                            0.08s  
+  ✓ it keeps every declared model relationship executable                                                        0.08s  
+
+   PASS  Tests\Unit\Permissions\PermissionCatalogTest
+  ✓ it normalizes transitive permission dependencies                                                             0.04s  
+  ✓ it normalizes critical invoice dependencies                                                                  0.04s  
+  ✓ it keeps legacy permissions out of assignable keys                                                           0.04s  
+  ✓ it only exposes explicitly active non deprecated keys and has a stable version                               0.29s  
+  ✓ it declares typed catalog synchronization inspection methods                                                 0.04s  
+  ✓ it keeps collection and shipping permissions independent                                                     0.04s  
+  ✓ it resolves canonical and aliased role labels without using arrays as keys                                   0.04s  
+  ✓ it falls back safely for unknown roles                                                                       0.04s  
+  ✓ it rejects unknown and deprecated dependencies at the backend boundary                                       0.04s  
+
+   PASS  Tests\Unit\Permissions\PermissionIndependentChangeTrackingTest
+  ✓ frontend tracks role and direct permission snapshots independently                                           0.01s  
+  ✓ dependency normalization only targets direct permission inputs
+  ✓ backend uses changed flags and preserves legacy ids
+  ✓ permission assets are cache busted and catalog version is submitted
+  ✓ self healing is guarded by direct permission change and logs failure
+
+   PASS  Tests\Unit\PreinvoiceReservationSyncTest
+  ✓ sync uses total existing order reservation before checking free stock                                        0.05s  
+
+   PASS  Tests\Unit\ProductCatalogGroupingServiceTest
+  ✓ same price and same colors merge models                                                                      0.05s  
+  ✓ different color sets remain separate                                                                         0.04s  
+  ✓ different prices remain separate and summary uses range                                                      0.04s  
+  ✓ deduplicates identical variants                                                                              0.04s  
+  ✓ models are naturally sorted                                                                                  0.04s  
+  ✓ without price has single unpriced label                                                                      0.04s  
+
+   PASS  Tests\Unit\ProductDiscountAllocatorTest
+  ✓ it allocates amount discounts across multiple variants with exact rounding                                   0.04s  
+  ✓ it allocates percent discounts and puts rounding remainder on last positive line                             0.05s  
+
+   PASS  Tests\Unit\ProductExportPickerUiTest
+  ✓ picker keeps live search race safety and keyboard contract                                                   0.04s  
+  ✓ picker renders search results without injecting server html                                                  0.04s  
+
+   PASS  Tests\Unit\ProductPriceListVazirFontTest
+  ✓ vazir has priority when it is available                                                                      0.05s  
+  ✓ vazirmatn is selected without exception when vazir is missing                                                0.05s  
+  ✓ dejavu is selected without exception when project fonts are missing                                          0.05s  
+  ✓ font fallback writes warning to laravel log                                                                  0.05s  
+  ✓ body header footer and default font use resolved family                                                      0.06s  
+  ✓ current project can render persian and latin pdf without font exception                                      0.36s  
+
+   PASS  Tests\Unit\PurchaseJalaliDateFilterTest
+  ✓ it converts english persian and arabic jalali digits to the same gregorian date with ('1405/04/28')          0.06s  
+  ✓ it converts english persian and arabic jalali digits to the same gregorian date with ('۱۴۰۵/۰۴/۲۸')          0.04s  
+  ✓ it converts english persian and arabic jalali digits to the same gregorian date with ('١٤٠٥/٠٤/٢٨')          0.04s  
+  ✓ it converts english persian and arabic jalali digits to the same gregorian date with ('1405-04-28')          0.04s  
+  ✓ it renders the purchase datetime in jalali and renders null as an em dash                                    0.04s  
+  ✓ it normalizes jalali filter fields before validation                                                         0.05s  
+  ✓ it rejects invalid jalali dates with a persian validation error                                              0.05s  
+  ✓ it rejects a start date after the end date                                                                   0.04s  
+  ✓ it uses date-only jalali fields and preserves pagination and export query strings                            0.04s  
+  ✓ it applies full-day boundaries in list and excel queries                                                     0.04s  
+
+   PASS  Tests\Unit\ReturnFromSalePricingUiTest
+  ✓ sazeh price field exists for mobile and desktop and shares state                                             0.01s  
+  ✓ internal price is rendered as read only historical details
+  ✓ applied price only edit uses inventory delta
+
+   PASS  Tests\Unit\SalesDocumentTotalsTest
+  ✓ calculates without discount
+  ✓ calculates row document and shipping discounts
+  ✓ allocated lines does not double subtract invoice discount
+  ✓ product lines combines product and invoice discounts
+  ✓ discounts are capped at subtotal
+  ✓ from document does not double count product lines discount
+  ✓ from document keeps allocated lines legacy behavior
+  ✓ warehouse quantity reduction preserves effective unit discount
+  ✓ proportional discount uses deterministic integer half up rounding
+  ✓ proportional discount supports zero and increased quantities and caps at gross
+  ✓ proportional discount rejects an ambiguous zero historical quantity
+  ✓ invoice 00614 regression totals match the preserved commercial snapshot
+
+   PASS  Tests\Unit\SalesReturnCalculationServiceTest
+  ✓ internal refund uses invoice snapshot instead of current variant price                                       0.01s  
+  ✓ line discount is spread over the historical row
+  ✓ product lines applies line and invoice discounts once
+  ✓ allocated lines does not subtract invoice discount twice
+  ✓ legacy invoice falls back to total minus line discount
+  ✓ invoice discount floor and remainder allocation is stable
+  ✓ last partial return receives the exact remaining rial
+
+   PASS  Tests\Unit\SalesReturnDateOnlyTest
+  ✓ expected jalali date maps to gregorian date
+  ✓ model and migration use date instead of datetime
+  ✓ return form forces official date only picker options
+  ✓ date display normalizes legacy time without rendering it
+
+   PASS  Tests\Unit\SalesReturnItemsPayloadDecoderTest
+  ✓ it decodes compact payloads with one one hundred and two hundred fifty variants with (1)                     0.06s  
+  ✓ it decodes compact payloads with one one hundred and two hundred fifty variants with (100)                   0.06s  
+  ✓ it decodes compact payloads with one one hundred and two hundred fifty variants with (250)                   0.06s  
+  ✓ it rejects invalid product and variant references with validation errors with ('product')                    0.05s  
+  ✓ it rejects invalid product and variant references with validation errors with ('variant')                    0.05s  
+  ✓ it rejects malformed json invalid versions and oversized payloads                                            0.05s  
+  ✓ it uses one post variable instead of recursively generated item inputs                                       0.04s  
+  ✓ it expands compact payloads in the shared store and update request preparation path                          0.04s  
+
+   PASS  Tests\Unit\SalesReturnNewProductBooleanNormalizationTest
+  ✓ it normalizes every supported true representation with (true)                                                0.06s  
+  ✓ it normalizes every supported true representation with (1)                                                   0.04s  
+  ✓ it normalizes every supported true representation with ('1')                                                 0.04s  
+  ✓ it normalizes every supported true representation with ('true')                                              0.04s  
+  ✓ it normalizes every supported true representation with ('TRUE')                                              0.04s  
+  ✓ it normalizes every supported true representation with ('yes')                                               0.05s  
+  ✓ it normalizes every supported true representation with ('on')                                                0.06s  
+  ✓ it normalizes every supported false representation with (false)                                              0.04s  
+  ✓ it normalizes every supported false representation with (0)                                                  0.07s  
+  ✓ it normalizes every supported false representation with ('0')                                                0.07s  
+  ✓ it normalizes every supported false representation with ('false')                                            0.05s  
+  ✓ it normalizes every supported false representation with ('FALSE')                                            0.04s  
+  ✓ it normalizes every supported false representation with ('no')                                               0.04s  
+  ✓ it normalizes every supported false representation with ('off')                                              0.05s  
+  ✓ it uses safe schema two defaults and never turns invalid text on                                             0.04s  
+  ✓ it normalizes booleans again at the service boundary                                                         0.04s  
+  ✓ it keeps the frontend base model and design cartesian fallbacks                                              0.04s  
+
+   PASS  Tests\Unit\SalesReturnNewProductPayloadNormalizerTest
+  ✓ it supplies every schema two default without undefined array keys                                            0.06s  
+  ✓ it turns malformed collection and string values into safe types                                              0.04s  
+  ✓ it removes stale model data when models are disabled                                                         0.04s  
+  ✓ it removes stale design data when designs are disabled                                                       0.04s  
+  ✓ it trims design names and makes their indexes stable and sequential                                          0.04s  
+  ✓ it upgrades incomplete legacy drafts without throwing                                                        0.04s  
+  ✓ it keeps the four frontend variant contracts and reset behavior explicit                                     0.04s  
+
+   PASS  Tests\Unit\SalesReturnNewProductToggleTest
+  ✓ it keeps both feature cards visible and toggles only their inner panels                                      0.05s  
+  ✓ it preserves temporary model and design selections while toggles are off                                     0.04s  
+  ✓ it keeps disabled feature data out of the submitted payload                                                  0.04s  
+  ✓ it accepts both features enabled independently at the backend boundary                                       0.04s  
+  ✓ it retains the cartesian product implementation for two models and three designs                             0.04s  
+
+   PASS  Tests\Unit\SalesReturnPriceNormalizationTest
+  ✓ persian arabic and english money inputs become integer rials
+  ✓ external invoice datetime is normalized to date only
+  ✓ external invoice date remains y m d
+
+   PASS  Tests\Feature\Architecture\ControllerCoverageTest
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.05s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it loads every controller class and inspects its public actions with ('E:\laragon\www\inventory\app/…er.php… 0.04s  
+  ✓ it ensures all controller actions referenced by routes exist                                                17.70s  
+
+   PASS  Tests\Feature\AuditSalesDiscountIntegrityCommandTest
+  ✓ it audits without writing by default and accepts the explicit dry-run option                                 1.11s  
+  ✓ it supports a targeted invoice repair invocation without hardcoded document numbers                          0.04s  
+
+   PASS  Tests\Feature\AutoLoginTest
+  ✓ legacy phone based auto login is not available                                                               0.05s  
+
+   PASS  Tests\Feature\Controllers\RouteCoverageTest
+  ✓ it uses a completely isolated in-memory testing database                                                     0.07s  
+  ✓ it maps every registered route to an existing callable controller method                                     0.06s  
+  ✓ it blocks guests from every route protected by authentication middleware                                     0.68s  
+  ✓ it returns 403 for authenticated users without required roles and permissions                                1.52s  
+  ✓ it executes every GET POST PUT PATCH and DELETE route without server errors                                 16.90s  
+
+   PASS  Tests\Feature\CrmSsoTest
+  ✓ it creates a state and PKCE challenge and redirects guests without leaking secrets                           0.07s  
+  ✓ it rejects callbacks with missing or mismatched state and missing code                                       0.05s  
+  ✓ it exchanges the code, upserts by crm id, maps roles and logs in without copying a password hash             0.08s  
+  ✓ it updates a changed phone on the same crm user and refuses inactive or unmapped users                       0.06s  
+  ✓ it fails closed when token exchange fails or the CRM user is inactive                                        0.07s  
+  ✓ it allows active local emergency login but blocks inactive and crm-managed local login when the transition…  0.09s  
+
+   PASS  Tests\Feature\CrmUserSyncTest
+  ✓ it uses bearer auth canonical endpoint and follows cursor pages from zero                                    0.08s  
+  ✓ it is idempotent updates phone by crm id and preserves password and local roles                              0.07s  
+  ✓ it resolves managers after later pages and stores independent access and seller flags                        0.06s  
+  ✓ it uses a fixed incremental window and resets cursor on each cycle                                           0.05s  
+  ✓ it does not advance successful state when the response contract is invalid                                   0.05s  
+  ✓ it keeps dry run fully read only                                                                             0.05s  
+  ✓ it rejects a non advancing cursor and does not retry unauthorized responses                                  0.05s  
+  ✓ it retries temporary failures but not contract failures                                                      0.05s  
+  ✓ it rejects html responses without retrying                                                                   0.05s  
+  ✓ it does not link ambiguous phone matches and never consumes password fields                                  0.05s  
+  ✓ it blocks login when crm access is revoked without deleting the user                                         0.05s  
+
+   PASS  Tests\Feature\CustomerBalanceCancelledInvoiceTest
+  ✓ cancelled status helper only returns not shipped                                                             0.05s  
+  ✓ customer balance ignores not shipped and counts pending collection                                           0.04s  
+  ✓ customers page and preinvoice customer search load without balance exception                                 0.06s  
+
+   PASS  Tests\Feature\CustomerLedgerCancelledInvoiceTest
+  ✓ cancelled invoice is not counted but active invoices and payments are                                        0.05s  
+
+   PASS  Tests\Feature\Exports\ExcelExportTest
+  ✓ it exports product rows with headings and mapped excel output                                                0.04s  
+  ✓ it builds the purchases excel export query and headings for saved purchase rows                              0.04s  
+  ✓ it exports sales return rows with report filters headings and mapped totals                                  0.04s  
+
+   PASS  Tests\Feature\ExternalPaidOrderRegistrationTest
+  ✓ it registers a paid store order with its variant in collecting status                                        0.08s  
+  ✓ it is idempotent and does not consume stock or create payments twice                                         0.09s  
+  ✓ it rolls the whole import back when the store variant cannot be resolved                                     0.05s  
+  ✓ it rolls the whole import back when variant stock is insufficient                                            0.06s  
+  ✓ it rejects paid order requests with an invalid token                                                         0.05s  
+
+   PASS  Tests\Feature\ExternalStoreCustomerRegistrationTest
+  ✓ it registers a store user as a new inventory customer                                                        0.05s  
+  ✓ it updates the same customer instead of creating a duplicate                                                 0.05s  
+  ✓ it rejects requests with an invalid token                                                                    0.04s  
+
+   PASS  Tests\Feature\FinancePreinvoiceDatabasePersistenceTest
+  ✓ it keeps finance persistence atomic and logs query exception details                                         0.04s  
+
+   PASS  Tests\Feature\FinancePreinvoiceEditPersistenceTest
+  ✓ it finance editor service persists item and invoice discount fields without creating invoices                0.04s  
+
+   PASS  Tests\Feature\FinancePreinvoiceSaveAndFinalizeTest
+  ✓ it save and finalize updates first then refreshes before finalizing                                          0.04s  
+
+   PASS  Tests\Feature\FinancePreinvoiceUpdateTest
+  ✓ it saves finance edits behaviorally without finalizing or creating invoices                                  0.10s  
+  ✓ it keeps request intent and action contracts aligned with save and save_and_finalize                         0.04s  
+
+   PASS  Tests\Feature\FinancePreinvoiceUpdateValidationTest
+  ✓ it defines Persian edit reason validation messages                                                           0.04s  
+  ✓ it renders edit reason field attributes old input and one validation message                                 0.67s  
+  ✓ it redirects a successful finance edit back to the finance edit page without finalize coupling               0.09s  
+
+   PASS  Tests\Feature\FinanceProductDiscountPersistenceTest
+  ✓ it previews percent product discounts with backend allocation contract                                       0.04s  
+  ✓ it persists percent product discounts and reloads discount breakdown fields                                  0.04s  
+  ✓ it validates product discount percent maximum without limiting amount discounts to one hundred               0.04s  
+
+   PASS  Tests\Feature\InventorySyncSafetyTest
+  ✓ it does not register the public test route                                                                   0.05s  
+  ✓ it skips sync and sends no HTTP requests when sync is disabled                                               0.04s  
+  ✓ it skips sync and sends no HTTP requests when URL or token is missing with dataset "missing URL"             0.04s  
+  ✓ it skips sync and sends no HTTP requests when URL or token is missing with dataset "empty URL"               0.05s  
+  ✓ it skips sync and sends no HTTP requests when URL or token is missing with dataset "missing token"           0.05s  
+  ✓ it skips sync and sends no HTTP requests when URL or token is missing with dataset "empty token"             0.05s  
+  ✓ it sends HTTP with a fake client when sync is enabled and configured without changing local inventory data   0.06s  
+
+   PASS  Tests\Feature\InvoiceCancellationTest
+  ✓ cancellation uses transaction and row lock                                                                   0.07s  
+  ✓ cancellation is idempotent by status and stock movement                                                      0.04s  
+  ✓ applied sales return blocks invoice cancellation                                                             0.04s  
+  ✓ invoice debit is voided but payments are not deleted                                                         0.04s  
+  ✓ cancelled fields are stored on invoice                                                                       0.04s  
+  ✓ controller authorizes and validates invoice number and physical return                                       0.04s  
+  ✓ active and cancelled scopes exist                                                                            0.04s  
+  ✓ active index query excludes cancelled invoices                                                               0.04s  
+  ✓ cancelled archive route and view exist                                                                       0.05s  
+  ✓ cancelled invoice operations are guarded                                                                     0.04s  
+
+   PASS  Tests\Feature\InvoiceLiveIndexTest
+  ✓ live routes and permissions are registered                                                                   0.05s  
+  ✓ index is simple and has no numbered paginator or report exports                                              0.04s  
+  ✓ data uses bounded cursor pagination and stable order                                                         0.04s  
+  ✓ query filters exact customer and excludes cancelled invoices                                                 0.04s  
+  ✓ invoice and preinvoice codes are searched with exact priority                                                0.04s  
+  ✓ summary is optional and not requested during load more                                                       0.04s  
+  ✓ customer endpoint is limited and returns no sensitive fields                                                 0.04s  
+  ✓ responsive views and permission aware actions exist                                                          0.04s  
+
+   PASS  Tests\Feature\InvoiceUuidImmutabilityTest
+  ✓ invoice uuid cannot change after create                                                                      0.05s  
+
+   PASS  Tests\Feature\LegacyPreinvoiceDiscountHydrationTest
+  ✓ it hydrates unstructured legacy discount as invoice discount when line discounts are zero                    0.04s  
+  ✓ it splits legacy total discount between item discounts and invoice discount                                  0.04s  
+  ✓ it preserves structured product discount type and value exactly                                              0.04s  
+
+   PASS  Tests\Feature\LegacyReservationIntegrityAuditCommandTest
+  ✓ command is read only and writes no mutation queries                                                          0.08s  
+  ✓ classifications expected reserved and duplicate rules                                                        0.07s  
+  ✓ filters limit reports without data changes or personal data                                                  0.08s  
+
+   PASS  Tests\Feature\MyPreinvoiceDraftActionsTest
+  ✓ it allows an owner to edit supported preinvoice states without an invoice with ('draft')                     0.05s  
+  ✓ it allows an owner to edit supported preinvoice states without an invoice with ('returned_to_sales')         0.04s  
+  ✓ it allows an owner to edit supported preinvoice states without an invoice with ('reservation_expired')       0.05s  
+  ✓ it locks a draft which already has an invoice                                                                0.05s  
+  ✓ it does not allow an anonymous or different seller to edit a draft                                           0.04s  
+  ✓ it renders both seller draft actions and explicit submit intents                                             0.04s  
+
+   PASS  Tests\Feature\MySalesDocumentsReservationExpiryTest
+  ✓ it expired_preinvoice_is_visible_in_active_tab                                                               0.16s  
+  ✓ it expired_preinvoice_is_not_duplicated_in_needs_correction                                                  0.16s  
+  ✓ it active_preinvoice_shows_remaining_reservation_timer                                                       0.14s  
+  ✓ it expired_preinvoice_shows_expired_timer_state                                                              0.16s  
+  ✓ it converted_preinvoice_does_not_show_preinvoice_timer                                                       0.15s  
+  ✓ it expiration_notification_links_to_active_tab                                                               0.06s  
+  ✓ it seller_can_recheck_and_resubmit_expired_preinvoice                                                        0.11s  
+  ✓ it expired_preinvoice_resubmit_fails_atomically_when_stock_is_insufficient                                   0.07s  
+  ✓ it my_index_expires_overdue_pending_finance_preinvoice                                                       0.17s  
+  ✓ it active_non_expired_preinvoice_stays_pending_finance                                                       0.15s  
+  ✓ it invoice_prevents_expiry_fallback                                                                          0.16s  
+  ✓ it direct_edit_expires_order_before_access_check                                                             0.21s  
+  ✓ it fallback_does_not_release_twice                                                                           0.28s  
+
+   PASS  Tests\Feature\NumericInputNormalizationTest
+  ✓ it normalizes formatted Persian Arabic and comma separated money inputs                                      0.06s  
+
+   PASS  Tests\Feature\PreinvoiceCsrfHardeningTest
+  ✓ it keeps the preinvoice form and browser endpoints same-origin                                               0.05s  
+  ✓ it exposes only the current csrf token to an authenticated user                                              0.05s  
+  ✓ it does not expose the csrf refresh endpoint anonymously                                                     0.04s  
+  ✓ it accepts a matching token and rejects a stale token before controller code runs                            0.04s  
+  ✓ it uses an inventory-specific cookie and production-safe cookie knobs                                        0.04s  
+  ✓ it keeps every preinvoice write route behind csrf middleware                                                 0.05s  
+
+   PASS  Tests\Feature\PreinvoiceDiscountRoundTripTest
+  ✓ it persists the full discount contract from create through finance                                           0.05s  
+
+   PASS  Tests\Feature\PreinvoiceLargePayloadTest
+  ✓ it submits 220 products through a complete json payload without products 198 validation loss                 4.25s  
+  ✓ it updates a large draft without deleting tail items and allows intentional deletion only                    2.02s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('count mismatch')                0.87s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('broken json')                   0.89s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('not complete')                  0.84s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('empty payload')                 0.77s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('missing id')                    0.78s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('missing variety')               0.77s  
+  ✓ it rejects incomplete json payloads before mutating an existing draft with ('missing quantity')              0.78s  
+  ✓ it renders the json payload contract instead of relying on legacy product inputs during submit               0.04s  
+
+   PASS  Tests\Feature\PreinvoiceProductFinderTest
+  ✓ it protects the finder with authentication and preinvoice create permission                                  0.10s  
+  ✓ it returns product-centric A14 model and variant matches with bounded previews and safe fields               0.10s  
+  ✓ it searches product and variant codes and normalizes Persian digits and Arabic letters                       0.12s  
+  ✓ it searches model brands and ranks exact models above product-name-only matches                              0.13s  
+  ✓ it applies stock flags and recursive category filters                                                        0.12s  
+  ✓ it excludes inactive and sales-disabled variants from sellable totals                                        0.11s  
+  ✓ it validates oversized queries and paginates without duplicate products                                      0.14s  
+  ✓ it keeps finder selection isolated from reservation and waits for modal hidden event                         0.04s  
+  ✓ it uses one bootstrap bundle and stable modal lifecycle without double submit                                0.04s  
+
+   PASS  Tests\Feature\PriceIntegrityAuditCommandTest
+  ✓ positive stock zero variant is critical and invoice suggests high confidence                                 0.09s  
+  ✓ inactive unstocked zero variant is low                                                                       0.08s  
+  ✓ product summary desync is reported                                                                           0.07s  
+  ✓ buy price does not create sell price suggestion                                                              0.06s  
+  ✓ invoice and preinvoice zero items are critical and preserve updated at                                       0.08s  
+  ✓ no write queries are executed by command                                                                     0.07s  
+  ✓ write query guard blocks insert before execution                                                             0.05s  
+  ✓ write query guard blocks update before execution                                                             0.05s  
+  ✓ write query guard blocks write cte before execution                                                          0.06s  
+  ✓ write query guard allows select and select cte then disable allows normal writes                             0.04s  
+  ✓ write query guard registers again for new connection after purge                                             0.04s  
+  ✓ csv and json outputs are written                                                                             0.06s  
+  ✓ product variant and severity filters work                                                                    0.07s  
+
+   WARN  Tests\Feature\ProductCatalogCustomerOutputTest
+  - legacy customer catalog suite is replaced by unified price list → Legacy customer catalog output was replac… 0.07s  
+
+   PASS  Tests\Feature\ProductCatalogExportTest
+  ✓ index only shows root categories in root filter                                                              0.22s  
+  ✓ children endpoint returns only selected parent children                                                      0.07s  
+  ✓ root category without child includes descendants                                                             0.07s  
+  ✓ selected subcategory filters products correctly and excludes unrelated                                       0.08s  
+  ✓ multiple model lists filter visible variants                                                                 0.07s  
+  ✓ product without matching model variant is excluded and empty model shows all                                 0.08s  
+  ✓ in stock filter uses visible variants                                                                        0.09s  
+  ✓ print route and old export route                                                                             0.08s  
+  ✓ screen paginates 24 products and query count does not grow linearly                                          3.99s  
+
+   PASS  Tests\Feature\ProductCatalogModelBrandFilterTest
+  ✓ model brand filter lists distinct brands                                                                     0.16s  
+  ✓ model list endpoint only returns selected brand models                                                       0.08s  
+  ✓ one model checkbox filters products                                                                          0.08s  
+  ✓ multiple model checkboxes use or logic                                                                       0.10s  
+  ✓ mixed brand model ids are rejected                                                                           0.08s  
+  ✓ selected checkboxes are restored after refresh                                                               0.19s  
+  ✓ changing brand clears old model ids                                                                          0.04s  
+
+   WARN  Tests\Feature\ProductCatalogPrintLayoutTest
+  - legacy print layout suite is replaced by pdf download → Legacy browser print layout was replaced by direct…  0.04s  
+
+   PASS  Tests\Feature\ProductCatalogVariantRegressionTest
+  ✓ index accepts has many relation                                                                              0.18s  
+  ✓ print accepts has many relation                                                                              0.07s  
+  ✓ model list filter still works                                                                                0.17s  
+  ✓ inactive variant is excluded                                                                                 0.16s  
+  ✓ catalog query does not use parameterized valid variants relation                                             0.04s  
+
+   PASS  Tests\Feature\ProductExportFilterRequestTest
+  ✓ index opens without query string                                                                             0.17s  
+  ✓ empty stock status defaults to all                                                                           0.17s  
+  ✓ in stock is preserved                                                                                        0.18s  
+  ✓ out of stock is preserved                                                                                    0.18s  
+  ✓ invalid stock status is rejected                                                                             0.09s  
+  ✓ missing model list ids defaults to empty array                                                               0.17s  
+  ✓ missing page defaults to one                                                                                 0.16s  
+
+   PASS  Tests\Feature\ProductExportProductSelectionTest
+  ✓ without product ids keeps existing all products behavior                                                     0.08s  
+  ✓ one or multiple product ids only show selected products                                                      0.08s  
+  ✓ duplicate product id is normalized and rendered once                                                         0.08s  
+  ✓ invalid or more than two hundred product ids are rejected                                                    0.16s  
+  ✓ product ids intersect with category filter                                                                   0.11s  
+  ✓ product ids intersect with model list and stock status                                                       0.08s  
+  ✓ product search supports name codes and variant fields                                                        0.12s  
+  ✓ product search obeys current filters and limit                                                               0.10s  
+  ✓ one character search is live and limited to fifteen products                                                 0.11s  
+  ✓ search normalizes persian letters digits and multiword tokens                                                0.11s  
+  ✓ multiple matching variants return one product with match information                                         0.07s  
+  ✓ exact code is ranked before exact product name                                                               0.06s  
+  ✓ product search respects model list and stock filters                                                         0.08s  
+  ✓ empty search does not execute catalog query                                                                  0.05s  
+  ✓ product search requires products export permission                                                           0.07s  
+  ✓ selected products are restored after refresh                                                                 0.15s  
+  ✓ download receives the same product ids and meta                                                              0.08s  
+  ✓ download uses font fallback instead of returning font error                                                  0.16s  
+  ✓ meta reports all names or selected count                                                                     0.05s  
+
+   PASS  Tests\Feature\ProductPriceListPdfTest
+  ✓ pdf route returns application pdf                                                                            0.09s  
+  ✓ pdf starts with pdf signature                                                                                0.07s  
+  ✓ pdf has download filename                                                                                    0.08s  
+  ✓ pdf does not contain laravel label                                                                           0.09s  
+  ✓ single output mode only                                                                                      0.18s  
+  ✓ output mode is not required                                                                                  0.11s  
+  ✓ products are grouped without rowspan                                                                         0.10s  
+  ✓ product without image has no placeholder                                                                     0.08s  
+  ✓ filters still apply                                                                                          0.07s  
+  ✓ product without price is hidden by default                                                                   0.11s  
+  ✓ product without price can be included                                                                        0.13s  
+  ✓ view contract                                                                                                0.06s  
+
+   PASS  Tests\Feature\ProductSearchTest
+  ✓ products index exposes ajax search shell with initial filters                                                0.30s  
+  ✓ products data keeps search strict with category filter and cursor meta                                       0.14s  
+  ✓ products index form submits one canonical q field                                                            0.20s  
+  ✓ multi word product search requires every token across searchable fields                                      0.10s  
+  ✓ multi word product search can match category and keeps category filters                                      0.06s  
+  ✓ multi word product search requires all tokens for iphone query                                               0.06s  
+  ✓ single word and code search still match related products                                                     0.07s  
+
+   PASS  Tests\Feature\PurchaseExportSummaryTest
+  ✓ purchase export query returns one row per purchase not items                                                 0.08s  
+
+   PASS  Tests\Feature\PurchaseJalaliFilterQueryTest
+  ✓ export filter includes the whole end day and combines supplier filter                                        0.06s  
+
+   PASS  Tests\Feature\PurchaseValidationTest
+  ✓ money values are normalized to the same integer rial with data set "english plain"                           0.04s  
+  ✓ money values are normalized to the same integer rial with data set "english grouped"                         0.04s  
+  ✓ money values are normalized to the same integer rial with data set "persian plain"                           0.04s  
+  ✓ money values are normalized to the same integer rial with data set "persian grouped"                         0.04s  
+  ✓ money values are normalized to the same integer rial with data set "arabic grouped"                          0.04s  
+  ✓ json payload preserves all rows without using php input variable slots                                       0.05s  
+  ✓ invalid json payload is rejected without partial items                                                       0.06s  
+  ✓ two billion rial line total stays an integer                                                                 0.06s  
+  ✓ same submission token cannot be acquired twice                                                               0.06s  
+
+   PASS  Tests\Feature\QuarantineZeroPriceVariantsCommandTest
+  ✓ zero price variant only disables sales and keeps price stock reserved                                        0.06s  
+  ✓ dry run changes nothing and second apply is idempotent                                                       0.05s  
+
+   PASS  Tests\Feature\RepairMissingOfficialReservationsCommandTest
+  ✓ finance queue preinvoice with correct reservation stays untouched                                            0.05s  
+  ✓ preinvoice with invoice or stock released at is never backfilled                                             0.06s  
+  ✓ temporary user reservations are not changed                                                                  0.05s  
+  ✓ dry run is default and apply is idempotent                                                                   0.05s  
+
+   PASS  Tests\Feature\RepairReservedCacheCommandTest
+  ✓ expected reserved excludes official but keeps active temporary and preinvoice 301                            0.07s  
+  ✓ cancelled by finance unreleased variants are excluded and warehouse stocks do not change                     0.07s  
+  ✓ dry run changes nothing and apply is idempotent                                                              0.08s  
+
+   PASS  Tests\Feature\SalesDocumentTotalsConsistencyTest
+  ✓ it uses SalesDocumentTotals for order totals finalize and reapproval sync                                    0.04s  
+  ✓ it preserves proportional line discounts in both warehouse invoice mutation paths                            0.04s  
+
+   PASS  Tests\Feature\SalesPrintDiscountSummaryTest
+  ✓ invoice print summary uses items net subtotal and invoice discount only                                      0.05s  
+  ✓ preinvoice without product discount keeps gross and items net subtotal equal                                 0.04s  
+  ✓ preinvoice with only product discount prints zero invoice discount                                           0.04s  
+
+   PASS  Tests\Feature\SalesQueueOrderingTest
+  ✓ initial page and refresh use created at desc with id tie breaker
+  ✓ queue data uses bounded pagination and returns metadata
+  ✓ only collection statuses remain in the queue contract
+  ✓ auto refresh requests and replaces only the current page
+  ✓ desktop and mobile render the same paginated collection
+
+   PASS  Tests\Feature\SalesReturnAppliedAdjustmentTest
+  ✓ draft has edit and delete actions                                                                            0.05s  
+  ✓ applied has edit and void actions with permission                                                            0.04s  
+  ✓ applied actions hidden without permission                                                                    0.04s  
+  ✓ legacy is read only                                                                                          0.04s  
+  ✓ applied edit keeps document number                                                                           0.05s  
+  ✓ applied edit keeps created at                                                                                0.05s  
+  ✓ applied edit keeps original applied at                                                                       0.04s  
+  ✓ applied edit keeps customer and source                                                                       0.04s  
+  ✓ applied edit reverses old stock and applies new stock                                                        0.04s  
+  ✓ applied edit reverses old credit and records new credit                                                      0.07s  
+  ✓ insufficient stock rolls back entire adjustment                                                              0.05s  
+  ✓ applied void reverses stock                                                                                  0.05s  
+  ✓ applied void reverses customer credit                                                                        0.04s  
+  ✓ applied void keeps document and items                                                                        0.04s  
+  ✓ applied void marks document cancelled                                                                        0.04s  
+  ✓ repeated void does not reverse twice                                                                         0.04s  
+  ✓ adjustment creates revision                                                                                  0.04s  
+  ✓ cancelled document cannot be edited                                                                          0.07s  
+
+   PASS  Tests\Feature\SalesReturnAppliedVoidInventoryTest
+  ✓ void applied return restores destination stock                                                               0.08s  
+  ✓ void central return syncs variant and product stock                                                          0.05s  
+  ✓ void return warehouse does not change central variant stock                                                  0.05s  
+  ✓ multiple items same variant are aggregated safely                                                            0.04s  
+  ✓ insufficient stock rolls back void                                                                           0.04s  
+  ✓ void debits customer once                                                                                    0.04s  
+
+   PASS  Tests\Feature\SalesReturnCustomerPrintTest
+  ✓ customer print keeps existing document rows                                                                  0.06s  
+  ✓ customer print contains applied new documents                                                                0.04s  
+  ✓ customer print contains valid legacy returns                                                                 0.06s  
+  ✓ customer print excludes drafts                                                                               0.06s  
+  ✓ customer print excludes cancelled documents                                                                  0.05s  
+  ✓ customer print respects customer filter                                                                      0.04s  
+  ✓ customer print respects jalali date and time range                                                           0.04s  
+  ✓ customer print respects document number                                                                      0.04s  
+  ✓ customer print has print button                                                                              0.06s  
+  ✓ old print route remains compatible                                                                           0.06s  
+  ✓ old pdf report route redirects with filters                                                                  0.05s  
+
+   PASS  Tests\Feature\SalesReturnDateTimeFilterTest
+  ✓ jalali date time range and customer filter are shared by list and customer print                             0.06s  
+  ✓ print buttons build their query from current filter form                                                     0.04s  
+
+   PASS  Tests\Feature\SalesReturnDocumentNumberTest
+  ✓ existing sr 000001 generates sr 000002                                                                       0.04s  
+  ✓ stale sequence is recovered                                                                                  0.04s  
+  ✓ sequence ahead is preserved                                                                                  0.04s  
+  ✓ two consecutive creations are unique                                                                         0.05s  
+  ✓ invalid old numbers are ignored                                                                              0.04s  
+  ✓ sequence is not reset on each request                                                                        0.04s  
+  ✓ failed document persistence rolls back everything                                                            0.04s  
+  ✓ creating draft does not change inventory or ledger                                                           0.04s  
+  ✓ applying sales return updates stock and credit once                                                          0.04s  
+
+   PASS  Tests\Feature\SalesReturnFirstPatchTest
+  ✓ index customer filter uses remote picker                                                                     0.05s  
+  ✓ index shows drafts with edit and cancel actions                                                              0.05s  
+  ✓ applied document does not show draft edit action                                                             0.04s  
+  ✓ legacy document is read only                                                                                 0.04s  
+  ✓ healthy return reason is valid                                                                               0.04s  
+  ✓ each item can have its own destination                                                                       0.05s  
+  ✓ apply posts stock to each item destination                                                                   0.05s  
+  ✓ draft does not change stock or ledger                                                                        0.06s  
+  ✓ editing draft preserves row destinations                                                                     0.04s  
+  ✓ unit price request accepts clean integer                                                                     0.04s  
+  ✓ cancel draft has no financial or inventory effect                                                            0.05s  
+
+   PASS  Tests\Feature\SalesReturnIndexStabilizationTest
+  ✓ status filter is not rendered                                                                                0.05s  
+  ✓ persian jalali dates are normalized                                                                          0.04s  
+  ✓ invalid date returns persian validation error                                                                0.04s  
+  ✓ ajax index returns results partial                                                                           0.04s  
+  ✓ ajax filter preserves customer id                                                                            0.05s  
+  ✓ draft row has edit and cancel actions                                                                        0.07s  
+  ✓ applied row does not have draft actions                                                                      0.06s  
+  ✓ legacy row is read only                                                                                      0.06s  
+  ✓ source switch has explicit panels                                                                            0.06s  
+  ✓ source switch updates hidden value                                                                           0.04s  
+
+   PASS  Tests\Feature\SalesReturnLiveIndexTest
+  ✓ index only renders four live filters                                                                         0.05s  
+  ✓ live search finds new document by number                                                                     0.04s  
+  ✓ live search finds legacy document by reference                                                               0.04s  
+  ✓ customer live filter returns only selected customer                                                          0.05s  
+  ✓ persian jalali date and time range is inclusive                                                              0.04s  
+  ✓ invalid date has persian error                                                                               0.04s  
+  ✓ ajax response contains html url and total                                                                    0.04s  
+  ✓ ajax pagination preserves filters                                                                            0.04s  
+  ✓ database pagination does not load all rows                                                                   0.05s  
+  ✓ clear filter returns first page                                                                              0.06s  
+
+   PASS  Tests\Feature\SalesReturnNewProductSnapshotNormalizationTest
+  ✓ missing or null category snapshot is rebuilt without an undefined key error                                  0.07s  
+  ✓ valid existing category snapshot is preserved                                                                0.04s  
+
+   PASS  Tests\Feature\SalesReturnNumericDocumentNumberTest
+  ✓ old sr numbers remain unchanged                                                                              0.04s  
+  ✓ next number continues after old sr numbers                                                                   0.04s  
+  ✓ numeric and old formats share one sequence                                                                   0.04s  
+  ✓ higher numeric number wins                                                                                   0.04s  
+  ✓ invalid formats are ignored                                                                                  0.04s  
+  ✓ consecutive creations are ordered                                                                            0.05s  
+  ✓ stale sequence recovers from documents                                                                       0.04s  
+
+   PASS  Tests\Feature\SalesReturnPdfPrintCompatibilityTest
+  ✓ show page no longer has pdf button but keeps print                                                           0.04s  
+  ✓ legacy pdf route redirects to print without mpdf                                                             0.04s  
+
+   PASS  Tests\Feature\SalesReturnProductPrintTest
+  ✓ product print aggregates same variant across documents                                                       0.04s  
+  ✓ different variants are not merged                                                                            0.04s  
+  ✓ healthy and damaged quantities are separate                                                                  0.04s  
+  ✓ weighted unit price is correct                                                                               0.05s  
+  ✓ product print counts unique documents                                                                        0.04s  
+  ✓ product print counts unique customers                                                                        0.04s  
+  ✓ product print groups destination warehouses                                                                  0.04s  
+  ✓ product print includes legacy items                                                                          0.04s  
+  ✓ duplicated new and legacy reference is counted once                                                          0.04s  
+  ✓ draft items are excluded                                                                                     0.04s  
+  ✓ cancelled items are excluded                                                                                 0.04s  
+  ✓ voided applied document is excluded                                                                          0.04s  
+  ✓ adjusted applied document uses current items only                                                            0.05s  
+  ✓ filters are applied to product report                                                                        0.04s  
+  ✓ report totals equal sum of rows                                                                              0.06s  
+  ✓ large product report uses aggregate queries not model groupby                                                0.06s  
+  ✓ same variant with different snapshots keeps strict group by and merges by variant                            0.05s  
+  ✓ two variants of one product remain separate after strict group fix                                           0.04s  
+  ✓ new and legacy product queries do not group by select aliases                                                0.04s  
+
+   PASS  Tests\Feature\SalesReturnsExportSummaryTest
+  ✓ sales returns export uses one summary row per return and filters customer name                               0.08s  
+
+   PASS  Tests\Feature\SellerDashboardTest
+  ✓ seller sees only quick actions allowed by real permissions                                                   0.28s  
+  ✓ seller statistics and recent rows are restricted to created by                                               0.40s  
+  ✓ temporary autosave is excluded from dashboard and my preinvoices                                             0.39s  
+  ✓ work item counts use actual status constants and returned item has priority                                  0.40s  
+  ✓ recent preinvoices are limited to five and use id as tie breaker                                             0.32s  
+  ✓ empty state is actionable and zero conversion is safe                                                        0.31s  
+  ✓ unauthorized sales links are not rendered                                                                    0.27s  
+  ✓ admin sees management reports below sales dashboard and monthly endpoint works                               0.14s  
+  ✓ regular seller cannot access management monthly report                                                       0.17s  
+  ✓ finance and warehouse users load without sales data or server errors                                         0.43s  
+  ✓ unknown preinvoice status does not break the dashboard                                                       0.29s  
+
+   PASS  Tests\Feature\StockReservationIntegrityAuditCommandTest
+  ✓ stock is compared only against central warehouse and non central stock does not create s01                   0.07s  
+  ✓ reserved cache is compared only with active reservations and released or consumed are ignored                0.07s  
+  ✓ reserved greater than stock alone is not an anomaly when cache matches active reserved                       0.07s  
+  ✓ stale temporary and invalid official reservations are reported without changes                               0.07s  
+  ✓ zero price reports distinguish central non central and active reservations                                   0.07s  
+  ✓ no write queries are executed by command                                                                     0.08s  
+  ✓ json output and filters work                                                                                 0.07s  
+
+   PASS  Tests\Feature\TestEnvironmentIsolationTest
+  ✓ test environment uses in memory sqlite and never inventory database                                          0.05s  
+
+   PASS  Tests\Feature\UserPermissionManagementTest
+  ✓ page renders standard alias unknown and empty roles safely                                                   0.79s  
+  ✓ invalid user id does not fall through or return 500                                                          0.16s  
+  ✓ view only actor can read but cannot update                                                                   0.37s  
+  ✓ actor without view permission is forbidden                                                                   0.15s  
+  ✓ actor without assign roles cannot change roles with forged input                                             0.10s  
+  ✓ assign roles actor can remove all non super admin roles                                                      0.06s  
+  ✓ last super admin is protected for every alias but one of two can be removed                                  0.08s  
+  ✓ direct permissions are added removed and dependencies are normalized                                         0.15s  
+  ✓ effective sources distinguish role direct both and none                                                      0.11s  
+  ✓ get page does not write or sync catalog                                                                      0.20s  
+  ✓ permissions sync command does not change assignments                                                         0.05s  
+  ✓ unchanged submission does not create activity log                                                            0.09s  
+  ✓ role only update preserves active and legacy direct permissions                                              0.10s  
+  ✓ role with legacy permission can be assigned                                                                  0.06s  
+  ✓ active direct update preserves roles and legacy direct permissions                                           0.09s  
+  ✓ unknown direct permission is ignored without blocking safe changes                                           0.10s  
+  ✓ stale catalog version keeps safe permissions and returns warning                                             0.09s  
+  ✓ missing active permission is self healed before direct assignment                                            0.10s  
+  ✓ role only update does not self heal missing direct permission                                                0.08s  
+  ✓ get page reports missing permissions without writing                                                         0.20s  
+  ✓ catalog sync is idempotent and repairs the real guard                                                        0.06s  
+
+   PASS  Tests\Feature\WarehouseCollectionItemAdjustmentTest
+  ✓ collection edit browser contract allows existing item deletion                                               0.06s  
+  ✓ controller validates delete flag and allowed reasons                                                         0.04s  
+  ✓ service uses atomic delta stock line totals snapshots and document totals                                    0.04s  
+  ✓ revision schema already supports removed item null on delete                                                 0.04s  
+
+   PASS  Tests\Feature\WarehouseCollectionLargeInvoiceTest
+  ✓ collection form serializes large item tables to single json payload                                          0.04s  
+  ✓ controller decodes and validates large json payload before service call                                      0.04s  
+  ✓ large invoice input count exceeds default php limit without json                                             0.05s  
+
+  Tests:    2 skipped, 1448 passed (14355 assertions)
+  Duration: 131.41s
+

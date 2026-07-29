@@ -29,7 +29,7 @@ class ProductExportFilterRequestTest extends TestCase
 
         $this->get(route('admin.product-exports.index'))
             ->assertOk()
-            ->assertSee('کاتالوگ محصولات')
+            ->assertSee('لیست قیمت محصولات')
             ->assertSee('value="all" selected', false)
             ->assertViewHas('filters', fn (array $filters) => $filters['stock_status'] === 'all');
     }

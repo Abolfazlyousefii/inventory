@@ -36,7 +36,7 @@
                                 @if(($row['status'] ?? null) === \App\Models\SalesReturnDocument::STATUS_APPLIED)
                                     <button class="btn btn-sm btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#voidSalesReturnModal" data-void-url="{{ $row['cancel_url'] }}" data-doc="{{ $row['document_number'] }}" data-customer="{{ $row['customer_name'] }}" data-amount="{{ number_format($row['total_amount']) }}" data-qty="{{ number_format($row['quantity']) }}">حذف</button>
                                 @else
-                                    <form class="d-inline" method="POST" action="{{ $row['cancel_url'] }}" onsubmit="return confirm('این پیش‌نویس هنوز روی موجودی و حساب مشتری اثری ندارد. حذف شود؟')">@csrf<button class="btn btn-sm btn-outline-danger">حذف</button></form>
+                                    <form class="d-inline" method="POST" action="{{ $row['cancel_url'] }}" onsubmit="return confirm('این پیش‌نویس هنوز روی موجودی و حساب مشتری اثری ندارد. حذف شود؟')">@csrf<button class="btn btn-sm btn-outline-danger">حذف پیش‌نویس</button></form>
                                 @endif
                             @endif
                         </div>
