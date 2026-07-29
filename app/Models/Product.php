@@ -40,6 +40,8 @@ class Product extends Model
         // CRM
         'external_id',
         'synced_at',
+        'inventory_to_site_synced',
+        'site_to_inventory_verified',
 
         // اگر ستونش هست و نمی‌خوای حذف کنی:
         'models',
@@ -67,7 +69,39 @@ class Product extends Model
         'warehouse_rows' => 'array',
         'warehouse_bins' => 'array',
         'synced_at'  => 'datetime',
+        'inventory_to_site_synced' => 'boolean',
+        'site_to_inventory_verified' => 'boolean',
     ];
+
+    /**
+     * هر تغییر واقعی روی محصول، چرخه ارسال و تأیید را دوباره باز می‌کند.
+     *
+     * تغییر خود فلگ‌ها، synced_at و updated_at نباید باعث صفرشدن
+     * دوباره فلگ‌ها شود.
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (Product $product): void {
+            $changedFields = array_keys($product->getDirty());
+
+            $ignoredFields = [
+                'inventory_to_site_synced',
+                'site_to_inventory_verified',
+                'synced_at',
+                'updated_at',
+            ];
+
+            $businessChanges = array_diff(
+                $changedFields,
+                $ignoredFields
+            );
+
+            if ($businessChanges !== []) {
+                $product->inventory_to_site_synced = false;
+                $product->site_to_inventory_verified = false;
+            }
+        });
+    }
 
     public function category()
     {
@@ -230,7 +264,7 @@ class Product extends Model
     private static function isProductSearchCodeLike(string $search): bool
     {
         return preg_match('/^[\p{L}\d\-_\.\/]+$/u', $search) === 1
-            && (preg_match('/\d/u', $search) === 1 || mb_strlen($search) <= 16);
+               && (preg_match('/\d/u', $search) === 1 || mb_strlen($search) <= 16);
     }
 
     private static function orWhereProductCodeMatches(Builder $query, string $search, bool $isCodeLike)

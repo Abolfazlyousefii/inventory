@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\ProductVariantStructureService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class ProductVariant extends Model
 {
@@ -38,6 +39,65 @@ class ProductVariant extends Model
         'reserved'   => 'integer',
         'synced_at'  => 'datetime',
     ];
+
+    /**
+     * هر ایجاد، ویرایش یا حذف واریانت باید محصول مرتبط را
+     * دوباره وارد صف همگام‌سازی Inventory با Site کند.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (ProductVariant $variant): void {
+            static::markProductsAsPending([
+                $variant->product_id,
+            ]);
+        });
+
+        static::updated(function (ProductVariant $variant): void {
+            /*
+             * اگر product_id تغییر کرده باشد، هم محصول قبلی و هم محصول جدید
+             * باید دوباره همگام‌سازی شوند.
+             */
+            static::markProductsAsPending([
+                $variant->getOriginal('product_id'),
+                $variant->product_id,
+            ]);
+        });
+
+        static::deleted(function (ProductVariant $variant): void {
+            static::markProductsAsPending([
+                $variant->product_id,
+            ]);
+        });
+    }
+
+    /**
+     * فلگ‌های همگام‌سازی محصولات مرتبط را بدون اجرای Event مدل Product صفر می‌کند.
+     *
+     * @param array<int, mixed> $productIds
+     */
+    private static function markProductsAsPending(array $productIds): void
+    {
+        $productIds = collect($productIds)
+            ->filter(static function ($productId): bool {
+                return is_numeric($productId)
+                       && (int) $productId > 0;
+            })
+            ->map(static fn ($productId): int => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($productIds === []) {
+            return;
+        }
+
+        DB::table('products')
+            ->whereIn('id', $productIds)
+            ->update([
+                'inventory_to_site_synced' => false,
+                'site_to_inventory_verified' => false,
+            ]);
+    }
 
     public function product()
     {
