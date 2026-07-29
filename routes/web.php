@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\InventorySyncService;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\ActivityLogController;
@@ -545,3 +546,8 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
+
+
+Route::get('/test',function (){
+    return    app(InventorySyncService::class)->syncAll();
+});
