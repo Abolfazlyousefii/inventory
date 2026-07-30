@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\Sync;
 
 use App\Models\Product;
 use App\Models\WarehouseStock;
@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class InventorySyncService {
+class InventoryProductsSyncService {
     public function __construct() {
         $this->apiUrl = rtrim((string) Config::get('services.site.base_url'), '/') . $this->url;
     }

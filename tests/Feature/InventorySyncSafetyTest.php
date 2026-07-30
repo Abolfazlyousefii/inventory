@@ -3,7 +3,7 @@
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\WarehouseStock;
-use App\Services\InventorySyncService;
+use App\Services\Sync\InventoryProductsSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -80,7 +80,7 @@ it('skips sync and sends no HTTP requests when sync is disabled', function (): v
     config()->set('services.sales_server.api_url', 'https://sales.example.test/inventory');
     config()->set('services.sales_server.api_token', 'test-token');
 
-    $result = app(InventorySyncService::class)->syncAll();
+    $result = app(InventoryProductsSyncService::class)->syncAll();
 
     expect($result)->toBe([
         'skipped' => true,
@@ -99,7 +99,7 @@ it('skips sync and sends no HTTP requests when URL or token is missing', functio
     config()->set('services.sales_server.api_url', $apiUrl);
     config()->set('services.sales_server.api_token', $apiToken);
 
-    $result = app(InventorySyncService::class)->syncAll();
+    $result = app(InventoryProductsSyncService::class)->syncAll();
 
     expect($result)->toBe([
         'skipped' => true,
@@ -125,7 +125,7 @@ it('sends HTTP with a fake client when sync is enabled and configured without ch
     config()->set('services.sales_server.api_url', 'https://sales.example.test/inventory');
     config()->set('services.sales_server.api_token', 'test-token');
 
-    $result = app(InventorySyncService::class)
+    $result = app(InventoryProductsSyncService::class)
         ->setDelayBetweenChunks(0)
         ->syncAll();
 

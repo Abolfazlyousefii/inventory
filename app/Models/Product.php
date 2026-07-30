@@ -98,7 +98,6 @@ class Product extends Model
 
             if ($businessChanges !== []) {
                 $product->inventory_to_site_synced = false;
-                $product->site_to_inventory_verified = false;
             }
         });
     }
