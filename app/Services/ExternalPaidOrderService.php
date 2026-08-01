@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\City;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Province;
 use App\Support\DocumentCodeGenerator;
@@ -25,7 +26,7 @@ class ExternalPaidOrderService
     /**
      * @return array{invoice: Invoice, created: bool}
      */
-    public function import(array $payload): array
+    public function import(array $payload, bool $startCollection = true): array
     {
         $externalOrderId = (int) $payload['crm_order_id'];
         $existing = Invoice::query()->where('external_order_id', $externalOrderId)->first();
@@ -35,7 +36,7 @@ class ExternalPaidOrderService
         }
 
         try {
-            return DB::transaction(function () use ($payload, $externalOrderId): array {
+            return DB::transaction(function () use ($payload, $externalOrderId, $startCollection): array {
                 $existing = Invoice::query()
                     ->where('external_order_id', $externalOrderId)
                     ->lockForUpdate()
@@ -65,7 +66,11 @@ class ExternalPaidOrderService
                 $occurredAt = $this->occurredAt($payload);
                 [$provinceId, $cityId] = $this->resolveLocationIds($shippingAddress);
 
-                $invoice = Invoice::query()->create([
+                $initialStatus = $startCollection
+                    ? Invoice::STATUS_COLLECTING
+                    : Invoice::STATUS_PENDING_COLLECTION;
+
+                $invoice = Invoice::create([
                     'uuid' => $invoiceNumber,
                     'external_order_id' => $externalOrderId,
                     'document_date' => $occurredAt,
@@ -84,10 +89,10 @@ class ExternalPaidOrderService
                     'discount_allocation_mode' => 'separate',
                     'subtotal' => $totals['subtotal'],
                     'total' => $totals['total'],
-                    'status' => Invoice::STATUS_COLLECTING,
+                    'status' => $initialStatus,
                     'status_changed_at' => now(),
-                    'warehouse_received_at' => now(),
-                    'collection_started_at' => now(),
+                    'warehouse_received_at' => $startCollection ? now() : null,
+                    'collection_started_at' => $startCollection ? now() : null,
                 ]);
 
                 foreach ($resolvedItems as $index => $row) {
@@ -124,8 +129,10 @@ class ExternalPaidOrderService
                     'external_paid_order_imported',
                     'status',
                     null,
-                    Invoice::STATUS_COLLECTING,
-                    "سفارش پرداخت‌شده سایت #{$externalOrderId} دریافت و جمع‌آوری آن آغاز شد."
+                    $initialStatus,
+                    $startCollection
+                        ? "سفارش پرداخت‌شده سایت #{$externalOrderId} دریافت و جمع‌آوری آن آغاز شد."
+                        : "سفارش پرداخت‌شده سایت #{$externalOrderId} دریافت و در صف جمع‌آوری قرار گرفت."
                 );
 
                 return [
@@ -207,6 +214,8 @@ class ExternalPaidOrderService
                 'price_variant.variety_code',
                 'price_variant.sku',
                 'price_variant.barcode',
+                'variant_code',
+                'stock_code',
             ]);
 
             if ($code !== null) {
@@ -214,6 +223,17 @@ class ExternalPaidOrderService
                     $codeQuery->where('variant_code', $code)
                         ->orWhere('variety_code', $code);
                 })->first();
+            }
+        }
+
+        if (! $variant) {
+            $title = trim((string) ($item['title'] ?? ''));
+            $product = $title !== ''
+                ? Product::query()->where('name', $title)->first()
+                : null;
+
+            if ($product && $product->variants()->count() === 1) {
+                $variant = $product->variants()->with('product')->lockForUpdate()->first();
             }
         }
 

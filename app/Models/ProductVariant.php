@@ -6,6 +6,7 @@ use App\Services\ProductVariantStructureService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ProductVariant extends Model
 {
@@ -91,12 +92,18 @@ class ProductVariant extends Model
             return;
         }
 
+        $syncFlags = array_values(array_filter([
+            Schema::hasColumn('products', 'inventory_to_site_synced') ? 'inventory_to_site_synced' : null,
+            Schema::hasColumn('products', 'site_to_inventory_verified') ? 'site_to_inventory_verified' : null,
+        ]));
+
+        if ($syncFlags === []) {
+            return;
+        }
+
         DB::table('products')
             ->whereIn('id', $productIds)
-            ->update([
-                'inventory_to_site_synced' => false,
-                'site_to_inventory_verified' => false,
-            ]);
+            ->update(array_fill_keys($syncFlags, false));
     }
 
     public function product()

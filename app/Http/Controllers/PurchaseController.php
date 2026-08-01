@@ -1260,5 +1260,10 @@ class PurchaseController extends Controller
     private function recalcProductSummary(Product $product): void
     {
         app(ProductVariantStructureService::class)->recalculateProductSummary($product);
+
+        Product::query()
+            ->whereKey($product->id)
+            ->update(['inventory_to_site_synced' => false]);
+
     }
 }

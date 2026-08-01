@@ -48,7 +48,9 @@ use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Services\Sync\InventoryProductsSyncService;
+use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
+use App\Services\Sync\SitePaidOrdersSyncService;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard'));
@@ -503,5 +505,5 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
 require __DIR__ . '/auth.php';
 
 Route::get('/test',function (){
-    return    app(SiteImageSyncService::class)->syncAll();
+    return app(InventoryProductsSyncService::class)->syncAll();
 });
