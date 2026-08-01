@@ -109,7 +109,6 @@ class ExternalPaidOrderService
 
                 $this->consumeStock($resolvedItems);
                 $this->customerLedgerService->syncInvoiceDebit($invoice);
-
                 if ($invoice->total > 0) {
                     $this->paymentRegistrationService->registerForInvoice(
                         $invoice,

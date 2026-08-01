@@ -10,30 +10,32 @@ Schedule::call(function () {
     app(InventoryProductsSyncService::class)->syncAll();
 })
     ->everyTenSeconds()
+    ->name('inventory-products-Service')
     ->withoutOverlapping();
 
 Schedule::call(function () {
     app(SiteImageSyncService::class)->syncAll();
 })
     ->everyTenSeconds()
+    ->name('site-image-products-sync')
     ->withoutOverlapping();
 
 Schedule::call(function () {
     app(SiteCustomersSyncService::class)->syncAll();
 })
     ->name('site-customers-sync')
-    ->everyFiveSeconds()
+    ->everyTenSeconds()
     ->withoutOverlapping();
 
 Schedule::call(function () {
     app(SitePaidOrdersSyncService::class)->syncAll();
 })
     ->name('site-paid-orders-sync')
-    ->everyFiveSeconds()
+    ->everyTenSeconds()
     ->withoutOverlapping();
 
 Schedule::command('crm:sync-users --incremental')
-    ->everyFiveMinutes()
+    ->everyThirtyMinutes()
     ->withoutOverlapping();
 
 Schedule::command('crm:sync-users --full')

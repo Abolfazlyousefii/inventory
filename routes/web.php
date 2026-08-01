@@ -505,5 +505,5 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
 require __DIR__ . '/auth.php';
 
 Route::get('/test',function (){
-    return app(InventoryProductsSyncService::class)->syncAll();
+    return app(SitePaidOrdersSyncService::class)->syncAll();
 });
