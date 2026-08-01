@@ -26,4 +26,13 @@ class UpdateAppliedSalesReturnRequest extends StoreSalesReturnRequest
         $rules['adjustment_reason'] = ['required', 'string', 'min:3', 'max:1000'];
         return $rules;
     }
+
+    public function messages(): array
+    {
+        return parent::messages() + [
+            'adjustment_reason.required' => 'وارد کردن دلیل اصلاح سند الزامی است.',
+            'adjustment_reason.min' => 'دلیل اصلاح سند باید حداقل ۳ نویسه باشد.',
+            'adjustment_reason.max' => 'دلیل اصلاح سند نباید بیشتر از ۱۰۰۰ نویسه باشد.',
+        ];
+    }
 }

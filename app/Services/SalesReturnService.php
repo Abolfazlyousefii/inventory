@@ -48,7 +48,7 @@ class SalesReturnService
     private function rowCondition(array $row, Warehouse $warehouse): string { $condition=$row['item_condition'] ?? null; return in_array($condition,[SalesReturnDocumentItem::CONDITION_HEALTHY,SalesReturnDocumentItem::CONDITION_DAMAGED],true) ? $condition : $this->conditionForWarehouse($warehouse); }
     public function resolveDestinationWarehouse(string $condition, int $requestedId=0, bool $canOverride=false): Warehouse { $type=$condition===SalesReturnDocumentItem::CONDITION_HEALTHY?'central':'return'; if($canOverride && $requestedId>0){$w=Warehouse::whereKey($requestedId)->where('is_active',true)->whereIn('type',['central','return'])->first(); if($w)return $w;} return Warehouse::firstOrCreate(['type'=>$type,'name'=>$type==='central'?'انبار مرکزی':'انبار مرجوعی'],['is_active'=>true]); }
 
-    private function materializeNewProductGroups(SalesReturnDocument $doc): void
+    public function materializeNewProductGroups(SalesReturnDocument $doc): void
     {
         $items = $doc->items->where('item_source', SalesReturnDocumentItem::SOURCE_NEW_PRODUCT);
         foreach ($items->groupBy(fn ($item) => (string) (($item->new_product_payload['temporary_product_uuid'] ?? '') ?: 'item-'.$item->id)) as $groupItems) {

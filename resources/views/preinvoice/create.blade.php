@@ -1706,6 +1706,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const SERVER_ITEM_ERRORS = @json(session('preinvoice_item_errors', []));
 
     class SessionChangedError extends Error {}
+    class CsrfMismatchError extends Error {}
 
     function currentCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -1734,7 +1735,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
         const response = await fetch(url, {...options, headers, credentials: 'same-origin'});
         const contentType = response.headers.get('content-type') || '';
-        if ([401, 403, 419].includes(response.status) || response.redirected || !contentType.includes('application/json')) {
+        if (response.status === 419) {
+            throw new CsrfMismatchError('اعتبار امنیتی فرم تغییر کرده است. اطلاعات انتخاب‌شده محفوظ مانده؛ لطفاً دوباره تلاش کنید.');
+        }
+        if ([401, 403].includes(response.status) || response.redirected || !contentType.includes('application/json')) {
             preserveDraftAfterSessionChange();
             throw new SessionChangedError(sessionChangedMessage());
         }
@@ -1847,17 +1851,28 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         return rows;
     }
 
-    async function postReservation(url, body) {
-        const {response: res, json} = await fetchJson(url, {
-            credentials: 'same-origin',
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-            },
-            body: JSON.stringify(body)
-        });
+    async function postReservation(url, body, csrfRetry = true) {
+        let result;
+        try {
+            result = await fetchJson(url, {
+                credentials: 'same-origin',
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(body)
+            });
+        } catch (error) {
+            if (csrfRetry && error instanceof CsrfMismatchError) {
+                await refreshCsrfToken();
+                return postReservation(url, body, false);
+            }
+            if (error instanceof CsrfMismatchError) preserveDraftAfterSessionChange();
+            throw error;
+        }
+        const {response: res, json} = result;
         if (!res.ok || json?.ok === false) {
             const message = Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در فریز موجودی پیش‌فاکتور.';
             throw new Error(message);
@@ -1891,6 +1906,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         try {
             const response = await postReservation(API.reservationsSync, {
                 reservation_token: token,
+                submission_token: token,
                 is_in_person: currentIsInPerson(),
                 items: reservationItemsFromGroups(sourceGroups)
             });
@@ -1904,7 +1920,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     async function releaseDraftReservation() {
         const token = normalize(document.getElementById('reservation_token')?.value) || normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
         if (!token) return;
-        await postReservation(API.reservationsRelease, { reservation_token: token });
+        await postReservation(API.reservationsRelease, { reservation_token: token, submission_token: token });
         localStorage.removeItem(RESERVATION_TOKEN_KEY);
         const input = document.getElementById('reservation_token');
         if (input) input.value = '';
@@ -2944,7 +2960,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         try {
             await syncDraftReservation(groupedSelections);
         } catch (e) {
-            groupedSelections = previousSelections;
+            if (!(e instanceof CsrfMismatchError)) groupedSelections = previousSelections;
             alert(e.message || 'موجودی برای این انتخاب کافی نیست.');
             isSavingGroupSelection = false;
             if (saveBtn) {

@@ -2,38 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Cheque;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\User;
+use App\Support\JalaliDate;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class FinanceReportController extends Controller
 {
-    public function index(Request $request): View
+    public function index(): View
     {
-        $filters = $this->filters($request);
-        $query = $this->invoiceReportQuery($filters);
-        $summary = $this->summaryFromQuery($query);
-
-        $chequeSummary = class_exists(Cheque::class)
-            ? [
-                'count' => Cheque::query()->whereIn('status', ['pending', 'registered', 'in_progress'])->count(),
-                'amount' => (int) Cheque::query()->whereIn('status', ['pending', 'registered', 'in_progress'])->sum('amount'),
-            ]
-            : null;
-
         return view('finance.reports.index', [
-            'filters' => $filters,
-            'summary' => $summary,
-            'chequeSummary' => $chequeSummary,
-            'users' => $this->usersForFilter(),
-            'customers' => $this->customersForFilter(),
-            'statuses' => $this->statusOptions(),
+            'reports' => [[
+                'title' => 'اسناد فروش و پورسانت فروشندگان',
+                'description' => 'ثبت و مدیریت فاکتورهای منتخب هر فروشنده برای محاسبات واحد مالی',
+                'url' => route('finance.seller-sales.index'),
+            ]],
         ]);
     }
 
@@ -41,40 +30,33 @@ class FinanceReportController extends Controller
     {
         $filters = $this->filters($request);
         $query = $this->invoiceReportQuery($filters);
-        $creatorColumn = $this->creatorColumn();
-
-        if ($creatorColumn) {
-            $rows = $this->aggregateQuery($query)
-                ->selectRaw("invoices.{$creatorColumn} as user_id")
-                ->selectRaw('count(*) as invoice_count')
-                ->selectRaw('count(distinct invoices.customer_id) as customers_count')
-                ->selectRaw('coalesce(sum(invoices.total), 0) as total_sales')
-                ->selectRaw('coalesce(sum((' . $this->paidSubquerySql() . ')), 0) as paid_amount')
-                ->groupBy("invoices.{$creatorColumn}")
-                ->orderByDesc('total_sales')
-                ->get();
-        } else {
-            $summary = $this->summaryFromQuery($query);
-            $rows = collect([(object) [
-                'user_id' => null,
-                'invoice_count' => $summary['invoice_count'],
-                'customers_count' => $summary['customers_count'],
-                'total_sales' => $summary['total_sales'],
-                'paid_amount' => $summary['paid_amount'],
-            ]]);
-        }
+        $rows = $this->aggregateQuery($query)
+            ->leftJoinSub($this->paymentTotalsQuery(), 'invoice_payment_totals', function ($join): void {
+                $join->on('invoice_payment_totals.invoice_id', '=', 'invoices.id');
+            })
+            ->selectRaw('report_preinvoices.created_by as registered_by_user_id')
+            ->selectRaw('count(*) as invoice_count')
+            ->selectRaw('count(distinct invoices.customer_id) as customers_count')
+            ->selectRaw('coalesce(sum(invoices.total), 0) as total_sales')
+            ->selectRaw('coalesce(sum(coalesce(invoice_payment_totals.paid_amount, 0)), 0) as aggregated_paid_amount')
+            ->groupBy('report_preinvoices.created_by')
+            ->orderByDesc('total_sales')
+            ->get();
 
         $users = $this->usersForFilter();
-        $userNames = $users->pluck('name', 'id');
+        $userNames = User::query()->whereIn('id', $rows->pluck('registered_by_user_id')->filter()->unique())->pluck('name', 'id');
 
         $rows = $rows->map(function ($row) use ($userNames) {
             $totalSales = (int) $row->total_sales;
-            $paidAmount = (int) $row->paid_amount;
+            $paidAmount = (int) $row->aggregated_paid_amount;
             $invoiceCount = (int) $row->invoice_count;
 
+            $registeredByUserId = (int) $row->registered_by_user_id;
+
             return [
-                'user_id' => $row->user_id,
-                'user_name' => $row->user_id ? ($userNames[$row->user_id] ?? ('کاربر #' . $row->user_id)) : 'نامشخص',
+                'user_id' => $registeredByUserId,
+                'registered_by_user_id' => $registeredByUserId,
+                'user_name' => $userNames[$registeredByUserId] ?? ('کاربر #' . $registeredByUserId),
                 'invoice_count' => $invoiceCount,
                 'customers_count' => (int) $row->customers_count,
                 'total_sales' => $totalSales,
@@ -99,8 +81,6 @@ class FinanceReportController extends Controller
             'totals' => $totals,
             'users' => $users,
             'customers' => $this->customersForFilter(),
-            'statuses' => $this->statusOptions(),
-            'creatorColumn' => $creatorColumn,
         ]);
     }
 
@@ -108,54 +88,37 @@ class FinanceReportController extends Controller
     {
         $query = Invoice::query()
             ->select('invoices.*')
-            ->selectSub($this->paidSubquery(), 'paid_total')
-            ->whereIn('invoices.status', $this->validInvoiceStatuses());
+            ->leftJoin('preinvoice_orders as report_preinvoices', 'report_preinvoices.id', '=', 'invoices.preinvoice_order_id')
+            ->whereNotNull('report_preinvoices.created_by')
+            ->whereExists(function ($userQuery): void {
+                $userQuery->selectRaw('1')
+                    ->from('users as registrar_users')
+                    ->whereColumn('registrar_users.id', 'report_preinvoices.created_by');
+            })
+            ->where(function (Builder $query): void {
+                $query->whereNull('invoices.status')
+                    ->orWhereNotIn('invoices.status', Invoice::cancelledStatuses());
+            });
 
-        if ($filters['date_from']) {
-            $query->whereDate('invoices.created_at', '>=', $filters['date_from']);
+        if ($filters['date_from_boundary']) {
+            $query->whereRaw('coalesce(invoices.document_date, invoices.created_at) >= ?', [$filters['date_from_boundary']]);
         }
 
-        if ($filters['date_to']) {
-            $query->whereDate('invoices.created_at', '<=', $filters['date_to']);
-        }
-
-        if ($filters['status']) {
-            $query->where('invoices.status', $filters['status']);
+        if ($filters['date_to_boundary']) {
+            $query->whereRaw('coalesce(invoices.document_date, invoices.created_at) <= ?', [$filters['date_to_boundary']]);
         }
 
         if ($filters['customer_id']) {
             $query->where('invoices.customer_id', $filters['customer_id']);
         }
 
-        $creatorColumn = $this->creatorColumn();
-        if ($creatorColumn && $filters['user_id']) {
-            $query->where("invoices.{$creatorColumn}", $filters['user_id']);
+        if ($filters['user_id']) {
+            $registeredByUserId = $filters['user_id'];
+            $query->where('report_preinvoices.created_by', $registeredByUserId);
         }
 
         return $query;
     }
-
-    private function summaryFromQuery(Builder $query): array
-    {
-        $row = $this->aggregateQuery($query)
-            ->selectRaw('count(*) as invoice_count')
-            ->selectRaw('count(distinct invoices.customer_id) as customers_count')
-            ->selectRaw('coalesce(sum(invoices.total), 0) as total_sales')
-            ->selectRaw('coalesce(sum((' . $this->paidSubquerySql() . ')), 0) as paid_amount')
-            ->first();
-
-        $totalSales = (int) ($row->total_sales ?? 0);
-        $paidAmount = (int) ($row->paid_amount ?? 0);
-
-        return [
-            'invoice_count' => (int) ($row->invoice_count ?? 0),
-            'customers_count' => (int) ($row->customers_count ?? 0),
-            'total_sales' => $totalSales,
-            'paid_amount' => $paidAmount,
-            'remaining_amount' => $totalSales - $paidAmount,
-        ];
-    }
-
 
     private function aggregateQuery(Builder $query): Builder
     {
@@ -165,60 +128,67 @@ class FinanceReportController extends Controller
         return $aggregateQuery;
     }
 
-    private function paidSubquery(): \Illuminate\Database\Query\Builder
+    private function paymentTotalsQuery(): \Illuminate\Database\Query\Builder
     {
         return DB::table('invoice_payments')
-            ->selectRaw('coalesce(sum(amount), 0)')
-            ->whereColumn('invoice_payments.invoice_id', 'invoices.id');
-    }
-
-    private function paidSubquerySql(): string
-    {
-        return 'select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id';
+            ->select('invoice_id')
+            ->selectRaw('coalesce(sum(amount), 0) as paid_amount')
+            ->groupBy('invoice_id');
     }
 
     private function filters(Request $request): array
     {
+        $dateFrom = $this->dateInput($request->query('date_from'), 'date_from');
+        $dateTo = $this->dateInput($request->query('date_to'), 'date_to');
+
+        if ($dateFrom && $dateTo && $dateFrom->isAfter($dateTo)) {
+            throw ValidationException::withMessages([
+                'date_from' => 'تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.',
+            ]);
+        }
+
         return [
-            'date_from' => $request->date('date_from')?->toDateString(),
-            'date_to' => $request->date('date_to')?->toDateString(),
+            'date_from' => $dateFrom ? JalaliDate::date($dateFrom, '') : '',
+            'date_to' => $dateTo ? JalaliDate::date($dateTo, '') : '',
+            'date_from_boundary' => $dateFrom?->startOfDay(),
+            'date_to_boundary' => $dateTo?->endOfDay(),
             'user_id' => $request->integer('user_id') ?: null,
             'customer_id' => $request->integer('customer_id') ?: null,
-            'status' => $request->filled('status') ? (string) $request->input('status') : null,
         ];
     }
 
-    private function validInvoiceStatuses(): array
+    private function dateInput(mixed $value, string $field): ?CarbonImmutable
     {
-        $invalid = ['cancelled', 'canceled', 'draft', 'returned_to_sales_after_collection', 'cancelled_by_finance', 'reservation_expired', 'not_shipped'];
-        $defined = array_keys(Invoice::statusLabels());
-
-        if ($defined === []) {
-            return ['processing', 'pending_collection', 'warehouse_received', 'collecting', 'pending_finance_reapproval', 'ready_to_ship', 'shipped', 'delivered'];
+        if (blank($value)) {
+            return null;
         }
 
-        return array_values(array_diff($defined, $invalid));
-    }
+        $value = strtr(trim((string) $value), [
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        ]);
 
-    private function statusOptions(): array
-    {
-        return collect(Invoice::statusLabels())
-            ->only($this->validInvoiceStatuses())
-            ->all();
-    }
+        try {
+            if (preg_match('/^(19|20)\d{2}-\d{2}-\d{2}$/', $value)) {
+                return CarbonImmutable::createFromFormat('!Y-m-d', $value, config('app.timezone'));
+            }
 
-    private function creatorColumn(): ?string
-    {
-        if (Schema::hasColumn('invoices', 'created_by')) {
-            return 'created_by';
+            $gregorian = JalaliDate::toGregorianDate($value);
+            if ($gregorian) {
+                return CarbonImmutable::createFromFormat('!Y-m-d', $gregorian, config('app.timezone'));
+            }
+        } catch (\Throwable) {
+            // The validation error below is the stable public contract.
         }
 
-        return null;
+        throw ValidationException::withMessages([$field => 'تاریخ واردشده معتبر نیست.']);
     }
 
     private function usersForFilter()
     {
-        return User::query()->select('id', 'name')->orderBy('name')->get();
+        return User::query()->activeErpUsers()->select('id', 'name')->orderBy('name')->get();
     }
 
     private function customersForFilter()

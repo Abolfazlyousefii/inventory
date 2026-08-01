@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AccessPermission;
+use App\Models\ActivityLog;
+use App\Support\PageAccessCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +35,7 @@ class RoleController extends Controller
         $data = $this->validated($request);
         $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
         $this->syncPermissions($role, $data['permissions'] ?? []);
+        $this->audit('role.created', $role, [], $data['permissions'] ?? []);
 
         return redirect()->route('admin.roles.index')->with('success', 'نقش با موفقیت ایجاد شد.');
     }
@@ -48,11 +51,13 @@ class RoleController extends Controller
 
     public function update(Request $request, Role $role): RedirectResponse
     {
+        $before = $role->permissions()->pluck('permissions.id')->all();
         $data = $this->validated($request, $role);
         if (! in_array($role->name, $this->systemRoles, true)) {
             $role->update(['name' => $data['name']]);
         }
         $this->syncPermissions($role, $data['permissions'] ?? []);
+        $this->audit('role.updated', $role, $before, $data['permissions'] ?? []);
 
         return redirect()->route('admin.roles.index')->with('success', 'نقش با موفقیت ویرایش شد.');
     }
@@ -68,7 +73,7 @@ class RoleController extends Controller
 
     private function permissions()
     {
-        return AccessPermission::query()->whereNotNull('key')->orderBy('group')->orderBy('name')->get()->groupBy('group');
+        return AccessPermission::query()->where('key', 'like', 'page.%')->orderBy('group')->orderBy('name')->get()->groupBy('group');
     }
 
     private function validated(Request $request, ?Role $role = null): array
@@ -76,7 +81,7 @@ class RoleController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')->ignore($role?->id)],
             'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['integer', 'exists:permissions,id'],
+            'permissions.*' => ['integer', Rule::exists('permissions', 'id')->where(fn ($query) => $query->where('key', 'like', 'page.%'))],
         ]);
     }
 
@@ -87,5 +92,14 @@ class RoleController extends Controller
             DB::table('role_has_permissions')->updateOrInsert(['role_id' => $role->id, 'permission_id' => $permissionId]);
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    private function audit(string $action, Role $role, array $before, array $after): void
+    {
+        ActivityLog::query()->create([
+            'user_id' => auth()->id(), 'action' => $action, 'subject_type' => Role::class, 'subject_id' => $role->id,
+            'description' => 'تغییر صفحات مجاز نقش', 'properties' => ['role_id' => $role->id, 'before' => array_values($before), 'after' => array_values($after)],
+            'occurred_at' => now(),
+        ]);
     }
 }

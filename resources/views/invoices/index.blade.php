@@ -65,6 +65,20 @@
 
     <section id="invoiceSummary" class="invoice-summary" aria-live="polite"></section>
 
+    @if($canReassignSeller)
+    <form id="bulkSellerForm" class="card card-body mb-3" method="POST" action="{{ route('invoices.bulk.reassign-seller') }}">
+        @csrf
+        <input type="hidden" name="operation_key" value="{{ (string) Str::uuid() }}">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3"><label class="form-label">فروشنده مقصد</label><select class="form-select" name="seller_id" required><option value="">انتخاب کنید</option>@foreach($sellers as $seller)<option value="{{ $seller->id }}">{{ $seller->name }} (#{{ $seller->id }})</option>@endforeach</select></div>
+            <div class="col-md-5"><label class="form-label">دلیل تغییر</label><input class="form-control" name="reason" maxlength="1000" required></div>
+            <div class="col-md-2"><label class="form-check"><input class="form-check-input" type="checkbox" name="sync_preinvoice" value="1" checked> همگام‌سازی پیش‌فاکتور</label></div>
+            <div class="col-md-2"><button class="btn btn-warning w-100" onclick="return confirm('فروشنده فاکتورهای انتخاب‌شده تغییر کند؟')">تغییر گروهی</button></div>
+        </div>
+        <small class="text-muted mt-2">فاکتورها را از جدول انتخاب کنید؛ حداکثر ۱۰۰ مورد و عملیات اتمیک است.</small>
+    </form>
+    @endif
+
     <section class="invoice-results" aria-live="polite" aria-busy="true">
         <div class="invoice-desktop">
             <table class="table align-middle mb-0">

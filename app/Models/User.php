@@ -87,7 +87,12 @@ class User extends Authenticatable
 
     public function scopeActiveSellers($query)
     {
-        return $query->where('is_active', true)->where('can_access_erp', true)->where('is_seller', true);
+        return $query->activeErpUsers()->where('is_seller', true);
+    }
+
+    public function scopeActiveErpUsers($query)
+    {
+        return $query->where('is_active', true)->where('can_access_erp', true);
     }
 
     public function permissions(): BelongsToMany

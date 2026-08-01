@@ -54,6 +54,7 @@ class PreinvoiceOrder extends Model
         'uuid',
         'external_order_id',
         'created_by',
+        'seller_id',
         'document_date',
         'status',
         'customer_id', // <-- این فیلد اضافه شد تا باگ ذخیره نشدن مشتری رفع شود
@@ -125,6 +126,11 @@ class PreinvoiceOrder extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function seller()
+    {
+        return $this->belongsTo(User::class, 'seller_id');
+    }
+
     public function warehouseReviewer()
     {
         return $this->belongsTo(User::class, 'warehouse_reviewed_by');
@@ -152,7 +158,14 @@ class PreinvoiceOrder extends Model
 
     public function scopeCreatedBySeller(Builder $query, int $sellerId): Builder
     {
-        return $query->where('created_by', $sellerId);
+        return $query->where('seller_id', $sellerId);
+    }
+
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        return $user->hasAnyRole(\App\Support\PermissionCatalog::administratorRoles())
+            ? $query
+            : $query->where('seller_id', $user->id);
     }
 
     public function scopeWithoutTemporaryAutosaves(Builder $query): Builder

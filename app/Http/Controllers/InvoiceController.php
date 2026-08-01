@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\User;
 use App\Support\PermissionCatalog;
 use App\Support\Currency;
 use App\Support\SalesDocumentTotals;
@@ -20,6 +21,7 @@ use App\Services\WarehouseCollectionService;
 use App\Services\WarehouseStockService;
 use App\Services\CustomerLedgerService;
 use App\Services\NotificationService;
+use App\Services\SalesDocumentSellerReassignmentService;
 use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
@@ -41,6 +43,7 @@ class InvoiceController extends Controller
         private readonly WarehouseCollectionService $warehouseCollectionService,
         private readonly CustomerLedgerService $customerLedgerService,
         private readonly NotificationService $notificationService,
+        private readonly SalesDocumentSellerReassignmentService $sellerReassignmentService,
     ) {}
 
     public function index(Request $request)
@@ -59,6 +62,8 @@ class InvoiceController extends Controller
                 'quick_range' => trim((string) $request->query('quick_range', '')),
             ],
             'canViewCancelled' => PermissionCatalog::userHasPermission($request->user(), 'invoices.cancel'),
+            'canReassignSeller' => $this->canReassignSeller($request->user()),
+            'sellers' => $this->canReassignSeller($request->user()) ? User::activeSellers()->orderBy('name')->get(['id', 'name']) : collect(),
         ]);
 
         /* Legacy report implementation retained below temporarily for reference. */
@@ -167,8 +172,8 @@ class InvoiceController extends Controller
 
         $query->with([
             'customer:id,crm_customer_id,first_name,last_name,mobile',
-            'preinvoiceOrder:id,uuid,created_by',
-            'preinvoiceOrder.creator:id,name',
+            'preinvoiceOrder:id,uuid,created_by,seller_id',
+            'seller:id,name',
         ])->withSum('payments as paid_total', 'amount');
 
         $orderCode = (string) ($filters['order_code'] ?? '');
@@ -185,7 +190,7 @@ class InvoiceController extends Controller
         foreach ($paginator->items() as $invoice) {
             $invoice->setAttribute('live_meta', $this->invoiceLiveMeta($invoice, $permissions));
         }
-        $viewData = ['invoices' => collect($paginator->items())];
+        $viewData = ['invoices' => collect($paginator->items()), 'canReassignSeller' => $this->canReassignSeller($request->user())];
 
         $effectiveDateFrom = $dateFrom ? Jalalian::fromCarbon($dateFrom)->format('Y/m/d') : ($filters['date_from'] ?? null);
         $effectiveDateTo = $dateTo ? Jalalian::fromCarbon($dateTo)->format('Y/m/d') : ($filters['date_to'] ?? null);
@@ -703,7 +708,7 @@ class InvoiceController extends Controller
     public function edit(string $uuid)
     {
         $invoice = Invoice::query()
-            ->with(['items.product', 'items.variant', 'payments.cheque', 'notes.user', 'preinvoiceOrder.creator:id,name'])
+            ->with(['items.product', 'items.variant', 'payments.cheque', 'notes.user', 'preinvoiceOrder.creator:id,name', 'seller:id,name'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
@@ -716,7 +721,9 @@ class InvoiceController extends Controller
         $canEditItemsWithCollectionFlow = (string) $invoice->status !== Invoice::STATUS_SHIPPED;
         $statusLabels = $this->statusService->labels();
 
-        return view('invoices.edit', compact('invoice', 'paidTotal', 'remainingAmount', 'canRegisterPayments', 'canEditPrices', 'canEditItemsWithCollectionFlow', 'statusLabels'));
+        $canReassignSeller = $this->canReassignSeller(auth()->user());
+        $sellers = $canReassignSeller ? User::activeSellers()->orderBy('name')->get(['id', 'name']) : collect();
+        return view('invoices.edit', compact('invoice', 'paidTotal', 'remainingAmount', 'canRegisterPayments', 'canEditPrices', 'canEditItemsWithCollectionFlow', 'statusLabels', 'canReassignSeller', 'sellers'));
     }
 
     public function update(string $uuid, Request $request)
@@ -752,6 +759,44 @@ class InvoiceController extends Controller
 
         return redirect()->route('invoices.edit', $invoice->uuid)
             ->with('success', 'تغییرات اقلام فاکتور ذخیره شد.');
+    }
+
+    public function reassignSeller(string $uuid, Request $request)
+    {
+        abort_unless($this->canReassignSeller($request->user()), 403);
+        $data = $request->validate([
+            'seller_id' => ['required', 'integer', 'exists:users,id'],
+            'reason' => ['required', 'string', 'max:1000'],
+            'sync_preinvoice' => ['nullable', 'boolean'],
+        ]);
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $seller = User::query()->findOrFail($data['seller_id']);
+        $result = $this->sellerReassignmentService->reassignInvoiceSeller($invoice, $seller, $request->user(), $data['reason'], $request->boolean('sync_preinvoice', true));
+
+        return back()->with('success', $result->changed ? 'فروشنده فاکتور تغییر کرد.' : 'فروشنده از قبل همین کاربر بود؛ تغییری انجام نشد.');
+    }
+
+    public function bulkReassignSeller(Request $request)
+    {
+        abort_unless($this->canReassignSeller($request->user()), 403);
+        $data = $request->validate([
+            'invoice_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'invoice_ids.*' => ['required', 'integer', 'distinct'],
+            'seller_id' => ['required', 'integer', 'exists:users,id'],
+            'reason' => ['required', 'string', 'max:1000'],
+            'sync_preinvoice' => ['nullable', 'boolean'],
+            'operation_key' => ['nullable', 'string', 'max:100'],
+        ]);
+        $seller = User::query()->findOrFail($data['seller_id']);
+        $results = $this->sellerReassignmentService->reassignMany($data['invoice_ids'], $seller, $request->user(), $data['reason'], $request->boolean('sync_preinvoice', true), 'bulk', $data['operation_key'] ?? null);
+        $changed = collect($results)->where('changed', true)->count();
+
+        return back()->with('success', "فروشنده {$changed} فاکتور با موفقیت تغییر کرد.");
+    }
+
+    private function canReassignSeller(?User $user): bool
+    {
+        return $user !== null && $user->hasAnyRole(array_merge(PermissionCatalog::administratorRoles(), ['Manager', 'manager', 'sales_manager']));
     }
 
     private function canManageInvoice(Invoice $invoice): bool
@@ -992,13 +1037,14 @@ class InvoiceController extends Controller
         ])->all();
 
         return [
+            'id' => $invoice->id,
             'number' => $invoice->uuid ?: '—',
             'date' => $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '—',
             'preinvoice' => $invoice->preinvoiceOrder?->uuid,
             'customer_name' => $customerName,
             'customer_mobile' => $invoice->customer_mobile ?: $invoice->customer?->mobile ?: '—',
             'customer_code' => $invoice->customer?->crm_customer_id ?: $invoice->customer_id ?: '—',
-            'seller' => $invoice->preinvoiceOrder?->creator?->name ?? '—',
+            'seller' => $invoice->seller?->name ?? '—',
             'status_label' => $this->statusService->labels()[$status] ?? ($status ?: '—'),
             'status_tone' => $statusTone,
             'legacy' => in_array($status, $this->invoiceLegacyStatuses(), true),

@@ -20,6 +20,7 @@ class SalesReturnAppliedAdjustmentService
             $before = $this->snapshot($doc);
             $revision = $this->revision($doc, 'applied_updated', $reason, $before, $actorId, (int) $doc->total_refund_amount);
             $previousInventory = $this->inventoryGroups($doc);
+            $materializedNewProducts = $this->materializedNewProductMap($doc);
             $this->reverseLedger($doc, $actorId, 'sales_return_reversal', $revision->id);
 
             $immutable = $doc->only(['document_number','source_type','customer_id','invoice_id','external_invoice_number','external_invoice_date','created_by','applied_by','applied_at','created_at']);
@@ -34,6 +35,9 @@ class SalesReturnAppliedAdjustmentService
             $doc->items()->delete();
             $items = $doc->isInternal() ? $this->salesReturns->prepareInternalItems($doc, $data + $immutable) : $this->salesReturns->prepareSazehItems($doc, $data + $immutable);
             foreach ($items as $i => $attrs) { $attrs['sort_order'] = $i + 1; $doc->items()->create($attrs); }
+            $doc->load('items');
+            $this->restoreMaterializedNewProducts($doc, $materializedNewProducts);
+            $this->salesReturns->materializeNewProductGroups($doc);
             $doc->load('items');
             $this->applyInventoryDelta($previousInventory, $this->inventoryGroups($doc), $actorId, $revision->id);
             $this->refreshTotals($doc);
@@ -172,6 +176,14 @@ class SalesReturnAppliedAdjustmentService
 
     private function inventoryGroups(SalesReturnDocument $doc): array
     {
+        foreach ($doc->items as $item) {
+            if ((int) $item->product_id <= 0 || (int) $item->product_variant_id <= 0) {
+                throw ValidationException::withMessages([
+                    'items.'.$item->sort_order.'.product_variant_id' => 'کالای جدید هنوز برای ثبت موجودی نهایی نشده است.',
+                ]);
+            }
+        }
+
         return $doc->items
             ->groupBy(fn ($item) => implode(':', [(int) $item->destination_warehouse_id, (int) $item->product_id, (int) $item->product_variant_id]))
             ->map(fn ($items) => [
@@ -184,6 +196,40 @@ class SalesReturnAppliedAdjustmentService
             ->sortBy(fn ($group) => sprintf('%012d:%012d:%012d', $group['warehouse_id'], $group['variant_id'], $group['product_id']))
             ->values()
             ->all();
+    }
+
+    private function materializedNewProductMap(SalesReturnDocument $doc): array
+    {
+        return $doc->items
+            ->where('item_source', SalesReturnDocumentItem::SOURCE_NEW_PRODUCT)
+            ->filter(fn ($item) => $this->temporaryVariantUuid($item) !== '' && (int) $item->product_id > 0 && (int) $item->product_variant_id > 0)
+            ->mapWithKeys(fn ($item) => [$this->temporaryVariantUuid($item) => [
+                'product_id' => (int) $item->product_id,
+                'variant_id' => (int) $item->product_variant_id,
+            ]])
+            ->all();
+    }
+
+    private function restoreMaterializedNewProducts(SalesReturnDocument $doc, array $map): void
+    {
+        foreach ($doc->items->where('item_source', SalesReturnDocumentItem::SOURCE_NEW_PRODUCT) as $item) {
+            $ids = $map[$this->temporaryVariantUuid($item)] ?? null;
+            if (! $ids || ! DB::table('product_variants')->where('id', $ids['variant_id'])->where('product_id', $ids['product_id'])->exists()) {
+                continue;
+            }
+            $item->update([
+                'product_id' => $ids['product_id'],
+                'product_variant_id' => $ids['variant_id'],
+                'created_product_id' => $ids['product_id'],
+                'created_variant_id' => $ids['variant_id'],
+            ]);
+        }
+    }
+
+    private function temporaryVariantUuid(SalesReturnDocumentItem $item): string
+    {
+        $payload = $item->new_product_payload ?: [];
+        return trim((string) ($payload['temporary_variant_uuid'] ?? $payload['selected_variants'][0]['temporary_variant_uuid'] ?? ''));
     }
 
     private function movement(SalesReturnDocumentItem $item, int $actorId, string $type, string $reason, int $qty, int $before, int $after, int $revisionId): void

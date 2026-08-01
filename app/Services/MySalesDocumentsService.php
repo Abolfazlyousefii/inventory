@@ -129,7 +129,7 @@ class MySalesDocumentsService
             ->withSum('items as items_quantity_sum', 'quantity')
             ->with([
                 'customer:id,first_name,last_name,mobile',
-                'creator:id,name',
+                'seller:id,name',
                 'warehouseReviewer:id,name',
                 'invoice' => fn ($invoiceQuery) => $invoiceQuery
                     ->select('id', 'uuid', 'preinvoice_order_id', 'status', 'total', 'items_updated_at', 'status_changed_at', 'status_changed_by', 'created_at', 'updated_at', 'customer_name', 'customer_mobile', 'shipped_at', 'shipping_id', 'collection_note')

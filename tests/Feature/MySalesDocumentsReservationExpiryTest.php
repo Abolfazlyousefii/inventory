@@ -59,6 +59,7 @@ function mySalesExpiryOrder(User $seller, string $status, ?\Carbon\CarbonInterfa
     $order = PreinvoiceOrder::query()->create([
         'uuid' => 'EXP-'.uniqid(),
         'created_by' => $seller->id,
+        'seller_id' => $seller->id,
         'status' => $status,
         'customer_name' => 'مشتری تست',
         'customer_mobile' => '09120000000',

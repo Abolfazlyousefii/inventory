@@ -21,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Morilog\Jalali\Jalalian;
 
 class DashboardController extends Controller
@@ -98,7 +99,9 @@ class DashboardController extends Controller
         $sellerSupplementaryActions = collect();
         $sellerFollowUps = collect();
 
-        if ($sellerDashboardEnabled && $canViewOwnPreinvoices) {
+        // TODO: remove this deployment compatibility guard after seller ownership is migrated everywhere.
+        $sellerOwnershipSchemaReady = Schema::hasColumn('preinvoice_orders', 'seller_id');
+        if ($sellerDashboardEnabled && $canViewOwnPreinvoices && $sellerOwnershipSchemaReady) {
             $sellerBaseQuery = PreinvoiceOrder::query()
                 ->createdBySeller((int) $user->id)
                 ->withoutTemporaryAutosaves();

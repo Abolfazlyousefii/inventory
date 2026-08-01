@@ -607,6 +607,19 @@ class PermissionCatalog
             return true;
         }
 
+        if (str_starts_with($permission, 'page.')) {
+            return $user instanceof \App\Models\User
+                && PageAccessCatalog::userCan($user, $permission);
+        }
+
+        $pagePermission = PageAccessCatalog::pagePermissionForLegacy($permission);
+        if ($pagePermission && $user instanceof \App\Models\User) {
+            $effective = $user->getAllPermissions()->pluck('key')->filter()->all();
+            if (in_array($pagePermission, $effective, true)) {
+                return true;
+            }
+        }
+
         if ($permission === '*') {
             return method_exists($user, 'hasAnyRole') && $user->hasAnyRole(self::administratorRoles());
         }
@@ -641,6 +654,15 @@ class PermissionCatalog
     public static function routePermissions(): array
     {
         return [
+            'admin.product-exports.print'=>'products.export', 'admin.product-exports.download'=>'products.export', 'admin.product-exports.model-lists'=>'products.export', 'admin.product-exports.products.search'=>'products.export', 'admin.product-exports.categories.children'=>'products.export',
+            'vouchers.sales.products.categories'=>'warehouse.collection.view', 'vouchers.sales.products.by-category'=>'warehouse.collection.view', 'vouchers.sales.products.variants'=>'warehouse.collection.view',
+            'finance.invoices.reapprove'=>'invoices.change_status', 'finance.invoices.return-to-sales'=>'invoices.change_status',
+            'vouchers.return-from-sale.categories.index'=>'sales_returns.create', 'vouchers.return-from-sale.categories.products'=>'sales_returns.create', 'vouchers.return-from-sale.legacy.print'=>'sales_returns.print',
+            'stock-count-documents.subcategories'=>'inventory.count.view', 'stock-count-documents.products'=>'inventory.count.view', 'stock-count-documents.variants'=>'inventory.count.view',
+            'preinvoice.autosave'=>'preinvoices.drafts.edit', 'preinvoice.autosave.latest'=>'preinvoices.drafts.edit', 'preinvoice.autosave.discard'=>'preinvoices.drafts.edit', 'preinvoice.reservations.heartbeat'=>'preinvoices.create', 'preinvoice.reservations.release-token'=>'preinvoices.create', 'preinvoice.draft.return'=>'preinvoices.finance.confirm',
+            'preinvoice.api.products'=>'preinvoices.create', 'preinvoice.api.product'=>'preinvoices.create', 'preinvoice.api.area'=>'preinvoices.create',
+            'archive.index'=>'invoices.view', 'invoices.cancelled'=>'invoices.view', 'invoices.history'=>'invoices.view', 'invoices.cancel.undo'=>'invoices.change_status',
+            'admin.bug-investigator.index'=>'logs.view', 'admin.bug-investigator.create'=>'logs.view', 'admin.bug-investigator.store'=>'logs.view', 'admin.bug-investigator.rerun'=>'logs.view', 'admin.bug-investigator.show'=>'logs.view',
             'admin.permissions.index' => 'permissions.view',
             'admin.permissions.update' => 'permissions.edit',
             'vouchers.sales.queue' => 'warehouse.collection.queue.view',
@@ -721,7 +743,7 @@ class PermissionCatalog
             'api.customers.search' => 'customers.view', 'api.customers.store' => 'customers.create', 'api.customers.show' => 'customers.view', 'preinvoice.api.product-finder' => 'preinvoices.create', 'preinvoice.api.product-finder.categories' => 'preinvoices.create', 'preinvoice.api.reservations.sync' => 'preinvoices.create', 'preinvoice.api.reservations.release' => 'preinvoices.create',
             'customers.index' => 'customers.view', 'customers.store' => 'customers.create', 'customers.update' => 'customers.edit', 'customers.destroy' => 'customers.delete', 'customers.import' => 'customers.import',
             'archive.preinvoices.show' => 'preinvoices.print', 'archive.invoices.show' => 'invoices.print',
-            'invoices.index' => 'invoices.view', 'invoices.data' => 'invoices.view', 'invoices.customers.search' => 'invoices.view', 'invoices.print' => 'invoices.print', 'invoices.edit' => 'invoices.edit', 'invoices.update' => 'invoices.edit', 'invoices.show' => 'invoices.show', 'invoices.status' => 'invoices.change_status', 'invoices.cancel' => 'invoices.cancel', 'invoices.payments.store' => 'payments.create', 'invoices.notes.store' => 'notes.create', 'cheques.store' => 'cheques.create',
+            'invoices.index' => 'invoices.view', 'invoices.data' => 'invoices.view', 'invoices.customers.search' => 'invoices.view', 'invoices.print' => 'invoices.print', 'invoices.edit' => 'invoices.edit', 'invoices.update' => 'invoices.edit', 'invoices.reassign-seller' => 'invoices.edit', 'invoices.bulk.reassign-seller' => 'invoices.edit', 'invoices.show' => 'invoices.show', 'invoices.status' => 'invoices.change_status', 'invoices.cancel' => 'invoices.cancel', 'invoices.payments.store' => 'payments.create', 'invoices.notes.store' => 'notes.create', 'cheques.store' => 'cheques.create',
             'finance.cheques.registered' => 'cheques.view', 'finance.cheques.index' => 'cheques.view', 'finance.reports.index' => 'finance.reports.view', 'finance.reports.sales-visitors' => 'finance.reports.view',
             'payments.view' => 'payments.view', 'account-statements.index' => 'account_statements.view', 'account-statements.payments.store' => 'account_statements.payments.create', 'account-statements.documents.invoices.show' => 'account_statements.view', 'account-statements.documents.returns.show' => 'account_statements.view', 'account-statements.documents.payments.show' => 'account_statements.view', 'account-statements.show' => 'account_statements.view',
             'activity-logs.index' => 'logs.view',

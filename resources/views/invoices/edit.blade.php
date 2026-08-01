@@ -6,6 +6,18 @@
   $paymentText = $paidTotal > $invoice->total ? 'پرداخت اضافه' : ($remainingAmount === 0 ? 'تسویه‌شده' : ($paidTotal > 0 ? 'پرداخت ناقص' : 'پرداخت‌نشده'));
 @endphp
 @section('content')
+@if($canReassignSeller)
+<div class="card card-body mb-3">
+  <h2 class="h6">تغییر فروشنده</h2>
+  <p class="small text-muted">فروشنده فعلی: <strong>{{ $invoice->seller?->name ?? 'تعیین‌نشده' }}</strong></p>
+  <form method="POST" action="{{ route('invoices.reassign-seller', $invoice->uuid) }}" class="row g-2 align-items-end" onsubmit="return confirm('تغییر فروشنده این فاکتور تأیید می‌شود؟')">@csrf
+    <div class="col-md-4"><label class="form-label">فروشنده مقصد</label><select class="form-select" name="seller_id" required><option value="">انتخاب کنید</option>@foreach($sellers as $seller)<option value="{{ $seller->id }}">{{ $seller->name }} (#{{ $seller->id }})</option>@endforeach</select></div>
+    <div class="col-md-5"><label class="form-label">دلیل تغییر</label><input class="form-control" name="reason" maxlength="1000" required></div>
+    <div class="col-md-2"><label class="form-check"><input class="form-check-input" type="checkbox" name="sync_preinvoice" value="1" checked> تغییر پیش‌فاکتور مرتبط</label></div>
+    <div class="col-md-1"><button class="btn btn-warning">ثبت</button></div>
+  </form>
+</div>
+@endif
 <style>
 .invoice-edit-page{--blue:#2563eb;--blue-soft:#eff6ff;--border:#dbeafe;--text:#0f172a;--muted:#64748b;max-width:100%;overflow-x:hidden;background:#f8fbff;font-size:.88rem;color:var(--text)}.invoice-edit-card{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;box-shadow:0 12px 28px rgba(15,23,42,.05);overflow:hidden}.invoice-edit-card__head{background:#f8fbff;border-bottom:1px solid var(--border);padding:13px 16px;font-weight:900;color:#1e3a8a}.invoice-edit-actionbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;margin-bottom:16px}.invoice-edit-actionbar .btn{border-radius:12px;font-size:.8rem;font-weight:800;padding:8px 13px}.info-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem}.info-box{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.75rem;min-width:0}.info-label{font-size:.76rem;color:var(--muted)}.info-value{font-weight:800;overflow-wrap:anywhere}.soft-table{width:100%;border-collapse:separate;border-spacing:0 6px}.soft-table th{font-size:.75rem;color:var(--muted);font-weight:800}.soft-table td{background:#fff;border-top:1px solid #eef2ff;border-bottom:1px solid #eef2ff;padding:.65rem}.soft-table td:first-child{border-right:1px solid #eef2ff;border-radius:0 12px 12px 0}.soft-table td:last-child{border-left:1px solid #eef2ff;border-radius:12px 0 0 12px}.table-responsive{overflow-x:auto}#invoiceItemsTable{min-width:760px}.modal{z-index:1060}.modal-backdrop{z-index:1055}.modal-content{border-radius:18px;border:0}.modal-body{overflow-x:hidden}.payment-segment .btn{border-radius:999px;font-weight:900}.notes-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:.75rem}@media(max-width:768px){.info-grid{grid-template-columns:1fr 1fr}.invoice-edit-actionbar .btn{flex:1 1 150px}.modal-dialog{max-width:calc(100% - 16px);margin:.5rem auto}}@media(max-width:576px){.info-grid{grid-template-columns:1fr}.soft-table{min-width:680px}#invoiceItemsTable{min-width:680px}}
 </style>

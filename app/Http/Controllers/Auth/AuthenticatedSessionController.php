@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Services\Crm\CrmAuditLogger;
+use App\Support\FirstAllowedPageResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,7 +24,7 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request, CrmAuditLogger $audit): RedirectResponse
+    public function store(LoginRequest $request, CrmAuditLogger $audit, FirstAllowedPageResolver $resolver): RedirectResponse
     {
         $request->merge(['remember' => true]);
         $request->authenticate();
@@ -37,7 +38,7 @@ class AuthenticatedSessionController extends Controller
             ]);
         }
 
-        return redirect()->route('dashboard');
+        return redirect()->to($resolver->destination($request->user(), $request));
     }
 
     /**

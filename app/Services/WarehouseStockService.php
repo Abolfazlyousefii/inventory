@@ -243,6 +243,18 @@ class WarehouseStockService
 
     private static function assertVariantBelongsToProduct(int $productId, ?int $variantId): void
     {
+        if ($productId <= 0 || ! Product::query()->whereKey($productId)->exists()) {
+            throw ValidationException::withMessages([
+                'product_id' => 'امکان اصلاح موجودی این قلم وجود ندارد؛ ارتباط کالا نامعتبر است.',
+            ]);
+        }
+
+        if ($variantId !== null && $variantId <= 0) {
+            throw ValidationException::withMessages([
+                'variant_id' => 'امکان اصلاح موجودی این قلم وجود ندارد؛ ارتباط تنوع نامعتبر است.',
+            ]);
+        }
+
         $hasVariants = ProductVariant::query()
             ->where('product_id', $productId)
             ->exists();

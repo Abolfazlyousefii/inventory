@@ -1,0 +1,20 @@
+.seller-commission-page { direction: rtl; max-width: 1440px; margin: 0 auto; }
+.seller-commission-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.seller-commission-header h1 { margin: 0 0 .35rem; font-size: 1.5rem; font-weight: 800; color: #172033; }
+.seller-commission-header p { margin: 0; color: #64748b; }
+.seller-commission-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 16px rgba(15,23,42,.04); }
+.seller-commission-filters { padding: 1rem; margin-bottom: 1rem; }
+.seller-commission-table th { white-space: nowrap; color: #475569; background: #f8fafc; font-size: .83rem; }
+.seller-commission-table td { vertical-align: middle; }
+.seller-commission-actions { display: flex; flex-wrap: wrap; gap: .65rem; white-space: nowrap; }
+.seller-commission-actions a { text-decoration: none; font-weight: 700; font-size: .85rem; }
+.seller-commission-summary { position: sticky; bottom: .75rem; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; margin-top: 1rem; border: 1px solid #cbd5e1; border-radius: 14px; background: rgba(255,255,255,.96); box-shadow: 0 12px 30px rgba(15,23,42,.12); backdrop-filter: blur(8px); }
+.seller-commission-summary__numbers { display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; color: #475569; }
+.seller-commission-summary__numbers strong { color: #0f172a; }
+.seller-commission-empty { padding: 2.5rem 1rem !important; color: #64748b !important; text-align: center; }
+.seller-commission-meta { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .75rem; }
+.seller-commission-meta > div { padding: .9rem; border-radius: 10px; background: #f8fafc; }
+.seller-commission-meta span { display: block; margin-bottom: .25rem; color: #64748b; font-size: .8rem; }
+.seller-commission-meta strong { color: #0f172a; }
+@media (max-width: 991px) { .seller-commission-meta { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 575px) { .seller-commission-header,.seller-commission-summary { align-items: stretch; flex-direction: column; } .seller-commission-meta { grid-template-columns: 1fr; } }

@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\PreinvoiceOrder;
 use App\Models\User;
+use App\Support\PageAccessCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -33,7 +35,7 @@ class SellerDashboardTest extends TestCase
             ->assertDontSee('گزارش‌های مدیریتی');
     }
 
-    public function test_seller_statistics_and_recent_rows_are_restricted_to_created_by(): void
+    public function test_seller_statistics_and_recent_rows_are_restricted_to_seller_id(): void
     {
         Carbon::setTestNow('2026-07-27 10:30:00');
         $sellerA = $this->seller();
@@ -146,7 +148,7 @@ class SellerDashboardTest extends TestCase
             ->assertDontSee('NaN');
     }
 
-    public function test_unauthorized_sales_links_are_not_rendered(): void
+    public function test_page_access_exposes_parent_page_actions_but_not_other_pages(): void
     {
         $user = $this->userWithPermissions('limited-dashboard', [
             'dashboard.view',
@@ -156,16 +158,16 @@ class SellerDashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertDontSee('ثبت اولین پیش‌فاکتور')
-            ->assertDontSee(route('preinvoice.create'), false)
+            ->assertSee('ثبت اولین پیش‌فاکتور')
+            ->assertSee(route('preinvoice.create'), false)
             ->assertDontSee(route('customers.index'), false)
             ->assertDontSee(route('invoices.index'), false);
     }
 
-    public function test_admin_sees_management_reports_below_sales_dashboard_and_monthly_endpoint_works(): void
+    public function test_owner_sees_management_reports_below_sales_dashboard_and_monthly_endpoint_works(): void
     {
         $admin = User::factory()->create();
-        $admin->assignRole(Role::findOrCreate('admin', 'web'));
+        $admin->assignRole(Role::findOrCreate('Owner', 'web'));
 
         $this->actingAs($admin)
             ->get(route('dashboard'))
@@ -248,6 +250,21 @@ class SellerDashboardTest extends TestCase
 
         foreach ($permissions as $permissionName) {
             $role->givePermissionTo(Permission::findOrCreate($permissionName, 'web'));
+
+            $pagePermission = PageAccessCatalog::pagePermissionForLegacy($permissionName);
+            if ($pagePermission && ! DB::table('permissions')->where('key', $pagePermission)->exists()) {
+                DB::table('permissions')->insert([
+                    'key'=>$pagePermission, 'name'=>$pagePermission, 'group'=>'page-test',
+                    'guard_name'=>'web', 'created_at'=>now(), 'updated_at'=>now(),
+                ]);
+            }
+            $pagePermissionId = $pagePermission ? DB::table('permissions')->where('key', $pagePermission)->value('id') : null;
+            if ($pagePermissionId) {
+                DB::table('role_has_permissions')->updateOrInsert([
+                    'role_id' => $role->id,
+                    'permission_id' => $pagePermissionId,
+                ]);
+            }
         }
 
         $user = User::factory()->create();
@@ -266,6 +283,7 @@ class SellerDashboardTest extends TestCase
         return PreinvoiceOrder::query()->create(array_merge([
             'uuid' => 'dash-'.str()->uuid(),
             'created_by' => $seller->id,
+            'seller_id' => $seller->id,
             'status' => $status,
             'customer_name' => $customerName,
             'customer_mobile' => '09120000000',

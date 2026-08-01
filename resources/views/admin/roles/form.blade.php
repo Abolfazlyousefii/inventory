@@ -12,6 +12,7 @@
                 <input name="name" value="{{ old('name', $role->name) }}" class="form-control @error('name') is-invalid @enderror" {{ in_array($role->name, ['super_admin','admin','staff','editor','union_expert','user','employee'], true) ? 'readonly' : '' }}>
                 @error('name')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
+            <div class="alert alert-info small">هر گزینه دسترسی کامل به همان صفحه و عملیات وابسته مانند ثبت، ویرایش، جست‌وجو، چاپ و درخواست‌های داخلی را فراهم می‌کند.</div>
             <div class="row g-3">
                 @foreach($permissions as $group => $items)
                     <div class="col-md-6 col-xl-4">
@@ -20,7 +21,7 @@
                             @foreach($items as $permission)
                                 <label class="d-flex gap-2 mb-2 small">
                                     <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
-                                    <span>{{ $permission->name }} <code class="text-muted">{{ $permission->key }}</code></span>
+                                    <span><strong>{{ $permission->name }}</strong><small class="d-block text-muted">{{ \App\Support\PageAccessCatalog::page(str($permission->key)->after('page.')->toString())['description'] ?? '' }}</small></span>
                                 </label>
                             @endforeach
                         </div>

@@ -433,7 +433,6 @@ class UserPermissionManagementTest extends TestCase
     {
         $user = User::factory()->create();
         $user->permissions()->sync(collect($permissions)->map(fn (string $key): int => $this->permissionId($key))->all());
-
         return $user;
     }
 

@@ -1,6 +1,7 @@
 @foreach($invoices as $invoice)
 @php($meta = $invoice->live_meta)
 <tr>
+    @if($canReassignSeller ?? false)<td><input class="form-check-input" type="checkbox" name="invoice_ids[]" value="{{ $meta['id'] }}" form="bulkSellerForm" aria-label="انتخاب فاکتور {{ $meta['number'] }}"></td>@endif
     <td><strong class="invoice-code">{{ $meta['number'] }}</strong><small>{{ $meta['date'] }}</small>@if($meta['preinvoice'])<small>پیش‌فاکتور: {{ $meta['preinvoice'] }}</small>@endif</td>
     <td><strong title="{{ $meta['customer_name'] }}">{{ $meta['customer_name'] }}</strong><small>{{ $meta['customer_mobile'] }} · کد {{ $meta['customer_code'] }}</small></td>
     <td>{{ $meta['seller'] }}</td>

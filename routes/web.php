@@ -11,6 +11,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\FinanceReportController;
+use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\InventoryWebhookController;
 use App\Http\Controllers\InvoiceNoteController;
 use App\Http\Controllers\InvoicePaymentController;
@@ -51,6 +52,10 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\BugInvestigatorController;
 
 Route::get('/', fn () => redirect()->route('dashboard'));
+
+Route::get('/access-unassigned', fn () => response()->view('errors.access-unassigned'))
+    ->middleware('auth')
+    ->name('access.unassigned');
 
 Route::get('/session/csrf-token', function () {
     return response()->json([
@@ -204,11 +209,22 @@ Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->m
 
 Route::prefix('finance/reports')
     ->name('finance.reports.')
-    ->middleware(['auth', 'role:admin|Admin|finance|Accountant'])
+    ->middleware(['auth', 'role:admin|Admin|finance|Accountant|Manager|manager'])
     ->group(function () {
         Route::get('/', [FinanceReportController::class, 'index'])->name('index');
         Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
     });
+
+Route::prefix('finance/reports/seller-commission-documents')->name('finance.seller-sales.')->middleware(['auth','page.access:finance.seller_sales_documents'])->group(function(){
+    Route::get('/',[SellerCommissionDocumentController::class,'index'])->name('index');
+    Route::get('/create',[SellerCommissionDocumentController::class,'create'])->name('create');
+    Route::get('/available-invoices',[SellerCommissionDocumentController::class,'availableInvoices'])->name('available-invoices');
+    Route::post('/',[SellerCommissionDocumentController::class,'store'])->name('store');
+    Route::get('/{document}',[SellerCommissionDocumentController::class,'show'])->name('show');
+    Route::get('/{document}/edit',[SellerCommissionDocumentController::class,'edit'])->name('edit');
+    Route::put('/{document}',[SellerCommissionDocumentController::class,'update'])->name('update');
+    Route::get('/{document}/print',[SellerCommissionDocumentController::class,'print'])->name('print');
+});
 
 
 Route::prefix('vouchers/section/return-from-sale')
@@ -413,11 +429,11 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     Route::prefix('preinvoice/api')->group(function () {
         Route::get('/product-finder', [PreinvoiceApiController::class, 'productFinder'])->name('preinvoice.api.product-finder');
         Route::get('/product-finder/categories', [PreinvoiceApiController::class, 'productFinderCategories'])->name('preinvoice.api.product-finder.categories');
-        Route::get('/products', [PreinvoiceApiController::class, 'products']);
-        Route::get('/products/{product}', [PreinvoiceApiController::class, 'product']);
+        Route::get('/products', [PreinvoiceApiController::class, 'products'])->name('preinvoice.api.products');
+        Route::get('/products/{product}', [PreinvoiceApiController::class, 'product'])->name('preinvoice.api.product');
         Route::post('/reservations/sync', [PreinvoiceApiController::class, 'syncDraftReservation'])->name('preinvoice.api.reservations.sync');
         Route::post('/reservations/release', [PreinvoiceApiController::class, 'releaseDraftReservation'])->name('preinvoice.api.reservations.release');
-        Route::get('/area', [PreinvoiceApiController::class, 'area']);
+        Route::get('/area', [PreinvoiceApiController::class, 'area'])->name('preinvoice.api.area');
         Route::get('/customers', [CustomerApiController::class, 'search'])->name('api.customers.search');
         Route::post('/customers', [CustomerApiController::class, 'store'])->name('api.customers.store');
         Route::get('/customers/{customer}', [CustomerApiController::class, 'show'])->name('api.customers.show');
@@ -439,12 +455,14 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/data', [InvoiceController::class, 'data'])->middleware('permission:invoices.view')->name('invoices.data');
         Route::get('/customers/search', [InvoiceController::class, 'customersSearch'])->middleware('permission:invoices.view')->name('invoices.customers.search');
         Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->middleware('permission:invoices.cancel')->name('invoices.cancelled');
+        Route::post('/bulk/reassign-seller', [InvoiceController::class, 'bulkReassignSeller'])->name('invoices.bulk.reassign-seller');
         Route::get('/{uuid}/print', [InvoiceController::class, 'print'])->name('invoices.print');
         Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.edit');
         Route::put('/{uuid}', [InvoiceController::class, 'update'])->name('invoices.update');
         Route::get('/{uuid}/history', [InvoiceController::class, 'history'])->name('invoices.history');
         Route::get('/{uuid}', [InvoiceController::class, 'show'])->name('invoices.show');
         Route::post('/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.status');
+        Route::post('/{uuid}/reassign-seller', [InvoiceController::class, 'reassignSeller'])->name('invoices.reassign-seller');
         Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->middleware('permission:invoices.cancel')->name('invoices.cancel');
         Route::post('/{uuid}/cancel/undo', [InvoiceController::class, 'undoCancel'])->name('invoices.cancel.undo');
         Route::post('/{uuid}/payments', [InvoicePaymentController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager')->name('invoices.payments.store');

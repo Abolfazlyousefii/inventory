@@ -253,14 +253,16 @@ class PreinvoiceApiController extends Controller
 
         $data = $request->validate([
             'reservation_token' => ['required', 'uuid'],
-            'items' => ['nullable', 'array'],
-            'items.*.product_id' => ['required_with:items', 'integer', 'exists:products,id,is_sellable,1'],
+            'submission_token' => ['required', 'uuid', 'same:reservation_token'],
+            'items' => ['required', 'array', 'max:500'],
+            'items.*.product_id' => ['required', 'integer', 'exists:products,id,is_sellable,1'],
             'items.*.variant_id' => [
-                'required_with:items',
+                'required',
                 'integer',
+                'distinct',
                 Rule::exists('product_variants', 'id')->where(fn ($query) => $query->where('is_active', true)->where('sales_enabled', true)),
             ],
-            'items.*.quantity' => ['required_with:items', 'integer', 'min:0'],
+            'items.*.quantity' => ['required', 'integer', 'min:1'],
             'is_in_person' => ['nullable', 'boolean'],
         ]);
 

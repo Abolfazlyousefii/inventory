@@ -23,7 +23,7 @@ class Invoice extends Model
     public const STATUS_RETURNED_TO_SALES_AFTER_COLLECTION = 'returned_to_sales_after_collection';
 
     protected $fillable = [
-        'uuid','customer_id','preinvoice_order_id',
+        'uuid','customer_id','preinvoice_order_id','seller_id',
         'document_date',
         'customer_name','customer_mobile','customer_address',
         'province_id','city_id','shipping_id','shipping_price',
@@ -80,6 +80,11 @@ class Invoice extends Model
         });
     }
 
+    public function getDisplayDocumentDateAttribute()
+    {
+        return $this->document_date ?? $this->created_at;
+    }
+
     public function recalculateSnapshotTotals(): void
     {
         $this->loadMissing('items');
@@ -126,6 +131,7 @@ class Invoice extends Model
     public function notes() { return $this->hasMany(InvoiceNote::class)->latest(); }
     public function attachments() { return $this->hasMany(InvoiceAttachment::class)->latest(); }
     public function preinvoiceOrder() { return $this->belongsTo(PreinvoiceOrder::class); }
+    public function seller() { return $this->belongsTo(User::class, 'seller_id'); }
     public function customer() { return $this->belongsTo(Customer::class); }
     public function shippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_id'); }
     public function dispatchShippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_method_id'); }

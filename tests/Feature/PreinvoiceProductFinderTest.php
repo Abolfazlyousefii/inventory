@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -21,6 +22,8 @@ function signInForProductFinder(bool $allowed = true): User
     if ($allowed) {
         $role = Role::findOrCreate('preinvoice-product-finder', 'web');
         $role->givePermissionTo(Permission::findOrCreate('preinvoices.create', 'web'));
+        $pageId = DB::table('permissions')->insertGetId(['key'=>'page.sales.preinvoices','name'=>'page.sales.preinvoices','group'=>'page-test','guard_name'=>'web','created_at'=>now(),'updated_at'=>now()]);
+        DB::table('role_has_permissions')->insert(['role_id'=>$role->id,'permission_id'=>$pageId]);
         $user->assignRole($role);
     }
     test()->actingAs($user);

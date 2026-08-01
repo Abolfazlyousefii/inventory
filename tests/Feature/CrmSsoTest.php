@@ -87,7 +87,7 @@ it('exchanges the code, upserts by crm id, maps roles and logs in without copyin
     $oldSessionId = session()->getId();
 
     $this->get(route('auth.crm.callback', ['state' => $query['state'], 'code' => 'one-time-code']))
-        ->assertRedirect(route('dashboard'));
+        ->assertRedirect(route('access.unassigned'));
 
     $user = User::query()->where('crm_user_id', '18')->firstOrFail();
     $this->assertAuthenticatedAs($user);
@@ -166,7 +166,7 @@ it('allows active local emergency login but blocks inactive and crm-managed loca
     $managed = User::factory()->create(['phone' => '09120000002', 'password' => Hash::make('StrongPass!1'), 'crm_user_id' => '2', 'is_crm_managed' => true, 'is_active' => true]);
     $inactive = User::factory()->create(['phone' => '09120000003', 'password' => Hash::make('StrongPass!1'), 'is_active' => false]);
 
-    $this->post(route('login'), ['phone' => $local->phone, 'password' => 'StrongPass!1'])->assertRedirect(route('dashboard'));
+    $this->post(route('login'), ['phone' => $local->phone, 'password' => 'StrongPass!1'])->assertRedirect(route('access.unassigned'));
     $this->assertAuthenticatedAs($local);
     auth()->logout();
 

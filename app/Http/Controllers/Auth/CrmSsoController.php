@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Crm\CrmAuditLogger;
 use App\Services\CrmClient;
 use App\Services\CrmUserService;
+use App\Support\FirstAllowedPageResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,6 +23,7 @@ class CrmSsoController extends Controller
         private readonly CrmClient $client,
         private readonly CrmUserService $users,
         private readonly CrmAuditLogger $audit,
+        private readonly FirstAllowedPageResolver $resolver,
     ) {}
 
     public function redirect(Request $request): RedirectResponse
@@ -98,7 +100,7 @@ class CrmSsoController extends Controller
                 'status' => 'succeeded',
             ]);
 
-            return redirect()->intended(route('dashboard'));
+            return redirect()->to($this->resolver->destination($user, $request));
         } catch (\Throwable $e) {
             Log::warning('CRM SSO callback failed', [
                 'request_id' => $requestId,

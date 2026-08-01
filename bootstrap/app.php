@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureActiveUser;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Http\Middleware\CheckRoleOrRoutePermission;
+use App\Http\Middleware\EnsurePageAccess;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
@@ -42,34 +43,30 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => CheckRoleOrRoutePermission::class,
             'permission' => CheckPermission::class,
             'route.permission' => RoutePermissionMiddleware::class,
+            'page.access' => EnsurePageAccess::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->report(function (TokenMismatchException $exception) {
             $request = request();
-            $origin = parse_url((string) $request->headers->get('origin'), PHP_URL_HOST);
-            $referer = parse_url((string) $request->headers->get('referer'), PHP_URL_HOST);
             $cookieName = (string) config('session.cookie');
+            $sessionId = $request->hasSession() ? (string) $request->session()->getId() : '';
+            $items = $request->input('items', []);
 
             Log::warning('CSRF token mismatch', [
-                'timestamp' => now()->toIso8601String(),
                 'method' => $request->method(),
                 'route' => $request->route()?->getName(),
-                'path' => $request->path(),
-                'host' => $request->getHost(),
-                'scheme' => $request->getScheme(),
-                'origin_host' => $origin ?: null,
-                'referer_host' => $referer ?: null,
-                'forwarded_host' => $request->headers->get('x-forwarded-host'),
-                'forwarded_proto' => $request->headers->get('x-forwarded-proto'),
-                'session_cookie_name' => $cookieName,
-                'has_session_cookie' => $cookieName !== '' && $request->cookies->has($cookieName),
-                'session_driver' => config('session.driver'),
+                'authenticated' => $request->user() !== null,
                 'user_id' => $request->user()?->getAuthIdentifier(),
-                'expects_json' => $request->expectsJson(),
-                'user_agent' => mb_substr((string) $request->userAgent(), 0, 180),
-                'ip' => $request->ip(),
+                'session_id_hash' => $sessionId !== '' ? hash('sha256', $sessionId) : null,
+                'csrf_header_present' => $request->headers->has('x-csrf-token') || $request->headers->has('x-xsrf-token'),
+                'csrf_body_present' => $request->request->has('_token'),
+                'session_cookie_present' => $cookieName !== '' && $request->cookies->has($cookieName),
+                'content_type' => $request->getContentTypeFormat(),
+                'content_length' => (int) $request->headers->get('content-length', 0),
+                'input_count' => count($request->all()),
+                'variant_count' => is_array($items) ? count($items) : 0,
             ]);
         });
 

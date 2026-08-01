@@ -750,6 +750,7 @@ class PreinvoiceController extends Controller
             $shippingId = $this->validatedShippingId($validated);
             $attrs = [
                 'created_by' => auth()->id(),
+                'seller_id' => auth()->user()?->is_seller ? auth()->id() : null,
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
                 'customer_id' => $customer?->id,
                 'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
@@ -875,6 +876,7 @@ class PreinvoiceController extends Controller
             $order = $this->editableAutosaveOrder($validated['autosave_uuid'] ?? null);
             $orderAttrs = [
                 'created_by' => auth()->id(),
+                'seller_id' => auth()->user()?->is_seller ? auth()->id() : null,
                 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
 
                 'customer_id' => $customer?->id,
@@ -940,6 +942,7 @@ class PreinvoiceController extends Controller
             $order = $this->editableAutosaveOrder($validated['autosave_uuid'] ?? null);
             $orderAttrs = [
                 'created_by' => auth()->id(),
+                'seller_id' => auth()->user()?->is_seller ? auth()->id() : null,
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
 
                 'customer_id' => $customer?->id,
@@ -2676,6 +2679,8 @@ class PreinvoiceController extends Controller
             if ($invoice) {
                 $invoice->items()->delete();
                 $invoice->update([
+                    'seller_id' => $order->seller_id,
+                    'document_date' => $order->display_document_date,
                     'customer_id' => $order->customer_id ?? null,
                     'customer_name' => $order->customer_name,
                     'customer_mobile' => $order->customer_mobile,
@@ -2701,6 +2706,8 @@ class PreinvoiceController extends Controller
                 $invoice = Invoice::create([
                     'uuid' => $officialInvoiceUuid,
                     'preinvoice_order_id' => $order->id,
+                    'seller_id' => $order->seller_id,
+                    'document_date' => $order->display_document_date,
 
                     'customer_id' => $order->customer_id ?? null,
                     'customer_name' => $order->customer_name,

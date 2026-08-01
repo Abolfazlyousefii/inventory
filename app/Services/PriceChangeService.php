@@ -178,7 +178,7 @@ class PriceChangeService
             'error' => $newPrice <= 0 ? 'قیمت جدید باید بزرگ‌تر از صفر باشد.' : null];
     }
 
-    private function assertScopeIsConsistent(array $payload): void
+    public function assertScopeIsConsistent(array $payload): void
     {
         if (empty($payload['category_id'])) throw new RuntimeException('انتخاب دسته‌بندی اصلی الزامی است.');
         $categoryIds = Category::selfAndDescendantIds((int) $payload['category_id']);

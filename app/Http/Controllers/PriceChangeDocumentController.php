@@ -37,8 +37,11 @@ class PriceChangeDocumentController extends Controller
     public function create(): View
     {
         $rootCategories = Category::query()->whereNull('parent_id')->orderBy('name')->get(['id', 'name', 'code', 'parent_id']);
+        $selectedProduct = old('product_id')
+            ? Product::query()->find(old('product_id'), ['id', 'name', 'code', 'sku', 'category_id'])
+            : null;
 
-        return view('products.price-changes.create', compact('rootCategories'));
+        return view('products.price-changes.create', compact('rootCategories', 'selectedProduct'));
     }
 
     public function preview(Request $request): JsonResponse
@@ -117,19 +120,43 @@ class PriceChangeDocumentController extends Controller
     public function productSearch(Request $request): JsonResponse
     {
         $payload = $this->validatedPayload($request, requireChange: false, partial: true);
-        $term = trim((string) $request->query('q', ''));
+        try {
+            $this->service->assertScopeIsConsistent($payload);
+        } catch (RuntimeException $exception) {
+            throw ValidationException::withMessages(['scope' => $exception->getMessage()]);
+        }
+        $term = Product::normalizeProductSearchTerm((string) ($payload['q'] ?? ''));
+        $perPage = (int) ($payload['per_page'] ?? 20);
         $categoryId = (int) ($payload['subcategory_id'] ?? $payload['category_id'] ?? 0);
         $categoryIds = Category::selfAndDescendantIds($categoryId);
-        $products = Product::query()->with('category:id,name,parent_id')->whereIn('category_id', $categoryIds)
+        $products = Product::query()
+            ->with('category:id,name,parent_id')
+            ->whereIn('products.category_id', $categoryIds)
             ->when($payload['include_active_products_only'] ?? true, fn ($q) => $q->where('is_sellable', true))
-            ->when($term !== '', fn ($q) => $q->where(function ($w) use ($term) {
-                $w->where('name', 'like', "%{$term}%")->orWhere('code', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%");
-            }))
-            ->orderBy('name')->paginate(20, ['id', 'name', 'sku', 'code', 'category_id']);
+            ->when($payload['include_active_variants_only'] ?? true, fn ($q) => $q->whereHas('variants', fn ($variant) => $variant->where('is_active', true)))
+            ->when($payload['in_stock_only'] ?? false, fn ($q) => $q->whereHas('variants', fn ($variant) => $variant->where('is_active', true)->where('stock', '>', 0)))
+            ->when($term !== '', fn ($q) => $q->search($term))
+            ->when($term === '', fn ($q) => $q->orderBy('products.name')->orderBy('products.id'))
+            ->withCount([
+                'variants as active_variants_count' => fn ($query) => $query->where('is_active', true),
+                'variants as available_variants_count' => fn ($query) => $query->where('is_active', true)->where('stock', '>', 0),
+            ])
+            ->paginate($perPage, ['products.id', 'products.name', 'products.sku', 'products.code', 'products.category_id']);
 
-        return response()->json(['results' => $products->getCollection()->map(fn (Product $product) => [
-            'id' => $product->id, 'text' => $product->name, 'code' => $product->code ?: $product->sku, 'category_path' => $product->category ? $this->service->categoryPath($product->category) : null,
-        ]), 'pagination' => ['more' => $products->hasMorePages()]]);
+        return response()->json([
+            'results' => $products->getCollection()->map(fn (Product $product) => [
+                'id' => $product->id,
+                'text' => $product->name,
+                'name' => $product->name,
+                'code' => $product->code,
+                'sku' => $product->sku,
+                'category_path' => $product->category ? $this->service->categoryPath($product->category) : null,
+                'active_variants_count' => (int) $product->active_variants_count,
+                'available_variants_count' => (int) $product->available_variants_count,
+            ])->values(),
+            'pagination' => ['more' => $products->hasMorePages()],
+            'meta' => ['current_page' => $products->currentPage(), 'total' => $products->total(), 'per_page' => $products->perPage()],
+        ]);
     }
 
     public function productVariants(Product $product, Request $request): JsonResponse
@@ -168,6 +195,9 @@ class PriceChangeDocumentController extends Controller
             'include_active_products_only' => ['sometimes', 'boolean'],
             'include_active_variants_only' => ['sometimes', 'boolean'],
             'in_stock_only' => ['sometimes', 'boolean'],
+            'q' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:50'],
         ];
         if ($requireChange) {
             $rules += [

@@ -83,7 +83,7 @@ it('uses an inventory-specific cookie and production-safe cookie knobs', functio
     $sessionConfig = file_get_contents(config_path('session.php'));
 
     expect($example)
-        ->toContain('SESSION_COOKIE=ariya_inventory_session_v2')
+        ->toContain('SESSION_COOKIE=inventory_session')
         ->toContain('SESSION_SECURE_COOKIE=false')
         ->toContain('SESSION_HTTP_ONLY=true')
         ->toContain('SESSION_SAME_SITE=lax')
@@ -92,6 +92,18 @@ it('uses an inventory-specific cookie and production-safe cookie knobs', functio
         ->toContain("env('SESSION_DOMAIN')")
         ->toContain("env('SESSION_SECURE_COOKIE')")
         ->toContain("env('SESSION_LIFETIME', 120)");
+});
+
+it('distinguishes csrf mismatch from authentication loss and retries only idempotent reservation writes', function () {
+    $view = file_get_contents(resource_path('views/preinvoice/create.blade.php'));
+
+    expect($view)
+        ->toContain('class CsrfMismatchError extends Error')
+        ->toContain('response.status === 419')
+        ->toContain('postReservation(url, body, false)')
+        ->toContain("'X-Requested-With': 'XMLHttpRequest'")
+        ->toContain('submission_token: token')
+        ->toContain('if (!(e instanceof CsrfMismatchError)) groupedSelections = previousSelections;');
 });
 
 it('keeps every preinvoice write route behind csrf middleware', function () {

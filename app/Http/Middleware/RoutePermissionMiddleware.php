@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Middleware\EnsurePageAccess;
 use App\Support\PermissionCatalog;
 use Closure;
 use Illuminate\Http\Request;
@@ -11,6 +12,9 @@ class RoutePermissionMiddleware
 {
     public function handle(Request $request, Closure $next, ...$permissions): Response
     {
+        if ($permissions === []) {
+            return app(EnsurePageAccess::class)->handle($request, $next);
+        }
         $permission = $permissions[0] ?? null;
 
         if ($permission === null) {
