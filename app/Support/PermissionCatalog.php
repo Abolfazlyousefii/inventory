@@ -317,7 +317,7 @@ class PermissionCatalog
                 ['permission' => 'stock_in.print', 'label' => 'چاپ خرید کالا'],
                 ['permission' => 'stock_in.export', 'label' => 'خروجی خرید کالا'],
             ],
-            'انبارداری شرکت آریا' => [
+            'انبارداری' => [
                 ['permission' => 'issues.view', 'label' => 'حواله‌های انبار'],
                 ['permission' => 'warehouse.collection.queue.view', 'label' => 'صف جمع‌آوری فاکتور'],
                 ['permission' => 'warehouse.shipping.queue.view', 'label' => 'صف ارسال فاکتور'],

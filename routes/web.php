@@ -1,55 +1,58 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-
-use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AccountStatementController;
+use App\Http\Controllers\ActivityLogController;
+use App\Http\Controllers\Admin\BugInvestigatorController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserPermissionController;
+use App\Http\Controllers\ArchiveController;
+use App\Http\Controllers\AssetDocumentController;
+use App\Http\Controllers\AssetPersonnelController;
+use App\Http\Controllers\AssetTrusteeController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ChequeController;
 use App\Http\Controllers\CustomerApiController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\FinanceReportController;
 use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\InventoryWebhookController;
+use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceNoteController;
 use App\Http\Controllers\InvoicePaymentController;
+use App\Http\Controllers\ModelListController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PersonController;
-use App\Http\Controllers\ModelListController;
 use App\Http\Controllers\PreinvoiceApiController;
 use App\Http\Controllers\PreinvoiceController;
-use App\Http\Controllers\ProductController;
-use App\Http\Controllers\ProductExportController;
-use App\Http\Controllers\ProductSalesLedgerController;
-use App\Http\Controllers\ProductPurchaseLedgerController;
-use App\Http\Controllers\ProductDeactivationDocumentController;
 use App\Http\Controllers\PriceChangeDocumentController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductDeactivationDocumentController;
+use App\Http\Controllers\ProductExportController;
+use App\Http\Controllers\ProductPurchaseLedgerController;
+use App\Http\Controllers\ProductSalesLedgerController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\SalesHavalehController;
+use App\Http\Controllers\SalesReturnController;
+use App\Http\Controllers\SalesReturnLookupController;
+use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\StockMovementController;
 use App\Http\Controllers\StockMovementReportController;
 use App\Http\Controllers\StocktakeController;
 use App\Http\Controllers\SupplierController;
-use App\Http\Controllers\ShippingMethodController;
-use App\Http\Controllers\WarehouseShippingController;
-use App\Http\Controllers\SalesHavalehController;
-use App\Http\Controllers\SalesReturnController;
-use App\Http\Controllers\VoucherSalesReturnController;
-use App\Http\Controllers\SalesReturnLookupController;
-use App\Http\Controllers\AssetPersonnelController;
-use App\Http\Controllers\AssetDocumentController;
-use App\Http\Controllers\AssetTrusteeController;
-use App\Http\Controllers\ArchiveController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VoucherController;
+use App\Http\Controllers\VoucherSalesReturnController;
 use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReviewController;
-use App\Http\Controllers\Admin\UserPermissionController;
-use App\Http\Controllers\Admin\RoleController;
-use App\Http\Controllers\Admin\BugInvestigatorController;
+use App\Http\Controllers\WarehouseShippingController;
+use App\Services\Sync\InventoryProductsSyncService;
+use App\Services\Sync\SiteCustomersSyncService;
+use App\Services\Sync\SiteImageSyncService;
+use App\Services\Sync\SitePaidOrdersSyncService;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard'));
 
@@ -518,3 +521,7 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
+
+Route::get('/test',function (){
+    return app(SitePaidOrdersSyncService::class)->syncAll();
+});

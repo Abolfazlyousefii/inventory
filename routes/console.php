@@ -1,27 +1,43 @@
 <?php
 
-use App\Http\Controllers\PreinvoiceController;
-use App\Models\PreinvoiceOrder;
-use App\Models\Product;
-use App\Models\ProductVariant;
-use App\Services\AriyajanebiSyncService;
-use App\Services\DefaultProductDesignService;
-use App\Services\InventorySyncService;
-use App\Services\InventoryWebhookService;
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
+use App\Services\Sync\InventoryProductsSyncService;
+use App\Services\Sync\SiteCustomersSyncService;
+use App\Services\Sync\SiteImageSyncService;
+use App\Services\Sync\SitePaidOrdersSyncService;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::call(function () {
-    app(InventorySyncService::class)->syncAll();
+    app(InventoryProductsSyncService::class)->syncAll();
 })
-    ->everyMinute();
+    ->everyTenSeconds()
+    ->name('inventory-products-Service')
+    ->withoutOverlapping();
+
+Schedule::call(function () {
+    app(SiteImageSyncService::class)->syncAll();
+})
+    ->everyTenSeconds()
+    ->name('site-image-products-sync')
+    ->withoutOverlapping();
+
+Schedule::call(function () {
+    app(SiteCustomersSyncService::class)->syncAll();
+})
+    ->name('site-customers-sync')
+    ->everyTenSeconds()
+    ->withoutOverlapping();
+
+Schedule::call(function () {
+    app(SitePaidOrdersSyncService::class)->syncAll();
+})
+    ->name('site-paid-orders-sync')
+    ->everyTenSeconds()
+    ->withoutOverlapping();
 
 Schedule::command('crm:sync-users --incremental')
-    ->everyFiveMinutes()
-    ->withoutOverlapping(10);
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
 
 Schedule::command('crm:sync-users --full')
     ->dailyAt('02:00')
-    ->withoutOverlapping(180);
+    ->withoutOverlapping();
