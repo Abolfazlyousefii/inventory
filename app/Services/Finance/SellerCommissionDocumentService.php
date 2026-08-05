@@ -40,13 +40,15 @@ class SellerCommissionDocumentService
         ?string $search = null,
     ): Builder {
         [$from, $to] = $this->dateBoundaries($dateFrom, $dateTo);
+        $effectiveSeller = Invoice::effectiveSellerSql('invoices', 'commission_preinvoices');
 
         return Invoice::query()
             ->select('invoices.*')
-            ->join('preinvoice_orders as commission_preinvoices', 'commission_preinvoices.id', '=', 'invoices.preinvoice_order_id')
-            ->with(['customer:id,first_name,last_name', 'preinvoiceOrder:id,created_by,created_at'])
-            ->where('commission_preinvoices.created_by', $userId)
-            ->whereBetween('commission_preinvoices.created_at', [$from, $to])
+            ->selectRaw("{$effectiveSeller} as effective_seller_id")
+            ->leftJoin('preinvoice_orders as commission_preinvoices', 'commission_preinvoices.id', '=', 'invoices.preinvoice_order_id')
+            ->with(['customer:id,first_name,last_name', 'seller:id,name', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
+            ->whereRaw("{$effectiveSeller} = ?", [$userId])
+            ->whereBetween(DB::raw('COALESCE(invoices.document_date, invoices.created_at)'), [$from, $to])
             ->where(function (Builder $query): void {
                 $query->whereNull('invoices.status')
                     ->orWhereNotIn('invoices.status', Invoice::cancelledStatuses());
@@ -64,7 +66,7 @@ class SellerCommissionDocumentService
                         ->orWhere('invoices.customer_name', 'like', $term);
                 });
             })
-            ->orderByDesc('commission_preinvoices.created_at')
+            ->orderByDesc(DB::raw('COALESCE(invoices.document_date, invoices.created_at)'))
             ->orderByDesc('invoices.id');
     }
 
@@ -196,19 +198,14 @@ class SellerCommissionDocumentService
 
     public function resolveInvoiceOwner(Invoice $invoice): ?int
     {
-        $invoice->loadMissing('preinvoiceOrder:id,created_by,created_at');
-
-        return $invoice->preinvoiceOrder?->created_by !== null
-            ? (int) $invoice->preinvoiceOrder->created_by
-            : null;
+        return $invoice->effective_seller_id;
     }
 
     public function resolveInvoiceInitialDate(Invoice $invoice): ?CarbonImmutable
     {
-        $invoice->loadMissing('preinvoiceOrder:id,created_by,created_at');
-        $createdAt = $invoice->preinvoiceOrder?->created_at;
+        $date = $invoice->display_document_date;
 
-        return $createdAt ? CarbonImmutable::instance($createdAt) : null;
+        return $date ? CarbonImmutable::instance($date) : null;
     }
 
     public function resolveInvoiceFinalAmount(Invoice $invoice): int
@@ -240,7 +237,7 @@ class SellerCommissionDocumentService
         [$from, $to] = $this->dateBoundaries($dateFrom, $dateTo);
 
         $invoices = Invoice::query()
-            ->with(['customer:id,first_name,last_name', 'preinvoiceOrder:id,created_by,created_at'])
+            ->with(['customer:id,first_name,last_name', 'seller:id,name', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
             ->whereIn('id', $ids)
             ->lockForUpdate()
             ->get()

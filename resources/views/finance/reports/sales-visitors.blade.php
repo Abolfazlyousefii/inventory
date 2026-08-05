@@ -128,6 +128,38 @@
                     </div>
                 @endif
             </section>
+
+            @if($filters['user_id'] && $detailRows->isNotEmpty())
+                <section class="finance-report-panel" aria-labelledby="visitor-details-title">
+                    <h2 class="finance-report-panel__title" id="visitor-details-title">جزئیات فاکتورهای فروشنده</h2>
+                    <form method="POST" action="{{ route('finance.reports.sales-visitors.commission-batches.store') }}">
+                        @csrf
+                        <input type="hidden" name="visitor_id" value="{{ $filters['user_id'] }}">
+                        <input type="hidden" name="date_from" value="{{ $filters['date_from'] }}">
+                        <input type="hidden" name="date_to" value="{{ $filters['date_to'] }}">
+                        <div class="finance-report-table-wrap">
+                            <table class="finance-report-table">
+                                <thead><tr><th>انتخاب</th><th>شماره فاکتور</th><th>تاریخ</th><th>فروشنده</th><th>مشتری</th><th>مبلغ</th></tr></thead>
+                                <tbody>
+                                @foreach($detailRows as $invoice)
+                                    <tr>
+                                        <td><input type="checkbox" name="invoice_ids[]" value="{{ $invoice->id }}" @disabled($batchedInvoiceIds->contains($invoice->id))></td>
+                                        <td>{{ $invoice->uuid }}</td>
+                                        <td>{{ App\Support\JalaliDate::dateTime($invoice->display_document_date) }}</td>
+                                        <td>{{ $invoice->effectiveSeller()?->name ?? '—' }}</td>
+                                        <td>{{ $invoice->customer_name ?: '—' }}</td>
+                                        <td class="finance-report-table__number">{{ $money($invoice->total) }}</td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="finance-report-filter__actions mt-3">
+                            <button type="submit" class="finance-report-button finance-report-button--primary">تأیید پورسانت فاکتورهای انتخاب‌شده</button>
+                        </div>
+                    </form>
+                </section>
+            @endif
         </div>
     </div>
 </x-app-layout>

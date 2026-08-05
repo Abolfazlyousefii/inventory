@@ -173,6 +173,8 @@ class InvoiceController extends Controller
         $query->with([
             'customer:id,crm_customer_id,first_name,last_name,mobile',
             'preinvoiceOrder:id,uuid,created_by,seller_id',
+            'preinvoiceOrder.seller:id,name',
+            'preinvoiceOrder.creator:id,name',
             'seller:id,name',
         ])->withSum('payments as paid_total', 'amount');
 
@@ -332,7 +334,7 @@ class InvoiceController extends Controller
                 'warehouse_received_at' => $invoice->warehouse_received_at ? Jalalian::fromDateTime($invoice->warehouse_received_at)->format('Y/m/d H:i') : null,
                 'collection_started_at' => $invoice->collection_started_at ? Jalalian::fromDateTime($invoice->collection_started_at)->format('Y/m/d H:i') : null,
                 'collected_at' => $invoice->collected_at ? Jalalian::fromDateTime($invoice->collected_at)->format('Y/m/d H:i') : null,
-                'seller' => $invoice->preinvoiceOrder?->creator?->name,
+                'seller' => $invoice->effectiveSeller()?->name,
                 'show_url' => route('vouchers.sales.show', $invoice->uuid),
                 'print_url' => route('vouchers.sales.print', $invoice->uuid),
                 'edit_items_url' => $invoice->status === Invoice::STATUS_COLLECTING ? route('vouchers.sales.collection.edit', $invoice->uuid) : null,
@@ -351,7 +353,7 @@ class InvoiceController extends Controller
     private function salesQueueQuery(bool $shipped)
     {
         return Invoice::query()
-            ->with(['items.product', 'items.variant', 'preinvoiceOrder.creator:id,name'])
+            ->with(['items.product', 'items.variant', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
             ->when($shipped, fn ($query) => $query->where('status', SalesHavalehStatusService::SHIPPED), fn ($query) => $query->whereIn('status', $this->queueStatuses()));
     }
 
@@ -367,7 +369,7 @@ class InvoiceController extends Controller
     public function salesVoucherShow(string $uuid)
     {
         $invoice = Invoice::query()
-            ->with(['items.product', 'items.variant', 'notes', 'preinvoiceOrder.creator:id,name', 'shippingMethod:id,name,price', 'dispatchShippingMethod:id,name,price', 'shippedBy:id,name'])
+            ->with(['items.product', 'items.variant', 'notes', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name', 'shippingMethod:id,name,price', 'dispatchShippingMethod:id,name,price', 'shippedBy:id,name'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
@@ -695,7 +697,7 @@ class InvoiceController extends Controller
     public function history(string $uuid)
     {
         $invoice = Invoice::query()
-            ->with(['histories.actor', 'payments.creator', 'notes.user', 'preinvoiceOrder.creator:id,name'])
+            ->with(['histories.actor', 'payments.creator', 'notes.user', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
@@ -708,7 +710,7 @@ class InvoiceController extends Controller
     public function edit(string $uuid)
     {
         $invoice = Invoice::query()
-            ->with(['items.product', 'items.variant', 'payments.cheque', 'notes.user', 'preinvoiceOrder.creator:id,name', 'seller:id,name'])
+            ->with(['items.product', 'items.variant', 'payments.cheque', 'notes.user', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name', 'seller:id,name'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
@@ -812,6 +814,8 @@ class InvoiceController extends Controller
             ->with([
                 'items.product',
                 'items.variant',
+                'seller:id,name',
+                'preinvoiceOrder.seller:id,name',
                 'preinvoiceOrder.creator',
                 'shippingMethod:id,name,price',
             ])
@@ -834,6 +838,8 @@ class InvoiceController extends Controller
                 'payments.cheque',
                 'payments.creator',
                 'notes',
+                'seller:id,name',
+                'preinvoiceOrder.seller:id,name',
                 'preinvoiceOrder.creator:id,name',
             ])
             ->where('uuid', $uuid)
@@ -909,7 +915,7 @@ class InvoiceController extends Controller
         $invoices = Invoice::query()->cancelled()
             ->select('invoices.*')
             ->selectSub('select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id', 'paid_total')
-            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'preinvoiceOrder.creator:id,name', 'canceller:id,name'])
+            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name', 'canceller:id,name'])
             ->when($filters['q'] !== '', function ($query) use ($filters) {
                 $q = $filters['q'];
                 $query->where(function ($qq) use ($q) {
@@ -1044,7 +1050,7 @@ class InvoiceController extends Controller
             'customer_name' => $customerName,
             'customer_mobile' => $invoice->customer_mobile ?: $invoice->customer?->mobile ?: '—',
             'customer_code' => $invoice->customer?->crm_customer_id ?: $invoice->customer_id ?: '—',
-            'seller' => $invoice->seller?->name ?? '—',
+            'seller' => $invoice->effectiveSeller()?->name ?? '—',
             'status_label' => $this->statusService->labels()[$status] ?? ($status ?: '—'),
             'status_tone' => $statusTone,
             'legacy' => in_array($status, $this->invoiceLegacyStatuses(), true),
@@ -1275,7 +1281,7 @@ SQL)->first();
                 $remaining = max((int) $invoice->total - $paid, 0);
                 fputcsv($handle, [
                     $invoice->uuid,
-                    optional($invoice->created_at)->format('Y-m-d'),
+                    optional($invoice->display_document_date)->format('Y-m-d'),
                     $invoice->customer_name ?: $invoice->customer?->display_name,
                     $invoice->customer?->crm_customer_id ?: $invoice->customer_id,
                     $invoice->customer_mobile ?: $invoice->customer?->mobile,
@@ -1284,7 +1290,7 @@ SQL)->first();
                     $remaining,
                     $this->paymentStatusLabel($paid, (int) $invoice->total),
                     $this->statusService->labels()[$invoice->status] ?? ($invoice->status ?: ''),
-                    $invoice->preinvoiceOrder?->creator?->name ?? '',
+                    $invoice->effectiveSeller()?->name ?? '',
                     implode(' | ', $this->invoiceWarningLabels($invoice)),
                     $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '',
                 ]);

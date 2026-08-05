@@ -30,7 +30,7 @@
         <td class="fw-bold" dir="ltr">{{ $invoice->uuid }}</td>
         <td>{{ $invoice->customer_name ?: $invoice->customer?->display_name ?: '—' }}</td>
         <td>{{ $invoice->customer_mobile ?: $invoice->customer?->mobile ?: '—' }}</td>
-        <td>{{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</td>
+        <td>{{ $invoice->effectiveSeller()?->name ?? '—' }}</td>
         <td>{{ $rial($invoice->total) }}</td>
         <td><div class="text-success">پرداخت: {{ $rial($paid) }}</div><div class="text-muted">مانده: {{ $rial(max((int)$invoice->total - $paid, 0)) }}</div></td>
         <td>{{ $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '—' }}</td>

@@ -136,10 +136,10 @@
                         class="sidebar-section-title sidebar-accordion-trigger {{ $warehouseActive ? 'is-active' : '' }}"
                         data-accordion-trigger
                         aria-expanded="{{ $warehouseActive ? 'true' : 'false' }}"
-                        title="انبارداری">
+                        title="{{ config('app.warehouse_section_name', 'انبارداری شرکت آریا') }}">
                     <span class="sidebar-section-main">
                         <svg class="sidebar-icon" aria-hidden="true"><use href="#sidebar-icon-warehouse"/></svg>
-                        <span class="sidebar-label">انبارداری</span>
+                        <span class="sidebar-label">{{ config('app.warehouse_section_name', 'انبارداری شرکت آریا') }}</span>
                     </span>
                     <svg class="sidebar-accordion-trigger-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>

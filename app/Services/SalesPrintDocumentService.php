@@ -15,7 +15,7 @@ class SalesPrintDocumentService
 
     public function invoiceData(Invoice $invoice, string $mode = 'warehouse'): array
     {
-        $invoice->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'payments', 'preinvoiceOrder', 'shippingMethod', 'customer']);
+        $invoice->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'payments', 'seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator', 'shippingMethod', 'customer']);
 
         $paid = $invoice->relationLoaded('payments') ? (int) $invoice->payments->sum('amount') : (int) $invoice->paid_amount;
         $totals = SalesDocumentTotals::fromDocument($invoice);
@@ -29,6 +29,7 @@ class SalesPrintDocumentService
             'registeredAt' => $invoice->display_document_date,
             'issuedAt' => $invoice->display_document_date,
             'status' => $this->statusLabel($invoice->status),
+            'seller' => $invoice->effectiveSeller()?->name,
             'customer' => [
                 'name' => $invoice->customer_name ?: $invoice->customer?->display_name,
                 'mobile' => $invoice->customer_mobile ?: $invoice->customer?->mobile,
@@ -74,6 +75,7 @@ class SalesPrintDocumentService
             'registeredAt' => $order->display_document_date,
             'issuedAt' => null,
             'status' => $this->statusLabel($order->status),
+            'seller' => $order->seller?->name ?? $order->creator?->name,
             'customer' => [
                 'name' => $order->customer_name,
                 'mobile' => $order->customer_mobile,

@@ -85,6 +85,33 @@ class Invoice extends Model
         return $this->document_date ?? $this->created_at;
     }
 
+    /** SQL equivalent of the canonical seller ownership rule used by reports. */
+    public static function effectiveSellerSql(
+        string $invoiceAlias = 'invoices',
+        string $preinvoiceAlias = 'preinvoice_orders'
+    ): string {
+        return "COALESCE({$invoiceAlias}.seller_id, {$preinvoiceAlias}.seller_id, {$preinvoiceAlias}.created_by)";
+    }
+
+    public function getEffectiveSellerIdAttribute(mixed $value = null): ?int
+    {
+        $sellerId = $value
+            ?? $this->seller_id
+            ?? $this->preinvoiceOrder?->seller_id
+            ?? $this->preinvoiceOrder?->created_by;
+
+        return $sellerId !== null ? (int) $sellerId : null;
+    }
+
+    public function effectiveSeller(): ?User
+    {
+        $this->loadMissing(['seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator']);
+
+        return $this->seller
+            ?? $this->preinvoiceOrder?->seller
+            ?? $this->preinvoiceOrder?->creator;
+    }
+
     public function recalculateSnapshotTotals(): void
     {
         $this->loadMissing('items');

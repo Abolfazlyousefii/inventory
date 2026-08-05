@@ -48,10 +48,8 @@ use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
-use App\Services\Sync\InventoryProductsSyncService;
 use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
-use App\Services\Sync\SitePaidOrdersSyncService;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard'));
@@ -216,6 +214,10 @@ Route::prefix('finance/reports')
     ->group(function () {
         Route::get('/', [FinanceReportController::class, 'index'])->name('index');
         Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
+        Route::post('/sales-visitors/commission-batches', [FinanceReportController::class, 'storeCommissionBatch'])->name('sales-visitors.commission-batches.store');
+        Route::get('/sales-visitors/commission-batches/{batch}', [FinanceReportController::class, 'showCommissionBatch'])->name('sales-visitors.commission-batches.show');
+        Route::get('/sales-visitors/commission-batches/{batch}/export', [FinanceReportController::class, 'exportCommissionBatch'])->name('sales-visitors.commission-batches.export');
+        Route::get('/sales-visitors/commission-batches/{batch}/print', [FinanceReportController::class, 'printCommissionBatch'])->name('sales-visitors.commission-batches.print');
     });
 
 Route::prefix('finance/reports/seller-commission-documents')->name('finance.seller-sales.')->middleware(['auth','page.access:finance.seller_sales_documents'])->group(function(){
@@ -521,7 +523,3 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 require __DIR__ . '/auth.php';
-
-Route::get('/test',function (){
-    return app(SitePaidOrdersSyncService::class)->syncAll();
-});

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\FinanceCommissionBatch;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Support\JalaliDate;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FinanceReportController extends Controller
 {
@@ -29,33 +31,34 @@ class FinanceReportController extends Controller
     public function salesVisitors(Request $request): View
     {
         $filters = $this->filters($request);
+        $effectiveSeller = Invoice::effectiveSellerSql('invoices', 'report_preinvoices');
         $query = $this->invoiceReportQuery($filters);
         $rows = $this->aggregateQuery($query)
             ->leftJoinSub($this->paymentTotalsQuery(), 'invoice_payment_totals', function ($join): void {
                 $join->on('invoice_payment_totals.invoice_id', '=', 'invoices.id');
             })
-            ->selectRaw('report_preinvoices.created_by as registered_by_user_id')
+            ->selectRaw("{$effectiveSeller} as effective_seller_id")
             ->selectRaw('count(*) as invoice_count')
             ->selectRaw('count(distinct invoices.customer_id) as customers_count')
             ->selectRaw('coalesce(sum(invoices.total), 0) as total_sales')
             ->selectRaw('coalesce(sum(coalesce(invoice_payment_totals.paid_amount, 0)), 0) as aggregated_paid_amount')
-            ->groupBy('report_preinvoices.created_by')
+            ->groupByRaw($effectiveSeller)
             ->orderByDesc('total_sales')
             ->get();
 
         $users = $this->usersForFilter();
-        $userNames = User::query()->whereIn('id', $rows->pluck('registered_by_user_id')->filter()->unique())->pluck('name', 'id');
+        $userNames = User::query()->whereIn('id', $rows->pluck('effective_seller_id')->filter()->unique())->pluck('name', 'id');
 
         $rows = $rows->map(function ($row) use ($userNames) {
             $totalSales = (int) $row->total_sales;
             $paidAmount = (int) $row->aggregated_paid_amount;
             $invoiceCount = (int) $row->invoice_count;
 
-            $registeredByUserId = (int) $row->registered_by_user_id;
+            $registeredByUserId = (int) $row->effective_seller_id;
 
             return [
                 'user_id' => $registeredByUserId,
-                'registered_by_user_id' => $registeredByUserId,
+                'effective_seller_id' => $registeredByUserId,
                 'user_name' => $userNames[$registeredByUserId] ?? ('کاربر #' . $registeredByUserId),
                 'invoice_count' => $invoiceCount,
                 'customers_count' => (int) $row->customers_count,
@@ -75,25 +78,153 @@ class FinanceReportController extends Controller
             'average_sale' => $rows->sum('invoice_count') > 0 ? (int) round($rows->sum('total_sales') / $rows->sum('invoice_count')) : 0,
         ];
 
+        $detailRows = collect();
+        $batchedInvoiceIds = collect();
+        if ($filters['user_id']) {
+            $detailRows = $this->invoiceReportQuery($filters)
+                ->with(['seller:id,name', 'preinvoiceOrder:id,seller_id,created_by', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
+                ->orderByDesc(DB::raw('COALESCE(invoices.document_date, invoices.created_at)'))
+                ->get();
+            $batchedInvoiceIds = DB::table('finance_commission_batch_items as items')
+                ->join('finance_commission_batches as batches', 'batches.id', '=', 'items.batch_id')
+                ->where('batches.status', FinanceCommissionBatch::STATUS_ACTIVE)
+                ->whereIn('items.invoice_id', $detailRows->pluck('id'))
+                ->pluck('items.invoice_id');
+        }
+
         return view('finance.reports.sales-visitors', [
             'filters' => $filters,
             'rows' => $rows,
             'totals' => $totals,
             'users' => $users,
             'customers' => $this->customersForFilter(),
+            'detailRows' => $detailRows,
+            'batchedInvoiceIds' => $batchedInvoiceIds,
         ]);
+    }
+
+    public function storeCommissionBatch(Request $request)
+    {
+        $data = $request->validate([
+            'visitor_id' => ['required', 'integer', 'exists:users,id'],
+            'date_from' => ['nullable', 'string'],
+            'date_to' => ['nullable', 'string'],
+            'invoice_ids' => ['required', 'array', 'min:1'],
+            'invoice_ids.*' => ['required', 'integer', 'distinct'],
+            'note' => ['nullable', 'string', 'max:2000'],
+        ]);
+        $from = $this->dateInput($data['date_from'] ?? null, 'date_from');
+        $to = $this->dateInput($data['date_to'] ?? null, 'date_to');
+        if ($from && $to && $from->isAfter($to)) {
+            throw ValidationException::withMessages(['date_from' => 'تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.']);
+        }
+
+        $batch = DB::transaction(function () use ($data, $from, $to, $request): FinanceCommissionBatch {
+            $filters = [
+                'date_from_boundary' => $from?->startOfDay(),
+                'date_to_boundary' => $to?->endOfDay(),
+                'user_id' => (int) $data['visitor_id'],
+                'customer_id' => null,
+            ];
+            $ids = array_map('intval', $data['invoice_ids']);
+            $invoices = $this->invoiceReportQuery($filters)
+                ->whereIn('invoices.id', $ids)
+                ->whereNotExists(function ($query): void {
+                    $query->selectRaw('1')
+                        ->from('finance_commission_batch_items as existing_items')
+                        ->join('finance_commission_batches as existing_batches', 'existing_batches.id', '=', 'existing_items.batch_id')
+                        ->whereColumn('existing_items.invoice_id', 'invoices.id')
+                        ->where('existing_batches.status', FinanceCommissionBatch::STATUS_ACTIVE);
+                })
+                ->lockForUpdate()
+                ->get();
+
+            if ($invoices->count() !== count($ids)) {
+                throw ValidationException::withMessages(['invoice_ids' => 'یک یا چند فاکتور با فروشنده، بازه یا وضعیت انتخاب‌شده مطابقت ندارند.']);
+            }
+
+            $batch = FinanceCommissionBatch::query()->create([
+                'visitor_id' => (int) $data['visitor_id'],
+                'from_date' => $from?->toDateString(),
+                'to_date' => $to?->toDateString(),
+                'invoice_count' => $invoices->count(),
+                'total_amount' => (int) $invoices->sum('total'),
+                'approved_by' => $request->user()->id,
+                'approved_at' => now(),
+                'status' => FinanceCommissionBatch::STATUS_ACTIVE,
+                'note' => $data['note'] ?? null,
+            ]);
+
+            foreach ($invoices as $invoice) {
+                $batch->items()->create([
+                    'invoice_id' => $invoice->id,
+                    'invoice_uuid' => (string) $invoice->uuid,
+                    'invoice_date' => $invoice->display_document_date,
+                    'customer_name' => $invoice->customer_name,
+                    'customer_mobile' => $invoice->customer_mobile,
+                    'invoice_total' => (int) $invoice->total,
+                    'invoice_status' => $invoice->status,
+                ]);
+            }
+
+            return $batch;
+        });
+
+        return redirect()->route('finance.reports.sales-visitors.commission-batches.show', $batch);
+    }
+
+    public function showCommissionBatch(FinanceCommissionBatch $batch): View
+    {
+        $batch->load(['visitor:id,name', 'approver:id,name', 'items']);
+
+        return view('finance.reports.commission-batch-show', compact('batch'));
+    }
+
+    public function printCommissionBatch(FinanceCommissionBatch $batch): View
+    {
+        $batch->load(['visitor:id,name', 'approver:id,name', 'items']);
+
+        return view('finance.reports.commission-batch-show', ['batch' => $batch, 'printMode' => true]);
+    }
+
+    public function exportCommissionBatch(Request $request, FinanceCommissionBatch $batch): StreamedResponse
+    {
+        $batch->load(['visitor:id,name', 'items']);
+        $excel = $request->query('format') === 'excel';
+        $filename = 'commission-batch-'.$batch->id.($excel ? '.xls' : '.csv');
+
+        return response()->streamDownload(function () use ($batch): void {
+            $handle = fopen('php://output', 'w');
+            fwrite($handle, "\xEF\xBB\xBF");
+            fputcsv($handle, ['seller_id', 'seller_name', 'invoice_number', 'invoice_date', 'customer_name', 'customer_mobile', 'invoice_total', 'invoice_status']);
+            foreach ($batch->items as $item) {
+                fputcsv($handle, [
+                    $batch->visitor_id,
+                    $batch->visitor?->name,
+                    $item->invoice_uuid,
+                    optional($item->invoice_date)->format('Y-m-d H:i:s'),
+                    $item->customer_name,
+                    $item->customer_mobile,
+                    $item->invoice_total,
+                    $item->invoice_status,
+                ]);
+            }
+            fclose($handle);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     private function invoiceReportQuery(array $filters): Builder
     {
+        $effectiveSeller = Invoice::effectiveSellerSql('invoices', 'report_preinvoices');
         $query = Invoice::query()
             ->select('invoices.*')
+            ->selectRaw("{$effectiveSeller} as effective_seller_id")
             ->leftJoin('preinvoice_orders as report_preinvoices', 'report_preinvoices.id', '=', 'invoices.preinvoice_order_id')
-            ->whereNotNull('report_preinvoices.created_by')
+            ->whereNotNull(DB::raw($effectiveSeller))
             ->whereExists(function ($userQuery): void {
                 $userQuery->selectRaw('1')
-                    ->from('users as registrar_users')
-                    ->whereColumn('registrar_users.id', 'report_preinvoices.created_by');
+                    ->from('users as seller_users')
+                    ->whereColumn('seller_users.id', DB::raw(Invoice::effectiveSellerSql('invoices', 'report_preinvoices')));
             })
             ->where(function (Builder $query): void {
                 $query->whereNull('invoices.status')
@@ -113,8 +244,7 @@ class FinanceReportController extends Controller
         }
 
         if ($filters['user_id']) {
-            $registeredByUserId = $filters['user_id'];
-            $query->where('report_preinvoices.created_by', $registeredByUserId);
+            $query->whereRaw("{$effectiveSeller} = ?", [$filters['user_id']]);
         }
 
         return $query;
@@ -188,7 +318,20 @@ class FinanceReportController extends Controller
 
     private function usersForFilter()
     {
-        return User::query()->activeErpUsers()->select('id', 'name')->orderBy('name')->get();
+        $effectiveSeller = Invoice::effectiveSellerSql('invoices', 'filter_preinvoices');
+        $historicalIds = Invoice::query()
+            ->leftJoin('preinvoice_orders as filter_preinvoices', 'filter_preinvoices.id', '=', 'invoices.preinvoice_order_id')
+            ->selectRaw("{$effectiveSeller} as effective_seller_id")
+            ->whereNotNull(DB::raw($effectiveSeller))
+            ->pluck('effective_seller_id');
+
+        return User::query()
+            ->where(function (Builder $query) use ($historicalIds): void {
+                $query->activeSellers()->orWhereIn('id', $historicalIds);
+            })
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
     }
 
     private function customersForFilter()

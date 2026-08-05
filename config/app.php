@@ -15,6 +15,8 @@ return [
 
     'name' => env('APP_NAME', 'نرم افزار داخلی آریا گستر'),
 
+    'warehouse_section_name' => env('WAREHOUSE_SECTION_NAME', 'انبارداری شرکت آریا'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

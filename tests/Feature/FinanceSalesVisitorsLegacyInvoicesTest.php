@@ -28,7 +28,7 @@ class FinanceSalesVisitorsLegacyInvoicesTest extends TestCase
         $this->assertSame(3000, $row['total_sales']);
     }
 
-    public function test_direct_unknown_invalid_and_cancelled_invoices_are_not_attributed(): void
+    public function test_invoice_seller_takes_priority_over_missing_or_invalid_legacy_creator(): void
     {
         $registrar = User::factory()->create();
         $validOrder = $this->order($registrar->id);
@@ -39,7 +39,10 @@ class FinanceSalesVisitorsLegacyInvoicesTest extends TestCase
         $this->invoice($validOrder->id, $registrar->id, Invoice::STATUS_NOT_SHIPPED, 4000);
 
         $response = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors'));
-        $this->assertTrue(collect($response->viewData('rows'))->isEmpty());
+        $row = collect($response->viewData('rows'))->sole();
+        $this->assertSame($registrar->id, $row['effective_seller_id']);
+        $this->assertSame(2, $row['invoice_count']);
+        $this->assertSame(3000, $row['total_sales']);
     }
 
     private function order(int $createdBy): PreinvoiceOrder

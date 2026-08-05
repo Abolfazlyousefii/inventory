@@ -11,16 +11,16 @@ class SellerCommissionDocumentDateResolutionTest extends TestCase
 {
     use CreatesSellerCommissionDocuments, RefreshDatabase;
 
-    public function test_initial_preinvoice_created_at_is_used_instead_of_updated_at_or_invoice_date(): void
+    public function test_invoice_document_date_is_used_instead_of_preinvoice_dates(): void
     {
         $owner = $this->erpUser();
         $invoice = $this->makeInvoice($owner, 1000, '2026-07-08 09:30:00', ['document_date' => '2026-08-20 10:00:00']);
         $date = app(SellerCommissionDocumentService::class)->resolveInvoiceInitialDate($invoice);
-        $this->assertSame('2026-07-08 09:30:00', $date->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-20 10:00:00', $date->format('Y-m-d H:i:s'));
         $this->assertSame('2026-08-01 12:00:00', (string) $invoice->preinvoiceOrder()->value('updated_at'));
     }
 
-    public function test_snapshot_stores_original_preinvoice_date(): void
+    public function test_snapshot_stores_effective_invoice_date(): void
     {
         $owner = $this->erpUser();
         $invoice = $this->makeInvoice($owner, 1000, '2026-07-05 13:14:15');

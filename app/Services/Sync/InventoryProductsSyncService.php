@@ -12,13 +12,9 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class InventoryProductsSyncService {
-    public function __construct() {
-        $this->apiUrl = rtrim((string) Config::get('services.site.base_url'), '/') . $this->url;
-    }
+    protected ?string $apiUrl = null;
 
-    protected ?string $apiUrl;
-
-    protected string $url = '/api/v2/sync/products';
+    protected ?string $apiToken = null;
 
     protected int $batchSize = 1;
 
@@ -47,10 +43,18 @@ class InventoryProductsSyncService {
      * به Inventory برگردانده است.
      */
     public function syncAll(): array {
+        $this->apiUrl = trim((string) Config::get('services.sales_server.api_url'));
+        $this->apiToken = trim((string) Config::get('services.sales_server.api_token'));
+
+        if (! Config::get('services.sales_server.sync_enabled') || $this->apiUrl === '' || $this->apiToken === '') {
+            return [
+                'skipped' => true,
+                'reason' => 'inventory_sync_disabled_or_not_configured',
+            ];
+        }
+
         $totalChunks          = 0;
-        $successfulChunks     = 0;
-        $syncedProductCount   = 0;
-        $verifiedProductCount = 0;
+        $successCount         = 0;
         $failedChunks         = [];
 
         Product::where(function ( $query ): void {
@@ -63,7 +67,7 @@ class InventoryProductsSyncService {
             ])
             ->orderBy('id')
             ->chunkById($this->batchSize, function ( Collection $products ) use (
-                &$totalChunks, &$successfulChunks, &$syncedProductCount, &$verifiedProductCount, &$failedChunks
+                &$totalChunks, &$successCount, &$failedChunks
             ): void {
                 $totalChunks ++;
 
@@ -91,24 +95,13 @@ class InventoryProductsSyncService {
                 }
 
                 $syncedProductIds = $this->onlyExpectedIds($result['synced_product_ids'], $expectedProductIds);
-
                 $verifiedProductIds = $this->onlyExpectedIds($result['verified_product_ids'], $expectedProductIds);
-
-                if ( $syncedProductIds !== [] ) {
-                    DB::table('products')
-                        ->whereIn('id', $syncedProductIds)
-                        ->update([
-                            'inventory_to_site_synced' => true,
-                        ]);
-
-                    $syncedProductCount += count($syncedProductIds);
-                }
 
                 $syncComplete   = $syncedProductIds === $expectedProductIds;
                 $verifyComplete = $verifiedProductIds === $expectedProductIds;
 
                 if ( $syncComplete && $verifyComplete ) {
-                    $successfulChunks ++;
+                    $successCount ++;
 
                     Log::info("Inventory-to-Site chunk {$totalChunks} synced and verified.", [
                         'synced_product_ids'   => $syncedProductIds,
@@ -137,11 +130,9 @@ class InventoryProductsSyncService {
             }, 'id');
 
         $summary = [
-            'total_chunks'           => $totalChunks,
-            'successful_chunks'      => $successfulChunks,
-            'synced_product_count'   => $syncedProductCount,
-            'verified_product_count' => $verifiedProductCount,
-            'failed_chunks'          => $failedChunks,
+            'total_chunks'  => $totalChunks,
+            'success_count' => $successCount,
+            'failed_chunks' => $failedChunks,
         ];
 
         Log::info('Inventory-to-Site synchronization completed.', $summary);
@@ -234,12 +225,20 @@ class InventoryProductsSyncService {
 
             try {
                 $response = Http::withoutVerifying()
+                    ->withToken($this->apiToken)
                     ->acceptJson()
                     ->asJson()
                     ->timeout($this->timeout)
                     ->post($this->apiUrl, $payload);
 
                 if ( $response->successful() ) {
+                    if ($response->json('ok') === true) {
+                        return [
+                            'synced_product_ids' => $expectedProductIds,
+                            'verified_product_ids' => $expectedProductIds,
+                        ];
+                    }
+
                     $status = (string) $response->json('status', '');
 
                     $syncedProductIds = $this->normalizeIds($response->json('data.synced_product_ids', []));

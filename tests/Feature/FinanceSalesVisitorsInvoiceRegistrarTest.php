@@ -14,7 +14,7 @@ class FinanceSalesVisitorsInvoiceRegistrarTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_invoice_is_grouped_by_preinvoice_creator_even_when_seller_is_different(): void
+    public function test_invoice_is_grouped_by_effective_seller_not_preinvoice_creator(): void
     {
         $registrar = User::factory()->create(['name' => 'ثبت‌کننده الف', 'crm_user_id' => '88001']);
         $other = User::factory()->create(['name' => 'کاربر ب', 'is_seller' => true]);
@@ -23,18 +23,18 @@ class FinanceSalesVisitorsInvoiceRegistrarTest extends TestCase
         InvoicePayment::query()->create(['invoice_id' => $invoice->id, 'method' => 'cash', 'amount' => 1500]);
 
         $response = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', [
-            'user_id' => $registrar->id,
+            'user_id' => $other->id,
         ]));
 
         $row = collect($response->viewData('rows'))->sole();
-        $this->assertSame($registrar->id, $row['registered_by_user_id']);
+        $this->assertSame($other->id, $row['effective_seller_id']);
         $this->assertSame(1, $row['invoice_count']);
         $this->assertSame(5000, $row['total_sales']);
         $this->assertSame(2500, $row['paid_amount']);
         $this->assertSame(2500, $row['remaining_amount']);
 
-        $otherResponse = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', ['user_id' => $other->id]));
-        $this->assertTrue(collect($otherResponse->viewData('rows'))->isEmpty());
+        $registrarResponse = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', ['user_id' => $registrar->id]));
+        $this->assertTrue(collect($registrarResponse->viewData('rows'))->isEmpty());
 
         $crmResponse = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', ['user_id' => 88001]));
         $this->assertTrue(collect($crmResponse->viewData('rows'))->isEmpty());

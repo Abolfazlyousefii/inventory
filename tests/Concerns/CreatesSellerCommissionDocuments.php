@@ -78,7 +78,7 @@ trait CreatesSellerCommissionDocuments
             'discount_amount' => 0,
             'total' => $total,
             'status' => Invoice::STATUS_SHIPPED,
-            'document_date' => '2026-07-20 10:00:00',
+            'document_date' => $createdAt,
         ], $attributes));
     }
 

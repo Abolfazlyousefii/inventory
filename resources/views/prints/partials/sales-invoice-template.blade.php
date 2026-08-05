@@ -27,6 +27,7 @@
             <div>تاریخ ثبت پیش‌فاکتور: {{ $fmtDate($printData['registeredAt']) }}</div>
             @if($printData['issuedAt'])<div>تاریخ صدور فاکتور: {{ $fmtDate($printData['issuedAt']) }}</div>@endif
             @if($printData['status'])<div>وضعیت سند: {{ $printData['status'] }}</div>@endif
+            @if(filled($printData['seller']))<div>فروشنده: {{ $printData['seller'] }}</div>@endif
         </div></div>
     </header>
     <section class="info-grid">

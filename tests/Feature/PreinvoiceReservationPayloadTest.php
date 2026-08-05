@@ -6,6 +6,8 @@ use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
+require_once __DIR__.'/../Support/LargePayloadFixtures.php';
+
 uses(RefreshDatabase::class);
 
 beforeEach(function () {

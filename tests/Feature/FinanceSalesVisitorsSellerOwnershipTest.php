@@ -13,7 +13,7 @@ class FinanceSalesVisitorsSellerOwnershipTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_report_uses_preinvoice_registrar_not_invoice_seller_or_crm_id(): void
+    public function test_report_uses_effective_seller_priority_and_not_crm_id(): void
     {
         $seller = User::factory()->create([
             'name' => 'فروشنده داخلی',
@@ -38,21 +38,23 @@ class FinanceSalesVisitorsSellerOwnershipTest extends TestCase
         $this->invoice(null, $preinvoice->id, 3000);
 
         $response = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', [
-            'user_id' => $other->id,
+            'user_id' => $seller->id,
         ]));
 
         $response->assertOk()
             ->assertSee('value="' . $seller->id . '"', false)
             ->assertDontSee('value="987654"', false);
         $row = collect($response->viewData('rows'))->sole();
-        $this->assertSame($other->id, $row['user_id']);
-        $this->assertSame(1, $row['invoice_count']);
-        $this->assertSame(3000, $row['total_sales']);
+        $this->assertSame($seller->id, $row['user_id']);
+        $this->assertSame(2, $row['invoice_count']);
+        $this->assertSame(4000, $row['total_sales']);
 
         $sellerResponse = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', [
-            'user_id' => $seller->id,
+            'user_id' => $other->id,
         ]));
-        $this->assertTrue(collect($sellerResponse->viewData('rows'))->isEmpty());
+        $otherRow = collect($sellerResponse->viewData('rows'))->sole();
+        $this->assertSame(1, $otherRow['invoice_count']);
+        $this->assertSame(2000, $otherRow['total_sales']);
 
         $crmResponse = $this->actingAs($this->owner())->get(route('finance.reports.sales-visitors', [
             'user_id' => 987654,

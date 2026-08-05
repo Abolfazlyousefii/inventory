@@ -6,7 +6,7 @@
   <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3"><div><h3>تاریخچه فاکتور {{ $invoice->uuid }}</h3><div class="text-muted">Timeline ساده؛ طراحی فلوچارتی کامل در Patch بعدی تکمیل می‌شود.</div></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{{ route('invoices.show', $invoice->uuid) }}">مشاهده فاکتور</a><a class="btn btn-outline-dark" href="{{ route('invoices.print', $invoice->uuid) }}" target="_blank">چاپ</a></div></div>
   <div class="muted-box mb-3">لاگ کامل مراحل status changes، item changes، payment changes، note changes و shipping changes به داده‌های ثبت‌شده فعلی وابسته است. اگر رویدادی در لیست نیست، لاگ کامل آن مرحله در Patch بعدی تکمیل می‌شود.</div>
   <div class="timeline">
-    <div class="timeline-item"><h6>ایجاد فاکتور</h6><div class="text-muted">{{ $invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '—' }} | فروشنده: {{ $invoice->preinvoiceOrder?->creator?->name ?? '—' }}</div></div>
+    <div class="timeline-item"><h6>ایجاد فاکتور</h6><div class="text-muted">{{ $invoice->display_document_date ? Jalalian::fromDateTime($invoice->display_document_date)->format('Y/m/d H:i') : '—' }} | فروشنده: {{ $invoice->effectiveSeller()?->name ?? '—' }}</div></div>
     @foreach($invoice->histories as $h)
       <div class="timeline-item"><h6>{{ $h->description ?: ($h->action_type ?? 'تغییر') }}</h6><div class="small text-muted">{{ $h->field_name ?: '—' }}: {{ $h->old_value ?: '—' }} ← {{ $h->new_value ?: '—' }}</div><div class="small text-muted">{{ $h->actor?->name ?? '—' }} | {{ $h->done_at ? Jalalian::fromDateTime($h->done_at)->format('Y/m/d H:i') : '—' }}</div></div>
     @endforeach

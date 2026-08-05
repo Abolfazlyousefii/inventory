@@ -38,7 +38,7 @@
   </div>
 
   <div class="invoice-edit-card mb-3"><div class="invoice-edit-card__head">خلاصه فاکتور</div><div class="card-body"><div class="info-grid">
-    @foreach([['شماره فاکتور',$invoice->uuid],['مشتری',$invoice->customer_name ?: $invoice->customer?->display_name],['موبایل',$invoice->customer_mobile ?: $invoice->customer?->mobile],['فروشنده',$invoice->preinvoiceOrder?->creator?->name],['تاریخ صدور',$invoice->created_at ? Jalalian::fromDateTime($invoice->created_at)->format('Y/m/d H:i') : '—'],['وضعیت فعلی',$statusFa($invoice->status)],['مبلغ کل',$rial($invoice->total)],['پرداخت‌شده',$rial($paidTotal)],['مانده',$rial($remainingAmount)],['وضعیت پرداخت',$paymentText]] as [$label,$value])
+    @foreach([['شماره فاکتور',$invoice->uuid],['مشتری',$invoice->customer_name ?: $invoice->customer?->display_name],['موبایل',$invoice->customer_mobile ?: $invoice->customer?->mobile],['فروشنده',$invoice->effectiveSeller()?->name],['تاریخ صدور',$invoice->display_document_date ? Jalalian::fromDateTime($invoice->display_document_date)->format('Y/m/d H:i') : '—'],['وضعیت فعلی',$statusFa($invoice->status)],['مبلغ کل',$rial($invoice->total)],['پرداخت‌شده',$rial($paidTotal)],['مانده',$rial($remainingAmount)],['وضعیت پرداخت',$paymentText]] as [$label,$value])
       <div class="info-box"><div class="info-label">{{ $label }}</div><div class="info-value">{{ $value ?: '—' }}</div></div>
     @endforeach
   </div></div></div>
