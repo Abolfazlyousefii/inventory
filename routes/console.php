@@ -48,5 +48,4 @@ Schedule::call(function () {
 })
     ->name('telegram_daily_report')
     ->dailyAt('21:00')
-    ->timezone('Asia/Tehran')
     ->withoutOverlapping(10);
