@@ -276,7 +276,11 @@ class TelegramDailyReport {
      */
     private function sendToBotWebhook( string $message ): Response {
         $address_bot_webhook = "https://bot.ariyajanebi.ir/";
-        $chatId              = "453342829";
+        $chatId = trim(
+            (string) config(
+                'services.telegram_daily_report.chat_id'
+            )
+        );
         $response            = Http::withoutVerifying()
             ->acceptJson()
             ->asJson()
