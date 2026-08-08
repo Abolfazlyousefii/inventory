@@ -524,7 +524,13 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
-Route::get('test',(function () {
-   return app(TelegramDailyReport::class)->send();
-}));
-require __DIR__ . '/auth.php';
+Route::get('/test', function () {
+    app(TelegramDailyReport::class)->send();
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Telegram daily report sent successfully.',
+    ]);
+});
+
+require __DIR__.'/auth.php';

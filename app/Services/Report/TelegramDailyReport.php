@@ -6,6 +6,7 @@ use App\Models\Cheque;
 use App\Models\Invoice;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -13,8 +14,6 @@ use Morilog\Jalali\Jalalian;
 use RuntimeException;
 
 class TelegramDailyReport {
-    private const WEBHOOK_ROUTE = 'sendMessage';
-
     /**
      * Generate and send today's report.
      */
@@ -119,9 +118,9 @@ class TelegramDailyReport {
                 $start, $end
             ): void {
                 $query->where(function ( Builder $documentDateQuery ) use ( $start, $end ): void {
-                        $documentDateQuery->whereDate('document_date', '>=', $start->toDateString())
-                            ->whereDate('document_date', '<=', $end->toDateString());
-                    })
+                    $documentDateQuery->whereDate('document_date', '>=', $start->toDateString())
+                        ->whereDate('document_date', '<=', $end->toDateString());
+                })
                     ->orWhere(function ( Builder $fallbackQuery ) use ( $start, $end ): void {
                         $fallbackQuery->whereNull('document_date')
                             ->whereBetween('created_at', [ $start, $end ]);
@@ -150,9 +149,9 @@ class TelegramDailyReport {
         $dueCheques = Cheque::query()
             ->where('status', 'pending')
             ->whereBetween('due_date', [
-                    $dueStart->toDateString(),
-                    $dueEnd->toDateString(),
-                ]);
+                $dueStart->toDateString(),
+                $dueEnd->toDateString(),
+            ]);
 
         /*
          * Because the report runs near the end of today,
@@ -180,11 +179,10 @@ class TelegramDailyReport {
      * Build the Persian Telegram report message.
      */
     private function buildMessage( CarbonImmutable $reportDay, array $metrics ): string {
-        $jalaliDate = Jalalian::fromCarbon(
-            $reportDay->toMutable()
-        )->format('Y/m/d');
+        $jalaliDate = Jalalian::fromCarbon($reportDay->toMutable())
+            ->format('Y/m/d');
 
-        $comparison = $this->comparisonText((int) $metrics['total_amount'], (int) $metrics['previous_total']);
+        $comparison         = $this->comparisonText((int) $metrics['total_amount'], (int) $metrics['previous_total']);
         $largestInvoiceText = $this->largestInvoiceText($metrics['largest_invoice']);
 
         return implode("\n", [
@@ -274,22 +272,26 @@ class TelegramDailyReport {
 
     /**
      * Send the report to the Natilosir SDK webhook.
+     * @throws ConnectionException
      */
     private function sendToBotWebhook( string $message ): Response {
-dd($message);
-        $response = Http::acceptJson()
+        $address_bot_webhook = "https://bot.ariyajanebi.ir/";
+        $chatId              = "453342829";
+        $response            = Http::withoutVerifying()
+            ->acceptJson()
             ->asJson()
-            ->connectTimeout(5)
+            ->connectTimeout(10)
             ->timeout(20)
-            ->retry(times : 2, sleepMilliseconds : 500, throw : false)
-            ->post($webhookUrl, [
-                    'route' => self::WEBHOOK_ROUTE,
+            ->retry(9, 5000)
+            ->post($address_bot_webhook, [
+                'route' => 'sendMessage',
 
-                    'data' => [
-                        'chat_id' => $chatId,
-                        'text'    => $message,
-                    ],
-                ]);
+                'data' => [
+                    'chat_id' => $chatId,
+                    'text'    => $message,
+                ],
+            ]);
+        return $response;
     }
 
     /**
