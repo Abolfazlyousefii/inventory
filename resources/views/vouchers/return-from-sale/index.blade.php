@@ -1,10 +1,4 @@
 @extends('layouts.app')
-@php
-	use App\Models\SalesReturnDocument;
-	use App\Models\SalesReturnDocumentItem;
-	$sourceLabels = SalesReturnDocument::sourceTypeLabels();
-	$reasonLabels = SalesReturnDocument::returnReasonLabels();
-@endphp
 @section('content')
 	<style>
 		.sr-index {
@@ -213,13 +207,14 @@
 			const debounce=(key,ms)=>{clearTimeout(timers[key]);timers[key]=setTimeout(()=>liveFetch(),ms)};
 			form.querySelector('[name="document_number"]')?.addEventListener('input',()=>debounce('doc',350));
 			['salesReturnDateFrom','salesReturnDateTo'].forEach(id=>{const el=document.getElementById(id);el?.addEventListener('input',()=>debounce(id,350));el?.addEventListener('change',()=>liveFetch());el?.addEventListener('jdp:change',()=>liveFetch());});
-			form.addEventListener('submit',e=>{}); window.salesReturnLiveFetch=liveFetch;
+			window.salesReturnLiveFetch=liveFetch;
 			results.addEventListener('click',e=>{const a=e.target.closest('.pagination a');if(!a)return;e.preventDefault();liveFetch(a.href.replace(indexUrl,dataUrl))});
 			document.addEventListener('click',e=>{if(e.target.matches('[data-sr-retry]'))liveFetch();const print=e.target.closest('[data-print-base-url]');if(print){const qs=cleanParams().toString();window.open(print.dataset.printBaseUrl+(qs?`?${qs}`:''),'_blank','noopener');}});
-			document.getElementById('salesReturnClearFilters')?.addEventListener('click',()=>{form.querySelector('[name="document_number"]').value='';form.querySelector('[name="customer_id"]').value='';form.querySelector('[data-customer-search]').value='';form.querySelector('[data-customer-selected] span').textContent='مشتری انتخاب نشده است.';form.querySelector('[data-customer-clear]')?.classList.add('d-none');document.getElementById('salesReturnDateFrom').value='';document.getElementById('salesReturnDateTo').value='';syncUrl(indexUrl);liveFetch(dataUrl);form.querySelector('[name="document_number"]').focus();});
+			document.getElementById('salesReturnClearFilters')?.addEventListener('click',()=>{const documentNumber=form.querySelector('[name="document_number"]');const customerId=form.querySelector('[name="customer_id"]');const customerSearch=form.querySelector('[data-customer-search]');const customerLabel=form.querySelector('[data-customer-selected] span');const dateFrom=document.getElementById('salesReturnDateFrom');const dateTo=document.getElementById('salesReturnDateTo');if(documentNumber)documentNumber.value='';if(customerId)customerId.value='';if(customerSearch)customerSearch.value='';if(customerLabel)customerLabel.textContent='مشتری انتخاب نشده است.';form.querySelector('[data-customer-clear]')?.classList.add('d-none');if(dateFrom)dateFrom.value='';if(dateTo)dateTo.value='';syncUrl(indexUrl);liveFetch(dataUrl);documentNumber?.focus();});
 			window.addEventListener('popstate',()=>{const params=new URLSearchParams(location.search);['document_number','customer_id','date_from','date_to'].forEach(n=>{const el=form.querySelector(`[name="${n}"]`);if(el)el.value=params.get(n)||''});liveFetch(`${dataUrl}${location.search}`)});
 
 		})();
 		(()=>{document.querySelectorAll('[data-customer-picker]').forEach(root=>{const url=root.dataset.searchUrl,input=root.querySelector('[data-customer-search]'),hidden=root.querySelector('[data-customer-id]'),box=root.querySelector('[data-customer-results]'),label=root.querySelector('[data-customer-selected] span'),clear=root.querySelector('[data-customer-clear]');let timer,abort,active=-1,items=[];const close=()=>box.classList.add('d-none');const fire=()=>hidden.dispatchEvent(new Event('change',{bubbles:true}));const render=()=>{box.innerHTML=items.map((c,i)=>`<div class="sr-filter-result ${i===active?'active':''}" data-i="${i}"><span>${c.name||c.text||'—'}</span><div class="small text-muted">${c.mobile||'—'} | کد: ${c.customer_code||c.id}</div></div>`).join('')||'<div class="p-2 small text-muted">نتیجه‌ای یافت نشد.</div>';box.classList.remove('d-none')};const pick=c=>{hidden.value=c?.id||'';input.value=c?(c.name||c.text||''):'';label.textContent=c?`${c.name||c.text||'—'} | ${c.mobile||'—'} | کد: ${c.customer_code||c.id}`:'مشتری انتخاب نشده است.';clear.classList.toggle('d-none',!c);close();fire()};const search=q=>{if((q||'').trim().length<2){items=[];close();return}abort?.abort();abort=new AbortController();fetch(url+'?q='+encodeURIComponent(q),{headers:{Accept:'application/json'},signal:abort.signal}).then(r=>r.json()).then(j=>{items=j.data||j.results||[];active=items.length?0:-1;render()}).catch(e=>{if(e.name!=='AbortError')console.error(e)})};input.addEventListener('input',e=>{hidden.value='';clearTimeout(timer);timer=setTimeout(()=>search(e.target.value),280)});input.addEventListener('keydown',e=>{if(e.key==='Escape'){close();return}if(!items.length)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();active=(active+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;render()}if(e.key==='Enter'){e.preventDefault();pick(items[active])}});hidden.addEventListener('change',()=>window.salesReturnLiveFetch?.());box.addEventListener('click',e=>{const r=e.target.closest('[data-i]');if(r)pick(items[Number(r.dataset.i)])});clear.addEventListener('click',()=>pick(null));document.addEventListener('click',e=>{if(!root.contains(e.target))close()})})})();
 	</script>
 @endsection
+LTR
