@@ -41,6 +41,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
 use App\Support\SalesDocumentTotals;
+use App\Support\PageAccessCatalog;
 
 class PreinvoiceController extends Controller
 {
@@ -2404,7 +2405,7 @@ class PreinvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['Admin', 'admin', 'finance', 'Accountant', 'Manager', 'manager']) || $user->can('finance.approve') || $user->can('preinvoices.finance.view'));
+        return $user && PageAccessCatalog::userCan($user, 'page.sales.preinvoice_finance_review');
     }
 
     private function canHandleWarehouseActions(): bool
@@ -2414,13 +2415,13 @@ class PreinvoiceController extends Controller
             return false;
         }
 
-        return $user->hasAnyRole(['Admin', 'warehouse', 'StorageManager']) || $user->can('warehouse.approve');
+        return PageAccessCatalog::userCan($user, 'page.sales.preinvoice_warehouse_review');
     }
 
 
     public function canFinanceEditPreinvoice(PreinvoiceOrder $order, $user): bool
     {
-        if (! $user || ! ($user->hasAnyRole(['admin', 'Admin', 'finance', 'Accountant', 'Manager']) || $user->can('finance.approve') || $user->can('preinvoices.finance.view'))) {
+        if (! $user || ! PageAccessCatalog::userCan($user, 'page.sales.preinvoice_finance_review')) {
             return false;
         }
 

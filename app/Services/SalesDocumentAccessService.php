@@ -90,6 +90,6 @@ class SalesDocumentAccessService
 
     public function canSellerEditInvoiceItems(Invoice $invoice, ?User $user): bool
     {
-        return $this->isFinance($user) || $this->isManager($user);
+        return $this->isInvoiceOwner($invoice, $user) || $this->isFinance($user) || $this->isManager($user);
     }
 }

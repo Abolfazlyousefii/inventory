@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Support\PermissionCatalog;
+use App\Support\PageAccessCatalog;
 use App\Support\ProductFinderSearchNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -11,7 +11,7 @@ class PreinvoiceProductFinderRequest extends FormRequest
     public function authorize(): bool
     {
         return $this->user() !== null
-            && PermissionCatalog::userHasPermission($this->user(), 'preinvoices.create');
+            && PageAccessCatalog::userCan($this->user(), 'page.sales.preinvoices');
     }
 
     protected function prepareForValidation(): void

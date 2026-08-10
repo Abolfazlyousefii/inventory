@@ -18,6 +18,14 @@ class PermissionCatalog
         return array_merge(self::superAdminRoles(), ['admin', 'Admin', 'ادمین']);
     }
 
+    public static function protectedSystemRoles(): array
+    {
+        return array_values(array_unique(array_merge(
+            self::superAdminRoles(),
+            ['admin', 'Admin', 'ادمین', 'staff', 'editor', 'union_expert', 'user', 'employee']
+        )));
+    }
+
     public static function priceChangeRoles(): array
     {
         return array_merge(self::administratorRoles(), ['manager', 'Manager', 'مدیر', 'finance', 'Finance', 'مالی']);

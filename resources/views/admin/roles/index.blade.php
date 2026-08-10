@@ -4,9 +4,7 @@
 <div class="container py-4" dir="rtl">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h4 mb-0">مدیریت نقش‌ها</h1>
-        @canPermission('roles.create')
-            <a href="{{ route('admin.roles.create') }}" class="btn btn-primary">ایجاد نقش</a>
-        @endcanPermission
+        <a href="{{ route('admin.roles.create') }}" class="btn btn-primary">ایجاد نقش</a>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
@@ -18,15 +16,13 @@
                         <td><code>{{ $role->name }}</code></td>
                         <td>{{ $role->permissions_count ?? $role->permissions->count() }}</td>
                         <td class="text-end">
-                            @canPermission('roles.edit')
-                                <a href="{{ route('admin.roles.edit', $role) }}" class="btn btn-sm btn-outline-primary">ویرایش</a>
-                            @endcanPermission
-                            @canPermission('roles.delete')
+                            <a href="{{ route('admin.roles.edit', $role) }}" class="btn btn-sm btn-outline-primary">ویرایش</a>
+                            @unless(in_array($role->name, $protectedRoleNames, true))
                                 <form action="{{ route('admin.roles.destroy', $role) }}" method="POST" class="d-inline" onsubmit="return confirm('آیا از حذف این نقش مطمئن هستید؟')">
                                     @csrf @method('DELETE')
                                     <button class="btn btn-sm btn-outline-danger">حذف</button>
                                 </form>
-                            @endcanPermission
+                            @endunless
                         </td>
                     </tr>
                 @endforeach

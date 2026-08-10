@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\UpdateUserPermissionsRequest;
 use App\Models\User;
 use App\Services\Permissions\PermissionManagementService;
 use App\Support\PermissionCatalog;
+use App\Support\PageAccessCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -82,9 +83,9 @@ class UserPermissionController extends Controller
                 'legacy' => PermissionCatalog::isLegacyRole($role->name),
             ]);
 
-        $canEditPermissions = PermissionCatalog::userHasPermission($request->user(), 'permissions.edit');
-        $canAssignRoles = PermissionCatalog::userHasPermission($request->user(), 'permissions.assign_roles');
-        $canSyncPermissions = PermissionCatalog::userHasPermission($request->user(), 'permissions.sync');
+        $canEditPermissions = false;
+        $canAssignRoles = $request->user() && PageAccessCatalog::userCan($request->user(), 'page.roles');
+        $canSyncPermissions = false;
         $missingActivePermissionKeys = PermissionCatalog::missingActiveKeys();
         $effectiveCount = collect($effective)->where('granted', true)->count();
         $directCount = collect($effective)->whereIn('source', ['direct', 'both'])->count();
@@ -114,8 +115,8 @@ class UserPermissionController extends Controller
 
         $data = $request->validated();
         $actor = $request->user();
-        $canEditPermissions = PermissionCatalog::userHasPermission($actor, 'permissions.edit');
-        $canAssignRoles = PermissionCatalog::userHasPermission($actor, 'permissions.assign_roles');
+        $canEditPermissions = false;
+        $canAssignRoles = PageAccessCatalog::userCan($actor, 'page.roles');
         $changeRoles = $canAssignRoles && $request->boolean('roles_changed');
         $changePermissions = $canEditPermissions && $request->boolean('direct_permissions_changed');
         $roles = $changeRoles

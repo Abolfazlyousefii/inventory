@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AccessPermission;
 use App\Models\ActivityLog;
 use App\Support\PageAccessCatalog;
+use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,18 +17,16 @@ use Spatie\Permission\PermissionRegistrar;
 
 class RoleController extends Controller
 {
-    private array $systemRoles = ['super_admin', 'admin', 'staff', 'editor', 'union_expert', 'user', 'employee'];
-
     public function index(): View
     {
         $roles = Role::with('permissions')->orderBy('name')->get();
 
-        return view('admin.roles.index', compact('roles'));
+        return view('admin.roles.index', ['roles' => $roles, 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
     }
 
     public function create(): View
     {
-        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'selectedPermissionIds' => []]);
+        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -46,6 +45,7 @@ class RoleController extends Controller
             'role' => $role,
             'permissions' => $this->permissions(),
             'selectedPermissionIds' => $role->permissions()->pluck('permissions.id')->all(),
+            'protectedRoleNames' => PermissionCatalog::protectedSystemRoles(),
         ]);
     }
 
@@ -53,7 +53,7 @@ class RoleController extends Controller
     {
         $before = $role->permissions()->pluck('permissions.id')->all();
         $data = $this->validated($request, $role);
-        if (! in_array($role->name, $this->systemRoles, true)) {
+        if (! in_array($role->name, PermissionCatalog::protectedSystemRoles(), true)) {
             $role->update(['name' => $data['name']]);
         }
         $this->syncPermissions($role, $data['permissions'] ?? []);
@@ -64,7 +64,7 @@ class RoleController extends Controller
 
     public function destroy(Role $role): RedirectResponse
     {
-        abort_if(in_array($role->name, $this->systemRoles, true), 403, 'نقش‌های سیستمی قابل حذف نیستند.');
+        abort_if(in_array($role->name, PermissionCatalog::protectedSystemRoles(), true), 403, 'نقش‌های سیستمی قابل حذف نیستند.');
         $role->delete();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 

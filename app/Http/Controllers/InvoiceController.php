@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Support\PermissionCatalog;
+use App\Support\PageAccessCatalog;
 use App\Support\Currency;
 use App\Support\SalesDocumentTotals;
 use App\Services\SalesHavalehStatusService;
@@ -805,7 +806,7 @@ class InvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && $user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant', 'warehouse', 'Warehouse']);
+        return $user && $this->accessService->canSellerEditInvoiceItems($invoice, $user);
     }
 
     public function print(string $uuid, Request $request, SalesPrintDocumentService $printService)
@@ -860,14 +861,14 @@ class InvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve') || PermissionCatalog::userHasPermission($user, 'payments.create'));
+        return $user && PageAccessCatalog::userCan($user, 'page.finance.payments');
     }
 
     private function canCancelInvoices(): bool
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || PermissionCatalog::userHasPermission($user, 'invoices.cancel') || $user->can('finance.approve'));
+        return $user && PageAccessCatalog::userCan($user, 'page.sales.invoices');
     }
 
     public function updateStatus(string $uuid, Request $request)
@@ -1013,12 +1014,9 @@ class InvoiceController extends Controller
     {
         $user = $request->user();
 
-        return [
-            'show' => PermissionCatalog::userHasPermission($user, 'invoices.show'),
-            'print' => PermissionCatalog::userHasPermission($user, 'invoices.print'),
-            'edit' => PermissionCatalog::userHasPermission($user, 'invoices.edit'),
-            'cancel' => PermissionCatalog::userHasPermission($user, 'invoices.cancel'),
-        ];
+        $hasPage = $user && PageAccessCatalog::userCan($user, 'page.sales.invoices');
+
+        return ['show' => $hasPage, 'print' => $hasPage, 'edit' => $hasPage, 'cancel' => $hasPage];
     }
 
     private function invoiceLiveMeta(Invoice $invoice, array $permissions): array
