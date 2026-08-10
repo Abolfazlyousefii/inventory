@@ -354,36 +354,56 @@ class PageAccessCatalog
      * @var array<string, array<int, string>>
      */
     private const LINKED_ROUTE_ACCESS = [
+        // Warehouse workflows need read-only access to the sale document.
         'warehouse.collection' => [
             'vouchers.sales.show',
             'vouchers.sales.print',
         ],
         'warehouse.shipping' => [
-            'vouchers.sales.queue',
             'vouchers.sales.show',
             'vouchers.sales.print',
         ],
+
+        // Warehouse review may print the reviewed preinvoice.
         'sales.preinvoice_warehouse_review' => [
-            'preinvoice.my.show',
             'preinvoice.print',
         ],
+
+        // Finance review needs the resulting invoice and finance-only workflow actions.
         'sales.preinvoice_finance_review' => [
             'invoices.show',
             'invoices.print',
             'finance.invoices.reapprove',
+            'finance.invoices.return-to-sales',
         ],
+
+        // Sellers may follow their own converted preinvoice to its read-only invoice/havaleh.
+        // Record-level ownership checks remain enforced by the controllers.
+        'sales.preinvoices' => [
+            'invoices.show',
+            'invoices.print',
+            'vouchers.sales.show',
+            'vouchers.sales.print',
+        ],
+
+        // Product forms embed quick-create helpers from configuration pages.
         'products' => [
             'purchases.show',
-            'invoices.show',
+            'categories.quickStore',
+            'model-lists.quick-store',
         ],
-        'sales.returns' => [
-            'vouchers.sales.show',
-        ],
+
+        // Warehouse issue users can inspect/print the corresponding invoice, but not edit it.
         'warehouse.issues' => [
             'invoices.show',
-            'invoices.edit',
-            'invoices.update',
             'invoices.print',
+        ],
+
+        // Invoice editing uses these product lookup endpoints internally.
+        'sales.invoices' => [
+            'vouchers.sales.products.categories',
+            'vouchers.sales.products.by-category',
+            'vouchers.sales.products.variants',
         ],
     ];
 

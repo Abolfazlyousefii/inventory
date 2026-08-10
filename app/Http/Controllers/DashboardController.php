@@ -234,6 +234,8 @@ class DashboardController extends Controller
     public function globalSearch(Request $request)
     {
         $q = trim((string) $request->query('q', ''));
+        /** @var User $user */
+        $user = $request->user();
 
         $results = [
             'products' => collect(),
@@ -244,48 +246,52 @@ class DashboardController extends Controller
         ];
 
         if ($q !== '') {
-            $results['products'] = Product::query()
-                ->where(fn ($query) => $query->where('name', 'like', "%{$q}%")
-                    ->orWhere('sku', 'like', "%{$q}%")
-                    ->orWhere('code', 'like', "%{$q}%")
-                    ->orWhere('barcode', 'like', "%{$q}%")
-                    ->orWhere('short_barcode', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'name', 'sku', 'code', 'barcode', 'stock']);
+            if (PageAccessCatalog::userCan($user, 'page.products')) {
+                $results['products'] = Product::query()
+                    ->where(fn ($query) => $query->where('name', 'like', "%{$q}%")
+                        ->orWhere('sku', 'like', "%{$q}%")
+                        ->orWhere('code', 'like', "%{$q}%")
+                        ->orWhere('barcode', 'like', "%{$q}%")
+                        ->orWhere('short_barcode', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['id', 'name', 'sku', 'code', 'barcode', 'stock']);
 
-            $results['variants'] = ProductVariant::query()
-                ->with('product:id,name')
-                ->where(fn ($query) => $query->where('variant_code', 'like', "%{$q}%")
-                    ->orWhere('variety_code', 'like', "%{$q}%")
-                    ->orWhere('variant_name', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'product_id', 'variant_name', 'variant_code', 'stock']);
+                $results['variants'] = ProductVariant::query()
+                    ->with('product:id,name')
+                    ->where(fn ($query) => $query->where('variant_code', 'like', "%{$q}%")
+                        ->orWhere('variety_code', 'like', "%{$q}%")
+                        ->orWhere('variant_name', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['id', 'product_id', 'variant_name', 'variant_code', 'stock']);
+            }
 
-            $results['invoices'] = Invoice::query()
-                ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
-                    ->orWhere('customer_name', 'like', "%{$q}%")
-                    ->orWhere('customer_mobile', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['uuid', 'customer_name', 'customer_mobile', 'total', 'created_at']);
+            if (PageAccessCatalog::userCan($user, 'page.sales.invoices')) {
+                $results['invoices'] = Invoice::query()
+                    ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
+                        ->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('customer_mobile', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['uuid', 'customer_name', 'customer_mobile', 'total', 'created_at']);
+            }
 
-            $results['preinvoices'] = PreinvoiceOrder::query()
-                ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
-                    ->orWhere('customer_name', 'like', "%{$q}%")
-                    ->orWhere('customer_mobile', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['uuid', 'customer_name', 'customer_mobile', 'total_price', 'created_at']);
+            if (PageAccessCatalog::userCan($user, 'page.sales.preinvoices')) {
+                $results['preinvoices'] = PreinvoiceOrder::query()
+                    ->where('created_by', $user->id)
+                    ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
+                        ->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('customer_mobile', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['uuid', 'customer_name', 'customer_mobile', 'total_price', 'created_at']);
+            }
 
-            $results['customers'] = Customer::query()
-                ->where(fn ($query) => $query->where('first_name', 'like', "%{$q}%")
-                    ->orWhere('last_name', 'like', "%{$q}%")
-                    ->orWhere('mobile', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'first_name', 'last_name', 'mobile']);
+            if (PageAccessCatalog::userCan($user, 'page.customers')) {
+                $results['customers'] = Customer::query()
+                    ->where(fn ($query) => $query->where('first_name', 'like', "%{$q}%")
+                        ->orWhere('last_name', 'like', "%{$q}%")
+                        ->orWhere('mobile', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['id', 'first_name', 'last_name', 'mobile']);
+            }
         }
 
         return view('dashboard.search', compact('q', 'results'));
