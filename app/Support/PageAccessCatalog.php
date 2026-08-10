@@ -344,6 +344,49 @@ class PageAccessCatalog
         'finance.cheques.index' => ['finance.payments'],
     ];
 
+    /**
+     * Cross-page routes that are part of another page's workflow.
+     *
+     * These grants are deliberately route-level rather than page-level so a user
+     * can follow the linked workflow without inheriting every operation of the
+     * destination module.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const LINKED_ROUTE_ACCESS = [
+        'warehouse.collection' => [
+            'vouchers.sales.show',
+            'vouchers.sales.print',
+        ],
+        'warehouse.shipping' => [
+            'vouchers.sales.queue',
+            'vouchers.sales.show',
+            'vouchers.sales.print',
+        ],
+        'sales.preinvoice_warehouse_review' => [
+            'preinvoice.my.show',
+            'preinvoice.print',
+        ],
+        'sales.preinvoice_finance_review' => [
+            'invoices.show',
+            'invoices.print',
+            'finance.invoices.reapprove',
+        ],
+        'products' => [
+            'purchases.show',
+            'invoices.show',
+        ],
+        'sales.returns' => [
+            'vouchers.sales.show',
+        ],
+        'warehouse.issues' => [
+            'invoices.show',
+            'invoices.edit',
+            'invoices.update',
+            'invoices.print',
+        ],
+    ];
+
     /** @return array<string, array<string, mixed>> */
     public static function pages(): array
     {
@@ -432,7 +475,16 @@ class PageAccessCatalog
     {
         if (! $routeName) return [];
 
-        return collect(self::ROUTE_OWNERS[$routeName] ?? [])
+        $owners = self::ROUTE_OWNERS[$routeName] ?? [];
+
+        foreach (self::LINKED_ROUTE_ACCESS as $sourcePage => $linkedRoutes) {
+            if (in_array($routeName, $linkedRoutes, true)) {
+                $owners[] = $sourcePage;
+            }
+        }
+
+        return collect($owners)
+            ->unique()
             ->map(fn (string $key): string => 'page.'.$key)
             ->values()
             ->all();
@@ -520,6 +572,15 @@ class PageAccessCatalog
         return in_array($pagePermission, $rolePermissions, true);
     }
 
+
+    public static function userCanRoute(User $user, ?string $routeName): bool
+    {
+        if ($user->isSuperAdmin()) return true;
+
+        return collect(self::permissionsForRoute($routeName))
+            ->contains(fn (string $permission): bool => self::userCan($user, $permission));
+    }
+
     public static function permissions(): array
     {
         return collect(self::pages())->pluck('permission')->values()->all();
@@ -560,17 +621,17 @@ class PageAccessCatalog
     private static function preferredLandingRoute(string $key): ?string
     {
         return [
-            'dashboard'=>'dashboard', 'products'=>'products.index', 'products.price_changes'=>'products.price-changes.index',
-            'categories'=>'categories.index', 'brands_models'=>'model-lists.index', 'shipping_methods'=>'shipping-methods.index',
-            'warehouses'=>'warehouses.index', 'warehouse.stocks'=>'products.index', 'warehouse.stocktake'=>'stock-count-documents.index',
-            'warehouse.purchases'=>'purchases.index', 'warehouse.issues'=>'vouchers.index', 'warehouse.collection'=>'vouchers.sales.queue',
-            'warehouse.shipping'=>'warehouse.shipping.index', 'warehouse.map'=>'warehouse-map.index', 'assets'=>'asset.hub',
-            'sales.preinvoices'=>'preinvoice.create', 'sales.preinvoice_warehouse_review'=>'warehouse.reviews.index',
-            'sales.preinvoice_finance_review'=>'preinvoice.draft.finance', 'sales.invoices'=>'invoices.index',
-            'sales.returns'=>'vouchers.return-from-sale.index', 'customers'=>'customers.index', 'suppliers'=>'suppliers.index',
-            'finance.payments'=>'finance.cheques.index', 'finance.accounts'=>'account-statements.index', 'finance.seller_sales_documents'=>'finance.seller-sales.index', 'reports'=>'finance.reports.index',
-            'users'=>'users.index', 'roles'=>'admin.roles.index', 'activity_logs'=>'activity-logs.index',
-            'integrations.inventory'=>'inventory-webhooks.index',
-        ][$key] ?? null;
+                   'dashboard'=>'dashboard', 'products'=>'products.index', 'products.price_changes'=>'products.price-changes.index',
+                   'categories'=>'categories.index', 'brands_models'=>'model-lists.index', 'shipping_methods'=>'shipping-methods.index',
+                   'warehouses'=>'warehouses.index', 'warehouse.stocks'=>'products.index', 'warehouse.stocktake'=>'stock-count-documents.index',
+                   'warehouse.purchases'=>'purchases.index', 'warehouse.issues'=>'vouchers.index', 'warehouse.collection'=>'vouchers.sales.queue',
+                   'warehouse.shipping'=>'warehouse.shipping.index', 'warehouse.map'=>'warehouse-map.index', 'assets'=>'asset.hub',
+                   'sales.preinvoices'=>'preinvoice.create', 'sales.preinvoice_warehouse_review'=>'warehouse.reviews.index',
+                   'sales.preinvoice_finance_review'=>'preinvoice.draft.finance', 'sales.invoices'=>'invoices.index',
+                   'sales.returns'=>'vouchers.return-from-sale.index', 'customers'=>'customers.index', 'suppliers'=>'suppliers.index',
+                   'finance.payments'=>'finance.cheques.index', 'finance.accounts'=>'account-statements.index', 'finance.seller_sales_documents'=>'finance.seller-sales.index', 'reports'=>'finance.reports.index',
+                   'users'=>'users.index', 'roles'=>'admin.roles.index', 'activity_logs'=>'activity-logs.index',
+                   'integrations.inventory'=>'inventory-webhooks.index',
+               ][$key] ?? null;
     }
 }

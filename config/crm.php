@@ -19,7 +19,7 @@ return [
 
     'sso' => [
         'enabled' => (bool) env('CRM_SSO_ENABLED', false),
-        'local_login_for_managed_users' => (bool) env('CRM_LOCAL_LOGIN_FOR_MANAGED_USERS', true),
+        'local_login_for_managed_users' => (bool) env('CRM_LOCAL_LOGIN_FOR_MANAGED_USERS', false),
         'client_id' => env('CRM_OAUTH_CLIENT_ID'),
         'client_secret' => env('CRM_OAUTH_CLIENT_SECRET'),
         'redirect_uri' => env('CRM_OAUTH_REDIRECT_URI'),

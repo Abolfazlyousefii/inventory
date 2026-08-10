@@ -31,7 +31,9 @@ class EnsurePageAccess
             return $this->denied($request, 'برای این مسیر، صفحه دسترسی معتبری تعریف نشده است.');
         }
 
-        if (collect($permissions)->contains(fn (string $permission) => PageAccessCatalog::userCan($user, $permission))) {
+        if ($page
+            ? PageAccessCatalog::userCan($user, $page['permission'])
+            : PageAccessCatalog::userCanRoute($user, $routeName)) {
             return $next($request);
         }
 

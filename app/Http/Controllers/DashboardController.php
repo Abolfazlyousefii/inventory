@@ -16,6 +16,7 @@ use App\Models\StockCountDocument;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Support\Currency;
+use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,17 +41,17 @@ class DashboardController extends Controller
         $canViewOwnPreinvoices = $this->canUseRoute($user, 'preinvoice.my.index');
         $canViewManagementReports = $this->canViewManagementReports($user);
         $canViewFinanceReports = $canViewManagementReports || $this->userHasAnyPermission($user, [
-            'finance.reports.view',
-            'account_statements.view',
-            'payments.view',
-            'preinvoices.finance.view',
-        ]);
+                'finance.reports.view',
+                'account_statements.view',
+                'payments.view',
+                'preinvoices.finance.view',
+            ]);
         $canViewWarehouseReports = $canViewManagementReports || $this->userHasAnyPermission($user, [
-            'inventory.view',
-            'inventory.count.view',
-            'warehouse.collection.queue.view',
-            'warehouse.shipping.queue.view',
-        ]);
+                'inventory.view',
+                'inventory.count.view',
+                'warehouse.collection.queue.view',
+                'warehouse.shipping.queue.view',
+            ]);
 
         $sellerQuickActions = collect([
             [
@@ -387,8 +388,8 @@ class DashboardController extends Controller
             $route = route('preinvoice.draft.edit', $order->uuid);
             $label = 'اصلاح سفارش';
         } elseif ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE
-            && $order->invoice
-            && $this->canUseRoute($user, 'invoices.show')) {
+                  && $order->invoice
+                  && $this->canUseRoute($user, 'invoices.show')) {
             $route = route('invoices.show', $order->invoice->uuid);
             $label = 'مشاهده فاکتور';
         } elseif (in_array($order->status, [
@@ -574,13 +575,8 @@ class DashboardController extends Controller
 
     private function canUseRoute(User $user, string $routeName): bool
     {
-        if (! Route::has($routeName)) {
-            return false;
-        }
-
-        $permission = PermissionCatalog::routePermissions()[$routeName] ?? null;
-
-        return $permission !== null && PermissionCatalog::userHasPermission($user, $permission);
+        return Route::has($routeName)
+               && PageAccessCatalog::userCanRoute($user, $routeName);
     }
 
     private function userHasAnyPermission(User $user, array $permissions): bool
@@ -663,9 +659,9 @@ class DashboardController extends Controller
 
         $max = max(1, collect($metrics)->max('value'));
         $metrics = collect($metrics)->map(fn (array $metric): array => $metric + [
-            'percent' => (float) min(100, round(($metric['value'] / $max) * 100, 2)),
-            'display_value' => number_format($metric['value']),
-        ])->values()->all();
+                'percent' => (float) min(100, round(($metric['value'] / $max) * 100, 2)),
+                'display_value' => number_format($metric['value']),
+            ])->values()->all();
 
         $monthNames = [
             1 => 'فروردین', 2 => 'اردیبهشت', 3 => 'خرداد', 4 => 'تیر', 5 => 'مرداد', 6 => 'شهریور',

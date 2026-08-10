@@ -49,8 +49,7 @@ class FirstAllowedPageResolver
         $route = collect(Route::getRoutes())->first(fn ($candidate) =>
             in_array('GET', $candidate->methods(), true) && $candidate->matches(Request::create($path, 'GET'))
         );
-        $permissions = $route ? PageAccessCatalog::permissionsForRoute($route->getName()) : [];
-
-        return collect($permissions)->contains(fn (string $permission) => PageAccessCatalog::userCan($user, $permission));
+        return $route !== null
+               && PageAccessCatalog::userCanRoute($user, $route->getName());
     }
 }
