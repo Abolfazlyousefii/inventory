@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
@@ -41,3 +42,10 @@ Schedule::command('crm:sync-users --incremental')
 Schedule::command('crm:sync-users --full')
     ->dailyAt('02:00')
     ->withoutOverlapping();
+
+Schedule::call(function () {
+    app(TelegramDailyReport::class)->send();
+})
+    ->name('telegram_daily_report')
+    ->dailyAt('21:00')
+    ->withoutOverlapping(10);

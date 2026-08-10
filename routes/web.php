@@ -48,6 +48,7 @@ use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
+use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
 use Illuminate\Support\Facades\Route;
@@ -521,4 +522,14 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
 Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
-require __DIR__ . '/auth.php';
+
+Route::get('/test', function () {
+    app(TelegramDailyReport::class)->send();
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Telegram daily report sent successfully.',
+    ]);
+});
+
+require __DIR__.'/auth.php';

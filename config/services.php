@@ -53,4 +53,11 @@ return [
     'site' => [
         'base_url' => env('SITE_BASE_URL'),
     ],
+
+    'telegram_daily_report' => [
+        'webhook_url' => env('TELEGRAM_DAILY_REPORT_WEBHOOK_URL'),
+        'webhook_secret' => env('TELEGRAM_DAILY_REPORT_WEBHOOK_SECRET'),
+        'chat_id' => env('TELEGRAM_DAILY_REPORT_CHAT_ID'),
+        'cheque_due_days' => (int) env('TELEGRAM_DAILY_REPORT_CHEQUE_DUE_DAYS', 7),
+    ],
 ];
