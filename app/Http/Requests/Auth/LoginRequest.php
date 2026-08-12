@@ -55,13 +55,6 @@ class LoginRequest extends FormRequest
             ]);
         }
 
-        if ($user && $user->crm_user_id && ! config('crm.sso.local_login_for_managed_users', true)) {
-            RateLimiter::hit($this->throttleKey());
-            throw ValidationException::withMessages([
-                'phone' => 'برای این حساب از گزینه «ورود از طریق CRM» استفاده کنید.',
-            ]);
-        }
-
         if (! Auth::attempt([$loginColumn => $login, 'password' => $this->string('password')->toString(), 'is_active' => true, 'can_access_erp' => true], $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
