@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Http\Middleware\RoutePermissionMiddleware;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Support\MessageBag;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -23,6 +24,9 @@ function financeValidationUser(): User
 {
     $user = User::factory()->create();
     $role = Role::findOrCreate('finance', 'web');
+    $permission = Permission::findOrCreate('page.sales.preinvoice_finance_review', 'web');
+    $permission->forceFill(['key' => 'page.sales.preinvoice_finance_review'])->save();
+    $role->givePermissionTo($permission);
     $user->assignRole($role);
 
     return $user;

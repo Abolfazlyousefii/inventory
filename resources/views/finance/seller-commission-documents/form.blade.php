@@ -3,7 +3,7 @@
 @php
     $editing = (bool) $document;
     $initialItems = $editing
-        ? $document->items->map(fn ($item) => [
+        ? $document->items->where('status', App\Models\SellerSalesDocumentItem::STATUS_ACTIVE)->map(fn ($item) => [
             'id' => (int) $item->invoice_id,
             'number' => $item->invoice_number_snapshot,
             'date' => $item->invoice_date_snapshot?->format('Y-m-d'),
@@ -48,11 +48,11 @@
                     </select>
                 </div>
                 <div class="col-lg-2 col-md-6">
-                    <label class="form-label" for="dateFrom">از تاریخ ثبت پیش‌فاکتور</label>
+                    <label class="form-label" for="dateFrom">از تاریخ فاکتور</label>
                     <input class="form-control" id="dateFrom" name="date_from" data-jdp autocomplete="off" value="{{ old('date_from', $document ? App\Support\JalaliDate::date($document->period_from) : '') }}" required>
                 </div>
                 <div class="col-lg-2 col-md-6">
-                    <label class="form-label" for="dateTo">تا تاریخ ثبت پیش‌فاکتور</label>
+                    <label class="form-label" for="dateTo">تا تاریخ فاکتور</label>
                     <input class="form-control" id="dateTo" name="date_to" data-jdp autocomplete="off" value="{{ old('date_to', $document ? App\Support\JalaliDate::date($document->period_to) : '') }}" required>
                 </div>
                 <div class="col-lg-3 col-md-6">
@@ -64,6 +64,30 @@
                 </div>
             </div>
         </div>
+
+        @if($editing && $document->items->where('status', App\Models\SellerSalesDocumentItem::STATUS_REASSIGNED)->isNotEmpty())
+            <div class="alert alert-warning mt-3 mb-3">
+                <strong>تاریخچه انتقال:</strong>
+                {{ number_format($document->items->where('status', App\Models\SellerSalesDocumentItem::STATUS_REASSIGNED)->count()) }}
+                فاکتور انتقال‌یافته در سند حفظ شده و با ذخیره ویرایش حذف یا فعال نمی‌شود.
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>شماره فاکتور</th><th>مشتری</th><th>مبلغ تاریخی</th><th>انتقال به</th><th>تاریخ انتقال</th></tr></thead>
+                        <tbody>
+                        @foreach($document->items->where('status', App\Models\SellerSalesDocumentItem::STATUS_REASSIGNED) as $historicalItem)
+                            <tr>
+                                <td>{{ $historicalItem->invoice_number_snapshot }}</td>
+                                <td>{{ $historicalItem->customer_name_snapshot }}</td>
+                                <td>{{ App\Support\Currency::formatRial($historicalItem->invoice_total_snapshot) }}</td>
+                                <td>{{ $historicalItem->reassignedToSeller?->name ?: 'نامشخص' }}</td>
+                                <td>{{ $historicalItem->reassigned_at ? App\Support\JalaliDate::dateTime($historicalItem->reassigned_at) : 'ثبت نشده' }}</td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        @endif
 
         <div class="seller-commission-card overflow-hidden">
             <div class="p-3 border-bottom d-flex flex-wrap align-items-end justify-content-between gap-3">
@@ -81,7 +105,7 @@
             <div id="loading" class="p-4 text-center" hidden>در حال دریافت فاکتورها…</div>
             <div class="table-responsive">
                 <table class="table seller-commission-table mb-0">
-                    <thead><tr><th></th><th>ردیف</th><th>شماره فاکتور</th><th>تاریخ ثبت اولیه پیش‌فاکتور</th><th>نام مشتری</th><th>مبلغ نهایی فاکتور</th></tr></thead>
+                    <thead><tr><th></th><th>ردیف</th><th>شماره فاکتور</th><th>تاریخ فاکتور</th><th>نام مشتری</th><th>مبلغ نهایی فاکتور</th></tr></thead>
                     <tbody id="invoiceRows"><tr><td colspan="6" class="seller-commission-empty">کاربر و بازه تاریخی را انتخاب کنید.</td></tr></tbody>
                 </table>
             </div>

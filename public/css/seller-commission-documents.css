@@ -6,6 +6,7 @@
 .seller-commission-filters { padding: 1rem; margin-bottom: 1rem; }
 .seller-commission-table th { white-space: nowrap; color: #475569; background: #f8fafc; font-size: .83rem; }
 .seller-commission-table td { vertical-align: middle; }
+.seller-commission-table tr.seller-commission-row--reassigned > td { background: #fff1f2; color: #9f1239; }
 .seller-commission-actions { display: flex; flex-wrap: wrap; gap: .65rem; white-space: nowrap; }
 .seller-commission-actions a { text-decoration: none; font-weight: 700; font-size: .85rem; }
 .seller-commission-summary { position: sticky; bottom: .75rem; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; margin-top: 1rem; border: 1px solid #cbd5e1; border-radius: 14px; background: rgba(255,255,255,.96); box-shadow: 0 12px 30px rgba(15,23,42,.12); backdrop-filter: blur(8px); }

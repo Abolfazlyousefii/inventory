@@ -18,7 +18,8 @@ class ProductSearchTest extends TestCase
     private function actingAsProductsViewer(): User
     {
         $role = Role::findOrCreate('products-viewer', 'web');
-        $permission = Permission::findOrCreate('products.view', 'web');
+        $permission = Permission::findOrCreate('page.products', 'web');
+        $permission->forceFill(['key' => 'page.products'])->save();
         $role->givePermissionTo($permission);
 
         $user = User::factory()->create();

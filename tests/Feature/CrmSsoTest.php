@@ -160,18 +160,23 @@ it('fails closed when token exchange fails or the CRM user is inactive', functio
     $this->assertGuest();
 });
 
-it('allows active local emergency login but blocks inactive and crm-managed local login when the transition flag is off', function () {
+it('allows active local and crm-managed users with local passwords but blocks disabled ERP access', function () {
     config(['crm.sso.local_login_for_managed_users' => false]);
     $local = User::factory()->create(['phone' => '09120000001', 'password' => Hash::make('StrongPass!1'), 'is_active' => true]);
     $managed = User::factory()->create(['phone' => '09120000002', 'password' => Hash::make('StrongPass!1'), 'crm_user_id' => '2', 'is_crm_managed' => true, 'is_active' => true]);
     $inactive = User::factory()->create(['phone' => '09120000003', 'password' => Hash::make('StrongPass!1'), 'is_active' => false]);
+    $erpDisabled = User::factory()->create(['phone' => '09120000004', 'password' => Hash::make('StrongPass!1'), 'is_active' => true, 'can_access_erp' => false]);
 
     $this->post(route('login'), ['phone' => $local->phone, 'password' => 'StrongPass!1'])->assertRedirect(route('access.unassigned'));
     $this->assertAuthenticatedAs($local);
     auth()->logout();
 
-    $this->post(route('login'), ['phone' => $managed->phone, 'password' => 'StrongPass!1'])->assertSessionHasErrors('phone');
-    $this->assertGuest();
+    $this->post(route('login'), ['phone' => $managed->phone, 'password' => 'StrongPass!1'])->assertRedirect(route('access.unassigned'));
+    $this->assertAuthenticatedAs($managed);
+    auth()->logout();
+
     $this->post(route('login'), ['phone' => $inactive->phone, 'password' => 'StrongPass!1'])->assertSessionHasErrors('phone');
+    $this->assertGuest();
+    $this->post(route('login'), ['phone' => $erpDisabled->phone, 'password' => 'StrongPass!1'])->assertSessionHasErrors('phone');
     $this->assertGuest();
 });

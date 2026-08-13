@@ -16,7 +16,8 @@ class ProductExportFilterRequestTest extends TestCase
     private function signIn(): void
     {
         $role = Role::findOrCreate('products-exporter', 'web');
-        $permission = Permission::findOrCreate('products.export', 'web');
+        $permission = Permission::findOrCreate('page.products', 'web');
+        $permission->forceFill(['key' => 'page.products'])->save();
         $role->givePermissionTo($permission);
         $user = User::factory()->create();
         $user->assignRole($role);

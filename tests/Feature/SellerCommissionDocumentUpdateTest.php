@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\SellerSalesDocumentItem;
 use App\Services\Finance\SellerCommissionDocumentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -80,5 +81,38 @@ class SellerCommissionDocumentUpdateTest extends TestCase
         $this->assertSame('توضیح ویرایش‌شده', $updated->notes);
         $this->assertSame($before, (array) DB::table('invoices')->where('id', $invoice->id)->first());
         $this->assertSame($owner->id, (int) $invoice->preinvoiceOrder()->value('created_by'));
+    }
+
+    public function test_update_neither_deletes_nor_reactivates_historical_reassigned_items(): void
+    {
+        $actor = $this->financeActor();
+        $owner = $this->erpUser();
+        $historicalInvoice = $this->makeInvoice($owner, 100);
+        $activeInvoice = $this->makeInvoice($owner, 200);
+        $addedInvoice = $this->makeInvoice($owner, 300);
+        $document = $this->createCommissionDocument($owner, [$historicalInvoice, $activeInvoice], $actor);
+        $historicalItem = $document->items()->where('invoice_id', $historicalInvoice->id)->firstOrFail();
+        $historicalItem->update([
+            'status' => SellerSalesDocumentItem::STATUS_REASSIGNED,
+            'active_invoice_id' => null,
+        ]);
+
+        $updated = app(SellerCommissionDocumentService::class)->updateDocument(
+            $document,
+            $this->documentData($owner, [$activeInvoice, $addedInvoice]),
+            $actor,
+        );
+
+        $historicalItem->refresh();
+        $this->assertSame(SellerSalesDocumentItem::STATUS_REASSIGNED, $historicalItem->status);
+        $this->assertNull($historicalItem->active_invoice_id);
+        $this->assertSame(100, $historicalItem->invoice_total_snapshot);
+        $this->assertSame(2, $updated->invoice_count);
+        $this->assertSame(500, $updated->total_sales_amount);
+
+        $this->actingAs($actor)->get(route('finance.seller-sales.edit', $document))
+            ->assertOk()
+            ->assertSee($historicalItem->invoice_number_snapshot)
+            ->assertSee('تاریخچه انتقال');
     }
 }

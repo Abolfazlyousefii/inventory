@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\SellerSalesDocumentItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\CreatesSellerCommissionDocuments;
@@ -75,5 +76,35 @@ class SellerCommissionDocumentPrintTest extends TestCase
             ->assertSee($actor->name)
             ->assertSee('توضیحات نهایی سند')
             ->assertSee('8,765');
+    }
+
+    public function test_show_and_print_keep_reassigned_snapshot_with_warning_label(): void
+    {
+        $actor = $this->financeActor();
+        $owner = $this->erpUser();
+        $target = $this->erpUser(['name' => 'فروشنده مقصد']);
+        $invoice = $this->makeInvoice($owner, 12_345, '2026-07-10', ['uuid' => '00693']);
+        $document = $this->createCommissionDocument($owner, [$invoice], $actor);
+        $document->items()->firstOrFail()->update([
+            'status' => SellerSalesDocumentItem::STATUS_REASSIGNED,
+            'active_invoice_id' => null,
+            'reassigned_to_seller_id' => $target->id,
+            'reassigned_at' => '2026-08-02 14:09:02',
+        ]);
+        $document->update(['invoice_count' => 0, 'total_sales_amount' => 0]);
+
+        $this->actingAs($actor)->get(route('finance.seller-sales.show', $document))
+            ->assertOk()
+            ->assertSee('00693')
+            ->assertSee('12,345')
+            ->assertSee('انتقال‌یافته')
+            ->assertSee('فروشنده مقصد');
+
+        $this->actingAs($actor)->get(route('finance.seller-sales.print', $document))
+            ->assertOk()
+            ->assertSee('00693')
+            ->assertSee('12,345')
+            ->assertSee('انتقال‌یافته به فروشنده مقصد')
+            ->assertSee('جمع کل فروش موثر');
     }
 }

@@ -77,14 +77,14 @@ class SellerCommissionDocumentController extends Controller
 
     public function show(SellerSalesDocument $document): View
     {
-        $document->load(['seller:id,name', 'creator:id,name', 'updater:id,name', 'items']);
+        $document->load(['seller:id,name', 'creator:id,name', 'updater:id,name', 'items.reassignedToSeller:id,name']);
 
         return view('finance.seller-commission-documents.show', compact('document'));
     }
 
     public function edit(SellerSalesDocument $document): View
     {
-        $document->load('items');
+        $document->load(['items.reassignedToSeller:id,name']);
 
         return view('finance.seller-commission-documents.form', [
             'document' => $document,
@@ -101,7 +101,7 @@ class SellerCommissionDocumentController extends Controller
 
     public function print(SellerSalesDocument $document): View
     {
-        $document->load(['seller:id,name', 'creator:id,name', 'items']);
+        $document->load(['seller:id,name', 'creator:id,name', 'items.reassignedToSeller:id,name']);
 
         return view('finance.seller-commission-documents.print', compact('document'));
     }

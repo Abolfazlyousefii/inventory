@@ -13,6 +13,7 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Http\Middleware\RoutePermissionMiddleware;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -25,6 +26,9 @@ function financeEditorUser(): User
 {
     $user = User::factory()->create();
     $role = Role::findOrCreate('finance', 'web');
+    $permission = Permission::findOrCreate('page.sales.preinvoice_finance_review', 'web');
+    $permission->forceFill(['key' => 'page.sales.preinvoice_finance_review'])->save();
+    $role->givePermissionTo($permission);
     $user->assignRole($role);
 
     return $user;

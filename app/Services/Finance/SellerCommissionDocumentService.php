@@ -4,6 +4,7 @@ namespace App\Services\Finance;
 
 use App\Models\Invoice;
 use App\Models\SellerSalesDocument;
+use App\Models\SellerSalesDocumentItem;
 use App\Models\User;
 use App\Support\ActivityLogger;
 use Carbon\CarbonImmutable;
@@ -56,7 +57,7 @@ class SellerCommissionDocumentService
             ->whereNotExists(function ($query) use ($currentDocumentId): void {
                 $query->selectRaw('1')
                     ->from('seller_sales_document_items as commission_items')
-                    ->whereColumn('commission_items.invoice_id', 'invoices.id')
+                    ->whereColumn('commission_items.active_invoice_id', 'invoices.id')
                     ->when($currentDocumentId, fn ($inner) => $inner->where('commission_items.seller_sales_document_id', '<>', $currentDocumentId));
             })
             ->when(filled($search), function (Builder $query) use ($search): void {
@@ -137,7 +138,7 @@ class SellerCommissionDocumentService
     {
         try {
             return DB::transaction(function () use ($document, $data, $actor): SellerSalesDocument {
-                $locked = SellerSalesDocument::query()->with('items')->lockForUpdate()->findOrFail($document->id);
+                $locked = SellerSalesDocument::query()->with(['items', 'activeItems'])->lockForUpdate()->findOrFail($document->id);
                 $user = $this->validUser((int) $data['user_id']);
                 $invoices = $this->validatedInvoices(
                     $data['invoice_ids'],
@@ -147,14 +148,14 @@ class SellerCommissionDocumentService
                     $locked->id,
                 );
 
-                $oldIds = $locked->items->pluck('invoice_id')->map(fn ($id) => (int) $id);
+                $oldIds = $locked->activeItems->pluck('invoice_id')->map(fn ($id) => (int) $id);
                 $newIds = $invoices->pluck('id')->map(fn ($id) => (int) $id);
                 $addedIds = $newIds->diff($oldIds)->values();
                 $removedIds = $oldIds->diff($newIds)->values();
                 $oldTotal = (int) $locked->total_sales_amount;
 
                 if ($removedIds->isNotEmpty()) {
-                    $locked->items()->whereIn('invoice_id', $removedIds)->delete();
+                    $locked->activeItems()->whereIn('invoice_id', $removedIds)->delete();
                 }
 
                 foreach ($invoices->whereIn('id', $addedIds) as $invoice) {
@@ -264,7 +265,7 @@ class SellerCommissionDocumentService
         }
 
         $duplicate = DB::table('seller_sales_document_items')
-            ->whereIn('invoice_id', $ids)
+            ->whereIn('active_invoice_id', $ids)
             ->when($currentDocumentId, fn ($query) => $query->where('seller_sales_document_id', '<>', $currentDocumentId))
             ->exists();
 
@@ -279,6 +280,8 @@ class SellerCommissionDocumentService
     {
         return [
             'invoice_id' => $invoice->id,
+            'status' => SellerSalesDocumentItem::STATUS_ACTIVE,
+            'active_invoice_id' => $invoice->id,
             'invoice_number_snapshot' => (string) $invoice->uuid,
             'invoice_date_snapshot' => $this->resolveInvoiceInitialDate($invoice),
             'customer_name_snapshot' => $invoice->customer_name ?: $invoice->customer?->display_name ?: '—',
@@ -289,8 +292,8 @@ class SellerCommissionDocumentService
     private function refreshTotals(SellerSalesDocument $document): void
     {
         $document->update([
-            'invoice_count' => $document->items()->count(),
-            'total_sales_amount' => (int) $document->items()->sum('invoice_total_snapshot'),
+            'invoice_count' => $document->activeItems()->count(),
+            'total_sales_amount' => (int) $document->activeItems()->sum('invoice_total_snapshot'),
         ]);
     }
 

@@ -8,16 +8,31 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('products', function (Blueprint $table): void {
-            $table->boolean('inventory_to_site_synced')->default(false);
-            $table->boolean('site_to_inventory_verified')->default(false);
-        });
+        if (! Schema::hasColumn('products', 'inventory_to_site_synced')) {
+            Schema::table('products', function (Blueprint $table): void {
+                $table->boolean('inventory_to_site_synced')->default(false);
+            });
+        }
+
+        if (! Schema::hasColumn('products', 'site_to_inventory_verified')) {
+            Schema::table('products', function (Blueprint $table): void {
+                $table->boolean('site_to_inventory_verified')->default(false);
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('products', function (Blueprint $table): void {
-            $table->dropColumn(['inventory_to_site_synced', 'site_to_inventory_verified']);
-        });
+        if (Schema::hasColumn('products', 'inventory_to_site_synced')) {
+            Schema::table('products', function (Blueprint $table): void {
+                $table->dropColumn('inventory_to_site_synced');
+            });
+        }
+
+        if (Schema::hasColumn('products', 'site_to_inventory_verified')) {
+            Schema::table('products', function (Blueprint $table): void {
+                $table->dropColumn('site_to_inventory_verified');
+            });
+        }
     }
 };

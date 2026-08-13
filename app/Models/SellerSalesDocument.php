@@ -34,4 +34,14 @@ class SellerSalesDocument extends Model
     {
         return $this->hasMany(SellerSalesDocumentItem::class);
     }
+
+    public function activeItems()
+    {
+        return $this->items()->active();
+    }
+
+    public function reassignedItems()
+    {
+        return $this->items()->reassigned();
+    }
 }

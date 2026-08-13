@@ -367,7 +367,8 @@ class ProductExportProductSelectionTest extends TestCase
     private function signIn(bool $withPermission = true): void
     {
         $role = Role::findOrCreate('product-export-test', 'web');
-        $permission = Permission::findOrCreate('products.export', 'web');
+        $permission = Permission::findOrCreate('page.products', 'web');
+        $permission->forceFill(['key' => 'page.products'])->save();
         if ($withPermission) {
             $role->givePermissionTo($permission);
         }
