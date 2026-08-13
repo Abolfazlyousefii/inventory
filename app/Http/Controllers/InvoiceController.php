@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Support\PermissionCatalog;
+use App\Support\PageAccessCatalog;
 use App\Support\Currency;
 use App\Support\SalesDocumentTotals;
 use App\Services\SalesHavalehStatusService;
@@ -391,7 +392,7 @@ class InvoiceController extends Controller
         $canEditItems = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
 
         $canAdjustPrice = auth()->user()?->hasPermission('warehouse.collection.adjust_price')
-            || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
+                          || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
         $openedAt = optional($invoice->items_updated_at ?: $invoice->updated_at)->toJSON();
 
         return view('vouchers.sales.edit', compact('invoice', 'statusLabels', 'canEditItems', 'canAdjustPrice', 'openedAt'));
@@ -548,7 +549,7 @@ class InvoiceController extends Controller
 
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         $canAdjustPrice = auth()->user()?->hasPermission('warehouse.collection.adjust_price')
-            || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
+                          || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
         $this->warehouseCollectionService->updateCollectedItems($invoice, $items, auth()->user(), $data['collection_note'] ?? $data['change_note'] ?? null, $canAdjustPrice, $data['change_reason'], $data['opened_at']);
 
         $this->notifyFinanceReapproval($invoice);
@@ -805,7 +806,7 @@ class InvoiceController extends Controller
     {
         $user = auth()->user();
 
-        return $user && $user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant', 'warehouse', 'Warehouse']);
+        return $user && $this->accessService->canSellerEditInvoiceItems($invoice, $user);
     }
 
     public function print(string $uuid, Request $request, SalesPrintDocumentService $printService)
@@ -849,25 +850,69 @@ class InvoiceController extends Controller
 
         $paidTotal = (int) $invoice->payments->sum('amount');
         $remainingAmount = max((int) $invoice->total - $paidTotal, 0);
-        $canManageInvoice = $this->canManageInvoice($invoice);
-        $canRegisterPayments = $this->canHandleFinanceActions() && $remainingAmount > 0;
+        $user = auth()->user();
+        $canHandleFinanceActions = $this->canHandleFinanceActions();
+        $canEditInvoice = $this->canManageInvoice($invoice)
+                          && $user
+                          && PageAccessCatalog::userCanRoute($user, 'invoices.edit');
+        $canRegisterPayments = $canHandleFinanceActions && $remainingAmount > 0;
+        $canCancelInvoice = $this->canCancelInvoices();
+        $canPrintInvoice = $user && PageAccessCatalog::userCanRoute($user, 'invoices.print');
+        $backUrl = $this->invoiceShowBackUrl($user);
         $statusLabels = $this->statusService->labels();
 
-        return view('invoices.show', compact('invoice', 'paidTotal', 'remainingAmount', 'canManageInvoice', 'canRegisterPayments', 'statusLabels'));
+        return view('invoices.show', compact(
+            'invoice',
+            'paidTotal',
+            'remainingAmount',
+            'canEditInvoice',
+            'canRegisterPayments',
+            'canHandleFinanceActions',
+            'canCancelInvoice',
+            'canPrintInvoice',
+            'backUrl',
+            'statusLabels'
+        ));
     }
 
     private function canHandleFinanceActions(): bool
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve') || PermissionCatalog::userHasPermission($user, 'payments.create'));
+        return $user && PageAccessCatalog::userCan($user, 'page.finance.payments');
     }
 
     private function canCancelInvoices(): bool
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || PermissionCatalog::userHasPermission($user, 'invoices.cancel') || $user->can('finance.approve'));
+        return $user && PageAccessCatalog::userCan($user, 'page.sales.invoices');
+    }
+
+
+    private function invoiceShowBackUrl(?User $user): string
+    {
+        if (! $user) {
+            return route('login');
+        }
+
+        if (PageAccessCatalog::userCan($user, 'page.sales.invoices')) {
+            return route('invoices.index');
+        }
+
+        if (PageAccessCatalog::userCan($user, 'page.sales.preinvoice_finance_review')) {
+            return route('preinvoice.draft.index');
+        }
+
+        if (PageAccessCatalog::userCan($user, 'page.warehouse.issues')) {
+            return route('vouchers.index');
+        }
+
+        if (PageAccessCatalog::userCan($user, 'page.sales.preinvoices')) {
+            return route('preinvoice.my.index');
+        }
+
+        return route('access.unassigned');
     }
 
     public function updateStatus(string $uuid, Request $request)
@@ -1013,12 +1058,9 @@ class InvoiceController extends Controller
     {
         $user = $request->user();
 
-        return [
-            'show' => PermissionCatalog::userHasPermission($user, 'invoices.show'),
-            'print' => PermissionCatalog::userHasPermission($user, 'invoices.print'),
-            'edit' => PermissionCatalog::userHasPermission($user, 'invoices.edit'),
-            'cancel' => PermissionCatalog::userHasPermission($user, 'invoices.cancel'),
-        ];
+        $hasPage = $user && PageAccessCatalog::userCan($user, 'page.sales.invoices');
+
+        return ['show' => $hasPage, 'print' => $hasPage, 'edit' => $hasPage, 'cancel' => $hasPage];
     }
 
     private function invoiceLiveMeta(Invoice $invoice, array $permissions): array

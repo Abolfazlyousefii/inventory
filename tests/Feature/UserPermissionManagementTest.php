@@ -9,6 +9,7 @@ use App\Support\PermissionCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class UserPermissionManagementTest extends TestCase
@@ -56,22 +57,28 @@ class UserPermissionManagementTest extends TestCase
             ->assertSee('کاربر درخواستی پیدا نشد');
     }
 
-    public function test_view_only_actor_can_read_but_cannot_update(): void
+    public function test_page_role_actor_can_manage_roles_but_cannot_create_direct_permissions(): void
     {
         $actor = $this->actor(['permissions.view']);
         $target = User::factory()->create();
+        $role = Role::findOrCreate('Sales', 'web');
 
         $this->actingAs($actor)->get(route('admin.permissions.index', ['user_id' => $target->id]))
             ->assertOk()
-            ->assertDontSee('ذخیره دسترسی ها');
+            ->assertSee('ذخیره نقش‌های کاربر');
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
-            'roles_changed' => 0,
+            'roles_changed' => 1,
+            'roles_submitted' => 1,
+            'roles' => [$role->name],
             'direct_permissions_changed' => 1,
             'direct_permissions_submitted' => 1,
             'direct_permissions' => ['products.view'],
-        ])->assertForbidden();
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertTrue($target->fresh()->hasRole($role));
+        $this->assertFalse($target->fresh()->permissions()->where('key', 'products.view')->exists());
     }
 
     public function test_actor_without_view_permission_is_forbidden(): void
@@ -83,7 +90,8 @@ class UserPermissionManagementTest extends TestCase
 
     public function test_actor_without_assign_roles_cannot_change_roles_with_forged_input(): void
     {
-        $actor = $this->actor(['permissions.view', 'permissions.edit']);
+        $actor = User::factory()->create();
+        $actor->permissions()->sync([$this->permissionId('permissions.view'), $this->permissionId('permissions.edit')]);
         $target = User::factory()->create();
         $original = Role::findOrCreate('Sales', 'web');
         $forged = Role::findOrCreate('Admin', 'web');
@@ -97,7 +105,7 @@ class UserPermissionManagementTest extends TestCase
             'roles' => [$forged->name],
             'direct_permissions_submitted' => 1,
             'direct_permissions' => [],
-        ])->assertRedirect();
+        ])->assertForbidden();
 
         $this->assertTrue($target->fresh()->hasRole($original));
         $this->assertFalse($target->fresh()->hasRole($forged));
@@ -147,10 +155,11 @@ class UserPermissionManagementTest extends TestCase
         $this->assertFalse($first->fresh()->hasRole('Super Admin'));
     }
 
-    public function test_direct_permissions_are_added_removed_and_dependencies_are_normalized(): void
+    public function test_forged_direct_permission_changes_are_ignored_and_legacy_values_are_preserved(): void
     {
         $actor = $this->actor(['permissions.view', 'permissions.edit']);
         $target = User::factory()->create();
+        $target->permissions()->attach($this->legacyPermissionId('legacy.keep.readonly'));
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
@@ -161,7 +170,7 @@ class UserPermissionManagementTest extends TestCase
         ])->assertRedirect();
 
         expect($target->fresh()->permissions()->pluck('key')->all())
-            ->toContain('products.edit', 'products.show', 'products.view');
+            ->toBe(['legacy.keep.readonly']);
 
         $this->actingAs($actor)->put(route('admin.permissions.update', $target), [
             'user_id' => $target->id,
@@ -170,7 +179,8 @@ class UserPermissionManagementTest extends TestCase
             'direct_permissions_submitted' => 1,
             'direct_permissions' => [],
         ])->assertRedirect();
-        $this->assertCount(0, $target->fresh()->permissions);
+        expect($target->fresh()->permissions()->pluck('key')->all())
+            ->toBe(['legacy.keep.readonly']);
     }
 
     public function test_effective_sources_distinguish_role_direct_both_and_none(): void
@@ -281,7 +291,7 @@ class UserPermissionManagementTest extends TestCase
         $this->assertTrue($target->fresh()->hasRole($role));
     }
 
-    public function test_active_direct_update_preserves_roles_and_legacy_direct_permissions(): void
+    public function test_forged_active_direct_update_preserves_roles_and_legacy_direct_permissions(): void
     {
         $actor = $this->actor(['permissions.view', 'permissions.edit']);
         $target = User::factory()->create();
@@ -301,7 +311,8 @@ class UserPermissionManagementTest extends TestCase
         $fresh = $target->fresh();
         $this->assertTrue($fresh->hasRole($role));
         expect($fresh->permissions()->pluck('key')->all())
-            ->toContain('customers.view', 'legacy.keep.me')
+            ->toContain('legacy.keep.me')
+            ->not->toContain('customers.view')
             ->not->toContain('legacy.new.cannot');
     }
 
@@ -335,7 +346,7 @@ class UserPermissionManagementTest extends TestCase
         $this->assertFalse($target->fresh()->permissions()->where('key', 'unknown.permission')->exists());
     }
 
-    public function test_stale_catalog_version_keeps_safe_permissions_and_returns_warning(): void
+    public function test_stale_catalog_version_does_not_create_direct_permissions_and_returns_warning(): void
     {
         $actor = $this->actor(['permissions.view', 'permissions.edit']);
         $target = User::factory()->create();
@@ -350,11 +361,11 @@ class UserPermissionManagementTest extends TestCase
         ])->assertRedirect()->assertSessionHasNoErrors()
             ->assertSessionHas('warning', 'فهرست دسترسی‌ها پس از بازشدن صفحه به‌روزرسانی شده بود؛ موارد قدیمی کنار گذاشته شدند.');
 
-        expect($target->fresh()->permissions()->pluck('key')->all())->toContain('customers.view')
+        expect($target->fresh()->permissions()->pluck('key')->all())->not->toContain('customers.view')
             ->not->toContain('stale.cached.permission');
     }
 
-    public function test_missing_active_permission_is_self_healed_before_direct_assignment(): void
+    public function test_missing_active_permission_is_not_self_healed_by_ignored_direct_assignment(): void
     {
         $actor = $this->actor(['permissions.view', 'permissions.edit']);
         $target = User::factory()->create();
@@ -370,9 +381,9 @@ class UserPermissionManagementTest extends TestCase
             'direct_permissions' => ['products.edit'],
         ])->assertRedirect()->assertSessionHasNoErrors();
 
-        $this->assertSame([], PermissionCatalog::missingActiveKeys());
+        $this->assertContains('products.edit', PermissionCatalog::missingActiveKeys());
         expect($target->fresh()->permissions()->pluck('key')->all())
-            ->toContain('products.edit', 'products.show', 'products.view');
+            ->not->toContain('products.edit', 'products.show', 'products.view');
     }
 
     public function test_role_only_update_does_not_self_heal_missing_direct_permission(): void
@@ -433,6 +444,11 @@ class UserPermissionManagementTest extends TestCase
     {
         $user = User::factory()->create();
         $user->permissions()->sync(collect($permissions)->map(fn (string $key): int => $this->permissionId($key))->all());
+        $role = Role::findOrCreate('PermissionPageManager', 'web');
+        $pagePermission = Permission::findOrCreate('page.roles', 'web');
+        $pagePermission->forceFill(['key' => 'page.roles'])->save();
+        $role->givePermissionTo($pagePermission);
+        $user->assignRole($role);
         return $user;
     }
 

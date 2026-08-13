@@ -8,11 +8,9 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Services\ProductExportService;
-use App\Services\ProductPriceListPdfService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Mockery\MockInterface;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Models\Role;
@@ -25,8 +23,10 @@ class ProductExportProductSelectionTest extends TestCase
         parent::setUp();
 
         config(['app.key' => 'base64:'.base64_encode(str_repeat('p', 32))]);
+        $this->app->forgetInstance(PermissionRegistrar::class);
         $this->createIsolatedSchema();
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $registrar = $this->app->make(PermissionRegistrar::class);
+        $registrar->forgetCachedPermissions();
     }
 
     public function test_without_product_ids_keeps_existing_all_products_behavior(): void
@@ -317,40 +317,32 @@ class ProductExportProductSelectionTest extends TestCase
             ->assertSee('data-products-search-url', false);
     }
 
-    public function test_download_receives_the_same_product_ids_and_meta(): void
+    public function test_print_receives_the_same_product_ids_and_meta(): void
     {
         $this->signIn();
-        $selected = $this->product('محصول PDF انتخابی');
-        $this->product('محصول PDF خارج');
+        $selected = $this->product('محصول چاپ انتخابی');
+        $outside = $this->product('محصول چاپ خارج');
 
-        $this->mock(ProductPriceListPdfService::class, function (MockInterface $mock) use ($selected) {
-            $mock->shouldReceive('render')
-                ->once()
-                ->withArgs(function (array $products, array $meta) use ($selected) {
-                    $this->assertSame([$selected->id], array_column($products, 'id'));
-                    $this->assertSame($selected->name, $meta['selected_products']);
-                    $this->assertSame(1, $meta['selected_products_count']);
-
-                    return true;
-                })
-                ->andReturn("%PDF-1.4\n");
-        });
-
-        $this->get(route('admin.product-exports.download', ['product_ids' => [$selected->id]]))
+        $this->get(route('admin.product-exports.print', ['product_ids' => [$selected->id]]))
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/pdf');
+            ->assertSee($selected->name)
+            ->assertDontSee($outside->name)
+            ->assertViewHas('products', fn ($products) => $products->pluck('id')->all() === [$selected->id])
+            ->assertViewHas('meta', fn (array $meta) => $meta['selected_products'] === $selected->name && $meta['selected_products_count'] === 1);
     }
 
-    public function test_download_uses_font_fallback_instead_of_returning_font_error(): void
+    public function test_print_is_html_and_does_not_expose_mpdf_output(): void
     {
         $this->signIn();
 
-        $response = $this->get(route('admin.product-exports.download'))
+        $response = $this->get(route('admin.product-exports.print'))
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/pdf');
+            ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
+            ->assertSee('<!doctype html>', false)
+            ->assertDontSee('%PDF-', false)
+            ->assertDontSee('Mpdf', false);
 
-        $this->assertStringStartsWith('%PDF-', $response->getContent());
-        $this->assertContains(app(ProductPriceListPdfService::class)->fontFamily(), ['vazir', 'vazirmatn', 'dejavusans']);
+        $this->assertStringNotContainsString('application/pdf', (string) $response->headers->get('Content-Type'));
     }
 
     public function test_meta_reports_all_names_or_selected_count(): void

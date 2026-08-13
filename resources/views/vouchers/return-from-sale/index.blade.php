@@ -1,55 +1,220 @@
 @extends('layouts.app')
-@php
-    use App\Models\SalesReturnDocument;
-    use App\Models\SalesReturnDocumentItem;
-    $sourceLabels = SalesReturnDocument::sourceTypeLabels();
-    $reasonLabels = SalesReturnDocument::returnReasonLabels();
-@endphp
 @section('content')
-<style>
-:root{--aria-primary:#0b5fa8;--aria-primary-dark:#084a84;--aria-soft:#eef6fc;--aria-border:#cfe1f0;--aria-text:#263746;--aria-muted:#718096}.sr-index{font-size:12px;color:var(--aria-text)}.sr-filter-box{border:1px solid var(--aria-border);border-radius:10px;background:#fff;padding:12px;box-shadow:0 4px 14px rgba(11,95,168,.05)}.sr-filter-title{font-size:12px;color:var(--aria-primary-dark);margin-bottom:8px}.sr-filter-grid{display:grid;grid-template-columns:3fr 4fr 2fr 2fr 1fr;gap:10px;align-items:end}.sr-filter-box label{font-size:11.5px;color:var(--aria-muted);margin-bottom:4px;font-weight:400}.sr-filter-box .form-control,.sr-filter-box .form-select,.sr-filter-box .btn{height:42px;font-size:12px;border-radius:8px}.sr-filter-box .form-control:focus{border-color:var(--aria-primary);box-shadow:0 0 0 .14rem rgba(11,95,168,.12)}.sr-filter-results{position:absolute;z-index:1050;top:100%;right:0;left:0;max-height:260px;overflow:auto;background:#fff;border:1px solid var(--aria-border);border-radius:10px;box-shadow:0 16px 32px rgba(15,23,42,.14)}.sr-filter-result{padding:.45rem .6rem;border-bottom:1px solid #edf2f7;cursor:pointer}.sr-filter-result.active,.sr-filter-result:hover{background:var(--aria-soft)}.sr-selected-customer-line{height:18px;overflow:hidden}.sr-results-shell.is-loading .sr-results-card{opacity:.45}.sr-live-status{min-height:22px;color:var(--aria-muted)}.sr-items-summary{max-width:260px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.sr-destination-detail{max-width:170px;white-space:normal}.sr-results-table td,.sr-results-table th{padding:9px;font-size:12px;line-height:1.55;vertical-align:middle}.sr-results-table tbody tr:hover{background:#f4f9fd}.sr-results-table thead th{position:sticky;top:0;background:#f8fbff;color:#415466;font-weight:500}.sr-ltr{direction:ltr;unicode-bidi:plaintext}.sr-amount{font-weight:400}.sr-row-actions{display:inline-flex;gap:4px;white-space:nowrap}.sr-row-actions .btn{font-size:11px;padding:.22rem .45rem}.sr-toolbar-actions .btn{height:32px;font-weight:400}.btn-aria{background:var(--aria-primary);border-color:var(--aria-primary);color:#fff}.btn-aria:hover{background:var(--aria-primary-dark);border-color:var(--aria-primary-dark);color:#fff}@media(max-width:992px){.sr-filter-grid{grid-template-columns:1fr 1fr}.sr-filter-grid>*{min-width:0}}@media(max-width:576px){.sr-filter-grid{grid-template-columns:1fr}}
-</style>
-<div class="container-fluid sr-index" dir="rtl" data-module="new-sales-return">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div><h4 class="mb-1">برگشت از فروش</h4><div class="text-muted small">فهرست اسناد جدید و حواله‌های قدیمی برگشت از فروش</div></div>
-        <div class="d-flex gap-2 flex-wrap sr-toolbar-actions">@canPermission('sales_returns.create')<a class="btn btn-sm btn-primary" href="{{ route('vouchers.return-from-sale.create') }}">ثبت برگشت جدید</a>@endcanPermission @canPermission('sales_returns.export')<a class="btn btn-sm btn-outline-success" href="{{ route('vouchers.return-from-sale.export.excel', request()->query()) }}">Excel</a>@endcanPermission @canPermission('sales_returns.print')<button class="btn btn-sm btn-outline-primary" type="button" data-print-base-url="{{ route('vouchers.return-from-sale.print.customers') }}">چاپ برگشتی مشتریان</button><button class="btn btn-sm btn-aria" type="button" data-print-base-url="{{ route('vouchers.return-from-sale.print.products') }}">چاپ برگشتی کالاها</button>@endcanPermission <a class="btn btn-sm btn-light" href="{{ route('vouchers.index') }}">بازگشت</a></div>
-    </div>
+	<style>
+		.sr-index {
+			font-size: 12px;
+			color: #263746;
+		}
 
-    <form class="sr-filter-box mb-3" method="GET" action="{{ route('vouchers.return-from-sale.index') }}" data-live-url="{{ route('vouchers.return-from-sale.data') }}">
-        <div class="sr-filter-title">جست‌وجوی برگشت از فروش</div>
-        <div class="sr-filter-grid">
-            <div><label class="form-label">شماره سند یا حواله</label><input class="form-control" name="document_number" value="{{ $filters['document_number'] ?? '' }}" autocomplete="off"></div>
-            <div><label class="form-label">انتخاب مشتری</label>@include('vouchers.return-from-sale.partials.customer-filter-picker')</div>
-            <div><label class="form-label">از تاریخ و ساعت</label><input type="text" id="salesReturnDateFrom" class="form-control" name="date_from" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸ ۰۹:۳۰:۰۰" value="{{ $filters['date_from'] ?? '' }}"></div>
-            <div><label class="form-label">تا تاریخ و ساعت</label><input type="text" id="salesReturnDateTo" class="form-control" name="date_to" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸ ۱۰:۳۰:۰۰" value="{{ $filters['date_to'] ?? '' }}"></div>
-            <div><button class="btn btn-outline-secondary w-100" type="button" id="salesReturnClearFilters">پاک‌کردن</button></div>
-        </div>
-        <div class="sr-live-status small mt-2" id="salesReturnLiveStatus" aria-live="polite"></div>
-    </form>
+		.sr-filter-box {
+			border: 1px solid #cfe1f0;
+			border-radius: 10px;
+			background: #fff;
+			padding: 12px;
+			box-shadow: 0 4px 14px rgba(11, 95, 168, .05);
+		}
 
-    <div id="salesReturnResults" class="sr-results-shell">
-        @include('vouchers.return-from-sale.partials.index-results')
-    </div>
-</div>
-<script>
-(()=>{
-const form=document.querySelector('.sr-filter-box');const results=document.getElementById('salesReturnResults');const status=document.getElementById('salesReturnLiveStatus');if(!form||!results)return;
-if(window.jalaliDatepicker){window.jalaliDatepicker.startWatch({selector:'#salesReturnDateFrom, #salesReturnDateTo',persianDigits:true,zIndex:3000});}
-let timers={}, controller=null, seq=0;const indexUrl=@json(route('vouchers.return-from-sale.index'));const dataUrl=form.dataset.liveUrl;
-const cleanParams=()=>{const params=new URLSearchParams(new FormData(form));for(const [k,v] of [...params.entries()]){if(v===''||v==='all')params.delete(k)}return params};
-const syncUrl=url=>history.replaceState({},'',url);
-const setLoading=v=>{results.classList.toggle('is-loading',v);if(status)status.textContent=v?'در حال دریافت اسناد...':''};
-const liveFetch=(url=null)=>{controller?.abort();controller=new AbortController();const current=++seq;const params=cleanParams();const qs=params.toString();let target=url||`${dataUrl}${qs?`?${qs}`:''}`;setLoading(true);fetch(target,{headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},signal:controller.signal}).then(async r=>{if(!r.ok)throw new Error('bad');return r.json()}).then(j=>{if(current!==seq)return;results.innerHTML=j.html;syncUrl(j.url||`${indexUrl}${qs?`?${qs}`:''}`);}).catch(e=>{if(e.name!=='AbortError'&&status){status.innerHTML='دریافت فهرست برگشت از فروش با خطا مواجه شد. <button class="btn btn-sm btn-link p-0" type="button" data-sr-retry>تلاش مجدد</button>';}}).finally(()=>{if(current===seq)setLoading(false)});};
-const debounce=(key,ms)=>{clearTimeout(timers[key]);timers[key]=setTimeout(()=>liveFetch(),ms)};
-form.querySelector('[name="document_number"]')?.addEventListener('input',()=>debounce('doc',350));
-['salesReturnDateFrom','salesReturnDateTo'].forEach(id=>{const el=document.getElementById(id);el?.addEventListener('input',()=>debounce(id,350));el?.addEventListener('change',()=>liveFetch());el?.addEventListener('jdp:change',()=>liveFetch());});
-form.addEventListener('submit',e=>{}); window.salesReturnLiveFetch=liveFetch;
-results.addEventListener('click',e=>{const a=e.target.closest('.pagination a');if(!a)return;e.preventDefault();liveFetch(a.href.replace(indexUrl,dataUrl))});
-document.addEventListener('click',e=>{if(e.target.matches('[data-sr-retry]'))liveFetch();const print=e.target.closest('[data-print-base-url]');if(print){const qs=cleanParams().toString();window.open(print.dataset.printBaseUrl+(qs?`?${qs}`:''),'_blank','noopener');}});
-document.getElementById('salesReturnClearFilters')?.addEventListener('click',()=>{form.querySelector('[name="document_number"]').value='';form.querySelector('[name="customer_id"]').value='';form.querySelector('[data-customer-search]').value='';form.querySelector('[data-customer-selected] span').textContent='مشتری انتخاب نشده است.';form.querySelector('[data-customer-clear]')?.classList.add('d-none');document.getElementById('salesReturnDateFrom').value='';document.getElementById('salesReturnDateTo').value='';syncUrl(indexUrl);liveFetch(dataUrl);form.querySelector('[name="document_number"]').focus();});
-window.addEventListener('popstate',()=>{const params=new URLSearchParams(location.search);['document_number','customer_id','date_from','date_to'].forEach(n=>{const el=form.querySelector(`[name="${n}"]`);if(el)el.value=params.get(n)||''});liveFetch(`${dataUrl}${location.search}`)});
+		.sr-filter-title {
+			font-size: 12px;
+			color: #084a84;
+			margin-bottom: 8px;
+		}
 
-})();
-(()=>{document.querySelectorAll('[data-customer-picker]').forEach(root=>{const url=root.dataset.searchUrl,input=root.querySelector('[data-customer-search]'),hidden=root.querySelector('[data-customer-id]'),box=root.querySelector('[data-customer-results]'),label=root.querySelector('[data-customer-selected] span'),clear=root.querySelector('[data-customer-clear]');let timer,abort,active=-1,items=[];const close=()=>box.classList.add('d-none');const fire=()=>hidden.dispatchEvent(new Event('change',{bubbles:true}));const render=()=>{box.innerHTML=items.map((c,i)=>`<div class="sr-filter-result ${i===active?'active':''}" data-i="${i}"><span>${c.name||c.text||'—'}</span><div class="small text-muted">${c.mobile||'—'} | کد: ${c.customer_code||c.id}</div></div>`).join('')||'<div class="p-2 small text-muted">نتیجه‌ای یافت نشد.</div>';box.classList.remove('d-none')};const pick=c=>{hidden.value=c?.id||'';input.value=c?(c.name||c.text||''):'';label.textContent=c?`${c.name||c.text||'—'} | ${c.mobile||'—'} | کد: ${c.customer_code||c.id}`:'مشتری انتخاب نشده است.';clear.classList.toggle('d-none',!c);close();fire()};const search=q=>{if((q||'').trim().length<2){items=[];close();return}abort?.abort();abort=new AbortController();fetch(url+'?q='+encodeURIComponent(q),{headers:{Accept:'application/json'},signal:abort.signal}).then(r=>r.json()).then(j=>{items=j.data||j.results||[];active=items.length?0:-1;render()}).catch(e=>{if(e.name!=='AbortError')console.error(e)})};input.addEventListener('input',e=>{hidden.value='';clearTimeout(timer);timer=setTimeout(()=>search(e.target.value),280)});input.addEventListener('keydown',e=>{if(e.key==='Escape'){close();return}if(!items.length)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();active=(active+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;render()}if(e.key==='Enter'){e.preventDefault();pick(items[active])}});hidden.addEventListener('change',()=>window.salesReturnLiveFetch?.());box.addEventListener('click',e=>{const r=e.target.closest('[data-i]');if(r)pick(items[Number(r.dataset.i)])});clear.addEventListener('click',()=>pick(null));document.addEventListener('click',e=>{if(!root.contains(e.target))close()})})})();
-</script>
+		.sr-filter-grid {
+			display: grid;
+			grid-template-columns: 3fr 4fr 2fr 2fr 1fr;
+			gap: 10px;
+			align-items: end;
+		}
+
+		.sr-filter-box label {
+			font-size: 11.5px;
+			color: #718096;
+			margin-bottom: 4px;
+			font-weight: 400;
+		}
+
+		.sr-filter-box .form-control,
+		.sr-filter-box .form-select,
+		.sr-filter-box .btn {
+			height: 42px;
+			font-size: 12px;
+			border-radius: 8px;
+		}
+
+		.sr-filter-box .form-control:focus {
+			border-color: #0b5fa8;
+			box-shadow: 0 0 0 .14rem rgba(11, 95, 168, .12);
+		}
+
+		.sr-filter-results {
+			position: absolute;
+			z-index: 1050;
+			top: 100%;
+			right: 0;
+			left: 0;
+			max-height: 260px;
+			overflow: auto;
+			background: #fff;
+			border: 1px solid #cfe1f0;
+			border-radius: 10px;
+			box-shadow: 0 16px 32px rgba(15, 23, 42, .14);
+		}
+
+		.sr-filter-result {
+			padding: .45rem .6rem;
+			border-bottom: 1px solid #edf2f7;
+			cursor: pointer;
+		}
+
+		.sr-filter-result.active,
+		.sr-filter-result:hover {
+			background: #eef6fc;
+		}
+
+		.sr-selected-customer-line {
+			height: 18px;
+			overflow: hidden;
+		}
+
+		.sr-results-shell.is-loading .sr-results-card {
+			opacity: .45;
+		}
+
+		.sr-live-status {
+			min-height: 22px;
+			color: #718096;
+		}
+
+		.sr-items-summary {
+			max-width: 260px;
+			display: -webkit-box;
+			-webkit-line-clamp: 3;
+			-webkit-box-orient: vertical;
+			overflow: hidden;
+		}
+
+		.sr-destination-detail {
+			max-width: 170px;
+			white-space: normal;
+		}
+
+		.sr-results-table td,
+		.sr-results-table th {
+			padding: 9px;
+			font-size: 12px;
+			line-height: 1.55;
+			vertical-align: middle;
+		}
+
+		.sr-results-table tbody tr:hover {
+			background: #f4f9fd;
+		}
+
+		.sr-results-table thead th {
+			position: sticky;
+			top: 0;
+			background: #f8fbff;
+			color: #415466;
+			font-weight: 500;
+		}
+
+		.sr-ltr {
+			direction: ltr;
+			unicode-bidi: plaintext;
+		}
+
+		.sr-amount {
+			font-weight: 400;
+		}
+
+		.sr-row-actions {
+			display: inline-flex;
+			gap: 4px;
+			white-space: nowrap;
+		}
+
+		.sr-row-actions .btn {
+			font-size: 11px;
+			padding: .22rem .45rem;
+		}
+
+		.sr-toolbar-actions .btn {
+			height: 32px;
+			font-weight: 400;
+		}
+
+		.btn-aria {
+			background: #0b5fa8;
+			border-color: #0b5fa8;
+			color: #fff;
+		}
+
+		.btn-aria:hover {
+			background: #084a84;
+			border-color: #084a84;
+			color: #fff;
+		}
+
+		@media (max-width: 992px) {
+			.sr-filter-grid {
+				grid-template-columns: 1fr 1fr;
+			}
+
+			.sr-filter-grid > * {
+				min-width: 0;
+			}
+		}
+
+		@media (max-width: 576px) {
+			.sr-filter-grid {
+				grid-template-columns: 1fr;
+			}
+		}
+
+	</style>
+	<div class="container-fluid sr-index" dir="rtl" data-module="new-sales-return">
+		<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+			<div><h4 class="mb-1">برگشت از فروش</h4><div class="text-muted small">فهرست اسناد جدید و حواله‌های قدیمی برگشت از فروش</div></div>
+			<div class="d-flex gap-2 flex-wrap sr-toolbar-actions">@canPermission('sales_returns.create')<a class="btn btn-sm btn-primary" href="{{ route('vouchers.return-from-sale.create') }}">ثبت برگشت جدید</a>@endcanPermission @canPermission('sales_returns.export')<a class="btn btn-sm btn-outline-success" href="{{ route('vouchers.return-from-sale.export.excel', request()->query()) }}">Excel</a>@endcanPermission @canPermission('sales_returns.print')<button class="btn btn-sm btn-outline-primary" type="button" data-print-base-url="{{ route('vouchers.return-from-sale.print.customers') }}">چاپ برگشتی مشتریان</button><button class="btn btn-sm btn-aria" type="button" data-print-base-url="{{ route('vouchers.return-from-sale.print.products') }}">چاپ برگشتی کالاها</button>@endcanPermission @canPermission('issues.view')<a class="btn btn-sm btn-light" href="{{ route('vouchers.index') }}">بازگشت</a>@endcanPermission</div>
+		</div>
+
+		<form class="sr-filter-box mb-3" method="GET" action="{{ route('vouchers.return-from-sale.index') }}" data-live-url="{{ route('vouchers.return-from-sale.data') }}">
+			<div class="sr-filter-title">جست‌وجوی برگشت از فروش</div>
+			<div class="sr-filter-grid">
+				<div><label class="form-label">شماره سند یا حواله</label><input class="form-control" name="document_number" value="{{ $filters['document_number'] ?? '' }}" autocomplete="off"></div>
+				<div><label class="form-label">انتخاب مشتری</label>@include('vouchers.return-from-sale.partials.customer-filter-picker')</div>
+				<div><label class="form-label">از تاریخ و ساعت</label><input type="text" id="salesReturnDateFrom" class="form-control" name="date_from" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸ ۰۹:۳۰:۰۰" value="{{ $filters['date_from'] ?? '' }}"></div>
+				<div><label class="form-label">تا تاریخ و ساعت</label><input type="text" id="salesReturnDateTo" class="form-control" name="date_to" data-jdp inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۴/۲۸ ۱۰:۳۰:۰۰" value="{{ $filters['date_to'] ?? '' }}"></div>
+				<div><button class="btn btn-outline-secondary w-100" type="button" id="salesReturnClearFilters">پاک‌کردن</button></div>
+			</div>
+			<div class="sr-live-status small mt-2" id="salesReturnLiveStatus" aria-live="polite"></div>
+		</form>
+
+		<div id="salesReturnResults" class="sr-results-shell">
+			@include('vouchers.return-from-sale.partials.index-results')
+		</div>
+	</div>
+	<script>
+		(()=>{
+			const form=document.querySelector('.sr-filter-box');const results=document.getElementById('salesReturnResults');const status=document.getElementById('salesReturnLiveStatus');if(!form||!results)return;
+			if(window.jalaliDatepicker){window.jalaliDatepicker.startWatch({selector:'#salesReturnDateFrom, #salesReturnDateTo',persianDigits:true,zIndex:3000});}
+			let timers={}, controller=null, seq=0;const indexUrl=@json(route('vouchers.return-from-sale.index'));const dataUrl=form.dataset.liveUrl;
+			const cleanParams=()=>{const params=new URLSearchParams(new FormData(form));for(const [k,v] of [...params.entries()]){if(v===''||v==='all')params.delete(k)}return params};
+			const syncUrl=url=>history.replaceState({},'',url);
+			const setLoading=v=>{results.classList.toggle('is-loading',v);if(status)status.textContent=v?'در حال دریافت اسناد...':''};
+			const liveFetch=(url=null)=>{controller?.abort();controller=new AbortController();const current=++seq;const params=cleanParams();const qs=params.toString();let target=url||`${dataUrl}${qs?`?${qs}`:''}`;setLoading(true);fetch(target,{headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},signal:controller.signal}).then(async r=>{if(!r.ok)throw new Error('bad');return r.json()}).then(j=>{if(current!==seq)return;results.innerHTML=j.html;syncUrl(j.url||`${indexUrl}${qs?`?${qs}`:''}`);}).catch(e=>{if(e.name!=='AbortError'&&status){status.innerHTML='دریافت فهرست برگشت از فروش با خطا مواجه شد. <button class="btn btn-sm btn-link p-0" type="button" data-sr-retry>تلاش مجدد</button>';}}).finally(()=>{if(current===seq)setLoading(false)});};
+			const debounce=(key,ms)=>{clearTimeout(timers[key]);timers[key]=setTimeout(()=>liveFetch(),ms)};
+			form.querySelector('[name="document_number"]')?.addEventListener('input',()=>debounce('doc',350));
+			['salesReturnDateFrom','salesReturnDateTo'].forEach(id=>{const el=document.getElementById(id);el?.addEventListener('input',()=>debounce(id,350));el?.addEventListener('change',()=>liveFetch());el?.addEventListener('jdp:change',()=>liveFetch());});
+			window.salesReturnLiveFetch=liveFetch;
+			results.addEventListener('click',e=>{const a=e.target.closest('.pagination a');if(!a)return;e.preventDefault();liveFetch(a.href.replace(indexUrl,dataUrl))});
+			document.addEventListener('click',e=>{if(e.target.matches('[data-sr-retry]'))liveFetch();const print=e.target.closest('[data-print-base-url]');if(print){const qs=cleanParams().toString();window.open(print.dataset.printBaseUrl+(qs?`?${qs}`:''),'_blank','noopener');}});
+			document.getElementById('salesReturnClearFilters')?.addEventListener('click',()=>{const documentNumber=form.querySelector('[name="document_number"]');const customerId=form.querySelector('[name="customer_id"]');const customerSearch=form.querySelector('[data-customer-search]');const customerLabel=form.querySelector('[data-customer-selected] span');const dateFrom=document.getElementById('salesReturnDateFrom');const dateTo=document.getElementById('salesReturnDateTo');if(documentNumber)documentNumber.value='';if(customerId)customerId.value='';if(customerSearch)customerSearch.value='';if(customerLabel)customerLabel.textContent='مشتری انتخاب نشده است.';form.querySelector('[data-customer-clear]')?.classList.add('d-none');if(dateFrom)dateFrom.value='';if(dateTo)dateTo.value='';syncUrl(indexUrl);liveFetch(dataUrl);documentNumber?.focus();});
+			window.addEventListener('popstate',()=>{const params=new URLSearchParams(location.search);['document_number','customer_id','date_from','date_to'].forEach(n=>{const el=form.querySelector(`[name="${n}"]`);if(el)el.value=params.get(n)||''});liveFetch(`${dataUrl}${location.search}`)});
+
+		})();
+		(()=>{document.querySelectorAll('[data-customer-picker]').forEach(root=>{const url=root.dataset.searchUrl,input=root.querySelector('[data-customer-search]'),hidden=root.querySelector('[data-customer-id]'),box=root.querySelector('[data-customer-results]'),label=root.querySelector('[data-customer-selected] span'),clear=root.querySelector('[data-customer-clear]');let timer,abort,active=-1,items=[];const close=()=>box.classList.add('d-none');const fire=()=>hidden.dispatchEvent(new Event('change',{bubbles:true}));const render=()=>{box.innerHTML=items.map((c,i)=>`<div class="sr-filter-result ${i===active?'active':''}" data-i="${i}"><span>${c.name||c.text||'—'}</span><div class="small text-muted">${c.mobile||'—'} | کد: ${c.customer_code||c.id}</div></div>`).join('')||'<div class="p-2 small text-muted">نتیجه‌ای یافت نشد.</div>';box.classList.remove('d-none')};const pick=c=>{hidden.value=c?.id||'';input.value=c?(c.name||c.text||''):'';label.textContent=c?`${c.name||c.text||'—'} | ${c.mobile||'—'} | کد: ${c.customer_code||c.id}`:'مشتری انتخاب نشده است.';clear.classList.toggle('d-none',!c);close();fire()};const search=q=>{if((q||'').trim().length<2){items=[];close();return}abort?.abort();abort=new AbortController();fetch(url+'?q='+encodeURIComponent(q),{headers:{Accept:'application/json'},signal:abort.signal}).then(r=>r.json()).then(j=>{items=j.data||j.results||[];active=items.length?0:-1;render()}).catch(e=>{if(e.name!=='AbortError')console.error(e)})};input.addEventListener('input',e=>{hidden.value='';clearTimeout(timer);timer=setTimeout(()=>search(e.target.value),280)});input.addEventListener('keydown',e=>{if(e.key==='Escape'){close();return}if(!items.length)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();active=(active+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;render()}if(e.key==='Enter'){e.preventDefault();pick(items[active])}});hidden.addEventListener('change',()=>window.salesReturnLiveFetch?.());box.addEventListener('click',e=>{const r=e.target.closest('[data-i]');if(r)pick(items[Number(r.dataset.i)])});clear.addEventListener('click',()=>pick(null));document.addEventListener('click',e=>{if(!root.contains(e.target))close()})})})();
+	</script>
 @endsection
+LTR

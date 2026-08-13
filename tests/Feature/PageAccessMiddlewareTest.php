@@ -32,11 +32,24 @@ it('returns a json 403 for an ajax user without page access', function () {
         ->and($response->headers->get('content-type'))->toContain('application/json');
 });
 
-it('keeps retained legacy permission compatibility limited to its mapped route', function () {
+it('does not use retained legacy direct permissions for runtime page access', function () {
     $user = User::factory()->create();
     $permissionId = DB::table('permissions')->where('key','products.view')->value('id');
     DB::table('user_permissions')->insert(['user_id'=>$user->id,'permission_id'=>$permissionId,'created_at'=>now(),'updated_at'=>now()]);
+    expect(fn () => app(EnsurePageAccess::class)->handle(pageAccessRequest($user), fn () => response('ok')))
+        ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+});
+
+it('allows runtime page access only through a role page permission', function () {
+    $user = User::factory()->create();
+    $role = Role::findOrCreate('ProductPageRole', 'web');
+    $permission = \Spatie\Permission\Models\Permission::findOrCreate('page.products', 'web');
+    $permission->forceFill(['key' => 'page.products'])->save();
+    $role->givePermissionTo($permission);
+    $user->assignRole($role);
+
     $response = app(EnsurePageAccess::class)->handle(pageAccessRequest($user), fn () => response('ok'));
+
     expect($response->getStatusCode())->toBe(200);
 });
 

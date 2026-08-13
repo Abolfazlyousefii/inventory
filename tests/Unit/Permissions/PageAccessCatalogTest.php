@@ -32,3 +32,21 @@ it('keeps sensitive preinvoice workflows separate', function () {
         ->and(PageAccessCatalog::pagePermissionForLegacy('preinvoices.warehouse.confirm'))->toBe('page.sales.preinvoice_warehouse_review')
         ->and(PageAccessCatalog::pagePermissionForLegacy('preinvoices.finance.confirm'))->toBe('page.sales.preinvoice_finance_review');
 });
+
+it('uses explicit multi page ownership for shared endpoints', function () {
+    expect(PageAccessCatalog::permissionsForRoute('api.customers.search'))
+        ->toBe(['page.customers', 'page.sales.preinvoices'])
+        ->and(PageAccessCatalog::permissionsForRoute('products.warehouse-stock'))
+        ->toBe(['page.products', 'page.warehouse.stocks'])
+        ->and(PageAccessCatalog::permissionsForRoute('preinvoice.draft.finance'))
+        ->toBe(['page.sales.preinvoice_finance_review'])
+        ->and(PageAccessCatalog::permissionsForRoute('warehouse.shipping.ship'))
+        ->toBe(['page.warehouse.shipping']);
+});
+
+it('does not infer runtime route ownership from legacy permission prefixes', function () {
+    $source = file_get_contents(app_path('Support/PageAccessCatalog.php'));
+
+    expect($source)->toContain('private const ROUTE_OWNERS')
+        ->and(PageAccessCatalog::permissionsForRoute('products.future-action'))->toBe([]);
+});

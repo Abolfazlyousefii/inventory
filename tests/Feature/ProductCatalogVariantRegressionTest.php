@@ -41,8 +41,11 @@ class ProductCatalogVariantRegressionTest extends TestCase
         $this->variant($product, $model, 'Print A25 Black');
         $this->variant($product, $model, 'Print A25 Blue');
 
-        $this->get(route('admin.product-exports.print'))
-            ->assertRedirect(route('admin.product-exports.download', ['stock_status' => 'all', 'include_without_price' => 0]));
+        $this->get(route('admin.product-exports.print', ['output_mode' => 'catalog']))
+            ->assertOk()
+            ->assertSee('Print variants')
+            ->assertSee('A25')
+            ->assertSee('catalog-print-table', false);
     }
 
     public function test_model_list_filter_still_works(): void

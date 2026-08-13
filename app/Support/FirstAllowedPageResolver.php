@@ -29,12 +29,7 @@ class FirstAllowedPageResolver
 
     private function canUsePage(User $user, array $page): bool
     {
-        if (PageAccessCatalog::userCan($user, $page['permission'])) return true;
-
-        // Transitional compatibility only; migration decisions remain strict.
-        return collect($page['legacy_permissions'])->contains(
-            fn (string $permission) => PermissionCatalog::userHasPermission($user, $permission)
-        );
+        return PageAccessCatalog::userCan($user, $page['permission']);
     }
 
     private function firstSafeRouteUrl(array $names): ?string
@@ -54,9 +49,7 @@ class FirstAllowedPageResolver
         $route = collect(Route::getRoutes())->first(fn ($candidate) =>
             in_array('GET', $candidate->methods(), true) && $candidate->matches(Request::create($path, 'GET'))
         );
-        $permission = $route ? PageAccessCatalog::permissionForRoute($route->getName()) : null;
-        if (! $permission) return false;
-        $page = collect(PageAccessCatalog::pages())->firstWhere('permission', $permission);
-        return $page ? $this->canUsePage($user, $page) : false;
+        return $route !== null
+               && PageAccessCatalog::userCanRoute($user, $route->getName());
     }
 }

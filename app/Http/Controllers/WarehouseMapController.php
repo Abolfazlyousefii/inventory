@@ -10,7 +10,7 @@ use App\Models\Warehouse;
 use App\Models\WarehouseLocation;
 use App\Models\WarehouseLocationMovement;
 use App\Services\WarehouseMapService;
-use App\Support\PermissionCatalog;
+use App\Support\PageAccessCatalog;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -296,8 +296,7 @@ class WarehouseMapController extends Controller
     private function canManageWarehouseMap(): bool
     {
         $user = auth()->user();
-        return $user && (PermissionCatalog::userHasPermission($user, '*')
-            || (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(self::MANAGER_ROLES)));
+        return $user && PageAccessCatalog::userCan($user, 'page.warehouse.map');
     }
 
     private function normalizeFa(?string $value): string

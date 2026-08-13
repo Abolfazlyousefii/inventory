@@ -16,6 +16,7 @@ use App\Models\StockCountDocument;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Support\Currency;
+use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,17 +41,17 @@ class DashboardController extends Controller
         $canViewOwnPreinvoices = $this->canUseRoute($user, 'preinvoice.my.index');
         $canViewManagementReports = $this->canViewManagementReports($user);
         $canViewFinanceReports = $canViewManagementReports || $this->userHasAnyPermission($user, [
-            'finance.reports.view',
-            'account_statements.view',
-            'payments.view',
-            'preinvoices.finance.view',
-        ]);
+                'finance.reports.view',
+                'account_statements.view',
+                'payments.view',
+                'preinvoices.finance.view',
+            ]);
         $canViewWarehouseReports = $canViewManagementReports || $this->userHasAnyPermission($user, [
-            'inventory.view',
-            'inventory.count.view',
-            'warehouse.collection.queue.view',
-            'warehouse.shipping.queue.view',
-        ]);
+                'inventory.view',
+                'inventory.count.view',
+                'warehouse.collection.queue.view',
+                'warehouse.shipping.queue.view',
+            ]);
 
         $sellerQuickActions = collect([
             [
@@ -233,6 +234,8 @@ class DashboardController extends Controller
     public function globalSearch(Request $request)
     {
         $q = trim((string) $request->query('q', ''));
+        /** @var User $user */
+        $user = $request->user();
 
         $results = [
             'products' => collect(),
@@ -243,48 +246,52 @@ class DashboardController extends Controller
         ];
 
         if ($q !== '') {
-            $results['products'] = Product::query()
-                ->where(fn ($query) => $query->where('name', 'like', "%{$q}%")
-                    ->orWhere('sku', 'like', "%{$q}%")
-                    ->orWhere('code', 'like', "%{$q}%")
-                    ->orWhere('barcode', 'like', "%{$q}%")
-                    ->orWhere('short_barcode', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'name', 'sku', 'code', 'barcode', 'stock']);
+            if (PageAccessCatalog::userCan($user, 'page.products')) {
+                $results['products'] = Product::query()
+                    ->where(fn ($query) => $query->where('name', 'like', "%{$q}%")
+                        ->orWhere('sku', 'like', "%{$q}%")
+                        ->orWhere('code', 'like', "%{$q}%")
+                        ->orWhere('barcode', 'like', "%{$q}%")
+                        ->orWhere('short_barcode', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['id', 'name', 'sku', 'code', 'barcode', 'stock']);
 
-            $results['variants'] = ProductVariant::query()
-                ->with('product:id,name')
-                ->where(fn ($query) => $query->where('variant_code', 'like', "%{$q}%")
-                    ->orWhere('variety_code', 'like', "%{$q}%")
-                    ->orWhere('variant_name', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'product_id', 'variant_name', 'variant_code', 'stock']);
+                $results['variants'] = ProductVariant::query()
+                    ->with('product:id,name')
+                    ->where(fn ($query) => $query->where('variant_code', 'like', "%{$q}%")
+                        ->orWhere('variety_code', 'like', "%{$q}%")
+                        ->orWhere('variant_name', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['id', 'product_id', 'variant_name', 'variant_code', 'stock']);
+            }
 
-            $results['invoices'] = Invoice::query()
-                ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
-                    ->orWhere('customer_name', 'like', "%{$q}%")
-                    ->orWhere('customer_mobile', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['uuid', 'customer_name', 'customer_mobile', 'total', 'created_at']);
+            if (PageAccessCatalog::userCan($user, 'page.sales.invoices')) {
+                $results['invoices'] = Invoice::query()
+                    ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
+                        ->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('customer_mobile', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['uuid', 'customer_name', 'customer_mobile', 'total', 'created_at']);
+            }
 
-            $results['preinvoices'] = PreinvoiceOrder::query()
-                ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
-                    ->orWhere('customer_name', 'like', "%{$q}%")
-                    ->orWhere('customer_mobile', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['uuid', 'customer_name', 'customer_mobile', 'total_price', 'created_at']);
+            if (PageAccessCatalog::userCan($user, 'page.sales.preinvoices')) {
+                $results['preinvoices'] = PreinvoiceOrder::query()
+                    ->where('created_by', $user->id)
+                    ->where(fn ($query) => $query->where('uuid', 'like', "%{$q}%")
+                        ->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('customer_mobile', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['uuid', 'customer_name', 'customer_mobile', 'total_price', 'created_at']);
+            }
 
-            $results['customers'] = Customer::query()
-                ->where(fn ($query) => $query->where('first_name', 'like', "%{$q}%")
-                    ->orWhere('last_name', 'like', "%{$q}%")
-                    ->orWhere('mobile', 'like', "%{$q}%"))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'first_name', 'last_name', 'mobile']);
+            if (PageAccessCatalog::userCan($user, 'page.customers')) {
+                $results['customers'] = Customer::query()
+                    ->where(fn ($query) => $query->where('first_name', 'like', "%{$q}%")
+                        ->orWhere('last_name', 'like', "%{$q}%")
+                        ->orWhere('mobile', 'like', "%{$q}%"))
+                    ->latest('id')->limit(10)
+                    ->get(['id', 'first_name', 'last_name', 'mobile']);
+            }
         }
 
         return view('dashboard.search', compact('q', 'results'));
@@ -387,8 +394,8 @@ class DashboardController extends Controller
             $route = route('preinvoice.draft.edit', $order->uuid);
             $label = 'اصلاح سفارش';
         } elseif ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE
-            && $order->invoice
-            && $this->canUseRoute($user, 'invoices.show')) {
+                  && $order->invoice
+                  && $this->canUseRoute($user, 'invoices.show')) {
             $route = route('invoices.show', $order->invoice->uuid);
             $label = 'مشاهده فاکتور';
         } elseif (in_array($order->status, [
@@ -574,13 +581,8 @@ class DashboardController extends Controller
 
     private function canUseRoute(User $user, string $routeName): bool
     {
-        if (! Route::has($routeName)) {
-            return false;
-        }
-
-        $permission = PermissionCatalog::routePermissions()[$routeName] ?? null;
-
-        return $permission !== null && PermissionCatalog::userHasPermission($user, $permission);
+        return Route::has($routeName)
+               && PageAccessCatalog::userCanRoute($user, $routeName);
     }
 
     private function userHasAnyPermission(User $user, array $permissions): bool
@@ -663,9 +665,9 @@ class DashboardController extends Controller
 
         $max = max(1, collect($metrics)->max('value'));
         $metrics = collect($metrics)->map(fn (array $metric): array => $metric + [
-            'percent' => (float) min(100, round(($metric['value'] / $max) * 100, 2)),
-            'display_value' => number_format($metric['value']),
-        ])->values()->all();
+                'percent' => (float) min(100, round(($metric['value'] / $max) * 100, 2)),
+                'display_value' => number_format($metric['value']),
+            ])->values()->all();
 
         $monthNames = [
             1 => 'فروردین', 2 => 'اردیبهشت', 3 => 'خرداد', 4 => 'تیر', 5 => 'مرداد', 6 => 'شهریور',

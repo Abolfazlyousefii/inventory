@@ -27,7 +27,6 @@ abstract class TestCase extends BaseTestCase
             'APP_ENV' => 'testing',
             'DB_CONNECTION' => 'sqlite',
             'DB_DATABASE' => ':memory:',
-            'APP_CONFIG_CACHE' => 'bootstrap/cache/config-testing.php',
         ];
 
         foreach ($variables as $key => $value) {

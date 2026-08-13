@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\DatabaseSessionHandler;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -14,6 +16,21 @@ class TestEnvironmentIsolationTest extends TestCase
         $this->assertSame('sqlite', config('database.default'));
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        $this->assertSame('array', config('session.driver'));
+        $this->assertSame('array', config('cache.default'));
+
+        $permissionCacheStore = config('permission.cache.store');
+
+        $this->assertContains($permissionCacheStore, ['array', 'default']);
+        $this->assertSame(
+            'array',
+            $permissionCacheStore === 'default' ? config('cache.default') : $permissionCacheStore
+        );
+
+        $sessionHandler = app('session')->driver()->getHandler();
+
+        $this->assertInstanceOf(ArraySessionHandler::class, $sessionHandler);
+        $this->assertNotInstanceOf(DatabaseSessionHandler::class, $sessionHandler);
 
         $databaseName = DB::connection()->getDatabaseName();
 

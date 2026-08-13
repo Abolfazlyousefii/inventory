@@ -8,13 +8,15 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Services\SalesDocumentAccessService;
+use App\Support\PageAccessCatalog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProductSalesLedgerController extends Controller
 {
-    public function index(Request $request, Product $product)
+    public function index(Request $request, Product $product, SalesDocumentAccessService $accessService)
     {
         $variantId = $request->filled('variant_id') ? (int) $request->input('variant_id') : null;
         $selectedVariant = null;
@@ -81,6 +83,16 @@ class ProductSalesLedgerController extends Controller
         }
 
         $ledgerItems = $query->paginate(25)->withQueryString();
+        $user = $request->user();
+
+        $ledgerItems->getCollection()->each(function (InvoiceItem $item) use ($user, $accessService): void {
+            $canViewInvoice = $item->invoice
+                              && $user
+                              && PageAccessCatalog::userCanRoute($user, 'invoices.show')
+                              && $accessService->canViewInvoiceReadonly($item->invoice, $user);
+
+            $item->setAttribute('can_view_invoice', $canViewInvoice);
+        });
 
         $customers = Customer::query()
             ->orderBy('first_name')

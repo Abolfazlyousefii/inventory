@@ -66,10 +66,99 @@ class ProductExportService
         return $query;
     }
 
+
+    public function buildVisitQuery(array $filters): Builder
+    {
+        $modelListIds = $this->modelListIds($filters);
+        $productIds = $this->productIds($filters);
+        $categoryIds = $this->categoryIds($filters);
+        $stockStatus = $filters['stock_status'] ?? 'all';
+
+        $query = Product::query()
+            ->select(['id', 'name', 'code', 'sku', 'image_path', 'price', 'stock', 'category_id', 'models', 'has_colors', 'is_sellable', 'updated_at'])
+            ->with(['category:id,name'])
+            ->withCount('variants')
+            ->with(['catalogVariants' => function ($variantQuery) use ($modelListIds, $stockStatus) {
+                $this->applyVisitVariantConstraints($variantQuery, [
+                    'model_list_ids' => $modelListIds,
+                    'stock_status' => $stockStatus,
+                ]);
+
+                $variantQuery->select([
+                    'id', 'product_id', 'model_list_id', 'color_id', 'variant_name', 'variety_name', 'variety_code',
+                    'variant_code', 'sell_price', 'stock', 'is_active', 'sales_enabled',
+                ])
+                    ->with(['modelList:id,brand,model_name,code', 'color:id,name,code,hex_code'])
+                    ->orderBy('model_list_id')
+                    ->orderBy('variant_name')
+                    ->orderBy('variety_name')
+                    ->orderBy('id');
+            }])
+            ->when($categoryIds !== [], fn (Builder $productQuery) => $productQuery->whereIn('category_id', $categoryIds))
+            ->when($productIds !== [], fn (Builder $productQuery) => $productQuery->whereIn('products.id', $productIds));
+
+        $query->where(function (Builder $availabilityQuery) use ($modelListIds, $stockStatus) {
+            $availabilityQuery->whereHas('catalogVariants', function (Builder $variantQuery) use ($modelListIds, $stockStatus) {
+                $this->applyVisitVariantConstraints($variantQuery, [
+                    'model_list_ids' => $modelListIds,
+                    'stock_status' => $stockStatus,
+                ]);
+            });
+
+            if ($modelListIds === []) {
+                $availabilityQuery->orWhere(function (Builder $simpleProductQuery) use ($stockStatus) {
+                    $simpleProductQuery->whereDoesntHave('variants');
+                    if ($stockStatus === 'in_stock') {
+                        $simpleProductQuery->where('products.stock', '>', 0);
+                    } elseif ($stockStatus === 'out_of_stock') {
+                        $simpleProductQuery->where('products.stock', '<=', 0);
+                    }
+                });
+            }
+        });
+
+        return $query->orderBy('name')->orderBy('id');
+    }
+
+    private function applyVisitVariantConstraints(Builder|Relation $query, array $filters = []): Builder|Relation
+    {
+        $modelListIds = $this->modelListIds($filters);
+        $stockStatus = $filters['stock_status'] ?? 'all';
+
+        $query->where('is_active', true);
+
+        if ($modelListIds !== []) {
+            $query->whereIn('model_list_id', $modelListIds);
+        }
+
+        if ($stockStatus === 'in_stock') {
+            $query->where('stock', '>', 0);
+        } elseif ($stockStatus === 'out_of_stock') {
+            $query->where('stock', '<=', 0);
+        }
+
+        return $query;
+    }
+
+    private function outputMode(array $filters): string
+    {
+        return ($filters['output_mode'] ?? 'catalog') === 'visit' ? 'visit' : 'catalog';
+    }
+
+    private function queryForMode(array $filters): Builder
+    {
+        return $this->outputMode($filters) === 'visit'
+            ? $this->buildVisitQuery($filters)
+            : $this->buildQuery($filters);
+    }
+
     public function paginate(array $filters, int $perPage = 24): LengthAwarePaginator
     {
-        $paginator = $this->buildQuery($filters)->paginate($perPage)->withQueryString();
-        $mapped = $paginator->getCollection()->map(fn (Product $product) => $this->mapProduct($product, $filters));
+        $visitMode = $this->outputMode($filters) === 'visit';
+        $paginator = $this->queryForMode($filters)->paginate($perPage)->withQueryString();
+        $mapped = $paginator->getCollection()->map(
+            fn (Product $product) => $visitMode ? $this->mapVisitProduct($product, $filters) : $this->mapProduct($product, $filters)
+        );
         $paginator->setCollection($this->filterWithoutPrice($mapped, $filters));
 
         return $paginator;
@@ -77,7 +166,11 @@ class ProductExportService
 
     public function allForPrint(array $filters): Collection
     {
-        $products = $this->buildQuery($filters)->get()->map(fn (Product $product) => $this->mapProduct($product, $filters));
+        $visitMode = $this->outputMode($filters) === 'visit';
+        $products = $this->queryForMode($filters)->get()->map(
+            fn (Product $product) => $visitMode ? $this->mapVisitProduct($product, $filters) : $this->mapProduct($product, $filters)
+        );
+
         return $this->filterWithoutPrice($products, $filters)->values();
     }
 
@@ -106,6 +199,100 @@ class ProductExportService
         ];
     }
 
+    public function mapVisitProduct(Product $product, array $filters): array
+    {
+        $includeWithoutPrice = (bool) ($filters['include_without_price'] ?? false);
+        $hasDatabaseVariants = (int) ($product->variants_count ?? 0) > 0;
+
+        if ($hasDatabaseVariants) {
+            $rows = $product->catalogVariants
+                ->map(function (ProductVariant $variant) use ($product) {
+                    $price = $this->variantPrice($variant, $product);
+                    $model = $this->visitModelLabel($variant);
+                    $color = $this->cleanText($variant->color?->name ?: $variant->variety_name, '—');
+                    $code = $this->cleanText(
+                        $variant->variant_code ?: ($variant->variety_code ?: $variant->modelList?->code),
+                        '—'
+                    );
+
+                    return [
+                        'id' => (int) $variant->id,
+                        'model' => $model,
+                        'color' => $color,
+                        'code' => $code,
+                        'stock' => max(0, (int) ($variant->stock ?? 0)),
+                        'price' => $price,
+                        'price_label' => $this->priceLabel($price),
+                        'has_price' => $price !== null,
+                    ];
+                })
+                ->when(! $includeWithoutPrice, fn (Collection $rows) => $rows->filter(fn (array $row) => $row['has_price']))
+                ->values();
+        } else {
+            $price = (int) ($product->price ?? 0) > 0 ? (int) $product->price : null;
+            $rows = collect([[
+                'id' => null,
+                'model' => 'مدل عمومی',
+                'color' => '—',
+                'code' => $this->cleanText($product->code ?: $product->sku, '—'),
+                'stock' => max(0, (int) ($product->stock ?? 0)),
+                'price' => $price,
+                'price_label' => $this->priceLabel($price),
+                'has_price' => $price !== null,
+            ]]);
+
+            if (! $includeWithoutPrice && $price === null) {
+                $rows = collect();
+            }
+        }
+
+        $prices = $rows->pluck('price')->filter(fn ($price) => $price !== null && $price > 0)->sort()->values();
+        $imagePath = $this->imagePath($product);
+
+        return [
+            'id' => (int) $product->id,
+            'name' => $this->cleanText($product->name, 'محصول بدون نام'),
+            'category_name' => $this->cleanText($product->category?->name, 'بدون دسته‌بندی'),
+            'image_path' => $imagePath,
+            'has_real_image' => $imagePath !== null,
+            'variant_count' => $hasDatabaseVariants ? $rows->count() : 0,
+            'total_stock' => (int) $rows->sum('stock'),
+            'price_min' => $prices->first(),
+            'price_max' => $prices->last(),
+            'price_summary' => $this->visitPriceSummary($prices),
+            'variants' => $rows->all(),
+            'has_price' => $prices->isNotEmpty(),
+        ];
+    }
+
+    private function visitModelLabel(ProductVariant $variant): string
+    {
+        $parts = collect([$variant->modelList?->model_name, $variant->variant_name])
+            ->map(fn ($value) => $this->cleanText($value, ''))
+            ->filter()
+            ->unique(fn ($value) => mb_strtolower($value))
+            ->values();
+
+        if ($parts->isEmpty()) {
+            $parts->push($this->cleanText($variant->variety_code ?: $variant->variant_code, 'تنوع بدون نام'));
+        }
+
+        return $parts->implode(' - ');
+    }
+
+    private function visitPriceSummary(Collection $prices): string
+    {
+        if ($prices->isEmpty()) {
+            return 'بدون قیمت';
+        }
+
+        if ($prices->first() === $prices->last()) {
+            return $this->priceLabel((int) $prices->first());
+        }
+
+        return 'از '.number_format((int) $prices->first()).' تا '.number_format((int) $prices->last()).' ریال';
+    }
+
     public function meta(array $filters): array
     {
         $root = ! empty($filters['root_category_id']) ? Category::query()->find($filters['root_category_id']) : null;
@@ -120,7 +307,8 @@ class ProductExportService
         };
 
         return [
-            'title' => 'لیست قیمت محصولات',
+            'title' => $this->outputMode($filters) === 'visit' ? 'لیست قیمت و موجودی ویزیتوری' : 'لیست قیمت محصولات',
+            'output_mode' => $this->outputMode($filters),
             'root_category' => $this->cleanText($root?->name, 'همه دسته‌ها'),
             'subcategory' => $this->cleanText($child?->name, 'همه زیردسته‌ها'),
             'model_brand' => $this->cleanText($filters['model_brand'] ?? null, 'همه انواع مدل'),
@@ -186,7 +374,7 @@ class ProductExportService
         $modelListIds = $this->modelListIds($searchFilters);
         $limit = max(1, min($limit, $this->searchLimit($term)));
         $tokens = $this->searchTokens($term);
-        $query = $this->buildQuery($searchFilters)
+        $query = $this->queryForMode($searchFilters)
             ->addSelect(['code', 'sku', 'barcode', 'short_barcode'])
             ->reorder();
 
@@ -513,11 +701,16 @@ class ProductExportService
         }
 
         $matchingFilters = array_merge($filters, ['product_ids' => $ids]);
-        $products = $this->buildQuery($matchingFilters)->get();
+        $visitMode = $this->outputMode($matchingFilters) === 'visit';
+        $products = $this->queryForMode($matchingFilters)->get();
         if (! ($filters['include_without_price'] ?? false)) {
-            $products = $products->filter(
-                fn (Product $product) => $this->mapProduct($product, $matchingFilters)['has_price']
-            );
+            $products = $products->filter(function (Product $product) use ($matchingFilters, $visitMode) {
+                $mapped = $visitMode
+                    ? $this->mapVisitProduct($product, $matchingFilters)
+                    : $this->mapProduct($product, $matchingFilters);
+
+                return $mapped['has_price'];
+            });
         }
 
         return $products->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
@@ -575,7 +768,7 @@ class ProductExportService
 
     private function priceLabel(?int $price): string
     {
-        return $price ? number_format($price) . ' ریال' : 'بدون قیمت';
+        return $price ? number_format($price) . ' ریال' : 'قیمت ثبت نشده';
     }
 
     private function variantDisplayName(ProductVariant $variant): string

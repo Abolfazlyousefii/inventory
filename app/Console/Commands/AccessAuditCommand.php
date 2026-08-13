@@ -19,19 +19,21 @@ class AccessAuditCommand extends Command
     {
         $namedRoutes = collect(Route::getRoutes())->filter(fn ($route) => $route->getName());
         $authRoutes = $namedRoutes->filter(fn ($route) => in_array('auth', $route->gatherMiddleware(), true));
-        $authenticatedAllowlist = ['access.unassigned','session.csrf-token','locations.provinces.index','locations.provinces.cities','profile.edit','profile.update','profile.destroy','verification.notice','verification.verify','verification.send','password.confirm','password.update','logout'];
+        $authenticatedAllowlist = PageAccessCatalog::authenticatedRouteAllowlist();
         $tableCount = fn (string $table): int => Schema::hasTable($table) ? DB::table($table)->count() : 0;
         $report = [
             'counts' => [
                 'roles' => $tableCount('roles'), 'legacy_permissions' => Schema::hasTable('permissions') ? DB::table('permissions')->where('key','not like','page.%')->count() : 0,
                 'page_permissions' => Schema::hasTable('permissions') ? DB::table('permissions')->where('key','like','page.%')->count() : 0, 'catalog_pages' => count(PageAccessCatalog::pages()),
+                'explicit_route_mappings' => count(PageAccessCatalog::routeOwners()), 'shared_routes' => count(PageAccessCatalog::sharedRoutes()),
                 'role_permissions' => $tableCount('role_has_permissions'), 'direct_permissions' => $tableCount('user_permissions'),
                 'roles_without_permissions' => Schema::hasTable('roles') && Schema::hasTable('role_has_permissions') ? DB::table('roles')->leftJoin('role_has_permissions','roles.id','=','role_has_permissions.role_id')->whereNull('role_has_permissions.role_id')->count() : 0,
                 'users_without_roles' => Schema::hasTable('users') && Schema::hasTable('model_has_roles') ? User::query()->doesntHave('roles')->count() : 0, 'users_with_multiple_roles' => Schema::hasTable('users') && Schema::hasTable('model_has_roles') ? User::query()->has('roles','>',1)->count() : 0,
             ],
             'catalog' => PageAccessCatalog::pages(),
-            'named_authenticated_routes_without_page_mapping' => $authRoutes->map(fn ($route) => $route->getName())->filter(fn ($name) => PageAccessCatalog::permissionForRoute($name) === null && !in_array($name,$authenticatedAllowlist,true))->values()->all(),
+            'named_authenticated_routes_without_page_mapping' => $authRoutes->map(fn ($route) => $route->getName())->filter(fn ($name) => PageAccessCatalog::permissionsForRoute($name) === [] && !in_array($name,$authenticatedAllowlist,true))->values()->all(),
             'intentionally_unprotected_authenticated_routes' => $authenticatedAllowlist,
+            'shared_routes' => PageAccessCatalog::sharedRoutes(),
             'direct_permission_users_count' => Schema::hasTable('user_permissions') ? DB::table('user_permissions')->distinct('user_id')->count('user_id') : 0,
             'role_permission_connections' => Schema::hasTable('role_has_permissions') ? DB::table('role_has_permissions')
                 ->join('roles','roles.id','=','role_has_permissions.role_id')

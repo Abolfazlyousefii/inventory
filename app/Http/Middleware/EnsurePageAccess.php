@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use App\Support\PageAccessCatalog;
-use App\Support\PermissionCatalog;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -16,19 +15,28 @@ class EnsurePageAccess
         if ($pageKey !== null && $page === null) {
             return $this->denied($request, 'کلید دسترسی صفحه معتبر نیست.');
         }
-        $permission = $page['permission'] ?? PageAccessCatalog::permissionForRoute($request->route()?->getName());
-        if ($permission === null) {
-            $routeName = $request->route()?->getName();
-            if (in_array($routeName, ['locations.provinces.index','locations.provinces.cities','profile.edit','profile.update','profile.destroy'], true)) {
-                return $next($request);
-            }
+
+        $user = $request->user();
+        if (! $user) return redirect()->guest(route('login'));
+
+        if ($user->isSuperAdmin()) return $next($request);
+
+        $routeName = $request->route()?->getName();
+        if ($pageKey === null && in_array($routeName, PageAccessCatalog::authenticatedRouteAllowlist(), true)) {
+            return $next($request);
+        }
+
+        $permissions = $page ? [$page['permission']] : PageAccessCatalog::permissionsForRoute($routeName);
+        if ($permissions === []) {
             return $this->denied($request, 'برای این مسیر، صفحه دسترسی معتبری تعریف نشده است.');
         }
-        $user = $request->user();
-        if ($user && PageAccessCatalog::userCan($user, $permission)) return $next($request);
-        $legacyPermission = $pageKey === null ? (PermissionCatalog::routePermissions()[$request->route()?->getName()] ?? null) : null;
-        if ($user && $legacyPermission && $user->hasPermission($legacyPermission)) return $next($request);
-        if (! $user) return redirect()->guest(route('login'));
+
+        if ($page
+            ? PageAccessCatalog::userCan($user, $page['permission'])
+            : PageAccessCatalog::userCanRoute($user, $routeName)) {
+            return $next($request);
+        }
+
         return $this->denied($request, 'شما به این صفحه یا فرآیند دسترسی ندارید.');
     }
 

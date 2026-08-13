@@ -7,15 +7,13 @@ use App\Models\Category;
 use App\Models\ModelList;
 use App\Models\Product;
 use App\Services\ProductExportService;
-use App\Services\ProductPriceListPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\Response;
 
 class ProductExportController extends Controller
 {
-    public function __construct(private readonly ProductExportService $service, private readonly ProductPriceListPdfService $pdfService) {}
+    public function __construct(private readonly ProductExportService $service) {}
 
     public function index(ProductExportFilterRequest $request): View
     {
@@ -45,24 +43,19 @@ class ProductExportController extends Controller
         return view('product-exports.partials.product-list', compact('products', 'filters'))->render();
     }
 
-    public function print(ProductExportFilterRequest $request): RedirectResponse
-    {
-        return redirect()->route('admin.product-exports.download', $request->query());
-    }
-
-    public function download(ProductExportFilterRequest $request): Response
+    public function print(ProductExportFilterRequest $request): View
     {
         $filters = $request->filters();
         $products = $this->service->allForPrint($filters);
         $meta = $this->service->meta($filters);
         $meta['products_count'] = $products->count();
-        $pdf = $this->pdfService->render($products->all(), $meta);
-        $filename = 'aria-gostar-price-list-'.now()->format('Y-m-d-Hi').'.pdf';
 
-        return response($pdf, 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
-        ]);
+        return view('product-exports.print', compact('products', 'meta', 'filters'));
+    }
+
+    public function download(ProductExportFilterRequest $request): RedirectResponse
+    {
+        return redirect()->route('admin.product-exports.print', $request->query());
     }
 
     public function export(ProductExportFilterRequest $request): RedirectResponse

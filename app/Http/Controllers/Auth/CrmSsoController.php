@@ -83,8 +83,14 @@ class CrmSsoController extends Controller
             $result = $this->users->syncOnePayload($payload);
             $user = $result['user'];
 
-            if (! $user->is_active) {
-                return $this->failed($requestId, 'inactive_user', 'حساب کاربری شما در CRM غیرفعال است.', $user->crm_user_id, $user->id);
+            if (! $user->is_active || ! $user->can_access_erp) {
+                return $this->failed(
+                    $requestId,
+                    'erp_access_denied',
+                    'حساب کاربری شما اجازه دسترسی به ERP را ندارد.',
+                    $user->crm_user_id,
+                    $user->id
+                );
             }
 
             if ($user->roles->isEmpty()) {

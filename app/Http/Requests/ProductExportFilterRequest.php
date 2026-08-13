@@ -15,7 +15,7 @@ class ProductExportFilterRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $input = $this->all();
-        foreach (['root_category_id','subcategory_id','category_id','model_list_id','model_brand','stock_status','page','q'] as $key) {
+        foreach (['root_category_id','subcategory_id','category_id','model_list_id','model_brand','stock_status','output_mode','page','q'] as $key) {
             if (array_key_exists($key, $input) && $input[$key] === '') $input[$key] = null;
         }
         $modelListIds = $input['model_list_ids'] ?? [];
@@ -52,6 +52,7 @@ class ProductExportFilterRequest extends FormRequest
             'product_ids' => ['nullable','array','max:200'],
             'product_ids.*' => ['integer','distinct','exists:products,id'],
             'stock_status' => ['nullable', Rule::in(['all','in_stock','out_of_stock'])],
+            'output_mode' => ['nullable', Rule::in(['visit','catalog'])],
             'include_without_price' => ['nullable','boolean'],
             'q' => ['nullable','string','max:100'],
             'page' => ['nullable','integer','min:1'],
@@ -80,6 +81,7 @@ class ProductExportFilterRequest extends FormRequest
             'model_list_ids' => $v['model_list_ids'] ?? [],
             'product_ids' => $v['product_ids'] ?? [],
             'stock_status' => $v['stock_status'] ?? 'all',
+            'output_mode' => $v['output_mode'] ?? 'visit',
             'include_without_price' => (bool) ($v['include_without_price'] ?? false),
             'page' => $v['page'] ?? 1,
         ];

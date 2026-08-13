@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsurePageAccess;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 it('fails closed for an unknown explicit page key', function () {
@@ -34,4 +35,28 @@ it('provides safe migration audit sync and cleanup commands', function () {
     foreach (['access:audit', 'access:sync-page-catalog', 'access:migrate-to-page-permissions', 'access:cleanup-legacy'] as $command) {
         expect(Artisan::all())->toHaveKey($command);
     }
+});
+
+it('maps every authenticated named route or documents it in the allowlist', function () {
+    $allowlist = \App\Support\PageAccessCatalog::authenticatedRouteAllowlist();
+    $unmapped = collect(Route::getRoutes())
+        ->filter(fn ($route) => $route->getName() && in_array('auth', $route->gatherMiddleware(), true))
+        ->map(fn ($route) => $route->getName())
+        ->filter(fn (string $name) => \App\Support\PageAccessCatalog::permissionsForRoute($name) === [] && ! in_array($name, $allowlist, true))
+        ->values()
+        ->all();
+
+    expect($unmapped)->toBe([]);
+});
+
+it('keeps legacy role and permission middleware off mapped page routes', function () {
+    $violations = collect(Route::getRoutes())
+        ->filter(fn ($route) => $route->getName() && \App\Support\PageAccessCatalog::permissionsForRoute($route->getName()) !== [])
+        ->flatMap(fn ($route) => collect($route->gatherMiddleware())
+            ->filter(fn (string $middleware) => str_starts_with($middleware, 'role:') || str_starts_with($middleware, 'permission:'))
+            ->map(fn (string $middleware) => $route->getName().':'.$middleware))
+        ->values()
+        ->all();
+
+    expect($violations)->toBe([]);
 });

@@ -112,8 +112,12 @@ class ProductCatalogExportTest extends TestCase
         $model = ModelList::create(['brand' => 'Brand', 'model_name' => 'Print Model']);
         $this->variant($product, $model, 'Printable Variant', 4, 12000);
 
-        $this->get(route('admin.product-exports.print'))
-            ->assertRedirect(route('admin.product-exports.download', ['stock_status' => 'all', 'include_without_price' => 0]));
+        $this->get(route('admin.product-exports.print', ['output_mode' => 'catalog']))
+            ->assertOk()
+            ->assertSee('Printable product')
+            ->assertSee('Print Model')
+            ->assertSee('catalog-print-table', false)
+            ->assertHeader('Content-Type', 'text/html; charset=UTF-8');
         $this->get(route('admin.product-exports.export', ['stock_status' => 'in_stock']))->assertRedirect(route('admin.product-exports.print', [
             'stock_status' => 'in_stock',
             'include_without_price' => 0,

@@ -6,6 +6,407 @@ use App\Models\User;
 
 class PageAccessCatalog
 {
+    /** Explicit runtime ownership. Legacy permissions are migration metadata only. */
+    private const ROUTE_OWNERS = [
+        'dashboard' => ['dashboard'],
+        'dashboard.monthly-report' => ['dashboard'],
+        'global-search' => ['dashboard'],
+        'products.index' => ['products'],
+        'products.data' => ['products'],
+        'products.create' => ['products'],
+        'products.store' => ['products'],
+        'products.price-changes.index' => ['products.price_changes'],
+        'products.price-changes.create' => ['products.price_changes'],
+        'products.price-changes.categories.root' => ['products.price_changes'],
+        'products.price-changes.categories.children' => ['products.price_changes'],
+        'products.price-changes.products.search' => ['products.price_changes'],
+        'products.price-changes.products.variants' => ['products.price_changes'],
+        'products.price-changes.scope-summary' => ['products.price_changes'],
+        'products.price-changes.preview' => ['products.price_changes'],
+        'products.price-changes.store' => ['products.price_changes'],
+        'products.price-changes.show' => ['products.price_changes'],
+        'products.price-changes.apply' => ['products.price_changes'],
+        'products.price-changes.cancel' => ['products.price_changes'],
+        'products.variants' => ['products'],
+        'products.edit' => ['products'],
+        'products.update' => ['products'],
+        'products.warehouse-stock' => ['products', 'warehouse.stocks'],
+        'products.image' => ['products'],
+        'products.destroy' => ['products'],
+        'products.sales-ledger' => ['products'],
+        'products.purchase-ledger' => ['products'],
+        'categories.index' => ['categories'],
+        'categories.create' => ['categories'],
+        'categories.store' => ['categories'],
+        'categories.edit' => ['categories'],
+        'categories.update' => ['categories'],
+        'categories.destroy' => ['categories'],
+        'categories.fixCodes' => ['categories'],
+        'products.pricelist' => ['products'],
+        'admin.product-exports.index' => ['products'],
+        'admin.product-exports.data' => ['products'],
+        'admin.product-exports.print' => ['products'],
+        'admin.product-exports.download' => ['products'],
+        'admin.product-exports.model-lists' => ['products'],
+        'admin.product-exports.products.search' => ['products'],
+        'admin.product-exports.categories.children' => ['products'],
+        'admin.product-exports.export' => ['products'],
+        'products.sync.crm' => ['products'],
+        'product-deactivation-documents.index' => ['products'],
+        'product-deactivation-documents.create' => ['products'],
+        'product-deactivation-documents.store' => ['products'],
+        'product-deactivation-documents.show' => ['products'],
+        'model-lists.index' => ['brands_models'],
+        'model-lists.store' => ['brands_models'],
+        'model-lists.update' => ['brands_models'],
+        'model-lists.destroy' => ['brands_models'],
+        'model-lists.assign-codes' => ['brands_models'],
+        'model-lists.import-from-products' => ['brands_models'],
+        'model-lists.import-phone-catalog' => ['brands_models'],
+        'model-lists.quick-store' => ['brands_models'],
+        'shipping-methods.index' => ['shipping_methods'],
+        'shipping-methods.store' => ['shipping_methods'],
+        'shipping-methods.update' => ['shipping_methods'],
+        'shipping-methods.destroy' => ['shipping_methods'],
+        'categories.quickStore' => ['categories'],
+        'inventory-webhooks.index' => ['integrations.inventory'],
+        'inventory-webhooks.update' => ['integrations.inventory'],
+        'movements.create' => ['warehouse.stocks'],
+        'movements.store' => ['warehouse.stocks'],
+        'movements.index' => ['reports'],
+        'sales-returns.index' => ['sales.returns'],
+        'sales-returns.create' => ['sales.returns'],
+        'sales-returns.store' => ['sales.returns'],
+        'sales-returns.export.excel' => ['sales.returns'],
+        'sales-returns.export.pdf' => ['sales.returns'],
+        'sales-returns.print-report' => ['sales.returns'],
+        'sales-returns.customers.search' => ['sales.returns'],
+        'sales-returns.customers.invoices' => ['sales.returns'],
+        'sales-returns.invoices.items' => ['sales.returns'],
+        'sales-returns.products.search' => ['sales.returns'],
+        'sales-returns.products.variants' => ['sales.returns'],
+        'sales-returns.preview' => ['sales.returns'],
+        'sales-returns.show' => ['sales.returns'],
+        'sales-returns.edit' => ['sales.returns'],
+        'sales-returns.update' => ['sales.returns'],
+        'sales-returns.apply' => ['sales.returns'],
+        'sales-returns.cancel' => ['sales.returns'],
+        'sales-returns.print' => ['sales.returns'],
+        'sales-returns.pdf' => ['sales.returns'],
+        'vouchers.index' => ['warehouse.issues'],
+        'vouchers.sales.index' => ['warehouse.issues'],
+        'vouchers.sales.queue' => ['warehouse.collection'],
+        'vouchers.sales.queue.data' => ['warehouse.collection'],
+        'vouchers.sales.shipped' => ['warehouse.shipping'],
+        'warehouse.shipping.index' => ['warehouse.shipping'],
+        'warehouse.shipping.ship' => ['warehouse.shipping'],
+        'vouchers.sales.queue.receive' => ['warehouse.collection'],
+        'vouchers.sales.queue.start-collection' => ['warehouse.collection'],
+        'vouchers.sales.queue.complete-collection' => ['warehouse.collection'],
+        'vouchers.sales.queue.items' => ['warehouse.collection'],
+        'vouchers.sales.products.categories' => ['warehouse.collection'],
+        'vouchers.sales.products.by-category' => ['warehouse.collection'],
+        'vouchers.sales.products.variants' => ['warehouse.collection'],
+        'vouchers.sales.collection.edit' => ['warehouse.collection'],
+        'vouchers.sales.collection.update' => ['warehouse.collection'],
+        'vouchers.sales.edit' => ['warehouse.collection'],
+        'vouchers.sales.show' => ['warehouse.issues'],
+        'vouchers.sales.history' => ['warehouse.issues'],
+        'vouchers.sales.update' => ['warehouse.collection'],
+        'vouchers.sales.status' => ['warehouse.issues'],
+        'vouchers.sales.print' => ['warehouse.issues'],
+        'finance.invoices.reapprove' => ['finance.payments'],
+        'finance.invoices.return-to-sales' => ['finance.payments'],
+        'finance.cheques.registered' => ['finance.payments'],
+        'finance.reports.index' => ['finance.accounts'],
+        'finance.reports.sales-visitors' => ['finance.accounts'],
+        'finance.reports.sales-visitors.commission-batches.store' => ['finance.accounts'],
+        'finance.reports.sales-visitors.commission-batches.show' => ['finance.accounts'],
+        'finance.reports.sales-visitors.commission-batches.export' => ['finance.accounts'],
+        'finance.reports.sales-visitors.commission-batches.print' => ['finance.accounts'],
+        'finance.seller-sales.index' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.create' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.available-invoices' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.store' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.show' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.edit' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.update' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.print' => ['finance.seller_sales_documents'],
+        'vouchers.return-from-sale.index' => ['sales.returns'],
+        'vouchers.return-from-sale.data' => ['sales.returns'],
+        'vouchers.return-from-sale.create' => ['sales.returns'],
+        'vouchers.return-from-sale.store' => ['sales.returns'],
+        'vouchers.return-from-sale.customers.search' => ['sales.returns'],
+        'vouchers.return-from-sale.customers.invoices' => ['sales.returns'],
+        'vouchers.return-from-sale.invoices.items' => ['sales.returns'],
+        'vouchers.return-from-sale.categories.index' => ['sales.returns'],
+        'vouchers.return-from-sale.categories.products' => ['sales.returns'],
+        'vouchers.return-from-sale.products.search' => ['sales.returns'],
+        'vouchers.return-from-sale.products.variants' => ['sales.returns'],
+        'vouchers.return-from-sale.preview' => ['sales.returns'],
+        'vouchers.return-from-sale.export.excel' => ['sales.returns'],
+        'vouchers.return-from-sale.export.pdf' => ['sales.returns'],
+        'vouchers.return-from-sale.print-report' => ['sales.returns'],
+        'vouchers.return-from-sale.print.customers' => ['sales.returns'],
+        'vouchers.return-from-sale.print.products' => ['sales.returns'],
+        'vouchers.return-from-sale.legacy.print' => ['sales.returns'],
+        'vouchers.return-from-sale.show' => ['sales.returns'],
+        'vouchers.return-from-sale.edit' => ['sales.returns'],
+        'vouchers.return-from-sale.applied.edit' => ['sales.returns'],
+        'vouchers.return-from-sale.applied.update' => ['sales.returns'],
+        'vouchers.return-from-sale.applied.void' => ['sales.returns'],
+        'vouchers.return-from-sale.update' => ['sales.returns'],
+        'vouchers.return-from-sale.apply' => ['sales.returns'],
+        'vouchers.return-from-sale.cancel' => ['sales.returns'],
+        'vouchers.return-from-sale.print' => ['sales.returns'],
+        'vouchers.return-from-sale.pdf' => ['sales.returns'],
+        'vouchers.section.index' => ['warehouse.issues'],
+        'vouchers.section.create' => ['warehouse.issues'],
+        'vouchers.section.store' => ['warehouse.issues'],
+        'vouchers.create' => ['warehouse.issues'],
+        'vouchers.store' => ['warehouse.issues'],
+        'vouchers.invoice.products' => ['warehouse.issues'],
+        'vouchers.sale-delivery.index' => ['warehouse.issues'],
+        'vouchers.sale-delivery.edit' => ['warehouse.issues'],
+        'vouchers.sale-delivery.update' => ['warehouse.issues'],
+        'vouchers.return.customer-invoices' => ['warehouse.issues'],
+        'notifications.index' => ['dashboard'],
+        'notifications.latest' => ['dashboard'],
+        'notifications.unread-count' => ['dashboard'],
+        'notifications.read' => ['dashboard'],
+        'notifications.read-all' => ['dashboard'],
+        'notifications.open' => ['dashboard'],
+        'vouchers.show' => ['warehouse.issues'],
+        'vouchers.edit' => ['warehouse.issues'],
+        'vouchers.update' => ['warehouse.issues'],
+        'vouchers.destroy' => ['warehouse.issues'],
+        'warehouse.outputs' => ['warehouse.issues'],
+        'asset.hub' => ['assets'],
+        'asset.personnel.index' => ['assets'],
+        'asset.personnel.create' => ['assets'],
+        'asset.personnel.store' => ['assets'],
+        'asset.personnel.show' => ['assets'],
+        'asset.personnel.edit' => ['assets'],
+        'asset.personnel.update' => ['assets'],
+        'asset.personnel.toggle-status' => ['assets'],
+        'asset.documents.index' => ['assets'],
+        'asset.documents.create' => ['assets'],
+        'asset.documents.store' => ['assets'],
+        'asset.documents.show' => ['assets'],
+        'asset.documents.view' => ['assets'],
+        'asset.documents.print' => ['assets'],
+        'asset.documents.signed-form.view' => ['assets'],
+        'asset.documents.signed-form.download' => ['assets'],
+        'asset.documents.edit' => ['assets'],
+        'asset.documents.update' => ['assets'],
+        'asset.documents.finalize' => ['assets'],
+        'asset.documents.cancel' => ['assets'],
+        'asset.codes.search' => ['assets'],
+        'asset.codes.find' => ['assets'],
+        'sales-havaleh.create-from-financial' => ['warehouse.issues'],
+        'sales-havaleh.show' => ['warehouse.issues'],
+        'sales-havaleh.view' => ['warehouse.issues'],
+        'sales-havaleh.update' => ['warehouse.issues'],
+        'sales-havaleh.status' => ['warehouse.issues'],
+        'sales-havaleh.history' => ['warehouse.issues'],
+        'payments.view' => ['finance.payments'],
+        'warehouse-map.index' => ['warehouse.map'],
+        'warehouse-map.locations.show' => ['warehouse.map'],
+        'warehouse-map.categories.children' => ['warehouse.map'],
+        'warehouse-map.categories.products' => ['warehouse.map'],
+        'warehouse-map.products.variants' => ['warehouse.map'],
+        'warehouse-map.history' => ['warehouse.map'],
+        'warehouse-map.locations.store' => ['warehouse.map'],
+        'warehouse-map.locations.update' => ['warehouse.map'],
+        'warehouse-map.assign' => ['warehouse.map'],
+        'warehouse-map.transfer' => ['warehouse.map'],
+        'warehouses.index' => ['warehouses'],
+        'warehouses.edit' => ['warehouses'],
+        'warehouses.update' => ['warehouses'],
+        'warehouses.destroy' => ['warehouses'],
+        'warehouses.personnel.index' => ['warehouses'],
+        'warehouses.personnel.store' => ['warehouses'],
+        'warehouses.personnel.show' => ['warehouses'],
+        'purchases.index' => ['warehouse.purchases'],
+        'purchases.export' => ['warehouse.purchases'],
+        'purchases.create' => ['warehouse.purchases'],
+        'purchases.products.variants' => ['warehouse.purchases'],
+        'purchases.store' => ['warehouse.purchases'],
+        'purchases.show' => ['warehouse.purchases'],
+        'purchases.edit' => ['warehouse.purchases'],
+        'purchases.update' => ['warehouse.purchases'],
+        'purchases.destroy' => ['warehouse.purchases'],
+        'persons.index' => ['customers'],
+        'persons.store' => ['customers'],
+        'persons.update' => ['customers'],
+        'suppliers.index' => ['suppliers'],
+        'suppliers.store' => ['suppliers'],
+        'stocktake.index' => ['warehouse.stocktake'],
+        'stock-count-documents.index' => ['warehouse.stocktake'],
+        'stock-count-documents.create' => ['warehouse.stocktake'],
+        'stock-count-documents.store' => ['warehouse.stocktake'],
+        'stock-count-documents.subcategories' => ['warehouse.stocktake'],
+        'stock-count-documents.products' => ['warehouse.stocktake'],
+        'stock-count-documents.variants' => ['warehouse.stocktake'],
+        'stock-count-documents.show' => ['warehouse.stocktake'],
+        'stock-count-documents.view' => ['warehouse.stocktake'],
+        'stock-count-documents.edit' => ['warehouse.stocktake'],
+        'stock-count-documents.update' => ['warehouse.stocktake'],
+        'stock-count-documents.finalize' => ['warehouse.stocktake'],
+        'stock-count-documents.cancel' => ['warehouse.stocktake'],
+        'stock-count-documents.system-quantity' => ['warehouse.stocktake'],
+        'preinvoice.create' => ['sales.preinvoices'],
+        'preinvoice.draft.save' => ['sales.preinvoices'],
+        'preinvoice.autosave' => ['sales.preinvoices'],
+        'preinvoice.autosave.latest' => ['sales.preinvoices'],
+        'preinvoice.autosave.discard' => ['sales.preinvoices'],
+        'preinvoice.reservations.heartbeat' => ['sales.preinvoices'],
+        'preinvoice.reservations.release-token' => ['sales.preinvoices'],
+        'warehouse.reviews.index' => ['sales.preinvoice_warehouse_review'],
+        'warehouse.reviews.show' => ['sales.preinvoice_warehouse_review'],
+        'warehouse.reviews.print' => ['sales.preinvoice_warehouse_review'],
+        'preinvoice.warehouse.index' => ['sales.preinvoice_warehouse_review'],
+        'preinvoice.warehouse.review' => ['sales.preinvoice_warehouse_review'],
+        'preinvoice.warehouse.save' => ['sales.preinvoice_warehouse_review'],
+        'preinvoice.warehouse.approve' => ['sales.preinvoice_warehouse_review'],
+        'preinvoice.warehouse.reject' => ['sales.preinvoice_warehouse_review'],
+        'preinvoice.draft.index' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.edit' => ['sales.preinvoices'],
+        'preinvoice.draft.update' => ['sales.preinvoices'],
+        'preinvoice.draft.finance' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.finance.edit' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.finance.update' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.finance.save-and-finalize' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.finalize' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.return' => ['sales.preinvoice_finance_review'],
+        'preinvoice.draft.cancel' => ['sales.preinvoice_finance_review'],
+        'preinvoice.all.index' => ['sales.preinvoice_finance_review', 'sales.preinvoice_warehouse_review'],
+        'preinvoice.my.index' => ['sales.preinvoices'],
+        'preinvoice.my.show' => ['sales.preinvoices'],
+        'preinvoice.print' => ['sales.preinvoices'],
+        'preinvoice.api.product-finder' => ['sales.preinvoices'],
+        'preinvoice.api.product-finder.categories' => ['sales.preinvoices'],
+        'preinvoice.api.products' => ['sales.preinvoices'],
+        'preinvoice.api.product' => ['sales.preinvoices'],
+        'preinvoice.api.reservations.sync' => ['sales.preinvoices'],
+        'preinvoice.api.reservations.release' => ['sales.preinvoices'],
+        'preinvoice.api.area' => ['sales.preinvoices'],
+        'api.customers.search' => ['customers', 'sales.preinvoices'],
+        'api.customers.store' => ['customers', 'sales.preinvoices'],
+        'api.customers.show' => ['customers', 'sales.preinvoices'],
+        'customers.index' => ['customers'],
+        'customers.store' => ['customers'],
+        'customers.update' => ['customers'],
+        'customers.destroy' => ['customers'],
+        'customers.import' => ['customers'],
+        'archive.index' => ['sales.invoices'],
+        'archive.preinvoices.show' => ['sales.preinvoices'],
+        'archive.invoices.show' => ['sales.invoices'],
+        'invoices.index' => ['sales.invoices'],
+        'invoices.data' => ['sales.invoices'],
+        'invoices.customers.search' => ['sales.invoices', 'customers'],
+        'invoices.cancelled' => ['sales.invoices'],
+        'invoices.bulk.reassign-seller' => ['sales.invoices'],
+        'invoices.print' => ['sales.invoices'],
+        'invoices.edit' => ['sales.invoices'],
+        'invoices.update' => ['sales.invoices'],
+        'invoices.history' => ['sales.invoices'],
+        'invoices.show' => ['sales.invoices'],
+        'invoices.status' => ['sales.invoices'],
+        'invoices.reassign-seller' => ['sales.invoices'],
+        'invoices.cancel' => ['sales.invoices'],
+        'invoices.cancel.undo' => ['sales.invoices'],
+        'invoices.payments.store' => ['finance.payments'],
+        'invoices.notes.store' => ['sales.invoices'],
+        'cheques.store' => ['finance.payments'],
+        'account-statements.index' => ['finance.accounts'],
+        'account-statements.payments.store' => ['finance.accounts'],
+        'account-statements.documents.invoices.show' => ['finance.accounts'],
+        'account-statements.documents.returns.show' => ['finance.accounts'],
+        'account-statements.documents.payments.show' => ['finance.accounts'],
+        'account-statements.show' => ['finance.accounts'],
+        'activity-logs.index' => ['activity_logs'],
+        'users.index' => ['users'],
+        'users.sync' => ['users'],
+        'admin.bug-investigator.index' => ['activity_logs'],
+        'admin.bug-investigator.create' => ['activity_logs'],
+        'admin.bug-investigator.store' => ['activity_logs'],
+        'admin.bug-investigator.rerun' => ['activity_logs'],
+        'admin.bug-investigator.show' => ['activity_logs'],
+        'admin.permissions.index' => ['roles'],
+        'admin.permissions.update' => ['roles'],
+        'admin.roles.index' => ['roles'],
+        'admin.roles.create' => ['roles'],
+        'admin.roles.store' => ['roles'],
+        'admin.roles.edit' => ['roles'],
+        'admin.roles.update' => ['roles'],
+        'admin.roles.destroy' => ['roles'],
+        'finance.cheques.index' => ['finance.payments'],
+    ];
+
+    /**
+     * Cross-page routes that are part of another page's workflow.
+     *
+     * These grants are deliberately route-level rather than page-level so a user
+     * can follow the linked workflow without inheriting every operation of the
+     * destination module.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const LINKED_ROUTE_ACCESS = [
+        // Warehouse workflows need read-only access to the sale document.
+        'warehouse.collection' => [
+            'vouchers.sales.show',
+            'vouchers.sales.print',
+        ],
+        'warehouse.shipping' => [
+            'vouchers.sales.show',
+            'vouchers.sales.print',
+        ],
+
+        // Warehouse review may print the reviewed preinvoice.
+        'sales.preinvoice_warehouse_review' => [
+            'preinvoice.print',
+        ],
+
+        // Finance review needs the resulting invoice and finance-only workflow actions.
+        'sales.preinvoice_finance_review' => [
+            'invoices.show',
+            'invoices.print',
+            'finance.invoices.reapprove',
+            'finance.invoices.return-to-sales',
+        ],
+
+        // Sellers may follow their own converted preinvoice to its read-only invoice/havaleh.
+        // Record-level ownership checks remain enforced by the controllers.
+        'sales.preinvoices' => [
+            'invoices.show',
+            'invoices.print',
+            'vouchers.sales.show',
+            'vouchers.sales.print',
+        ],
+
+        // Product forms embed quick-create helpers from configuration pages.
+        'products' => [
+            'purchases.show',
+            'categories.quickStore',
+            'model-lists.quick-store',
+        ],
+
+        // Warehouse issue users can inspect/print the corresponding invoice, but not edit it.
+        'warehouse.issues' => [
+            'invoices.show',
+            'invoices.print',
+        ],
+
+        // Invoice editing uses these product lookup endpoints internally.
+        'sales.invoices' => [
+            'vouchers.sales.products.categories',
+            'vouchers.sales.products.by-category',
+            'vouchers.sales.products.variants',
+        ],
+    ];
+
     /** @return array<string, array<string, mixed>> */
     public static function pages(): array
     {
@@ -50,7 +451,6 @@ class PageAccessCatalog
             'integrations.inventory' => ['یکپارچه‌سازی‌ها', 'همگام‌سازی موجودی', ['inventory_webhooks']],
         ];
 
-        $routes = PermissionCatalog::routePermissions();
         $pages = [];
         foreach ($definitions as $key => $definition) {
             [$group, $label, $legacyPrefixes] = $definition;
@@ -58,12 +458,9 @@ class PageAccessCatalog
             $legacy = collect(PermissionCatalog::registry())->keys()
                 ->filter(fn (string $name) => self::matchesAnyPrefix($name, $legacyPrefixes))
                 ->values()->all();
-            $pageRoutes = collect($routes)
-                ->filter(fn (string $legacyPermission) => in_array($legacyPermission, $legacy, true))
+            $pageRoutes = collect(self::ROUTE_OWNERS)
+                ->filter(fn (array $owners) => in_array($key, $owners, true))
                 ->keys()->values()->all();
-            if ($key === 'finance.seller_sales_documents') {
-                $pageRoutes = ['finance.seller-sales.index','finance.seller-sales.create','finance.seller-sales.available-invoices','finance.seller-sales.store','finance.seller-sales.show','finance.seller-sales.edit','finance.seller-sales.update','finance.seller-sales.print'];
-            }
             $preferredRoute = self::preferredLandingRoute($key);
             if ($preferredRoute !== null && in_array($preferredRoute, $pageRoutes, true)) {
                 $pageRoutes = array_values(array_unique([$preferredRoute, ...$pageRoutes]));
@@ -90,13 +487,53 @@ class PageAccessCatalog
 
     public static function permissionForRoute(?string $routeName): ?string
     {
-        if (! $routeName) return null;
-        $legacy = PermissionCatalog::routePermissions()[$routeName] ?? null;
-        if ($legacy) return self::pagePermissionForLegacy($legacy);
-        foreach (self::pages() as $page) {
-            if (in_array($routeName, $page['routes'], true)) return $page['permission'];
+        return self::permissionsForRoute($routeName)[0] ?? null;
+    }
+
+    /** @return array<int, string> */
+    public static function permissionsForRoute(?string $routeName): array
+    {
+        if (! $routeName) return [];
+
+        $owners = self::ROUTE_OWNERS[$routeName] ?? [];
+
+        foreach (self::LINKED_ROUTE_ACCESS as $sourcePage => $linkedRoutes) {
+            if (in_array($routeName, $linkedRoutes, true)) {
+                $owners[] = $sourcePage;
+            }
         }
-        return null;
+
+        return collect($owners)
+            ->unique()
+            ->map(fn (string $key): string => 'page.'.$key)
+            ->values()
+            ->all();
+    }
+
+    /** @return array<string, array<int, string>> */
+    public static function routeOwners(): array
+    {
+        return collect(self::ROUTE_OWNERS)
+            ->map(fn (array $keys): array => array_map(fn (string $key): string => 'page.'.$key, $keys))
+            ->all();
+    }
+
+    /** @return array<string, array<int, string>> */
+    public static function sharedRoutes(): array
+    {
+        return array_filter(self::routeOwners(), fn (array $permissions): bool => count($permissions) > 1);
+    }
+
+    /** @return array<int, string> */
+    public static function authenticatedRouteAllowlist(): array
+    {
+        return [
+            'access.unassigned', 'session.csrf-token',
+            'locations.provinces.index', 'locations.provinces.cities',
+            'profile.edit', 'profile.update', 'profile.destroy',
+            'verification.notice', 'verification.verify', 'verification.send',
+            'password.confirm', 'password.update', 'logout',
+        ];
     }
 
     public static function pagePermissionForLegacy(string $legacyPermission): ?string
@@ -150,8 +587,18 @@ class PageAccessCatalog
         if ($user->isSuperAdmin()) return true;
         $page = collect(self::pages())->firstWhere('permission', $pagePermission);
         if (! $page) return false;
-        $effective = $user->getAllPermissions()->pluck('key')->filter()->all();
-        return in_array($pagePermission, $effective, true);
+        $rolePermissions = $user->getPermissionsViaRoles()->pluck('key')->filter()->all();
+
+        return in_array($pagePermission, $rolePermissions, true);
+    }
+
+
+    public static function userCanRoute(User $user, ?string $routeName): bool
+    {
+        if ($user->isSuperAdmin()) return true;
+
+        return collect(self::permissionsForRoute($routeName))
+            ->contains(fn (string $permission): bool => self::userCan($user, $permission));
     }
 
     public static function permissions(): array
@@ -194,17 +641,17 @@ class PageAccessCatalog
     private static function preferredLandingRoute(string $key): ?string
     {
         return [
-            'dashboard'=>'dashboard', 'products'=>'products.index', 'products.price_changes'=>'products.price-changes.index',
-            'categories'=>'categories.index', 'brands_models'=>'model-lists.index', 'shipping_methods'=>'shipping-methods.index',
-            'warehouses'=>'warehouses.index', 'warehouse.stocks'=>'products.index', 'warehouse.stocktake'=>'stock-count-documents.index',
-            'warehouse.purchases'=>'purchases.index', 'warehouse.issues'=>'vouchers.index', 'warehouse.collection'=>'vouchers.sales.queue',
-            'warehouse.shipping'=>'warehouse.shipping.index', 'warehouse.map'=>'warehouse-map.index', 'assets'=>'asset.hub',
-            'sales.preinvoices'=>'preinvoice.create', 'sales.preinvoice_warehouse_review'=>'warehouse.reviews.index',
-            'sales.preinvoice_finance_review'=>'preinvoice.draft.finance', 'sales.invoices'=>'invoices.index',
-            'sales.returns'=>'vouchers.return-from-sale.index', 'customers'=>'customers.index', 'suppliers'=>'suppliers.index',
-            'finance.payments'=>'finance.cheques.index', 'finance.accounts'=>'account-statements.index', 'finance.seller_sales_documents'=>'finance.seller-sales.index', 'reports'=>'finance.reports.index',
-            'users'=>'users.index', 'roles'=>'admin.roles.index', 'activity_logs'=>'activity-logs.index',
-            'integrations.inventory'=>'inventory-webhooks.index',
-        ][$key] ?? null;
+                   'dashboard'=>'dashboard', 'products'=>'products.index', 'products.price_changes'=>'products.price-changes.index',
+                   'categories'=>'categories.index', 'brands_models'=>'model-lists.index', 'shipping_methods'=>'shipping-methods.index',
+                   'warehouses'=>'warehouses.index', 'warehouse.stocks'=>'products.index', 'warehouse.stocktake'=>'stock-count-documents.index',
+                   'warehouse.purchases'=>'purchases.index', 'warehouse.issues'=>'vouchers.index', 'warehouse.collection'=>'vouchers.sales.queue',
+                   'warehouse.shipping'=>'warehouse.shipping.index', 'warehouse.map'=>'warehouse-map.index', 'assets'=>'asset.hub',
+                   'sales.preinvoices'=>'preinvoice.create', 'sales.preinvoice_warehouse_review'=>'warehouse.reviews.index',
+                   'sales.preinvoice_finance_review'=>'preinvoice.draft.finance', 'sales.invoices'=>'invoices.index',
+                   'sales.returns'=>'vouchers.return-from-sale.index', 'customers'=>'customers.index', 'suppliers'=>'suppliers.index',
+                   'finance.payments'=>'finance.cheques.index', 'finance.accounts'=>'account-statements.index', 'finance.seller_sales_documents'=>'finance.seller-sales.index', 'reports'=>'finance.reports.index',
+                   'users'=>'users.index', 'roles'=>'admin.roles.index', 'activity_logs'=>'activity-logs.index',
+                   'integrations.inventory'=>'inventory-webhooks.index',
+               ][$key] ?? null;
     }
 }

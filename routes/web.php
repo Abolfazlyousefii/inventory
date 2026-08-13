@@ -72,18 +72,18 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/locations/provinces/{province}/cities', [PreinvoiceApiController::class, 'cities'])->name('locations.provinces.cities');
 
     // Dashboard + profile
-    Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('permission:dashboard.view')->name('dashboard');
-    Route::get('/dashboard/monthly-report', [DashboardController::class, 'monthlyReport'])->middleware('permission:dashboard.view')->name('dashboard.monthly-report');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard/monthly-report', [DashboardController::class, 'monthlyReport'])->name('dashboard.monthly-report');
     Route::get('/global-search', [DashboardController::class, 'globalSearch'])->name('global-search');
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // Products + categories
-    Route::get('/products', [ProductController::class, 'index'])->middleware('permission:products.view')->name('products.index');
-    Route::get('/products/data', [ProductController::class, 'data'])->middleware('permission:products.view')->name('products.data');
-    Route::get('/products/create', [ProductController::class, 'create'])->middleware('permission:products.create')->name('products.create');
-    Route::post('/products', [ProductController::class, 'store'])->middleware('permission:products.create')->name('products.store');
+    Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+    Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
+    Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
+    Route::post('/products', [ProductController::class, 'store'])->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
         Route::get('/', [PriceChangeDocumentController::class, 'index'])->name('index');
         Route::get('/create', [PriceChangeDocumentController::class, 'create'])->name('create');
@@ -99,20 +99,20 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/{document}/cancel', [PriceChangeDocumentController::class, 'cancel'])->name('cancel');
     });
 
-    Route::get('/products/{product}/variants', [ProductController::class, 'variants'])->whereNumber('product')->middleware('permission:products.view')->name('products.variants');
-    Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->middleware('permission:products.edit')->name('products.edit');
-    Route::put('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
-    Route::patch('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware('permission:products.edit')->name('products.update');
-    Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->middleware('permission:products.view')->name('products.warehouse-stock');
+    Route::get('/products/{product}/variants', [ProductController::class, 'variants'])->whereNumber('product')->name('products.variants');
+    Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->name('products.edit');
+    Route::put('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->name('products.update');
+    Route::patch('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->name('products.update');
+    Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->name('products.warehouse-stock');
     Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
-    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->middleware('permission:products.delete')->name('products.destroy');
+    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->name('products.destroy');
     Route::get('/products/{product}/sales-ledger', [ProductSalesLedgerController::class, 'index'])->whereNumber('product')->name('products.sales-ledger');
     Route::get('/products/{product}/purchase-ledger', [ProductPurchaseLedgerController::class, 'purchaseLedger'])->whereNumber('product')->name('products.purchase-ledger');
     Route::resource('categories', CategoryController::class)->except(['show', 'destroy']);
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
     Route::post('/categories/fix-codes', [CategoryController::class, 'fixCodes'])->name('categories.fixCodes');
 
-    Route::get('/products/pricelist', [ProductController::class, 'priceList'])->middleware('permission:products.view')->name('products.pricelist');
+    Route::get('/products/pricelist', [ProductController::class, 'priceList'])->name('products.pricelist');
 
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
         Route::get('/', [ProductExportController::class, 'index'])->name('index');
@@ -120,7 +120,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/print', [ProductExportController::class, 'print'])->name('print');
         Route::get('/download', [ProductExportController::class, 'download'])->name('download');
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
-        Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->middleware('permission:products.export')->name('products.search');
+        Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->name('products.search');
         Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
     });
@@ -135,7 +135,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/model-lists', [ModelListController::class, 'index'])->name('model-lists.index');
     Route::post('/model-lists', [ModelListController::class, 'store'])->name('model-lists.store');
     Route::put('/model-lists/{modelList}', [ModelListController::class, 'update'])->name('model-lists.update');
-    Route::delete('/model-lists/{modelList}', [ModelListController::class, 'destroy'])->middleware('role:admin|Admin')->name('model-lists.destroy');
+    Route::delete('/model-lists/{modelList}', [ModelListController::class, 'destroy'])->name('model-lists.destroy');
 
     Route::post('/model-lists/assign-codes', [ModelListController::class, 'assignCodes'])->name('model-lists.assign-codes');
     Route::post('/model-lists/import-from-products', [ModelListController::class, 'importFromProducts'])->name('model-lists.import-from-products');
@@ -149,16 +149,16 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::delete('/shipping-methods/{shippingMethod}', [ShippingMethodController::class, 'destroy'])->name('shipping-methods.destroy');
 
     // Quick category store
-    Route::post('/categories/quick-store', [CategoryController::class, 'quickStore'])->middleware('role:admin|Admin')->name('categories.quickStore');
+    Route::post('/categories/quick-store', [CategoryController::class, 'quickStore'])->name('categories.quickStore');
 
 
-    Route::get('/inventory-webhooks', [InventoryWebhookController::class, 'index'])->middleware('role:admin|Admin')->name('inventory-webhooks.index');
-    Route::put('/inventory-webhooks', [InventoryWebhookController::class, 'update'])->middleware('role:admin|Admin')->name('inventory-webhooks.update');
+    Route::get('/inventory-webhooks', [InventoryWebhookController::class, 'index'])->name('inventory-webhooks.index');
+    Route::put('/inventory-webhooks', [InventoryWebhookController::class, 'update'])->name('inventory-webhooks.update');
 
     // Stock movements
     Route::get('/products/{product}/movements/create', [StockMovementController::class, 'create'])->whereNumber('product')->name('movements.create');
     Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->whereNumber('product')->name('movements.store');
-    Route::get('/movements', [StockMovementReportController::class, 'index'])->middleware('permission:reports.stock_movement')->name('movements.index');
+    Route::get('/movements', [StockMovementReportController::class, 'index'])->name('movements.index');
 
 
     Route::get('/sales-returns', fn () => redirect()->route('vouchers.return-from-sale.index'))->name('sales-returns.index');
@@ -185,33 +185,32 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
 
 Route::get('/vouchers/sales', [InvoiceController::class, 'salesVouchers'])->name('vouchers.sales.index');
-Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->middleware('permission:warehouse.collection.queue.view')->name('vouchers.sales.queue');
-Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->middleware('permission:warehouse.collection.queue.view')->name('vouchers.sales.queue.data');
-Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->middleware('permission:warehouse.shipping.queue.view')->name('vouchers.sales.shipped');
-Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->middleware('permission:warehouse.shipping.queue.view')->name('warehouse.shipping.index');
-Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->middleware('permission:warehouse.shipping.ship')->name('warehouse.shipping.ship');
-Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->middleware('permission:warehouse.collection.receive')->name('vouchers.sales.queue.receive');
-Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->middleware('permission:warehouse.collection.start')->name('vouchers.sales.queue.start-collection');
-Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->middleware('permission:warehouse.collection.submit_reapproval')->name('vouchers.sales.queue.complete-collection');
-Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'updateSalesQueueItems'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.queue.items');
-Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.products.categories');
-Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.products.by-category');
-Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.products.variants');
-Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.collection.edit');
-Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->middleware('permission:warehouse.collection.edit')->name('vouchers.sales.collection.update');
-Route::get('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherEdit'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.edit');
+Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->name('vouchers.sales.queue');
+Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->name('vouchers.sales.queue.data');
+Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->name('vouchers.sales.shipped');
+Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->name('warehouse.shipping.index');
+Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->name('warehouse.shipping.ship');
+Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->name('vouchers.sales.queue.receive');
+Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->name('vouchers.sales.queue.start-collection');
+Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->name('vouchers.sales.queue.complete-collection');
+Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'updateSalesQueueItems'])->name('vouchers.sales.queue.items');
+Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->name('vouchers.sales.products.categories');
+Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->name('vouchers.sales.products.by-category');
+Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->name('vouchers.sales.products.variants');
+Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->name('vouchers.sales.collection.edit');
+Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.collection.update');
+Route::get('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherEdit'])->name('vouchers.sales.edit');
 Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVoucherShow'])->name('vouchers.sales.show');
 Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
-Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager')->name('vouchers.sales.update');
+Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.update');
 Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
-Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->middleware('role:admin|Admin|warehouse|Warehouse|manager|Manager|finance|Accountant')->name('vouchers.sales.print');
-Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.reapprove');
-Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('finance.invoices.return-to-sales');
-Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('finance.cheques.registered');
+Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
+Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->name('finance.invoices.reapprove');
+Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->name('finance.invoices.return-to-sales');
+Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->name('finance.cheques.registered');
 
 Route::prefix('finance/reports')
     ->name('finance.reports.')
-    ->middleware(['auth', 'role:admin|Admin|finance|Accountant|Manager|manager'])
     ->group(function () {
         Route::get('/', [FinanceReportController::class, 'index'])->name('index');
         Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
@@ -236,34 +235,34 @@ Route::prefix('finance/reports/seller-commission-documents')->name('finance.sell
 Route::prefix('vouchers/section/return-from-sale')
     ->name('vouchers.return-from-sale.')
     ->group(function () {
-        Route::get('/', [VoucherSalesReturnController::class, 'index'])->middleware('permission:sales_returns.view')->name('index');
-        Route::get('/data', [VoucherSalesReturnController::class, 'data'])->middleware('permission:sales_returns.view')->name('data');
-        Route::get('/create', [VoucherSalesReturnController::class, 'create'])->middleware('permission:sales_returns.create')->name('create');
-        Route::post('/', [VoucherSalesReturnController::class, 'store'])->middleware('permission:sales_returns.create')->name('store');
-        Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->middleware('permission:sales_returns.view')->name('customers.search');
-        Route::get('/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->middleware('permission:sales_returns.view')->name('customers.invoices');
-        Route::get('/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->middleware('permission:sales_returns.view')->name('invoices.items');
-        Route::get('/categories', [SalesReturnLookupController::class, 'categories'])->middleware('permission:sales_returns.view')->name('categories.index');
-        Route::get('/categories/{category}/products', [SalesReturnLookupController::class, 'categoryProducts'])->whereNumber('category')->middleware('permission:sales_returns.view')->name('categories.products');
-        Route::get('/products/search', [SalesReturnLookupController::class, 'products'])->middleware('permission:sales_returns.view')->name('products.search');
-        Route::get('/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->middleware('permission:sales_returns.view')->name('products.variants');
-        Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->middleware('permission:sales_returns.create')->name('preview');
-        Route::get('/export/excel', [VoucherSalesReturnController::class, 'exportExcel'])->middleware('permission:sales_returns.export')->name('export.excel');
-        Route::get('/export/pdf', [VoucherSalesReturnController::class, 'exportPdf'])->middleware('permission:sales_returns.export')->name('export.pdf');
-        Route::get('/print', [VoucherSalesReturnController::class, 'printReport'])->middleware('permission:sales_returns.print')->name('print-report');
-        Route::get('/print/customers', [VoucherSalesReturnController::class, 'printCustomers'])->middleware('permission:sales_returns.print')->name('print.customers');
-        Route::get('/print/products', [VoucherSalesReturnController::class, 'printProducts'])->middleware('permission:sales_returns.print')->name('print.products');
-        Route::get('/legacy/{transfer}/print', [VoucherSalesReturnController::class, 'printLegacy'])->whereNumber('transfer')->middleware('permission:sales_returns.print')->name('legacy.print');
-        Route::get('/{document}', [VoucherSalesReturnController::class, 'show'])->whereNumber('document')->middleware('permission:sales_returns.view')->name('show');
-        Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->middleware('permission:sales_returns.edit_draft')->name('edit');
-        Route::get('/{document}/applied-edit', [VoucherSalesReturnController::class, 'editApplied'])->whereNumber('document')->middleware('permission:sales_returns.edit_applied')->name('applied.edit');
-        Route::patch('/{document}/applied-update', [VoucherSalesReturnController::class, 'updateApplied'])->whereNumber('document')->middleware('permission:sales_returns.edit_applied')->name('applied.update');
-        Route::post('/{document}/void', [VoucherSalesReturnController::class, 'voidApplied'])->whereNumber('document')->middleware('permission:sales_returns.void_applied')->name('applied.void');
-        Route::patch('/{document}', [VoucherSalesReturnController::class, 'update'])->whereNumber('document')->middleware('permission:sales_returns.edit_draft')->name('update');
-        Route::post('/{document}/apply', [VoucherSalesReturnController::class, 'apply'])->whereNumber('document')->middleware('permission:sales_returns.apply')->name('apply');
-        Route::post('/{document}/cancel', [VoucherSalesReturnController::class, 'cancel'])->whereNumber('document')->middleware('permission:sales_returns.cancel_draft')->name('cancel');
-        Route::get('/{document}/print', [VoucherSalesReturnController::class, 'print'])->whereNumber('document')->middleware('permission:sales_returns.print')->name('print');
-        Route::get('/{document}/pdf', [VoucherSalesReturnController::class, 'pdf'])->whereNumber('document')->middleware('permission:sales_returns.print')->name('pdf');
+        Route::get('/', [VoucherSalesReturnController::class, 'index'])->name('index');
+        Route::get('/data', [VoucherSalesReturnController::class, 'data'])->name('data');
+        Route::get('/create', [VoucherSalesReturnController::class, 'create'])->name('create');
+        Route::post('/', [VoucherSalesReturnController::class, 'store'])->name('store');
+        Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->name('customers.search');
+        Route::get('/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->name('customers.invoices');
+        Route::get('/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->name('invoices.items');
+        Route::get('/categories', [SalesReturnLookupController::class, 'categories'])->name('categories.index');
+        Route::get('/categories/{category}/products', [SalesReturnLookupController::class, 'categoryProducts'])->whereNumber('category')->name('categories.products');
+        Route::get('/products/search', [SalesReturnLookupController::class, 'products'])->name('products.search');
+        Route::get('/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->name('products.variants');
+        Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->name('preview');
+        Route::get('/export/excel', [VoucherSalesReturnController::class, 'exportExcel'])->name('export.excel');
+        Route::get('/export/pdf', [VoucherSalesReturnController::class, 'exportPdf'])->name('export.pdf');
+        Route::get('/print', [VoucherSalesReturnController::class, 'printReport'])->name('print-report');
+        Route::get('/print/customers', [VoucherSalesReturnController::class, 'printCustomers'])->name('print.customers');
+        Route::get('/print/products', [VoucherSalesReturnController::class, 'printProducts'])->name('print.products');
+        Route::get('/legacy/{transfer}/print', [VoucherSalesReturnController::class, 'printLegacy'])->whereNumber('transfer')->name('legacy.print');
+        Route::get('/{document}', [VoucherSalesReturnController::class, 'show'])->whereNumber('document')->name('show');
+        Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->name('edit');
+        Route::get('/{document}/applied-edit', [VoucherSalesReturnController::class, 'editApplied'])->whereNumber('document')->name('applied.edit');
+        Route::patch('/{document}/applied-update', [VoucherSalesReturnController::class, 'updateApplied'])->whereNumber('document')->name('applied.update');
+        Route::post('/{document}/void', [VoucherSalesReturnController::class, 'voidApplied'])->whereNumber('document')->name('applied.void');
+        Route::patch('/{document}', [VoucherSalesReturnController::class, 'update'])->whereNumber('document')->name('update');
+        Route::post('/{document}/apply', [VoucherSalesReturnController::class, 'apply'])->whereNumber('document')->name('apply');
+        Route::post('/{document}/cancel', [VoucherSalesReturnController::class, 'cancel'])->whereNumber('document')->name('cancel');
+        Route::get('/{document}/print', [VoucherSalesReturnController::class, 'print'])->whereNumber('document')->name('print');
+        Route::get('/{document}/pdf', [VoucherSalesReturnController::class, 'pdf'])->whereNumber('document')->name('pdf');
     });
 
 Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
@@ -292,7 +291,7 @@ Route::get('/vouchers/{voucher}', [VoucherController::class, 'show'])->name('vou
 Route::get('/vouchers/{voucher}/edit', [VoucherController::class, 'edit'])->name('vouchers.edit');
 Route::put('/vouchers/{voucher}', [VoucherController::class, 'update'])->name('vouchers.update');
 Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->name('vouchers.destroy');
-    Route::get('/warehouse-outputs', [VoucherController::class, 'outputs'])->middleware('permission:stock.out')->name('warehouse.outputs');
+    Route::get('/warehouse-outputs', [VoucherController::class, 'outputs'])->name('warehouse.outputs');
 
     // Asset trustee module (امین اموال)
     Route::prefix('warehouse/asset-trustee')->name('asset.')->group(function () {
@@ -342,7 +341,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/products/{product}/variants', [WarehouseMapController::class, 'productVariants'])->name('products.variants');
         Route::get('/history', [WarehouseMapController::class, 'history'])->name('history');
 
-        Route::middleware('role:super_admin|admin|Admin|ادمین|Manager|manager|مدیر|warehouse|انباردار|StorageUser|StorageManager')->group(function () {
+        Route::group([], function () {
             Route::post('/locations', [WarehouseMapController::class, 'storeLocation'])->name('locations.store');
             Route::put('/locations/{location}', [WarehouseMapController::class, 'updateLocation'])->name('locations.update');
             Route::post('/assign', [WarehouseMapController::class, 'assign'])->name('assign');
@@ -351,7 +350,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     });
 
     // Warehouses
-    Route::get('/warehouses', [WarehouseController::class, 'index'])->middleware('permission:inventory.view')->name('warehouses.index');
+    Route::get('/warehouses', [WarehouseController::class, 'index'])->name('warehouses.index');
     Route::get('/warehouses/{warehouse}/edit', [WarehouseController::class, 'edit'])->name('warehouses.edit');
     Route::put('/warehouses/{warehouse}', [WarehouseController::class, 'update'])->name('warehouses.update');
     Route::delete('/warehouses/{warehouse}', [WarehouseController::class, 'destroy'])->name('warehouses.destroy');
@@ -361,28 +360,28 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     Route::get('/warehouses/{warehouse}/personnel/{personnel}', [WarehouseController::class, 'personnelShow'])->name('warehouses.personnel.show');
 
     // Purchases
-    Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('permission:stock.in')->name('purchases.index');
+    Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/purchases/export', [PurchaseController::class, 'exportExcel'])->name('purchases.export');
-    Route::get('/purchases/create', [PurchaseController::class, 'create'])->middleware('permission:stock.in')->name('purchases.create');
+    Route::get('/purchases/create', [PurchaseController::class, 'create'])->name('purchases.create');
     Route::get('/purchases/products/{product}/variants', [PurchaseController::class, 'productVariants'])->name('purchases.products.variants');
-    Route::post('/purchases', [PurchaseController::class, 'store'])->middleware('permission:stock.in')->name('purchases.store');
+    Route::post('/purchases', [PurchaseController::class, 'store'])->name('purchases.store');
     Route::get('/purchases/{purchase}', [PurchaseController::class, 'show'])->name('purchases.show');
     Route::get('/purchases/{purchase}/edit', [PurchaseController::class, 'edit'])->name('purchases.edit');
     Route::put('/purchases/{purchase}', [PurchaseController::class, 'update'])->name('purchases.update');
     Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy'])->name('purchases.destroy');
 
     // Persons
-    Route::get('/persons', [PersonController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('persons.index');
-    Route::post('/persons', [PersonController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant')->name('persons.store');
-    Route::put('/persons/{personKey}', [PersonController::class, 'update'])->middleware('role:admin|Admin|finance|Accountant')->name('persons.update');
+    Route::get('/persons', [PersonController::class, 'index'])->name('persons.index');
+    Route::post('/persons', [PersonController::class, 'store'])->name('persons.store');
+    Route::put('/persons/{personKey}', [PersonController::class, 'update'])->name('persons.update');
 
     // Suppliers
-    Route::get('/suppliers', [SupplierController::class, 'index'])->middleware('permission:suppliers.manage')->name('suppliers.index');
-    Route::post('/suppliers', [SupplierController::class, 'store'])->middleware('permission:suppliers.manage')->name('suppliers.store');
+    Route::get('/suppliers', [SupplierController::class, 'index'])->name('suppliers.index');
+    Route::post('/suppliers', [SupplierController::class, 'store'])->name('suppliers.store');
 
     // Stocktake / Stock Count Documents
-    Route::get('/stocktake', [StocktakeController::class, 'index'])->middleware('permission:inventory.view')->name('stocktake.index');
-    Route::get('/stock-count-documents', [StocktakeController::class, 'index'])->middleware('permission:inventory.view')->name('stock-count-documents.index');
+    Route::get('/stocktake', [StocktakeController::class, 'index'])->name('stocktake.index');
+    Route::get('/stock-count-documents', [StocktakeController::class, 'index'])->name('stock-count-documents.index');
     Route::get('/stock-count-documents/create', [StocktakeController::class, 'create'])->name('stock-count-documents.create');
     Route::post('/stock-count-documents', [StocktakeController::class, 'store'])->name('stock-count-documents.store');
     Route::get('/stock-count-documents/subcategories', [StocktakeController::class, 'subcategories'])->name('stock-count-documents.subcategories');
@@ -405,7 +404,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     Route::post('/preinvoice/reservations/heartbeat', [PreinvoiceController::class, 'heartbeatReservations'])->name('preinvoice.reservations.heartbeat');
     Route::post('/preinvoice/reservations/release-token', [PreinvoiceController::class, 'releaseReservationToken'])->name('preinvoice.reservations.release-token');
 
-    Route::prefix('warehouse/reviews')->name('warehouse.reviews.')->middleware('permission:preinvoices.warehouse.reviews.view')->group(function () {
+    Route::prefix('warehouse/reviews')->name('warehouse.reviews.')->group(function () {
         Route::get('/', [WarehouseReviewController::class, 'index'])->name('index');
         Route::get('/{preinvoiceOrder:uuid}', [WarehouseReviewController::class, 'show'])->name('show');
         Route::get('/{preinvoiceOrder:uuid}/print', [WarehouseReviewController::class, 'print'])->name('print');
@@ -416,17 +415,17 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     Route::put('/preinvoice/warehouse/{uuid}', [PreinvoiceController::class, 'warehouseSave'])->name('preinvoice.warehouse.save');
     Route::post('/preinvoice/warehouse/{uuid}/approve', [PreinvoiceController::class, 'warehouseApprove'])->name('preinvoice.warehouse.approve');
     Route::post('/preinvoice/warehouse/{uuid}/reject', [PreinvoiceController::class, 'warehouseReject'])->name('preinvoice.warehouse.reject');
-    Route::get('/preinvoice/drafts', [PreinvoiceController::class, 'draftIndex'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.index');
+    Route::get('/preinvoice/drafts', [PreinvoiceController::class, 'draftIndex'])->name('preinvoice.draft.index');
     Route::get('/preinvoice/drafts/{uuid}/edit', [PreinvoiceController::class, 'editDraft'])->name('preinvoice.draft.edit');
     Route::put('/preinvoice/drafts/{uuid}', [PreinvoiceController::class, 'updateDraft'])->name('preinvoice.draft.update');
-    Route::get('/preinvoice/drafts/{uuid}/finance', [PreinvoiceController::class, 'finance'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.finance');
-    Route::get('/preinvoice/drafts/{uuid}/finance/edit', [PreinvoiceController::class, 'financeEdit'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.finance.edit');
-    Route::put('/preinvoice/drafts/{uuid}/finance', [PreinvoiceController::class, 'financeUpdate'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.finance.update');
-    Route::post('/preinvoice/drafts/{uuid}/finance/save-and-finalize', [PreinvoiceController::class, 'financeSaveAndFinalize'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.finance.save-and-finalize');
-    Route::post('/preinvoice/drafts/{uuid}/finalize', [PreinvoiceController::class, 'finalize'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.finalize');
-    Route::post('/preinvoice/drafts/{uuid}/return', [PreinvoiceController::class, 'financeReturn'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.return');
-    Route::post('/preinvoice/drafts/{uuid}/cancel', [PreinvoiceController::class, 'financeCancel'])->middleware('role:admin|Admin|finance|Accountant|Manager')->name('preinvoice.draft.cancel');
-    Route::get('/preinvoice/all', [PreinvoiceController::class, 'allIndex'])->middleware('role:admin|Admin|warehouse|finance|Accountant|Manager')->name('preinvoice.all.index');
+    Route::get('/preinvoice/drafts/{uuid}/finance', [PreinvoiceController::class, 'finance'])->name('preinvoice.draft.finance');
+    Route::get('/preinvoice/drafts/{uuid}/finance/edit', [PreinvoiceController::class, 'financeEdit'])->name('preinvoice.draft.finance.edit');
+    Route::put('/preinvoice/drafts/{uuid}/finance', [PreinvoiceController::class, 'financeUpdate'])->name('preinvoice.draft.finance.update');
+    Route::post('/preinvoice/drafts/{uuid}/finance/save-and-finalize', [PreinvoiceController::class, 'financeSaveAndFinalize'])->name('preinvoice.draft.finance.save-and-finalize');
+    Route::post('/preinvoice/drafts/{uuid}/finalize', [PreinvoiceController::class, 'finalize'])->name('preinvoice.draft.finalize');
+    Route::post('/preinvoice/drafts/{uuid}/return', [PreinvoiceController::class, 'financeReturn'])->name('preinvoice.draft.return');
+    Route::post('/preinvoice/drafts/{uuid}/cancel', [PreinvoiceController::class, 'financeCancel'])->name('preinvoice.draft.cancel');
+    Route::get('/preinvoice/all', [PreinvoiceController::class, 'allIndex'])->name('preinvoice.all.index');
     Route::get('/preinvoice/my', [PreinvoiceController::class, 'myIndex'])->name('preinvoice.my.index');
     Route::get('/preinvoice/my/{uuid}', [PreinvoiceController::class, 'myShow'])->name('preinvoice.my.show');
     Route::get('/preinvoice/{uuid}/print', [ArchiveController::class, 'showPreinvoice'])->name('preinvoice.print');
@@ -446,8 +445,8 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     });
 
     // Customers
-    Route::get('/customers', [CustomerController::class, 'index'])->middleware('permission:customers.manage')->name('customers.index');
-    Route::post('/customers', [CustomerController::class, 'store'])->middleware('permission:customers.manage')->name('customers.store');
+    Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
+    Route::post('/customers', [CustomerController::class, 'store'])->name('customers.store');
     Route::put('/customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
     Route::delete('/customers/{customer}', [CustomerController::class, 'destroy'])->name('customers.destroy');
 
@@ -458,31 +457,31 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     // Invoices
     Route::prefix('invoices')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('invoices.index');
-        Route::get('/data', [InvoiceController::class, 'data'])->middleware('permission:invoices.view')->name('invoices.data');
-        Route::get('/customers/search', [InvoiceController::class, 'customersSearch'])->middleware('permission:invoices.view')->name('invoices.customers.search');
-        Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->middleware('permission:invoices.cancel')->name('invoices.cancelled');
+        Route::get('/data', [InvoiceController::class, 'data'])->name('invoices.data');
+        Route::get('/customers/search', [InvoiceController::class, 'customersSearch'])->name('invoices.customers.search');
+        Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->name('invoices.cancelled');
         Route::post('/bulk/reassign-seller', [InvoiceController::class, 'bulkReassignSeller'])->name('invoices.bulk.reassign-seller');
         Route::get('/{uuid}/print', [InvoiceController::class, 'print'])->name('invoices.print');
-        Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.edit');
+        Route::get('/{uuid}/edit', [InvoiceController::class, 'edit'])->name('invoices.edit');
         Route::put('/{uuid}', [InvoiceController::class, 'update'])->name('invoices.update');
         Route::get('/{uuid}/history', [InvoiceController::class, 'history'])->name('invoices.history');
         Route::get('/{uuid}', [InvoiceController::class, 'show'])->name('invoices.show');
         Route::post('/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.status');
         Route::post('/{uuid}/reassign-seller', [InvoiceController::class, 'reassignSeller'])->name('invoices.reassign-seller');
-        Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->middleware('permission:invoices.cancel')->name('invoices.cancel');
+        Route::post('/{uuid}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
         Route::post('/{uuid}/cancel/undo', [InvoiceController::class, 'undoCancel'])->name('invoices.cancel.undo');
-        Route::post('/{uuid}/payments', [InvoicePaymentController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager')->name('invoices.payments.store');
-        Route::post('/{uuid}/notes', [InvoiceNoteController::class, 'store'])->middleware('role:admin|Admin|finance|Accountant|Manager|manager|warehouse|Warehouse')->name('invoices.notes.store');
+        Route::post('/{uuid}/payments', [InvoicePaymentController::class, 'store'])->name('invoices.payments.store');
+        Route::post('/{uuid}/notes', [InvoiceNoteController::class, 'store'])->name('invoices.notes.store');
         Route::post('/payments/{payment}/cheque', [ChequeController::class, 'store'])->name('cheques.store');
     });
 
     // Account statements (گردش حساب اشخاص)
-    Route::get('/account-statements', [AccountStatementController::class, 'index'])->middleware('role:admin|Admin|finance|Accountant')->name('account-statements.index');
-    Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->middleware('role:admin|Admin|finance|Accountant')->name('account-statements.payments.store');
-    Route::get('/account-statements/documents/invoices/{uuid}', [AccountStatementController::class, 'showInvoice'])->middleware('role:admin|Admin|finance|Accountant')->name('account-statements.documents.invoices.show');
-    Route::get('/account-statements/documents/returns/{voucher}', [AccountStatementController::class, 'showReturnFromSale'])->middleware('role:admin|Admin|finance|Accountant')->name('account-statements.documents.returns.show');
-    Route::get('/account-statements/documents/payments/{payment}', [AccountStatementController::class, 'showPayment'])->middleware('role:admin|Admin|finance|Accountant')->name('account-statements.documents.payments.show');
-    Route::get('/account-statements/{customer}', [AccountStatementController::class, 'show'])->middleware('role:admin|Admin|finance|Accountant')->name('account-statements.show');
+    Route::get('/account-statements', [AccountStatementController::class, 'index'])->name('account-statements.index');
+    Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
+    Route::get('/account-statements/documents/invoices/{uuid}', [AccountStatementController::class, 'showInvoice'])->name('account-statements.documents.invoices.show');
+    Route::get('/account-statements/documents/returns/{voucher}', [AccountStatementController::class, 'showReturnFromSale'])->name('account-statements.documents.returns.show');
+    Route::get('/account-statements/documents/payments/{payment}', [AccountStatementController::class, 'showPayment'])->name('account-statements.documents.payments.show');
+    Route::get('/account-statements/{customer}', [AccountStatementController::class, 'show'])->name('account-statements.show');
 
     // Activity logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('activity-logs.index');
@@ -491,7 +490,7 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
     Route::post('/users/sync', [UserController::class, 'sync'])->name('users.sync');
 
-    Route::prefix('admin/bug-investigator')->name('admin.bug-investigator.')->middleware('role:admin|Admin|Manager|manager|مدیر')->group(function () {
+    Route::prefix('admin/bug-investigator')->name('admin.bug-investigator.')->group(function () {
         Route::get('/', [BugInvestigatorController::class, 'index'])->name('index');
         Route::get('/create', [BugInvestigatorController::class, 'create'])->name('create');
         Route::post('/', [BugInvestigatorController::class, 'store'])->name('store');
@@ -499,8 +498,8 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/{bugCase}', [BugInvestigatorController::class, 'show'])->name('show');
     });
 
-    Route::get('/admin/permissions', [UserPermissionController::class, 'index'])->middleware('permission:permissions.view')->name('admin.permissions.index');
-    Route::put('/admin/permissions/{user}', [UserPermissionController::class, 'update'])->middleware('permission:permissions.edit')->name('admin.permissions.update');
+    Route::get('/admin/permissions', [UserPermissionController::class, 'index'])->name('admin.permissions.index');
+    Route::put('/admin/permissions/{user}', [UserPermissionController::class, 'update'])->name('admin.permissions.update');
     Route::resource('/admin/roles', RoleController::class)->except(['show'])->names('admin.roles');
 });
 Route::post('model-lists/import-phone-catalog', [ModelListController::class, 'importPhoneCatalog'])

@@ -48,11 +48,18 @@ class ProductPriceListPdfService
             'backupSubsFont' => ['dejavusans'],
         ]);
 
+        $visitMode = ($meta['output_mode'] ?? 'catalog') === 'visit';
+        $view = $visitMode ? 'product-exports.visit-price-list-pdf' : 'product-exports.price-list-pdf';
+        $title = $visitMode ? 'لیست قیمت و موجودی ویزیتوری آریا گستر' : 'لیست قیمت محصولات آریا گستر';
+        $footerNote = $visitMode
+            ? 'قیمت و موجودی براساس آخرین اطلاعات ثبت‌شده در سامانه هستند.'
+            : 'قیمت‌ها براساس آخرین اطلاعات ثبت‌شده در سامانه هستند.';
+
         $mpdf->SetDirectionality('rtl');
-        $mpdf->SetTitle('لیست قیمت محصولات آریا گستر');
+        $mpdf->SetTitle($title);
         $mpdf->SetHTMLHeader(view('product-exports.partials.pdf-header', compact('meta', 'fontFamily'))->render());
-        $mpdf->SetHTMLFooter('<table width="100%" style="font-family:'.$fontFamily.',dejavusans,sans-serif;font-size:6.8pt;font-weight:400;color:#778892;border-top:0.7px solid #D8E3E9;padding-top:3px"><tr><td width="33%" align="right">مجموعه آریا گستر</td><td width="34%" align="center">قیمت‌ها براساس آخرین اطلاعات ثبت‌شده در سامانه هستند.</td><td width="33%" align="left">صفحه {PAGENO} از {nbpg}</td></tr></table>');
-        $mpdf->WriteHTML(view('product-exports.price-list-pdf', compact('products', 'meta', 'fontFamily'))->render());
+        $mpdf->SetHTMLFooter('<table width="100%" style="font-family:'.$fontFamily.',dejavusans,sans-serif;font-size:6.8pt;font-weight:400;color:#778892;border-top:0.7px solid #D8E3E9;padding-top:3px"><tr><td width="33%" align="right">مجموعه آریا گستر</td><td width="34%" align="center">'.$footerNote.'</td><td width="33%" align="left">صفحه {PAGENO} از {nbpg}</td></tr></table>');
+        $mpdf->WriteHTML(view($view, compact('products', 'meta', 'fontFamily'))->render());
 
         return $mpdf->Output('', Destination::STRING_RETURN);
     }

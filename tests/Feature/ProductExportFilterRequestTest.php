@@ -29,9 +29,33 @@ class ProductExportFilterRequestTest extends TestCase
 
         $this->get(route('admin.product-exports.index'))
             ->assertOk()
-            ->assertSee('لیست قیمت محصولات')
+            ->assertSee('کاتالوگ محصولات')
             ->assertSee('value="all" selected', false)
             ->assertViewHas('filters', fn (array $filters) => $filters['stock_status'] === 'all');
+    }
+
+    public function test_output_mode_defaults_to_visit_and_catalog_can_be_selected(): void
+    {
+        $this->signIn();
+
+        $this->get(route('admin.product-exports.index'))
+            ->assertOk()
+            ->assertViewHas('filters', fn (array $filters) => $filters['output_mode'] === 'visit');
+
+        $this->get(route('admin.product-exports.index', ['output_mode' => 'catalog']))
+            ->assertOk()
+            ->assertViewHas('filters', fn (array $filters) => $filters['output_mode'] === 'catalog');
+    }
+
+    public function test_invalid_output_mode_is_rejected(): void
+    {
+        $this->signIn();
+        $this->mock(ProductExportService::class, fn ($mock) => $mock->shouldNotReceive('paginate'));
+
+        $this->from(route('admin.product-exports.index'))
+            ->get(route('admin.product-exports.index', ['output_mode' => 'invalid']))
+            ->assertRedirect(route('admin.product-exports.index'))
+            ->assertSessionHasErrors('output_mode');
     }
 
     public function test_empty_stock_status_defaults_to_all(): void
