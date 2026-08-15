@@ -53,10 +53,9 @@ use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Models\SalesReturnDocument;
 use Illuminate\Support\Facades\Route;
+Route::get('/', fn() => redirect()->route('dashboard'));
 
-Route::get('/', fn () => redirect()->route('dashboard'));
-
-Route::get('/access-unassigned', fn () => response()->view('errors.access-unassigned'))
+Route::get('/access-unassigned', fn() => response()->view('errors.access-unassigned'))
     ->middleware('auth')
     ->name('access.unassigned');
 
@@ -203,8 +202,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->whereNumber('product')->name('movements.store');
     Route::get('/movements', [StockMovementReportController::class, 'index'])->name('movements.index');
 
-    Route::get('/sales-returns', fn () => redirect()->route('vouchers.return-from-sale.index'))->name('sales-returns.index');
-    Route::get('/sales-returns/create', fn () => redirect()->route('vouchers.return-from-sale.create'))->name('sales-returns.create');
+    Route::get('/sales-returns', fn() => redirect()->route('vouchers.return-from-sale.index'))->name('sales-returns.index');
+    Route::get('/sales-returns/create', fn() => redirect()->route('vouchers.return-from-sale.create'))->name('sales-returns.create');
     Route::post('/sales-returns', [SalesReturnController::class, 'store'])->name('sales-returns.store');
     Route::get('/sales-returns/export/excel', [SalesReturnController::class, 'exportExcel'])->name('sales-returns.export.excel');
     Route::get('/sales-returns/export/pdf', [SalesReturnController::class, 'exportPdf'])->name('sales-returns.export.pdf');
@@ -215,8 +214,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/sales-returns/products/search', [SalesReturnLookupController::class, 'products'])->name('sales-returns.products.search');
     Route::get('/sales-returns/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->name('sales-returns.products.variants');
     Route::post('/sales-returns/preview', [SalesReturnLookupController::class, 'preview'])->name('sales-returns.preview');
-    Route::get('/sales-returns/{document}', fn (SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.show', $document))->whereNumber('document')->name('sales-returns.show');
-    Route::get('/sales-returns/{document}/edit', fn (SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.edit', $document))->whereNumber('document')->name('sales-returns.edit');
+    Route::get('/sales-returns/{document}', fn(SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.show', $document))->whereNumber('document')->name('sales-returns.show');
+    Route::get('/sales-returns/{document}/edit', fn(SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.edit', $document))->whereNumber('document')->name('sales-returns.edit');
     Route::patch('/sales-returns/{document}', [SalesReturnController::class, 'update'])->whereNumber('document')->name('sales-returns.update');
     Route::post('/sales-returns/{document}/apply', [SalesReturnController::class, 'apply'])->whereNumber('document')->name('sales-returns.apply');
     Route::post('/sales-returns/{document}/cancel', [SalesReturnController::class, 'cancel'])->whereNumber('document')->name('sales-returns.cancel');
@@ -561,4 +560,16 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
-require __DIR__.'/auth.php';
+Route::get('/test', function () {
+    $token =   app(TokenService::class)->hash('09357318998');
+
+    $verify =  app(TokenService::class)->verify('09357318998', '6b29832dd61fc49296f4d6e6ad26297d');
+
+    dd($token, $verify);
+    return response()->json([
+        'success' => true,
+        'message' => 'Telegram daily report sent successfully.',
+    ]);
+});
+
+require __DIR__ . '/auth.php';
