@@ -2,10 +2,7 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\Facades\Blade;
-use Illuminate\Support\Facades\Gate;
-use App\Support\PermissionCatalog;
-use Illuminate\Routing\Router;
+use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Models\Category;
 use App\Models\Cheque;
 use App\Models\Customer;
@@ -18,15 +15,20 @@ use App\Models\PreinvoiceOrderItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
+use App\Models\WarehouseStock;
 use App\Observers\ActivityObserver;
+use App\Observers\CommissionSourceObserver;
 use App\Observers\ProductInventoryObserver;
+use App\Observers\ProductVariantSyncObserver;
 use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
-use App\Observers\ProductVariantSyncObserver;
-use App\Http\Middleware\RoutePermissionMiddleware;
-use App\Models\WarehouseStock;
-use Illuminate\Support\ServiceProvider;
+use App\Support\PermissionCatalog;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -50,6 +52,8 @@ class AppServiceProvider extends ServiceProvider
         PreinvoiceOrderItem::observe(ActivityObserver::class);
         Invoice::observe(ActivityObserver::class);
         InvoiceItem::observe(ActivityObserver::class);
+        Invoice::observe(CommissionSourceObserver::class);
+        InvoiceItem::observe(CommissionSourceObserver::class);
         InvoicePayment::observe(ActivityObserver::class);
         InvoiceNote::observe(ActivityObserver::class);
         Cheque::observe(ActivityObserver::class);

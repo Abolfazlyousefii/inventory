@@ -1,7 +1,7 @@
 <?php
 
 $all = [
-    'page.dashboard','page.products','page.products.price_changes','page.categories','page.brands_models','page.units','page.shipping_methods','page.warehouses','page.warehouse.stocks','page.warehouse.stocktake','page.warehouse.purchases','page.warehouse.issues','page.warehouse.collection','page.warehouse.shipping','page.warehouse.reservations','page.warehouse.transfers','page.warehouse.receipts','page.warehouse.map','page.assets','page.sales.preinvoices','page.sales.preinvoice_warehouse_review','page.sales.preinvoice_finance_review','page.sales.invoices','page.sales.returns','page.customers','page.suppliers','page.finance.payments','page.finance.accounts','page.finance.seller_sales_documents','page.reports','page.tickets','page.users','page.roles','page.settings','page.activity_logs','page.integrations.inventory',
+    'page.dashboard','page.products','page.products.price_changes','page.categories','page.brands_models','page.units','page.shipping_methods','page.warehouses','page.warehouse.stocks','page.warehouse.stocktake','page.warehouse.purchases','page.warehouse.issues','page.warehouse.collection','page.warehouse.shipping','page.warehouse.reservations','page.warehouse.transfers','page.warehouse.receipts','page.warehouse.map','page.assets','page.sales.preinvoices','page.commercial.commissions','page.sales.preinvoice_warehouse_review','page.sales.preinvoice_finance_review','page.sales.invoices','page.sales.returns','page.customers','page.suppliers','page.finance.payments','page.finance.accounts','page.finance.seller_sales_documents','page.reports','page.tickets','page.users','page.roles','page.settings','page.activity_logs','page.integrations.inventory',
 ];
 
 $defaults = [

@@ -1,0 +1,32 @@
+@php
+    $adjustmentTypes = ['manual' => 'دستی', 'carry_forward' => 'انتقال مانده'];
+    $reviewStatuses = ['pending' => 'در انتظار بررسی', 'approved' => 'تأییدشده', 'rejected' => 'ردشده'];
+    $settlementStatuses = ['unpaid' => 'پرداخت‌نشده', 'partially_paid' => 'پرداخت بخشی', 'paid' => 'پرداخت‌شده', 'credit_carried' => 'انتقال اعتبار', 'zero' => 'بدون مانده'];
+@endphp
+
+@if($period)
+<article class="commission-card">
+    <div class="commission-card__head"><div><h3>فرایند مالی دوره</h3><p>بررسی، نهایی‌سازی و ثبت پرداخت پس از تکمیل اسناد</p></div><span class="commission-status commission-status--{{ $period->display_status }}">{{ $period->status_label }}</span></div>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+        @if($period->status === 'open' && $permissions['close_periods'])<form method="post" action="{{ route('commercial.commissions.periods.review', $period) }}" data-loading-form>@csrf<button class="btn btn-primary" @disabled($reviewBlockers) data-loading-text="در حال انتقال…">شروع بررسی مالی</button></form>@endif
+        @if($period->status === 'review' && $permissions['close_periods'])<form method="post" action="{{ route('commercial.commissions.periods.close', $period) }}" data-loading-form>@csrf<button class="btn btn-danger" @disabled($closeBlockers) data-loading-text="در حال نهایی‌سازی…">بستن دوره و ایجاد تسویه‌ها</button></form>@endif
+        @if($period->status === 'closed' && $permissions['mark_paid'])<form method="post" action="{{ route('commercial.commissions.periods.paid', $period) }}" data-loading-form>@csrf<button class="btn btn-success" @disabled($paidBlockers) data-loading-text="در حال ثبت…">ثبت پرداخت کامل دوره</button></form>@endif
+    </div>
+    @php($blockers = $period->status === 'open' ? $reviewBlockers : ($period->status === 'review' ? $closeBlockers : $paidBlockers))
+    @if($blockers)<div class="alert alert-warning mt-3"><strong>موارد لازم پیش از تغییر وضعیت:</strong><ul class="mb-0">@foreach($blockers as $blocker)<li>{{ str_replace(['stale', 'immutable'], ['نیازمند بروزرسانی', 'قفل‌شده'], $blocker) }}</li>@endforeach</ul></div>@endif
+    @if(in_array($period->status, ['closed', 'paid'], true))<div class="commission-kpi-grid commission-kpi-grid--compact mt-3">@foreach(['approved_commission_snapshot'=>'پورسانت نهایی','return_reversal_snapshot'=>'برگشتی','seller_correction_snapshot'=>'اصلاح فروشنده','manual_adjustment_snapshot'=>'تعدیلات'] as $field=>$label)<article class="commission-kpi"><span>{{ $label }}</span><strong>{{ \App\Support\Currency::formatToman($period->$field) }}</strong></article>@endforeach</div>@endif
+</article>
+
+<article class="commission-card">
+    <div class="commission-card__head"><div><h3>تعدیلات پورسانت</h3><p>افزایش یا کاهش‌های دارای دلیل و سابقه بررسی مالی</p></div></div>
+    @if($permissions['manage_adjustments'] && in_array($period->status, ['open', 'review'], true))
+        <details class="mt-3"><summary class="btn btn-outline-primary">ثبت تعدیل جدید</summary><form method="post" action="{{ route('commercial.commissions.adjustments.store') }}" class="commission-form-grid mt-3" data-loading-form>@csrf<input type="hidden" name="commission_period_id" value="{{ $period->id }}"><div><label class="form-label">فروشنده</label><select name="seller_id" class="form-select" required>@foreach($documentSellers as $seller)<option value="{{ $seller->id }}">{{ $seller->name }}</option>@endforeach</select></div><div><label class="form-label">مبلغ تعدیل</label><div class="input-group"><input name="amount_toman" class="form-control commission-signed-money-input" inputmode="numeric" required><span class="input-group-text">تومان</span></div><small class="form-text">برای کاهش، مبلغ را با علامت منفی وارد کنید.</small></div><div><label class="form-label">دوره مرتبط (اختیاری)</label><select name="source_period_id" class="form-select"><option value="">—</option>@foreach($periods as $source)<option value="{{ $source->id }}">{{ $source->label }}</option>@endforeach</select></div><div><label class="form-label">دلیل</label><input name="reason" class="form-control" required maxlength="5000"></div><div class="commission-form-grid__full"><button class="btn btn-primary" data-loading-text="در حال ثبت…">ثبت برای بررسی</button></div></form></details>
+    @endif
+    <div class="table-responsive mt-3"><table class="commission-table"><thead><tr><th>فروشنده</th><th>نوع</th><th>مبلغ</th><th>دلیل</th><th>وضعیت</th></tr></thead><tbody>@forelse($adjustments as $adjustment)<tr><td>{{ $adjustment->seller->name }}</td><td>{{ $adjustmentTypes[$adjustment->type] ?? 'تعدیل' }}</td><td>{{ \App\Support\Currency::formatToman($adjustment->amount) }}</td><td>{{ $adjustment->reason }}</td><td>{{ $reviewStatuses[$adjustment->status] ?? $adjustment->status }}</td></tr>@empty<tr><td colspan="5"><div class="commission-empty commission-empty--inline">تعدیلی برای این دوره ثبت نشده است.</div></td></tr>@endforelse</tbody></table></div>{{ $adjustments->links() }}
+</article>
+
+<article class="commission-card">
+    <div class="commission-card__head"><div><h3>تسویه‌های فروشندگان</h3><p>مبالغ نهایی، پرداخت‌شده و مانده هر فروشنده</p></div></div>
+    <div class="table-responsive mt-3"><table class="commission-table"><thead><tr><th>شماره</th><th>فروشنده</th><th>پورسانت نهایی</th><th>پرداخت‌شده</th><th>مانده</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>@forelse($settlements as $settlement)<tr><td>{{ $settlement->settlement_number }}</td><td>{{ $settlement->seller->name }}</td><td>{{ \App\Support\Currency::formatToman($settlement->net_payable) }}</td><td>{{ \App\Support\Currency::formatToman($settlement->paid_amount) }}</td><td>{{ \App\Support\Currency::formatToman($settlement->remaining_amount) }}</td><td><span class="commission-status commission-status--{{ $settlement->status === 'paid' ? 'paid' : 'neutral' }}">{{ $settlementStatuses[$settlement->status] ?? $settlement->status }}</span></td><td><div class="commission-row-actions"><a class="btn btn-sm btn-outline-primary" href="{{ route('commercial.commissions.settlements.show', $settlement) }}">مشاهده و پرداخت</a><a class="btn btn-sm btn-outline-secondary" target="_blank" href="{{ route('commercial.commissions.settlements.print', $settlement) }}">چاپ</a></div></td></tr>@empty<tr><td colspan="7"><div class="commission-empty commission-empty--inline">پس از بستن دوره، تسویه‌های فروشندگان در این بخش ساخته می‌شوند.</div></td></tr>@endforelse</tbody></table></div>{{ $settlements->links() }}
+</article>
+@endif

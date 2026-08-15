@@ -57,6 +57,10 @@
             </div>
         </header>
 
+        @if($commissionDashboard || $commissionPeriodUnavailable)
+            @include('dashboard.partials.commission-widget')
+        @endif
+
         @if($sellerQuickActions->isNotEmpty())
             <section class="seller-section" aria-labelledby="seller-quick-actions-title">
                 <div class="seller-section__heading">
@@ -266,6 +270,10 @@
                 <div class="seller-hero__meta"><span>{{ $todayDateLabel }}</span><span>آخرین بارگذاری {{ $todayDateTimeLabel }}</span></div>
             </div>
         </header>
+
+        @if($commissionDashboard || $commissionPeriodUnavailable)
+            @include('dashboard.partials.commission-widget')
+        @endif
     @endif
 
     @if($canViewManagementReports || $canViewFinanceReports || $canViewWarehouseReports)

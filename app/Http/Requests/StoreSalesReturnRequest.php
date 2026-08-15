@@ -1,7 +1,13 @@
 <?php
+
 namespace App\Http\Requests;
 
-use App\Models\{Invoice,InvoiceItem,ProductVariant,SalesReturnDocument,SalesReturnDocumentItem};
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\ModelList;
+use App\Models\ProductVariant;
+use App\Models\SalesReturnDocument;
+use App\Models\SalesReturnDocumentItem;
 use App\Services\SalesReturnCalculationService;
 use App\Services\SalesReturnItemsPayloadDecoder;
 use App\Services\SalesReturnNewProductPayloadNormalizer;
@@ -10,11 +16,15 @@ use Illuminate\Validation\Rule;
 
 class StoreSalesReturnRequest extends FormRequest
 {
-    public function authorize(): bool { return true; }
+    public function authorize(): bool
+    {
+        return true;
+    }
 
     public function rules(): array
     {
         return [
+            'commission_effect_type' => ['nullable', Rule::in(array_keys(SalesReturnDocument::commissionEffectLabels()))],
             'items_payload' => ['nullable', 'string', 'max:8388608'],
             'source_type' => ['required', Rule::in([SalesReturnDocument::SOURCE_INTERNAL_INVOICE, SalesReturnDocument::SOURCE_SAZEH_HESAB])],
             'customer_id' => ['required', 'exists:customers,id'],
@@ -98,12 +108,13 @@ class StoreSalesReturnRequest extends FormRequest
                 $row['item_condition'] = SalesReturnDocumentItem::CONDITION_HEALTHY;
             }
             if (isset($row['refund_unit_price'])) {
-                $row['refund_unit_price'] = (int) preg_replace('/[^0-9]/', '', strtr((string) $row['refund_unit_price'], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']));
+                $row['refund_unit_price'] = (int) preg_replace('/[^0-9]/', '', strtr((string) $row['refund_unit_price'], ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9', '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']));
             }
             if (is_array($row['new_product_payload'] ?? null)) {
                 $row['new_product_payload'] = app(SalesReturnNewProductPayloadNormalizer::class)
                     ->normalize($row['new_product_payload']);
             }
+
             return $row;
         })->all();
         $this->merge([
@@ -119,18 +130,34 @@ class StoreSalesReturnRequest extends FormRequest
             $items = collect($this->input('items', []));
             if ($source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE) {
                 $invoice = Invoice::find((int) $this->input('invoice_id'));
-                if (! $invoice) return;
-                if ((int) $invoice->customer_id !== (int) $this->input('customer_id')) $validator->errors()->add('invoice_id', 'فاکتور متعلق به مشتری انتخاب‌شده نیست.');
+                if (! $invoice) {
+                    return;
+                }
+                if ((int) $invoice->customer_id !== (int) $this->input('customer_id')) {
+                    $validator->errors()->add('invoice_id', 'فاکتور متعلق به مشتری انتخاب‌شده نیست.');
+                }
                 $canOverride = $this->user()?->can('sales_returns.override_invoice_status') ?? false;
-                if (! $canOverride && $invoice->status !== Invoice::STATUS_SHIPPED) $validator->errors()->add('invoice_id', 'فقط فاکتور ارسال‌شده مجاز است.');
-                if (in_array($invoice->status, [Invoice::STATUS_NOT_SHIPPED, 'draft', 'cancelled', 'canceled'], true)) $validator->errors()->add('invoice_id', 'فاکتور لغوشده یا پیش‌نویس قابل برگشت نیست.');
+                if (! $canOverride && $invoice->status !== Invoice::STATUS_SHIPPED) {
+                    $validator->errors()->add('invoice_id', 'فقط فاکتور ارسال‌شده مجاز است.');
+                }
+                if (in_array($invoice->status, [Invoice::STATUS_NOT_SHIPPED, 'draft', 'cancelled', 'canceled'], true)) {
+                    $validator->errors()->add('invoice_id', 'فاکتور لغوشده یا پیش‌نویس قابل برگشت نیست.');
+                }
                 $ids = [];
                 foreach ($items as $idx => $row) {
                     $id = (int) ($row['invoice_item_id'] ?? 0);
-                    if ($id <= 0) { $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم فاکتور الزامی است.'); continue; }
-                    if (isset($ids[$id])) $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم فاکتور تکراری است.');
+                    if ($id <= 0) {
+                        $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم فاکتور الزامی است.');
+
+                        continue;
+                    }
+                    if (isset($ids[$id])) {
+                        $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم فاکتور تکراری است.');
+                    }
                     $ids[$id] = true;
-                    if (! InvoiceItem::where('invoice_id', $invoice->id)->whereKey($id)->exists()) $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم متعلق به این فاکتور نیست.');
+                    if (! InvoiceItem::where('invoice_id', $invoice->id)->whereKey($id)->exists()) {
+                        $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم متعلق به این فاکتور نیست.');
+                    }
                 }
                 $routeDocument = $this->route('document');
                 $excludeDocumentId = $routeDocument?->isApplied() ? (int) $routeDocument->id : null;
@@ -141,36 +168,65 @@ class StoreSalesReturnRequest extends FormRequest
                 );
                 $byId = collect($preview)->keyBy(fn ($row) => (int) $row['invoice_item']->id);
                 foreach ($items as $idx => $row) {
-                    $id = (int) ($row['invoice_item_id'] ?? 0); $qty = (int) ($row['return_quantity'] ?? 0);
+                    $id = (int) ($row['invoice_item_id'] ?? 0);
+                    $qty = (int) ($row['return_quantity'] ?? 0);
                     $p = $byId->get($id);
-                    if ($p && $qty > (int) $p['returnable_quantity']) $validator->errors()->add("items.$idx.return_quantity", 'تعداد برگشتی بیشتر از قابل برگشت است.');
+                    if ($p && $qty > (int) $p['returnable_quantity']) {
+                        $validator->errors()->add("items.$idx.return_quantity", 'تعداد برگشتی بیشتر از قابل برگشت است.');
+                    }
                 }
             }
 
             if ($source === SalesReturnDocument::SOURCE_SAZEH_HESAB) {
                 foreach ($items as $idx => $row) {
                     $src = $row['item_source'] ?? null;
-                    if ($src === SalesReturnDocumentItem::SOURCE_INVOICE_ITEM) $validator->errors()->add("items.$idx.item_source", 'در سازه‌حساب آیتم فاکتور داخلی مجاز نیست.');
-                    if ((int) ($row['refund_unit_price'] ?? 0) < 1) $validator->errors()->add("items.$idx.refund_unit_price", 'قیمت برگشتی مشتری الزامی است.');
-                    if ($src === SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT && empty($row['product_variant_id'])) $validator->errors()->add("items.$idx.product_variant_id", 'تنوع کالای موجود الزامی است.');
+                    if ($src === SalesReturnDocumentItem::SOURCE_INVOICE_ITEM) {
+                        $validator->errors()->add("items.$idx.item_source", 'در سازه‌حساب آیتم فاکتور داخلی مجاز نیست.');
+                    }
+                    if ((int) ($row['refund_unit_price'] ?? 0) < 1) {
+                        $validator->errors()->add("items.$idx.refund_unit_price", 'قیمت برگشتی مشتری الزامی است.');
+                    }
+                    if ($src === SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT && empty($row['product_variant_id'])) {
+                        $validator->errors()->add("items.$idx.product_variant_id", 'تنوع کالای موجود الزامی است.');
+                    }
                     if ($src === SalesReturnDocumentItem::SOURCE_NEW_PRODUCT) {
-                        if (! ($this->user()?->can('sales_returns.create_product') ?? false)) $validator->errors()->add("items.$idx.new_product_payload", 'مجوز تعریف کالای جدید را ندارید.');
+                        if (! ($this->user()?->can('sales_returns.create_product') ?? false)) {
+                            $validator->errors()->add("items.$idx.new_product_payload", 'مجوز تعریف کالای جدید را ندارید.');
+                        }
                         $p = $row['new_product_payload'] ?? [];
-                        foreach (['name', 'category_id'] as $field) if (blank($p[$field] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
+                        foreach (['name', 'category_id'] as $field) {
+                            if (blank($p[$field] ?? null)) {
+                                $validator->errors()->add("items.$idx.new_product_payload.$field", 'این فیلد الزامی است.');
+                            }
+                        }
                         if (($p['schema_version'] ?? null) == 2) {
                             $useModels = ($p['use_models'] ?? false) === true;
                             $useDesigns = ($p['use_designs'] ?? false) === true;
-                            if ($useModels && empty($p['model_list_ids'])) $validator->errors()->add("items.$idx.new_product_payload.model_list_ids", 'حداقل یک مدل انتخاب کنید.');
-                            if ($useModels && filled($p['model_brand_group'] ?? null)) {
-                                $badBrand = \App\Models\ModelList::whereIn('id', $p['model_list_ids'] ?? [])->where('brand', '<>', $p['model_brand_group'])->exists();
-                                if ($badBrand) $validator->errors()->add("items.$idx.new_product_payload.model_brand_group", 'مدل‌ها متعلق به برند انتخاب‌شده نیستند.');
+                            if ($useModels && empty($p['model_list_ids'])) {
+                                $validator->errors()->add("items.$idx.new_product_payload.model_list_ids", 'حداقل یک مدل انتخاب کنید.');
                             }
-                            if ($useDesigns && empty($p['designs'])) $validator->errors()->add("items.$idx.new_product_payload.designs", 'حداقل یک طرح کامل وارد کنید.');
-                            if (empty($p['selected_variants'])) $validator->errors()->add("items.$idx.new_product_payload.selected_variants", 'حداقل یک تنوع برای کالا انتخاب کنید.');
+                            if ($useModels && filled($p['model_brand_group'] ?? null)) {
+                                $badBrand = ModelList::whereIn('id', $p['model_list_ids'] ?? [])->where('brand', '<>', $p['model_brand_group'])->exists();
+                                if ($badBrand) {
+                                    $validator->errors()->add("items.$idx.new_product_payload.model_brand_group", 'مدل‌ها متعلق به برند انتخاب‌شده نیستند.');
+                                }
+                            }
+                            if ($useDesigns && empty($p['designs'])) {
+                                $validator->errors()->add("items.$idx.new_product_payload.designs", 'حداقل یک طرح کامل وارد کنید.');
+                            }
+                            if (empty($p['selected_variants'])) {
+                                $validator->errors()->add("items.$idx.new_product_payload.selected_variants", 'حداقل یک تنوع برای کالا انتخاب کنید.');
+                            }
                         } else {
-                            if (blank($p['variant_name'] ?? null)) $validator->errors()->add("items.$idx.new_product_payload.variant_name", 'این فیلد الزامی است.');
+                            if (blank($p['variant_name'] ?? null)) {
+                                $validator->errors()->add("items.$idx.new_product_payload.variant_name", 'این فیلد الزامی است.');
+                            }
                         }
-                        foreach (['sku' => 'variant_code', 'barcode' => 'variant_code'] as $field => $column) if (filled($p[$field] ?? null) && ProductVariant::where($column, $p[$field])->exists()) $validator->errors()->add("items.$idx.new_product_payload.$field", 'کد یا بارکد تکراری است.');
+                        foreach (['sku' => 'variant_code', 'barcode' => 'variant_code'] as $field => $column) {
+                            if (filled($p[$field] ?? null) && ProductVariant::where($column, $p[$field])->exists()) {
+                                $validator->errors()->add("items.$idx.new_product_payload.$field", 'کد یا بارکد تکراری است.');
+                            }
+                        }
                     }
                 }
             }
@@ -188,5 +244,4 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.new_product_payload.selected_variants.required' => 'حداقل یک تنوع برای کالا انتخاب کنید.',
         ];
     }
-
 }

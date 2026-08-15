@@ -20,13 +20,15 @@ it('registers the central middleware and keeps route compatibility behind it', f
         ->and($middleware)->toContain("app(EnsurePageAccess::class)->handle(\$request, \$next)");
 });
 
-it('shows only page permissions in role ui and only roles in user ui', function () {
+it('shows page permissions and the explicit commission action allowlist in role ui but only roles in user ui', function () {
     $roleController = file_get_contents(app_path('Http/Controllers/Admin/RoleController.php'));
     $roleView = file_get_contents(resource_path('views/admin/roles/form.blade.php'));
     $userView = file_get_contents(resource_path('views/admin/permissions/index.blade.php'));
 
     expect($roleController)->toContain("where('key', 'like', 'page.%')")
+        ->and($roleController)->toContain("'commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods'")
         ->and($roleView)->toContain('هر گزینه دسترسی کامل به همان صفحه')
+        ->and($roleView)->toContain('عملیات حساس پورسانت')
         ->and($userView)->toContain('دسترسی صفحات فقط از نقش‌های کاربر محاسبه می‌شود.')
         ->and($userView)->not->toContain('name="direct_permissions[]"');
 });

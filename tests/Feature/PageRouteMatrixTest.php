@@ -14,8 +14,8 @@ uses(RefreshDatabase::class);
 
 function pageMatrixUser(string $pagePermission): User
 {
-    $permission = Permission::findOrCreate($pagePermission, 'web');
-    $permission->forceFill(['key' => $pagePermission])->save();
+    $permission = Permission::query()->where('key', $pagePermission)->first() ?? Permission::findOrCreate($pagePermission, 'web');
+    if ($permission->key !== $pagePermission) $permission->forceFill(['key' => $pagePermission])->save();
     $role = Role::findOrCreate('Matrix-'.str_replace('.', '-', $pagePermission), 'web');
     $role->givePermissionTo($permission);
     $user = User::factory()->create();
@@ -36,7 +36,7 @@ function pageMatrixRequest(User $user, string $routeName): Request
 }
 
 $matrixPages = [
-    'products', 'sales.preinvoices', 'sales.preinvoice_warehouse_review',
+    'products', 'commercial.commissions', 'sales.preinvoices', 'sales.preinvoice_warehouse_review',
     'sales.preinvoice_finance_review', 'sales.invoices', 'sales.returns',
     'customers', 'warehouse.stocks', 'warehouse.collection', 'warehouse.shipping',
     'users', 'roles',
