@@ -560,16 +560,4 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
-Route::get('/test', function () {
-    $token =   app(TokenService::class)->hash('09357318998');
-
-    $verify =  app(TokenService::class)->verify('09357318998', '6b29832dd61fc49296f4d6e6ad26297d');
-
-    dd($token, $verify);
-    return response()->json([
-        'success' => true,
-        'message' => 'Telegram daily report sent successfully.',
-    ]);
-});
-
 require __DIR__ . '/auth.php';
