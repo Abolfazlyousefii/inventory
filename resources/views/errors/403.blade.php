@@ -10,7 +10,9 @@
                 <div class="card-body p-5">
                     <div class="display-1 fw-bold text-danger mb-3">403</div>
                     <h1 class="h4 fw-bold mb-3">دسترسی غیرمجاز</h1>
-                    <p class="text-muted mb-4">شما دسترسی لازم برای مشاهده این بخش را ندارید.</p>
+                    <p class="text-muted mb-4">
+	                    {{ $exception->getMessage() ?: 'متأسفیم، اما شما اجازه مشاهده این منبع را ندارید. در صورت نیاز به دسترسی، لطفاً با مدیر سیستم تماس بگیرید.' }}
+                    </p>
                     <div class="d-flex gap-2 justify-content-center flex-wrap">
                         @auth
                             <a href="{{ route('dashboard') }}" class="btn btn-primary px-4">بازگشت به داشبورد</a>

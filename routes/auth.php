@@ -8,13 +8,15 @@ use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\PhoneTokenLoginController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
+
+
+Route::get('auth/phone/verify', PhoneTokenLoginController::class)
+    ->name('auth.phone.verify');
+
 Route::middleware('guest')->group(function () {
-    Route::get('auth/crm/redirect', [CrmSsoController::class, 'redirect'])->name('auth.crm.redirect');
-    Route::get('auth/crm/callback', [CrmSsoController::class, 'callback'])->name('auth.crm.callback');
-
-
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');
 
