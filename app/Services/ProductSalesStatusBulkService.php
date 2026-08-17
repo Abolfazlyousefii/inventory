@@ -141,7 +141,7 @@ class ProductSalesStatusBulkService
         $latest = collect();
         if ($desired && $active->isNotEmpty()) {
             $latestIds = ProductDeactivationDocumentItem::query()->whereIn('variant_id', $active->pluck('id'))->selectRaw('MAX(id) as id')->groupBy('variant_id')->pluck('id');
-            $latest = ProductDeactivationDocumentItem::query()->whereIn('id', $latestIds)->get(['variant_id', 'action_type', 'scope_type'])->keyBy('variant_id');
+            $latest = ProductDeactivationDocumentItem::query()->whereIn('id', $latestIds)->get(['variant_id', 'action_type', 'scope_type', 'deactivation_type', 'new_sales_enabled'])->keyBy('variant_id');
         }
 
         $effective = $active->filter(function (ProductVariant $variant) use ($desired, $latest): bool {
@@ -153,8 +153,23 @@ class ProductSalesStatusBulkService
             }
             $event = $latest->get($variant->id);
 
-            return $event?->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
-                && in_array($event?->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true);
+            if (! $event) {
+                return false;
+            }
+
+            $isDeactivation = $event->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
+                || ($event->action_type === null && $event->new_sales_enabled !== true);
+
+            if (! $isDeactivation) {
+                return false;
+            }
+
+            return in_array($event->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true)
+                || in_array($event->deactivation_type, [
+                    ProductDeactivationDocument::TYPE_PRODUCT,
+                    ProductDeactivationDocument::TYPE_CATEGORY,
+                    ProductDeactivationDocument::TYPE_SUBCATEGORY,
+                ], true);
         })->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
         $already = $active->filter(fn (ProductVariant $variant) => (bool) $variant->sales_enabled === $desired)->count();
         $unable = $variants->where('is_active', false)->count() + ($desired ? $active->where('sales_enabled', false)->count() - count($effective) : 0);

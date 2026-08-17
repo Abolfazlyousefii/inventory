@@ -7,6 +7,7 @@ use App\Models\ProductDeactivationDocument;
 use App\Models\ProductDeactivationDocumentItem;
 use App\Models\ProductVariant;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -36,25 +37,41 @@ class ProductSalesStatusService
                 throw ValidationException::withMessages(['variant_ids' => 'این تنوع از نظر ساختاری غیرفعال است و ابتدا باید ساختار کالا اصلاح شود.']);
             }
 
-            if ($scope === ProductDeactivationDocument::SCOPE_PRODUCT && $action === ProductDeactivationDocument::ACTION_ACTIVATE) {
-                $latestItems = ProductDeactivationDocumentItem::query()
-                    ->whereIn('variant_id', $targets->pluck('id'))
-                    ->latest('id')->get()->unique('variant_id')->keyBy('variant_id');
-                $targets = $targets->filter(function (ProductVariant $variant) use ($latestItems): bool {
-                    $latest = $latestItems->get($variant->id);
+            $desired = $action === ProductDeactivationDocument::ACTION_ACTIVATE;
+            $currentAggregate = $variants->contains(
+                fn (ProductVariant $variant) => (bool) $variant->is_active && (bool) $variant->sales_enabled
+            );
 
-                    return ! $variant->sales_enabled && $latest?->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
-                        && in_array($latest?->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true);
+            if ($scope === ProductDeactivationDocument::SCOPE_PRODUCT && $desired) {
+                $latestItems = $this->latestStatusItems($targets->pluck('id'));
+                $targets = $targets->filter(function (ProductVariant $variant) use ($latestItems): bool {
+                    if ($variant->sales_enabled) {
+                        return false;
+                    }
+
+                    return $this->isRestorableByProductActivation($latestItems->get($variant->id));
                 });
             } else {
-                $desired = $action === ProductDeactivationDocument::ACTION_ACTIVATE;
                 $targets = $targets->filter(fn (ProductVariant $variant) => (bool) $variant->sales_enabled !== $desired);
             }
 
-            $productWillChange = $scope === ProductDeactivationDocument::SCOPE_PRODUCT
-                && (bool) $product->is_sellable !== ($action === ProductDeactivationDocument::ACTION_ACTIVATE);
-            if ($targets->isEmpty() && ! $productWillChange) {
-                throw ValidationException::withMessages(['action_type' => 'وضعیت هدف از قبل همین مقدار است؛ سند تکراری ایجاد نشد.']);
+            if ($targets->isEmpty()) {
+                if ($scope === ProductDeactivationDocument::SCOPE_PRODUCT && $desired && ! $currentAggregate) {
+                    $activeCount = $variants->where('is_active', true)->count();
+                    if ($activeCount === 0) {
+                        throw ValidationException::withMessages([
+                            'action_type' => 'این کالا هیچ تنوع ساختاری فعالی ندارد؛ ابتدا ساختار کالا را بررسی کنید.',
+                        ]);
+                    }
+
+                    throw ValidationException::withMessages([
+                        'action_type' => 'برای این کالا تنوع قابل‌بازیابی از سابقه غیرفعال‌سازی کل کالا پیدا نشد. اگر این تنوع‌ها عمداً به‌صورت مستقل غیرفعال شده‌اند، از «تنوع‌های مشخص» آن‌ها را فعال کنید.',
+                    ]);
+                }
+
+                throw ValidationException::withMessages([
+                    'action_type' => 'وضعیت واقعی فروش از قبل همین مقدار است؛ سند تکراری ایجاد نشد.',
+                ]);
             }
 
             $document = ProductDeactivationDocument::create([
@@ -73,7 +90,6 @@ class ProductSalesStatusService
             ]);
             $document->update(['document_number' => 'SS-'.now()->format('Ymd').'-'.str_pad((string) $document->id, 6, '0', STR_PAD_LEFT)]);
 
-            $desired = $action === ProductDeactivationDocument::ACTION_ACTIVATE;
             foreach ($targets as $variant) {
                 ProductDeactivationDocumentItem::create([
                     'document_id' => $document->id,
@@ -89,9 +105,10 @@ class ProductSalesStatusService
                     'variant_name_snapshot' => $variant->variant_name,
                 ]);
                 $variant->update(['sales_enabled' => $desired]);
+                $variant->sales_enabled = $desired;
             }
 
-            $aggregate = $variants->contains(fn (ProductVariant $variant) => $variant->is_active && $variant->fresh()->sales_enabled);
+            $aggregate = $variants->contains(fn (ProductVariant $variant) => (bool) $variant->is_active && (bool) $variant->sales_enabled);
             if ((bool) $product->is_sellable !== $aggregate) {
                 $product->update(['is_sellable' => $aggregate]);
             }
@@ -100,4 +117,57 @@ class ProductSalesStatusService
             return $document->fresh();
         }, 3);
     }
+    /** @param Collection<int, int|string> $variantIds */
+    private function latestStatusItems(Collection $variantIds): Collection
+    {
+        if ($variantIds->isEmpty()) {
+            return collect();
+        }
+
+        $latestIds = ProductDeactivationDocumentItem::query()
+            ->whereIn('variant_id', $variantIds)
+            ->selectRaw('MAX(id) as id')
+            ->groupBy('variant_id')
+            ->pluck('id');
+
+        return ProductDeactivationDocumentItem::query()
+            ->whereIn('id', $latestIds)
+            ->get([
+                'id',
+                'variant_id',
+                'action_type',
+                'scope_type',
+                'deactivation_type',
+                'previous_sales_enabled',
+                'new_sales_enabled',
+            ])
+            ->keyBy('variant_id');
+    }
+
+    private function isRestorableByProductActivation(?ProductDeactivationDocumentItem $item): bool
+    {
+        if (! $item) {
+            return false;
+        }
+
+        $isDeactivation = $item->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
+            || ($item->action_type === null && $item->new_sales_enabled !== true);
+
+        if (! $isDeactivation) {
+            return false;
+        }
+
+        if (in_array($item->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true)) {
+            return true;
+        }
+
+        // Legacy documents predate scope_type/action_type. Their original
+        // deactivation_type still tells us whether the event was product-level.
+        return in_array($item->deactivation_type, [
+            ProductDeactivationDocument::TYPE_PRODUCT,
+            ProductDeactivationDocument::TYPE_CATEGORY,
+            ProductDeactivationDocument::TYPE_SUBCATEGORY,
+        ], true);
+    }
+
 }

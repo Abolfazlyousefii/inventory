@@ -101,6 +101,24 @@ class ProductDeactivationDocumentController extends Controller
 
     private function productResource(Product $product): array
     {
-        return ['id' => $product->id, 'name' => $product->name, 'code' => $product->code ?: $product->sku, 'category' => $product->category?->name, 'is_sellable' => (bool) $product->is_sellable, 'structural_variants_count' => (int) $product->structural_variants_count, 'sellable_variants_count' => (int) $product->sellable_variants_count];
+        $structuralCount = (int) $product->structural_variants_count;
+        $sellableCount = (int) $product->sellable_variants_count;
+        $computedSellable = $sellableCount > 0;
+        $computedStatus = $sellableCount === 0
+            ? 'inactive'
+            : ($structuralCount > 0 && $sellableCount >= $structuralCount ? 'active' : 'partial');
+
+        return [
+            'id' => $product->id,
+            'name' => $product->name,
+            'code' => $product->code ?: $product->sku,
+            'category' => $product->category?->name,
+            'is_sellable' => (bool) $product->is_sellable,
+            'computed_sellable' => $computedSellable,
+            'computed_status' => $computedStatus,
+            'status_inconsistent' => (bool) $product->is_sellable !== $computedSellable,
+            'structural_variants_count' => $structuralCount,
+            'sellable_variants_count' => $sellableCount,
+        ];
     }
 }
