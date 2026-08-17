@@ -150,24 +150,25 @@ class ProductSalesStatusService
             return false;
         }
 
-        $isDeactivation = $item->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
-            || ($item->action_type === null && $item->new_sales_enabled !== true);
+        // Rows created before the sales-status migration have no reliable
+        // action/scope metadata. Detect them by the nullable before/after
+        // snapshots and use the original deactivation_type as the source
+        // of truth. This prevents a migration default from turning an old
+        // variant-level stop into a product-level stop.
+        $isLegacy = $item->previous_sales_enabled === null
+            && $item->new_sales_enabled === null;
 
-        if (! $isDeactivation) {
-            return false;
+        if ($isLegacy) {
+            return in_array($item->deactivation_type, [
+                ProductDeactivationDocument::TYPE_PRODUCT,
+                ProductDeactivationDocument::TYPE_CATEGORY,
+                ProductDeactivationDocument::TYPE_SUBCATEGORY,
+            ], true);
         }
 
-        if (in_array($item->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true)) {
-            return true;
-        }
-
-        // Legacy documents predate scope_type/action_type. Their original
-        // deactivation_type still tells us whether the event was product-level.
-        return in_array($item->deactivation_type, [
-            ProductDeactivationDocument::TYPE_PRODUCT,
-            ProductDeactivationDocument::TYPE_CATEGORY,
-            ProductDeactivationDocument::TYPE_SUBCATEGORY,
-        ], true);
+        return $item->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
+            && in_array($item->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true)
+            && $item->new_sales_enabled !== true;
     }
 
 }
