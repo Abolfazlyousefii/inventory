@@ -30,6 +30,7 @@ use App\Http\Controllers\PreinvoiceController;
 use App\Http\Controllers\PriceChangeDocumentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductDeactivationDocumentController;
+use App\Http\Controllers\ProductSalesStatusBulkController;
 use App\Http\Controllers\ProductExportController;
 use App\Http\Controllers\ProductPurchaseLedgerController;
 use App\Http\Controllers\ProductSalesLedgerController;
@@ -171,6 +172,12 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/products/sync-crm', [ProductController::class, 'syncCrm'])->name('products.sync.crm');
     Route::get('/product-deactivation-documents', [ProductDeactivationDocumentController::class, 'index'])->name('product-deactivation-documents.index');
     Route::get('/product-deactivation-documents/create', [ProductDeactivationDocumentController::class, 'create'])->name('product-deactivation-documents.create');
+    Route::get('/product-deactivation-documents/search/products', [ProductDeactivationDocumentController::class, 'searchProducts'])->name('product-deactivation-documents.products.search');
+    Route::get('/product-deactivation-documents/products/{product}/variants', [ProductDeactivationDocumentController::class, 'variants'])->name('product-deactivation-documents.products.variants');
+    Route::get('/product-deactivation-documents/bulk/create', [ProductSalesStatusBulkController::class, 'create'])->name('product-deactivation-documents.bulk.create');
+    Route::get('/product-deactivation-documents/bulk/categories/{category}/children', [ProductSalesStatusBulkController::class, 'children'])->name('product-deactivation-documents.bulk.categories.children');
+    Route::post('/product-deactivation-documents/bulk/preview', [ProductSalesStatusBulkController::class, 'preview'])->name('product-deactivation-documents.bulk.preview');
+    Route::post('/product-deactivation-documents/bulk', [ProductSalesStatusBulkController::class, 'store'])->name('product-deactivation-documents.bulk.store');
     Route::post('/product-deactivation-documents', [ProductDeactivationDocumentController::class, 'store'])->name('product-deactivation-documents.store');
     Route::get('/product-deactivation-documents/{productDeactivationDocument}', [ProductDeactivationDocumentController::class, 'show'])->name('product-deactivation-documents.show');
 

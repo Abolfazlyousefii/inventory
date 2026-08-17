@@ -4,274 +4,103 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\ProductDeactivationDocument;
-use App\Models\Category;
-use App\Models\ProductDeactivationDocumentItem;
-use App\Models\ProductVariant;
+use App\Services\ProductSalesStatusService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
 
 class ProductDeactivationDocumentController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request): View
     {
-        $query = ProductDeactivationDocument::query()
-            ->with(['creator:id,name']);
+        $documents = ProductDeactivationDocument::query()
+            ->with(['creator:id,name', 'product:id,name,code,sku'])
+            ->when($request->filled('q'), function ($query) use ($request): void {
+                $term = trim((string) $request->q);
+                $query->where(function ($nested) use ($term): void {
+                    $nested->where('product_name_snapshot', 'like', "%{$term}%")
+                        ->orWhereHas('product', fn ($product) => $product->where('name', 'like', "%{$term}%")->orWhere('code', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%"))
+                        ->orWhereHas('items', fn ($item) => $item->where('product_name_snapshot', 'like', "%{$term}%"));
+                });
+            })
+            ->when(in_array($request->action_type, ['activate', 'deactivate'], true), fn ($query) => $query->where('action_type', $request->action_type))
+            ->when($request->filled('created_by'), fn ($query) => $query->where('created_by', $request->integer('created_by')))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('created_at', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('created_at', '<=', $request->date_to))
+            ->latest('id')->paginate(20)->withQueryString();
 
-        if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-
-        if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
-
-        if ($request->filled('time_range')) {
-            $days = match ((string) $request->time_range) {
-                'today' => 0,
-                '7d' => 7,
-                '30d' => 30,
-                default => null,
-            };
-
-            if (!is_null($days)) {
-                $from = $days === 0 ? now()->startOfDay() : now()->subDays($days)->startOfDay();
-                $query->where('created_at', '>=', $from);
-            }
-        }
-
-        $documents = $query->latest('id')->paginate(20)->withQueryString();
         return view('product-deactivation-documents.index', compact('documents'));
     }
 
-    public function create()
+    public function create(Request $request): View
     {
-        $allCategories = Category::query()
-            ->orderBy('name')
-            ->get(['id', 'name', 'parent_id']);
+        $selectedProduct = $request->integer('product_id')
+            ? Product::query()->with('category:id,name')->withCount(['variants as structural_variants_count' => fn ($q) => $q->where('is_active', true), 'variants as sellable_variants_count' => fn ($q) => $q->where('is_active', true)->where('sales_enabled', true)])->find($request->integer('product_id'))
+            : null;
 
-        $categoriesById = $allCategories->keyBy('id');
-
-        $resolveCategoryPath = static function (?int $categoryId) use ($categoriesById): array {
-            if (!$categoryId || !$categoriesById->has($categoryId)) {
-                return ['root_id' => null, 'subcategory_id' => null];
-            }
-
-            $current = $categoriesById->get($categoryId);
-            $trail = [];
-
-            while ($current) {
-                array_unshift($trail, $current);
-
-                if (!$current->parent_id) {
-                    break;
-                }
-
-                $current = $categoriesById->get((int) $current->parent_id);
-            }
-
-            $root = $trail[0] ?? null;
-            $subcategory = $trail[1] ?? null;
-
-            return [
-                'root_id' => $root ? (int) $root->id : null,
-                'subcategory_id' => $subcategory ? (int) $subcategory->id : null,
-            ];
-        };
-
-        $products = Product::query()
-            ->where(function ($query) {
-                $query->where('is_sellable', true)
-                    ->orWhereHas('variants', function ($v) {
-                        $v->where('is_active', true)->where('sales_enabled', true);
-                    });
-            })
-            ->with([
-                'category:id,name,parent_id',
-                'variants' => fn ($q) => $q->where('is_active', true)->where('sales_enabled', true)->orderBy('variant_name'),
-            ])
-            ->orderBy('name')
-            ->get(['id', 'name', 'is_sellable', 'category_id'])
-            ->map(function (Product $product) use ($resolveCategoryPath) {
-                $path = $resolveCategoryPath($product->category_id ? (int) $product->category_id : null);
-                $product->setAttribute('root_category_id', $path['root_id']);
-                $product->setAttribute('subcategory_id', $path['subcategory_id']);
-                return $product;
-            });
-
-        $rootCategories = $allCategories
-            ->whereNull('parent_id')
-            ->values();
-
-        $subcategories = $allCategories
-            ->whereNotNull('parent_id')
-            ->filter(fn (Category $category) => $categoriesById->get((int) $category->parent_id)?->parent_id === null)
-            ->values();
-
-        return view('product-deactivation-documents.create', compact('products', 'rootCategories', 'subcategories'));
+        return view('product-deactivation-documents.create', compact('selectedProduct'));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, ProductSalesStatusService $service): RedirectResponse
     {
-        if (!$request->has('items') && ($request->filled('product_id') || $request->filled('category_id'))) {
-            $request->merge([
-                'items' => [[
-                    'deactivation_type' => $request->input('deactivation_type'),
-                    'category_id' => $request->input('category_id'),
-                    'subcategory_id' => $request->input('subcategory_id'),
-                    'product_id' => $request->input('product_id'),
-                    'variant_id' => $request->input('variant_id'),
-                ]],
-            ]);
-        }
-
+        $action = (string) $request->input('action_type');
+        $reasonKeys = array_keys($action === 'activate' ? ProductDeactivationDocument::activationReasonLabels() : ProductDeactivationDocument::reasonLabels());
         $data = $request->validate([
-            'reason_type' => ['nullable', 'string', 'in:' . implode(',', array_keys(ProductDeactivationDocument::reasonLabels()))],
-            'reason_text' => ['required_if:reason_type,custom', 'nullable', 'string', 'min:3', 'max:2000'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.deactivation_type' => ['nullable', 'string', 'in:variant,product,subcategory,category'],
-            'items.*.category_id' => ['nullable', 'integer', 'exists:categories,id'],
-            'items.*.subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
-            'items.*.product_id' => ['nullable', 'integer', 'exists:products,id'],
-            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-        ], [
-            'reason_text.required_if' => 'نوشتن دلیل سفارشی غیرفعال‌سازی الزامی است.',
-            'items.required' => 'حداقل یک هدف برای غیرفعال‌سازی وارد کنید.',
-        ]);
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'action_type' => ['required', 'in:activate,deactivate'],
+            'scope_type' => ['required', 'in:product,variants'],
+            'variant_ids' => ['nullable', 'array'],
+            'variant_ids.*' => ['integer', 'exists:product_variants,id'],
+            'reason_type' => ['required', 'in:'.implode(',', $reasonKeys)],
+            'reason_text' => ['nullable', 'string', 'max:2000', 'required_if:reason_type,custom'],
+            'return_to_edit' => ['nullable', 'boolean'],
+        ], ['reason_type.required' => 'انتخاب دلیل تغییر وضعیت الزامی است.', 'reason_text.required_if' => 'برای دلیل سفارشی، توضیح تکمیلی الزامی است.']);
 
-        DB::transaction(function () use ($data) {
-            $resolvedItems = collect();
-            $seenVariantIds = [];
-            $categoryIdsToDisableProducts = [];
-            $productIdsToDisableProducts = [];
+        $document = $service->change((int) $data['product_id'], $data['action_type'], $data['scope_type'], $data['variant_ids'] ?? [], $data['reason_type'], isset($data['reason_text']) ? trim($data['reason_text']) : null, $request->user());
+        $redirect = $request->boolean('return_to_edit') ? redirect()->route('products.edit', $data['product_id']) : redirect()->route('product-deactivation-documents.show', $document);
 
-            foreach ($data['items'] as $index => $itemData) {
-                $type = (string) ($itemData['deactivation_type'] ?? '');
-                if ($type === '') {
-                    $type = !empty($itemData['variant_id']) ? ProductDeactivationDocument::TYPE_VARIANT : ProductDeactivationDocument::TYPE_PRODUCT;
-                }
-
-                $query = ProductVariant::query()
-                    ->with(['product.category'])
-                    ->where('is_active', true)
-                    ->lockForUpdate();
-
-                if ($type === ProductDeactivationDocument::TYPE_VARIANT) {
-                    if (empty($itemData['variant_id'])) {
-                        throw ValidationException::withMessages(["items.{$index}.variant_id" => 'انتخاب تنوع برای غیرفعال‌سازی تنوع الزامی است.']);
-                    }
-                    $query->whereKey((int) $itemData['variant_id']);
-                    if (!empty($itemData['product_id'])) {
-                        $query->where('product_id', (int) $itemData['product_id']);
-                    }
-                } elseif ($type === ProductDeactivationDocument::TYPE_PRODUCT) {
-                    if (empty($itemData['product_id'])) {
-                        throw ValidationException::withMessages(["items.{$index}.product_id" => 'انتخاب کالا برای غیرفعال‌سازی کالا الزامی است.']);
-                    }
-                    $query->where('product_id', (int) $itemData['product_id']);
-                    $productIdsToDisableProducts[(int) $itemData['product_id']] = true;
-                } elseif ($type === ProductDeactivationDocument::TYPE_SUBCATEGORY) {
-                    if (empty($itemData['subcategory_id'])) {
-                        throw ValidationException::withMessages(["items.{$index}.subcategory_id" => 'انتخاب زیر‌دسته الزامی است.']);
-                    }
-                    $subcategory = Category::query()->findOrFail((int) $itemData['subcategory_id']);
-                    if (!empty($itemData['category_id']) && (int) $subcategory->parent_id !== (int) $itemData['category_id']) {
-                        throw ValidationException::withMessages(["items.{$index}.subcategory_id" => 'زیر‌دسته انتخاب‌شده با دسته‌بندی اصلی مطابقت ندارد.']);
-                    }
-                    $categoryIdsToDisableProducts[] = (int) $subcategory->id;
-                    $query->whereHas('product', fn ($q) => $q->where('category_id', (int) $subcategory->id));
-                } elseif ($type === ProductDeactivationDocument::TYPE_CATEGORY) {
-                    if (empty($itemData['category_id'])) {
-                        throw ValidationException::withMessages(["items.{$index}.category_id" => 'انتخاب دسته‌بندی اصلی الزامی است.']);
-                    }
-                    $categoryId = (int) $itemData['category_id'];
-                    $childIds = Category::query()->where('parent_id', $categoryId)->pluck('id')->map(fn ($id) => (int) $id)->all();
-                    $categoryScopeIds = array_values(array_unique(array_merge([$categoryId], $childIds)));
-                    $categoryIdsToDisableProducts = array_merge($categoryIdsToDisableProducts, $categoryScopeIds);
-                    $query->whereHas('product', fn ($q) => $q->whereIn('category_id', $categoryScopeIds));
-                }
-
-                foreach ($query->orderBy('id')->get() as $variant) {
-                    if (isset($seenVariantIds[(int) $variant->id])) {
-                        continue;
-                    }
-                    $seenVariantIds[(int) $variant->id] = true;
-                    $resolvedItems->push(['product' => $variant->product, 'variant' => $variant, 'deactivation_type' => $type]);
-                }
-            }
-
-            if ($resolvedItems->isEmpty()) {
-                throw ValidationException::withMessages(['items' => 'حداقل یک تنوع معتبر برای غیرفعال‌سازی لازم است.']);
-            }
-
-            $first = $resolvedItems->first();
-            $doc = ProductDeactivationDocument::create([
-                'document_number' => 'TMP-' . now()->format('YmdHis') . '-' . random_int(100, 999),
-                'deactivation_type' => $first['deactivation_type'],
-                'product_id' => $first['product']->id,
-                'variant_id' => $first['variant']->id,
-                'items_count' => 0,
-                'reason_type' => (string) ($data['reason_type'] ?? 'custom'),
-                'reason_text' => trim((string) ($data['reason_text'] ?? 'غیرفعال‌سازی فروش')),
-                'description' => null,
-                'product_name_snapshot' => (string) $first['product']->name,
-                'variant_name_snapshot' => $first['variant']->variant_name,
-                'created_by' => (int) auth()->id(),
-            ]);
-            $doc->update(['document_number' => 'PD-' . now()->format('Ymd') . '-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT)]);
-
-            foreach ($resolvedItems as $resolvedItem) {
-                $product = $resolvedItem['product'];
-                $variant = $resolvedItem['variant'];
-                $category = null; $subcategory = null;
-                if ($product->category) {
-                    if ($product->category->parent_id) { $subcategory = $product->category; $category = Category::query()->find($product->category->parent_id); }
-                    else { $category = $product->category; }
-                }
-                ProductDeactivationDocumentItem::create([
-                    'document_id' => $doc->id,
-                    'category_id' => $category?->id,
-                    'subcategory_id' => $subcategory?->id,
-                    'product_id' => $product->id,
-                    'variant_id' => $variant->id,
-                    'deactivation_type' => $resolvedItem['deactivation_type'],
-                    'deactivation_status' => 'deactivated',
-                    'category_name_snapshot' => $category?->name,
-                    'subcategory_name_snapshot' => $subcategory?->name,
-                    'product_name_snapshot' => (string) $product->name,
-                    'variant_name_snapshot' => $variant->variant_name,
-                ]);
-                if ((bool) ($variant->sales_enabled ?? true)) {
-                    $variant->update(['sales_enabled' => false]);
-                }
-            }
-
-            if (!empty($productIdsToDisableProducts)) {
-                Product::query()->whereIn('id', array_keys($productIdsToDisableProducts))->update(['is_sellable' => false]);
-            }
-            if (!empty($categoryIdsToDisableProducts)) {
-                Product::query()->whereIn('category_id', array_values(array_unique($categoryIdsToDisableProducts)))->update(['is_sellable' => false]);
-            }
-
-            $doc->update(['items_count' => $doc->items()->count()]);
-        });
-
-        return redirect()->route('product-deactivation-documents.index')->with('success', 'سند غیرفعال‌سازی با موفقیت ثبت شد.');
+        return $redirect->with('success', 'تغییر وضعیت فروش ثبت شد.');
     }
 
-    public function show(ProductDeactivationDocument $productDeactivationDocument)
+    public function show(ProductDeactivationDocument $productDeactivationDocument): View
     {
-        $productDeactivationDocument->load([
-            'creator:id,name',
-            'items.product:id,name,is_sellable',
-            'items.variant:id,product_id,variant_name,is_active,sales_enabled',
-        ]);
+        $productDeactivationDocument->load(['creator:id,name', 'items.product:id,name,is_sellable', 'items.variant:id,product_id,variant_name,variant_code,is_active,sales_enabled']);
+        $productIds = $productDeactivationDocument->items->pluck('product_id')->filter()->push($productDeactivationDocument->product_id)->unique();
+        $history = ProductDeactivationDocument::query()->with('creator:id,name')
+            ->where(fn ($query) => $query->whereIn('product_id', $productIds)->orWhereHas('items', fn ($item) => $item->whereIn('product_id', $productIds)))
+            ->oldest('id')->get();
 
-        $typeLabels = ProductDeactivationDocument::typeLabels();
+        return view('product-deactivation-documents.show', ['document' => $productDeactivationDocument, 'history' => $history]);
+    }
 
-        return view('product-deactivation-documents.show', [
-            'document' => $productDeactivationDocument,
-            'typeLabels' => $typeLabels,
-        ]);
+    public function searchProducts(Request $request): JsonResponse
+    {
+        $data = $request->validate(['q' => ['required', 'string', 'min:2', 'max:100'], 'page' => ['nullable', 'integer', 'min:1']]);
+        $term = trim($data['q']);
+        $products = Product::query()->with('category:id,name')
+            ->withCount(['variants as structural_variants_count' => fn ($q) => $q->where('is_active', true), 'variants as sellable_variants_count' => fn ($q) => $q->where('is_active', true)->where('sales_enabled', true)])
+            ->where(function ($query) use ($term): void {
+                $query->where('name', 'like', "%{$term}%")
+                    ->orWhere('code', 'like', "%{$term}%")
+                    ->orWhere('sku', 'like', "%{$term}%")
+                    ->orWhere('short_barcode', 'like', "%{$term}%")
+                    ->orWhere('barcode', 'like', "%{$term}%")
+                    ->orWhereHas('variants', fn ($variant) => $variant->where('variant_code', 'like', "%{$term}%"));
+            })->orderBy('name')->paginate(15);
+
+        return response()->json(['data' => $products->getCollection()->map(fn (Product $product) => $this->productResource($product)), 'next_page_url' => $products->nextPageUrl()]);
+    }
+
+    public function variants(Product $product): JsonResponse
+    {
+        $product->load('category')->loadCount(['variants as structural_variants_count' => fn ($q) => $q->where('is_active', true), 'variants as sellable_variants_count' => fn ($q) => $q->where('is_active', true)->where('sales_enabled', true)]);
+
+        return response()->json(['product' => $this->productResource($product), 'variants' => $product->variants()->orderBy('variant_name')->get(['id', 'variant_name', 'variant_code', 'is_active', 'sales_enabled'])]);
+    }
+
+    private function productResource(Product $product): array
+    {
+        return ['id' => $product->id, 'name' => $product->name, 'code' => $product->code ?: $product->sku, 'category' => $product->category?->name, 'is_sellable' => (bool) $product->is_sellable, 'structural_variants_count' => (int) $product->structural_variants_count, 'sellable_variants_count' => (int) $product->sellable_variants_count];
     }
 }

@@ -8,17 +8,23 @@ class ProductDeactivationDocumentItem extends Model
 {
     protected $fillable = [
         'document_id',
+        'action_type',
+        'scope_type',
         'category_id',
         'subcategory_id',
         'product_id',
         'variant_id',
         'deactivation_type',
         'deactivation_status',
+        'previous_sales_enabled',
+        'new_sales_enabled',
         'category_name_snapshot',
         'subcategory_name_snapshot',
         'product_name_snapshot',
         'variant_name_snapshot',
     ];
+
+    protected $casts = ['previous_sales_enabled' => 'boolean', 'new_sales_enabled' => 'boolean'];
 
     public function document()
     {

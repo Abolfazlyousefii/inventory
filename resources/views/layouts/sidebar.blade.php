@@ -123,7 +123,7 @@
                             <a class="sidebar-sublink {{ $is('admin.product-exports.*') }}" href="{{ route('admin.product-exports.index') }}">خروجی کالا</a>
                         @endcanPermission
                         @canPermission('products.change_status')
-                            <a class="sidebar-sublink {{ $is('product-deactivation-documents.*') }}" href="{{ route('product-deactivation-documents.index') }}">غیرفعال کردن کالا</a>
+                            <a class="sidebar-sublink {{ $is('product-deactivation-documents.*') }}" href="{{ route('product-deactivation-documents.index') }}">مدیریت وضعیت فروش</a>
                         @endcanPermission
                     </div>
                 </div>
