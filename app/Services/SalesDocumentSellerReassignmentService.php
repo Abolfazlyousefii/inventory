@@ -34,6 +34,11 @@ class SalesDocumentSellerReassignmentService
             throw ValidationException::withMessages(['seller_id' => 'کاربر مقصد فروشنده فعال و مجاز ERP نیست.']);
         }
 
+        // seller_reassignment_audits.source is VARCHAR(20). Source values are
+        // internal audit identifiers, so normalize them here to keep every
+        // caller transaction-safe and prevent SQL 1406 on future UI/command paths.
+        $source = $this->normalizeSource($source);
+
         return DB::transaction(function () use ($invoice, $newSeller, $actor, $reason, $syncLinkedPreinvoice, $source, $operationKey): SellerReassignmentResult {
             $locked = Invoice::query()
                 ->with('preinvoiceOrder')
@@ -164,5 +169,15 @@ class SalesDocumentSellerReassignmentService
                 $ids,
             );
         });
+    }
+
+    private function normalizeSource(string $source): string
+    {
+        $source = trim($source);
+        if ($source === '') {
+            return 'ui';
+        }
+
+        return mb_substr($source, 0, 20);
     }
 }

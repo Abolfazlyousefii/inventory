@@ -12,6 +12,7 @@ use App\Http\Controllers\AssetTrusteeController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ChequeController;
 use App\Http\Controllers\CommercialCommissionController;
+use App\Http\Controllers\CommercialInvoiceReassignmentController;
 use App\Http\Controllers\CommissionDocumentController;
 use App\Http\Controllers\CommissionSettlementController;
 use App\Http\Controllers\CustomerApiController;
@@ -52,13 +53,6 @@ use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
-use App\Services\Crm\TokenService;
-use App\Services\Report\TelegramDailyReport;
-use App\Services\Sync\InventoryProductsSyncService;
-use App\Services\Sync\SiteCustomersSyncService;
-use App\Services\Sync\SiteImageSyncService;
-use App\Services\Sync\SitePaidOrdersSyncService;
-use Illuminate\Support\Facades\Auth;
 use App\Models\SalesReturnDocument;
 use Illuminate\Support\Facades\Route;
 Route::get('/', fn() => redirect()->route('dashboard'));
@@ -75,6 +69,13 @@ Route::get('/session/csrf-token', function () {
 })->middleware('auth')->name('session.csrf-token');
 
 Route::middleware(['auth', 'route.permission'])->group(function () {
+
+    Route::prefix('commercial/invoice-reassignments')->name('commercial.invoice-reassignments.')->group(function () {
+        Route::get('/', [CommercialInvoiceReassignmentController::class, 'index'])->name('index');
+        Route::get('/search', [CommercialInvoiceReassignmentController::class, 'search'])->name('search');
+        Route::post('/preview', [CommercialInvoiceReassignmentController::class, 'preview'])->name('preview');
+        Route::post('/', [CommercialInvoiceReassignmentController::class, 'store'])->name('store');
+    });
 
     Route::prefix('commercial/commissions')->name('commercial.commissions.')->group(function () {
         Route::get('/', [CommercialCommissionController::class, 'index'])->name('index');
@@ -574,8 +575,4 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
-Route::get('/test', function () {
-    return app(InventoryProductsSyncService::class)->syncAll();
-});
-
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';
