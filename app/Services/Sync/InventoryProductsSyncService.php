@@ -12,9 +12,13 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class InventoryProductsSyncService {
-    protected ?string $apiUrl = null;
+    public function __construct() {
+        $this->apiUrl = rtrim((string) Config::get('services.site.base_url'), '/') . $this->url;
+    }
 
-    protected ?string $apiToken = null;
+    protected ?string $apiUrl;
+
+    protected string $url = '/api/v2/sync/products';
 
     protected int $batchSize = 1;
 
@@ -30,7 +34,7 @@ class InventoryProductsSyncService {
      */
     protected int $delayBetweenChunks = 1;
 
-    protected int $timeout = 30;
+    protected int $timeout = 900;
 
     /**
      * وضعیت دو مرحله مستقل است:
@@ -43,18 +47,10 @@ class InventoryProductsSyncService {
      * به Inventory برگردانده است.
      */
     public function syncAll(): array {
-        $this->apiUrl = trim((string) Config::get('services.sales_server.api_url'));
-        $this->apiToken = trim((string) Config::get('services.sales_server.api_token'));
-
-        if (! Config::get('services.sales_server.sync_enabled') || $this->apiUrl === '' || $this->apiToken === '') {
-            return [
-                'skipped' => true,
-                'reason' => 'inventory_sync_disabled_or_not_configured',
-            ];
-        }
-
         $totalChunks          = 0;
-        $successCount         = 0;
+        $successfulChunks     = 0;
+        $syncedProductCount   = 0;
+        $verifiedProductCount = 0;
         $failedChunks         = [];
 
         Product::where(function ( $query ): void {
@@ -67,7 +63,7 @@ class InventoryProductsSyncService {
             ])
             ->orderBy('id')
             ->chunkById($this->batchSize, function ( Collection $products ) use (
-                &$totalChunks, &$successCount, &$failedChunks
+                &$totalChunks, &$successfulChunks, &$syncedProductCount, &$verifiedProductCount, &$failedChunks
             ): void {
                 $totalChunks ++;
 
@@ -95,13 +91,24 @@ class InventoryProductsSyncService {
                 }
 
                 $syncedProductIds = $this->onlyExpectedIds($result['synced_product_ids'], $expectedProductIds);
+
                 $verifiedProductIds = $this->onlyExpectedIds($result['verified_product_ids'], $expectedProductIds);
+
+                if ( $syncedProductIds !== [] ) {
+                    DB::table('products')
+                        ->whereIn('id', $syncedProductIds)
+                        ->update([
+                            'inventory_to_site_synced' => true,
+                        ]);
+
+                    $syncedProductCount += count($syncedProductIds);
+                }
 
                 $syncComplete   = $syncedProductIds === $expectedProductIds;
                 $verifyComplete = $verifiedProductIds === $expectedProductIds;
 
                 if ( $syncComplete && $verifyComplete ) {
-                    $successCount ++;
+                    $successfulChunks ++;
 
                     Log::info("Inventory-to-Site chunk {$totalChunks} synced and verified.", [
                         'synced_product_ids'   => $syncedProductIds,
@@ -130,9 +137,11 @@ class InventoryProductsSyncService {
             }, 'id');
 
         $summary = [
-            'total_chunks'  => $totalChunks,
-            'success_count' => $successCount,
-            'failed_chunks' => $failedChunks,
+            'total_chunks'           => $totalChunks,
+            'successful_chunks'      => $successfulChunks,
+            'synced_product_count'   => $syncedProductCount,
+            'verified_product_count' => $verifiedProductCount,
+            'failed_chunks'          => $failedChunks,
         ];
 
         Log::info('Inventory-to-Site synchronization completed.', $summary);
@@ -225,16 +234,15 @@ class InventoryProductsSyncService {
 
             try {
                 $response = Http::withoutVerifying()
-                    ->withToken($this->apiToken)
                     ->acceptJson()
                     ->asJson()
                     ->timeout($this->timeout)
                     ->post($this->apiUrl, $payload);
 
                 if ( $response->successful() ) {
-                    if ($response->json('ok') === true) {
+                    if ( $response->json('ok') === true ) {
                         return [
-                            'synced_product_ids' => $expectedProductIds,
+                            'synced_product_ids'   => $expectedProductIds,
                             'verified_product_ids' => $expectedProductIds,
                         ];
                     }
@@ -325,27 +333,10 @@ class InventoryProductsSyncService {
         }
     }
 
-    public function setBatchSize( int $size ): self {
-        $this->batchSize = max(1, $size);
-
-        return $this;
-    }
-
-    public function setMaxRetries( int $retries ): self {
-        $this->maxRetries = max(1, $retries);
-
-        return $this;
-    }
-
     public function setDelayBetweenChunks( int $milliseconds ): self {
         $this->delayBetweenChunks = max(0, $milliseconds);
 
         return $this;
     }
 
-    public function setTimeout( int $timeout ): self {
-        $this->timeout = max(1, $timeout);
-
-        return $this;
-    }
 }

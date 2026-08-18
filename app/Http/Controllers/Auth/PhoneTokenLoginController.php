@@ -45,12 +45,12 @@ class PhoneTokenLoginController extends Controller {
         // The browser may already be authenticated in Inventory as a different
         // user (for example, Admin). Replace that session with the CRM user
         // represented by this fresh phone/token handoff.
-        Auth::guard('web')->logout();
+        Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         // Do not create a persistent remember-me cookie for CRM handoff logins.
-        Auth::guard('web')->login($user, false);
+        Auth::login($user, true);
         $request->session()->regenerate();
 
         if ( !$user->crm_user_id ) {

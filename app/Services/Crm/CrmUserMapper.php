@@ -18,6 +18,7 @@ final class CrmUserMapper
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
+            'password_hash' => ['nullable', 'string', 'max:255'],
             'manager_id' => ['nullable', 'integer', 'min:1'],
             'roles' => ['present', 'array'],
             'roles.*' => ['string', 'max:100'],
@@ -30,7 +31,7 @@ final class CrmUserMapper
 
         return new CrmUserData(
             crmUserId: (string) $row['id'], name: trim($row['name']),
-            phone: $this->nullableString($row['phone'] ?? null), email: $this->nullableString($row['email'] ?? null),
+            phone: $this->nullableString($row['phone'] ?? null), email: $this->nullableString($row['email'] ?? null), passwordHash: $this->nullableString($row['password_hash'] ?? null),
             isActive: $row['is_active'], canAccessErp: $row['can_access_erp'], isSeller: $row['is_seller'],
             username: null, personnelCode: null, department: null, position: null, branch: null,
             managerCrmUserId: isset($row['manager_id']) ? (string) $row['manager_id'] : null,

@@ -100,7 +100,7 @@ class SiteCustomersSyncService {
             $bySourceId = Customer::where('crm_customer_id', $sourceId)
                 ->lockForUpdate()
                 ->first();
-            $byMobile = Customer::where('mobile', $mobile)
+            $byMobile   = Customer::where('mobile', $mobile)
                 ->lockForUpdate()
                 ->first();
 
@@ -131,7 +131,8 @@ class SiteCustomersSyncService {
     }
 
     private function httpClient(): PendingRequest {
-        $request = Http::acceptJson()
+        $request = Http::withoutVerifying()
+            ->acceptJson()
             ->connectTimeout(5)
             ->timeout(20)
             ->retry(3, 250, throw : false);
