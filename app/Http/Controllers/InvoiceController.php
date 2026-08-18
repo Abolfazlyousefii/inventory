@@ -776,7 +776,14 @@ class InvoiceController extends Controller
         $seller = User::query()->findOrFail($data['seller_id']);
         $result = $this->sellerReassignmentService->reassignInvoiceSeller($invoice, $seller, $request->user(), $data['reason'], $request->boolean('sync_preinvoice', true));
 
-        return back()->with('success', $result->changed ? 'فروشنده فاکتور تغییر کرد.' : 'فروشنده از قبل همین کاربر بود؛ تغییری انجام نشد.');
+        $message = match (true) {
+            $result->changed && $result->commissionClaimRepaired => 'فروشنده فاکتور تغییر کرد و فاکتور از سند پورسانت فروشنده قبلی آزاد شد.',
+            $result->changed => 'فروشنده فاکتور تغییر کرد.',
+            $result->commissionClaimRepaired => 'فروشنده از قبل همین کاربر بود؛ ناسازگاری سند پورسانت اصلاح و فاکتور آزاد شد.',
+            default => 'فروشنده و وضعیت پورسانت از قبل صحیح بودند.',
+        };
+
+        return back()->with('success', $message);
     }
 
     public function bulkReassignSeller(Request $request)
@@ -792,9 +799,14 @@ class InvoiceController extends Controller
         ]);
         $seller = User::query()->findOrFail($data['seller_id']);
         $results = $this->sellerReassignmentService->reassignMany($data['invoice_ids'], $seller, $request->user(), $data['reason'], $request->boolean('sync_preinvoice', true), 'bulk', $data['operation_key'] ?? null);
-        $changed = collect($results)->where('changed', true)->count();
+        $results = collect($results);
+        $changed = $results->where('changed', true)->count();
+        $repaired = $results->where('commissionClaimRepaired', true)->count();
 
-        return back()->with('success', "فروشنده {$changed} فاکتور با موفقیت تغییر کرد.");
+        return back()->with(
+            'success',
+            "فروشنده {$changed} فاکتور تغییر کرد؛ وضعیت پورسانت {$repaired} فاکتور آزاد/اصلاح شد."
+        );
     }
 
     private function canReassignSeller(?User $user): bool

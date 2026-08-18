@@ -39,6 +39,8 @@ class InvoiceSellerReassignmentTest extends TestCase
         $invoice = Invoice::query()->create(['uuid' => fake()->uuid(), 'seller_id' => $seller->id, 'total' => 1, 'subtotal' => 1]);
         $result = app(SalesDocumentSellerReassignmentService::class)->reassignInvoiceSeller($invoice, $seller, $seller, 'retry');
         $this->assertFalse($result->changed);
+        $this->assertFalse($result->commissionClaimRepaired);
+        $this->assertSame(0, $result->releasedCommissionClaims);
         $this->assertDatabaseCount('seller_reassignment_audits', 0);
     }
 

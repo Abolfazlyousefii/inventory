@@ -95,4 +95,98 @@ class SellerCommissionDocumentReassignmentTest extends TestCase
 
         $this->assertSame(SellerSalesDocumentItem::STATUS_ACTIVE, $document->items()->firstOrFail()->status);
     }
+
+    public function test_same_seller_request_repairs_stale_old_document_claim_without_fake_audit(): void
+    {
+        $actor = $this->financeActor();
+        $sellerA = $this->erpUser(['is_seller' => true]);
+        $sellerB = $this->erpUser(['is_seller' => true]);
+        $invoice = $this->makeInvoice($sellerA, 286_940_000, '2026-07-29 12:51:49', [
+            'uuid' => '00657',
+            'seller_id' => $sellerA->id,
+        ]);
+        $invoice->preinvoiceOrder->update(['seller_id' => $sellerA->id]);
+        $oldDocument = $this->createCommissionDocument($sellerA, [$invoice], $actor);
+        $oldItem = $oldDocument->items()->firstOrFail();
+
+        // Simulate the legacy broken state: ownership was changed directly,
+        // but the old commission claim and its totals were never reconciled.
+        $invoice->forceFill(['seller_id' => $sellerB->id])->save();
+        $invoice->preinvoiceOrder->forceFill(['seller_id' => $sellerB->id])->save();
+
+        $result = app(SalesDocumentSellerReassignmentService::class)
+            ->reassignInvoiceSeller($invoice->fresh(), $sellerB, $actor, 'repair legacy stale claim');
+
+        $this->assertFalse($result->changed);
+        $this->assertTrue($result->commissionClaimRepaired);
+        $this->assertSame(1, $result->releasedCommissionClaims);
+        $this->assertDatabaseCount('seller_reassignment_audits', 0);
+
+        $oldItem->refresh();
+        $this->assertSame(SellerSalesDocumentItem::STATUS_REASSIGNED, $oldItem->status);
+        $this->assertNull($oldItem->active_invoice_id);
+        $this->assertSame($sellerB->id, $oldItem->reassigned_to_seller_id);
+        $this->assertNull($oldItem->reassignment_audit_id);
+        $this->assertNull($oldItem->reassigned_at);
+        $this->assertSame(0, $oldDocument->fresh()->invoice_count);
+        $this->assertSame(0, $oldDocument->fresh()->total_sales_amount);
+
+        $this->assertTrue(app(SellerCommissionDocumentService::class)->getAvailableInvoices(
+            $sellerB->id,
+            '2026-07-01',
+            '2026-07-31',
+        )->where('invoices.id', $invoice->id)->exists());
+    }
+
+    public function test_same_seller_with_correct_current_document_claim_is_true_noop(): void
+    {
+        $actor = $this->financeActor();
+        $seller = $this->erpUser(['is_seller' => true]);
+        $invoice = $this->makeInvoice($seller, 2000, '2026-07-11', ['seller_id' => $seller->id]);
+        $invoice->preinvoiceOrder->update(['seller_id' => $seller->id]);
+        $document = $this->createCommissionDocument($seller, [$invoice], $actor);
+        $item = $document->items()->firstOrFail();
+
+        $result = app(SalesDocumentSellerReassignmentService::class)
+            ->reassignInvoiceSeller($invoice, $seller, $actor, 'idempotent retry');
+
+        $this->assertFalse($result->changed);
+        $this->assertFalse($result->commissionClaimRepaired);
+        $this->assertSame(0, $result->releasedCommissionClaims);
+        $this->assertDatabaseCount('seller_reassignment_audits', 0);
+        $this->assertSame(SellerSalesDocumentItem::STATUS_ACTIVE, $item->fresh()->status);
+        $this->assertSame($invoice->id, $item->fresh()->active_invoice_id);
+    }
+
+    public function test_bulk_reassignment_repairs_same_seller_stale_claim_and_transfers_other_invoice(): void
+    {
+        $actor = $this->financeActor();
+        $sellerA = $this->erpUser(['is_seller' => true]);
+        $sellerB = $this->erpUser(['is_seller' => true]);
+
+        $stale = $this->makeInvoice($sellerA, 1000, '2026-07-10', ['seller_id' => $sellerA->id]);
+        $stale->preinvoiceOrder->update(['seller_id' => $sellerA->id]);
+        $staleDocument = $this->createCommissionDocument($sellerA, [$stale], $actor);
+        $stale->forceFill(['seller_id' => $sellerB->id])->save();
+        $stale->preinvoiceOrder->forceFill(['seller_id' => $sellerB->id])->save();
+
+        $normal = $this->makeInvoice($sellerA, 2000, '2026-07-11', ['seller_id' => $sellerA->id]);
+        $normal->preinvoiceOrder->update(['seller_id' => $sellerA->id]);
+        $normalDocument = $this->createCommissionDocument($sellerA, [$normal], $actor);
+
+        $results = collect(app(SalesDocumentSellerReassignmentService::class)->reassignMany(
+            [$normal->id, $stale->id],
+            $sellerB,
+            $actor,
+            'bulk transfer',
+        ));
+
+        $this->assertSame(1, $results->where('changed', true)->count());
+        $this->assertSame(2, $results->where('commissionClaimRepaired', true)->count());
+        $this->assertSame(0, $staleDocument->fresh()->invoice_count);
+        $this->assertSame(0, $normalDocument->fresh()->invoice_count);
+        $this->assertSame($sellerB->id, $normal->fresh()->seller_id);
+        $this->assertSame($sellerB->id, $normal->preinvoiceOrder->fresh()->seller_id);
+    }
+
 }

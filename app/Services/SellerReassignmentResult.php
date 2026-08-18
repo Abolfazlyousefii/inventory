@@ -10,5 +10,7 @@ final readonly class SellerReassignmentResult
         public ?int $oldSellerId,
         public int $newSellerId,
         public bool $changed,
+        public bool $commissionClaimRepaired = false,
+        public int $releasedCommissionClaims = 0,
     ) {}
 }

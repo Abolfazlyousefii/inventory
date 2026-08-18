@@ -35,46 +35,134 @@ class SalesDocumentSellerReassignmentService
         }
 
         return DB::transaction(function () use ($invoice, $newSeller, $actor, $reason, $syncLinkedPreinvoice, $source, $operationKey): SellerReassignmentResult {
-            $locked = Invoice::query()->with('preinvoiceOrder')->lockForUpdate()->findOrFail($invoice->id);
+            $locked = Invoice::query()
+                ->with('preinvoiceOrder')
+                ->lockForUpdate()
+                ->findOrFail($invoice->id);
+
             $oldSellerId = $locked->effective_seller_id ? (int) $locked->effective_seller_id : null;
-            if ($oldSellerId === (int) $newSeller->id
-                && (! $syncLinkedPreinvoice || ! $locked->preinvoiceOrder || (int) $locked->preinvoiceOrder->seller_id === (int) $newSeller->id)) {
-                return new SellerReassignmentResult($locked->id, $locked->preinvoice_order_id, $oldSellerId, $newSeller->id, false);
+            $preinvoiceAlreadyAligned = ! $syncLinkedPreinvoice
+                || ! $locked->preinvoiceOrder
+                || (int) $locked->preinvoiceOrder->seller_id === (int) $newSeller->id;
+
+            /**
+             * IMPORTANT: a same-seller request is not necessarily a real no-op.
+             * Legacy/direct seller changes may have updated invoices.seller_id
+             * while leaving an old seller commission document holding the
+             * invoice through active_invoice_id. Always reconcile that claim
+             * before returning.
+             */
+            if ($oldSellerId === (int) $newSeller->id && $preinvoiceAlreadyAligned) {
+                $releasedClaims = $this->commissionDocumentReassignmentService->reconcile(
+                    $locked,
+                    $newSeller,
+                    null,
+                );
+
+                return new SellerReassignmentResult(
+                    $locked->id,
+                    $locked->preinvoice_order_id,
+                    $oldSellerId,
+                    $newSeller->id,
+                    false,
+                    $releasedClaims > 0,
+                    $releasedClaims,
+                );
             }
 
             $locked->forceFill(['seller_id' => $newSeller->id])->save();
+
             if ($syncLinkedPreinvoice && $locked->preinvoiceOrder) {
-                $locked->preinvoiceOrder()->lockForUpdate()->firstOrFail()->forceFill(['seller_id' => $newSeller->id])->save();
+                $locked->preinvoiceOrder()
+                    ->lockForUpdate()
+                    ->firstOrFail()
+                    ->forceFill(['seller_id' => $newSeller->id])
+                    ->save();
             }
+
             $audit = SellerReassignmentAudit::query()->create([
-                'invoice_id' => $locked->id, 'preinvoice_id' => $locked->preinvoice_order_id,
-                'old_seller_id' => $oldSellerId, 'new_seller_id' => $newSeller->id,
-                'changed_by' => $actor->id, 'reason' => $reason, 'source' => $source,
-                'changed_at' => now(), 'operation_key' => $operationKey,
+                'invoice_id' => $locked->id,
+                'preinvoice_id' => $locked->preinvoice_order_id,
+                'old_seller_id' => $oldSellerId,
+                'new_seller_id' => $newSeller->id,
+                'changed_by' => $actor->id,
+                'reason' => $reason,
+                'source' => $source,
+                'changed_at' => now(),
+                'operation_key' => $operationKey,
             ]);
 
-            $this->commissionDocumentReassignmentService->reconcile($locked, $newSeller, $audit);
-            $this->commissionReconciliationService->reconcileSellerReassignment($locked, $newSeller, $audit);
+            $releasedClaims = $this->commissionDocumentReassignmentService->reconcile(
+                $locked,
+                $newSeller,
+                $audit,
+            );
 
-            return new SellerReassignmentResult($locked->id, $locked->preinvoice_order_id, $oldSellerId, $newSeller->id, true);
+            // The newer commercial commission engine has its own correction
+            // semantics and requires a real reassignment audit. Keep it tied
+            // only to a real ownership transition; never fabricate an audit for
+            // same-seller legacy repair.
+            $this->commissionReconciliationService->reconcileSellerReassignment(
+                $locked,
+                $newSeller,
+                $audit,
+            );
+
+            return new SellerReassignmentResult(
+                $locked->id,
+                $locked->preinvoice_order_id,
+                $oldSellerId,
+                $newSeller->id,
+                true,
+                $releasedClaims > 0,
+                $releasedClaims,
+            );
         });
     }
 
     /** @return list<SellerReassignmentResult> */
-    public function reassignMany(array $invoiceIds, User $seller, User $actor, string $reason, bool $sync = true, string $source = 'bulk', ?string $operationKey = null): array
-    {
+    public function reassignMany(
+        array $invoiceIds,
+        User $seller,
+        User $actor,
+        string $reason,
+        bool $sync = true,
+        string $source = 'bulk',
+        ?string $operationKey = null,
+    ): array {
         $ids = array_values(array_unique(array_map('intval', $invoiceIds)));
+        sort($ids, SORT_NUMERIC);
+
         if ($ids === [] || count($ids) > 100) {
             throw ValidationException::withMessages(['invoice_ids' => 'بین ۱ تا ۱۰۰ فاکتور انتخاب کنید.']);
         }
 
         return DB::transaction(function () use ($ids, $seller, $actor, $reason, $sync, $source, $operationKey): array {
-            $invoices = Invoice::query()->whereIn('id', $ids)->lockForUpdate()->get()->keyBy('id');
+            // Lock in deterministic order so overlapping bulk operations are
+            // much less likely to deadlock.
+            $invoices = Invoice::query()
+                ->whereIn('id', $ids)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
             if ($invoices->count() !== count($ids)) {
                 throw ValidationException::withMessages(['invoice_ids' => 'حداقل یکی از فاکتورهای انتخاب‌شده معتبر نیست.']);
             }
 
-            return array_map(fn (int $id) => $this->reassignInvoiceSeller($invoices[$id], $seller, $actor, $reason, $sync, $source, $operationKey), $ids);
+            return array_map(
+                fn (int $id) => $this->reassignInvoiceSeller(
+                    $invoices[$id],
+                    $seller,
+                    $actor,
+                    $reason,
+                    $sync,
+                    $source,
+                    $operationKey,
+                ),
+                $ids,
+            );
         });
     }
 }
