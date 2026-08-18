@@ -11,6 +11,7 @@ final readonly class CrmUserData
         public string $name,
         public ?string $phone,
         public ?string $email,
+        public ?string $passwordHash,
         public bool $isActive,
         public bool $canAccessErp,
         public bool $isSeller,

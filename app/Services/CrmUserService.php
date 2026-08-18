@@ -10,12 +10,12 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
-class CrmUserService
+readonly class CrmUserService
 {
     public function __construct(
-        private readonly CrmClient $crmClient,
-        private readonly CrmUserMapper $mapper,
-        private readonly CrmUserSynchronizer $synchronizer,
+        private CrmClient           $crmClient,
+        private CrmUserMapper       $mapper,
+        private CrmUserSynchronizer $synchronizer,
     ) {}
 
     public function syncUsers(bool $dryRun = false, bool $full = true, ?string $crmUserId = null, ?int $requestedLimit = null): array

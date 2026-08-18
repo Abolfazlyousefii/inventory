@@ -153,18 +153,11 @@ class SiteImageSyncService {
     }
 
     private function httpClient(): PendingRequest {
-        $request = Http::acceptJson()
+        return Http::withoutVerifying()
+            ->acceptJson()
             ->asJson()
             ->connectTimeout(10)
             ->timeout($this->timeout)
             ->retry($this->maxRetries + 1, $this->initialRetryDelay, throw : false);
-
-        $token = trim((string) Config::get('services.site.token', ''));
-
-        if ( $token !== '' ) {
-            $request = $request->withToken($token);
-        }
-
-        return $request;
     }
 }

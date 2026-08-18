@@ -8,11 +8,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
-final class CrmUserSynchronizer
+final readonly class CrmUserSynchronizer
 {
     public function __construct(
-        private readonly CrmRoleMapper $roleMapper,
-        private readonly CrmAuditLogger $audit,
+        private CrmRoleMapper  $roleMapper,
+        private CrmAuditLogger $audit,
     ) {}
 
     public function sync(CrmUserData $data, bool $dryRun = false): array
@@ -72,7 +72,9 @@ final class CrmUserSynchronizer
                 'manager_crm_user_id' => $data->managerCrmUserId,
             ]);
 
-            if (! $user->exists) {
+            if ($data->passwordHash !== null) {
+                $user->password = $data->passwordHash;
+            } elseif (! $user->exists) {
                 $user->password = Hash::make(Str::random(80));
             }
 
