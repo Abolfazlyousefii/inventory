@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AccessPermission;
 use App\Models\ActivityLog;
-use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,7 +25,7 @@ class RoleController extends Controller
 
     public function create(): View
     {
-        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
+        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'commissionActionPermissions' => $this->commissionActionPermissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -44,6 +43,7 @@ class RoleController extends Controller
         return view('admin.roles.form', [
             'role' => $role,
             'permissions' => $this->permissions(),
+            'commissionActionPermissions' => $this->commissionActionPermissions(),
             'selectedPermissionIds' => $role->permissions()->pluck('permissions.id')->all(),
             'protectedRoleNames' => PermissionCatalog::protectedSystemRoles(),
         ]);
@@ -76,12 +76,17 @@ class RoleController extends Controller
         return AccessPermission::query()->where('key', 'like', 'page.%')->orderBy('group')->orderBy('name')->get()->groupBy('group');
     }
 
+    private function commissionActionPermissions()
+    {
+        return AccessPermission::query()->whereIn('key', ['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])->orderBy('name')->get();
+    }
+
     private function validated(Request $request, ?Role $role = null): array
     {
         return $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')->ignore($role?->id)],
             'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['integer', Rule::exists('permissions', 'id')->where(fn ($query) => $query->where('key', 'like', 'page.%'))],
+            'permissions.*' => ['integer', Rule::exists('permissions', 'id')->where(fn ($query) => $query->where(fn ($allowed) => $allowed->where('key', 'like', 'page.%')->orWhereIn('key', ['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])))],
         ]);
     }
 

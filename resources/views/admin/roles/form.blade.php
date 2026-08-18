@@ -34,6 +34,18 @@
                     </div>
                 @endforeach
             </div>
+            <div class="border rounded-3 p-3 mt-4" data-commission-action-permissions>
+                <h2 class="h6">عملیات حساس پورسانت</h2>
+                <p class="small text-muted">این مجوزها فقط عملیات مدیریتی را فعال می‌کنند و به‌تنهایی اجازه ورود به صفحه پورسانت نمی‌دهند.</p>
+                <div class="row g-2">
+                    @foreach($commissionActionPermissions as $permission)
+                        <label class="col-md-4 d-flex gap-2 small">
+                            <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
+                            <span>{{ $permission->name }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            </div>
         </div>
         <div class="card-footer bg-white d-flex gap-2 align-items-center">
             <button class="btn btn-primary">ذخیره</button>

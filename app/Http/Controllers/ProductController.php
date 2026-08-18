@@ -637,7 +637,6 @@ class ProductController extends Controller {
             'category_id'           => [ 'required', 'exists:categories,id' ],
             'name'                  => [ 'required', 'string', 'max:255' ],
             'remove_image'          => [ 'nullable', 'boolean' ],
-            'is_sellable'           => [ 'nullable', 'boolean' ],
             'generate_new_variants' => [ 'nullable', 'boolean' ],
             'use_models'            => [ 'nullable' ],
             'use_designs'           => [ 'nullable' ],
@@ -688,7 +687,6 @@ class ProductController extends Controller {
             $productUpdate = [
                 'category_id' => (int) $data['category_id'],
                 'name'        => $data['name'],
-                'is_sellable' => (bool) ( $data['is_sellable'] ?? false ),
                 'models'      => app(ProductVariantStructureService::class)->metadata(filter_var($data['use_models'] ?? false, FILTER_VALIDATE_BOOLEAN), $data['model_list_ids'] ?? [], filter_var($data['use_designs'] ?? false, FILTER_VALIDATE_BOOLEAN), $data['design_count'] ?? null, $this->normalizeDesignNotes($data['design_notes'] ?? [])
                     ->all()),
             ];

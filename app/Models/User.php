@@ -85,6 +85,11 @@ class User extends Authenticatable
         return $this->belongsTo(self::class, 'manager_id');
     }
 
+    public function commissionTargets()
+    {
+        return $this->hasMany(CommissionTarget::class, 'seller_id');
+    }
+
     public function scopeActiveSellers($query)
     {
         return $query->activeErpUsers()->where('is_seller', true);

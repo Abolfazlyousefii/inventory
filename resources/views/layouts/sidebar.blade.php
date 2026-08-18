@@ -16,7 +16,7 @@
         || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*')
     );
 
-    $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*');
+    $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.commissions.*');
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
     $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
 
@@ -123,7 +123,7 @@
                             <a class="sidebar-sublink {{ $is('admin.product-exports.*') }}" href="{{ route('admin.product-exports.index') }}">خروجی کالا</a>
                         @endcanPermission
                         @canPermission('products.change_status')
-                            <a class="sidebar-sublink {{ $is('product-deactivation-documents.*') }}" href="{{ route('product-deactivation-documents.index') }}">غیرفعال کردن کالا</a>
+                            <a class="sidebar-sublink {{ $is('product-deactivation-documents.*') }}" href="{{ route('product-deactivation-documents.index') }}">مدیریت وضعیت فروش</a>
                         @endcanPermission
                     </div>
                 </div>
@@ -170,7 +170,7 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view'])
+        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view','page.commercial.commissions'])
             <div class="sidebar-accordion-item {{ $salesActive ? 'is-open' : '' }}" data-accordion-section="sales">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $salesActive ? 'is-active' : '' }}"
@@ -195,6 +195,9 @@
                         @endcanPermission
                         @canPermission('customers.view')
                             <a class="sidebar-sublink {{ $is('customers.*', 'persons.*') }}" href="{{ route('customers.index') }}">اشخاص و طرف‌حساب‌ها</a>
+                        @endcanPermission
+                        @canPermission('page.commercial.commissions')
+                            <a class="sidebar-sublink {{ $is('commercial.commissions.*') }}" href="{{ route('commercial.commissions.index') }}">پورسانت</a>
                         @endcanPermission
                     </div>
                 </div>

@@ -515,12 +515,22 @@
                             </div>
 
                             <div class="col-lg-3">
+                                @php
+                                    $structuralVariants = $product->variants->where('is_active', true);
+                                    $sellableVariants = $structuralVariants->where('sales_enabled', true)->count();
+                                @endphp
                                 <label class="form-label d-block">وضعیت فروش</label>
-                                <input type="hidden" name="is_sellable" value="0">
-                                <div class="form-check form-switch mt-2">
-                                    <input class="form-check-input" type="checkbox" id="isSellable" name="is_sellable" value="1" @checked(old('is_sellable', $product->is_sellable ? 1 : 0))>
-                                    <label class="form-check-label" for="isSellable">این کالا قابل فروش باشد</label>
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="badge {{ $product->is_sellable ? 'text-bg-success' : 'text-bg-secondary' }}">
+                                        {{ $product->is_sellable ? 'فعال' : 'غیرفعال' }}
+                                    </span>
+                                    @if($structuralVariants->isNotEmpty())
+                                        <small class="text-muted">{{ $sellableVariants }} از {{ $structuralVariants->count() }} تنوع قابل فروش</small>
+                                    @endif
                                 </div>
+                                <a class="btn btn-sm btn-outline-primary mt-2" href="{{ route('product-deactivation-documents.create', ['product_id' => $product->id, 'return_to' => route('products.edit', $product)]) }}">
+                                    مدیریت وضعیت فروش
+                                </a>
                             </div>
 
                             <div class="col-lg-3">

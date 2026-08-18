@@ -1187,3 +1187,51 @@
         transition-duration: .01ms !important;
     }
 }
+.seller-commission-widget {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1.15rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+}
+
+.seller-commission-widget__head,
+.seller-commission-widget__primary,
+.seller-commission-widget__target,
+.seller-commission-widget__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.seller-commission-widget__head > div { display: grid; gap: .15rem; }
+.seller-commission-widget__head span { color: #64748b; font-size: .78rem; }
+.seller-commission-widget__head h2 { margin: 0; color: #0f172a; font-size: 1.1rem; }
+.seller-commission-widget__warning { border-radius: 999px; padding: .3rem .6rem; background: #fef3c7; color: #92400e !important; font-weight: 750; }
+.seller-commission-widget__primary > div { display: grid; gap: .2rem; }
+.seller-commission-widget__primary > div span,
+.seller-commission-widget__target span { color: #64748b; font-size: .82rem; }
+.seller-commission-widget__primary > div strong { color: #0f172a; font-size: 1.8rem; }
+.seller-commission-widget__campaign { border-radius: 999px; padding: .3rem .65rem; background: #dcfce7; color: #166534; font-size: .78rem; font-weight: 750; }
+.seller-commission-widget__target strong { color: #1d4ed8; }
+.seller-commission-progress { height: 10px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.seller-commission-progress span { display: block; height: 100%; border-radius: inherit; background: #2563eb; }
+.seller-commission-widget__kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+.seller-commission-widget__kpis > div { display: grid; gap: .25rem; padding: .75rem; border: 1px solid #e2e8f0; border-radius: 10px; }
+.seller-commission-widget__kpis span { color: #64748b; font-size: .76rem; }
+.seller-commission-widget__kpis strong { color: #0f172a; font-size: .95rem; }
+.seller-commission-widget__empty { display: grid; gap: .25rem; padding: .9rem; border-radius: 10px; background: #f8fafc; color: #475569; }
+.seller-commission-widget__empty span { color: #64748b; font-size: .82rem; }
+.seller-commission-widget__foot { padding-top: .75rem; border-top: 1px solid #e2e8f0; color: #64748b; font-size: .8rem; }
+.seller-commission-widget__foot a { color: #1d4ed8; font-weight: 750; text-decoration: none; }
+
+@media (max-width: 800px) {
+    .seller-commission-widget__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .seller-commission-widget__head,
+    .seller-commission-widget__primary,
+    .seller-commission-widget__foot { align-items: stretch; flex-direction: column; }
+}

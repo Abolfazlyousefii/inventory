@@ -1,0 +1,19 @@
+@extends('layouts.app')
+
+@section('title', 'جزئیات پورسانت')
+@section('page-title', 'جزئیات پورسانت '.$seller->name)
+
+@section('content')
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-3"><div><h1 class="h4 mb-1">جزئیات پورسانت {{ $seller->name }}</h1><span class="text-muted">دوره {{ $period->label }}</span></div><a class="btn btn-outline-secondary" href="{{ route('commercial.commissions.index', ['period'=>$period->id]) }}">بازگشت به نمای کلی</a></div>
+    <div class="alert alert-info">این اعداد پورسانت محاسبه‌شده هستند؛ مبلغ تأییدشده مالی در سند پورسانت مشخص می‌شود.</div>
+    <div class="card"><div class="card-header"><strong>محاسبات فروش</strong></div><div class="table-responsive"><table class="table align-middle"><thead><tr><th>فاکتور</th><th>تاریخ</th><th>کالا / تنوع</th><th>تعداد</th><th>فروش خالص</th><th>پایه</th><th>کمپین</th><th>نرخ مؤثر</th><th>پورسانت</th><th>منبع نرخ</th></tr></thead><tbody>
+        @forelse($entries as $entry)<tr><td>{{ $entry->invoice_number_snapshot }}</td><td>{{ \App\Support\JalaliDate::date($entry->invoice_date_snapshot) }}</td><td>{{ $entry->product_name_snapshot }} @if($entry->variant_name_snapshot)/ {{ $entry->variant_name_snapshot }}@endif</td><td>{{ number_format($entry->quantity_snapshot) }}</td><td>{{ \App\Support\Currency::formatToman($entry->net_amount_snapshot) }}</td><td>{{ rtrim(rtrim($entry->base_rate_snapshot, '0'), '.') }}٪</td><td>+{{ rtrim(rtrim($entry->campaign_rate_snapshot, '0'), '.') }}٪</td><td>{{ rtrim(rtrim($entry->effective_rate_snapshot, '0'), '.') }}٪</td><td>{{ \App\Support\Currency::formatToman($entry->total_commission_amount) }} @if($entry->missing_rate)<span class="badge bg-warning text-dark">فاقد نرخ</span>@endif</td><td>{{ ['category'=>'دسته‌بندی','product'=>'کالا','variant'=>'تنوع'][$entry->rate_source_type] ?? 'تعیین نشده' }}</td></tr>
+        @empty<tr><td colspan="10" class="text-center text-muted py-4">هنوز محاسبه پورسانتی برای این فروشنده ثبت نشده است.</td></tr>@endforelse
+    </tbody></table></div><div class="card-footer">{{ $entries->links() }}</div></div>
+
+    <div class="card mt-3"><div class="card-header"><strong>اثر برگشت از فروش</strong></div><div class="table-responsive"><table class="table"><thead><tr><th>سند برگشت</th><th>تاریخ</th><th>فاکتور اصلی</th><th>تعداد برگشتی</th><th>فروش برگشتی</th><th>پایه</th><th>کمپین</th><th>پورسانت برگشتی</th></tr></thead><tbody>@forelse($returns as $row)<tr><td>{{ $row->salesReturn?->document_number }}</td><td>{{ \App\Support\JalaliDate::dateTime($row->salesReturn?->applied_at) }}</td><td>{{ $row->invoice?->uuid }}</td><td>{{ number_format($row->quantity_delta) }}</td><td>{{ \App\Support\Currency::formatToman($row->net_amount) }}</td><td>{{ \App\Support\Currency::formatToman($row->base_commission_amount) }}</td><td>{{ \App\Support\Currency::formatToman($row->campaign_commission_amount) }}</td><td>{{ \App\Support\Currency::formatToman($row->total_commission_amount) }}</td></tr>@empty<tr><td colspan="8" class="text-center text-muted py-4">برگشت از فروشی در این دوره ثبت نشده است.</td></tr>@endforelse</tbody></table></div><div class="card-footer">{{ $returns->links() }}</div></div>
+
+    <div class="card mt-3"><div class="card-header"><strong>اصلاحات انتقال فروشنده</strong></div><div class="table-responsive"><table class="table"><thead><tr><th>فاکتور</th><th>دوره مرتبط</th><th>مبلغ</th><th>دلیل</th></tr></thead><tbody>@forelse($reassignments as $row)<tr><td>{{ $row->invoice?->uuid }}</td><td>{{ $row->sourcePeriod?->label }}</td><td>{{ \App\Support\Currency::formatToman($row->total_commission_amount) }}</td><td>{{ $row->reason }}</td></tr>@empty<tr><td colspan="4" class="text-center text-muted py-4">اصلاح انتقال فروشنده‌ای وجود ندارد.</td></tr>@endforelse</tbody></table></div><div class="card-footer">{{ $reassignments->links() }}</div></div>
+</div>
+@endsection

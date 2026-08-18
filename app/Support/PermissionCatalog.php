@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\PermissionRegistrar;
@@ -34,6 +35,25 @@ class PermissionCatalog
     public static function groups(): array
     {
         return [
+            'پورسانت فروشندگان' => [
+                'commissions.manage_rates' => 'مدیریت نرخ‌های پورسانت',
+                'commissions.manage_campaigns' => 'مدیریت کمپین‌های پورسانت',
+                'commissions.manage_periods' => 'مدیریت دوره‌های پورسانت',
+                'commissions.manage_targets' => 'مدیریت تارگت‌های پورسانت',
+                'commissions.recalculate' => 'به‌روزرسانی محاسبات پورسانت',
+                'commissions.view_seller_details' => 'مشاهده جزئیات پورسانت فروشنده',
+                'commissions.manage_documents' => 'مدیریت اسناد پورسانت',
+                'commissions.review_documents' => 'بررسی مالی اسناد پورسانت',
+                'commissions.print_documents' => 'چاپ اسناد پورسانت',
+                'commissions.finalize_documents' => 'نهایی‌سازی اسناد پورسانت',
+                'commissions.close_periods' => 'بستن دوره‌های پورسانت',
+                'commissions.manage_adjustments' => 'ثبت تعدیلات پورسانت',
+                'commissions.review_adjustments' => 'بررسی تعدیلات پورسانت',
+                'commissions.record_payments' => 'ثبت پرداخت پورسانت',
+                'commissions.void_payments' => 'ابطال پرداخت پورسانت',
+                'commissions.mark_period_paid' => 'پرداخت‌شده کردن دوره پورسانت',
+                'commissions.view_settlements' => 'مشاهده تسویه‌های پورسانت',
+            ],
             'داشبورد' => [
                 'dashboard.view' => 'مشاهده داشبورد',
                 'dashboard.search' => 'جستجوی سراسری',
@@ -313,7 +333,7 @@ class PermissionCatalog
                 ['permission' => 'stock_in.view', 'label' => 'خرید کالا'],
                 ['permission' => 'products.price_changes.view', 'label' => 'تغییر قیمت کالا'],
                 ['permission' => 'products.export', 'label' => 'خروجی کالا'],
-                ['permission' => 'products.change_status', 'label' => 'غیرفعال کردن کالا'],
+                ['permission' => 'products.change_status', 'label' => 'مدیریت وضعیت فروش'],
             ],
             'خرید کالا' => [
                 ['permission' => 'stock_in.view', 'label' => 'لیست خرید کالاها'],
@@ -565,10 +585,10 @@ class PermissionCatalog
 
             if ($current === null) {
                 DB::table('permissions')->insert($values + [
-                        'key' => $permission['key'],
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                    'key' => $permission['key'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
                 $result['created']++;
 
                 continue;
@@ -616,12 +636,12 @@ class PermissionCatalog
         }
 
         if (str_starts_with($permission, 'page.')) {
-            return $user instanceof \App\Models\User
+            return $user instanceof User
                    && PageAccessCatalog::userCan($user, $permission);
         }
 
         $pagePermission = PageAccessCatalog::pagePermissionForLegacy($permission);
-        if ($pagePermission && $user instanceof \App\Models\User) {
+        if ($pagePermission && $user instanceof User) {
             return PageAccessCatalog::userCan($user, $pagePermission);
         }
 
@@ -798,6 +818,12 @@ class PermissionCatalog
             'categories.quickStore' => 'categories.create',
             'product-deactivation-documents.index' => 'products.change_status',
             'product-deactivation-documents.create' => 'products.change_status',
+            'product-deactivation-documents.products.search' => 'products.change_status',
+            'product-deactivation-documents.products.variants' => 'products.change_status',
+            'product-deactivation-documents.bulk.create' => 'products.change_status',
+            'product-deactivation-documents.bulk.categories.children' => 'products.change_status',
+            'product-deactivation-documents.bulk.preview' => 'products.change_status',
+            'product-deactivation-documents.bulk.store' => 'products.change_status',
             'product-deactivation-documents.store' => 'products.change_status',
             'product-deactivation-documents.show' => 'products.change_status',
             'model-lists.index' => 'model_lists.view',

@@ -11,7 +11,7 @@ class Currency
 
     public static function formatRial(int|float|string|null $rial): string
     {
-        return number_format(self::normalizeRial($rial)) . ' ریال';
+        return number_format(self::normalizeRial($rial)).' ریال';
     }
 
     public static function formatRialNumber(int|float|string|null $rial): string
@@ -34,6 +34,43 @@ class Currency
         return self::normalizeRialString((string) ($value ?? ''));
     }
 
+    public static function formatToman(int|float|string|null $rial): string
+    {
+        return self::formatTomanNumber($rial).' تومان';
+    }
+
+    public static function formatTomanNumber(int|float|string|null $rial): string
+    {
+        return number_format(self::rialToToman(self::normalizeSignedRial($rial)));
+    }
+
+    public static function tomanInput(mixed $value): int
+    {
+        $toman = self::normalizeRialString((string) ($value ?? ''));
+
+        if ($toman > intdiv(PHP_INT_MAX, 10)) {
+            return PHP_INT_MAX;
+        }
+
+        return $toman * 10;
+    }
+
+    public static function signedTomanInput(mixed $value): int
+    {
+        $text = trim((string) ($value ?? ''));
+        $amount = self::tomanInput($text);
+
+        return str_contains($text, '-') ? -$amount : $amount;
+    }
+
+    public static function rialToToman(int $rial): int
+    {
+        $absolute = abs($rial);
+        $rounded = intdiv($absolute + 5, 10);
+
+        return $rial < 0 ? -$rounded : $rounded;
+    }
+
     private static function normalizeRial(int|float|string|null $rial): int
     {
         if (is_string($rial)) {
@@ -41,6 +78,18 @@ class Currency
         }
 
         return max(0, (int) $rial);
+    }
+
+    private static function normalizeSignedRial(int|float|string|null $rial): int
+    {
+        if (! is_string($rial)) {
+            return (int) $rial;
+        }
+
+        $negative = str_contains(trim($rial), '-');
+        $amount = self::normalizeRialString($rial);
+
+        return $negative ? -$amount : $amount;
     }
 
     private static function normalizeRialString(string $value): int

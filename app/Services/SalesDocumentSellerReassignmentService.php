@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Invoice;
 use App\Models\SellerReassignmentAudit;
 use App\Models\User;
+use App\Services\Commissions\CommissionReconciliationService;
 use App\Services\Finance\SellerSalesDocumentReassignmentService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -13,6 +14,7 @@ class SalesDocumentSellerReassignmentService
 {
     public function __construct(
         private readonly SellerSalesDocumentReassignmentService $commissionDocumentReassignmentService,
+        private readonly CommissionReconciliationService $commissionReconciliationService,
     ) {}
 
     public function reassignInvoiceSeller(
@@ -34,7 +36,7 @@ class SalesDocumentSellerReassignmentService
 
         return DB::transaction(function () use ($invoice, $newSeller, $actor, $reason, $syncLinkedPreinvoice, $source, $operationKey): SellerReassignmentResult {
             $locked = Invoice::query()->with('preinvoiceOrder')->lockForUpdate()->findOrFail($invoice->id);
-            $oldSellerId = $locked->seller_id ? (int) $locked->seller_id : null;
+            $oldSellerId = $locked->effective_seller_id ? (int) $locked->effective_seller_id : null;
             if ($oldSellerId === (int) $newSeller->id
                 && (! $syncLinkedPreinvoice || ! $locked->preinvoiceOrder || (int) $locked->preinvoiceOrder->seller_id === (int) $newSeller->id)) {
                 return new SellerReassignmentResult($locked->id, $locked->preinvoice_order_id, $oldSellerId, $newSeller->id, false);
@@ -52,6 +54,7 @@ class SalesDocumentSellerReassignmentService
             ]);
 
             $this->commissionDocumentReassignmentService->reconcile($locked, $newSeller, $audit);
+            $this->commissionReconciliationService->reconcileSellerReassignment($locked, $newSeller, $audit);
 
             return new SellerReassignmentResult($locked->id, $locked->preinvoice_order_id, $oldSellerId, $newSeller->id, true);
         });

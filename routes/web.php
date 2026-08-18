@@ -11,11 +11,13 @@ use App\Http\Controllers\AssetPersonnelController;
 use App\Http\Controllers\AssetTrusteeController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ChequeController;
+use App\Http\Controllers\CommercialCommissionController;
+use App\Http\Controllers\CommissionDocumentController;
+use App\Http\Controllers\CommissionSettlementController;
 use App\Http\Controllers\CustomerApiController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FinanceReportController;
-use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\InventoryWebhookController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceNoteController;
@@ -28,6 +30,7 @@ use App\Http\Controllers\PreinvoiceController;
 use App\Http\Controllers\PriceChangeDocumentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductDeactivationDocumentController;
+use App\Http\Controllers\ProductSalesStatusBulkController;
 use App\Http\Controllers\ProductExportController;
 use App\Http\Controllers\ProductPurchaseLedgerController;
 use App\Http\Controllers\ProductSalesLedgerController;
@@ -36,6 +39,7 @@ use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\SalesHavalehController;
 use App\Http\Controllers\SalesReturnController;
 use App\Http\Controllers\SalesReturnLookupController;
+use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\StockMovementController;
 use App\Http\Controllers\StockMovementReportController;
@@ -55,11 +59,11 @@ use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
 use App\Services\Sync\SitePaidOrdersSyncService;
 use Illuminate\Support\Facades\Auth;
+use App\Models\SalesReturnDocument;
 use Illuminate\Support\Facades\Route;
+Route::get('/', fn() => redirect()->route('dashboard'));
 
-Route::get('/', fn () => redirect()->route('dashboard'));
-
-Route::get('/access-unassigned', fn () => response()->view('errors.access-unassigned'))
+Route::get('/access-unassigned', fn() => response()->view('errors.access-unassigned'))
     ->middleware('auth')
     ->name('access.unassigned');
 
@@ -71,6 +75,49 @@ Route::get('/session/csrf-token', function () {
 })->middleware('auth')->name('session.csrf-token');
 
 Route::middleware(['auth', 'route.permission'])->group(function () {
+
+    Route::prefix('commercial/commissions')->name('commercial.commissions.')->group(function () {
+        Route::get('/', [CommercialCommissionController::class, 'index'])->name('index');
+        Route::get('/tree', [CommercialCommissionController::class, 'tree'])->name('tree');
+        Route::post('/rates', [CommercialCommissionController::class, 'storeRate'])->name('rates.store');
+        Route::delete('/rates', [CommercialCommissionController::class, 'removeRate'])->name('rates.destroy');
+        Route::get('/rates/history', [CommercialCommissionController::class, 'rateHistory'])->name('rates.history');
+        Route::post('/campaigns', [CommercialCommissionController::class, 'storeCampaign'])->name('campaigns.store');
+        Route::put('/campaigns/{campaign}', [CommercialCommissionController::class, 'updateCampaign'])->name('campaigns.update');
+        Route::delete('/campaigns/{campaign}', [CommercialCommissionController::class, 'archiveCampaign'])->name('campaigns.destroy');
+        Route::put('/settings', [CommercialCommissionController::class, 'updateSetting'])->name('settings.update');
+        Route::put('/settings/features', [CommercialCommissionController::class, 'updateFeatureSettings'])->name('settings.features.update');
+        Route::post('/periods', [CommercialCommissionController::class, 'createPeriod'])->name('periods.store');
+        Route::post('/periods/{period}/recalculate', [CommercialCommissionController::class, 'recalculate'])->name('periods.recalculate');
+        Route::put('/periods/{period}/targets/{seller}', [CommercialCommissionController::class, 'updateTarget'])->name('targets.update');
+        Route::post('/periods/{period}/targets/copy-previous', [CommercialCommissionController::class, 'copyPreviousTargets'])->name('targets.copy-previous');
+        Route::post('/periods/{period}/review', [CommissionSettlementController::class, 'startReview'])->name('periods.review');
+        Route::post('/periods/{period}/close', [CommissionSettlementController::class, 'closePeriod'])->name('periods.close');
+        Route::post('/periods/{period}/paid', [CommissionSettlementController::class, 'markPaid'])->name('periods.paid');
+        Route::get('/periods/{period}/sellers/{seller}', [CommercialCommissionController::class, 'sellerDetails'])->name('sellers.show');
+        Route::post('/documents', [CommissionDocumentController::class, 'store'])->name('documents.store');
+        Route::get('/documents/{document}', [CommissionDocumentController::class, 'show'])->name('documents.show');
+        Route::put('/documents/{document}', [CommissionDocumentController::class, 'update'])->name('documents.update');
+        Route::get('/documents/{document}/invoice-search', [CommissionDocumentController::class, 'search'])->name('documents.invoice-search');
+        Route::post('/documents/{document}/invoices', [CommissionDocumentController::class, 'addInvoice'])->name('documents.invoices.store');
+        Route::post('/documents/{document}/refresh-candidates', [CommissionDocumentController::class, 'refreshCandidates'])->name('documents.refresh-candidates');
+        Route::post('/documents/{document}/refresh-calculations', [CommissionDocumentController::class, 'refreshCalculations'])->name('documents.refresh-calculations');
+        Route::post('/documents/{document}/items/{item}/approve', [CommissionDocumentController::class, 'approve'])->name('documents.items.approve');
+        Route::post('/documents/{document}/items/{item}/reject', [CommissionDocumentController::class, 'reject'])->name('documents.items.reject');
+        Route::post('/documents/{document}/items/{item}/remove', [CommissionDocumentController::class, 'remove'])->name('documents.items.remove');
+        Route::post('/documents/{document}/corrections/{correction}/approve', [CommissionDocumentController::class, 'approveCorrection'])->name('documents.corrections.approve');
+        Route::post('/documents/{document}/corrections/{correction}/reject', [CommissionDocumentController::class, 'rejectCorrection'])->name('documents.corrections.reject');
+        Route::get('/documents/{document}/items/{item}/breakdown', [CommissionDocumentController::class, 'breakdown'])->name('documents.items.breakdown');
+        Route::get('/documents/{document}/print', [CommissionDocumentController::class, 'print'])->name('documents.print');
+        Route::post('/documents/{document}/finalize', [CommissionDocumentController::class, 'finalize'])->name('documents.finalize');
+        Route::post('/adjustments', [CommissionSettlementController::class, 'storeAdjustment'])->name('adjustments.store');
+        Route::post('/documents/{document}/adjustments/{adjustment}/approve', [CommissionSettlementController::class, 'approveAdjustment'])->name('documents.adjustments.approve');
+        Route::post('/documents/{document}/adjustments/{adjustment}/reject', [CommissionSettlementController::class, 'rejectAdjustment'])->name('documents.adjustments.reject');
+        Route::get('/settlements/{settlement}', [CommissionSettlementController::class, 'show'])->name('settlements.show');
+        Route::get('/settlements/{settlement}/print', [CommissionSettlementController::class, 'print'])->name('settlements.print');
+        Route::post('/settlements/{settlement}/payments', [CommissionSettlementController::class, 'recordPayment'])->name('settlements.payments.store');
+        Route::post('/settlements/{settlement}/payments/{payment}/void', [CommissionSettlementController::class, 'voidPayment'])->name('settlements.payments.void');
+    });
 
     Route::get('/locations/provinces', [PreinvoiceApiController::class, 'provinces'])->name('locations.provinces.index');
     Route::get('/locations/provinces/{province}/cities', [PreinvoiceApiController::class, 'cities'])->name('locations.provinces.cities');
@@ -132,6 +179,12 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/products/sync-crm', [ProductController::class, 'syncCrm'])->name('products.sync.crm');
     Route::get('/product-deactivation-documents', [ProductDeactivationDocumentController::class, 'index'])->name('product-deactivation-documents.index');
     Route::get('/product-deactivation-documents/create', [ProductDeactivationDocumentController::class, 'create'])->name('product-deactivation-documents.create');
+    Route::get('/product-deactivation-documents/search/products', [ProductDeactivationDocumentController::class, 'searchProducts'])->name('product-deactivation-documents.products.search');
+    Route::get('/product-deactivation-documents/products/{product}/variants', [ProductDeactivationDocumentController::class, 'variants'])->name('product-deactivation-documents.products.variants');
+    Route::get('/product-deactivation-documents/bulk/create', [ProductSalesStatusBulkController::class, 'create'])->name('product-deactivation-documents.bulk.create');
+    Route::get('/product-deactivation-documents/bulk/categories/{category}/children', [ProductSalesStatusBulkController::class, 'children'])->name('product-deactivation-documents.bulk.categories.children');
+    Route::post('/product-deactivation-documents/bulk/preview', [ProductSalesStatusBulkController::class, 'preview'])->name('product-deactivation-documents.bulk.preview');
+    Route::post('/product-deactivation-documents/bulk', [ProductSalesStatusBulkController::class, 'store'])->name('product-deactivation-documents.bulk.store');
     Route::post('/product-deactivation-documents', [ProductDeactivationDocumentController::class, 'store'])->name('product-deactivation-documents.store');
     Route::get('/product-deactivation-documents/{productDeactivationDocument}', [ProductDeactivationDocumentController::class, 'show'])->name('product-deactivation-documents.show');
 
@@ -155,7 +208,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Quick category store
     Route::post('/categories/quick-store', [CategoryController::class, 'quickStore'])->name('categories.quickStore');
 
-
     Route::get('/inventory-webhooks', [InventoryWebhookController::class, 'index'])->name('inventory-webhooks.index');
     Route::put('/inventory-webhooks', [InventoryWebhookController::class, 'update'])->name('inventory-webhooks.update');
 
@@ -164,9 +216,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/products/{product}/movements', [StockMovementController::class, 'store'])->whereNumber('product')->name('movements.store');
     Route::get('/movements', [StockMovementReportController::class, 'index'])->name('movements.index');
 
-
-    Route::get('/sales-returns', fn () => redirect()->route('vouchers.return-from-sale.index'))->name('sales-returns.index');
-    Route::get('/sales-returns/create', fn () => redirect()->route('vouchers.return-from-sale.create'))->name('sales-returns.create');
+    Route::get('/sales-returns', fn() => redirect()->route('vouchers.return-from-sale.index'))->name('sales-returns.index');
+    Route::get('/sales-returns/create', fn() => redirect()->route('vouchers.return-from-sale.create'))->name('sales-returns.create');
     Route::post('/sales-returns', [SalesReturnController::class, 'store'])->name('sales-returns.store');
     Route::get('/sales-returns/export/excel', [SalesReturnController::class, 'exportExcel'])->name('sales-returns.export.excel');
     Route::get('/sales-returns/export/pdf', [SalesReturnController::class, 'exportPdf'])->name('sales-returns.export.pdf');
@@ -177,8 +228,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/sales-returns/products/search', [SalesReturnLookupController::class, 'products'])->name('sales-returns.products.search');
     Route::get('/sales-returns/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->name('sales-returns.products.variants');
     Route::post('/sales-returns/preview', [SalesReturnLookupController::class, 'preview'])->name('sales-returns.preview');
-    Route::get('/sales-returns/{document}', fn (\App\Models\SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.show', $document))->whereNumber('document')->name('sales-returns.show');
-    Route::get('/sales-returns/{document}/edit', fn (\App\Models\SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.edit', $document))->whereNumber('document')->name('sales-returns.edit');
+    Route::get('/sales-returns/{document}', fn(SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.show', $document))->whereNumber('document')->name('sales-returns.show');
+    Route::get('/sales-returns/{document}/edit', fn(SalesReturnDocument $document) => redirect()->route('vouchers.return-from-sale.edit', $document))->whereNumber('document')->name('sales-returns.edit');
     Route::patch('/sales-returns/{document}', [SalesReturnController::class, 'update'])->whereNumber('document')->name('sales-returns.update');
     Route::post('/sales-returns/{document}/apply', [SalesReturnController::class, 'apply'])->whereNumber('document')->name('sales-returns.apply');
     Route::post('/sales-returns/{document}/cancel', [SalesReturnController::class, 'cancel'])->whereNumber('document')->name('sales-returns.cancel');
@@ -186,115 +237,114 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/sales-returns/{document}/pdf', [SalesReturnController::class, 'pdf'])->whereNumber('document')->name('sales-returns.pdf');
 
     // Vouchers
-Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
+    Route::get('/vouchers', [VoucherController::class, 'hub'])->name('vouchers.index');
 
-Route::get('/vouchers/sales', [InvoiceController::class, 'salesVouchers'])->name('vouchers.sales.index');
-Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->name('vouchers.sales.queue');
-Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->name('vouchers.sales.queue.data');
-Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->name('vouchers.sales.shipped');
-Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->name('warehouse.shipping.index');
-Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->name('warehouse.shipping.ship');
-Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->name('vouchers.sales.queue.receive');
-Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->name('vouchers.sales.queue.start-collection');
-Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->name('vouchers.sales.queue.complete-collection');
-Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'updateSalesQueueItems'])->name('vouchers.sales.queue.items');
-Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->name('vouchers.sales.products.categories');
-Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->name('vouchers.sales.products.by-category');
-Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->name('vouchers.sales.products.variants');
-Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->name('vouchers.sales.collection.edit');
-Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.collection.update');
-Route::get('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherEdit'])->name('vouchers.sales.edit');
-Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVoucherShow'])->name('vouchers.sales.show');
-Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
-Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.update');
-Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
-Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
-Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->name('finance.invoices.reapprove');
-Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->name('finance.invoices.return-to-sales');
-Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->name('finance.cheques.registered');
+    Route::get('/vouchers/sales', [InvoiceController::class, 'salesVouchers'])->name('vouchers.sales.index');
+    Route::get('/vouchers/sales/queue', [InvoiceController::class, 'salesQueue'])->name('vouchers.sales.queue');
+    Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->name('vouchers.sales.queue.data');
+    Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->name('vouchers.sales.shipped');
+    Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->name('warehouse.shipping.index');
+    Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->name('warehouse.shipping.ship');
+    Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->name('vouchers.sales.queue.receive');
+    Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->name('vouchers.sales.queue.start-collection');
+    Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->name('vouchers.sales.queue.complete-collection');
+    Route::put('/vouchers/sales/queue/{uuid}/items', [InvoiceController::class, 'updateSalesQueueItems'])->name('vouchers.sales.queue.items');
+    Route::get('/vouchers/sales/products/categories', [InvoiceController::class, 'salesProductCategories'])->name('vouchers.sales.products.categories');
+    Route::get('/vouchers/sales/products/by-category', [InvoiceController::class, 'salesProductsByCategory'])->name('vouchers.sales.products.by-category');
+    Route::get('/vouchers/sales/products/{product}/variants', [InvoiceController::class, 'salesProductVariants'])->name('vouchers.sales.products.variants');
+    Route::get('/vouchers/sales/{uuid}/collection-edit', [InvoiceController::class, 'salesVoucherEdit'])->name('vouchers.sales.collection.edit');
+    Route::patch('/vouchers/sales/{uuid}/collection-update', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.collection.update');
+    Route::get('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherEdit'])->name('vouchers.sales.edit');
+    Route::get('/vouchers/sales/{uuid}/view', [InvoiceController::class, 'salesVoucherShow'])->name('vouchers.sales.show');
+    Route::get('/vouchers/sales/{uuid}/history', [InvoiceController::class, 'salesVoucherHistory'])->name('vouchers.sales.history');
+    Route::put('/vouchers/sales/{uuid}', [InvoiceController::class, 'salesVoucherUpdate'])->name('vouchers.sales.update');
+    Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
+    Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
+    Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->name('finance.invoices.reapprove');
+    Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->name('finance.invoices.return-to-sales');
+    Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->name('finance.cheques.registered');
 
-Route::prefix('finance/reports')
-    ->name('finance.reports.')
-    ->group(function () {
-        Route::get('/', [FinanceReportController::class, 'index'])->name('index');
-        Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
-        Route::post('/sales-visitors/commission-batches', [FinanceReportController::class, 'storeCommissionBatch'])->name('sales-visitors.commission-batches.store');
-        Route::get('/sales-visitors/commission-batches/{batch}', [FinanceReportController::class, 'showCommissionBatch'])->name('sales-visitors.commission-batches.show');
-        Route::get('/sales-visitors/commission-batches/{batch}/export', [FinanceReportController::class, 'exportCommissionBatch'])->name('sales-visitors.commission-batches.export');
-        Route::get('/sales-visitors/commission-batches/{batch}/print', [FinanceReportController::class, 'printCommissionBatch'])->name('sales-visitors.commission-batches.print');
+    Route::prefix('finance/reports')
+        ->name('finance.reports.')
+        ->group(function () {
+            Route::get('/', [FinanceReportController::class, 'index'])->name('index');
+            Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
+            Route::post('/sales-visitors/commission-batches', [FinanceReportController::class, 'storeCommissionBatch'])->name('sales-visitors.commission-batches.store');
+            Route::get('/sales-visitors/commission-batches/{batch}', [FinanceReportController::class, 'showCommissionBatch'])->name('sales-visitors.commission-batches.show');
+            Route::get('/sales-visitors/commission-batches/{batch}/export', [FinanceReportController::class, 'exportCommissionBatch'])->name('sales-visitors.commission-batches.export');
+            Route::get('/sales-visitors/commission-batches/{batch}/print', [FinanceReportController::class, 'printCommissionBatch'])->name('sales-visitors.commission-batches.print');
+        });
+
+    Route::prefix('finance/reports/seller-commission-documents')->name('finance.seller-sales.')->middleware(['auth', 'page.access:finance.seller_sales_documents'])->group(function () {
+        Route::get('/', [SellerCommissionDocumentController::class, 'index'])->name('index');
+        Route::get('/create', [SellerCommissionDocumentController::class, 'create'])->name('create');
+        Route::get('/available-invoices', [SellerCommissionDocumentController::class, 'availableInvoices'])->name('available-invoices');
+        Route::post('/', [SellerCommissionDocumentController::class, 'store'])->name('store');
+        Route::get('/{document}', [SellerCommissionDocumentController::class, 'show'])->name('show');
+        Route::get('/{document}/edit', [SellerCommissionDocumentController::class, 'edit'])->name('edit');
+        Route::put('/{document}', [SellerCommissionDocumentController::class, 'update'])->name('update');
+        Route::get('/{document}/print', [SellerCommissionDocumentController::class, 'print'])->name('print');
     });
 
-Route::prefix('finance/reports/seller-commission-documents')->name('finance.seller-sales.')->middleware(['auth','page.access:finance.seller_sales_documents'])->group(function(){
-    Route::get('/',[SellerCommissionDocumentController::class,'index'])->name('index');
-    Route::get('/create',[SellerCommissionDocumentController::class,'create'])->name('create');
-    Route::get('/available-invoices',[SellerCommissionDocumentController::class,'availableInvoices'])->name('available-invoices');
-    Route::post('/',[SellerCommissionDocumentController::class,'store'])->name('store');
-    Route::get('/{document}',[SellerCommissionDocumentController::class,'show'])->name('show');
-    Route::get('/{document}/edit',[SellerCommissionDocumentController::class,'edit'])->name('edit');
-    Route::put('/{document}',[SellerCommissionDocumentController::class,'update'])->name('update');
-    Route::get('/{document}/print',[SellerCommissionDocumentController::class,'print'])->name('print');
-});
+    Route::prefix('vouchers/section/return-from-sale')
+        ->name('vouchers.return-from-sale.')
+        ->group(function () {
+            Route::get('/', [VoucherSalesReturnController::class, 'index'])->name('index');
+            Route::get('/data', [VoucherSalesReturnController::class, 'data'])->name('data');
+            Route::get('/create', [VoucherSalesReturnController::class, 'create'])->name('create');
+            Route::post('/', [VoucherSalesReturnController::class, 'store'])->name('store');
+            Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->name('customers.search');
+            Route::get('/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->name('customers.invoices');
+            Route::get('/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->name('invoices.items');
+            Route::get('/categories', [SalesReturnLookupController::class, 'categories'])->name('categories.index');
+            Route::get('/categories/{category}/products', [SalesReturnLookupController::class, 'categoryProducts'])->whereNumber('category')->name('categories.products');
+            Route::get('/products/search', [SalesReturnLookupController::class, 'products'])->name('products.search');
+            Route::get('/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->name('products.variants');
+            Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->name('preview');
+            Route::get('/export/excel', [VoucherSalesReturnController::class, 'exportExcel'])->name('export.excel');
+            Route::get('/export/pdf', [VoucherSalesReturnController::class, 'exportPdf'])->name('export.pdf');
+            Route::get('/print', [VoucherSalesReturnController::class, 'printReport'])->name('print-report');
+            Route::get('/print/customers', [VoucherSalesReturnController::class, 'printCustomers'])->name('print.customers');
+            Route::get('/print/products', [VoucherSalesReturnController::class, 'printProducts'])->name('print.products');
+            Route::get('/legacy/{transfer}/print', [VoucherSalesReturnController::class, 'printLegacy'])->whereNumber('transfer')->name('legacy.print');
+            Route::get('/{document}', [VoucherSalesReturnController::class, 'show'])->whereNumber('document')->name('show');
+            Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->name('edit');
+            Route::get('/{document}/applied-edit', [VoucherSalesReturnController::class, 'editApplied'])->whereNumber('document')->name('applied.edit');
+            Route::patch('/{document}/applied-update', [VoucherSalesReturnController::class, 'updateApplied'])->whereNumber('document')->name('applied.update');
+            Route::post('/{document}/void', [VoucherSalesReturnController::class, 'voidApplied'])->whereNumber('document')->name('applied.void');
+            Route::patch('/{document}', [VoucherSalesReturnController::class, 'update'])->whereNumber('document')->name('update');
+            Route::post('/{document}/apply', [VoucherSalesReturnController::class, 'apply'])->whereNumber('document')->name('apply');
+            Route::post('/{document}/cancel', [VoucherSalesReturnController::class, 'cancel'])->whereNumber('document')->name('cancel');
+            Route::get('/{document}/print', [VoucherSalesReturnController::class, 'print'])->whereNumber('document')->name('print');
+            Route::get('/{document}/pdf', [VoucherSalesReturnController::class, 'pdf'])->whereNumber('document')->name('pdf');
+        });
 
+    Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
+    Route::get('/vouchers/section/{type}/create', [VoucherController::class, 'sectionCreate'])->name('vouchers.section.create');
+    Route::post('/vouchers/section/{type}', [VoucherController::class, 'sectionStore'])->name('vouchers.section.store');
 
-Route::prefix('vouchers/section/return-from-sale')
-    ->name('vouchers.return-from-sale.')
-    ->group(function () {
-        Route::get('/', [VoucherSalesReturnController::class, 'index'])->name('index');
-        Route::get('/data', [VoucherSalesReturnController::class, 'data'])->name('data');
-        Route::get('/create', [VoucherSalesReturnController::class, 'create'])->name('create');
-        Route::post('/', [VoucherSalesReturnController::class, 'store'])->name('store');
-        Route::get('/customers/search', [SalesReturnLookupController::class, 'customers'])->name('customers.search');
-        Route::get('/customers/{customer}/invoices', [SalesReturnLookupController::class, 'customerInvoices'])->whereNumber('customer')->name('customers.invoices');
-        Route::get('/invoices/{invoice}/items', [SalesReturnLookupController::class, 'invoiceItems'])->whereNumber('invoice')->name('invoices.items');
-        Route::get('/categories', [SalesReturnLookupController::class, 'categories'])->name('categories.index');
-        Route::get('/categories/{category}/products', [SalesReturnLookupController::class, 'categoryProducts'])->whereNumber('category')->name('categories.products');
-        Route::get('/products/search', [SalesReturnLookupController::class, 'products'])->name('products.search');
-        Route::get('/products/{product}/variants', [SalesReturnLookupController::class, 'variants'])->whereNumber('product')->name('products.variants');
-        Route::post('/preview', [SalesReturnLookupController::class, 'preview'])->name('preview');
-        Route::get('/export/excel', [VoucherSalesReturnController::class, 'exportExcel'])->name('export.excel');
-        Route::get('/export/pdf', [VoucherSalesReturnController::class, 'exportPdf'])->name('export.pdf');
-        Route::get('/print', [VoucherSalesReturnController::class, 'printReport'])->name('print-report');
-        Route::get('/print/customers', [VoucherSalesReturnController::class, 'printCustomers'])->name('print.customers');
-        Route::get('/print/products', [VoucherSalesReturnController::class, 'printProducts'])->name('print.products');
-        Route::get('/legacy/{transfer}/print', [VoucherSalesReturnController::class, 'printLegacy'])->whereNumber('transfer')->name('legacy.print');
-        Route::get('/{document}', [VoucherSalesReturnController::class, 'show'])->whereNumber('document')->name('show');
-        Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->name('edit');
-        Route::get('/{document}/applied-edit', [VoucherSalesReturnController::class, 'editApplied'])->whereNumber('document')->name('applied.edit');
-        Route::patch('/{document}/applied-update', [VoucherSalesReturnController::class, 'updateApplied'])->whereNumber('document')->name('applied.update');
-        Route::post('/{document}/void', [VoucherSalesReturnController::class, 'voidApplied'])->whereNumber('document')->name('applied.void');
-        Route::patch('/{document}', [VoucherSalesReturnController::class, 'update'])->whereNumber('document')->name('update');
-        Route::post('/{document}/apply', [VoucherSalesReturnController::class, 'apply'])->whereNumber('document')->name('apply');
-        Route::post('/{document}/cancel', [VoucherSalesReturnController::class, 'cancel'])->whereNumber('document')->name('cancel');
-        Route::get('/{document}/print', [VoucherSalesReturnController::class, 'print'])->whereNumber('document')->name('print');
-        Route::get('/{document}/pdf', [VoucherSalesReturnController::class, 'pdf'])->whereNumber('document')->name('pdf');
-    });
+    Route::get('/vouchers/create', [VoucherController::class, 'create'])->name('vouchers.create');
+    Route::post('/vouchers', [VoucherController::class, 'store'])->name('vouchers.store');
 
-Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
-Route::get('/vouchers/section/{type}/create', [VoucherController::class, 'sectionCreate'])->name('vouchers.section.create');
-Route::post('/vouchers/section/{type}', [VoucherController::class, 'sectionStore'])->name('vouchers.section.store');
+    Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invoiceProducts'])->name('vouchers.invoice.products');
 
-Route::get('/vouchers/create', [VoucherController::class, 'create'])->name('vouchers.create');
-Route::post('/vouchers', [VoucherController::class, 'store'])->name('vouchers.store');
+    Route::get('/vouchers/sale-delivery', [VoucherController::class, 'saleDeliveryIndex'])->name('vouchers.sale-delivery.index');
+    Route::get('/vouchers/sale-delivery/{uuid}/edit', [VoucherController::class, 'saleDeliveryEdit'])->name('vouchers.sale-delivery.edit');
+    Route::put('/vouchers/sale-delivery/{uuid}', [VoucherController::class, 'saleDeliveryUpdate'])->name('vouchers.sale-delivery.update');
 
-Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invoiceProducts'])->name('vouchers.invoice.products');
+    Route::get('/vouchers/return/customers/{customer}/invoices', [VoucherController::class, 'customerInvoices'])->name('vouchers.return.customer.invoices');
 
-Route::get('/vouchers/sale-delivery', [VoucherController::class, 'saleDeliveryIndex'])->name('vouchers.sale-delivery.index');
-Route::get('/vouchers/sale-delivery/{uuid}/edit', [VoucherController::class, 'saleDeliveryEdit'])->name('vouchers.sale-delivery.edit');
-Route::put('/vouchers/sale-delivery/{uuid}', [VoucherController::class, 'saleDeliveryUpdate'])->name('vouchers.sale-delivery.update');
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/latest', [NotificationController::class, 'latest'])->name('notifications.latest');
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::get('/notifications/{notification}/open', [NotificationController::class, 'open'])->name('notifications.open');
 
-Route::get('/vouchers/return/customers/{customer}/invoices', [VoucherController::class, 'customerInvoices'])->name('vouchers.return.customer.invoices');
-
-Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
-Route::get('/notifications/latest', [NotificationController::class, 'latest'])->name('notifications.latest');
-Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
-Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
-Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
-Route::get('/notifications/{notification}/open', [NotificationController::class, 'open'])->name('notifications.open');
-
-Route::get('/vouchers/{voucher}', [VoucherController::class, 'show'])->name('vouchers.show');
-Route::get('/vouchers/{voucher}/edit', [VoucherController::class, 'edit'])->name('vouchers.edit');
-Route::put('/vouchers/{voucher}', [VoucherController::class, 'update'])->name('vouchers.update');
-Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->name('vouchers.destroy');
+    Route::get('/vouchers/{voucher}', [VoucherController::class, 'show'])->name('vouchers.show');
+    Route::get('/vouchers/{voucher}/edit', [VoucherController::class, 'edit'])->name('vouchers.edit');
+    Route::put('/vouchers/{voucher}', [VoucherController::class, 'update'])->name('vouchers.update');
+    Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->name('vouchers.destroy');
     Route::get('/warehouse-outputs', [VoucherController::class, 'outputs'])->name('warehouse.outputs');
 
     // Asset trustee module (امین اموال)
@@ -325,7 +375,6 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
         Route::get('/search', [AssetDocumentController::class, 'codeSearchPage'])->name('codes.search');
         Route::get('/codes/{code}', [AssetDocumentController::class, 'findByCode'])->name('codes.find');
     });
-
 
     // Sales Havaleh APIs
     Route::post('/sales-havaleh/create-from-financial/{financialId}', [SalesHavalehController::class, 'createFromFinancial'])->name('sales-havaleh.create-from-financial');
@@ -509,8 +558,6 @@ Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->nam
 Route::post('model-lists/import-phone-catalog', [ModelListController::class, 'importPhoneCatalog'])
     ->middleware(['auth', 'route.permission'])
     ->name('model-lists.import-phone-catalog');
-
-
 
 // اگر این دو route را از قبل نداری، داخل routes/web.php اضافه کن.
 // اگر route مشابه داری، فقط مطمئن شو URL ها با همین دو آدرس یکی باشند.

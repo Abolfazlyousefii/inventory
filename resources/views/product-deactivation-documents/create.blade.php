@@ -2,343 +2,90 @@
 
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">ثبت جدید غیرفعال‌سازی</h4>
-    <a href="{{ route('product-deactivation-documents.index') }}" class="btn btn-outline-secondary">
-        بازگشت به لیست
-    </a>
+    <h4 class="mb-0">مدیریت وضعیت فروش</h4>
+    <div class="d-flex gap-2"><a href="{{ route('product-deactivation-documents.bulk.create') }}" class="btn btn-outline-primary">عملیات گروهی</a><a href="{{ route('product-deactivation-documents.index') }}" class="btn btn-outline-secondary">تاریخچه وضعیت</a></div>
 </div>
 
-<div class="card">
+@if($errors->any())
+    <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
+@endif
+
+<form method="POST" action="{{ route('product-deactivation-documents.store') }}" class="card">
+    @csrf
     <div class="card-body">
-        <form method="POST" action="{{ route('product-deactivation-documents.store') }}">
-            @csrf
+        <label class="form-label fw-bold">جستجوی نام یا کد کالا</label>
+        <input id="productSearch" class="form-control" autocomplete="off" placeholder="حداقل دو نویسه وارد کنید">
+        <div id="searchResults" class="list-group mt-1"></div>
+        <input type="hidden" name="product_id" id="productId" value="{{ old('product_id', $selectedProduct?->id) }}">
+        @if(request()->filled('return_to'))<input type="hidden" name="return_to_edit" value="1">@endif
 
-            <div class="mb-3">
-                <label class="form-label fw-bold">دلیل غیرفعال‌سازی</label>
-                <textarea
-                    name="reason_text"
-                    class="form-control @error('reason_text') is-invalid @enderror"
-                    rows="3"
-                    placeholder="دلیل را به صورت کامل بنویسید..."
-                >{{ old('reason_text') }}</textarea>
+        <div id="selectedProduct" class="border rounded p-3 my-3 {{ $selectedProduct ? '' : 'd-none' }}">
+            <div class="fw-bold" id="selectedName">{{ $selectedProduct?->name }}</div>
+            <div class="small text-muted mt-1" id="selectedMeta">
+                @if($selectedProduct)کد: {{ $selectedProduct->code ?: $selectedProduct->sku ?: '—' }} | دسته‌بندی: {{ $selectedProduct->category?->name ?? '—' }}@endif
+            </div>
+            @php
+                $selectedStructural = (int) ($selectedProduct?->structural_variants_count ?? 0);
+                $selectedSellable = (int) ($selectedProduct?->sellable_variants_count ?? 0);
+                $selectedComputedStatus = $selectedSellable === 0 ? 'inactive' : (($selectedStructural > 0 && $selectedSellable >= $selectedStructural) ? 'active' : 'partial');
+                $selectedStatusLabel = ['active' => 'فعال', 'partial' => 'نیمه‌فعال', 'inactive' => 'غیرفعال'][$selectedComputedStatus];
+                $selectedStatusClass = ['active' => 'text-bg-success', 'partial' => 'text-bg-warning', 'inactive' => 'text-bg-secondary'][$selectedComputedStatus];
+                $selectedInconsistent = $selectedProduct && ((bool) $selectedProduct->is_sellable !== ($selectedSellable > 0));
+            @endphp
+            <div class="mt-2">وضعیت واقعی فروش: <span id="statusBadge" class="badge {{ $selectedStatusClass }}">{{ $selectedStatusLabel }}</span> <span id="variantSummary" class="small text-muted">@if($selectedProduct){{ $selectedSellable }} از {{ $selectedStructural }} تنوع قابل فروش@endif</span> <span id="statusWarning" class="badge text-bg-danger {{ $selectedInconsistent ? '' : 'd-none' }}">وضعیت تجمیعی ناسازگار</span></div>
+        </div>
 
-                @error('reason_text')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
+        <div id="operationFields" class="{{ $selectedProduct ? '' : 'd-none' }}">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">عملیات</label>
+                    <div><label class="me-3"><input type="radio" name="action_type" value="deactivate" @checked(old('action_type', $selectedProduct?->is_sellable ? 'deactivate' : 'activate') === 'deactivate')> غیرفعال‌سازی</label><label><input type="radio" name="action_type" value="activate" @checked(old('action_type', $selectedProduct?->is_sellable ? 'deactivate' : 'activate') === 'activate')> فعال‌سازی مجدد</label></div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">محدوده</label>
+                    <div><label class="me-3"><input type="radio" name="scope_type" value="product" @checked(old('scope_type', 'product') === 'product')> کل کالا</label><label><input type="radio" name="scope_type" value="variants" @checked(old('scope_type') === 'variants')> تنوع‌های مشخص</label></div>
+                </div>
             </div>
 
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="mb-0">آیتم‌های سند</h6>
-                <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn">
-                    + افزودن ردیف
-                </button>
+            <div id="variantsPanel" class="border rounded mt-3 d-none">
+                <div class="p-2 border-bottom fw-bold">انتخاب تنوع‌ها</div>
+                <div id="variantsList" class="p-2"><span class="text-muted">در حال دریافت…</span></div>
             </div>
 
-            <div class="table-responsive border rounded">
-                <table class="table table-sm align-middle mb-0" id="itemsTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="min-width: 160px;">دسته‌بندی</th>
-                            <th style="min-width: 180px;">زیر دسته‌بندی</th>
-                            <th style="min-width: 220px;">کالا</th>
-                            <th style="min-width: 220px;">تنوع کالا</th>
-                            <th class="text-center" style="width: 80px;">حذف</th>
-                        </tr>
-                    </thead>
-                    <tbody id="itemsTbody"></tbody>
-                </table>
+            <div class="row g-3 mt-1">
+                <div class="col-md-6"><label class="form-label fw-bold">دلیل تغییر وضعیت</label><select name="reason_type" id="reasonType" class="form-select" required></select></div>
+                <div class="col-md-6"><label class="form-label">توضیح تکمیلی</label><textarea name="reason_text" id="reasonText" class="form-control" rows="2">{{ old('reason_text') }}</textarea><div class="form-text">برای «دلیل سفارشی» الزامی است.</div></div>
             </div>
-
-            @error('items')
-                <div class="text-danger small mt-2">{{ $message }}</div>
-            @enderror
-
-            <div class="mt-3">
-                <button type="submit" class="btn btn-danger">ثبت سند</button>
-            </div>
-        </form>
+        </div>
     </div>
-</div>
-
-<template id="rowTemplate">
-    <tr>
-        <td>
-            <select class="form-select form-select-sm js-category">
-                <option value="">انتخاب دسته‌بندی</option>
-            </select>
-            <input type="hidden" class="js-category-input" name="">
-        </td>
-        <td>
-            <select class="form-select form-select-sm js-subcategory">
-                <option value="">انتخاب زیر دسته‌بندی</option>
-            </select>
-            <input type="hidden" class="js-subcategory-input" name="">
-        </td>
-        <td>
-            <select class="form-select form-select-sm js-product">
-                <option value="">انتخاب کالا</option>
-            </select>
-            <input type="hidden" class="js-product-input" name="">
-        </td>
-        <td>
-            <select class="form-select form-select-sm js-variant">
-                <option value="">بدون تنوع (غیرفعال‌سازی کل کالا)</option>
-            </select>
-            <input type="hidden" class="js-variant-input" name="">
-        </td>
-        <td class="text-center">
-            <button type="button" class="btn btn-sm btn-outline-danger js-remove-row">×</button>
-        </td>
-    </tr>
-</template>
+    <div class="card-footer bg-white"><button id="submitButton" class="btn btn-primary" {{ $selectedProduct ? '' : 'disabled' }}>ثبت تغییر وضعیت</button></div>
+</form>
 
 @php
-    $categoryPayload = collect($rootCategories ?? [])->map(function ($c) {
-        return [
-            'id' => (int) $c->id,
-            'name' => (string) $c->name,
-        ];
-    })->values()->all();
-
-    $subcategoryPayload = collect($subcategories ?? [])->map(function ($c) {
-        return [
-            'id' => (int) $c->id,
-            'name' => (string) $c->name,
-            'parent_id' => (int) ($c->parent_id ?? 0),
-        ];
-    })->values()->all();
-
-    $productPayload = collect($products ?? [])->map(function ($p) {
-        return [
-            'id' => (int) $p->id,
-            'name' => (string) $p->name,
-            'root_category_id' => (int) ($p->root_category_id ?? 0),
-            'subcategory_id' => (int) ($p->subcategory_id ?? 0),
-            'variants' => collect($p->variants ?? [])->map(function ($v) {
-                return [
-                    'id' => (int) $v->id,
-                    'name' => (string) $v->variant_name,
-                ];
-            })->values()->all(),
-        ];
-    })->values()->all();
-
-    $oldItems = old('items', [
-        [
-            'category_id' => '',
-            'subcategory_id' => '',
-            'product_id' => '',
-            'variant_id' => '',
-        ]
-    ]);
+    $selectedPayload = $selectedProduct ? [
+        'id' => $selectedProduct->id,
+        'name' => $selectedProduct->name,
+        'code' => $selectedProduct->code ?: $selectedProduct->sku,
+        'category' => $selectedProduct->category?->name,
+        'is_sellable' => (bool) $selectedProduct->is_sellable,
+        'computed_sellable' => (int) $selectedProduct->sellable_variants_count > 0,
+        'computed_status' => (int) $selectedProduct->sellable_variants_count === 0 ? 'inactive' : (((int) $selectedProduct->structural_variants_count > 0 && (int) $selectedProduct->sellable_variants_count >= (int) $selectedProduct->structural_variants_count) ? 'active' : 'partial'),
+        'status_inconsistent' => (bool) $selectedProduct->is_sellable !== ((int) $selectedProduct->sellable_variants_count > 0),
+        'structural_variants_count' => (int) $selectedProduct->structural_variants_count,
+        'sellable_variants_count' => (int) $selectedProduct->sellable_variants_count,
+    ] : null;
 @endphp
-
 <script>
-    const categories = @json($categoryPayload);
-    const subcategories = @json($subcategoryPayload);
-    const products = @json($productPayload);
-    const oldItems = @json($oldItems);
-    const rootCategoryIds = new Set(categories.map((c) => Number(c.id || 0)));
-    const categoryParentMap = new Map();
-    categories.forEach((category) => {
-        categoryParentMap.set(Number(category.id || 0), 0);
-    });
-    subcategories.forEach((category) => {
-        categoryParentMap.set(Number(category.id || 0), Number(category.parent_id || 0));
-    });
-
-    const tbody = document.getElementById('itemsTbody');
-    const template = document.getElementById('rowTemplate');
-    const addRowBtn = document.getElementById('addRowBtn');
-
-    function toOptions(items, placeholder, valueKey = 'id', textKey = 'name') {
-        return `<option value="">${placeholder}</option>` + items.map(function (item) {
-            return `<option value="${item[valueKey]}">${item[textKey]}</option>`;
-        }).join('');
-    }
-
-    function updateInputNames(row, index) {
-        row.querySelector('.js-category-input').name = `items[${index}][category_id]`;
-        row.querySelector('.js-subcategory-input').name = `items[${index}][subcategory_id]`;
-        row.querySelector('.js-product-input').name = `items[${index}][product_id]`;
-        row.querySelector('.js-variant-input').name = `items[${index}][variant_id]`;
-    }
-
-    function bindRow(row, initial = {}) {
-        const categoryEl = row.querySelector('.js-category');
-        const subcategoryEl = row.querySelector('.js-subcategory');
-        const productEl = row.querySelector('.js-product');
-        const variantEl = row.querySelector('.js-variant');
-
-        const categoryInput = row.querySelector('.js-category-input');
-        const subcategoryInput = row.querySelector('.js-subcategory-input');
-        const productInput = row.querySelector('.js-product-input');
-        const variantInput = row.querySelector('.js-variant-input');
-
-        categoryEl.innerHTML = toOptions(categories, 'انتخاب دسته‌بندی');
-
-        function syncHidden() {
-            categoryInput.value = categoryEl.value || '';
-            subcategoryInput.value = subcategoryEl.value || '';
-            productInput.value = productEl.value || '';
-            variantInput.value = variantEl.value || '';
-        }
-
-        function renderSubcategories() {
-            const categoryId = Number(categoryEl.value || 0);
-
-            const items = subcategories.filter(function (s) {
-                return Number(s.parent_id) === categoryId;
-            });
-
-            subcategoryEl.innerHTML = toOptions(items, 'انتخاب زیر دسته‌بندی');
-
-            if (!items.length) {
-                subcategoryEl.value = '';
-            }
-
-            renderProducts();
-        }
-
-        function renderProducts() {
-            const categoryId = Number(categoryEl.value || 0);
-            const subcategoryId = Number(subcategoryEl.value || 0);
-
-            const filteredProducts = products.filter(function (p) {
-                if (!categoryId) {
-                    return true;
-                }
-
-                if (!subcategoryId) {
-                    return Number(p.root_category_id) === categoryId;
-                }
-
-                return Number(p.subcategory_id) === subcategoryId;
-            });
-
-            productEl.innerHTML = toOptions(filteredProducts, 'انتخاب کالا');
-            renderVariants();
-        }
-
-        function renderVariants() {
-            const productId = Number(productEl.value || 0);
-
-            const product = products.find(function (p) {
-                return Number(p.id) === productId;
-            });
-
-            const variantOptions = (product && product.variants) ? product.variants : [];
-
-            variantEl.innerHTML =
-                `<option value="">بدون تنوع (غیرفعال‌سازی کل کالا)</option>` +
-                variantOptions.map(function (v) {
-                    return `<option value="${v.id}">${v.name}</option>`;
-                }).join('');
-
-            variantEl.disabled = variantOptions.length === 0;
-
-            if (variantEl.disabled) {
-                variantEl.value = '';
-            }
-
-            syncHidden();
-        }
-
-        categoryEl.addEventListener('change', function () {
-            subcategoryEl.value = '';
-            productEl.value = '';
-            variantEl.value = '';
-            renderSubcategories();
-            syncHidden();
-        });
-
-        subcategoryEl.addEventListener('change', function () {
-            productEl.value = '';
-            variantEl.value = '';
-            renderProducts();
-            syncHidden();
-        });
-
-        productEl.addEventListener('change', function () {
-            variantEl.value = '';
-            renderVariants();
-            syncHidden();
-        });
-
-        variantEl.addEventListener('change', syncHidden);
-
-        row.querySelector('.js-remove-row').addEventListener('click', function () {
-            if (tbody.querySelectorAll('tr').length <= 1) {
-                return;
-            }
-
-            row.remove();
-            reindexRows();
-        });
-
-        const initialCategoryId = Number(initial.category_id || 0);
-        const initialSubcategoryId = Number(initial.subcategory_id || 0);
-
-        if (initialCategoryId) {
-            if (rootCategoryIds.has(initialCategoryId)) {
-                categoryEl.value = String(initialCategoryId);
-            } else {
-                const parentId = Number(categoryParentMap.get(initialCategoryId) || 0);
-                if (rootCategoryIds.has(parentId)) {
-                    categoryEl.value = String(parentId);
-                    if (!initialSubcategoryId) {
-                        initial.subcategory_id = String(initialCategoryId);
-                    }
-                }
-            }
-        }
-
-        renderSubcategories();
-
-        if (initial.subcategory_id) {
-            subcategoryEl.value = String(initial.subcategory_id);
-        }
-
-        renderProducts();
-
-        if (initial.product_id) {
-            productEl.value = String(initial.product_id);
-        }
-
-        renderVariants();
-
-        if (initial.variant_id) {
-            variantEl.value = String(initial.variant_id);
-        }
-
-        syncHidden();
-    }
-
-    function reindexRows() {
-        tbody.querySelectorAll('tr').forEach(function (row, index) {
-            updateInputNames(row, index);
-        });
-    }
-
-    function addRow(initial = {}) {
-        const fragment = template.content.cloneNode(true);
-        const row = fragment.querySelector('tr');
-
-        tbody.appendChild(row);
-        bindRow(row, initial);
-        reindexRows();
-    }
-
-    if (Array.isArray(oldItems) && oldItems.length) {
-        oldItems.forEach(function (item) {
-            addRow(item || {});
-        });
-    } else {
-        addRow({});
-    }
-
-    addRowBtn.addEventListener('click', function () {
-        addRow({});
-    });
+const routes={search:@json(route('product-deactivation-documents.products.search')),variants:@json(url('/product-deactivation-documents/products'))};
+const reasons={deactivate:@json(\App\Models\ProductDeactivationDocument::reasonLabels()),activate:@json(\App\Models\ProductDeactivationDocument::activationReasonLabels())};
+let current=@json($selectedPayload), timer, aborter;
+const $=id=>document.getElementById(id), escapeHtml=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+function renderReasons(){const action=document.querySelector('[name=action_type]:checked')?.value||'deactivate',old=@json(old('reason_type'));$('reasonType').innerHTML=Object.entries(reasons[action]).map(([v,l])=>`<option value="${v}" ${old===v?'selected':''}>${escapeHtml(l)}</option>`).join('')}
+function effectiveStatus(product){const structural=Number(product.structural_variants_count||0),sellable=Number(product.sellable_variants_count||0);if(sellable===0)return'inactive';if(structural>0&&sellable>=structural)return'active';return'partial'}
+async function selectProduct(product){current=product;$('productId').value=product.id;$('selectedName').textContent=product.name;$('selectedMeta').textContent=`کد: ${product.code||'—'} | دسته‌بندی: ${product.category||'—'}`;const status=product.computed_status||effectiveStatus(product),labels={active:'فعال',partial:'نیمه‌فعال',inactive:'غیرفعال'},classes={active:'text-bg-success',partial:'text-bg-warning',inactive:'text-bg-secondary'};$('statusBadge').textContent=labels[status]||'غیرفعال';$('statusBadge').className='badge '+(classes[status]||'text-bg-secondary');$('variantSummary').textContent=`${product.sellable_variants_count} از ${product.structural_variants_count} تنوع قابل فروش`;$('statusWarning').classList.toggle('d-none',!product.status_inconsistent);$('selectedProduct').classList.remove('d-none');$('operationFields').classList.remove('d-none');$('submitButton').disabled=false;$('searchResults').innerHTML='';const preferred=Number(product.sellable_variants_count||0)>0?'deactivate':'activate';document.querySelector(`[name=action_type][value=${preferred}]`).checked=true;renderReasons();await loadVariants()}
+async function loadVariants(){if(!current)return;const response=await fetch(`${routes.variants}/${current.id}/variants`,{headers:{Accept:'application/json'}});const data=await response.json();$('variantsList').innerHTML=data.variants.length?data.variants.map(v=>`<label class="d-flex gap-2 align-items-center border-bottom py-2"><input type="checkbox" name="variant_ids[]" value="${v.id}"><span><b>${escapeHtml(v.variant_name||'تنوع اصلی')}</b> <small class="text-muted">${escapeHtml(v.variant_code||'—')}</small><br><small>${v.is_active?(v.sales_enabled?'قابل فروش':'فروش غیرفعال'):'از نظر ساختاری غیرفعال'}</small></span></label>`).join(''):'<span class="text-muted">تنوعی ثبت نشده است.</span>'}
+$('productSearch').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(async()=>{const q=$('productSearch').value.trim();if(q.length<2){$('searchResults').innerHTML='';return}aborter?.abort();aborter=new AbortController();try{const response=await fetch(`${routes.search}?q=${encodeURIComponent(q)}`,{signal:aborter.signal,headers:{Accept:'application/json'}});const data=await response.json();$('searchResults').innerHTML=data.data.map(p=>`<button type="button" class="list-group-item list-group-item-action" data-id="${p.id}"><b>${escapeHtml(p.name)}</b><br><small>${escapeHtml(p.code||'—')} | ${escapeHtml(p.category||'—')}</small></button>`).join('')||'<div class="list-group-item text-muted">نتیجه‌ای یافت نشد.</div>';$('searchResults').querySelectorAll('[data-id]').forEach(button=>button.onclick=()=>selectProduct(data.data.find(p=>String(p.id)===button.dataset.id))) }catch(e){if(e.name!=='AbortError')$('searchResults').innerHTML='<div class="list-group-item text-danger">خطا در جستجو</div>'}},300)});
+document.querySelectorAll('[name=action_type]').forEach(el=>el.addEventListener('change',renderReasons));document.querySelectorAll('[name=scope_type]').forEach(el=>el.addEventListener('change',()=>{$('variantsPanel').classList.toggle('d-none',document.querySelector('[name=scope_type]:checked').value!=='variants')}));
+renderReasons();if(current)loadVariants();if(document.querySelector('[name=scope_type]:checked')?.value==='variants')$('variantsPanel').classList.remove('d-none');
 </script>
 @endsection
