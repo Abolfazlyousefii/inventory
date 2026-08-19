@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::call(function () {
     app(SyncProductsToSite::class)->syncAll();
 })
-    ->everyTenSeconds()
+    ->everyFiveSeconds()
     ->name('inventory-products-service')
     ->withoutOverlapping(1);
 
