@@ -65,7 +65,7 @@ class SalesReturnController extends Controller
             $doc = $this->service->apply($doc, auth()->id());
         }
 
-        return redirect()->route('sales-returns.show', $doc)->with('success', 'سند برگشت از فروش ذخیره شد.');
+        return redirect()->route('sales-returns.show', $doc)->with('success', $doc->isPendingWarehouse() ? 'سند برگشت از فروش به صف دریافت انبار ارسال شد.' : 'سند برگشت از فروش ذخیره شد.');
     }
 
     public function show(SalesReturnDocument $document, SalesDocumentAccessService $accessService)
@@ -94,14 +94,14 @@ class SalesReturnController extends Controller
             $doc = $this->service->apply($doc, auth()->id());
         }
 
-        return redirect()->route('sales-returns.show', $doc)->with('success', 'سند بروزرسانی شد.');
+        return redirect()->route('sales-returns.show', $doc)->with('success', $doc->isPendingWarehouse() ? 'تغییرات ذخیره و سند به صف دریافت انبار ارسال شد.' : 'سند بروزرسانی شد.');
     }
 
     public function apply(ApplySalesReturnRequest $request, SalesReturnDocument $document)
     {
         $doc = $this->service->apply($document, auth()->id());
 
-        return redirect()->route('sales-returns.show', $doc)->with('success', $doc->wasChanged('status') ? 'سند ثبت نهایی شد.' : 'این سند قبلاً ثبت نهایی شده است.');
+        return redirect()->route('sales-returns.show', $doc)->with('success', $doc->isPendingWarehouse() ? 'سند برای تأیید دریافت به صف انبار ارسال شد.' : 'وضعیت سند بدون تغییر باقی ماند.');
     }
 
     public function cancel(Request $request, SalesReturnDocument $document)

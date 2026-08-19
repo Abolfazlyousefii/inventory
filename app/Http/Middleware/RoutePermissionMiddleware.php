@@ -12,6 +12,20 @@ class RoutePermissionMiddleware
 {
     public function handle(Request $request, Closure $next, ...$permissions): Response
     {
+        $customerPermissions = [
+            'customers.index' => 'customers.view', 'customers.show' => 'customers.view',
+            'customers.create' => 'customers.create', 'customers.store' => 'customers.create',
+            'customers.edit' => 'customers.update', 'customers.update' => 'customers.update',
+            'customers.destroy' => 'customers.delete',
+        ];
+        $routeName = $request->route()?->getName();
+        if ($routeName === 'dashboard') {
+            return app(CheckPermission::class)->handle($request, $next, 'dashboard.view');
+        }
+        if (isset($customerPermissions[$routeName])) {
+            return app(CheckPermission::class)->handle($request, $next, $customerPermissions[$routeName]);
+        }
+
         if ($permissions === []) {
             return app(EnsurePageAccess::class)->handle($request, $next);
         }

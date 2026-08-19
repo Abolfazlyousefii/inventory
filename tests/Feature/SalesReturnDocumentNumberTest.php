@@ -82,12 +82,13 @@ class SalesReturnDocumentNumberTest extends TestCase
         $this->assertStringNotContainsString('recordCustomerCredit', $persist);
     }
 
-    public function test_applying_sales_return_updates_stock_and_credit_once(): void
+    public function test_applying_sales_return_queues_without_stock_or_credit(): void
     {
         $service = $this->serviceSource();
 
-        $this->assertStringContainsString('if($doc->isApplied()) return $doc;', $service);
-        $this->assertStringContainsString('recordInventoryEntry($item,$actorId)', $service);
-        $this->assertStringContainsString('recordCustomerCredit($doc,$actorId)', $service);
+        $this->assertStringContainsString('SalesReturnDocument::STATUS_PENDING_WAREHOUSE', $service);
+        $this->assertStringContainsString('queueSalesReturn($doc, $actorId)', $service);
+        $this->assertStringNotContainsString('recordInventoryEntry(', $service);
+        $this->assertStringNotContainsString('recordCustomerCredit(', $service);
     }
 }

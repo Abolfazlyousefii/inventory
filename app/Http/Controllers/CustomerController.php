@@ -3,6 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Actions\Customers\CreateCustomerAction;
+use App\Actions\Customers\UpdateCustomerAction;
+use App\Http\Requests\Customer\StoreCustomerRequest;
+use App\Http\Requests\Customer\UpdateCustomerRequest;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,14 +21,18 @@ class CustomerController extends Controller
         $q = trim($this->toEnglishDigits((string) $request->get('q')));
         $reservationTier = (string) $request->get('reservation_tier', '');
         $balanceStatus = (string) $request->get('balance_status', '');
+        $status = (string) $request->get('status', '');
 
         $customersQuery = Customer::query()
             ->withBalance()
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->where('first_name', 'like', "%{$q}%")
+                        ->orWhere('name', 'like', "%{$q}%")
+                        ->orWhere('company_name', 'like', "%{$q}%")
+                        ->orWhere('city', 'like', "%{$q}%")
+                        ->orWhereHas('phones', fn ($phones) => $phones->where('phone', 'like', "%{$q}%"))
                         ->orWhere('last_name', 'like', "%{$q}%")
-                        ->orWhereRaw("CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?", ["%{$q}%"])
                         ->orWhere('mobile', 'like', "%{$q}%")
                         ->orWhere('address', 'like', "%{$q}%")
                         ->orWhere('extra_description', 'like', "%{$q}%");
@@ -39,7 +47,9 @@ class CustomerController extends Controller
             })
             ->when($reservationTier === 'unset', function ($query) {
                 $query->whereNull('reservation_tier');
-            });
+            })
+            ->when($status === 'active', fn ($query) => $query->where('is_active', true))
+            ->when($status === 'inactive', fn ($query) => $query->where('is_active', false));
 
         if (in_array($balanceStatus, ['debt', 'credit', 'settled'], true)) {
             $balanceExpression = '(COALESCE(opening_balance, 0) + COALESCE(debit_sum, 0) - COALESCE(credit_sum, 0))';
@@ -59,31 +69,42 @@ class CustomerController extends Controller
         return view('customers.index', compact('customers', 'q', 'reservationTier', 'balanceStatus'));
     }
 
-    public function store(Request $request)
+    public function create()
     {
-        $payload = $this->validatedCustomerPayload($request);
+        return view('customers.create');
+    }
 
-        Customer::create($payload);
+    public function show(Customer $customer)
+    {
+        return view('customers.show', compact('customer'));
+    }
+
+    public function edit(Customer $customer)
+    {
+        return view('customers.edit', compact('customer'));
+    }
+
+    public function store(StoreCustomerRequest $request, CreateCustomerAction $action)
+    {
+        $customer = $action->execute($request->validated());
 
         return redirect()
-            ->route('customers.index')
+            ->route('customers.show', $customer)
             ->with('success', '✅ مشتری با موفقیت ساخته شد.');
     }
 
-    public function update(Request $request, Customer $customer)
+    public function update(UpdateCustomerRequest $request, Customer $customer, UpdateCustomerAction $action)
     {
-        $payload = $this->validatedCustomerPayload($request, $customer);
-
-        $customer->update($payload);
+        $action->execute($customer, $request->validated());
 
         return redirect()
-            ->route('customers.index')
+            ->route('customers.show', $customer)
             ->with('success', '✅ اطلاعات مشتری ویرایش شد.');
     }
 
     public function destroy(Customer $customer)
     {
-        $title = $customer->display_name ?: $customer->mobile;
+        $title = '';
         $customer->delete();
 
         return redirect()

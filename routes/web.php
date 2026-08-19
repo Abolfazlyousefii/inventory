@@ -50,12 +50,29 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\VoucherController;
 use App\Http\Controllers\VoucherSalesReturnController;
 use App\Http\Controllers\WarehouseController;
+use App\Http\Controllers\WarehouseInboundController;
 use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
+use App\Http\Controllers\Portal\CustomerAuthController;
 use App\Models\SalesReturnDocument;
 use Illuminate\Support\Facades\Route;
 Route::get('/', fn() => redirect()->route('dashboard'));
+
+Route::prefix('portal')->name('portal.')->group(function () {
+    Route::middleware('guest:customer')->group(function () {
+        Route::get('/login', [CustomerAuthController::class, 'create'])->name('login');
+        Route::post('/login/password', [CustomerAuthController::class, 'passwordLogin'])->name('login.password');
+        Route::post('/login', [CustomerAuthController::class, 'requestCode'])->middleware('throttle:3,1')->name('login.request');
+        Route::get('/verify', [CustomerAuthController::class, 'verification'])->name('verify');
+        Route::post('/verify', [CustomerAuthController::class, 'verify'])->name('verify.submit');
+        Route::post('/resend', [CustomerAuthController::class, 'resend'])->name('resend');
+    });
+    Route::middleware('customer.active')->group(function () {
+        Route::get('/', fn () => view('portal.dashboard'))->name('dashboard');
+        Route::post('/logout', [CustomerAuthController::class, 'logout'])->name('logout');
+    });
+});
 
 Route::get('/access-unassigned', fn() => response()->view('errors.access-unassigned'))
     ->middleware('auth')
@@ -246,6 +263,11 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->name('vouchers.sales.shipped');
     Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->name('warehouse.shipping.index');
     Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->name('warehouse.shipping.ship');
+    Route::prefix('warehouse/inbound-queue')->name('warehouse.inbound.')->group(function () {
+        Route::get('/', [WarehouseInboundController::class, 'index'])->name('index');
+        Route::get('/{receipt}', [WarehouseInboundController::class, 'show'])->whereNumber('receipt')->name('show');
+        Route::post('/{receipt}/receive', [WarehouseInboundController::class, 'receive'])->whereNumber('receipt')->name('receive');
+    });
     Route::post('/vouchers/sales/queue/{uuid}/receive', [InvoiceController::class, 'receiveSalesQueueInvoice'])->name('vouchers.sales.queue.receive');
     Route::post('/vouchers/sales/queue/{uuid}/start-collection', [InvoiceController::class, 'startSalesQueueCollection'])->name('vouchers.sales.queue.start-collection');
     Route::post('/vouchers/sales/queue/{uuid}/complete-collection', [InvoiceController::class, 'completeSalesQueueCollection'])->name('vouchers.sales.queue.complete-collection');
@@ -500,7 +522,10 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Customers
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
+    Route::get('/customers/create', [CustomerController::class, 'create'])->name('customers.create');
     Route::post('/customers', [CustomerController::class, 'store'])->name('customers.store');
+    Route::get('/customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
+    Route::get('/customers/{customer}/edit', [CustomerController::class, 'edit'])->name('customers.edit');
     Route::put('/customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
     Route::delete('/customers/{customer}', [CustomerController::class, 'destroy'])->name('customers.destroy');
 

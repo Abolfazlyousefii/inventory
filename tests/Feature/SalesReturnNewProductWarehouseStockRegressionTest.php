@@ -8,14 +8,14 @@ it('rejects zero product and variant ids before warehouse stock insertion', func
         ->toThrow(ValidationException::class, 'ارتباط کالا نامعتبر است');
 });
 
-it('materializes new products before applied adjustment inventory delta', function () {
+it('materializes new products before applied adjustment warehouse reapproval', function () {
     $adjustment = file_get_contents(app_path('Services/SalesReturnAppliedAdjustmentService.php'));
     $restore = strpos($adjustment, 'restoreMaterializedNewProducts($doc');
     $materialize = strpos($adjustment, 'materializeNewProductGroups($doc');
-    $inventoryDelta = strpos($adjustment, 'applyInventoryDelta($previousInventory');
+    $queue = strpos($adjustment, 'queueSalesReturn($doc');
 
     expect($restore)->toBeInt()->toBeLessThan($materialize)
-        ->and($materialize)->toBeInt()->toBeLessThan($inventoryDelta)
+        ->and($materialize)->toBeInt()->toBeLessThan($queue)
         ->and($adjustment)->toContain(
             'materializedNewProductMap($doc)',
             'temporaryVariantUuid',

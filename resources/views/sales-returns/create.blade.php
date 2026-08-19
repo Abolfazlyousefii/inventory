@@ -20,7 +20,7 @@
     <hr><div class="d-flex justify-content-between"><h6>اقلام برگشتی</h6><button class="btn btn-sm btn-outline-primary" type="button" id="addRow">افزودن کالا</button></div>
     <div class="table-responsive"><table class="table table-sm align-middle" id="itemsTable"><thead><tr><th>منبع/کالا</th><th>تنوع/آیتم فاکتور</th><th>تعداد</th><th>وضعیت</th><th>انبار مقصد</th><th>مبلغ واحد بستانکاری</th><th>کالای جدید</th><th></th></tr></thead><tbody></tbody></table></div>
     <div class="border rounded p-2 small bg-light" id="summary">تعداد اقلام: 0 | تعداد کل: 0 | سالم: 0 | مرجوعی: 0 | مبلغ بستانکاری: 0 ریال</div>
-    <div class="mt-3 d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-sm btn-success" name="action" value="apply" onclick="return confirm('با ثبت نهایی، موجودی انبار مقصد افزایش یافته و مشتری به مبلغ سند بستانکار می‌شود. پس از ثبت نهایی امکان ویرایش مستقیم وجود ندارد.')">ثبت نهایی</button><button class="btn btn-sm btn-outline-secondary" type="reset">پاک‌کردن فرم</button></div>
+    <div class="mt-3 d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-sm btn-success" name="action" value="apply" onclick="return confirm('با ارسال سند، اقلام وارد صف دریافت انبار می‌شوند و موجودی فقط پس از تأیید مدیر انبار افزایش می‌یابد. ادامه می‌دهید؟')">ارسال به صف انبار</button><button class="btn btn-sm btn-outline-secondary" type="reset">پاک‌کردن فرم</button></div>
   </form>
 </div>
 <script>

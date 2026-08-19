@@ -11,7 +11,8 @@ class EnsureActiveUser
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->user() && ($request->user()->is_active === false || $request->user()->can_access_erp === false)) {
+        $user = Auth::guard('web')->user();
+        if ($user && ($user->is_active === false || $user->can_access_erp === false)) {
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();

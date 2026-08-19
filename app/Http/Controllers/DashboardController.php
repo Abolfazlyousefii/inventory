@@ -254,6 +254,9 @@ class DashboardController extends Controller
         );
 
         return view('dashboard.index', array_merge($management, [
+            'activeCustomerCount' => ($user->hasPermission('customers.view') || $user->isSuperAdmin())
+                ? Customer::query()->active()->count()
+                : null,
             'todayDateLabel' => Jalalian::fromDateTime($now)->format('%A %d %B %Y'),
             'todayDateTimeLabel' => Jalalian::fromDateTime($now)->format('Y/m/d H:i'),
             'userName' => $user->name,

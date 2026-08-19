@@ -93,7 +93,9 @@ class VoucherSalesReturnController extends Controller
             $doc = $this->service->apply($doc, auth()->id());
         }
 
-        return $this->savedResponse($request, $doc, 'برگشت از فروش با موفقیت ثبت شد.');
+        $message = $doc->isPendingWarehouse() ? 'برگشت از فروش ثبت شد و برای تأیید دریافت به صف انبار ارسال شد.' : 'برگشت از فروش با موفقیت ثبت شد.';
+
+        return $this->savedResponse($request, $doc, $message);
     }
 
     public function show(SalesReturnDocument $document, SalesDocumentAccessService $accessService)
@@ -133,7 +135,7 @@ class VoucherSalesReturnController extends Controller
         $data = $request->validated();
         $doc = $this->adjustments->updateApplied($document, $this->enrich($request) + $data, auth()->id(), $data['adjustment_reason']);
 
-        return $this->savedResponse($request, $doc, 'تغییرات برگشت از فروش ذخیره شد.');
+        return $this->savedResponse($request, $doc, 'تغییرات ذخیره شد و سند برای تأیید مجدد دریافت به صف انبار ارسال شد.');
     }
 
     public function voidApplied(VoidAppliedSalesReturnRequest $request, SalesReturnDocument $document)
@@ -157,7 +159,7 @@ class VoucherSalesReturnController extends Controller
     {
         $doc = $this->service->apply($document, auth()->id());
 
-        return redirect()->route('vouchers.return-from-sale.show', $doc)->with('success', $doc->wasChanged('status') ? 'سند ثبت نهایی شد.' : 'این سند قبلاً ثبت نهایی شده است.');
+        return redirect()->route('vouchers.return-from-sale.show', $doc)->with('success', $doc->isPendingWarehouse() ? 'سند برای تأیید دریافت به صف انبار ارسال شد.' : 'وضعیت سند بدون تغییر باقی ماند.');
     }
 
     public function cancel(Request $request, SalesReturnDocument $document)

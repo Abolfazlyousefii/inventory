@@ -12,8 +12,8 @@
     $isSalesReturnRoute = $isRoute('vouchers.return-from-sale.*') || $isPath('vouchers/section/return-from-sale', 'vouchers/section/return-from-sale/*');
 
     $warehouseActive = ! $isSalesReturnRoute && (
-        $isRoute('vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
-        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*')
+        $isRoute('vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'warehouse.inbound.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
+        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/inbound-queue', 'warehouse/inbound-queue/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*')
     );
 
     $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.commissions.*', 'commercial.invoice-reassignments.*');
@@ -130,7 +130,7 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['issues.view','warehouse.collection.queue.view','warehouse.shipping.queue.view','inventory.count.view','assets.view','warehouse_map.view'])
+        @canAnyPermission(['issues.view','warehouse.collection.queue.view','warehouse.shipping.queue.view','page.warehouse.inbound_queue','inventory.count.view','assets.view','warehouse_map.view'])
             <div class="sidebar-accordion-item {{ $warehouseActive ? 'is-open' : '' }}" data-accordion-section="warehouse">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $warehouseActive ? 'is-active' : '' }}"
@@ -152,6 +152,9 @@
                         @endcanPermission
                         @canPermission('warehouse.collection.queue.view')
                             <a class="sidebar-sublink {{ $is('vouchers.sales.queue', 'vouchers.sales.queue.*') ?: $pathActive('vouchers/sales/queue', 'vouchers/sales/queue/*') }}" href="{{ route('vouchers.sales.queue') }}">صف جمع‌آوری فاکتور</a>
+                        @endcanPermission
+                        @canPermission('page.warehouse.inbound_queue')
+                            <a class="sidebar-sublink {{ $is('warehouse.inbound.*') ?: $pathActive('warehouse/inbound-queue', 'warehouse/inbound-queue/*') }}" href="{{ route('warehouse.inbound.index') }}">صف ورودی موجودی</a>
                         @endcanPermission
                         @canPermission('warehouse.shipping.queue.view')
                             <a class="sidebar-sublink {{ $is('warehouse.shipping.*') ?: $pathActive('warehouse/shipping', 'warehouse/shipping/*') }}" href="{{ route('warehouse.shipping.index') }}">صف ارسال فاکتور</a>

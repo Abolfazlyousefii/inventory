@@ -13,7 +13,8 @@ class CheckPermission
     {
         $user = $request->user();
 
-        if ($user && PermissionCatalog::userHasPermission($user, $permission)) {
+        if ($user && ((method_exists($user, 'hasPermission') && $user->hasPermission($permission))
+            || PermissionCatalog::userHasPermission($user, $permission))) {
             return $next($request);
         }
 

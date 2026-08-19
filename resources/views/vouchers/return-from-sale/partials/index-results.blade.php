@@ -12,6 +12,7 @@
                     $badge = match($status){
                         \App\Models\SalesReturnDocument::STATUS_APPLIED => 'bg-success-subtle text-success-emphasis border border-success-subtle',
                         \App\Models\SalesReturnDocument::STATUS_DRAFT => 'bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle',
+                        \App\Models\SalesReturnDocument::STATUS_PENDING_WAREHOUSE => 'bg-warning-subtle text-warning-emphasis border border-warning-subtle',
                         \App\Models\SalesReturnDocument::STATUS_CANCELLED => 'bg-danger-subtle text-danger-emphasis border border-danger-subtle',
                         default => 'bg-light text-muted border'
                     };

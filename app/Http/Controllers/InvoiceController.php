@@ -949,12 +949,12 @@ class InvoiceController extends Controller
         }
         $data = $request->validate($rules, [
             'confirm_invoice_uuid.in' => 'شماره فاکتور واردشده با فاکتور انتخاب‌شده مطابقت ندارد.',
-            'physical_return_confirmed.accepted' => 'برای لغو فاکتور ارسال‌شده، تأیید بازگشت فیزیکی کالا به انبار الزامی است.',
+            'physical_return_confirmed.accepted' => 'برای لغو فاکتور ارسال‌شده، تأیید بازگشت/ارسال فیزیکی کالا جهت تحویل به انبار الزامی است.',
         ]);
 
         $this->salesHavalehService->cancelAndRestore($invoice, $data['cancellation_reason'], auth()->id(), $data['cancellation_note'] ?? null);
 
-        return redirect()->route('invoices.index')->with('success', 'فاکتور با موفقیت لغو شد، موجودی به انبار مرکزی بازگشت و سند فاکتور از گردش حساب مشتری حذف شد. پرداخت‌های مشتری بدون تغییر باقی ماندند.');
+        return redirect()->route('invoices.index')->with('success', 'فاکتور با موفقیت لغو شد و اقلام آن وارد صف دریافت انبار شدند. موجودی فقط پس از تأیید مدیر انبار افزایش می‌یابد؛ سند فاکتور از گردش حساب مشتری حذف شد و پرداخت‌ها بدون تغییر ماندند.');
     }
 
     public function cancelled(Request $request)

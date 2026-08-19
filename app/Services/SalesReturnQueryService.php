@@ -93,7 +93,7 @@ class SalesReturnQueryService
         unset($filters['status']);
         $q = SalesReturnDocument::query(); $this->applyFilters($q, $filters);
         $rows = (clone $q)->select('status', DB::raw('count(*) as aggregate'))->groupBy('status')->pluck('aggregate', 'status');
-        return ['all'=>(clone $q)->count(),'draft'=>(int)($rows['draft']??0),'applied'=>(int)($rows['applied']??0),'cancelled'=>(int)($rows['cancelled']??0)];
+        return ['all'=>(clone $q)->count(),'draft'=>(int)($rows['draft']??0),'pending_warehouse'=>(int)($rows[SalesReturnDocument::STATUS_PENDING_WAREHOUSE]??0),'applied'=>(int)($rows['applied']??0),'cancelled'=>(int)($rows['cancelled']??0)];
     }
 
     public function destinationLabels(SalesReturnDocument $document): array
@@ -112,8 +112,11 @@ class SalesReturnQueryService
     public function appliedHealthCheck(SalesReturnDocument $document): array
     {
         $ledgerAmount = (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->where('reference_id', $document->id)->where('type', 'credit')->sum('amount');
-        $movementCount = StockMovement::where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $document->items->pluck('id'))->count();
-        $checks = ['status_applied'=>$document->isApplied(), 'ledger_exists'=>$ledgerAmount > 0, 'ledger_amount_matches'=>$ledgerAmount === (int)$document->total_refund_amount, 'stock_movements_complete'=>$movementCount >= $document->items->count(), 'new_products_materialized'=>$document->items->every(fn($i)=>$i->item_source !== SalesReturnDocumentItem::SOURCE_NEW_PRODUCT || ($i->created_product_id && $i->created_variant_id))];
+        $positiveItems = $document->items->filter(fn ($item) => (int) $item->return_quantity > 0);
+        $movementCount = $positiveItems->isEmpty()
+            ? 0
+            : StockMovement::where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $positiveItems->pluck('id'))->count();
+        $checks = ['status_applied'=>$document->isApplied(), 'ledger_exists'=>$ledgerAmount > 0, 'ledger_amount_matches'=>$ledgerAmount === (int)$document->total_refund_amount, 'stock_movements_complete'=>$movementCount >= $positiveItems->count(), 'new_products_materialized'=>$document->items->every(fn($i)=>$i->item_source !== SalesReturnDocumentItem::SOURCE_NEW_PRODUCT || ($i->created_product_id && $i->created_variant_id))];
         return ['checks'=>$checks, 'ok'=>!in_array(false, $checks, true), 'ledger_amount'=>$ledgerAmount, 'stock_movement_count'=>$movementCount];
     }
 

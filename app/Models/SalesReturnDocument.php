@@ -14,6 +14,8 @@ class SalesReturnDocument extends Model
 
     public const STATUS_APPLIED = 'applied';
 
+    public const STATUS_PENDING_WAREHOUSE = 'pending_warehouse';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const COMMISSION_COMMERCIAL = 'commercial';
@@ -83,6 +85,11 @@ class SalesReturnDocument extends Model
         return $this->status === self::STATUS_APPLIED;
     }
 
+    public function isPendingWarehouse(): bool
+    {
+        return $this->status === self::STATUS_PENDING_WAREHOUSE;
+    }
+
     public function isCancelled(): bool
     {
         return $this->status === self::STATUS_CANCELLED;
@@ -100,7 +107,7 @@ class SalesReturnDocument extends Model
 
     public static function statusLabels(): array
     {
-        return [self::STATUS_DRAFT => 'پیش‌نویس', self::STATUS_APPLIED => 'ثبت نهایی', self::STATUS_CANCELLED => 'لغوشده'];
+        return [self::STATUS_DRAFT => 'پیش‌نویس', self::STATUS_PENDING_WAREHOUSE => 'در انتظار دریافت انبار', self::STATUS_APPLIED => 'ثبت نهایی', self::STATUS_CANCELLED => 'لغوشده'];
     }
 
     public static function sourceTypeLabels(): array

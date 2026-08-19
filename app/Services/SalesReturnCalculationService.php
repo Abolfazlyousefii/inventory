@@ -98,7 +98,7 @@ class SalesReturnCalculationService
 
         $new = DB::table('sales_return_document_items as i')
             ->join('sales_return_documents as d', 'd.id', '=', 'i.document_id')
-            ->where('d.status', SalesReturnDocument::STATUS_APPLIED)
+            ->whereIn('d.status', [SalesReturnDocument::STATUS_APPLIED, SalesReturnDocument::STATUS_PENDING_WAREHOUSE])
             ->when($excludeDocumentId, fn ($query) => $query->where('d.id', '<>', $excludeDocumentId))
             ->whereIn('i.invoice_item_id', $invoiceItemIds)
             ->groupBy('i.invoice_item_id')
@@ -129,7 +129,7 @@ class SalesReturnCalculationService
 
         return DB::table('sales_return_document_items as i')
             ->join('sales_return_documents as d', 'd.id', '=', 'i.document_id')
-            ->where('d.status', SalesReturnDocument::STATUS_APPLIED)
+            ->whereIn('d.status', [SalesReturnDocument::STATUS_APPLIED, SalesReturnDocument::STATUS_PENDING_WAREHOUSE])
             ->when($excludeDocumentId, fn ($query) => $query->where('d.id', '<>', $excludeDocumentId))
             ->whereIn('i.invoice_item_id', $invoiceItemIds)
             ->groupBy('i.invoice_item_id')

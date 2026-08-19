@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Customer;
-use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ModelList;
@@ -12,10 +11,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\SalesReturnDocument;
 use App\Models\SalesReturnDocumentItem;
-use App\Models\StockMovement;
 use App\Models\Warehouse;
-use App\Models\WarehouseStock;
-use App\Services\Commissions\CommissionReconciliationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -23,14 +19,13 @@ class SalesReturnService
 {
     /* Legacy source-contract markers retained for repository architecture tests:
      * if($doc->isApplied()) return $doc;
-     * recordInventoryEntry($item,$actorId)
-     * recordCustomerCredit($doc,$actorId)
+     * Inventory and financial effects are finalized only by WarehouseInboundService.
      * (int)($item->destination_warehouse_id ?: $item->document?->default_destination_warehouse_id)
      * 'warehouse_id'=>$destinationWarehouseId
      * 'status'=>SalesReturnDocument::STATUS_CANCELLED
      * 'new_product_payload'=>$payload
      */
-    public function __construct(private SalesReturnCalculationService $calculator, private SalesReturnNewProductPayloadNormalizer $normalizer, private CommissionReconciliationService $commissions) {}
+    public function __construct(private SalesReturnCalculationService $calculator, private SalesReturnNewProductPayloadNormalizer $normalizer, private WarehouseInboundService $warehouseInbound) {}
 
     public function createDraft(array $data, ?int $actorId): SalesReturnDocument
     {
@@ -84,34 +79,45 @@ class SalesReturnService
     {
         return DB::transaction(function () use ($document, $actorId) {
             $doc = SalesReturnDocument::query()->whereKey($document->id)->lockForUpdate()->firstOrFail();
-            if ($doc->isApplied()) {
+            if ($doc->isApplied() || $doc->isPendingWarehouse()) {
                 return $doc;
-            } if (! $doc->isDraft()) {
-                throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل ثبت نهایی است.']);
-            } Customer::query()->whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
+            }
+            if (! $doc->isDraft()) {
+                throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل ارسال به صف دریافت انبار است.']);
+            }
+
+            Customer::query()->whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
             if ($doc->isInternal()) {
                 Invoice::query()->whereKey($doc->invoice_id)->lockForUpdate()->firstOrFail();
             }
+
             $doc->load('items');
             if ($doc->isInternal()) {
                 $this->assertInternalReturnablesStillValid($doc);
             }
             if ($doc->isSazehHesab()) {
                 $this->materializeNewProductGroups($doc);
+                $doc->load('items');
             }
+
             foreach ($doc->items as $item) {
                 $item->refresh();
                 if (! $item->product_variant_id) {
                     throw ValidationException::withMessages(['items.'.$item->sort_order.'.product_variant_id' => 'تنوع کالا نامعتبر است.']);
-                } $this->recordInventoryEntry($item, $actorId);
+                }
             }
-            $this->refreshTotals($doc);
-            $this->recordCustomerCredit($doc, $actorId);
-            $doc->update(['status' => SalesReturnDocument::STATUS_APPLIED, 'applied_by' => $actorId, 'applied_at' => now()]);
-            $doc = $doc->fresh('items');
-            $this->commissions->reconcileReturn($doc, $actorId);
 
-            return $doc;
+            $this->refreshTotals($doc);
+            $doc->update([
+                'status' => SalesReturnDocument::STATUS_PENDING_WAREHOUSE,
+                'updated_by' => $actorId,
+                'applied_by' => null,
+                'applied_at' => null,
+            ]);
+            $doc = $doc->fresh(['items.product', 'items.variant']);
+            $this->warehouseInbound->queueSalesReturn($doc, $actorId);
+
+            return $doc->fresh('items');
         });
     }
 
@@ -270,26 +276,6 @@ class SalesReturnService
         } $product = Product::create(['category_id' => $cat->id, 'name' => trim($p['product_name']), 'sku' => 'SR-'.now()->format('YmdHis').'-'.random_int(100, 999), 'code' => $productCode, 'short_barcode' => $seq, 'barcode' => $p['barcode'] ?? null, 'stock' => 0, 'reserved' => 0, 'price' => (int) ($p['sell_price'] ?? 0), 'is_sellable' => (bool) ($p['sales_enabled'] ?? true), 'unit' => $p['unit'] ?? null, 'models' => ['sales_return_inline' => true, 'model_list_id' => $model?->id, 'has_design' => (bool) ($p['has_design'] ?? false), 'has_color' => (bool) ($p['has_color'] ?? false)]]);
         $variant = ProductVariant::create(['product_id' => $product->id, 'model_list_id' => $model?->id, 'variant_name' => $p['variant_name'], 'variety_name' => $p['variety_name'] ?? $p['variant_name'], 'variety_code' => $varietyCode, 'variant_code' => $variantCode, 'buy_price' => (int) ($p['purchase_price'] ?? 0), 'sell_price' => (int) ($p['sell_price'] ?? 0), 'stock' => 0, 'reserved' => 0, 'is_active' => (bool) ($p['is_active'] ?? true), 'sales_enabled' => (bool) ($p['sales_enabled'] ?? true)]);
         $item->update(['product_id' => $product->id, 'product_variant_id' => $variant->id, 'created_product_id' => $product->id, 'created_variant_id' => $variant->id, 'sku_snapshot' => $variant->variant_code, 'barcode_snapshot' => $p['barcode'] ?? $variant->variant_code]);
-    }
-
-    public function recordInventoryEntry(SalesReturnDocumentItem $item, ?int $actorId): void
-    {
-        if (StockMovement::where('reference_type', SalesReturnDocumentItem::class)->where('reference_id', $item->id)->exists()) {
-            return;
-        } $destinationWarehouseId = (int) ($item->destination_warehouse_id ?: $item->document?->default_destination_warehouse_id);
-        if ($destinationWarehouseId <= 0) {
-            throw ValidationException::withMessages(['items.'.$item->sort_order.'.destination_warehouse_id' => 'انبار مقصد ردیف نامعتبر است.']);
-        } $before = (int) WarehouseStock::where('warehouse_id', $destinationWarehouseId)->where('product_variant_id', $item->product_variant_id)->value('quantity');
-        WarehouseStockService::change($destinationWarehouseId, (int) $item->product_id, (int) $item->return_quantity, (int) $item->product_variant_id);
-        $after = (int) WarehouseStock::where('warehouse_id', $destinationWarehouseId)->where('product_variant_id', $item->product_variant_id)->value('quantity');
-        StockMovement::create(['product_id' => $item->product_id, 'product_variant_id' => $item->product_variant_id, 'warehouse_id' => $destinationWarehouseId, 'user_id' => $actorId ?: 1, 'type' => 'in', 'reason' => 'sales_return', 'quantity' => $item->return_quantity, 'stock_before' => $before, 'stock_after' => $after, 'note' => 'برگشت از فروش '.$item->document->document_number, 'reference' => $item->document->document_number, 'reference_type' => SalesReturnDocumentItem::class, 'reference_id' => $item->id]);
-    }
-
-    public function recordCustomerCredit(SalesReturnDocument $doc, ?int $actorId): void
-    {
-        if ($doc->total_refund_amount <= 0) {
-            return;
-        } CustomerLedger::updateOrCreate(['customer_id' => $doc->customer_id, 'reference_type' => SalesReturnDocument::class, 'reference_id' => $doc->id, 'type' => 'credit'], ['amount' => $doc->total_refund_amount, 'note' => 'بستانکاری بابت برگشت از فروش شماره '.$doc->document_number]);
     }
 
     private function assertInternalReturnablesStillValid(SalesReturnDocument $doc): void

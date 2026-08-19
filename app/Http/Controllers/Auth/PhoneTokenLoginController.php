@@ -50,7 +50,7 @@ class PhoneTokenLoginController extends Controller {
         $request->session()->regenerateToken();
 
         // Do not create a persistent remember-me cookie for CRM handoff logins.
-        Auth::login($user, true);
+        Auth::login($user, false);
         $request->session()->regenerate();
 
         if ( !$user->crm_user_id ) {

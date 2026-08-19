@@ -17,6 +17,7 @@ class WarehouseCollectionService
     public function __construct(
         private readonly SalesHavalehHistoryService $historyService,
         private readonly CustomerLedgerService $customerLedgerService,
+        private readonly WarehouseInboundService $warehouseInbound,
     ) {}
 
     public function receiveInvoice(Invoice $invoice, User $user): Invoice
@@ -147,6 +148,12 @@ class WarehouseCollectionService
                 throw ValidationException::withMessages(['items' => 'فاکتور باید حداقل یک قلم کالا داشته باشد.']);
             }
 
+            $pendingInboundLines = $this->inboundLinesForReducedItems(
+                $invoice->items,
+                $normalized,
+                $reason ?: 'invoice_correction'
+            );
+
             $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
             $variantIds = $oldByVariant->keys()->merge($newByVariant->keys())->unique()->values();
             $stocks = WarehouseStock::query()
@@ -172,7 +179,7 @@ class WarehouseCollectionService
 
             foreach ($variantIds as $variantId) {
                 $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
-                if ($delta === 0) { continue; }
+                if ($delta <= 0) { continue; }
                 $variant = ProductVariant::query()->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
                 WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
             }
@@ -226,6 +233,12 @@ class WarehouseCollectionService
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
             $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
             $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
+            $this->warehouseInbound->queueInvoiceAdjustment(
+                $invoice->fresh(),
+                $pendingInboundLines,
+                (int) $user->id,
+                $reason ?: 'invoice_correction'
+            );
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
 
             return $invoice->fresh(['items.product', 'items.variant']);
@@ -350,6 +363,12 @@ class WarehouseCollectionService
                 throw ValidationException::withMessages(['items' => 'فاکتور باید حداقل یک قلم کالا داشته باشد.']);
             }
 
+            $pendingInboundLines = $this->inboundLinesForReducedItems(
+                $invoice->items,
+                $normalized,
+                $reason ?: 'invoice_correction'
+            );
+
             $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
             foreach ($oldByVariant->keys()->merge($newByVariant->keys())->unique() as $variantId) {
                 $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
@@ -364,7 +383,9 @@ class WarehouseCollectionService
                         throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد اضافه‌شده: {$delta}"]);
                     }
                 }
-                WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
+                if ($delta > 0) {
+                    WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
+                }
             }
 
             $aggregated = collect($normalized)->groupBy('variantId')->map(function ($rows) {
@@ -427,6 +448,12 @@ class WarehouseCollectionService
             }
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
             $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+            $this->warehouseInbound->queueInvoiceAdjustment(
+                $invoice->fresh(),
+                $pendingInboundLines,
+                (int) $user->id,
+                $reason ?: 'invoice_correction'
+            );
             $description = trim(($reason ? 'دلیل: ' . $reason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
             $this->historyService->log($invoice, 'invoice_items_updated', 'items', null, null, $description, $user->id);
             foreach ($priceChangeLogs as $logRow) {
@@ -455,6 +482,34 @@ class WarehouseCollectionService
             ->first();
 
         return max(0, (int) ($stock?->quantity ?? 0));
+    }
+
+    private function inboundLinesForReducedItems($existingItems, array $normalized, string $reason): array
+    {
+        $newQuantityByItem = collect($normalized)
+            ->filter(fn (array $row) => (int) ($row['itemId'] ?? 0) > 0)
+            ->groupBy(fn (array $row) => (int) $row['itemId'])
+            ->map(fn ($rows) => (int) collect($rows)->sum('qty'));
+        $centralWarehouseId = WarehouseStockService::centralWarehouseId();
+        $queueReason = $reason === 'physical_shortage' ? 'physical_shortage' : 'quantity_decreased';
+
+        return $existingItems->map(function (InvoiceItem $item) use ($newQuantityByItem, $centralWarehouseId, $queueReason, $reason) {
+            $oldQuantity = (int) $item->quantity;
+            $newQuantity = (int) ($newQuantityByItem[(int) $item->id] ?? 0);
+            $quantity = max($oldQuantity - $newQuantity, 0);
+            if ($quantity <= 0) {
+                return null;
+            }
+
+            return $this->warehouseInbound->invoiceItemLine(
+                $item,
+                $quantity,
+                $centralWarehouseId,
+                $queueReason === 'physical_shortage' ? 'کسری فیزیکی هنگام جمع‌آوری فاکتور' : 'کاهش/حذف کالا هنگام اصلاح فاکتور',
+                $newQuantity === 0 && $queueReason !== 'physical_shortage' ? 'item_removed' : $queueReason,
+                ['old_quantity' => $oldQuantity, 'new_quantity' => $newQuantity, 'change_reason' => $reason]
+            );
+        })->filter()->values()->all();
     }
 
     private function assertStatus(Invoice $invoice, array $allowed): void

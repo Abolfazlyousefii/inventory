@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Contracts\OtpSender;
 use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Models\Category;
 use App\Models\Cheque;
@@ -23,6 +24,7 @@ use App\Observers\ProductVariantSyncObserver;
 use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Support\PermissionCatalog;
+use App\Services\LogOtpSender;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
@@ -33,7 +35,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->bind(OtpSender::class, LogOtpSender::class);
     }
 
     public function boot(Router $router): void

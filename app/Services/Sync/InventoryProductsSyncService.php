@@ -12,9 +12,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class InventoryProductsSyncService {
-    public function __construct() {
-        $this->apiUrl = rtrim((string) Config::get('services.site.base_url'), '/') . $this->url;
-    }
+
+    protected string $apiUrl = '';
 
     protected ?string $apiToken = null;
 
@@ -65,9 +64,7 @@ class InventoryProductsSyncService {
             $query->where('inventory_to_site_synced', false);
         })
             ->with([
-                'variants' => function ( $query ): void {
-                    $query->where('is_active', true);
-                },
+                'variants',
             ])
             ->orderBy('id')
             ->chunkById($this->batchSize, function ( Collection $products ) use (
@@ -101,15 +98,7 @@ class InventoryProductsSyncService {
                 $syncedProductIds = $this->onlyExpectedIds($result['synced_product_ids'], $expectedProductIds);
                 $verifiedProductIds = $this->onlyExpectedIds($result['verified_product_ids'], $expectedProductIds);
 
-                if ( $syncedProductIds !== [] ) {
-                    DB::table('products')
-                        ->whereIn('id', $syncedProductIds)
-                        ->update([
-                            'inventory_to_site_synced' => true,
-                        ]);
-
-                    $syncedProductCount += count($syncedProductIds);
-                }
+                $syncedProductCount += count($syncedProductIds);
 
                 $syncComplete   = $syncedProductIds === $expectedProductIds;
                 $verifyComplete = $verifiedProductIds === $expectedProductIds;
@@ -146,6 +135,7 @@ class InventoryProductsSyncService {
         $summary = [
             'total_chunks'           => $totalChunks,
             'successful_chunks'      => $successfulChunks,
+            'success_count'          => $successfulChunks,
             'synced_product_count'   => $syncedProductCount,
             'verified_product_count' => $verifiedProductCount,
             'failed_chunks'          => $failedChunks,

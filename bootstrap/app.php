@@ -9,6 +9,7 @@ use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Http\Middleware\CheckRoleOrRoutePermission;
 use App\Http\Middleware\EnsurePageAccess;
+use App\Http\Middleware\EnsureActiveCustomer;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
@@ -45,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'route.permission' => RoutePermissionMiddleware::class,
             'page.access' => EnsurePageAccess::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            'customer.active' => EnsureActiveCustomer::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

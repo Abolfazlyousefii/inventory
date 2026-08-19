@@ -2,50 +2,58 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class Customer extends Model
+class Customer extends Authenticatable
 {
+    use HasFactory, SoftDeletes;
+
     protected $fillable = [
-        'crm_customer_id',
-        'sync_source',
-        'synced_at',
-        'crm_updated_at',
-        'last_crm_payload',
-        'first_name',
-        'last_name',
-        'mobile',
-        'address',
-        'postal_code',
-        'extra_description',
-        'province_id',
-        'city_id',
-        'opening_balance',
-        'reservation_tier',
+        'crm_customer_id', 'sync_source', 'synced_at', 'crm_updated_at', 'last_crm_payload',
+        'first_name', 'last_name', 'mobile', 'name', 'company_name', 'city', 'address',
+        'postal_code', 'extra_description', 'notes', 'province_id', 'city_id',
+        'opening_balance', 'reservation_tier', 'is_active', 'password', 'password_changed_at',
     ];
 
-    protected $casts = [
-        'province_id' => 'integer',
-        'city_id' => 'integer',
-        'opening_balance' => 'integer',
-        'reservation_tier' => 'string',
-        'synced_at' => 'datetime',
-        'crm_updated_at' => 'datetime',
-        'last_crm_payload' => 'array',
-    ];
+    protected $hidden = ['password'];
 
-    public function ledgers()
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'password_changed_at' => 'datetime',
+            'province_id' => 'integer',
+            'city_id' => 'integer',
+            'opening_balance' => 'integer',
+            'reservation_tier' => 'string',
+            'synced_at' => 'datetime',
+            'crm_updated_at' => 'datetime',
+            'last_crm_payload' => 'array',
+        ];
+    }
+
+    public function phones(): HasMany
+    {
+        return $this->hasMany(CustomerPhone::class)->orderByDesc('is_primary')->orderBy('id');
+    }
+
+    public function ledgers(): HasMany
     {
         return $this->hasMany(CustomerLedger::class);
     }
 
-    public function city(): BelongsTo
+    public function cityRelation(): BelongsTo
     {
-        return $this->belongsTo(City::class);
+        return $this->belongsTo(City::class, 'city_id');
     }
 
-    public function scopeWithBalance($query)
+    public function scopeWithBalance(Builder $query): Builder
     {
         return $query
             ->withSum(['ledgers as debit_sum' => fn ($q) => $q->effectiveForBalance()->where('type', 'debit')], 'amount')
@@ -54,11 +62,7 @@ class Customer extends Model
 
     public function getBalanceAttribute(): int
     {
-        $opening = (int) ($this->opening_balance ?? 0);
-        $debit = (int) ($this->debit_sum ?? 0);
-        $credit = (int) ($this->credit_sum ?? 0);
-
-        return $opening + $debit - $credit;
+        return (int) ($this->opening_balance ?? 0) + (int) ($this->debit_sum ?? 0) - (int) ($this->credit_sum ?? 0);
     }
 
     public function getDebtAttribute(): int
@@ -73,10 +77,7 @@ class Customer extends Model
 
     public function getDisplayNameAttribute(): string
     {
-        return trim(implode(' ', array_filter([
-            $this->first_name,
-            $this->last_name,
-        ])));
+        return (string) ($this->name ?: trim(implode(' ', array_filter([$this->first_name, $this->last_name]))));
     }
 
     public function reservationTierLabel(): string
@@ -98,4 +99,15 @@ class Customer extends Model
             default => 'bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle',
         };
     }
+
+    public function primaryPhone(): HasOne
+    {
+        return $this->hasOne(CustomerPhone::class)->where('is_primary', true);
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
+
 }

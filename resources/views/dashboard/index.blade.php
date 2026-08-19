@@ -374,6 +374,9 @@
                         </section>
                     @endif
 
+                    @if($activeCustomerCount !== null)
+                        <article class="seller-report-card"><h3>مشتریان فعال</h3><strong>{{ $activeCustomerCount }}</strong></article>
+                    @endif
                     <div class="seller-report-grid seller-report-grid--secondary">
                         @if($recentActivity)
                             <article class="seller-report-card">
