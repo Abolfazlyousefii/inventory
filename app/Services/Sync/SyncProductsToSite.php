@@ -2,7 +2,6 @@
 
 namespace App\Services\Sync;
 
-use App\Models\IntegrationSyncState;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Site\Price as SitePrice;
@@ -14,14 +13,10 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 use Throwable;
 
 class SyncProductsToSite {
-    private const INTEGRATION            = 'inventory-to-site-direct';
-    private const STREAM                 = 'products';
-    private const CHUNK_SIZE             = 200;
-    private const CURSOR_OVERLAP_SECONDS = 2;
+    private const CHUNK_SIZE = 200;
 
     private const EMPTY_VARIANT_NAMES = [
         '—',
@@ -33,25 +28,17 @@ class SyncProductsToSite {
     ];
 
     /**
-     * Executes exactly one synchronization cycle.
+     * Executes one reconciliation cycle.
      *
-     * The scheduler is responsible for calling this method every 5/10 seconds.
+     * Every execution compares the source data with the Site data and only writes
+     * records whose synchronized fields are actually different.
      */
     public function syncAll(): array {
         $startedAt = CarbonImmutable::now();
-        $state     = IntegrationSyncState::query()
-            ->firstOrNew([
-                'integration' => self::INTEGRATION,
-                'stream'      => self::STREAM,
-            ]);
-
-        $cursor = $state->last_succeeded_at ? CarbonImmutable::parse($state->last_succeeded_at)
-            ->subSeconds(self::CURSOR_OVERLAP_SECONDS) : null;
 
         $stats = [
-            'mode'              => $cursor === null ? 'full' : 'incremental',
+            'mode'              => 'full-diff',
             'started_at'        => $startedAt->toIso8601String(),
-            'cursor'            => $cursor?->toIso8601String(),
             'products_checked'  => 0,
             'products_created'  => 0,
             'products_updated'  => 0,
@@ -59,44 +46,25 @@ class SyncProductsToSite {
             'variants_checked'  => 0,
             'variants_created'  => 0,
             'variants_updated'  => 0,
+            'variants_deleted'  => 0,
             'variants_skipped'  => 0,
             'variants_ignored'  => 0,
             'attributes_synced' => 0,
             'errors'            => 0,
         ];
 
-        $state->fill([
-            'last_started_at' => $startedAt,
-            'last_error'      => null,
-        ])
-            ->save();
-
         try {
-            $changedProductIds = $this->syncProducts($cursor, $startedAt, $stats);
-            $this->syncVariants($cursor, $startedAt, $changedProductIds, $stats);
+            $this->syncProducts($stats);
+            $this->syncVariants($stats);
 
             $stats['finished_at'] = CarbonImmutable::now()
                 ->toIso8601String();
-
-            $state->fill([
-                'last_succeeded_at' => $startedAt,
-                'last_error'        => null,
-                'metadata'          => $stats,
-            ])
-                ->save();
 
             return $stats;
         } catch ( Throwable $exception ) {
             $stats['errors'] ++;
             $stats['finished_at'] = CarbonImmutable::now()
                 ->toIso8601String();
-
-            $state->fill([
-                'last_failed_at' => now(),
-                'last_error'     => mb_substr($exception->getMessage(), 0, 500),
-                'metadata'       => $stats,
-            ])
-                ->save();
 
             Log::error('Direct Inventory -> Site product synchronization failed.', [
                 'message'   => $exception->getMessage(),
@@ -109,217 +77,200 @@ class SyncProductsToSite {
     }
 
     /**
-     * @return array<int, int> Product IDs that were candidates in this cycle.
+     * Reconciles all products against the Site connection in chunks.
      */
-    private function syncProducts( ?CarbonImmutable $cursor, CarbonImmutable $boundary, array &$stats ): array {
-        $changedProductIds = [];
-
-        $query = Product::query()
-            ->where('updated_at', '<=', $boundary)
-            ->orderBy('id');
-
-        if ( $cursor !== null ) {
-            $query->where('updated_at', '>', $cursor);
-        }
-
-        $query->chunkById(self::CHUNK_SIZE, function ( EloquentCollection $products ) use ( &$changedProductIds, &$stats ): void {
-            if ( $products->isEmpty() ) {
-                return;
-            }
-
-            $productIds = $products->pluck('id')
-                ->map(static fn( $id ): int => (int) $id)
-                ->values()
-                ->all();
-
-            array_push($changedProductIds, ...$productIds);
-
-            $siteProducts = SiteProduct::query()
-                ->whereIn('id', $productIds)
-                ->get([ 'id', 'created_at', 'updated_at' ])
-                ->keyBy('id');
-
-            foreach ( $products as $sourceProduct ) {
-                $stats['products_checked'] ++;
-
-                /** @var SiteProduct|null $siteProduct */
-                $siteProduct = $siteProducts->get((int) $sourceProduct->id);
-
-                if ( $siteProduct !== null && !$this->sourceIsNewer($sourceProduct->updated_at, $siteProduct->updated_at) ) {
-                    $stats['products_skipped'] ++;
-                    continue;
+    private function syncProducts( array &$stats ): void {
+        Product::query()
+            ->orderBy('id')
+            ->chunkById(self::CHUNK_SIZE, function ( EloquentCollection $products ) use ( &$stats ): void {
+                if ( $products->isEmpty() ) {
+                    return;
                 }
 
-                $created = $siteProduct === null;
-                $this->saveProduct($sourceProduct, $siteProduct);
+                $productIds = $products->pluck('id')
+                    ->map(static fn( $id ): int => (int) $id)
+                    ->values()
+                    ->all();
 
-                $stats[$created ? 'products_created' : 'products_updated'] ++;
-            }
-        });
+                $siteProducts = SiteProduct::query()
+                    ->whereIn('id', $productIds)
+                    ->get()
+                    ->keyBy('id');
 
-        return array_values(array_unique($changedProductIds));
-    }
+                foreach ( $products as $sourceProduct ) {
+                    $stats['products_checked'] ++;
 
-    /**
-     * Synchronizes changed variants, variants under changed products, and variants
-     * whose warehouse stock changed since the previous successful cycle.
-     */
-    private function syncVariants( ?CarbonImmutable $cursor, CarbonImmutable $boundary, array $changedProductIds, array &$stats ): void {
-        $variantIds = $this->collectVariantIdsToSync($cursor, $boundary, $changedProductIds);
+                    /** @var SiteProduct|null $siteProduct */
+                    $siteProduct = $siteProducts->get((int) $sourceProduct->id);
+                    $desiredData = $this->makeProductData($sourceProduct);
 
-        if ( $variantIds === [] ) {
-            return;
-        }
-
-        foreach ( array_chunk($variantIds, self::CHUNK_SIZE) as $chunkIds ) {
-            $variants = ProductVariant::query()
-                ->whereIn('id', $chunkIds)
-                ->orderBy('id')
-                ->get();
-
-            if ( $variants->isEmpty() ) {
-                continue;
-            }
-
-            $stockRows = WarehouseStock::query()
-                ->whereIn('product_variant_id', $chunkIds)
-                ->groupBy('product_variant_id')
-                ->select([
-                    'product_variant_id',
-                    DB::raw('SUM(quantity) as total_stock'),
-                    DB::raw('MAX(updated_at) as stock_updated_at'),
-                ])
-                ->get()
-                ->keyBy('product_variant_id');
-
-            $sitePrices = SitePrice::withTrashed()
-                ->whereIn('id', $chunkIds)
-                ->get([ 'id', 'product_id', 'created_at', 'updated_at', 'deleted_at' ])
-                ->keyBy('id');
-
-            $variantNames = [];
-
-            foreach ( $variants as $variant ) {
-                $stats['variants_checked'] ++;
-
-                /** @var SitePrice|null $sitePrice */
-                $sitePrice = $sitePrices->get((int) $variant->id);
-
-                $stockRow = $stockRows->get((int) $variant->id);
-
-                $sourceTimestamp = $this->maxTimestamp($variant->updated_at, $stockRow?->stock_updated_at);
-
-                if ( $sitePrice !== null && !$this->sourceIsNewer($sourceTimestamp, $sitePrice->updated_at) ) {
-                    $stats['variants_skipped'] ++;
-                    continue;
-                }
-
-                $siteProduct = SiteProduct::query()
-                    ->find((int) $variant->product_id);
-
-                // A Price cannot be safely attached if its parent product does not exist on Site.
-                if ( $siteProduct === null ) {
-                    $sourceProduct = Product::query()
-                        ->find((int) $variant->product_id);
-
-                    if ( $sourceProduct === null ) {
-                        $stats['variants_ignored'] ++;
+                    if ( $siteProduct !== null && !$this->productHasDifferences($siteProduct, $desiredData) ) {
+                        $stats['products_skipped'] ++;
                         continue;
                     }
 
-                    $siteProduct = $this->saveProduct($sourceProduct, null);
-                    $stats['products_created'] ++;
+                    $created = $siteProduct === null;
+                    $this->saveProduct($sourceProduct, $siteProduct, $desiredData);
+
+                    $stats[$created ? 'products_created' : 'products_updated'] ++;
                 }
-
-                $priceData = $this->makePriceData($variant, (int) ( $stockRow?->total_stock ?? 0 ), $sourceTimestamp);
-
-                if ( $priceData === null ) {
-                    $stats['variants_ignored'] ++;
-                    continue;
-                }
-
-                $created   = $sitePrice === null;
-                $sitePrice = $this->savePrice($siteProduct, $sitePrice, $priceData);
-
-                $variantNames[(int) $sitePrice->id] = $priceData['variant_name'];
-                $stats[$created ? 'variants_created' : 'variants_updated'] ++;
-            }
-
-            if ( $variantNames !== [] ) {
-                $stats['attributes_synced'] += $this->syncVariantNameAttributes($variantNames);
-            }
-        }
+            });
     }
 
     /**
-     * @return array<int, int>
+     * Reconciles every current variant. Stock is calculated from warehouse rows,
+     * so a stock mismatch is also fixed even when product_variants.updated_at did
+     * not change.
      */
-    private function collectVariantIdsToSync( ?CarbonImmutable $cursor, CarbonImmutable $boundary, array $changedProductIds ): array {
-        // First run: synchronize every current variant.
-        if ( $cursor === null ) {
-            return ProductVariant::query()
-                ->where('updated_at', '<=', $boundary)
-                ->orderBy('id')
-                ->pluck('id')
-                ->map(static fn( $id ): int => (int) $id)
-                ->all();
-        }
+    private function syncVariants( array &$stats ): void {
+        ProductVariant::query()
+            ->orderBy('id')
+            ->chunkById(self::CHUNK_SIZE, function ( EloquentCollection $variants ) use ( &$stats ): void {
+                if ( $variants->isEmpty() ) {
+                    return;
+                }
 
-        $variantIds = ProductVariant::query()
-            ->where('updated_at', '>', $cursor)
-            ->where('updated_at', '<=', $boundary)
-            ->pluck('id');
+                $variantIds = $variants->pluck('id')
+                    ->map(static fn( $id ): int => (int) $id)
+                    ->values()
+                    ->all();
 
-        // When the parent product changed, include all of its variants as well.
-        if ( $changedProductIds !== [] ) {
-            $variantIds = $variantIds->merge(ProductVariant::query()
-                ->whereIn('product_id', $changedProductIds)
-                ->pluck('id'));
-        }
+                $productIds = $variants->pluck('product_id')
+                    ->filter(static fn( $id ): bool => is_numeric($id) && (int) $id > 0)
+                    ->map(static fn( $id ): int => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all();
 
-        // Stock may change without touching product_variants.updated_at.
-        $stockVariantIds = WarehouseStock::query()
-            ->whereNotNull('product_variant_id')
-            ->where('updated_at', '>', $cursor)
-            ->where('updated_at', '<=', $boundary)
-            ->pluck('product_variant_id');
+                $stockRows = WarehouseStock::query()
+                    ->whereIn('product_variant_id', $variantIds)
+                    ->groupBy('product_variant_id')
+                    ->select([
+                        'product_variant_id',
+                        DB::raw('SUM(quantity) as total_stock'),
+                        DB::raw('MAX(updated_at) as stock_updated_at'),
+                    ])
+                    ->get()
+                    ->keyBy('product_variant_id');
 
-        return $variantIds->merge($stockVariantIds)
-            ->filter(static fn( $id ): bool => is_numeric($id) && (int) $id > 0)
-            ->map(static fn( $id ): int => (int) $id)
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
+                $sitePrices = SitePrice::withTrashed()
+                    ->whereIn('id', $variantIds)
+                    ->get()
+                    ->keyBy('id');
+
+                $siteProducts = SiteProduct::query()
+                    ->whereIn('id', $productIds)
+                    ->get()
+                    ->keyBy('id');
+
+                $sourceProducts = Product::query()
+                    ->whereIn('id', $productIds)
+                    ->get()
+                    ->keyBy('id');
+
+                // We pass every variant name through the attribute reconciler so an
+                // attribute mismatch can be repaired even when the price row itself
+                // is already correct.
+                $variantNames = [];
+
+                foreach ( $variants as $variant ) {
+                    $stats['variants_checked'] ++;
+
+                    $variantId = (int) $variant->id;
+
+                    /** @var SitePrice|null $sitePrice */
+                    $sitePrice = $sitePrices->get($variantId);
+                    $stockRow  = $stockRows->get($variantId);
+
+                    $sourceTimestamp = $this->maxTimestamp($variant->updated_at, $stockRow?->stock_updated_at);
+
+                    $priceData = $this->makePriceData($variant, (int) ( $stockRow?->total_stock ?? 0 ), $sourceTimestamp);
+
+                    if ( $priceData === null ) {
+                        $variantNames[$variantId] = null;
+
+                        if ( $sitePrice !== null && !$sitePrice->trashed() ) {
+                            $sitePrice->delete();
+                            $stats['variants_deleted'] ++;
+                        }
+                        else {
+                            $stats['variants_ignored'] ++;
+                        }
+
+                        continue;
+                    }
+
+                    $variantNames[$variantId] = $priceData['variant_name'];
+
+                    /** @var SiteProduct|null $siteProduct */
+                    $siteProduct = $siteProducts->get((int) $variant->product_id);
+
+                    if ( $siteProduct === null ) {
+                        /** @var Product|null $sourceProduct */
+                        $sourceProduct = $sourceProducts->get((int) $variant->product_id);
+
+                        if ( $sourceProduct === null ) {
+                            $stats['variants_ignored'] ++;
+                            continue;
+                        }
+
+                        $siteProduct = $this->saveProduct($sourceProduct, null, $this->makeProductData($sourceProduct));
+
+                        $siteProducts->put((int) $siteProduct->id, $siteProduct);
+                        $stats['products_created'] ++;
+                    }
+
+                    $needsRestore = $sitePrice !== null && $sitePrice->trashed();
+                    $hasDiff      = $sitePrice === null || $this->priceHasDifferences($sitePrice, $priceData);
+
+                    if ( !$hasDiff && !$needsRestore ) {
+                        $stats['variants_skipped'] ++;
+                        continue;
+                    }
+
+                    $created   = $sitePrice === null;
+                    $sitePrice = $this->savePrice($siteProduct, $sitePrice, $priceData);
+
+                    $stats[$created ? 'variants_created' : 'variants_updated'] ++;
+                }
+
+                if ( $variantNames !== [] ) {
+                    $stats['attributes_synced'] += $this->syncVariantNameAttributes($variantNames);
+                }
+            });
     }
 
-    private function saveProduct( Product $source, ?SiteProduct $siteProduct ): SiteProduct {
+    /**
+     * @return array<string, mixed>
+     */
+    private function makeProductData( Product $source ): array {
+        return [
+            'id'              => $source->id,
+            'title'           => trim((string) $source->name),
+            'product_code'    => $source->code,
+            'image'           => $source->image_path,
+            'published'       => (bool) ( $source->is_sellable ?? false ),
+            'type'            => 'physical',
+            'price_type'      => 'multiple-price',
+            'unit'            => 'عدد',
+            'special'         => '0',
+            'rounding_type'   => 'default',
+            'rounding_amount' => 'default',
+            'slug'            => (string) $source->id,
+            'lang'            => 'fa',
+            'updated_at'      => $this->dateTimeString($source->updated_at) ?? now()->toDateTimeString(),
+        ];
+    }
+
+    private function saveProduct( Product $source, ?SiteProduct $siteProduct, ?array $data = null ): SiteProduct {
         $siteProduct ??= new SiteProduct();
         $isNew       = !$siteProduct->exists;
-
-        $slug = Str::slug((string) $source->name);
-
-        if ( $slug === '' ) {
-            $slug = 'product-' . $source->id;
-        }
-
-        $productCode = filled($source->code) ? trim((string) $source->code) : SiteProduct::generateInventoryProductCode((int) $source->id);
+        $data        ??= $this->makeProductData($source);
 
         $siteProduct->timestamps = false;
-        $siteProduct->forceFill([
-            'id'                         => (int) $source->id,
-            'title'                      => trim((string) $source->name),
-            'product_code'               => $productCode,
-            'published'                  => (bool) ( $source->is_sellable ?? true ),
-            'type'                       => 'physical',
-            'price_type'                 => 'multiple-price',
-            'slug'                       => $slug . '-' . $source->id,
-            'lang'                       => app()->getLocale(),
-            'inventory_to_site_synced'   => true,
-            'site_to_inventory_verified' => false,
-            'created_at'                 => $isNew ? ( $source->created_at ?? now() ) : $siteProduct->created_at,
-            'updated_at'                 => $source->updated_at ?? now(),
-        ]);
+        $siteProduct->forceFill($data + [
+                'created_at' => $isNew ? ( $this->dateTimeString($source->created_at) ?? now()->toDateTimeString() ) : $siteProduct->created_at,
+            ]);
         $siteProduct->save();
 
         return $siteProduct;
@@ -370,14 +321,15 @@ class SyncProductsToSite {
 
         $sitePrice->timestamps = false;
         $sitePrice->forceFill($data + [
-                'created_at' => $isNew ? now() : $sitePrice->created_at,
+                'created_at' => $isNew ? now()->toDateTimeString() : $sitePrice->created_at,
             ]);
         $sitePrice->product()
             ->associate($siteProduct);
         $sitePrice->save();
 
         if ( $sitePrice->trashed() ) {
-            // restore() normally touches updated_at; restore quietly and then restore source timestamp.
+            // restore() may touch updated_at, so restore and then put the source
+            // timestamp back explicitly.
             $sitePrice->restore();
             $sitePrice->timestamps = false;
             $sitePrice->forceFill([
@@ -387,6 +339,112 @@ class SyncProductsToSite {
         }
 
         return $sitePrice;
+    }
+
+    /**
+     * Compare only synchronized business fields. updated_at/created_at are not used
+     * to decide whether a row is correct.
+     *
+     * @param array<string, mixed> $desired
+     */
+    private function productHasDifferences( SiteProduct $siteProduct, array $desired ): bool {
+        $fields = [
+            'id',
+            'title',
+            'product_code',
+            'image',
+            'published',
+            'type',
+            'price_type',
+            'unit',
+            'special',
+            'rounding_type',
+            'rounding_amount',
+            'slug',
+            'lang',
+        ];
+
+        foreach ( $fields as $field ) {
+            if ( !$this->valuesMatch($field, $siteProduct->getAttribute($field), $desired[$field] ?? null) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $desired
+     */
+    private function priceHasDifferences( SitePrice $sitePrice, array $desired ): bool {
+        $fields = [
+            'id',
+            'external_variant_id',
+            'variant_code',
+            'variant_name',
+            'product_id',
+            'price',
+            'regular_price',
+            'discount',
+            'discount_price',
+            'stock',
+            'discount_expire_at',
+        ];
+
+        foreach ( $fields as $field ) {
+            if ( !$this->valuesMatch($field, $sitePrice->getAttribute($field), $desired[$field] ?? null) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function valuesMatch( string $field, mixed $actual, mixed $expected ): bool {
+        if ( in_array($field, [
+            'id',
+            'product_id',
+            'price',
+            'regular_price',
+            'discount',
+            'discount_price',
+            'stock',
+        ], true) ) {
+            return (int) $actual === (int) $expected;
+        }
+
+        if ( $field === 'published' ) {
+            return (bool) $actual === (bool) $expected;
+        }
+
+        if ( $field === 'discount_expire_at' ) {
+            return $this->dateTimeString($actual) === $this->dateTimeString($expected);
+        }
+
+        if ( in_array($field, [ 'image', 'variant_name' ], true) ) {
+            return $this->nullableString($actual) === $this->nullableString($expected);
+        }
+
+        return (string) ( $actual ?? '' ) === (string) ( $expected ?? '' );
+    }
+
+    private function nullableString( mixed $value ): ?string {
+        if ( $value === null ) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
+    }
+
+    private function dateTimeString( mixed $value ): ?string {
+        if ( $value === null || $value === '' ) {
+            return null;
+        }
+
+        return CarbonImmutable::parse($value)
+            ->toDateTimeString();
     }
 
     private function calculateDiscount( int $sellPrice, int $regularPrice, int $discountPrice ): int {
@@ -450,18 +508,21 @@ class SyncProductsToSite {
     /**
      * Synchronizes the "مدل" attribute used by Site prices.
      *
+     * This method also removes an old attribute relation when the source variant no
+     * longer has a model name.
+     *
      * @param array<int, string|null> $variantNames [price_id => variant_name]
      */
     private function syncVariantNameAttributes( array $variantNames ): int {
+        if ( $variantNames === [] ) {
+            return 0;
+        }
+
         $names = collect($variantNames)
             ->filter(static fn( $name ): bool => is_string($name) && trim($name) !== '')
             ->map(static fn( string $name ): string => trim($name))
             ->unique()
             ->values();
-
-        if ( $names->isEmpty() ) {
-            return 0;
-        }
 
         $connection = DB::connection('site');
         $now        = now()->toDateTimeString();
@@ -471,6 +532,12 @@ class SyncProductsToSite {
                 ->where('name', 'مدل')
                 ->where('lang', app()->getLocale())
                 ->first();
+
+            // If there are no desired names and the group never existed, there is
+            // nothing to reconcile.
+            if ( $attributeGroup === null && $names->isEmpty() ) {
+                return 0;
+            }
 
             if ( $attributeGroup === null ) {
                 $ordering = (int) $connection->table('attribute_groups')
@@ -496,7 +563,9 @@ class SyncProductsToSite {
             else {
                 $groupId = (int) $attributeGroup->id;
 
-                if ( Schema::connection('site')
+                // Restore the group only when we actually need to attach names.
+                if ( !$names->isEmpty()
+                     && Schema::connection('site')
                          ->hasColumn('attribute_groups', 'deleted_at')
                      && $attributeGroup->deleted_at !== null ) {
                     $connection->table('attribute_groups')
@@ -508,30 +577,34 @@ class SyncProductsToSite {
                 }
             }
 
-            $attributesByName = $connection->table('attributes')
-                ->where('attribute_group_id', $groupId)
-                ->whereIn('name', $names->all())
-                ->get([ 'id', 'name' ])
-                ->keyBy('name');
+            $attributesByName = collect();
 
-            foreach ( $names as $name ) {
-                if ( $attributesByName->has($name) ) {
-                    continue;
-                }
+            if ( !$names->isEmpty() ) {
+                $attributesByName = $connection->table('attributes')
+                    ->where('attribute_group_id', $groupId)
+                    ->whereIn('name', $names->all())
+                    ->get([ 'id', 'name' ])
+                    ->keyBy('name');
 
-                $attributeId = (int) $connection->table('attributes')
-                    ->insertGetId([
-                        'attribute_group_id' => $groupId,
-                        'name'               => $name,
-                        'value'              => null,
-                        'created_at'         => $now,
-                        'updated_at'         => $now,
+                foreach ( $names as $name ) {
+                    if ( $attributesByName->has($name) ) {
+                        continue;
+                    }
+
+                    $attributeId = (int) $connection->table('attributes')
+                        ->insertGetId([
+                            'attribute_group_id' => $groupId,
+                            'name'               => $name,
+                            'value'              => null,
+                            'created_at'         => $now,
+                            'updated_at'         => $now,
+                        ]);
+
+                    $attributesByName->put($name, (object) [
+                        'id'   => $attributeId,
+                        'name' => $name,
                     ]);
-
-                $attributesByName->put($name, (object) [
-                    'id'   => $attributeId,
-                    'name' => $name,
-                ]);
+                }
             }
 
             $groupAttributeIds = $connection->table('attributes')
@@ -540,31 +613,64 @@ class SyncProductsToSite {
                 ->map(static fn( $id ): int => (int) $id)
                 ->all();
 
+            $priceIds = collect(array_keys($variantNames))
+                ->map(static fn( $id ): int => (int) $id)
+                ->values()
+                ->all();
+
+            $existingRelations = collect();
+
+            if ( $groupAttributeIds !== [] && $priceIds !== [] ) {
+                $existingRelations = $connection->table('attribute_price')
+                    ->whereIn('price_id', $priceIds)
+                    ->whereIn('attribute_id', $groupAttributeIds)
+                    ->get([ 'price_id', 'attribute_id' ])
+                    ->groupBy(static fn( $row ): int => (int) $row->price_id);
+            }
+
             $synced = 0;
 
             foreach ( $variantNames as $priceId => $name ) {
+                $priceId = (int) $priceId;
+
                 $priceExists = $connection->table('prices')
-                    ->where('id', (int) $priceId)
+                    ->where('id', $priceId)
+                    ->whereNull('deleted_at')
                     ->exists();
 
-                if ( !$priceExists ) {
+                $normalizedName = is_string($name) ? trim($name) : '';
+                $desiredAttrId  = null;
+
+                if ( $normalizedName !== '' && $attributesByName->has($normalizedName) ) {
+                    $desiredAttrId = (int) $attributesByName->get($normalizedName)->id;
+                }
+
+                $currentIds = $existingRelations->get($priceId, collect())
+                    ->pluck('attribute_id')
+                    ->map(static fn( $id ): int => (int) $id)
+                    ->sort()
+                    ->values()
+                    ->all();
+
+                $desiredIds = $priceExists && $desiredAttrId !== null ? [ $desiredAttrId ] : [];
+                sort($desiredIds);
+
+                if ( $currentIds === $desiredIds ) {
                     continue;
                 }
 
                 if ( $groupAttributeIds !== [] ) {
                     $connection->table('attribute_price')
-                        ->where('price_id', (int) $priceId)
+                        ->where('price_id', $priceId)
                         ->whereIn('attribute_id', $groupAttributeIds)
                         ->delete();
                 }
 
-                $normalizedName = is_string($name) ? trim($name) : '';
-
-                if ( $normalizedName !== '' && $attributesByName->has($normalizedName) ) {
+                if ( $priceExists && $desiredAttrId !== null ) {
                     $connection->table('attribute_price')
                         ->insert([
-                            'attribute_id' => (int) $attributesByName->get($normalizedName)->id,
-                            'price_id'     => (int) $priceId,
+                            'attribute_id' => $desiredAttrId,
+                            'price_id'     => $priceId,
                             'created_at'   => $now,
                             'updated_at'   => $now,
                         ]);
@@ -575,19 +681,6 @@ class SyncProductsToSite {
 
             return $synced;
         });
-    }
-
-    private function sourceIsNewer( mixed $sourceUpdatedAt, mixed $siteUpdatedAt ): bool {
-        if ( $sourceUpdatedAt === null ) {
-            return false;
-        }
-
-        if ( $siteUpdatedAt === null ) {
-            return true;
-        }
-
-        return CarbonImmutable::parse($sourceUpdatedAt)
-            ->greaterThan(CarbonImmutable::parse($siteUpdatedAt));
     }
 
     private function maxTimestamp( mixed ...$timestamps ): ?CarbonImmutable {
