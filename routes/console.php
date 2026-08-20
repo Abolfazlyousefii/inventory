@@ -5,21 +5,15 @@ use App\Services\Sync\InventoryProductsSyncService;
 use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
 use App\Services\Sync\SitePaidOrdersSyncService;
+use App\Services\Sync\SyncProductsToSite;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::call(function () {
-    app(InventoryProductsSyncService::class)->syncAll();
+    app(SyncProductsToSite::class)->syncAll();
 })
-    ->everyTenSeconds()
-    ->name('inventory-products-Service')
-    ->withoutOverlapping();
-
-Schedule::call(function () {
-    app(SiteImageSyncService::class)->syncAll();
-})
-    ->everyTenSeconds()
-    ->name('site-image-products-sync')
-    ->withoutOverlapping();
+    ->everyFiveSeconds()
+    ->name('inventory-products-service')
+    ->withoutOverlapping(1);
 
 Schedule::call(function () {
     app(SiteCustomersSyncService::class)->syncAll();

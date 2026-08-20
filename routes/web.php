@@ -602,7 +602,7 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 Route::get('/test', function () {
-    return app(InventoryProductsSyncService::class)->syncAll();
+    return \App\Models\Site\Product::all()->take(5);
 });
 
 require __DIR__ . '/auth.php';

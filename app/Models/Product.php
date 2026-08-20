@@ -73,35 +73,6 @@ class Product extends Model
         'site_to_inventory_verified' => 'boolean',
     ];
 
-    /**
-     * هر تغییر واقعی روی محصول، چرخه ارسال و تأیید را دوباره باز می‌کند.
-     *
-     * تغییر خود فلگ‌ها، synced_at و updated_at نباید باعث صفرشدن
-     * دوباره فلگ‌ها شود.
-     */
-    protected static function booted(): void
-    {
-        static::updating(function (Product $product): void {
-            $changedFields = array_keys($product->getDirty());
-
-            $ignoredFields = [
-                'inventory_to_site_synced',
-                'site_to_inventory_verified',
-                'synced_at',
-                'updated_at',
-            ];
-
-            $businessChanges = array_diff(
-                $changedFields,
-                $ignoredFields
-            );
-
-            if ($businessChanges !== []) {
-                $product->inventory_to_site_synced = false;
-            }
-        });
-    }
-
     public function category()
     {
         return $this->belongsTo(Category::class);
