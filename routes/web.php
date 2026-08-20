@@ -57,6 +57,7 @@ use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\Portal\CustomerAuthController;
 use App\Models\SalesReturnDocument;
 use App\Services\Sync\InventoryProductsSyncService;
+use App\Services\Sync\SyncProductsToSite;
 use Illuminate\Support\Facades\Route;
 Route::get('/', fn() => redirect()->route('dashboard'));
 
@@ -602,7 +603,7 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 Route::get('/test', function () {
-    return app(InventoryProductsSyncService::class)->syncAll();
+   return app(SyncProductsToSite::class)->syncAll();
 });
 
 require __DIR__ . '/auth.php';
