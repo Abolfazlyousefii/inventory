@@ -15,8 +15,9 @@
         "maennchen/zipstream-php": "3.1",
         "morilog/jalali": "3.*",
         "mpdf/mpdf": "8.2.6",
-        "spatie/laravel-permission": "^6.24"
-    },
+        "spatie/laravel-permission": "^6.24",
+	  "ext-zip":"*"
+	},
     "require-dev": {
         "fakerphp/faker": "^1.23",
         "laravel/breeze": "^2.3",

@@ -21,6 +21,8 @@ class TelegramDailyReport {
         $reportDay = $this->resolveReportDay();
         $metrics   = $this->collectMetrics($reportDay);
         $message   = $this->buildMessage($reportDay, $metrics);
+        dd($message,$metrics);
+
         $response  = $this->sendToBotWebhook($message);
 
         Log::info('Telegram daily report sent.', [
@@ -224,7 +226,7 @@ class TelegramDailyReport {
 
             '',
 
-            '<i>' . 'مبنای فروش: تاریخ سند فاکتور و در نبود آن ' . 'تاریخ ثبت؛ فقط فاکتورهای غیرلغو. ' . 'مبالغ بر اساس فاکتورهای کل و به ریال هستند. ' . 'مرجوعی فروش در این نسخه کسر نمی‌شود.' . '</i>',
+            '<i>' . 'مبنای فروش: تاریخ سند فاکتور و در نبود آن ' . 'تاریخ ثبت؛ فقط فاکتورهای غیرلغو. ' . 'مبالغ بر اساس فاکتورهای کل و به تومان هستند. ' . 'مرجوعی فروش در این نسخه کسر نمی‌شود.' . '</i>',
         ]);
     }
 
@@ -320,7 +322,7 @@ class TelegramDailyReport {
      * Format a monetary amount.
      */
     private function money( int $amount ): string {
-        return number_format($amount) . ' ریال';
+        return number_format($amount/10) . ' تومان';
     }
 
     /**

@@ -110,4 +110,10 @@ class Customer extends Authenticatable
         return $query->where('is_active', true);
     }
 
+    public function city(): BelongsTo
+    {
+        return $this->belongsTo(City::class, 'city_id');
+    }
+
+
 }

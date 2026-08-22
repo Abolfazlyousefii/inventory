@@ -56,6 +56,7 @@ use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\Portal\CustomerAuthController;
 use App\Models\SalesReturnDocument;
+use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use Illuminate\Support\Facades\Route;
 Route::get('/', fn() => redirect()->route('dashboard'));
@@ -602,5 +603,11 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
 Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
+
+Route::get('/test', function () {
+
+  return  app( TelegramDailyReport::class)->send();
+});
+
 
 require __DIR__ . '/auth.php';
