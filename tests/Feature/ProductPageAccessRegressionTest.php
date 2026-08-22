@@ -11,8 +11,11 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 it('lets a non admin product page role use every routine product endpoint', function () {
-    $permission = Permission::findOrCreate('page.products', 'web');
-    $permission->forceFill(['key' => 'page.products'])->save();
+    $permission = Permission::query()->where('key', 'page.products')->first()
+        ?? Permission::findOrCreate('page.products', 'web');
+    if ($permission->key !== 'page.products') {
+        $permission->forceFill(['key' => 'page.products'])->save();
+    }
     $role = Role::findOrCreate('ProductTestRole', 'web');
     $role->givePermissionTo($permission);
     $user = User::factory()->create();

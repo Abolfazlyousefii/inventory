@@ -134,13 +134,13 @@ class SalesReturnService
         foreach ($rows as $r) {
             $it = $r['invoice_item'];
             $input = $inputRows->get((int) $it->id, []);
-            $cond = $this->normalizedCondition($input['item_condition'] ?? null);
-            $wh = $this->resolveDestinationWarehouse(
-                $cond,
+            $rowCondition = $this->normalizedCondition($input['item_condition'] ?? null);
+            $rowDestinationWarehouse = $this->resolveDestinationWarehouse(
+                $rowCondition,
                 (int) ($input['destination_warehouse_id'] ?? $data['default_destination_warehouse_id'] ?? 0),
                 (bool) ($data['can_override_destination'] ?? false)
             );
-            $out[] = ['invoice_item_id' => $it->id, 'product_id' => $it->product_id, 'product_variant_id' => $it->variant_id, 'product_name_snapshot' => $it->product?->name, 'variant_name_snapshot' => $it->variant?->variant_name, 'sku_snapshot' => $it->variant?->variant_code, 'barcode_snapshot' => $it->variant?->variant_code, 'item_source' => SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'sold_quantity_snapshot' => (int) $it->quantity, 'previously_returned_quantity_snapshot' => $r['previous_quantity'], 'return_quantity' => $r['quantity'], 'unit_price_snapshot' => (int) $it->price, 'line_discount_snapshot' => (int) ($it->line_discount_amount ?? 0), 'allocated_invoice_discount_snapshot' => $r['allocated_discount'], 'refund_unit_price' => $r['refund_unit_price'], 'refund_amount' => $r['refund_amount']];
+            $out[] = ['invoice_item_id' => $it->id, 'product_id' => $it->product_id, 'product_variant_id' => $it->variant_id, 'product_name_snapshot' => $it->product?->name, 'variant_name_snapshot' => $it->variant?->variant_name, 'sku_snapshot' => $it->variant?->variant_code, 'barcode_snapshot' => $it->variant?->variant_code, 'item_source' => SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, 'item_condition' => $rowCondition, 'destination_warehouse_id' => $rowDestinationWarehouse->id, 'sold_quantity_snapshot' => (int) $it->quantity, 'previously_returned_quantity_snapshot' => $r['previous_quantity'], 'return_quantity' => $r['quantity'], 'unit_price_snapshot' => (int) $it->price, 'line_discount_snapshot' => (int) ($it->line_discount_amount ?? 0), 'allocated_invoice_discount_snapshot' => $r['allocated_discount'], 'refund_unit_price' => $r['refund_unit_price'], 'refund_amount' => $r['refund_amount']];
         }
 
         return $out;

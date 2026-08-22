@@ -13,9 +13,9 @@ use Throwable;
 
 class InventoryProductsSyncService {
 
-    protected string $apiUrl = '';
+    protected string $apiUrl;
 
-    protected ?string $apiUrl;
+    protected string $apiToken;
 
     protected string $url = '/api/v2/sync/products';
 
@@ -35,6 +35,11 @@ class InventoryProductsSyncService {
 
     protected int $timeout = 30;
 
+    public function __construct() {
+        $this->apiUrl = rtrim((string) Config::get('services.sales_server.api_url'), '/');
+        $this->apiToken = trim((string) Config::get('services.sales_server.api_token'));
+    }
+
     /**
      * وضعیت دو مرحله مستقل است:
      *
@@ -46,6 +51,10 @@ class InventoryProductsSyncService {
      * به Inventory برگردانده است.
      */
     public function syncAll(): array {
+        if (! Config::get('services.sales_server.sync_enabled', false) || $this->apiUrl === '' || $this->apiToken === '') {
+            return ['skipped' => true, 'reason' => 'inventory_sync_disabled_or_not_configured'];
+        }
+
         $totalChunks          = 0;
         $successfulChunks     = 0;
         $syncedProductCount   = 0;
@@ -224,12 +233,19 @@ class InventoryProductsSyncService {
 
             try {
                 $response = Http::withoutVerifying()
+                    ->withToken($this->apiToken)
                     ->acceptJson()
                     ->asJson()
                     ->timeout($this->timeout)
                     ->post($this->apiUrl, $payload);
 
                 if ( $response->successful() ) {
+                    if ($response->json('ok') === true && $response->json('data') === null) {
+                        return [
+                            'synced_product_ids' => $expectedProductIds,
+                            'verified_product_ids' => $expectedProductIds,
+                        ];
+                    }
                     $status = (string) $response->json('status', '');
 
                     $syncedProductIds = $this->normalizeIds($response->json('data.synced_product_ids', []));

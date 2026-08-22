@@ -9,6 +9,7 @@ use App\Models\CommissionPeriod;
 use App\Models\CommissionRateRevision;
 use App\Models\CommissionSetting;
 use App\Models\CommissionSettlement;
+use App\Models\Invoice;
 use App\Models\User;
 use App\Services\Commissions\CommissionCalculationService;
 use App\Services\Commissions\CommissionCampaignService;
@@ -271,14 +272,42 @@ class CommercialCommissionController extends Controller
 
     public function sellerDetails(Request $request, CommissionPeriod $period, User $seller, CommissionReportService $reports, CommissionFeatureService $features): View
     {
-        $canViewAll = $request->user()->hasPermission('commissions.view_seller_details');
-        $canViewOwn = $features->isSellerVisibilityEnabled() && (int) $request->user()->id === (int) $seller->id;
-        abort_unless($canViewAll || $canViewOwn, 403);
+        $this->authorizeSellerCommissionView($request, $seller, $features);
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'string', 'max:50'],
+            'missing_rate' => ['nullable', 'boolean'],
+        ]);
 
         return view('commercial.commissions.seller-details', ['period' => $period, 'seller' => $seller,
-            'entries' => $reports->sellerDetails($period, $seller),
+            'invoices' => $reports->sellerDetails($period, $seller, 30, $filters),
+            'summary' => $reports->periodSummary($period, $seller->id),
+            'conflictingInvoiceIds' => $reports->conflictingSellerInvoices($period, $seller->id)->keys()->map(fn ($id) => (int) $id)->all(),
             'returns' => $reports->sellerCorrections($period, $seller, 'returns'),
-            'reassignments' => $reports->sellerCorrections($period, $seller, 'reassignments')]);
+            'reassignments' => $reports->sellerCorrections($period, $seller, 'reassignments'),
+            'adjustments' => $reports->sellerAdjustments($period, $seller),
+            'filters' => $filters]);
+    }
+
+    public function sellerInvoiceDetails(Request $request, CommissionPeriod $period, User $seller, Invoice $invoice, CommissionReportService $reports, CommissionFeatureService $features): View
+    {
+        $this->authorizeSellerCommissionView($request, $seller, $features);
+        $entries = $reports->invoiceEntries($period, $seller, $invoice);
+
+        return view('commercial.commissions.seller-invoice-details', [
+            'period' => $period,
+            'seller' => $seller,
+            'invoice' => $invoice,
+            'entries' => $entries,
+            'invoiceSummary' => [
+                'items_count' => $entries->count(),
+                'net_sales_amount' => (int) $entries->sum('net_amount_snapshot'),
+                'base_commission_amount' => (int) $entries->sum('base_commission_amount'),
+                'campaign_commission_amount' => (int) $entries->sum('campaign_commission_amount'),
+                'total_commission_amount' => (int) $entries->sum('total_commission_amount'),
+                'missing_rate_count' => $entries->where('missing_rate', true)->count(),
+            ],
+        ]);
     }
 
     private function mutablePeriodStart(int $periodId): Carbon
@@ -304,6 +333,13 @@ class CommercialCommissionController extends Controller
     private function authorizeAction(Request $request, string $permission): void
     {
         abort_unless($request->user()?->hasPermission($permission), 403);
+    }
+
+    private function authorizeSellerCommissionView(Request $request, User $seller, CommissionFeatureService $features): void
+    {
+        $canViewAll = $request->user()->hasPermission('commissions.view_seller_details');
+        $canViewOwn = $features->isSellerVisibilityEnabled() && (int) $request->user()->id === (int) $seller->id;
+        abort_unless($canViewAll || $canViewOwn, 403);
     }
 
     private function authorizePilotAccess(Request $request, CommissionFeatureService $features): void

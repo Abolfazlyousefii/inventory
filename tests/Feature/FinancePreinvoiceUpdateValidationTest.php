@@ -24,8 +24,11 @@ function financeValidationUser(): User
 {
     $user = User::factory()->create();
     $role = Role::findOrCreate('finance', 'web');
-    $permission = Permission::findOrCreate('page.sales.preinvoice_finance_review', 'web');
-    $permission->forceFill(['key' => 'page.sales.preinvoice_finance_review'])->save();
+    $permission = Permission::query()->where('key', 'page.sales.preinvoice_finance_review')->first()
+        ?? Permission::findOrCreate('page.sales.preinvoice_finance_review', 'web');
+    if ($permission->key !== 'page.sales.preinvoice_finance_review') {
+        $permission->forceFill(['key' => 'page.sales.preinvoice_finance_review'])->save();
+    }
     $role->givePermissionTo($permission);
     $user->assignRole($role);
 

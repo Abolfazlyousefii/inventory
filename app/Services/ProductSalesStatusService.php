@@ -109,9 +109,11 @@ class ProductSalesStatusService
             }
 
             $aggregate = $variants->contains(fn (ProductVariant $variant) => (bool) $variant->is_active && (bool) $variant->sales_enabled);
-            if ((bool) $product->is_sellable !== $aggregate) {
-                $product->update(['is_sellable' => $aggregate]);
-            }
+            $product->update([
+                'is_sellable' => $aggregate,
+                'inventory_to_site_synced' => false,
+                'site_to_inventory_verified' => false,
+            ]);
             $document->update(['items_count' => $document->items()->count()]);
 
             return $document->fresh();

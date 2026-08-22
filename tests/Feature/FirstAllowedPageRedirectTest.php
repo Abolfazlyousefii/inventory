@@ -10,10 +10,7 @@ use Spatie\Permission\PermissionRegistrar;
 uses(RefreshDatabase::class);
 
 it('redirects a user without dashboard to the first allowed catalog page', function () {
-    $permissionId = DB::table('permissions')->insertGetId([
-        'key'=>'page.products', 'name'=>'page.products', 'group'=>'test', 'guard_name'=>'web',
-        'created_at'=>now(), 'updated_at'=>now(),
-    ]);
+    $permissionId = DB::table('permissions')->where('key', 'page.products')->value('id');
     $role = Role::findOrCreate('Product viewer', 'web');
     DB::table('role_has_permissions')->insert(['role_id'=>$role->id, 'permission_id'=>$permissionId]);
     $user = User::factory()->create();

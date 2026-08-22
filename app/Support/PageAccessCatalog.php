@@ -33,6 +33,7 @@ class PageAccessCatalog
         'commercial.commissions.periods.close' => ['commercial.commissions'],
         'commercial.commissions.periods.paid' => ['commercial.commissions'],
         'commercial.commissions.sellers.show' => ['commercial.commissions'],
+        'commercial.commissions.sellers.invoices.show' => ['commercial.commissions'],
         'commercial.commissions.documents.store' => ['commercial.commissions'],
         'commercial.commissions.documents.show' => ['commercial.commissions'],
         'commercial.commissions.documents.update' => ['commercial.commissions'],

@@ -23,8 +23,11 @@ function preinvoiceAccessRequest(User $user, string $name): Request
 }
 
 it('lets a sales role use its complete normal preinvoice page but not review workflows', function () {
-    $permission = Permission::findOrCreate('page.sales.preinvoices', 'web');
-    $permission->forceFill(['key' => 'page.sales.preinvoices'])->save();
+    $permission = Permission::query()->where('key', 'page.sales.preinvoices')->first()
+        ?? Permission::findOrCreate('page.sales.preinvoices', 'web');
+    if ($permission->key !== 'page.sales.preinvoices') {
+        $permission->forceFill(['key' => 'page.sales.preinvoices'])->save();
+    }
     $role = Role::findOrCreate('SalesTestRole', 'web');
     $role->givePermissionTo($permission);
     $user = User::factory()->create();

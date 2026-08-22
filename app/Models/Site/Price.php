@@ -19,6 +19,12 @@ class Price extends Model {
     protected $connection = 'site';
     use SoftDeletes;
 
+    protected $fillable = [
+        'product_id', 'image_id', 'variant_code', 'price', 'regular_price',
+        'discount', 'discount_price', 'discount_expire_at', 'stock',
+        'cart_min', 'cart_max', 'status', 'stock_sync_enabled', 'stock_synced_at',
+    ];
+
     protected $guarded = [ 'id' ];
 
     protected $casts = [

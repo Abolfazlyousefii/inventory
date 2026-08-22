@@ -83,7 +83,7 @@ class PriceChangeDocumentProductPickerTest extends TestCase
     {
         $role = Role::findOrCreate('price-change-creator', 'web');
         $role->givePermissionTo(Permission::findOrCreate('products.price_changes.create', 'web'));
-        $pageId = DB::table('permissions')->insertGetId(['key'=>'page.products.price_changes','name'=>'page.products.price_changes','group'=>'page-test','guard_name'=>'web','created_at'=>now(),'updated_at'=>now()]);
+        $pageId = DB::table('permissions')->where('key', 'page.products.price_changes')->value('id');
         DB::table('role_has_permissions')->insert(['role_id'=>$role->id,'permission_id'=>$pageId]);
         $user = User::factory()->create();
         $user->assignRole($role);

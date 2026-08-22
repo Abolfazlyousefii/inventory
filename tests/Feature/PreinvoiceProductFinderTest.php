@@ -22,7 +22,7 @@ function signInForProductFinder(bool $allowed = true): User
     if ($allowed) {
         $role = Role::findOrCreate('preinvoice-product-finder', 'web');
         $role->givePermissionTo(Permission::findOrCreate('preinvoices.create', 'web'));
-        $pageId = DB::table('permissions')->insertGetId(['key'=>'page.sales.preinvoices','name'=>'page.sales.preinvoices','group'=>'page-test','guard_name'=>'web','created_at'=>now(),'updated_at'=>now()]);
+        $pageId = DB::table('permissions')->where('key', 'page.sales.preinvoices')->value('id');
         DB::table('role_has_permissions')->insert(['role_id'=>$role->id,'permission_id'=>$pageId]);
         $user->assignRole($role);
     }

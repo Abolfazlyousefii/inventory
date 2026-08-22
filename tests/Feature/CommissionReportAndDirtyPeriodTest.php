@@ -97,7 +97,8 @@ it('reports weighted seller summaries distinct invoices and paginated seller det
         ->and($sellerRow->invoice_count)->toBe(1)
         ->and((float) $sellerRow->effective_rate)->toBe(2.0)
         ->and((float) $summary['effective_rate'])->toBe(2.0)
-        ->and($details->total())->toBe(2);
+        ->and($details->total())->toBe(1)
+        ->and((int) $details->first()->items_count)->toBe(2);
 });
 
 it('scopes ordinary seller summaries and totals to the authenticated seller', function () {

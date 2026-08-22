@@ -10,6 +10,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config()->set('services.sales_server.sync_enabled', false);
+});
+
 function eligibilityFixture(bool $productEnabled = true, bool $structural = true, bool $sales = true): array
 {
     $category = Category::query()->create(['name' => 'فروش '.uniqid(), 'code' => uniqid('EC-')]);

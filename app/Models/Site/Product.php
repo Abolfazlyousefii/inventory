@@ -11,6 +11,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Product extends Model {
     protected $connection = 'site';
+    protected $fillable = [
+        'title', 'slug', 'category_id', 'brand_id', 'type', 'price_type',
+        'published', 'publish_date', 'unit', 'image', 'description',
+    ];
     protected $guarded    = [ 'id' ];
 
     public static function generateInventoryProductCode( int $id ): string {

@@ -57,7 +57,6 @@ use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\Portal\CustomerAuthController;
 use App\Models\SalesReturnDocument;
 use App\Services\Sync\InventoryProductsSyncService;
-use App\Services\Sync\SyncProductsToSite;
 use Illuminate\Support\Facades\Route;
 Route::get('/', fn() => redirect()->route('dashboard'));
 
@@ -115,6 +114,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/periods/{period}/close', [CommissionSettlementController::class, 'closePeriod'])->name('periods.close');
         Route::post('/periods/{period}/paid', [CommissionSettlementController::class, 'markPaid'])->name('periods.paid');
         Route::get('/periods/{period}/sellers/{seller}', [CommercialCommissionController::class, 'sellerDetails'])->name('sellers.show');
+        Route::get('/periods/{period}/sellers/{seller}/invoices/{invoice}', [CommercialCommissionController::class, 'sellerInvoiceDetails'])->name('sellers.invoices.show');
         Route::post('/documents', [CommissionDocumentController::class, 'store'])->name('documents.store');
         Route::get('/documents/{document}', [CommissionDocumentController::class, 'show'])->name('documents.show');
         Route::put('/documents/{document}', [CommissionDocumentController::class, 'update'])->name('documents.update');
@@ -172,8 +172,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::get('/products/{product}/variants', [ProductController::class, 'variants'])->whereNumber('product')->name('products.variants');
     Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->name('products.edit');
-    Route::put('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->name('products.update');
-    Route::patch('/products/{product}', [ProductController::class, 'update'])->whereNumber('product')->name('products.update');
+    Route::match(['put', 'patch'], '/products/{product}', [ProductController::class, 'update'])
+        ->whereNumber('product')
+        ->name('products.update');
     Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->name('products.warehouse-stock');
     Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->name('products.destroy');
@@ -601,9 +602,5 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
 Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
-
-Route::get('/test', function () {
-   return app(SyncProductsToSite::class)->syncAll();
-});
 
 require __DIR__ . '/auth.php';

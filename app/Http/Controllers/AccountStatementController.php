@@ -21,7 +21,7 @@ class AccountStatementController extends Controller
         $numericSearch = preg_replace('/\D+/', '', $normalizedSearch);
 
         $customers = Customer::query()
-            ->with('city:id,name')
+            ->with('cityRelation:id,name')
             ->withBalance()
             ->when($q !== '', function ($query) use ($q, $normalizedSearch, $numericSearch) {
                 $like = "%{$q}%";
@@ -33,7 +33,7 @@ class AccountStatementController extends Controller
                         ->orWhereRaw($this->fullNameExpression() . ' LIKE ?', [$like])
                         ->orWhere('mobile', 'like', $like)
                         ->orWhere('crm_customer_id', 'like', $like)
-                        ->orWhereHas('city', function ($cityQuery) use ($like) {
+                        ->orWhereHas('cityRelation', function ($cityQuery) use ($like) {
                             $cityQuery->where('name', 'like', $like);
                         });
 
