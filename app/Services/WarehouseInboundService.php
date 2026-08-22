@@ -26,8 +26,16 @@ class WarehouseInboundService
     ) {
     }
 
-    public function queueSalesReturn(SalesReturnDocument $document, ?int $actorId, string $operationKey = 'initial'): WarehouseInboundReceipt
+    public function queueSalesReturn(SalesReturnDocument $document, ?int $actorId, string $operationKey = 'initial'): ?WarehouseInboundReceipt
     {
+        $document->loadMissing(['items.product', 'items.variant', 'invoice:id,customer_name']);
+        $centralWarehouseId = WarehouseStockService::centralWarehouseId();
+        $lines = $document->items
+            ->filter(fn (SalesReturnDocumentItem $item) => (int) $item->destination_warehouse_id === $centralWarehouseId)
+            ->map(fn (SalesReturnDocumentItem $item) => $this->salesReturnItemLine($item))
+            ->values()
+            ->all();
+
         $existing = WarehouseInboundReceipt::query()
             ->where('source_type', WarehouseInboundReceipt::SOURCE_SALES_RETURN)
             ->where('source_id', $document->id)
@@ -37,34 +45,14 @@ class WarehouseInboundService
             ->first();
 
         if ($existing) {
-            return $existing;
+            return $existing->isPending()
+                ? $this->synchronizePendingSalesReturnReceipt($existing, $lines)
+                : $existing;
         }
 
-        $document->loadMissing(['items.product', 'items.variant', 'invoice:id,customer_name']);
-        $lines = $document->items->map(function (SalesReturnDocumentItem $item) {
-            return [
-                'source_item_type' => SalesReturnDocumentItem::class,
-                'source_item_id' => $item->id,
-                'product_id' => $item->product_id,
-                'product_variant_id' => $item->product_variant_id,
-                'product_name_snapshot' => $item->product_name_snapshot ?: $item->product?->name,
-                'variant_name_snapshot' => $item->variant_name_snapshot ?: $item->variant?->variant_name,
-                'sku_snapshot' => $item->sku_snapshot ?: $item->variant?->variant_code,
-                'expected_quantity' => (int) $item->return_quantity,
-                'suggested_warehouse_id' => (int) $item->destination_warehouse_id,
-                'condition' => $item->item_condition,
-                'reason' => 'sales_return',
-                'source_meta' => [
-                    'invoice_item_id' => $item->invoice_item_id,
-                    'sold_quantity' => $item->sold_quantity_snapshot,
-                    'previously_finalized_returned_quantity' => $item->previously_returned_quantity_snapshot,
-                    'historical_unit_price' => $item->unit_price_snapshot,
-                    'refund_unit_price' => $item->refund_unit_price,
-                    'refund_amount' => $item->refund_amount,
-                ],
-                'note' => null,
-            ];
-        })->all();
+        if ($lines === []) {
+            return null;
+        }
 
         return $this->createReceipt(
             WarehouseInboundReceipt::SOURCE_SALES_RETURN,
@@ -81,6 +69,62 @@ class WarehouseInboundService
                 'return_reason' => $document->return_reason,
             ]
         );
+    }
+
+    private function salesReturnItemLine(SalesReturnDocumentItem $item): array
+    {
+        return [
+            'source_item_type' => SalesReturnDocumentItem::class,
+            'source_item_id' => $item->id,
+            'product_id' => $item->product_id,
+            'product_variant_id' => $item->product_variant_id,
+            'product_name_snapshot' => $item->product_name_snapshot ?: $item->product?->name,
+            'variant_name_snapshot' => $item->variant_name_snapshot ?: $item->variant?->variant_name,
+            'sku_snapshot' => $item->sku_snapshot ?: $item->variant?->variant_code,
+            'expected_quantity' => (int) $item->return_quantity,
+            'suggested_warehouse_id' => (int) $item->destination_warehouse_id,
+            'condition' => $item->item_condition,
+            'reason' => 'sales_return',
+            'source_meta' => [
+                'invoice_item_id' => $item->invoice_item_id,
+                'sold_quantity' => $item->sold_quantity_snapshot,
+                'previously_finalized_returned_quantity' => $item->previously_returned_quantity_snapshot,
+                'historical_unit_price' => $item->unit_price_snapshot,
+                'refund_unit_price' => $item->refund_unit_price,
+                'refund_amount' => $item->refund_amount,
+            ],
+            'note' => null,
+        ];
+    }
+
+    private function synchronizePendingSalesReturnReceipt(WarehouseInboundReceipt $receipt, array $lines): ?WarehouseInboundReceipt
+    {
+        if ($lines === []) {
+            $receipt->delete();
+
+            return null;
+        }
+
+        $sourceIds = collect($lines)->pluck('source_item_id')->map(fn ($id) => (int) $id)->all();
+        $receipt->items()->whereNotIn('source_item_id', $sourceIds)->delete();
+
+        foreach ($lines as $line) {
+            $receipt->items()->updateOrCreate(
+                ['source_item_type' => $line['source_item_type'], 'source_item_id' => $line['source_item_id']],
+                collect($line)->except(['source_item_type', 'source_item_id'])->merge([
+                    'accepted_quantity' => 0,
+                    'received_warehouse_id' => null,
+                    'stock_movement_id' => null,
+                ])->all()
+            );
+        }
+
+        $receipt->update([
+            'expected_quantity' => (int) collect($lines)->sum('expected_quantity'),
+            'accepted_quantity' => 0,
+        ]);
+
+        return $receipt->fresh('items');
     }
 
     public function queueInvoiceCancellation(Invoice $invoice, ?int $actorId, ?string $note = null): WarehouseInboundReceipt

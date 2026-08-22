@@ -16,7 +16,7 @@
         || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/inbound-queue', 'warehouse/inbound-queue/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*')
     );
 
-    $salesActive = $isRoute('preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.commissions.*', 'commercial.invoice-reassignments.*');
+    $salesActive = $isSalesReturnRoute || $isRoute('sales-returns.*', 'preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.commissions.*', 'commercial.invoice-reassignments.*');
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
     $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
 
@@ -173,7 +173,7 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view','page.commercial.commissions','page.commercial.invoice_reassignments'])
+        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view','page.sales.returns','page.commercial.commissions','page.commercial.invoice_reassignments'])
             <div class="sidebar-accordion-item {{ $salesActive ? 'is-open' : '' }}" data-accordion-section="sales">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $salesActive ? 'is-active' : '' }}"
@@ -198,6 +198,9 @@
                         @endcanPermission
                         @canPermission('customers.view')
                             <a class="sidebar-sublink {{ $is('customers.*', 'persons.*') }}" href="{{ route('customers.index') }}">اشخاص و طرف‌حساب‌ها</a>
+                        @endcanPermission
+                        @canPermission('page.sales.returns')
+                            <a class="sidebar-sublink {{ $is('vouchers.return-from-sale.*', 'sales-returns.*') }}" href="{{ route('vouchers.return-from-sale.index') }}">برگشت از فروش</a>
                         @endcanPermission
                         @canPermission('page.commercial.commissions')
                             <a class="sidebar-sublink {{ $is('commercial.commissions.*') }}" href="{{ route('commercial.commissions.index') }}">پورسانت</a>

@@ -387,7 +387,15 @@ class PermissionCatalog
             }
         }
 
-        return $permissions;
+        foreach (PageAccessCatalog::pages() as $page) {
+            $permissions[] = [
+                'group' => $page['group'],
+                'key' => $page['permission'],
+                'name' => $page['label'],
+            ];
+        }
+
+        return collect($permissions)->unique('key')->values()->all();
     }
 
     /** Metadata used by the UI, authorization audit and role presets. */
@@ -433,21 +441,25 @@ class PermissionCatalog
             $risk = in_array($key, $critical, true) ? 'critical'
                 : (in_array($action, ['edit', 'create', 'confirm', 'cancel', 'delete', 'sync', 'apply'], true) ? 'sensitive' : 'normal');
 
+            $page = str_starts_with($key, 'page.')
+                ? PageAccessCatalog::page(str($key)->after('page.')->toString())
+                : null;
+
             return [$key => [
                 'key' => $key,
                 'label' => $permission['name'],
-                'description' => 'دسترسی کنترل‌شده برای '.$permission['name'],
+                'description' => $page['description'] ?? 'دسترسی کنترل‌شده برای '.$permission['name'],
                 'module' => self::moduleFor($key),
                 'module_label' => $permission['group'],
                 'action' => $action,
-                'risk' => $risk,
+                'risk' => ($page['sensitive'] ?? false) ? 'sensitive' : $risk,
                 'depends_on' => $dependencies[$key] ?? [],
                 'deprecated' => in_array($key, $legacy, true),
                 'active' => ! in_array($key, $legacy, true),
                 'sort_order' => ($index + 1) * 10,
-                'page_permission' => str_ends_with($key, '.view'),
-                'sidebar' => in_array($key, $sidebar, true),
-                'routes' => array_keys(self::routePermissions(), $key, true),
+                'page_permission' => $page !== null || str_ends_with($key, '.view'),
+                'sidebar' => $page !== null || in_array($key, $sidebar, true),
+                'routes' => $page['routes'] ?? array_keys(self::routePermissions(), $key, true),
             ]];
         })->all();
     }
@@ -566,14 +578,20 @@ class PermissionCatalog
         return 'web';
     }
 
-    /** @return array{created: int, updated: int, unchanged: int} */
+    /** @return array{created: int, updated: int, unchanged: int, legacy: int, pages: int} */
     public static function syncToDatabase(): array
     {
         $existing = DB::table('permissions')
             ->whereNotNull('key')
             ->get(['key', 'name', 'group', 'guard_name'])
             ->keyBy('key');
-        $result = ['created' => 0, 'updated' => 0, 'unchanged' => 0];
+        $result = [
+            'created' => 0,
+            'updated' => 0,
+            'unchanged' => 0,
+            'legacy' => count(self::all()) - count(PageAccessCatalog::pages()),
+            'pages' => count(PageAccessCatalog::pages()),
+        ];
 
         foreach (self::all() as $permission) {
             $current = $existing->get($permission['key']);

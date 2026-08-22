@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -20,10 +21,14 @@ class PermissionsAuditCommand extends Command
         if ($module = $this->option('module')) $registry = $registry->where('module', $module);
         $routes = collect(Route::getRoutes())->filter(fn ($r) => $r->getName());
         $mapped = PermissionCatalog::routePermissions();
+        $hasCatalogMapping = fn (?string $name): bool => $name !== null
+            && (isset($mapped[$name]) || PageAccessCatalog::permissionsForRoute($name) !== []);
+        $pageProtectedRoutes = $routes->filter(fn ($route) => collect($route->gatherMiddleware())
+            ->contains(fn ($middleware) => $middleware === 'route.permission' || str_starts_with($middleware, 'route.permission:')));
         $db = DB::table('permissions')->get();
         $dbKeys = $db->pluck('key')->filter();
         $duplicates = DB::table('permissions')->select('key', DB::raw('COUNT(*) as total'))->whereNotNull('key')->groupBy('key')->having('total','>',1)->get();
-        $roleOnly = $routes->filter(fn ($r) => collect($r->gatherMiddleware())->contains(fn ($m) => str_starts_with($m, 'role:')) && !isset($mapped[$r->getName()]))->pluck('uri')->values();
+        $roleOnly = $routes->filter(fn ($r) => collect($r->gatherMiddleware())->contains(fn ($m) => str_starts_with($m, 'role:')) && ! $hasCatalogMapping($r->getName()))->pluck('uri')->values();
         $deprecatedAssigned = DB::table('user_permissions')->join('permissions','permissions.id','=','user_permissions.permission_id')->whereIn('permissions.key',$registry->where('deprecated',true)->keys())->count();
         $report = [
             'counts' => ['roles'=>DB::table('roles')->count(),'permissions'=>$db->count(),'registry'=>$registry->count()],
@@ -31,7 +36,11 @@ class PermissionsAuditCommand extends Command
             'registry_missing_in_database' => $registry->keys()->diff($dbKeys)->values(),
             'database_outside_registry' => $dbKeys->diff(PermissionCatalog::registry() ? array_keys(PermissionCatalog::registry()) : [])->values(),
             'permissions_without_routes' => $registry->filter(fn($p)=>$p['routes']===[])->keys()->values(),
-            'named_routes_without_catalog_mapping' => $routes->map(fn ($route) => $route->getName())->filter(fn($n)=>!isset($mapped[$n]))->values(),
+            'named_routes_without_catalog_mapping' => $pageProtectedRoutes
+                ->map(fn ($route) => $route->getName())
+                ->reject(fn ($name) => in_array($name, PageAccessCatalog::authenticatedRouteAllowlist(), true))
+                ->filter(fn ($name) => ! $hasCatalogMapping($name))
+                ->values(),
             'role_only_routes' => $roleOnly,
             'deprecated_active_assignments' => $deprecatedAssigned,
             'role_aliases' => PermissionCatalog::roleAliases(),

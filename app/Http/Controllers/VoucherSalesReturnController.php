@@ -248,7 +248,9 @@ class VoucherSalesReturnController extends Controller
     private function enrich(Request $request): array
     {
         $data = $request->validated();
-        $data['can_override_destination'] = $request->user()?->can('sales_returns.override_destination') || $request->user()?->hasRole(['admin', 'Admin']);
+        $data['can_override_destination'] = $request->user()?->can('sales_returns.override_destination')
+            || $request->user()?->isSuperAdmin()
+            || $request->user()?->hasRole(['admin', 'Admin']);
 
         return $data;
     }

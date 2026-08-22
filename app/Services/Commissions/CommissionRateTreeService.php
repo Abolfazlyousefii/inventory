@@ -21,14 +21,16 @@ class CommissionRateTreeService
             $product = Product::query()->findOrFail($id);
             $variants = $product->variants()->when($search !== '', fn ($query) => $query->where(fn ($nested) => $nested->where('variant_name', 'like', "%{$search}%")->orWhere('variant_code', 'like', "%{$search}%")))->orderBy('variant_name')->paginate(30, ['id', 'product_id', 'variant_name', 'variant_code'], 'page', $page);
 
-            return ['items' => $this->serializeVariants($variants->getCollection(), $product), 'has_more' => $variants->hasMorePages()];
+            return $this->pagePayload($this->serializeVariants($variants->getCollection(), $product), $variants);
         }
 
         $category = Category::query()->findOrFail($id);
-        $categories = $category->children()->when($search !== '', fn ($query) => $query->where('name', 'like', "%{$search}%"))->get(['id', 'name', 'parent_id']);
+        $categories = $page === 1
+            ? $category->children()->when($search !== '', fn ($query) => $query->where('name', 'like', "%{$search}%"))->get(['id', 'name', 'parent_id'])
+            : collect();
         $products = $category->products()->when($search !== '', fn ($query) => $query->where(fn ($nested) => $nested->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%")))->orderBy('name')->paginate(30, ['id', 'name', 'sku', 'code', 'category_id'], 'page', $page);
 
-        return ['items' => [...$this->serializeCategories($categories), ...$this->serializeProducts($products->getCollection(), $category)], 'has_more' => $products->hasMorePages()];
+        return $this->pagePayload([...$this->serializeCategories($categories), ...$this->serializeProducts($products->getCollection(), $category)], $products);
     }
 
     public function search(string $search): array
@@ -41,17 +43,22 @@ class CommissionRateTreeService
         $rules = $this->activeRules();
         $allCategories = Category::query()->get(['id', 'parent_id'])->keyBy('id');
         $categories = Category::query()->where('name', 'like', "%{$search}%")
-            ->orderBy('name')->limit(15)->get(['id', 'name', 'parent_id']);
+            ->orderBy('name')->limit(16)->get(['id', 'name', 'parent_id']);
         $products = Product::query()->where(fn ($query) => $query
             ->where('name', 'like', "%{$search}%")
             ->orWhere('sku', 'like', "%{$search}%")
             ->orWhere('code', 'like', "%{$search}%"))
-            ->orderBy('name')->limit(15)->get(['id', 'name', 'category_id']);
+            ->orderBy('name')->limit(16)->get(['id', 'name', 'category_id']);
         $variants = ProductVariant::query()->with('product:id,category_id')
             ->where(fn ($query) => $query
                 ->where('variant_name', 'like', "%{$search}%")
                 ->orWhere('variant_code', 'like', "%{$search}%"))
-            ->orderBy('variant_name')->limit(15)->get(['id', 'product_id', 'variant_name', 'variant_code']);
+            ->orderBy('variant_name')->limit(16)->get(['id', 'product_id', 'variant_name', 'variant_code']);
+
+        $hasMore = $categories->count() > 15 || $products->count() > 15 || $variants->count() > 15;
+        $categories = $categories->take(15);
+        $products = $products->take(15);
+        $variants = $variants->take(15);
 
         $categoryNodes = $categories->map(function (Category $category) use ($rules, $allCategories) {
             $result = $this->categoryResult($category->id, $rules, $allCategories);
@@ -77,7 +84,20 @@ class CommissionRateTreeService
 
         return [
             'items' => $categoryNodes->concat($productNodes)->concat($variantNodes)->values()->all(),
-            'has_more' => false,
+            'has_more' => $hasMore,
+            'is_limited' => $hasMore,
+            'limit_per_type' => 15,
+        ];
+    }
+
+    private function pagePayload(array $items, $paginator): array
+    {
+        return [
+            'items' => $items,
+            'current_page' => $paginator->currentPage(),
+            'next_page' => $paginator->hasMorePages() ? $paginator->currentPage() + 1 : null,
+            'has_more' => $paginator->hasMorePages(),
+            'total' => $paginator->total(),
         ];
     }
 

@@ -28,6 +28,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class CommercialCommissionController extends Controller
@@ -134,8 +135,21 @@ class CommercialCommissionController extends Controller
     public function storeRate(Request $request, CommissionRateService $service): RedirectResponse
     {
         $this->authorizeAction($request, 'commissions.manage_rates');
-        $data = $request->validate(['target_type' => ['required', Rule::in(['category', 'product', 'variant'])], 'target_id' => ['required', 'integer', 'min:1'], 'percentage' => ['required', 'string', 'max:20']]);
-        $service->setRate($data['target_type'], (int) $data['target_id'], $data['percentage'], $request->user());
+        $request->mergeIfMissing(['effective_mode' => 'today']);
+        $data = $request->validate([
+            'target_type' => ['required', Rule::in(['category', 'product', 'variant'])],
+            'target_id' => ['required', 'integer', 'min:1'],
+            'percentage' => ['required', 'string', 'max:20'],
+            'effective_mode' => ['required', Rule::in(['period_start', 'today', 'custom'])],
+            'period_id' => ['nullable', 'integer', 'exists:commission_periods,id'],
+            'effective_from' => ['nullable', 'string', 'max:30'],
+        ]);
+        $effectiveFrom = match ($data['effective_mode']) {
+            'period_start' => $this->mutablePeriodStart((int) ($data['period_id'] ?? 0)),
+            'custom' => $this->customEffectiveFrom($data['effective_from'] ?? null),
+            default => now(),
+        };
+        $service->setRate($data['target_type'], (int) $data['target_id'], $data['percentage'], $request->user(), $effectiveFrom);
 
         return redirect()->route('commercial.commissions.index')->with('success', 'نرخ پورسانت با حفظ تاریخچه ثبت شد.');
     }
@@ -265,6 +279,26 @@ class CommercialCommissionController extends Controller
             'entries' => $reports->sellerDetails($period, $seller),
             'returns' => $reports->sellerCorrections($period, $seller, 'returns'),
             'reassignments' => $reports->sellerCorrections($period, $seller, 'reassignments')]);
+    }
+
+    private function mutablePeriodStart(int $periodId): Carbon
+    {
+        $period = CommissionPeriod::query()->find($periodId);
+        if (! $period || ! in_array($period->status, [CommissionPeriod::STATUS_OPEN, CommissionPeriod::STATUS_REVIEW], true)) {
+            throw ValidationException::withMessages(['period_id' => 'فقط دوره باز یا در حال بررسی قابل انتخاب است.']);
+        }
+
+        return Carbon::parse($period->start_at);
+    }
+
+    private function customEffectiveFrom(?string $value): Carbon
+    {
+        $gregorian = $value ? JalaliDate::toGregorianDate($value) : null;
+        if (! $gregorian) {
+            throw ValidationException::withMessages(['effective_from' => 'تاریخ مؤثر واردشده معتبر نیست.']);
+        }
+
+        return Carbon::parse($gregorian)->startOfDay();
     }
 
     private function authorizeAction(Request $request, string $permission): void

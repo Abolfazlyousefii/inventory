@@ -516,7 +516,7 @@ class PageAccessCatalog
         foreach ($definitions as $key => $definition) {
             [$group, $label, $legacyPrefixes] = $definition;
             $permission = 'page.'.$key;
-            $legacy = collect(PermissionCatalog::registry())->keys()
+            $legacy = collect(PermissionCatalog::groups())->flatMap(fn (array $permissions) => array_keys($permissions))
                 ->filter(fn (string $name) => self::matchesAnyPrefix($name, $legacyPrefixes))
                 ->values()->all();
             $pageRoutes = collect(self::ROUTE_OWNERS)
@@ -601,6 +601,14 @@ class PageAccessCatalog
 
     public static function pagePermissionForLegacy(string $legacyPermission): ?string
     {
+        if (in_array($legacyPermission, [
+            'sales_returns.override_invoice_status',
+            'sales_returns.override_destination',
+            'sales_returns.create_product',
+        ], true)) {
+            return null;
+        }
+
         $explicit = self::legacyMigrationDispositions()[$legacyPermission]['page_permission'] ?? null;
         if ($explicit) {
             return $explicit;

@@ -42,6 +42,10 @@ document.addEventListener('DOMContentLoaded', () => {
             </div><div class="commission-children d-none" aria-live="polite"></div></div>`;
     };
 
+    const loadMoreMarkup = (payload, type, id) => payload.has_more
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary commission-load-more" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}" data-page="${escapeHtml(payload.next_page)}">نمایش موارد بیشتر</button>`
+        : '';
+
     const selectedTargets = new Map();
     const targetHost = document.getElementById('campaignTargets');
     const renderTargets = () => {
@@ -73,6 +77,36 @@ document.addEventListener('DOMContentLoaded', () => {
     tree?.addEventListener('click', async (event) => {
         const wrapper = event.target.closest('.commission-node');
         if (!wrapper) return;
+
+        const loadMoreButton = event.target.closest('.commission-load-more');
+        if (loadMoreButton) {
+            loadMoreButton.disabled = true;
+            loadMoreButton.textContent = 'در حال بارگذاری…';
+            try {
+                const url = new URL(app.dataset.treeUrl, window.location.origin);
+                url.search = new URLSearchParams({
+                    type: loadMoreButton.dataset.type,
+                    id: loadMoreButton.dataset.id,
+                    q: '',
+                    page: loadMoreButton.dataset.page
+                });
+                const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error('load_more_failed');
+                const payload = await response.json();
+                loadMoreButton.insertAdjacentHTML('beforebegin', payload.items.map(nodeMarkup).join(''));
+                if (payload.has_more) {
+                    loadMoreButton.dataset.page = payload.next_page;
+                    loadMoreButton.disabled = false;
+                    loadMoreButton.textContent = 'نمایش موارد بیشتر';
+                } else {
+                    loadMoreButton.remove();
+                }
+            } catch (error) {
+                loadMoreButton.disabled = false;
+                loadMoreButton.textContent = 'تلاش دوباره برای نمایش موارد بیشتر';
+            }
+            return;
+        }
 
         if (event.target.closest('.commission-select')) {
             selectedRateNode = wrapper;
@@ -121,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('load_failed');
             const payload = await response.json();
             children.innerHTML = payload.items.length
-                ? payload.items.map(nodeMarkup).join('')
+                ? payload.items.map(nodeMarkup).join('') + loadMoreMarkup(payload, wrapper.dataset.type, wrapper.dataset.id)
                 : '<div class="commission-empty commission-empty--inline">موردی در این شاخه یافت نشد.</div>';
             children.dataset.loaded = '1';
         } catch (error) {
@@ -215,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const payload = await response.json();
                 if (sequence !== searchSequence) return;
                 tree.innerHTML = payload.items.length
-                    ? payload.items.map(nodeMarkup).join('')
+                    ? payload.items.map(nodeMarkup).join('') + (payload.is_limited ? '<div class="alert alert-info m-2 commission-search-limited">نتایج جستجو محدود است؛ برای نتیجه دقیق‌تر عبارت جستجو را کامل‌تر کنید.</div>' : '')
                     : '<div class="commission-empty commission-empty--inline">نتیجه‌ای در دسته‌ها، کالاها یا تنوع‌ها پیدا نشد.</div>';
             } catch (error) {
                 if (sequence !== searchSequence) return;

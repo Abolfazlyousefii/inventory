@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AccessPermission;
 use App\Models\ActivityLog;
+use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Spatie\Permission\Models\Role;
@@ -33,7 +33,7 @@ class RoleController extends Controller
         $data = $this->validated($request);
         $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
         $this->syncPermissions($role, $data['permissions'] ?? []);
-        $this->audit('role.created', $role, [], $data['permissions'] ?? []);
+        $this->audit('role.created', $role, [], $role->permissions()->pluck('permissions.id')->all());
 
         return redirect()->route('admin.roles.index')->with('success', 'نقش با موفقیت ایجاد شد.');
     }
@@ -57,7 +57,7 @@ class RoleController extends Controller
             $role->update(['name' => $data['name']]);
         }
         $this->syncPermissions($role, $data['permissions'] ?? []);
-        $this->audit('role.updated', $role, $before, $data['permissions'] ?? []);
+        $this->audit('role.updated', $role, $before, $role->permissions()->pluck('permissions.id')->all());
 
         return redirect()->route('admin.roles.index')->with('success', 'نقش با موفقیت ویرایش شد.');
     }
@@ -73,7 +73,13 @@ class RoleController extends Controller
 
     private function permissions()
     {
-        return AccessPermission::query()->where('key', 'like', 'page.%')->orderBy('group')->orderBy('name')->get()->groupBy('group');
+        return AccessPermission::query()
+            ->where('key', 'like', 'page.%')
+            ->whereIn('key', collect(PageAccessCatalog::pages())->pluck('permission'))
+            ->orderBy('group')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('group');
     }
 
     private function commissionActionPermissions()
@@ -86,17 +92,40 @@ class RoleController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')->ignore($role?->id)],
             'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['integer', Rule::exists('permissions', 'id')->where(fn ($query) => $query->where(fn ($allowed) => $allowed->where('key', 'like', 'page.%')->orWhereIn('key', ['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])))],
+            'permissions.*' => ['integer', Rule::exists('permissions', 'id')->where(fn ($query) => $query->whereIn('key', $this->managedPermissionKeys()))],
         ]);
     }
 
     private function syncPermissions(Role $role, array $permissionIds): void
     {
-        DB::table('role_has_permissions')->where('role_id', $role->id)->delete();
-        foreach ($permissionIds as $permissionId) {
-            DB::table('role_has_permissions')->updateOrInsert(['role_id' => $role->id, 'permission_id' => $permissionId]);
-        }
+        $managedIds = $this->managedPermissionIds();
+        $submittedManagedIds = collect($permissionIds)
+            ->map(fn ($id) => (int) $id)
+            ->intersect($managedIds);
+        $hiddenIds = $role->permissions()
+            ->whereNotIn('permissions.id', $managedIds)
+            ->pluck('permissions.id');
+
+        $role->permissions()->sync($hiddenIds->merge($submittedManagedIds)->unique()->values()->all());
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    private function managedPermissionIds(): array
+    {
+        return AccessPermission::query()
+            ->whereIn('key', $this->managedPermissionKeys())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function managedPermissionKeys(): array
+    {
+        return collect(PageAccessCatalog::pages())
+            ->pluck('permission')
+            ->merge(['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])
+            ->values()
+            ->all();
     }
 
     private function audit(string $action, Role $role, array $before, array $after): void

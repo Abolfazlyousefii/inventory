@@ -26,7 +26,7 @@
                             </div>
                             @foreach($items as $permission)
                                 <label class="d-flex gap-2 mb-2 small">
-                                    <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
+                                    <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-key="{{ $permission->key }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
                                     <span><strong>{{ $permission->name }}</strong><small class="d-block text-muted">{{ \App\Support\PageAccessCatalog::page(str($permission->key)->after('page.')->toString())['description'] ?? '' }}</small></span>
                                 </label>
                             @endforeach
@@ -40,7 +40,7 @@
                 <div class="row g-2">
                     @foreach($commissionActionPermissions as $permission)
                         <label class="col-md-4 d-flex gap-2 small">
-                            <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
+                            <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-key="{{ $permission->key }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
                             <span>{{ $permission->name }}</span>
                         </label>
                     @endforeach

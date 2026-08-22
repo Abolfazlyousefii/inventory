@@ -43,8 +43,7 @@ it('does not use retained legacy direct permissions for runtime page access', fu
 it('allows runtime page access only through a role page permission', function () {
     $user = User::factory()->create();
     $role = Role::findOrCreate('ProductPageRole', 'web');
-    $permission = \Spatie\Permission\Models\Permission::findOrCreate('page.products', 'web');
-    $permission->forceFill(['key' => 'page.products'])->save();
+    $permission = \Spatie\Permission\Models\Permission::query()->where('key', 'page.products')->firstOrFail();
     $role->givePermissionTo($permission);
     $user->assignRole($role);
 

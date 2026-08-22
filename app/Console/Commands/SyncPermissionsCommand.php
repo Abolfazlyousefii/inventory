@@ -16,7 +16,9 @@ class SyncPermissionsCommand extends Command
         $result = PermissionCatalog::syncToDatabase();
 
         $this->components->info('فهرست دسترسی ها با موفقیت همگام شد.');
-        $this->table(['ایجادشده', 'به روزشده', 'بدون تغییر'], [[
+        $this->table(['Legacy permissions', 'Page permissions', 'ایجادشده', 'به روزشده', 'بدون تغییر'], [[
+            $result['legacy'],
+            $result['pages'],
             $result['created'],
             $result['updated'],
             $result['unchanged'],

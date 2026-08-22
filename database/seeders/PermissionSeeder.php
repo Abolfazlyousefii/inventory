@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Support\PermissionCatalog;
-use App\Support\PageAccessCatalog;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -21,13 +20,6 @@ class PermissionSeeder extends Seeder
                     'updated_at' => now(),
                     'created_at' => now(),
                 ]
-            );
-        }
-
-        foreach (PageAccessCatalog::pages() as $page) {
-            DB::table('permissions')->updateOrInsert(
-                ['key' => $page['permission']],
-                ['name' => $page['label'], 'group' => $page['group'], 'guard_name' => 'web', 'updated_at' => now(), 'created_at' => now()]
             );
         }
     }

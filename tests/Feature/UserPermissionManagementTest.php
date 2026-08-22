@@ -445,8 +445,7 @@ class UserPermissionManagementTest extends TestCase
         $user = User::factory()->create();
         $user->permissions()->sync(collect($permissions)->map(fn (string $key): int => $this->permissionId($key))->all());
         $role = Role::findOrCreate('PermissionPageManager', 'web');
-        $pagePermission = Permission::findOrCreate('page.roles', 'web');
-        $pagePermission->forceFill(['key' => 'page.roles'])->save();
+        $pagePermission = Permission::query()->where('key', 'page.roles')->firstOrFail();
         $role->givePermissionTo($pagePermission);
         $user->assignRole($role);
         return $user;

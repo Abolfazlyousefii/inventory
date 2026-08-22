@@ -131,21 +131,74 @@ class WarehouseInboundQueueTest extends TestCase
         }
     }
 
-    public function test_sales_return_uses_accepted_quantity_for_stock_finance_and_destination(): void
+    public function test_sales_return_with_only_return_warehouse_items_does_not_create_central_receipt(): void
     {
         [$document, $invoiceItem, $returnWarehouse] = $this->salesReturnFixture(expected: 5, sold: 7);
         $receipt = app(WarehouseInboundService::class)->queueSalesReturn($document, $this->user->id);
 
-        $this->receive($receipt, 3, $returnWarehouse, 'دو عدد تحویل انبار نشد.');
+        $this->assertNull($receipt);
+        $this->assertSame(0, WarehouseInboundReceipt::query()->count());
+        $this->assertStock($returnWarehouse, $invoiceItem, 0);
+    }
 
-        $this->assertStock($returnWarehouse, $invoiceItem, 3);
-        $this->assertSame(3, $document->fresh()->total_quantity);
-        $this->assertSame(300, $document->fresh()->total_refund_amount);
-        $this->assertSame(SalesReturnDocument::STATUS_APPLIED, $document->fresh()->status);
-        $this->assertSame(300, (int) CustomerLedger::query()
-            ->where('reference_type', SalesReturnDocument::class)
-            ->where('reference_id', $document->id)
-            ->value('amount'));
+    public function test_mixed_sales_return_queues_only_central_items_and_is_idempotent(): void
+    {
+        [$document, , $central] = $this->salesReturnFixture(expected: 3, sold: 10, central: true);
+        $first = $document->items()->firstOrFail();
+        [, , , , $returnWarehouse] = $this->catalog();
+        $returnItem = $document->items()->create($this->returnItemAttributes($first, 5, $returnWarehouse));
+        $third = $document->items()->create($this->returnItemAttributes($first, 2, $central));
+
+        $service = app(WarehouseInboundService::class);
+        $receipt = $service->queueSalesReturn($document->fresh('items'), $this->user->id);
+        $again = $service->queueSalesReturn($document->fresh('items'), $this->user->id);
+
+        $this->assertSame($receipt->id, $again->id);
+        $this->assertSame(1, WarehouseInboundReceipt::query()->count());
+        $this->assertSame(5, (int) $receipt->fresh()->expected_quantity);
+        $this->assertSame([$first->id, $third->id], $receipt->items()->orderBy('source_item_id')->pluck('source_item_id')->all());
+        $this->assertFalse($receipt->items()->where('source_item_id', $returnItem->id)->exists());
+    }
+
+    public function test_pending_sales_return_receipt_synchronizes_destination_changes_but_finalized_receipt_is_immutable(): void
+    {
+        [$document, , $central] = $this->salesReturnFixture(expected: 3, sold: 10, central: true);
+        $item = $document->items()->firstOrFail();
+        [, , , , $returnWarehouse] = $this->catalog();
+        $service = app(WarehouseInboundService::class);
+        $receipt = $service->queueSalesReturn($document->fresh('items'), $this->user->id);
+
+        $item->update(['destination_warehouse_id' => $returnWarehouse->id]);
+        $this->assertNull($service->queueSalesReturn($document->fresh('items'), $this->user->id));
+        $this->assertDatabaseMissing('warehouse_inbound_receipts', ['id' => $receipt->id]);
+
+        $item->update(['destination_warehouse_id' => $central->id]);
+        $newReceipt = $service->queueSalesReturn($document->fresh('items'), $this->user->id);
+        $newReceipt->update(['status' => WarehouseInboundReceipt::STATUS_RECEIVED]);
+        $item->update(['destination_warehouse_id' => $returnWarehouse->id]);
+
+        $same = $service->queueSalesReturn($document->fresh('items'), $this->user->id);
+        $this->assertSame($newReceipt->id, $same->id);
+        $this->assertSame(1, $same->items()->count());
+    }
+
+    public function test_repair_command_is_dry_run_safe_and_repairs_only_pending_sales_return_items(): void
+    {
+        [$document, , $central] = $this->salesReturnFixture(expected: 3, sold: 10, central: true);
+        $first = $document->items()->firstOrFail();
+        [, , , , $returnWarehouse] = $this->catalog();
+        $returnItem = $document->items()->create($this->returnItemAttributes($first, 5, $returnWarehouse));
+        $receipt = app(WarehouseInboundService::class)->queueSalesReturn($document->fresh('items'), $this->user->id);
+        $receipt->items()->create($this->queueItemAttributes($returnItem));
+        $receipt->update(['expected_quantity' => 8]);
+
+        $this->artisan('warehouse:repair-sales-return-inbound --dry-run')->assertSuccessful();
+        $this->assertSame(2, $receipt->items()->count());
+        $this->assertSame(8, (int) $receipt->fresh()->expected_quantity);
+
+        $this->artisan('warehouse:repair-sales-return-inbound --apply')->assertSuccessful();
+        $this->assertSame([$first->id], $receipt->items()->pluck('source_item_id')->all());
+        $this->assertSame(3, (int) $receipt->fresh()->expected_quantity);
     }
 
     public function test_sales_return_exact_receipt_finalizes_stock_and_finance_for_expected_quantity(): void
@@ -300,6 +353,42 @@ class WarehouseInboundQueueTest extends TestCase
         ]);
 
         return [$document, $invoiceItem, $destination, $category];
+    }
+
+    private function returnItemAttributes(SalesReturnDocumentItem $source, int $quantity, Warehouse $destination): array
+    {
+        return [
+            'invoice_item_id' => null,
+            'product_id' => $source->product_id,
+            'product_variant_id' => $source->product_variant_id,
+            'product_name_snapshot' => $source->product_name_snapshot,
+            'variant_name_snapshot' => $source->variant_name_snapshot,
+            'sku_snapshot' => $source->sku_snapshot,
+            'item_source' => $source->item_source,
+            'item_condition' => $destination->type === 'return' ? SalesReturnDocumentItem::CONDITION_DAMAGED : SalesReturnDocumentItem::CONDITION_HEALTHY,
+            'destination_warehouse_id' => $destination->id,
+            'sold_quantity_snapshot' => 10,
+            'previously_returned_quantity_snapshot' => 0,
+            'return_quantity' => $quantity,
+            'unit_price_snapshot' => 100,
+            'refund_unit_price' => 100,
+            'refund_amount' => $quantity * 100,
+        ];
+    }
+
+    private function queueItemAttributes(SalesReturnDocumentItem $item): array
+    {
+        return [
+            'source_item_type' => SalesReturnDocumentItem::class,
+            'source_item_id' => $item->id,
+            'product_id' => $item->product_id,
+            'product_variant_id' => $item->product_variant_id,
+            'expected_quantity' => $item->return_quantity,
+            'accepted_quantity' => 0,
+            'suggested_warehouse_id' => $item->destination_warehouse_id,
+            'condition' => $item->item_condition,
+            'reason' => 'sales_return',
+        ];
     }
 
     private function catalog(): array

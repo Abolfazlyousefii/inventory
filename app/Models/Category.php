@@ -39,18 +39,20 @@ class Category extends Model
             return [$categoryId];
         }
 
-        return static::collectDescendantIds($categoryId, $categories)
-            ->prepend($categoryId)
-            ->unique()
-            ->values()
-            ->all();
-    }
+        $children = $categories->groupBy(fn (Category $category) => (int) ($category->parent_id ?? 0));
+        $visited = [];
+        $queue = [$categoryId];
+        while ($queue !== []) {
+            $id = (int) array_shift($queue);
+            if (isset($visited[$id])) {
+                continue;
+            }
+            $visited[$id] = true;
+            foreach ($children->get($id, collect()) as $child) {
+                $queue[] = (int) $child->id;
+            }
+        }
 
-    private static function collectDescendantIds(int $categoryId, Collection $categories): Collection
-    {
-        return $categories
-            ->where('parent_id', $categoryId)
-            ->pluck('id')
-            ->flatMap(fn ($childId) => static::collectDescendantIds((int) $childId, $categories)->prepend((int) $childId));
+        return array_keys($visited);
     }
 }
