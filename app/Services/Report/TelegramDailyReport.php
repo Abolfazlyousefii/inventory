@@ -21,7 +21,6 @@ class TelegramDailyReport {
         $reportDay = $this->resolveReportDay();
         $metrics   = $this->collectMetrics($reportDay);
         $message   = $this->buildMessage($reportDay, $metrics);
-        dd($message,$metrics);
 
         $response  = $this->sendToBotWebhook($message);
 
