@@ -606,7 +606,6 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
 
 Route::get('/test', function () {
 
-  return  app( TelegramDailyReport::class)->send();
 });
 
 

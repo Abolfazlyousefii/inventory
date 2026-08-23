@@ -249,7 +249,6 @@ class SyncProductsToSite {
             'title'           => trim((string) $source->name),
             'product_code'    => $source->code,
             'image'           => $source->image_path,
-            'published'       => (bool) ( $source->is_sellable ?? false ),
             'type'            => 'physical',
             'price_type'      => 'multiple-price',
             'unit'            => 'عدد',
