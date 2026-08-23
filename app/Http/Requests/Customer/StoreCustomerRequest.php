@@ -16,11 +16,16 @@ class StoreCustomerRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $phones = collect($this->input('phones', []))->map(fn ($phone) => [
+        $phonesInput = $this->has('phones')
+            ? $this->input('phones', [])
+            : [['phone' => $this->input('mobile', '')]];
+
+        $phones = collect($phonesInput)->map(fn ($phone) => [
             'phone' => PhoneNormalizer::normalize(is_array($phone) ? ($phone['phone'] ?? '') : ''),
         ])->values()->all();
 
         $this->merge([
+            'name' => $this->input('customer_name', $this->input('name')),
             'phones' => $phones,
             'primary_phone' => $this->input('primary_phone', 0),
             'is_active' => $this->boolean('is_active'),

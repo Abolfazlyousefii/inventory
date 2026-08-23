@@ -91,6 +91,51 @@ class CustomerManagementTest extends TestCase
         ]);
     }
 
+    public function test_authorized_user_can_create_customer_with_frontend_modal_payload(): void
+    {
+        $response = $this->actingAs($this->admin)->post('/customers', [
+            'customer_name' => 'Test Customer',
+            'mobile' => '+98 912 345 6789',
+            'address' => 'Test address',
+            'province_id' => 1,
+            'city_id' => 1,
+        ]);
+
+        $response->assertSessionDoesntHaveErrors()->assertRedirect();
+
+        $customer = Customer::query()->firstOrFail();
+        $this->assertSame('Test Customer', $customer->name);
+        $this->assertSame('09123456789', $customer->mobile);
+        $this->assertDatabaseHas('customer_phones', [
+            'customer_id' => $customer->id,
+            'phone' => '09123456789',
+            'is_primary' => true,
+        ]);
+    }
+
+    public function test_frontend_modal_payload_rejects_a_duplicate_mobile(): void
+    {
+        $this->createCustomer('Existing Customer', '09123456789');
+
+        $this->actingAs($this->admin)->post('/customers', [
+            'customer_name' => 'Duplicate Customer',
+            'mobile' => '+989123456789',
+        ])->assertSessionHasErrors('phones.0.phone');
+
+        $this->assertDatabaseCount('customers', 1);
+    }
+
+    public function test_frontend_modal_payload_rejects_an_invalid_iranian_mobile(): void
+    {
+        $this->actingAs($this->admin)->post('/customers', [
+            'customer_name' => 'Invalid Mobile Customer',
+            'mobile' => '02112345678',
+        ])->assertSessionHasErrors('phones.0.phone');
+
+        $this->assertDatabaseCount('customers', 0);
+        $this->assertDatabaseCount('customer_phones', 0);
+    }
+
     public function test_authorized_user_can_define_password_when_creating_customer(): void
     {
         $this->actingAs($this->admin)->post('/customers', $this->payload([
