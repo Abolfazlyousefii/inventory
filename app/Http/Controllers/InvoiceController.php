@@ -621,7 +621,10 @@ class InvoiceController extends Controller
                     'issues' => $integrityIssues,
                     'calculation_version' => SalesDocumentTotals::CALCULATION_VERSION,
                 ]);
-                abort(422, 'Invoice financial totals do not match its stored line snapshots. Run the sales discount integrity audit first.');
+                throw ValidationException::withMessages([
+                    'invoice' => 'این فاکتور به دلیل مغایرت مبلغ با snapshot اقلام قابل تایید نیست. ابتدا بررسی صحت فاکتور را انجام دهید.
+                    این فاکتور دارای مغایرت مالی است و نیاز به بررسی دارد، قیمت نهایی حاصل از تعداد کالاها با محاسبه تخفیف همخوانی ندارد.',
+                ]);
             }
             $canonicalTotals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $canonicalTotals['subtotal_before_discount'] + (int) $canonicalTotals['shipping'];
