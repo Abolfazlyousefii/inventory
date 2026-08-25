@@ -59,6 +59,7 @@ use App\Models\SalesReturnDocument;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use Illuminate\Support\Facades\Route;
+
 Route::get('/', fn() => redirect()->route('dashboard'));
 
 Route::prefix('portal')->name('portal.')->group(function () {
@@ -71,7 +72,7 @@ Route::prefix('portal')->name('portal.')->group(function () {
         Route::post('/resend', [CustomerAuthController::class, 'resend'])->name('resend');
     });
     Route::middleware('customer.active')->group(function () {
-        Route::get('/', fn () => view('portal.dashboard'))->name('dashboard');
+        Route::get('/', fn() => view('portal.dashboard'))->name('dashboard');
         Route::post('/logout', [CustomerAuthController::class, 'logout'])->name('logout');
     });
 });
@@ -604,9 +605,7 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
-Route::get('/test', function () {
-
-});
+// Removed public test route. Sync/test endpoints must not be exposed in production.
 
 
 require __DIR__ . '/auth.php';

@@ -108,14 +108,22 @@ class SalesReturnService
             }
 
             $this->refreshTotals($doc);
-            $doc->update([
-                'status' => SalesReturnDocument::STATUS_PENDING_WAREHOUSE,
-                'updated_by' => $actorId,
-                'applied_by' => null,
-                'applied_at' => null,
-            ]);
             $doc = $doc->fresh(['items.product', 'items.variant']);
-            $this->warehouseInbound->queueSalesReturn($doc, $actorId);
+
+            // فقط برگشت‌هایی که حداقل یک قلم مقصد انبار مرکزی دارند وارد صف انبار می‌شوند.
+            // برگشت‌های صرفاً مرجوعی مستقیماً نهایی می‌شوند.
+            $receipt = $this->warehouseInbound->queueSalesReturn($doc, $actorId);
+
+            if ($receipt) {
+                $doc->update([
+                    'status' => SalesReturnDocument::STATUS_PENDING_WAREHOUSE,
+                    'updated_by' => $actorId,
+                    'applied_by' => null,
+                    'applied_at' => null,
+                ]);
+            } else {
+                $this->warehouseInbound->finalizeSalesReturnWithoutInbound($doc, $actorId);
+            }
 
             return $doc->fresh('items');
         });
@@ -134,13 +142,9 @@ class SalesReturnService
         foreach ($rows as $r) {
             $it = $r['invoice_item'];
             $input = $inputRows->get((int) $it->id, []);
-            $rowCondition = $this->normalizedCondition($input['item_condition'] ?? null);
-            $rowDestinationWarehouse = $this->resolveDestinationWarehouse(
-                $rowCondition,
-                (int) ($input['destination_warehouse_id'] ?? $data['default_destination_warehouse_id'] ?? 0),
-                (bool) ($data['can_override_destination'] ?? false)
-            );
-            $out[] = ['invoice_item_id' => $it->id, 'product_id' => $it->product_id, 'product_variant_id' => $it->variant_id, 'product_name_snapshot' => $it->product?->name, 'variant_name_snapshot' => $it->variant?->variant_name, 'sku_snapshot' => $it->variant?->variant_code, 'barcode_snapshot' => $it->variant?->variant_code, 'item_source' => SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, 'item_condition' => $rowCondition, 'destination_warehouse_id' => $rowDestinationWarehouse->id, 'sold_quantity_snapshot' => (int) $it->quantity, 'previously_returned_quantity_snapshot' => $r['previous_quantity'], 'return_quantity' => $r['quantity'], 'unit_price_snapshot' => (int) $it->price, 'line_discount_snapshot' => (int) ($it->line_discount_amount ?? 0), 'allocated_invoice_discount_snapshot' => $r['allocated_discount'], 'refund_unit_price' => $r['refund_unit_price'], 'refund_amount' => $r['refund_amount']];
+            $wh = $this->rowDestinationWarehouse($data, $input);
+            $cond = $this->rowCondition($input, $wh);
+            $out[] = ['invoice_item_id' => $it->id, 'product_id' => $it->product_id, 'product_variant_id' => $it->variant_id, 'product_name_snapshot' => $it->product?->name, 'variant_name_snapshot' => $it->variant?->variant_name, 'sku_snapshot' => $it->variant?->variant_code, 'barcode_snapshot' => $it->variant?->variant_code, 'item_source' => SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'sold_quantity_snapshot' => (int) $it->quantity, 'previously_returned_quantity_snapshot' => $r['previous_quantity'], 'return_quantity' => $r['quantity'], 'unit_price_snapshot' => (int) $it->price, 'line_discount_snapshot' => (int) ($it->line_discount_amount ?? 0), 'allocated_invoice_discount_snapshot' => $r['allocated_discount'], 'refund_unit_price' => $r['refund_unit_price'], 'refund_amount' => $r['refund_amount']];
         }
 
         return $out;
@@ -154,12 +158,8 @@ class SalesReturnService
             $qty = (int) ($row['return_quantity'] ?? 0);
             if ($qty <= 0) {
                 continue;
-            } $cond = $this->normalizedCondition($row['item_condition'] ?? null);
-            $wh = $this->resolveDestinationWarehouse(
-                $cond,
-                (int) ($row['destination_warehouse_id'] ?? $data['default_destination_warehouse_id'] ?? 0),
-                (bool) ($data['can_override_destination'] ?? false)
-            );
+            } $wh = $this->rowDestinationWarehouse($data, $row);
+            $cond = $this->rowCondition($row, $wh);
             $source = $row['item_source'];
             $unit = (int) ($row['refund_unit_price'] ?? 0);
             $attrs = ['item_source' => $source, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'return_quantity' => $qty, 'refund_unit_price' => $unit, 'refund_amount' => $qty * $unit];
@@ -175,11 +175,31 @@ class SalesReturnService
         return $out;
     }
 
-    private function normalizedCondition(?string $condition): string
+    private function documentDestinationWarehouse(array $data): Warehouse
     {
-        return in_array($condition, [SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED], true)
-            ? $condition
-            : SalesReturnDocumentItem::CONDITION_HEALTHY;
+        return $this->resolveWarehouseId((int) ($data['default_destination_warehouse_id'] ?? 0), 'default_destination_warehouse_id');
+    }
+
+    private function rowDestinationWarehouse(array $data, array $row): Warehouse
+    {
+        return $this->resolveWarehouseId((int) ($row['destination_warehouse_id'] ?? $data['default_destination_warehouse_id'] ?? 0), 'items.destination_warehouse_id');
+    }
+
+    private function resolveWarehouseId(int $id, string $field): Warehouse
+    {
+        $warehouse = Warehouse::whereKey($id)->where('is_active', true)->whereIn('type', ['central', 'return'])->first();
+        if (! $warehouse) {
+            throw ValidationException::withMessages([$field => 'انبار مقصد نامعتبر است.']);
+        }
+
+        return $warehouse;
+    }
+
+    private function rowCondition(array $row, Warehouse $warehouse): string
+    {
+        $condition = $row['item_condition'] ?? null;
+
+        return in_array($condition, [SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED], true) ? $condition : $this->conditionForWarehouse($warehouse);
     }
 
     public function resolveDestinationWarehouse(string $condition, int $requestedId = 0, bool $canOverride = false): Warehouse
@@ -348,6 +368,11 @@ class SalesReturnService
     private function condition(?string $c): string
     {
         return in_array($c, [SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED], true) ? $c : SalesReturnDocumentItem::CONDITION_HEALTHY;
+    }
+
+    private function conditionForWarehouse(Warehouse $warehouse): string
+    {
+        return $warehouse->type === 'return' ? SalesReturnDocumentItem::CONDITION_DAMAGED : SalesReturnDocumentItem::CONDITION_HEALTHY;
     }
 
     private function nextDocumentNumber(): string

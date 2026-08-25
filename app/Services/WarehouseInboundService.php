@@ -23,19 +23,10 @@ class WarehouseInboundService
     public function __construct(
         private readonly SalesReturnCalculationService $salesReturnCalculator,
         private readonly CommissionReconciliationService $commissions,
-    ) {
-    }
+    ) {}
 
     public function queueSalesReturn(SalesReturnDocument $document, ?int $actorId, string $operationKey = 'initial'): ?WarehouseInboundReceipt
     {
-        $document->loadMissing(['items.product', 'items.variant', 'invoice:id,customer_name']);
-        $centralWarehouseId = WarehouseStockService::centralWarehouseId();
-        $lines = $document->items
-            ->filter(fn (SalesReturnDocumentItem $item) => (int) $item->destination_warehouse_id === $centralWarehouseId)
-            ->map(fn (SalesReturnDocumentItem $item) => $this->salesReturnItemLine($item))
-            ->values()
-            ->all();
-
         $existing = WarehouseInboundReceipt::query()
             ->where('source_type', WarehouseInboundReceipt::SOURCE_SALES_RETURN)
             ->where('source_id', $document->id)
@@ -44,10 +35,39 @@ class WarehouseInboundService
             ->latest('id')
             ->first();
 
+        $document->loadMissing(['items.product', 'items.variant', 'invoice:id,customer_name']);
+
+        $centralWarehouseId = WarehouseStockService::centralWarehouseId();
+
+        $lines = $document->items
+            ->filter(fn(SalesReturnDocumentItem $item) => (int) $item->destination_warehouse_id === (int) $centralWarehouseId)
+            ->map(function (SalesReturnDocumentItem $item) {
+                return [
+                    'source_item_type' => SalesReturnDocumentItem::class,
+                    'source_item_id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'product_variant_id' => $item->product_variant_id,
+                    'product_name_snapshot' => $item->product_name_snapshot ?: $item->product?->name,
+                    'variant_name_snapshot' => $item->variant_name_snapshot ?: $item->variant?->variant_name,
+                    'sku_snapshot' => $item->sku_snapshot ?: $item->variant?->variant_code,
+                    'expected_quantity' => (int) $item->return_quantity,
+                    'suggested_warehouse_id' => (int) $item->destination_warehouse_id,
+                    'condition' => $item->item_condition,
+                    'reason' => 'sales_return',
+                    'source_meta' => [
+                        'invoice_item_id' => $item->invoice_item_id,
+                        'sold_quantity' => $item->sold_quantity_snapshot,
+                        'previously_finalized_returned_quantity' => $item->previously_returned_quantity_snapshot,
+                        'historical_unit_price' => $item->unit_price_snapshot,
+                        'refund_unit_price' => $item->refund_unit_price,
+                        'refund_amount' => $item->refund_amount,
+                    ],
+                    'note' => null,
+                ];
+            })->values()->all();
+
         if ($existing) {
-            return $existing->isPending()
-                ? $this->synchronizePendingSalesReturnReceipt($existing, $lines)
-                : $existing;
+            return $this->syncSalesReturnReceipt($existing, $lines, $actorId);
         }
 
         if ($lines === []) {
@@ -71,57 +91,48 @@ class WarehouseInboundService
         );
     }
 
-    private function salesReturnItemLine(SalesReturnDocumentItem $item): array
-    {
-        return [
-            'source_item_type' => SalesReturnDocumentItem::class,
-            'source_item_id' => $item->id,
-            'product_id' => $item->product_id,
-            'product_variant_id' => $item->product_variant_id,
-            'product_name_snapshot' => $item->product_name_snapshot ?: $item->product?->name,
-            'variant_name_snapshot' => $item->variant_name_snapshot ?: $item->variant?->variant_name,
-            'sku_snapshot' => $item->sku_snapshot ?: $item->variant?->variant_code,
-            'expected_quantity' => (int) $item->return_quantity,
-            'suggested_warehouse_id' => (int) $item->destination_warehouse_id,
-            'condition' => $item->item_condition,
-            'reason' => 'sales_return',
-            'source_meta' => [
-                'invoice_item_id' => $item->invoice_item_id,
-                'sold_quantity' => $item->sold_quantity_snapshot,
-                'previously_finalized_returned_quantity' => $item->previously_returned_quantity_snapshot,
-                'historical_unit_price' => $item->unit_price_snapshot,
-                'refund_unit_price' => $item->refund_unit_price,
-                'refund_amount' => $item->refund_amount,
-            ],
-            'note' => null,
-        ];
-    }
+    private function syncSalesReturnReceipt(
+        WarehouseInboundReceipt $receipt,
+        array $lines,
+        ?int $actorId
+    ): ?WarehouseInboundReceipt {
+        if (! $receipt->isPending()) {
+            return $receipt;
+        }
 
-    private function synchronizePendingSalesReturnReceipt(WarehouseInboundReceipt $receipt, array $lines): ?WarehouseInboundReceipt
-    {
         if ($lines === []) {
+            $receipt->items()->delete();
             $receipt->delete();
 
             return null;
         }
 
-        $sourceIds = collect($lines)->pluck('source_item_id')->map(fn ($id) => (int) $id)->all();
-        $receipt->items()->whereNotIn('source_item_id', $sourceIds)->delete();
+        $sourceIds = collect($lines)->pluck('source_item_id')->map(fn($id) => (int) $id)->all();
+
+        $receipt->items()
+            ->whereNotIn('source_item_id', $sourceIds)
+            ->delete();
 
         foreach ($lines as $line) {
-            $receipt->items()->updateOrCreate(
-                ['source_item_type' => $line['source_item_type'], 'source_item_id' => $line['source_item_id']],
-                collect($line)->except(['source_item_type', 'source_item_id'])->merge([
-                    'accepted_quantity' => 0,
-                    'received_warehouse_id' => null,
-                    'stock_movement_id' => null,
-                ])->all()
-            );
+            $item = $receipt->items()->where('source_item_id', $line['source_item_id'])->first();
+
+            if ($item) {
+                $item->update([
+                    'expected_quantity' => $line['expected_quantity'],
+                    'suggested_warehouse_id' => $line['suggested_warehouse_id'],
+                    'condition' => $line['condition'],
+                    'source_meta' => $line['source_meta'],
+                ]);
+
+                continue;
+            }
+
+            $receipt->items()->create($line);
         }
 
         $receipt->update([
             'expected_quantity' => (int) collect($lines)->sum('expected_quantity'),
-            'accepted_quantity' => 0,
+            'updated_at' => now(),
         ]);
 
         return $receipt->fresh('items');
@@ -143,7 +154,7 @@ class WarehouseInboundService
 
         $invoice->loadMissing(['items.product', 'items.variant']);
         $centralWarehouseId = WarehouseStockService::centralWarehouseId();
-        $lines = $invoice->items->filter(fn (InvoiceItem $item) => (int) $item->quantity > 0)->map(function (InvoiceItem $item) use ($centralWarehouseId) {
+        $lines = $invoice->items->filter(fn(InvoiceItem $item) => (int) $item->quantity > 0)->map(function (InvoiceItem $item) use ($centralWarehouseId) {
             return $this->invoiceItemLine($item, (int) $item->quantity, $centralWarehouseId, 'برگشت موجودی بابت لغو فاکتور', 'invoice_cancelled');
         })->values()->all();
 
@@ -169,10 +180,9 @@ class WarehouseInboundService
         ?int $actorId,
         string $reason,
         ?string $operationKey = null
-    ): ?WarehouseInboundReceipt
-    {
+    ): ?WarehouseInboundReceipt {
         $lines = collect($lines)
-            ->filter(fn (array $line) => (int) ($line['expected_quantity'] ?? 0) > 0)
+            ->filter(fn(array $line) => (int) ($line['expected_quantity'] ?? 0) > 0)
             ->values()
             ->all();
 
@@ -220,8 +230,7 @@ class WarehouseInboundService
         ?string $note = null,
         string $reason = 'invoice_correction',
         array $sourceMeta = []
-    ): array
-    {
+    ): array {
         $item->loadMissing(['product', 'variant']);
 
         return [
@@ -258,15 +267,15 @@ class WarehouseInboundService
             }
 
             $items = $locked->items()->with(['product', 'variant', 'suggestedWarehouse'])->lockForUpdate()->get();
-            $submitted = collect($submittedItems)->keyBy(fn (array $row) => (int) ($row['id'] ?? 0));
+            $submitted = collect($submittedItems)->keyBy(fn(array $row) => (int) ($row['id'] ?? 0));
 
-            if ($submitted->count() !== $items->count() || $items->contains(fn ($item) => ! $submitted->has((int) $item->id))) {
+            if ($submitted->count() !== $items->count() || $items->contains(fn($item) => ! $submitted->has((int) $item->id))) {
                 throw ValidationException::withMessages([
                     'items' => 'فهرست اقلام رسید تغییر کرده است. صفحه را بروزرسانی و دوباره بررسی کنید.',
                 ]);
             }
 
-            $warehouseIds = $submitted->pluck('received_warehouse_id')->map(fn ($id) => (int) $id)->unique()->sort()->values();
+            $warehouseIds = $submitted->pluck('received_warehouse_id')->map(fn($id) => (int) $id)->unique()->sort()->values();
             $warehouses = Warehouse::query()
                 ->whereIn('id', $warehouseIds)
                 ->where('is_active', true)
@@ -328,7 +337,7 @@ class WarehouseInboundService
                 $items->each->refresh();
             }
 
-            $itemsForStock = $items->sortBy(fn ($item) => sprintf('%012d:%012d:%012d', (int) $normalized[(int) $item->id]['received_warehouse_id'], (int) $item->product_variant_id, (int) $item->id));
+            $itemsForStock = $items->sortBy(fn($item) => sprintf('%012d:%012d:%012d', (int) $normalized[(int) $item->id]['received_warehouse_id'], (int) $item->product_variant_id, (int) $item->id));
             foreach ($itemsForStock as $item) {
                 $row = $normalized[(int) $item->id];
                 $accepted = (int) $row['accepted_quantity'];
@@ -418,7 +427,7 @@ class WarehouseInboundService
                 'status' => WarehouseInboundReceipt::STATUS_CANCELLED,
                 'cancelled_by' => $actorId,
                 'cancelled_at' => now(),
-                'review_note' => trim(($receipt->review_note ? $receipt->review_note."\n" : '').'لغو صف به علت لغو کنسلی فاکتور. '.($note ?: '')),
+                'review_note' => trim(($receipt->review_note ? $receipt->review_note . "\n" : '') . 'لغو صف به علت لغو کنسلی فاکتور. ' . ($note ?: '')),
             ]);
         }
 
@@ -435,7 +444,7 @@ class WarehouseInboundService
         ?string $note,
         array $sourceMeta = []
     ): WarehouseInboundReceipt {
-        $lines = collect($lines)->filter(fn (array $line) => (int) ($line['expected_quantity'] ?? 0) > 0)->values();
+        $lines = collect($lines)->filter(fn(array $line) => (int) ($line['expected_quantity'] ?? 0) > 0)->values();
         if ($lines->isEmpty()) {
             throw ValidationException::withMessages(['items' => 'هیچ قلمی برای ورود به صف انبار وجود ندارد.']);
         }
@@ -475,6 +484,57 @@ class WarehouseInboundService
         }
 
         return $receipt->fresh('items');
+    }
+
+
+    /**
+     * نهایی‌سازی برگشت‌هایی که هیچ قلمی برای انبار مرکزی ندارند.
+     * این مسیر عمداً موجودی را تغییر نمی‌دهد و فقط اثر مالی/وضعیت سند را اعمال می‌کند.
+     */
+    public function finalizeSalesReturnWithoutInbound(SalesReturnDocument $document, int $actorId): void
+    {
+        DB::transaction(function () use ($document, $actorId) {
+            $doc = SalesReturnDocument::query()
+                ->whereKey($document->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($doc->isApplied()) {
+                return;
+            }
+
+            $doc->load('items');
+
+            if ($doc->items->contains(fn($item) => (int) $item->destination_warehouse_id === (int) WarehouseStockService::centralWarehouseId())) {
+                throw ValidationException::withMessages([
+                    'document' => 'این سند دارای قلم مقصد انبار مرکزی است و باید از صف ورود موجودی عبور کند.',
+                ]);
+            }
+
+            if ((int) $doc->total_refund_amount > 0) {
+                CustomerLedger::updateOrCreate(
+                    [
+                        'customer_id' => $doc->customer_id,
+                        'reference_type' => SalesReturnDocument::class,
+                        'reference_id' => $doc->id,
+                        'type' => 'credit',
+                    ],
+                    [
+                        'amount' => (int) $doc->total_refund_amount,
+                        'note' => 'بستانکاری بابت برگشت از فروش شماره ' . $doc->document_number,
+                    ]
+                );
+            }
+
+            $doc->update([
+                'status' => SalesReturnDocument::STATUS_APPLIED,
+                'applied_by' => $actorId,
+                'applied_at' => now(),
+                'updated_by' => $actorId,
+            ]);
+
+            $this->commissions->reconcileReturn($doc->fresh('items'), $actorId);
+        });
     }
 
     private function finalizeSalesReturnFromReceipt(
@@ -519,7 +579,7 @@ class WarehouseInboundService
                 $invoice,
                 $acceptedRows,
                 (int) $document->id
-            ))->keyBy(fn (array $row) => (int) $row['invoice_item']->id);
+            ))->keyBy(fn(array $row) => (int) $row['invoice_item']->id);
         }
 
         foreach ($receiptItems as $receiptItem) {
@@ -585,7 +645,7 @@ class WarehouseInboundService
                 ],
                 [
                     'amount' => $totalAmount,
-                    'note' => 'بستانکاری بابت برگشت از فروش شماره '.$document->document_number,
+                    'note' => 'بستانکاری بابت برگشت از فروش شماره ' . $document->document_number,
                 ]
             );
         }
@@ -613,7 +673,7 @@ class WarehouseInboundService
     private function movementNote(WarehouseInboundReceipt $receipt, WarehouseInboundReceiptItem $item): string
     {
         $source = WarehouseInboundReceipt::sourceLabels()[$receipt->source_type] ?? $receipt->source_type;
-        return $source.' '.$receipt->source_number_snapshot.' | رسید '.$receipt->receipt_number;
+        return $source . ' ' . $receipt->source_number_snapshot . ' | رسید ' . $receipt->receipt_number;
     }
 
     private function nextReceiptNumber(): string
@@ -637,21 +697,21 @@ class WarehouseInboundService
             'updated_at' => $now,
         ]);
 
-        return 'WI-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+        return 'WI-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
     }
 
     private function adjustmentOperationKey(Invoice $invoice, array $lines, string $reason): string
     {
-        $canonical = collect($lines)->map(fn (array $line) => [
+        $canonical = collect($lines)->map(fn(array $line) => [
             'source_item_id' => (int) ($line['source_item_id'] ?? 0),
             'product_id' => (int) ($line['product_id'] ?? 0),
             'variant_id' => (int) ($line['product_variant_id'] ?? 0),
             'quantity' => (int) ($line['expected_quantity'] ?? 0),
             'reason' => (string) ($line['reason'] ?? $reason),
-        ])->sortBy(fn (array $line) => implode(':', $line))->values()->all();
+        ])->sortBy(fn(array $line) => implode(':', $line))->values()->all();
         $version = optional($invoice->items_updated_at ?: $invoice->updated_at)->format('Y-m-d H:i:s.u') ?: 'initial';
 
-        return 'adjustment-'.substr(hash('sha256', json_encode([$invoice->id, $version, $reason, $canonical], JSON_UNESCAPED_UNICODE)), 0, 48);
+        return 'adjustment-' . substr(hash('sha256', json_encode([$invoice->id, $version, $reason, $canonical], JSON_UNESCAPED_UNICODE)), 0, 48);
     }
 
     private function assertSalesReturnQuantitiesAreReturnable(
