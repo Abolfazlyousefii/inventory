@@ -4,7 +4,7 @@
   <h4 class="mb-0">📌 نمایش سند اموال (Read Only)</h4>
   <div class="d-flex gap-2">
     <a href="{{ route('asset.documents.print', $document) }}" target="_blank" class="btn btn-dark">پرینت فرم تحویل اموال</a>
-    @if($document->status === \App\Models\AssetDocument::STATUS_DRAFT)
+    @if($document->status !== \App\Models\AssetDocument::STATUS_CANCELLED)
       <a href="{{ route('asset.documents.edit', $document) }}" class="btn btn-outline-primary">ویرایش</a>
     @endif
     <a href="{{ route('asset.documents.index') }}" class="btn btn-outline-secondary">بازگشت</a>
@@ -13,7 +13,7 @@
 
 <div class="card border-0 shadow-sm mb-3"><div class="card-body row g-2">
   <div class="col-md-4"><b>شماره سند:</b> {{ $document->document_number }}</div>
-  <div class="col-md-4"><b>تاریخ:</b> {{ optional($document->document_date)->format('Y-m-d') }}</div>
+  <div class="col-md-4"><b>تاریخ:</b> {{ \App\Support\JalaliDate::date($document->document_date) }}</div>
   <div class="col-md-4"><b>وضعیت:</b> {{ $statusLabels[$document->status] ?? $document->status }}</div>
   <div class="col-md-6"><b>پرسنل:</b> {{ $document->trusteeDisplayName() }}</div>
   <div class="col-md-6"><b>ثبت‌کننده:</b> {{ $document->creator?->name ?: '—' }}</div>
@@ -62,7 +62,7 @@
         <td>{{ $h->action_type }}</td>
         <td>{{ $h->description ?: '—' }}</td>
         <td>{{ $h->actor?->name ?: '—' }}</td>
-        <td>{{ optional($h->done_at)->format('Y-m-d H:i') }}</td>
+        <td>{{ \App\Support\JalaliDate::dateTime($h->done_at) }}</td>
       </tr>
     @empty
       <tr><td colspan="4" class="text-center text-muted">تاریخچه‌ای ثبت نشده است.</td></tr>

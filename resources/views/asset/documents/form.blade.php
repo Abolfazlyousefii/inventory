@@ -2,6 +2,13 @@
 @section('content')
 @php
 $isEdit = $document->exists;
+$rawDocumentDate = old('document_date');
+if ($rawDocumentDate === null) {
+    $documentDateValue = \App\Support\JalaliDate::date($document->document_date ?: now(), '');
+} else {
+    $convertedDocumentDate = \App\Support\JalaliDate::date($rawDocumentDate, '');
+    $documentDateValue = $convertedDocumentDate !== '' ? $convertedDocumentDate : $rawDocumentDate;
+}
 $items = old('items', $isEdit ? $document->items->map(fn($item)=>[
   'item_name' => $item->item_name,
   'quantity' => $item->quantity,
@@ -20,7 +27,7 @@ $items = old('items', $isEdit ? $document->items->map(fn($item)=>[
 
   <div class="card-body">
     <div class="row g-3 mb-3">
-      <div class="col-md-4"><label class="form-label">تاریخ سند</label><input type="date" name="document_date" class="form-control" required value="{{ old('document_date', optional($document->document_date)->toDateString() ?: now()->toDateString()) }}"></div>
+      <div class="col-md-4"><label class="form-label">تاریخ سند</label><input type="text" name="document_date" class="form-control text-start" dir="ltr" required placeholder="1405/06/04" value="{{ $documentDateValue }}"><small class="text-muted">تاریخ را شمسی و با فرمت 1405/06/04 وارد کنید.</small></div>
       <div class="col-md-8"><label class="form-label">پرسنل / تحویل‌گیرنده اموال</label><input type="text" class="form-control form-control-sm mb-1 user-select-filter" data-target="trusteeUserSelect" placeholder="جستجو بر اساس نام، تلفن، ایمیل یا کد پرسنلی"><select id="trusteeUserSelect" name="trustee_user_id" class="form-select" required><option value="">انتخاب پرسنل...</option>@foreach($trusteeUsers as $user)<option value="{{ $user->id }}" data-search="{{ trim($user->name.' '.$user->phone.' '.$user->email.' '.$user->personnel_code) }}" @selected((string) old('trustee_user_id', $document->trustee_user_id) === (string) $user->id)>{{ $user->name }}{{ $user->phone ? ' - '.$user->phone : '' }}</option>@endforeach</select></div>
       <div class="col-12"><label class="form-label">توضیحات کلی (اختیاری)</label><textarea name="description" class="form-control" rows="2">{{ old('description', $document->description) }}</textarea></div>
       <div class="col-12">

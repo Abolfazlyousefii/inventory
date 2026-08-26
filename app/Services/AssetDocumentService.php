@@ -17,9 +17,25 @@ class AssetDocumentService
 
     public function generateDocumentNumber(): string
     {
-        $prefix = 'AD-' . now()->format('Ymd');
-        $latestToday = AssetDocument::query()->where('document_number', 'like', $prefix . '-%')->count();
-        return $prefix . '-' . str_pad((string) ($latestToday + 1), 4, '0', STR_PAD_LEFT);
+        $maxNumber = AssetDocument::query()
+            ->pluck('document_number')
+            ->map(function ($number) {
+                $number = trim((string) $number);
+
+                if (preg_match('/^\d{4}$/', $number)) {
+                    return (int) $number;
+                }
+
+                if (preg_match('/^AD-\d{8}-(\d{4})$/', $number, $matches)) {
+                    return (int) $matches[1];
+                }
+
+                return null;
+            })
+            ->filter(fn ($number) => $number !== null)
+            ->max();
+
+        return str_pad((string) (((int) $maxNumber) + 1), 4, '0', STR_PAD_LEFT);
     }
 
     public function create(array $header, array $items, ?int $userId = null): AssetDocument
@@ -66,8 +82,8 @@ class AssetDocumentService
 
     public function update(AssetDocument $document, array $header, array $items, ?int $userId = null): AssetDocument
     {
-        if ($document->status !== AssetDocument::STATUS_DRAFT) {
-            abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
+        if ($document->status === AssetDocument::STATUS_CANCELLED) {
+            abort(422, 'سند لغوشده قابل ویرایش نیست.');
         }
 
         $normalizedItems = $this->validationService->normalizeAndValidateItems($items, $document->id);
