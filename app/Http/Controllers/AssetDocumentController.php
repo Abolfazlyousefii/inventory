@@ -9,10 +9,12 @@ use App\Models\AssetPersonnel;
 use App\Models\User;
 use App\Services\AssetCodeService;
 use App\Services\AssetDocumentService;
+use App\Support\JalaliDate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AssetDocumentController extends Controller
 {
@@ -70,6 +72,8 @@ class AssetDocumentController extends Controller
 
     public function store(Request $request)
     {
+        $this->normalizeDocumentDate($request);
+
         $data = $request->validate([
             'document_date' => 'required|date',
             'trustee_user_id' => ['required', 'integer', $this->activeUserRule()],
@@ -117,7 +121,8 @@ class AssetDocumentController extends Controller
 
         return response()->json([
             'document_number' => $document->document_number,
-            'document_date' => optional($document->document_date)->toDateString(),
+            'document_date' => JalaliDate::date($document->document_date, ''),
+            'document_date_gregorian' => optional($document->document_date)->toDateString(),
             'status' => $document->status,
             'status_label' => $statusLabels[$document->status] ?? $document->status,
             'personnel' => $document->personnel,
@@ -131,8 +136,8 @@ class AssetDocumentController extends Controller
 
     public function edit(AssetDocument $document)
     {
-        if ($document->status !== AssetDocument::STATUS_DRAFT) {
-            return redirect()->route('asset.documents.show', $document)->withErrors(['status' => 'فقط سند پیش‌نویس قابل ویرایش است.']);
+        if ($document->status === AssetDocument::STATUS_CANCELLED) {
+            return redirect()->route('asset.documents.show', $document)->withErrors(['status' => 'سند لغوشده قابل ویرایش نیست.']);
         }
 
         $document->load('items.codes');
@@ -158,6 +163,8 @@ class AssetDocumentController extends Controller
 
     public function update(Request $request, AssetDocument $document)
     {
+        $this->normalizeDocumentDate($request);
+
         $data = $request->validate([
             'document_date' => 'required|date',
             'trustee_user_id' => ['required', 'integer', $this->activeUserRule()],
@@ -324,6 +331,31 @@ class AssetDocumentController extends Controller
             'mobile' => $user->phone,
             'is_active' => true,
             'description' => 'ایجاد خودکار از کاربر سیستم برای امین اموال',
+        ]);
+    }
+
+
+    private function normalizeDocumentDate(Request $request): void
+    {
+        $rawDate = trim((string) $request->input('document_date', ''));
+        $gregorianDate = JalaliDate::toGregorianDate($rawDate);
+
+        if (! $gregorianDate && preg_match('/^\d{4}-\d{1,2}-\d{1,2}$/', $rawDate)) {
+            try {
+                $gregorianDate = \Carbon\Carbon::parse($rawDate)->format('Y-m-d');
+            } catch (\Throwable) {
+                $gregorianDate = null;
+            }
+        }
+
+        if (! $gregorianDate) {
+            throw ValidationException::withMessages([
+                'document_date' => 'تاریخ سند معتبر نیست. تاریخ را به فرمت 1405/06/04 وارد کنید.',
+            ]);
+        }
+
+        $request->merge([
+            'document_date' => $gregorianDate,
         ]);
     }
 

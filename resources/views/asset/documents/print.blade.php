@@ -37,7 +37,7 @@
     <table class="meta">
       <tr>
         <td><strong>شماره سند:</strong> {{ $document->document_number }}</td>
-        <td><strong>تاریخ ثبت:</strong> {{ optional($document->document_date)->format('Y-m-d') }}</td>
+        <td><strong>تاریخ ثبت:</strong> {{ \App\Support\JalaliDate::date($document->document_date) }}</td>
       </tr>
       <tr>
         <td><strong>نام پرسنل:</strong> {{ $document->trusteeDisplayName() }}</td>

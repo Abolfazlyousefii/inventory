@@ -20,14 +20,16 @@
       @forelse($documents as $d)
         <tr>
           <td>{{ $d->document_number }}</td>
-          <td>{{ optional($d->document_date)->format('Y-m-d') }}</td>
+          <td>{{ \App\Support\JalaliDate::date($d->document_date) }}</td>
           <td>{{ $d->trusteeDisplayName() }}</td>
           <td>{{ $d->items_count }}</td>
           <td><span class="badge bg-light text-dark border">{{ $statusLabels[$d->status] ?? $d->status }}</span></td>
           <td class="text-end d-flex gap-1 justify-content-end">
             <a class="btn btn-sm btn-outline-secondary" href="{{ route('asset.documents.show', $d) }}">مشاهده</a>
-            @if($d->status === \App\Models\AssetDocument::STATUS_DRAFT)
+            @if($d->status !== \App\Models\AssetDocument::STATUS_CANCELLED)
               <a class="btn btn-sm btn-outline-primary" href="{{ route('asset.documents.edit', $d) }}">ویرایش</a>
+            @endif
+            @if($d->status === \App\Models\AssetDocument::STATUS_DRAFT)
               <form method="POST" action="{{ route('asset.documents.finalize', $d) }}">@csrf @method('PATCH')<button class="btn btn-sm btn-outline-success">نهایی‌سازی</button></form>
             @endif
             @if($d->status !== \App\Models\AssetDocument::STATUS_CANCELLED)
