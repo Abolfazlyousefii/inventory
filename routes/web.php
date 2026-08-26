@@ -388,20 +388,42 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::patch('/personnel/{personnel}/toggle-status', [AssetPersonnelController::class, 'toggleStatus'])->name('personnel.toggle-status');
 
         Route::get('/documents', [AssetDocumentController::class, 'index'])->name('documents.index');
-        Route::get('/documents/create', [AssetDocumentController::class, 'create'])->name('documents.create');
-        Route::post('/documents', [AssetDocumentController::class, 'store'])->name('documents.store');
+        Route::get('/documents/create', [AssetDocumentController::class, 'create'])
+            ->middleware('route.permission:assets.documents.create')
+            ->name('documents.create');
+        Route::post('/documents', [AssetDocumentController::class, 'store'])
+            ->middleware('route.permission:assets.documents.create')
+            ->name('documents.store');
         Route::get('/documents/{document}', [AssetDocumentController::class, 'show'])->name('documents.show');
         Route::get('/documents/{document}/view', [AssetDocumentController::class, 'view'])->name('documents.view');
-        Route::get('/documents/{document}/print', [AssetDocumentController::class, 'print'])->name('documents.print');
-        Route::get('/documents/{document}/signed-form', [AssetDocumentController::class, 'signedFormView'])->name('documents.signed-form.view');
-        Route::get('/documents/{document}/signed-form/download', [AssetDocumentController::class, 'signedFormDownload'])->name('documents.signed-form.download');
-        Route::get('/documents/{document}/edit', [AssetDocumentController::class, 'edit'])->name('documents.edit');
-        Route::put('/documents/{document}', [AssetDocumentController::class, 'update'])->name('documents.update');
-        Route::patch('/documents/{document}/finalize', [AssetDocumentController::class, 'finalize'])->name('documents.finalize');
-        Route::patch('/documents/{document}/cancel', [AssetDocumentController::class, 'cancel'])->name('documents.cancel');
+        Route::get('/documents/{document}/print', [AssetDocumentController::class, 'print'])
+            ->middleware('route.permission:assets.documents.print')
+            ->name('documents.print');
+        Route::get('/documents/{document}/signed-form', [AssetDocumentController::class, 'signedFormView'])
+            ->middleware('route.permission:assets.documents.print')
+            ->name('documents.signed-form.view');
+        Route::get('/documents/{document}/signed-form/download', [AssetDocumentController::class, 'signedFormDownload'])
+            ->middleware('route.permission:assets.documents.print')
+            ->name('documents.signed-form.download');
+        Route::get('/documents/{document}/edit', [AssetDocumentController::class, 'edit'])
+            ->middleware('route.permission:assets.documents.edit')
+            ->name('documents.edit');
+        Route::put('/documents/{document}', [AssetDocumentController::class, 'update'])
+            ->middleware('route.permission:assets.documents.edit')
+            ->name('documents.update');
+        Route::patch('/documents/{document}/finalize', [AssetDocumentController::class, 'finalize'])
+            ->middleware('route.permission:assets.documents.confirm')
+            ->name('documents.finalize');
+        Route::patch('/documents/{document}/cancel', [AssetDocumentController::class, 'cancel'])
+            ->middleware('route.permission:assets.documents.cancel')
+            ->name('documents.cancel');
 
-        Route::get('/search', [AssetDocumentController::class, 'codeSearchPage'])->name('codes.search');
-        Route::get('/codes/{code}', [AssetDocumentController::class, 'findByCode'])->name('codes.find');
+        Route::get('/search', [AssetDocumentController::class, 'codeSearchPage'])
+            ->middleware('route.permission:assets.codes.search')
+            ->name('codes.search');
+        Route::get('/codes/{code}', [AssetDocumentController::class, 'findByCode'])
+            ->middleware('route.permission:assets.codes.search')
+            ->name('codes.find');
     });
 
     // Sales Havaleh APIs

@@ -25,7 +25,7 @@ class RoleController extends Controller
 
     public function create(): View
     {
-        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'commissionActionPermissions' => $this->commissionActionPermissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
+        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'commissionActionPermissions' => $this->commissionActionPermissions(), 'assetActionPermissions' => $this->assetActionPermissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -44,6 +44,7 @@ class RoleController extends Controller
             'role' => $role,
             'permissions' => $this->permissions(),
             'commissionActionPermissions' => $this->commissionActionPermissions(),
+            'assetActionPermissions' => $this->assetActionPermissions(),
             'selectedPermissionIds' => $role->permissions()->pluck('permissions.id')->all(),
             'protectedRoleNames' => PermissionCatalog::protectedSystemRoles(),
         ]);
@@ -87,6 +88,26 @@ class RoleController extends Controller
         return AccessPermission::query()->whereIn('key', ['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])->orderBy('name')->get();
     }
 
+    private function assetActionPermissions()
+    {
+        return AccessPermission::query()
+            ->whereIn('key', $this->assetActionPermissionKeys())
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function assetActionPermissionKeys(): array
+    {
+        return [
+            'assets.documents.create',
+            'assets.documents.edit',
+            'assets.documents.confirm',
+            'assets.documents.cancel',
+            'assets.documents.print',
+            'assets.codes.search',
+        ];
+    }
+
     private function validated(Request $request, ?Role $role = null): array
     {
         return $request->validate([
@@ -124,6 +145,8 @@ class RoleController extends Controller
         return collect(PageAccessCatalog::pages())
             ->pluck('permission')
             ->merge(['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])
+            ->merge($this->assetActionPermissionKeys())
+            ->unique()
             ->values()
             ->all();
     }
