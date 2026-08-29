@@ -7,6 +7,7 @@ use App\Models\ProductVariant;
 use App\Models\Warehouse;
 use App\Models\WarehouseStock;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use App\Services\AriyajanebiSyncService;
 
@@ -336,17 +337,29 @@ class WarehouseStockService
             return;
         }
 
+        if (app()->environment('testing')) {
+            return;
+        }
+
         DB::afterCommit(function () use ($productId) {
-            $product = Product::query()
-                ->with('variants')
-                ->whereKey($productId)
-                ->first();
+            try {
+                $product = Product::query()
+                    ->with('variants')
+                    ->whereKey($productId)
+                    ->first();
 
-            if (!$product) {
-                return;
+                if (! $product) {
+                    return;
+                }
+
+                AriyajanebiSyncService::syncProduct($product);
+            } catch (\Throwable $exception) {
+                Log::warning('Ariyajanebi product sync failed after warehouse stock change.', [
+                    'product_id' => $productId,
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
             }
-
-            AriyajanebiSyncService::syncProduct($product);
         });
     }
 
