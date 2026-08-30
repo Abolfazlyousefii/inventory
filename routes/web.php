@@ -347,6 +347,15 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
             Route::get('/{document}/pdf', [VoucherSalesReturnController::class, 'pdf'])->whereNumber('document')->name('pdf');
         });
 
+    Route::get('/vouchers/section/personnel/categories/{category}/children', [VoucherController::class, 'personnelCategoryChildren'])
+        ->whereNumber('category')
+        ->name('vouchers.personnel.categories.children');
+    Route::get('/vouchers/section/personnel/products/search', [VoucherController::class, 'personnelProductsSearch'])
+        ->name('vouchers.personnel.products.search');
+    Route::get('/vouchers/section/personnel/products/{product}/variants', [VoucherController::class, 'personnelProductVariants'])
+        ->whereNumber('product')
+        ->name('vouchers.personnel.products.variants');
+
     Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
     Route::get('/vouchers/section/{type}/create', [VoucherController::class, 'sectionCreate'])->name('vouchers.section.create');
     Route::post('/vouchers/section/{type}', [VoucherController::class, 'sectionStore'])->name('vouchers.section.store');
