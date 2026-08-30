@@ -82,6 +82,7 @@ class PhoneTokenLoginController extends Controller {
                 'crm_user_id' => $crmUser->id,
                 'external_crm_id' => $crmUser->id,
                 'name' => $crmUser->name,
+                'email' => $crmUser->email,
                 'phone' => $crmUser->phone,
                 'password' => Hash::make(Str::random()),
                 'is_active' => true,
