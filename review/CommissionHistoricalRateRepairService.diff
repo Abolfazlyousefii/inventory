@@ -1,0 +1,299 @@
+--- /mnt/data/commission-phase1-patch/app/Services/Commissions/CommissionHistoricalRateRepairService.php	2026-08-30 15:49:55.858424983 +0000
++++ /mnt/data/commission-phase1_1-patch/app/Services/Commissions/CommissionHistoricalRateRepairService.php	2026-08-30 16:17:35.538848316 +0000
+@@ -26,13 +26,16 @@
+     ) {}
+ 
+     /**
+-     * Build a read-only, tree-aware repair plan.
++     * Build a read-only, tree-aware and timeline-aware repair plan.
+      *
+-     * The current effective hierarchy near the end of the selected period is
+-     * treated as the intended hierarchy for that period. We only propose
+-     * backdating an exact rate source (variant/product/category) when that
+-     * active revision started after the period start and actually affected an
+-     * invoice item before its current effective_from.
++     * Safety rule:
++     * - The current hierarchy tells us which exact target (variant/product/category)
++     *   owns the rate today.
++     * - If that target has multiple revisions, we NEVER drag the newest revision
++     *   backwards across older intentional history.
++     * - We only fill the leading gap of the selected period by extending the
++     *   FIRST revision that overlaps/starts inside the period back to period start.
++     * - Later revisions and their transition timestamps stay untouched.
+      */
+     public function plan(CommissionPeriod $period, Category $rootCategory, ?int $sellerId = null): array
+     {
+@@ -41,8 +44,6 @@
+         $referenceAt = $this->referenceAt($period);
+         $categoryIds = Category::selfAndDescendantIds($rootCategory->id);
+ 
+-        // Warming is important here: a production period can contain tens of
+-        // thousands of invoice items and we must not issue resolver queries per row.
+         $this->resolver->warm($period->start_at, $period->end_at);
+ 
+         $revisions = CommissionRateRevision::query()
+@@ -50,8 +51,13 @@
+             ->where(function ($query) use ($period) {
+                 $query->whereNull('effective_to')->orWhere('effective_to', '>', $period->start_at);
+             })
+-            ->get()
+-            ->keyBy('id');
++            ->orderBy('target_key')
++            ->orderBy('effective_from')
++            ->orderBy('id')
++            ->get();
++
++        $revisionsById = $revisions->keyBy('id');
++        $timelines = $revisions->groupBy('target_key');
+ 
+         $items = InvoiceItem::query()
+             ->with(['invoice.preinvoiceOrder', 'product.category', 'variant'])
+@@ -78,65 +84,89 @@
+             $invoice = $item->invoice;
+             $invoiceDate = $invoice->display_document_date;
+             $seller = $invoice->effective_seller_id;
+-            $desired = $this->resolver->resolve($item->product, $item->variant, $referenceAt);
++            $reference = $this->resolver->resolve($item->product, $item->variant, $referenceAt);
+             $historical = $this->resolver->resolve($item->product, $item->variant, $invoiceDate);
+ 
+-            if ($desired->isAmbiguous || $historical->isAmbiguous) {
+-                $unresolved[] = $this->unresolvedRow($item, 'AMBIGUOUS_RATE_TIMELINE', $historical, $desired);
++            if ($reference->isAmbiguous || $historical->isAmbiguous) {
++                $unresolved[] = $this->unresolvedRow($item, 'AMBIGUOUS_RATE_TIMELINE', $historical, $reference);
+ 
+                 continue;
+             }
+ 
+-            if ($desired->isMissing) {
+-                $unresolved[] = $this->unresolvedRow($item, 'NO_CURRENT_RATE', $historical, $desired);
++            if ($reference->isMissing) {
++                $unresolved[] = $this->unresolvedRow($item, 'NO_CURRENT_RATE', $historical, $reference);
+ 
+                 continue;
+             }
+ 
+-            if ($this->sameResolution($historical, $desired)) {
++            $referenceRevision = $reference->ruleId ? $revisionsById->get($reference->ruleId) : null;
++            if (! $referenceRevision) {
++                $unresolved[] = $this->unresolvedRow($item, 'REFERENCE_RATE_REVISION_NOT_FOUND', $historical, $reference);
++
+                 continue;
+             }
+ 
+-            $revision = $desired->ruleId ? $revisions->get($desired->ruleId) : null;
+-            if (! $revision) {
+-                $unresolved[] = $this->unresolvedRow($item, 'RATE_REVISION_NOT_FOUND', $historical, $desired);
++            $timeline = $timelines->get($referenceRevision->target_key, collect());
++            $leadingRevision = $this->leadingRevisionForPeriod($timeline, $period);
++            if (! $leadingRevision) {
++                $unresolved[] = $this->unresolvedRow($item, 'TARGET_TIMELINE_NOT_FOUND_FOR_PERIOD', $historical, $reference);
+ 
+                 continue;
+             }
+ 
+-            if ((int) $revision->active_marker !== 1) {
+-                $unresolved[] = $this->unresolvedRow($item, 'REFERENCE_RATE_IS_NOT_ACTIVE', $historical, $desired);
++            // The exact target already had a revision covering period start.
++            // Any later revision changes are intentional history and must not be
++            // rewritten by a historical-gap repair.
++            if ($leadingRevision->effective_from->lte($period->start_at)) {
++                if ($historical->isMissing) {
++                    $unresolved[] = $this->unresolvedRow($item, 'TIMELINE_COVERS_PERIOD_BUT_RESOLVER_IS_MISSING', $historical, $reference);
++                }
+ 
+                 continue;
+             }
+ 
+-            if ($revision->effective_from->lte($period->start_at)) {
+-                $unresolved[] = $this->unresolvedRow($item, 'RESOLUTION_MISMATCH_NOT_FIXABLE_BY_BACKDATE', $historical, $desired);
++            // Only invoices in the leading gap are repair candidates. Once the
++            // first revision started, subsequent revisions/fallbacks belong to the
++            // recorded timeline and are not auto-rewritten here.
++            if ($invoiceDate->gte($leadingRevision->effective_from)) {
++                if ($historical->isMissing) {
++                    $unresolved[] = $this->unresolvedRow($item, 'MISSING_AFTER_FIRST_TARGET_REVISION', $historical, $reference);
++                }
+ 
+                 continue;
+             }
+ 
+-            if ($invoiceDate->gte($revision->effective_from)) {
+-                $unresolved[] = $this->unresolvedRow($item, 'RESOLUTION_MISMATCH_AFTER_RATE_START', $historical, $desired);
++            if (! $seller) {
++                $unresolved[] = $this->unresolvedRow($item, 'MISSING_SELLER', $historical, $reference);
+ 
+                 continue;
+             }
+ 
+-            if (! $seller) {
+-                $unresolved[] = $this->unresolvedRow($item, 'MISSING_SELLER', $historical, $desired);
++            if ($this->sameResolutionAsRevision($historical, $leadingRevision)) {
++                continue;
++            }
++
++            // Seeing another revision of the exact same target before the leading
++            // revision means the timeline query and resolver disagree. Fail closed.
++            if (! $historical->isMissing
++                && (string) $historical->sourceType === (string) $leadingRevision->target_type
++                && (int) $historical->sourceId === (int) $leadingRevision->target_id) {
++                $unresolved[] = $this->unresolvedRow($item, 'EARLIER_SAME_TARGET_RULE_EXISTS', $historical, $reference);
+ 
+                 continue;
+             }
+ 
+-            $targetKey = $revision->target_key;
++            $targetKey = $leadingRevision->target_key;
+             $targets[$targetKey] ??= [
+-                'revision_id' => (int) $revision->id,
+-                'target_type' => (string) $revision->target_type,
+-                'target_id' => (int) $revision->target_id,
+-                'target_key' => (string) $revision->target_key,
+-                'percentage' => (string) $revision->percentage,
+-                'created_by' => (int) $revision->created_by,
+-                'current_effective_from' => $revision->effective_from->toDateTimeString(),
++                'revision_id' => (int) $leadingRevision->id,
++                'target_type' => (string) $leadingRevision->target_type,
++                'target_id' => (int) $leadingRevision->target_id,
++                'target_key' => (string) $leadingRevision->target_key,
++                'percentage' => (string) $leadingRevision->percentage,
++                'created_by' => (int) $leadingRevision->created_by,
++                'revision_is_active' => (int) $leadingRevision->active_marker === 1,
++                'current_effective_from' => $leadingRevision->effective_from->toDateTimeString(),
++                'current_effective_to' => $leadingRevision->effective_to?->toDateTimeString(),
+                 'requested_effective_from' => $period->start_at->toDateTimeString(),
+                 'invoice_ids' => [],
+                 'item_ids' => [],
+@@ -160,10 +190,10 @@
+             }
+ 
+             $expectations[(int) $item->id] = [
+-                'source_type' => (string) $desired->sourceType,
+-                'source_id' => (int) $desired->sourceId,
+-                'rule_id' => (int) $desired->ruleId,
+-                'percentage' => (string) $desired->percentage,
++                'source_type' => (string) $leadingRevision->target_type,
++                'source_id' => (int) $leadingRevision->target_id,
++                'rule_id' => (int) $leadingRevision->id,
++                'percentage' => (string) $leadingRevision->percentage,
+                 'invoice_id' => (int) $invoice->id,
+             ];
+         }
+@@ -177,7 +207,7 @@
+             $target['affected_items'] = count($target['item_ids']);
+             $target['affected_sellers'] = count($target['seller_ids']);
+ 
+-            $revision = $revisions->get($target['revision_id']) ?? CommissionRateRevision::query()->find($target['revision_id']);
++            $revision = $revisionsById->get($target['revision_id']) ?? CommissionRateRevision::query()->find($target['revision_id']);
+             $blockReason = $revision ? $this->preflightBlockReason($revision, $period) : 'RATE_REVISION_NOT_FOUND';
+             if ($blockReason) {
+                 $target['blocked'] = true;
+@@ -214,9 +244,8 @@
+     }
+ 
+     /**
+-     * Apply an already-safe tree repair and then perform a full period
+-     * reconciliation. All rate changes + recalculation + postcondition checks
+-     * live inside one outer transaction.
++     * Apply the exact leading-gap repair and reconcile the whole mutable period.
++     * Rate mutations + recalculation + verification share one outer transaction.
+      */
+     public function repair(CommissionPeriod $period, Category $rootCategory, ?int $sellerId = null): array
+     {
+@@ -236,7 +265,7 @@
+ 
+         if ($plan['summary']['blocked_targets'] > 0) {
+             throw ValidationException::withMessages([
+-                'repair' => 'Repair متوقف شد؛ حداقل یک نرخ به دلیل تداخل تاریخچه، کاربر نامعتبر یا وضعیت نهایی‌شده قابل Backdate نیست.',
++                'repair' => 'Repair متوقف شد؛ حداقل یک revision به دلیل تداخل تاریخچه، کاربر نامعتبر یا وضعیت نهایی‌شده قابل Backdate نیست.',
+             ]);
+         }
+ 
+@@ -257,12 +286,11 @@
+                     ]);
+                 }
+ 
+-                $this->rates->backdateActiveRate(
+-                    $target['target_type'],
+-                    $target['target_id'],
++                $this->rates->backdateRevision(
++                    $target['revision_id'],
+                     $period->start_at,
+                     $actor,
+-                    $target['revision_id'],
++                    $target['current_effective_from'],
+                 );
+             }
+ 
+@@ -285,23 +313,32 @@
+         return $reference->lt($period->start_at) ? Carbon::parse($period->start_at) : $reference;
+     }
+ 
+-    private function sameResolution(object $historical, object $desired): bool
++    private function leadingRevisionForPeriod(Collection $timeline, CommissionPeriod $period): ?CommissionRateRevision
+     {
+-        if ($historical->isMissing || $desired->isMissing) {
+-            return $historical->isMissing === $desired->isMissing;
+-        }
++        return $timeline
++            ->filter(fn (CommissionRateRevision $revision) => $revision->effective_from->lt($period->end_at)
++                && ($revision->effective_to === null || $revision->effective_to->gt($period->start_at)))
++            ->sort(function (CommissionRateRevision $a, CommissionRateRevision $b) {
++                $dateCompare = $a->effective_from->getTimestamp() <=> $b->effective_from->getTimestamp();
+ 
+-        return (string) $historical->sourceType === (string) $desired->sourceType
+-            && (int) $historical->sourceId === (int) $desired->sourceId
+-            && (int) $historical->ruleId === (int) $desired->ruleId;
++                return $dateCompare !== 0 ? $dateCompare : ((int) $a->id <=> (int) $b->id);
++            })
++            ->first();
+     }
+ 
+-    private function preflightBlockReason(CommissionRateRevision $revision, CommissionPeriod $period): ?string
++    private function sameResolutionAsRevision(object $historical, CommissionRateRevision $revision): bool
+     {
+-        if ((int) $revision->active_marker !== 1) {
+-            return 'REVISION_IS_NOT_ACTIVE';
++        if ($historical->isMissing) {
++            return false;
+         }
+ 
++        return (string) $historical->sourceType === (string) $revision->target_type
++            && (int) $historical->sourceId === (int) $revision->target_id
++            && (int) $historical->ruleId === (int) $revision->id;
++    }
++
++    private function preflightBlockReason(CommissionRateRevision $revision, CommissionPeriod $period): ?string
++    {
+         if ($revision->effective_from->lte($period->start_at)) {
+             return 'REVISION_ALREADY_COVERS_PERIOD_START';
+         }
+@@ -316,15 +353,18 @@
+             return 'TARGET_MISSING';
+         }
+ 
+-        $timelineConflict = CommissionRateRevision::query()
++        // Only an EARLIER revision overlapping the proposed extension is a
++        // conflict. Later revisions are intentional and must remain untouched.
++        $earlierOverlap = CommissionRateRevision::query()
+             ->where('target_key', $revision->target_key)
+             ->whereKeyNot($revision->id)
++            ->where('effective_from', '<', $revision->effective_from)
+             ->where(function ($query) use ($period) {
+                 $query->whereNull('effective_to')->orWhere('effective_to', '>', $period->start_at);
+             })
+             ->exists();
+-        if ($timelineConflict) {
+-            return 'TIMELINE_CONFLICT';
++        if ($earlierOverlap) {
++            return 'EARLIER_REVISION_OVERLAP';
+         }
+ 
+         $finalizedConflict = CommissionPeriod::query()
+@@ -385,7 +425,6 @@
+             }
+         }
+ 
+-        // Guard against accidental scope drift while the command was running.
+         $categoryIds = Category::selfAndDescendantIds($rootCategory->id);
+         $outOfScope = $items->contains(fn (InvoiceItem $item) => ! in_array((int) $item->product->category_id, $categoryIds, true));
+         if ($outOfScope) {

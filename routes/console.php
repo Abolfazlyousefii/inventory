@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Commissions\CommissionInvoiceSyncOutboxService;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use App\Services\Sync\SiteCustomersSyncService;
@@ -35,6 +36,16 @@ Schedule::command('crm:sync-users --incremental')
 
 Schedule::command('crm:sync-users --full')
     ->dailyAt('02:00')
+    ->withoutOverlapping();
+
+// Normal delivery is synchronous immediately after source commit. This
+// scheduler is only the durable recovery path for a process crash or a
+// transient post-commit calculation failure.
+Schedule::call(function () {
+    app(CommissionInvoiceSyncOutboxService::class)->drain(100);
+})
+    ->name('commission-incremental-sync-outbox')
+    ->everyTenSeconds()
     ->withoutOverlapping();
 
 Schedule::call(function () {

@@ -1,0 +1,10 @@
+Production audit aggregation from the supplied JSON files:
+
+Root 7: 461 historical missing rows + 30 non-missing historical fallback/rate mismatches = 491 mismatched invoice items.
+Root 8: 311 historical missing rows + 15 non-missing historical fallback/rate mismatches = 326 mismatched invoice items.
+Root 9:  81 historical missing rows +  2 non-missing historical rate mismatches = 83 mismatched invoice items.
+
+Total: 900 unique historically mismatched invoice items across 135 unique invoices.
+
+Important root-9 evidence:
+Two invoice items on invoice 1355 at 2026-08-16 12:41:01 resolved category:9 at 2.5000%, while the current category:9 rate is 2.0000% (effective later that day). This indicates an actual prior revision on the same target. The new repair intentionally blocks such a timeline with TIMELINE_CONFLICT instead of rewriting it silently.

@@ -146,6 +146,9 @@ class PageAccessCatalog
         'sales-returns.pdf' => ['sales.returns'],
         'vouchers.index' => ['warehouse.issues'],
         'vouchers.sales.index' => ['warehouse.issues'],
+        'vouchers.personnel.categories.children' => ['warehouse.issues'],
+        'vouchers.personnel.products.search' => ['warehouse.issues'],
+        'vouchers.personnel.products.variants' => ['warehouse.issues'],
         'vouchers.sales.queue' => ['warehouse.collection'],
         'vouchers.sales.queue.data' => ['warehouse.collection'],
         'vouchers.sales.shipped' => ['warehouse.shipping'],
@@ -516,12 +519,12 @@ class PageAccessCatalog
         $pages = [];
         foreach ($definitions as $key => $definition) {
             [$group, $label, $legacyPrefixes] = $definition;
-            $permission = 'page.'.$key;
-            $legacy = collect(PermissionCatalog::groups())->flatMap(fn (array $permissions) => array_keys($permissions))
-                ->filter(fn (string $name) => self::matchesAnyPrefix($name, $legacyPrefixes))
+            $permission = 'page.' . $key;
+            $legacy = collect(PermissionCatalog::groups())->flatMap(fn(array $permissions) => array_keys($permissions))
+                ->filter(fn(string $name) => self::matchesAnyPrefix($name, $legacyPrefixes))
                 ->values()->all();
             $pageRoutes = collect(self::ROUTE_OWNERS)
-                ->filter(fn (array $owners) => in_array($key, $owners, true))
+                ->filter(fn(array $owners) => in_array($key, $owners, true))
                 ->keys()->values()->all();
             $preferredRoute = self::preferredLandingRoute($key);
             if ($preferredRoute !== null && in_array($preferredRoute, $pageRoutes, true)) {
@@ -532,7 +535,7 @@ class PageAccessCatalog
                 'permission' => $permission,
                 'label' => $label,
                 'group' => $group,
-                'description' => 'دسترسی کامل به صفحه یا فرآیند «'.$label.'» و عملیات وابسته آن',
+                'description' => 'دسترسی کامل به صفحه یا فرآیند «' . $label . '» و عملیات وابسته آن',
                 'routes' => $pageRoutes,
                 'legacy_permissions' => $legacy,
                 'order' => (array_search($key, array_keys($definitions), true) + 1) * 10,
@@ -569,7 +572,7 @@ class PageAccessCatalog
 
         return collect($owners)
             ->unique()
-            ->map(fn (string $key): string => 'page.'.$key)
+            ->map(fn(string $key): string => 'page.' . $key)
             ->values()
             ->all();
     }
@@ -578,25 +581,33 @@ class PageAccessCatalog
     public static function routeOwners(): array
     {
         return collect(self::ROUTE_OWNERS)
-            ->map(fn (array $keys): array => array_map(fn (string $key): string => 'page.'.$key, $keys))
+            ->map(fn(array $keys): array => array_map(fn(string $key): string => 'page.' . $key, $keys))
             ->all();
     }
 
     /** @return array<string, array<int, string>> */
     public static function sharedRoutes(): array
     {
-        return array_filter(self::routeOwners(), fn (array $permissions): bool => count($permissions) > 1);
+        return array_filter(self::routeOwners(), fn(array $permissions): bool => count($permissions) > 1);
     }
 
     /** @return array<int, string> */
     public static function authenticatedRouteAllowlist(): array
     {
         return [
-            'access.unassigned', 'session.csrf-token',
-            'locations.provinces.index', 'locations.provinces.cities',
-            'profile.edit', 'profile.update', 'profile.destroy',
-            'verification.notice', 'verification.verify', 'verification.send',
-            'password.confirm', 'password.update', 'logout',
+            'access.unassigned',
+            'session.csrf-token',
+            'locations.provinces.index',
+            'locations.provinces.cities',
+            'profile.edit',
+            'profile.update',
+            'profile.destroy',
+            'verification.notice',
+            'verification.verify',
+            'verification.send',
+            'password.confirm',
+            'password.update',
+            'logout',
         ];
     }
 
@@ -635,15 +646,28 @@ class PageAccessCatalog
     public static function legacyMigrationDispositions(): array
     {
         $map = [
-            'account_statements.adjust' => 'page.finance.accounts', 'finance.reports.view' => 'page.finance.accounts',
+            'account_statements.adjust' => 'page.finance.accounts',
+            'finance.reports.view' => 'page.finance.accounts',
             'permissions.assign_roles' => 'page.roles',
-            'products.price_changes.apply' => 'page.products.price_changes', 'products.price_changes.cancel' => 'page.products.price_changes', 'products.price_changes.create' => 'page.products.price_changes',
-            'sales_returns.edit_applied' => 'page.sales.returns', 'sales_returns.void_applied' => 'page.sales.returns',
-            'warehouse.collection.adjust_price' => 'page.warehouse.collection', 'warehouse.collection.edit' => 'page.warehouse.collection', 'warehouse.collection.queue.view' => 'page.warehouse.collection', 'warehouse.collection.receive' => 'page.warehouse.collection', 'warehouse.collection.start' => 'page.warehouse.collection', 'warehouse.collection.submit_reapproval' => 'page.warehouse.collection', 'warehouse.collection.view' => 'page.warehouse.collection',
-            'warehouse.reservations.release' => 'page.warehouse.reservations', 'warehouse.reservations.view' => 'page.warehouse.reservations',
-            'warehouse.shipping.queue.view' => 'page.warehouse.shipping', 'warehouse.shipping.ship' => 'page.warehouse.shipping', 'warehouse.shipping.view' => 'page.warehouse.shipping',
+            'products.price_changes.apply' => 'page.products.price_changes',
+            'products.price_changes.cancel' => 'page.products.price_changes',
+            'products.price_changes.create' => 'page.products.price_changes',
+            'sales_returns.edit_applied' => 'page.sales.returns',
+            'sales_returns.void_applied' => 'page.sales.returns',
+            'warehouse.collection.adjust_price' => 'page.warehouse.collection',
+            'warehouse.collection.edit' => 'page.warehouse.collection',
+            'warehouse.collection.queue.view' => 'page.warehouse.collection',
+            'warehouse.collection.receive' => 'page.warehouse.collection',
+            'warehouse.collection.start' => 'page.warehouse.collection',
+            'warehouse.collection.submit_reapproval' => 'page.warehouse.collection',
+            'warehouse.collection.view' => 'page.warehouse.collection',
+            'warehouse.reservations.release' => 'page.warehouse.reservations',
+            'warehouse.reservations.view' => 'page.warehouse.reservations',
+            'warehouse.shipping.queue.view' => 'page.warehouse.shipping',
+            'warehouse.shipping.ship' => 'page.warehouse.shipping',
+            'warehouse.shipping.view' => 'page.warehouse.shipping',
         ];
-        $result = collect($map)->map(fn ($page) => ['status' => 'mapped', 'page_permission' => $page])->all();
+        $result = collect($map)->map(fn($page) => ['status' => 'mapped', 'page_permission' => $page])->all();
         foreach (['posts.create', 'posts.delete', 'posts.edit', 'posts.view', 'unions.create', 'unions.delete', 'unions.edit', 'unions.view'] as $permission) {
             $result[$permission] = ['status' => 'no_real_page', 'page_permission' => null];
         }
@@ -690,7 +714,7 @@ class PageAccessCatalog
         }
 
         return collect(self::permissionsForRoute($routeName))
-            ->contains(fn (string $permission): bool => self::userCan($user, $permission));
+            ->contains(fn(string $permission): bool => self::userCan($user, $permission));
     }
 
     public static function permissions(): array
@@ -701,7 +725,7 @@ class PageAccessCatalog
     private static function matchesAnyPrefix(string $permission, array $prefixes): bool
     {
         foreach ($prefixes as $prefix) {
-            if ($permission === $prefix || str_starts_with($permission, $prefix.'.')) {
+            if ($permission === $prefix || str_starts_with($permission, $prefix . '.')) {
                 return true;
             }
         }
@@ -727,26 +751,49 @@ class PageAccessCatalog
             return array_values(array_intersect($legacy, $explicit[$key]));
         }
 
-        return collect($legacy)->filter(fn (string $permission) => str_ends_with($permission, '.view')
-            || str_ends_with($permission, '.index')
-            || preg_match('/(^|\.)(manage|reports)$/', $permission) === 1
-            || in_array($permission, ['dashboard', 'products', 'customers.manage', 'suppliers.manage', 'inventory', 'stock_in', 'stock_out'], true)
+        return collect($legacy)->filter(
+            fn(string $permission) => str_ends_with($permission, '.view')
+                || str_ends_with($permission, '.index')
+                || preg_match('/(^|\.)(manage|reports)$/', $permission) === 1
+                || in_array($permission, ['dashboard', 'products', 'customers.manage', 'suppliers.manage', 'inventory', 'stock_in', 'stock_out'], true)
         )->values()->all();
     }
 
     private static function preferredLandingRoute(string $key): ?string
     {
         return [
-            'dashboard' => 'dashboard', 'products' => 'products.index', 'products.price_changes' => 'products.price-changes.index',
-            'categories' => 'categories.index', 'brands_models' => 'model-lists.index', 'shipping_methods' => 'shipping-methods.index',
-            'warehouses' => 'warehouses.index', 'warehouse.stocks' => 'products.index', 'warehouse.stocktake' => 'stock-count-documents.index',
-            'warehouse.purchases' => 'purchases.index', 'warehouse.issues' => 'vouchers.index', 'warehouse.collection' => 'vouchers.sales.queue',
-            'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'warehouse.map' => 'warehouse-map.index', 'assets' => 'asset.hub',
-            'sales.preinvoices' => 'preinvoice.create', 'commercial.commissions' => 'commercial.commissions.index', 'commercial.invoice_reassignments' => 'commercial.invoice-reassignments.index', 'sales.preinvoice_warehouse_review' => 'warehouse.reviews.index',
-            'sales.preinvoice_finance_review' => 'preinvoice.draft.finance', 'sales.invoices' => 'invoices.index',
-            'sales.returns' => 'vouchers.return-from-sale.index', 'customers' => 'customers.index', 'suppliers' => 'suppliers.index',
-            'finance.payments' => 'finance.cheques.index', 'finance.accounts' => 'account-statements.index', 'finance.seller_sales_documents' => 'finance.seller-sales.index', 'reports' => 'finance.reports.index',
-            'users' => 'users.index', 'roles' => 'admin.roles.index', 'activity_logs' => 'activity-logs.index',
+            'dashboard' => 'dashboard',
+            'products' => 'products.index',
+            'products.price_changes' => 'products.price-changes.index',
+            'categories' => 'categories.index',
+            'brands_models' => 'model-lists.index',
+            'shipping_methods' => 'shipping-methods.index',
+            'warehouses' => 'warehouses.index',
+            'warehouse.stocks' => 'products.index',
+            'warehouse.stocktake' => 'stock-count-documents.index',
+            'warehouse.purchases' => 'purchases.index',
+            'warehouse.issues' => 'vouchers.index',
+            'warehouse.collection' => 'vouchers.sales.queue',
+            'warehouse.shipping' => 'warehouse.shipping.index',
+            'warehouse.inbound_queue' => 'warehouse.inbound.index',
+            'warehouse.map' => 'warehouse-map.index',
+            'assets' => 'asset.hub',
+            'sales.preinvoices' => 'preinvoice.create',
+            'commercial.commissions' => 'commercial.commissions.index',
+            'commercial.invoice_reassignments' => 'commercial.invoice-reassignments.index',
+            'sales.preinvoice_warehouse_review' => 'warehouse.reviews.index',
+            'sales.preinvoice_finance_review' => 'preinvoice.draft.finance',
+            'sales.invoices' => 'invoices.index',
+            'sales.returns' => 'vouchers.return-from-sale.index',
+            'customers' => 'customers.index',
+            'suppliers' => 'suppliers.index',
+            'finance.payments' => 'finance.cheques.index',
+            'finance.accounts' => 'account-statements.index',
+            'finance.seller_sales_documents' => 'finance.seller-sales.index',
+            'reports' => 'finance.reports.index',
+            'users' => 'users.index',
+            'roles' => 'admin.roles.index',
+            'activity_logs' => 'activity-logs.index',
             'integrations.inventory' => 'inventory-webhooks.index',
         ][$key] ?? null;
     }

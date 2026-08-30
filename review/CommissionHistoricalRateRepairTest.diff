@@ -1,0 +1,171 @@
+--- /mnt/data/commission-phase1-patch/tests/Feature/CommissionHistoricalRateRepairTest.php	2026-08-30 16:10:26.963253984 +0000
++++ /mnt/data/commission-phase1_1-patch/tests/Feature/CommissionHistoricalRateRepairTest.php	2026-08-30 16:19:14.401700318 +0000
+@@ -148,7 +148,7 @@
+         $this->assertTrue($this->ledgerFor($period, $unratedInvoice)->missing_rate);
+     }
+ 
+-    public function test_existing_historical_revision_blocks_backdate_instead_of_rewriting_intentional_rate_history(): void
++    public function test_existing_timeline_that_already_covers_period_start_is_preserved_as_intentional_history(): void
+     {
+         $period = $this->period();
+         $actor = User::factory()->create(['is_seller' => true]);
+@@ -163,23 +163,79 @@
+         $this->assertSame('1.0000', $this->ledgerFor($period, $invoice)->base_rate_snapshot);
+ 
+         $plan = app(CommissionHistoricalRateRepairService::class)->plan($period->fresh(), $root);
+-        $target = collect($plan['targets'])->firstWhere('target_key', 'category:'.$child->id);
+-        $this->assertNotNull($target);
+-        $this->assertTrue($target['blocked']);
+-        $this->assertSame('TIMELINE_CONFLICT', $target['block_reason']);
+-        $this->assertSame(1, $plan['summary']['blocked_targets']);
++        $this->assertSame(0, $plan['summary']['repair_targets']);
++        $this->assertSame(0, $plan['summary']['blocked_targets']);
++        $this->assertSame(0, $plan['summary']['unresolved_items']);
+ 
+         $this->artisan('commissions:repair-missing-rates', [
+             '--period' => $period->id,
+             '--category' => $root->id,
+             '--apply' => true,
+-        ])->assertFailed();
++        ])->assertSuccessful();
+ 
+         $this->assertSame('2026-08-01 00:00:00', $oldRevision->fresh()->effective_from->toDateTimeString());
+         $this->assertSame('2026-08-16 00:00:00', $newRevision->fresh()->effective_from->toDateTimeString());
+         $this->assertSame('1.0000', $this->ledgerFor($period, $invoice)->base_rate_snapshot);
+     }
+ 
++    public function test_timeline_aware_repair_backdates_the_inactive_leading_revision_and_preserves_later_transition(): void
++    {
++        $period = $this->period();
++        $actor = User::factory()->create(['is_seller' => true]);
++        $root = Category::query()->create(['name' => 'Timeline root']);
++        $product = $this->product($root, 'Timeline product');
++        $rates = app(CommissionRateService::class);
++
++        $leading = $rates->setRate('category', $root->id, '1.5', $actor, '2026-08-13 22:56:04');
++        $later = $rates->setRate('category', $root->id, '2', $actor, '2026-08-14 20:04:47');
++
++        $beforeFirstRate = $this->invoice($actor, $product, '2026-08-05 12:00:00');
++        $beforeTransition = $this->invoice($actor, $product, '2026-08-14 10:00:00');
++        $afterTransition = $this->invoice($actor, $product, '2026-08-15 10:00:00');
++
++        app(CommissionCalculationService::class)->recalculate($period);
++
++        $this->assertTrue($this->ledgerFor($period, $beforeFirstRate)->missing_rate);
++        $this->assertLedgerRate($period, $beforeTransition, '1.5000', $leading->id, $root->id);
++        $this->assertLedgerRate($period, $afterTransition, '2.0000', $later->id, $root->id);
++
++        $plan = app(CommissionHistoricalRateRepairService::class)->plan($period->fresh(), $root);
++        $this->assertSame(1, $plan['summary']['repair_targets']);
++        $this->assertSame(1, $plan['summary']['candidate_items']);
++        $this->assertSame(1, $plan['summary']['historically_missing_items']);
++        $this->assertSame(0, $plan['summary']['blocked_targets']);
++        $this->assertSame(0, $plan['summary']['unresolved_items']);
++
++        $target = collect($plan['targets'])->firstWhere('target_key', 'category:'.$root->id);
++        $this->assertNotNull($target);
++        $this->assertSame($leading->id, $target['revision_id']);
++        $this->assertFalse($target['revision_is_active']);
++        $this->assertSame('1.5000', $target['percentage']);
++        $this->assertSame('2026-08-13 22:56:04', $target['current_effective_from']);
++        $this->assertSame('2026-08-14 20:04:47', $target['current_effective_to']);
++
++        $this->artisan('commissions:repair-missing-rates', [
++            '--period' => $period->id,
++            '--category' => $root->id,
++            '--apply' => true,
++        ])->assertSuccessful();
++
++        $leading->refresh();
++        $later->refresh();
++
++        $this->assertSame('2026-08-01 00:00:00', $leading->effective_from->toDateTimeString());
++        $this->assertSame('2026-08-14 20:04:47', $leading->effective_to->toDateTimeString());
++        $this->assertNull($leading->active_marker);
++        $this->assertSame('2026-08-14 20:04:47', $later->effective_from->toDateTimeString());
++        $this->assertNull($later->effective_to);
++        $this->assertSame(1, (int) $later->active_marker);
++
++        $this->assertLedgerRate($period, $beforeFirstRate, '1.5000', $leading->id, $root->id);
++        $this->assertLedgerRate($period, $beforeTransition, '1.5000', $leading->id, $root->id);
++        $this->assertLedgerRate($period, $afterTransition, '2.0000', $later->id, $root->id);
++        $this->assertFalse($period->fresh()->needs_recalculation);
++    }
++
+     public function test_outer_transaction_rolls_back_all_backdates_when_full_recalculation_fails(): void
+     {
+         $period = $this->period();
+@@ -208,6 +264,37 @@
+         $this->assertSame('2026-08-16 11:00:00', $childRevision->fresh()->effective_from->toDateTimeString());
+     }
+ 
++    public function test_timeline_repair_rolls_back_inactive_revision_backdate_and_preserves_transition_when_recalculation_fails(): void
++    {
++        $period = $this->period();
++        $actor = User::factory()->create(['is_seller' => true]);
++        $root = Category::query()->create(['name' => 'Rollback timeline root']);
++        $product = $this->product($root, 'Rollback timeline product');
++        $rates = app(CommissionRateService::class);
++        $leading = $rates->setRate('category', $root->id, '1.5', $actor, '2026-08-13 10:00:00');
++        $later = $rates->setRate('category', $root->id, '2', $actor, '2026-08-14 10:00:00');
++        $this->invoice($actor, $product, '2026-08-05 12:00:00');
++
++        $calculation = Mockery::mock(CommissionCalculationService::class);
++        $calculation->shouldReceive('recalculate')->once()->andThrow(new RuntimeException('forced timeline recalculation failure'));
++        $this->app->instance(CommissionCalculationService::class, $calculation);
++
++        try {
++            app(CommissionHistoricalRateRepairService::class)->repair($period->fresh(), $root);
++            $this->fail('Expected forced timeline recalculation failure.');
++        } catch (RuntimeException $exception) {
++            $this->assertSame('forced timeline recalculation failure', $exception->getMessage());
++        }
++
++        $leading->refresh();
++        $later->refresh();
++        $this->assertSame('2026-08-13 10:00:00', $leading->effective_from->toDateTimeString());
++        $this->assertSame('2026-08-14 10:00:00', $leading->effective_to->toDateTimeString());
++        $this->assertNull($leading->active_marker);
++        $this->assertSame('2026-08-14 10:00:00', $later->effective_from->toDateTimeString());
++        $this->assertSame(1, (int) $later->active_marker);
++    }
++
+     public function test_apply_with_seller_filter_and_conflicting_dry_run_apply_flags_are_fail_closed(): void
+     {
+         $period = $this->period();
+@@ -252,6 +339,35 @@
+         $this->assertSame('2026-08-20 10:00:00', $current->fresh()->effective_from->toDateTimeString());
+     }
+ 
++    public function test_historical_revision_backdate_rejects_a_stale_preview_without_touching_later_revision(): void
++    {
++        $actor = User::factory()->create();
++        $root = Category::query()->create(['name' => 'Root']);
++        $rates = app(CommissionRateService::class);
++        $leading = $rates->setRate('category', $root->id, '1.5', $actor, '2026-08-13 10:00:00');
++        $later = $rates->setRate('category', $root->id, '2', $actor, '2026-08-14 10:00:00');
++
++        // Simulate a legitimate change after preview was generated.
++        $leading->update(['effective_from' => '2026-08-12 10:00:00']);
++
++        try {
++            $rates->backdateRevision(
++                $leading->id,
++                '2026-08-01 00:00:00',
++                $actor,
++                '2026-08-13 10:00:00',
++            );
++            $this->fail('Expected stale timeline preview guard to reject the repair.');
++        } catch (ValidationException $exception) {
++            $this->assertArrayHasKey('rate', $exception->errors());
++        }
++
++        $this->assertSame('2026-08-12 10:00:00', $leading->fresh()->effective_from->toDateTimeString());
++        $this->assertSame('2026-08-14 10:00:00', $leading->fresh()->effective_to->toDateTimeString());
++        $this->assertSame('2026-08-14 10:00:00', $later->fresh()->effective_from->toDateTimeString());
++        $this->assertSame(1, (int) $later->fresh()->active_marker);
++    }
++
+     public function test_second_apply_is_a_noop_and_does_not_create_duplicate_active_ledger_rows(): void
+     {
+         $period = $this->period();

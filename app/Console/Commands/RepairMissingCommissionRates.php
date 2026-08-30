@@ -4,25 +4,36 @@ namespace App\Console\Commands;
 
 use App\Models\Category;
 use App\Models\CommissionPeriod;
-use App\Models\CommissionRateRevision;
-use App\Models\InvoiceItem;
-use App\Models\User;
-use App\Services\Commissions\CommissionCalculationService;
-use App\Services\Commissions\CommissionRateService;
-use App\Services\Commissions\CommissionRateResolver;
-use App\Services\Commissions\CommissionTarget;
+use App\Services\Commissions\CommissionHistoricalRateRepairService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class RepairMissingCommissionRates extends Command
 {
-    protected $signature = 'commissions:repair-missing-rates {--period= : Mutable commission period ID} {--category= : Category rate target ID} {--seller= : Optional seller filter for impact report} {--dry-run : Explicitly request read-only mode} {--apply : Apply the safe backdate and recalculate}';
+    protected $signature = 'commissions:repair-missing-rates
+        {--period= : Mutable commission period ID}
+        {--category= : Root category tree to inspect and repair}
+        {--seller= : Optional seller filter for read-only impact analysis}
+        {--dry-run : Explicitly request read-only mode}
+        {--apply : Apply the tree-aware backdate plan and recalculate the period}';
 
-    protected $description = 'Safely backdate one late category rate to a mutable period start; dry-run unless --apply is supplied';
+    protected $description = 'Preview or safely fill leading historical rate gaps while preserving later commission-rate revisions';
 
-    public function handle(CommissionRateService $rates, CommissionRateResolver $resolver, CommissionCalculationService $calculation): int
+    public function handle(CommissionHistoricalRateRepairService $repair): int
     {
+        if ($this->option('dry-run') && $this->option('apply')) {
+            $this->error('--dry-run و --apply هم‌زمان مجاز نیستند.');
+
+            return self::FAILURE;
+        }
+
+        if ($this->option('apply') && $this->option('seller')) {
+            $this->error('--seller فقط برای گزارش Read-only است؛ Backdate نرخ روی همه فروشندگان اثر دارد و با --apply مجاز نیست.');
+
+            return self::FAILURE;
+        }
+
         $period = CommissionPeriod::query()->find($this->option('period'));
         $category = Category::query()->find($this->option('category'));
         if (! $period || ! $category) {
@@ -30,71 +41,116 @@ class RepairMissingCommissionRates extends Command
 
             return self::FAILURE;
         }
-        if (! in_array($period->status, [CommissionPeriod::STATUS_OPEN, CommissionPeriod::STATUS_REVIEW], true)) {
-            $this->error('Repair فقط برای دوره باز یا در حال بررسی مجاز است.');
+
+        try {
+            $plan = $repair->plan(
+                $period,
+                $category,
+                $this->option('seller') ? (int) $this->option('seller') : null,
+            );
+        } catch (Throwable $exception) {
+            $this->error($this->exceptionMessage($exception));
 
             return self::FAILURE;
         }
 
-        $revision = CommissionRateRevision::query()->where('target_key', CommissionTarget::key('category', $category->id))->where('active_marker', 1)->first();
-        if (! $revision || $revision->effective_from->lte($period->start_at)) {
-            $this->error('این دسته نرخ فعالِ دیرشروع‌شده‌ای برای Repair ندارد.');
+        $this->info('Commission historical rate repair preview');
+        $this->table(['Field', 'Value'], [
+            ['Period', $plan['period_id']],
+            ['Root category', $plan['root_category_id'].' - '.$category->name],
+            ['Reference at', $plan['reference_at']],
+            ['Scanned invoice items', $plan['summary']['scanned_items']],
+            ['Repair targets', $plan['summary']['repair_targets']],
+            ['Affected invoices', $plan['summary']['candidate_invoices']],
+            ['Affected invoice items', $plan['summary']['candidate_items']],
+            ['Affected sellers', $plan['summary']['candidate_sellers']],
+            ['Historically missing', $plan['summary']['historically_missing_items']],
+            ['Wrong fallback / older rule', $plan['summary']['historical_fallback_items']],
+            ['Blocked targets', $plan['summary']['blocked_targets']],
+            ['Unresolved items', $plan['summary']['unresolved_items']],
+        ]);
 
-            return self::FAILURE;
+        if ($plan['targets'] !== []) {
+            $this->table(
+                ['Target', 'Revision', 'Rate', 'Revision from', 'Revision until', 'State', 'Requested from', 'Invoices', 'Items', 'Missing', 'Fallback', 'Sellers', 'Preflight'],
+                collect($plan['targets'])->map(fn (array $target) => [
+                    $target['target_key'],
+                    '#'.$target['revision_id'],
+                    $target['percentage'].'%',
+                    $target['current_effective_from'],
+                    $target['current_effective_to'] ?? 'OPEN',
+                    $target['revision_is_active'] ? 'ACTIVE' : 'HISTORICAL',
+                    $target['requested_effective_from'],
+                    $target['affected_invoices'],
+                    $target['affected_items'],
+                    $target['historically_missing_items'],
+                    $target['historical_fallback_items'],
+                    $target['affected_sellers'],
+                    $target['blocked'] ? 'BLOCKED: '.$target['block_reason'] : 'OK',
+                ])->all(),
+            );
         }
 
-        $categoryIds = Category::selfAndDescendantIds($category->id);
-        $items = InvoiceItem::query()->with(['invoice.preinvoiceOrder', 'product.category', 'variant'])->whereHas('product', fn ($query) => $query->whereIn('category_id', $categoryIds))
-            ->whereHas('invoice', fn ($query) => $query->whereRaw('COALESCE(document_date, created_at) >= ?', [$period->start_at])->whereRaw('COALESCE(document_date, created_at) < ?', [$period->end_at]))
-            ->get()
-            ->when($this->option('seller'), fn ($collection) => $collection->filter(fn ($item) => (int) $item->invoice->effective_seller_id === (int) $this->option('seller')))
-            ->filter(fn ($item) => $item->invoice->display_document_date->lt($revision->effective_from)
-                && $resolver->resolve($item->product, $item->variant, $item->invoice->display_document_date)->isMissing);
-        if ($items->isEmpty()) {
-            $this->error('هیچ ردیف فاقد نرخی که مشخصاً از شروع دیرهنگام این دسته ناشی شده باشد پیدا نشد.');
-
-            return self::FAILURE;
+        if ($plan['unresolved'] !== []) {
+            $this->warn('نمونه ردیف‌های unresolved (حداکثر 20 مورد):');
+            $this->table(
+                ['Reason', 'Invoice', 'Item', 'Product', 'Variant', 'Seller', 'Historical', 'Desired'],
+                collect($plan['unresolved'])->take(20)->map(fn (array $row) => [
+                    $row['reason'],
+                    $row['invoice_id'],
+                    $row['invoice_item_id'],
+                    $row['product_id'],
+                    $row['variant_id'] ?? '—',
+                    $row['seller_id'] ?? '—',
+                    $row['historical_source'],
+                    $row['desired_source'],
+                ])->all(),
+            );
         }
-        $impact = [
-            ['Target', $revision->target_key],
-            ['Current percentage', $revision->percentage.'%'],
-            ['Current effective_from', $revision->effective_from->toDateTimeString()],
-            ['Requested effective_from', $period->start_at->toDateTimeString()],
-            ['Affected invoices', $items->pluck('invoice_id')->unique()->count()],
-            ['Affected invoice items', $items->count()],
-            ['Affected sellers', $items->map(fn ($item) => $item->invoice->effective_seller_id)->filter()->unique()->count()],
-        ];
-        $this->table(['Field', 'Value'], $impact);
 
         if (! $this->option('apply')) {
-            $this->info('Dry run completed; no database mutation was performed. Use --apply explicitly to repair.');
+            $this->info('DRY RUN completed; هیچ تغییری در نرخ‌ها، Ledger یا دوره نوشته نشد. پس از بررسی Preview فقط با --apply اجرا کنید.');
 
             return self::SUCCESS;
         }
 
-        $actor = User::query()->find($revision->created_by);
-        if (! $actor) {
-            $this->error('کاربر ثبت‌کننده revision موجود نیست؛ Repair متوقف شد.');
+        if ($plan['summary']['blocked_targets'] > 0 || $plan['summary']['unresolved_items'] > 0) {
+            $this->error('APPLY متوقف شد؛ Preview دارای Target مسدود یا ردیف unresolved است. هیچ تغییری اعمال نشد.');
 
             return self::FAILURE;
+        }
+
+        if ($plan['targets'] === []) {
+            $this->info('هیچ Backdate لازم نیست؛ دوره از نظر این درخت نرخ نیازمند Repair نیست.');
+
+            return self::SUCCESS;
         }
 
         try {
-            DB::transaction(function () use ($rates, $calculation, $category, $period, $actor) {
-                $rates->backdateActiveRate('category', $category->id, $period->start_at, $actor);
-                $calculation->recalculate($period->fresh());
-            });
-        } catch (\Throwable $exception) {
-            $message = $exception instanceof ValidationException
-                ? collect($exception->errors())->flatten()->implode(' ')
-                : $exception->getMessage();
-            $this->error($message);
+            $result = $repair->repair($period->fresh(), $category);
+        } catch (Throwable $exception) {
+            $this->error($this->exceptionMessage($exception));
 
             return self::FAILURE;
         }
 
-        $this->info('Rate backdated safely and the mutable period recalculated through CommissionCalculationService.');
+        if (! $result['changed']) {
+            $this->info('هیچ تغییری لازم نبود.');
+
+            return self::SUCCESS;
+        }
+
+        $this->info('Repair با موفقیت Commit شد: Gap ابتدای Timeline با Revision دقیق پر شد، Revisionهای بعدی حفظ شدند، دوره Recalculate و Ledger Verify شد.');
 
         return self::SUCCESS;
+    }
+
+    private function exceptionMessage(Throwable $exception): string
+    {
+        if ($exception instanceof ValidationException) {
+            return collect($exception->errors())->flatten()->implode(' ');
+        }
+
+        return $exception->getMessage();
     }
 }

@@ -62,13 +62,13 @@ class CommissionRateService
         });
     }
 
-    public function backdateActiveRate(string $type, int $id, CarbonInterface|string $effectiveFrom, User $actor): CommissionRateRevision
+    public function backdateActiveRate(string $type, int $id, CarbonInterface|string $effectiveFrom, User $actor, ?int $expectedRevisionId = null): CommissionRateRevision
     {
         CommissionTarget::resolve($type, $id);
         $effectiveFrom = Carbon::parse($effectiveFrom);
         $this->assertDateIsNotFinalized($effectiveFrom);
 
-        return DB::transaction(function () use ($type, $id, $effectiveFrom, $actor) {
+        return DB::transaction(function () use ($type, $id, $effectiveFrom, $actor, $expectedRevisionId) {
             CommissionSetting::current();
             CommissionSetting::query()->whereKey(1)->lockForUpdate()->firstOrFail();
             $key = CommissionTarget::key($type, $id);
@@ -77,6 +77,23 @@ class CommissionRateService
                 ->where('active_marker', 1)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($expectedRevisionId !== null && (int) $active->id !== $expectedRevisionId) {
+                throw ValidationException::withMessages([
+                    'rate' => 'نرخ فعال پس از تهیه Preview تغییر کرده است؛ Repair متوقف شد تا گزارش جدید تهیه شود.',
+                ]);
+            }
+
+            $finalizedOverlap = CommissionPeriod::query()
+                ->whereIn('status', [CommissionPeriod::STATUS_CLOSED, CommissionPeriod::STATUS_PAID])
+                ->where('start_at', '<', $active->effective_from)
+                ->where('end_at', '>', $effectiveFrom)
+                ->exists();
+            if ($finalizedOverlap) {
+                throw ValidationException::withMessages([
+                    'effective_from' => 'بازه Backdate با یک دوره بسته یا پرداخت‌شده هم‌پوشانی دارد و قابل تغییر نیست.',
+                ]);
+            }
 
             if ($effectiveFrom->gte($active->effective_from)) {
                 throw ValidationException::withMessages(['effective_from' => 'تاریخ درخواستی باید قبل از شروع فعلی نرخ باشد.']);
@@ -103,6 +120,93 @@ class CommissionRateService
             $this->dirtyMarker->markAllMutable();
 
             return $active->fresh();
+        });
+    }
+
+    /**
+     * Backdate one exact revision without rewriting later intentional revisions.
+     *
+     * This is intentionally revision-id based (not active-rate based), because a
+     * historical leading revision can already be inactive after a later rate
+     * change. Only earlier revisions that overlap the proposed extension block
+     * the operation; later revisions are preserved exactly as recorded.
+     */
+    public function backdateRevision(
+        int $revisionId,
+        CarbonInterface|string $effectiveFrom,
+        User $actor,
+        ?string $expectedEffectiveFrom = null,
+    ): CommissionRateRevision {
+        $effectiveFrom = Carbon::parse($effectiveFrom);
+        $this->assertDateIsNotFinalized($effectiveFrom);
+
+        return DB::transaction(function () use ($revisionId, $effectiveFrom, $actor, $expectedEffectiveFrom) {
+            CommissionSetting::current();
+            CommissionSetting::query()->whereKey(1)->lockForUpdate()->firstOrFail();
+
+            $revision = CommissionRateRevision::query()
+                ->whereKey($revisionId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            CommissionTarget::resolve($revision->target_type, (int) $revision->target_id);
+
+            if ($expectedEffectiveFrom !== null
+                && $revision->effective_from->toDateTimeString() !== Carbon::parse($expectedEffectiveFrom)->toDateTimeString()) {
+                throw ValidationException::withMessages([
+                    'rate' => 'Revision پس از تهیه Preview تغییر کرده است؛ Repair متوقف شد تا Preview جدید تهیه شود.',
+                ]);
+            }
+
+            if ($effectiveFrom->gte($revision->effective_from)) {
+                throw ValidationException::withMessages([
+                    'effective_from' => 'تاریخ درخواستی باید قبل از شروع فعلی Revision باشد.',
+                ]);
+            }
+
+            $finalizedOverlap = CommissionPeriod::query()
+                ->whereIn('status', [CommissionPeriod::STATUS_CLOSED, CommissionPeriod::STATUS_PAID])
+                ->where('start_at', '<', $revision->effective_from)
+                ->where('end_at', '>', $effectiveFrom)
+                ->exists();
+            if ($finalizedOverlap) {
+                throw ValidationException::withMessages([
+                    'effective_from' => 'بازه Backdate با یک دوره بسته یا پرداخت‌شده هم‌پوشانی دارد و قابل تغییر نیست.',
+                ]);
+            }
+
+            // Only revisions that begin before this revision and overlap the new
+            // leading interval can conflict. Later revisions are deliberately not
+            // considered a conflict because their transition times must survive.
+            $earlierOverlap = CommissionRateRevision::query()
+                ->where('target_key', $revision->target_key)
+                ->whereKeyNot($revision->id)
+                ->where('effective_from', '<', $revision->effective_from)
+                ->where(fn ($query) => $query->whereNull('effective_to')->orWhere('effective_to', '>', $effectiveFrom))
+                ->lockForUpdate()
+                ->exists();
+            if ($earlierOverlap) {
+                throw ValidationException::withMessages([
+                    'effective_from' => 'Backdate با یک Revision قدیمی‌تر هم‌پوشانی ایجاد می‌کند و متوقف شد.',
+                ]);
+            }
+
+            $oldEffectiveFrom = $revision->effective_from->toDateTimeString();
+            $effectiveToBefore = $revision->effective_to?->toDateTimeString();
+
+            $revision->update(['effective_from' => $effectiveFrom]);
+
+            ActivityLogger::log('commission_rate.revision_backdated', $revision, 'شروع یک Revision تاریخی پورسانت بدون تغییر ادامه Timeline اصلاح شد.', [
+                'target_key' => $revision->target_key,
+                'revision_id' => $revision->id,
+                'old_effective_from' => $oldEffectiveFrom,
+                'new_effective_from' => $effectiveFrom->toDateTimeString(),
+                'effective_to_preserved' => $effectiveToBefore,
+                'actor_id' => $actor->id,
+            ]);
+            $this->dirtyMarker->markAllMutable();
+
+            return $revision->fresh();
         });
     }
 
