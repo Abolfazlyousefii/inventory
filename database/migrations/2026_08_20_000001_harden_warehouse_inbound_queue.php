@@ -58,7 +58,19 @@ return new class extends Migration
             });
         }
 
-        if (! $this->hasIndex('warehouse_inbound_receipt_items', 'wiri_reason_idx')) {
+        /*
+         * The base 2026_08_19 migration already creates `reason` with Laravel's
+         * automatic index name:
+         * warehouse_inbound_receipt_items_reason_index
+         *
+         * Do not create a second equivalent index on fresh databases.
+         * Legacy databases that have the column but no index still receive the
+         * explicit hardened index.
+         */
+        if (
+            ! $this->hasIndex('warehouse_inbound_receipt_items', 'wiri_reason_idx')
+            && ! $this->hasIndex('warehouse_inbound_receipt_items', 'warehouse_inbound_receipt_items_reason_index')
+        ) {
             Schema::table('warehouse_inbound_receipt_items', function (Blueprint $table) {
                 $table->index('reason', 'wiri_reason_idx');
             });
@@ -76,6 +88,7 @@ return new class extends Migration
                         ->whereIn('id', $items->pluck('id')->slice(1)->all())
                         ->update(['stock_movement_id' => null]);
                 });
+
             Schema::table('warehouse_inbound_receipt_items', function (Blueprint $table) {
                 $table->unique('stock_movement_id', 'wiri_stock_movement_unique');
             });
@@ -89,13 +102,38 @@ return new class extends Migration
         }
 
         if ($this->hasIndex('warehouse_inbound_receipt_items', 'wiri_stock_movement_unique')) {
-            Schema::table('warehouse_inbound_receipt_items', fn (Blueprint $table) => $table->dropUnique('wiri_stock_movement_unique'));
+            Schema::table(
+                'warehouse_inbound_receipt_items',
+                fn (Blueprint $table) => $table->dropUnique('wiri_stock_movement_unique')
+            );
         }
+
         if ($this->hasIndex('warehouse_inbound_receipt_items', 'wiri_reason_idx')) {
-            Schema::table('warehouse_inbound_receipt_items', fn (Blueprint $table) => $table->dropIndex('wiri_reason_idx'));
+            Schema::table(
+                'warehouse_inbound_receipt_items',
+                fn (Blueprint $table) => $table->dropIndex('wiri_reason_idx')
+            );
         }
+
+        /*
+         * SQLite refuses DROP COLUMN while ANY index still references that
+         * column. The base inbound migration creates this automatic index,
+         * so it must be removed before dropping `reason`.
+         *
+         * On MariaDB this is also safe and makes rollback deterministic.
+         */
+        if ($this->hasIndex('warehouse_inbound_receipt_items', 'warehouse_inbound_receipt_items_reason_index')) {
+            Schema::table(
+                'warehouse_inbound_receipt_items',
+                fn (Blueprint $table) => $table->dropIndex('warehouse_inbound_receipt_items_reason_index')
+            );
+        }
+
         if ($this->hasIndex('warehouse_inbound_receipts', 'wir_source_operation_unique')) {
-            Schema::table('warehouse_inbound_receipts', fn (Blueprint $table) => $table->dropUnique('wir_source_operation_unique'));
+            Schema::table(
+                'warehouse_inbound_receipts',
+                fn (Blueprint $table) => $table->dropUnique('wir_source_operation_unique')
+            );
         }
 
         DB::table('warehouse_inbound_receipts')
@@ -103,11 +141,16 @@ return new class extends Migration
             ->update(['source_type' => 'finance_adjustment']);
 
         Schema::table('warehouse_inbound_receipt_items', function (Blueprint $table) {
-            $columns = array_values(array_filter(['reason', 'source_meta'], fn (string $column) => Schema::hasColumn('warehouse_inbound_receipt_items', $column)));
+            $columns = array_values(array_filter(
+                ['reason', 'source_meta'],
+                fn (string $column) => Schema::hasColumn('warehouse_inbound_receipt_items', $column)
+            ));
+
             if ($columns !== []) {
                 $table->dropColumn($columns);
             }
         });
+
         Schema::table('warehouse_inbound_receipts', function (Blueprint $table) {
             if (Schema::hasColumn('warehouse_inbound_receipts', 'operation_key')) {
                 $table->dropColumn('operation_key');

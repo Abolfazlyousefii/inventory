@@ -41,7 +41,7 @@ function reportPeriod(string $start = '2026-08-01', string $end = '2026-09-01'):
     return CommissionPeriod::query()->create(['label' => 'Report period', 'start_at' => $start, 'end_at' => $end, 'cycle_day_snapshot' => 10, 'status' => CommissionPeriod::STATUS_OPEN]);
 }
 
-function reportInvoice(User $seller, Product $product): Invoice
+function reportInvoice(User $seller, Product $product, ?bool $withoutCommissionEvents = false): Invoice
 {
     $preinvoice = PreinvoiceOrder::query()->create([
         'uuid' => (string) Str::uuid(), 'created_by' => $seller->id, 'seller_id' => $seller->id,
@@ -49,8 +49,33 @@ function reportInvoice(User $seller, Product $product): Invoice
         'province_id' => 1, 'shipping_id' => 0, 'shipping_price' => 0, 'discount_amount' => 0,
         'total_price' => 1000, 'status' => PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
     ]);
-    $invoice = Invoice::query()->create(['uuid' => (string) Str::uuid(), 'preinvoice_order_id' => $preinvoice->id, 'customer_name' => 'Customer', 'document_date' => '2026-08-15', 'subtotal' => 1000, 'total' => 1000, 'status' => Invoice::STATUS_SHIPPED]);
-    InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $product->id, 'quantity' => 1, 'price' => 1000]);
+
+    $createInvoice = fn () => Invoice::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'preinvoice_order_id' => $preinvoice->id,
+        'customer_name' => 'Customer',
+        'document_date' => '2026-08-15',
+        'subtotal' => 1000,
+        'total' => 1000,
+        'status' => Invoice::STATUS_SHIPPED,
+    ]);
+
+    $invoice = $withoutCommissionEvents
+        ? Invoice::withoutEvents($createInvoice)
+        : $createInvoice();
+
+    $createItem = fn () => InvoiceItem::query()->create([
+        'invoice_id' => $invoice->id,
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'price' => 1000,
+    ]);
+
+    if ($withoutCommissionEvents) {
+        InvoiceItem::withoutEvents($createItem);
+    } else {
+        $createItem();
+    }
 
     return $invoice->fresh('items');
 }
@@ -127,7 +152,18 @@ it('audits missing sellers without creating ledger rows', function () {
 
     app(CommissionCalculationService::class)->recalculate($period);
 
-    expect(CommissionLedgerEntry::query()->count())->toBe(0)
+    expect(
+        CommissionLedgerEntry::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('active_marker', 1)
+            ->count()
+    )->toBe(0)
+        ->and(
+            CommissionLedgerEntry::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('status', CommissionLedgerEntry::STATUS_SUPERSEDED)
+                ->exists()
+        )->toBeTrue()
         ->and($period->calculationWarnings()->where('code', 'missing_seller')->where('invoice_id', $invoice->id)->exists())->toBeTrue()
         ->and(app(CommissionReportService::class)->periodSummary($period)['missing_seller_invoice_count'])->toBe(1);
 });
@@ -142,9 +178,21 @@ it('marks an open period dirty through invoice item and rate changes but never d
     $open->update(['needs_recalculation' => false]);
 
     $invoice->items->first()->update(['price' => 11_000_000]);
-    expect($open->fresh()->needs_recalculation)->toBeTrue()
-        ->and($closed->fresh()->needs_recalculation)->toBeFalse();
 
+    $active = CommissionLedgerEntry::query()
+        ->where('commission_period_id', $open->id)
+        ->where('invoice_id', $invoice->id)
+        ->where('active_marker', 1)
+        ->firstOrFail();
+
+    expect($open->fresh()->needs_recalculation)->toBeFalse()
+        ->and($closed->fresh()->needs_recalculation)->toBeFalse()
+        ->and((int) $active->gross_amount_snapshot)->toBe(11_000_000)
+        ->and($active->missing_rate)->toBeTrue();
+
+    // Global rate changes can affect many invoices, so they must still dirty
+    // the mutable period even though one-invoice source changes are synced
+    // incrementally.
     $open->update(['needs_recalculation' => false]);
     app(CommissionRateService::class)->setRate('product', $product->id, '2.0000', $seller);
     expect($open->fresh()->needs_recalculation)->toBeTrue()
@@ -170,10 +218,20 @@ it('keeps seller summary query count constant for hundreds of ledger rows', func
     $seller = reportSeller();
     $period = reportPeriod();
     [, $product] = reportCatalog();
-    $invoice = reportInvoice($seller, $product, null);
+    // This is a report query-count test, not an incremental-sync test.
+    // Keep fixture creation silent so the Phase 2 observer does not create
+    // active ledger rows that this test intentionally inserts by hand.
+    $invoice = reportInvoice($seller, $product, true);
     $items = [$invoice->items->first()];
     for ($index = 2; $index <= 300; $index++) {
-        $items[] = $invoice->items()->create(['product_id' => $product->id, 'quantity' => 1, 'price' => 1000, 'line_discount_amount' => 0]);
+        $items[] = InvoiceItem::withoutEvents(
+            fn () => $invoice->items()->create([
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'price' => 1000,
+                'line_discount_amount' => 0,
+            ])
+        );
     }
     $rows = [];
     foreach ($items as $index => $item) {
