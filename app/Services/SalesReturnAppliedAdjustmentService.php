@@ -10,7 +10,7 @@ use App\Models\SalesReturnDocumentItem;
 use App\Models\SalesReturnDocumentRevision;
 use App\Models\StockMovement;
 use App\Models\WarehouseStock;
-use App\Services\Commissions\CommissionReconciliationService;
+use App\Services\Commissions\CommissionReturnSyncOutboxService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -20,8 +20,9 @@ class SalesReturnAppliedAdjustmentService
     /* Legacy source-contract marker: 'type'=>'debit' */
     public function __construct(
         private SalesReturnService $salesReturns,
-        private CommissionReconciliationService $commissions,
+        private CommissionReturnSyncOutboxService $commissionReturnOutbox,
         private WarehouseInboundService $warehouseInbound,
+        private SalesReturnCommissionPolicy $commissionPolicy,
     ) {}
 
     public function updateApplied(SalesReturnDocument $document, array $data, int $actorId, string $reason): SalesReturnDocument
@@ -37,9 +38,16 @@ class SalesReturnAppliedAdjustmentService
             $this->reverseLedger($doc, $actorId, 'sales_return_reversal', $revision->id);
 
             $immutable = $doc->only(['document_number', 'source_type', 'customer_id', 'invoice_id', 'external_invoice_number', 'external_invoice_date', 'created_by', 'created_at']);
+            $returnReason = $data['return_reason'] ?? $doc->return_reason;
             $doc->fill([
                 'default_destination_warehouse_id' => (int) ($data['default_destination_warehouse_id'] ?? $doc->default_destination_warehouse_id),
-                'return_reason' => $data['return_reason'] ?? $doc->return_reason,
+                'return_reason' => $returnReason,
+                'commission_effect_type' => $doc->isInternal()
+                    ? $this->commissionPolicy->resolve(
+                        $returnReason,
+                        $data['commission_effect_type'] ?? $doc->commission_effect_type,
+                    )
+                    : ($data['commission_effect_type'] ?? $doc->commission_effect_type),
                 'description' => $data['description'] ?? null,
                 'updated_by' => $actorId,
                 'status' => SalesReturnDocument::STATUS_PENDING_WAREHOUSE,
@@ -66,7 +74,7 @@ class SalesReturnAppliedAdjustmentService
             $this->warehouseInbound->queueSalesReturn($doc->fresh(['items.product', 'items.variant']), $actorId, 'revision-'.$revision->id);
             $after = $this->snapshot($doc->fresh(['items.destinationWarehouse', 'items.product', 'items.variant']));
             $revision->update(['after_snapshot' => $after, 'new_total' => (int) $doc->total_refund_amount]);
-            $this->commissions->reconcileReturn($doc->fresh('items'), $actorId);
+            $this->commissionReturnOutbox->stage((int) $doc->id, $actorId);
 
             return $doc->fresh('items');
         });
@@ -89,7 +97,7 @@ class SalesReturnAppliedAdjustmentService
             $this->reverseInventory($doc, $actorId, 'sales_return_void_reversal', $revision->id);
             $this->reverseLedger($doc, $actorId, 'sales_return_reversal', $revision->id);
             $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => $reason, 'updated_by' => $actorId]);
-            $this->commissions->reconcileReturn($doc->fresh('items'), $actorId);
+            $this->commissionReturnOutbox->stage((int) $doc->id, $actorId);
             ActivityLog::create(['user_id' => $actorId, 'action' => 'sales_return.applied_voided', 'subject_type' => SalesReturnDocument::class, 'subject_id' => $doc->id, 'description' => 'ابطال برگشت از فروش '.$doc->document_number, 'properties' => ['revision_id' => $revision->id, 'reason' => $reason], 'occurred_at' => now()]);
             $revision->update(['after_snapshot' => $this->snapshot($doc->fresh(['items.destinationWarehouse', 'items.product', 'items.variant', 'customer'])), 'new_total' => 0]);
 

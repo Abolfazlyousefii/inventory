@@ -11,7 +11,7 @@ use App\Models\StockMovement;
 use App\Models\Warehouse;
 use App\Models\WarehouseInboundReceipt;
 use App\Models\WarehouseInboundReceiptItem;
-use App\Services\Commissions\CommissionReconciliationService;
+use App\Services\Commissions\CommissionReturnSyncOutboxService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -22,7 +22,7 @@ class WarehouseInboundService
 
     public function __construct(
         private readonly SalesReturnCalculationService $salesReturnCalculator,
-        private readonly CommissionReconciliationService $commissions,
+        private readonly CommissionReturnSyncOutboxService $commissionReturnOutbox,
     ) {}
 
     public function queueSalesReturn(SalesReturnDocument $document, ?int $actorId, string $operationKey = 'initial'): ?WarehouseInboundReceipt
@@ -533,7 +533,7 @@ class WarehouseInboundService
                 'updated_by' => $actorId,
             ]);
 
-            $this->commissions->reconcileReturn($doc->fresh('items'), $actorId);
+            $this->commissionReturnOutbox->stage((int) $doc->id, $actorId);
         });
     }
 
@@ -656,7 +656,7 @@ class WarehouseInboundService
             'applied_at' => now(),
         ]);
 
-        $this->commissions->reconcileReturn($document->fresh('items'), $actorId);
+        $this->commissionReturnOutbox->stage((int) $document->id, $actorId);
     }
 
     private function movementReason(string $sourceType): string

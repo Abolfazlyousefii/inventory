@@ -141,8 +141,25 @@ class CommissionReconciliationService
             if (! $source) {
                 continue;
             }
-            $hash = hash('sha256', json_encode([$return->id, $sourceId, $delta, $return->status, $return->updated_at?->format('U.u')]));
-            CommissionCorrectionEntry::query()->firstOrCreate(['identity_key' => 'return:'.$hash], [
+            // Do not use updated_at as the idempotency boundary. A return may move
+            // APPLIED -> PENDING -> APPLIED inside the same timestamp precision
+            // (especially with second-precision DB columns), while those are two
+            // economically distinct reconciliation events. The immutable prior
+            // correction lineage distinguishes a true re-apply from a retry.
+            $priorCorrectionIds = $prior->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->sort()
+                ->values()
+                ->all();
+            $hash = hash('sha256', json_encode([
+                'version' => 2,
+                'return_id' => (int) $return->id,
+                'source_ledger_entry_id' => (int) $sourceId,
+                'prior_correction_ids' => $priorCorrectionIds,
+                'delta' => $delta,
+                'status' => (string) $return->status,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $correction = CommissionCorrectionEntry::query()->firstOrCreate(['identity_key' => 'return:'.$hash], [
                 'event_type' => $delta['total'] > 0 ? 'return_reversal_cancelled' : 'return_reversal',
                 'commission_period_id' => $period?->id, 'source_period_id' => $source->commission_period_id,
                 'seller_id' => $this->economicOwnerId($source), 'invoice_id' => $source->invoice_id, 'invoice_item_id' => $source->invoice_item_id,
@@ -152,7 +169,9 @@ class CommissionReconciliationService
                 'status' => $period ? CommissionCorrectionEntry::STATUS_ASSIGNED : CommissionCorrectionEntry::STATUS_PENDING_PERIOD,
                 'reason' => $return->commission_effect_type, 'created_by' => $actorId,
             ]);
-            $created++;
+            if ($correction->wasRecentlyCreated) {
+                $created++;
+            }
         }
         if (! $period && $sourceIds->isNotEmpty()) {
             $this->warning('correction_without_period', 'return-period:'.$return->id, $return, 'اثر پورسانت برگشت در انتظار تخصیص دوره است.');

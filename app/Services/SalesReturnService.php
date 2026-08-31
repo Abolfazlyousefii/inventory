@@ -25,7 +25,12 @@ class SalesReturnService
      * 'status'=>SalesReturnDocument::STATUS_CANCELLED
      * 'new_product_payload'=>$payload
      */
-    public function __construct(private SalesReturnCalculationService $calculator, private SalesReturnNewProductPayloadNormalizer $normalizer, private WarehouseInboundService $warehouseInbound) {}
+    public function __construct(
+        private SalesReturnCalculationService $calculator,
+        private SalesReturnNewProductPayloadNormalizer $normalizer,
+        private WarehouseInboundService $warehouseInbound,
+        private SalesReturnCommissionPolicy $commissionPolicy,
+    ) {}
 
     public function createDraft(array $data, ?int $actorId): SalesReturnDocument
     {
@@ -54,7 +59,29 @@ class SalesReturnService
         $source = $data['source_type'];
         if (blank($doc->document_number)) {
             $doc->document_number = $this->nextDocumentNumber();
-        } $doc->fill(['source_type' => $source, 'customer_id' => (int) $data['customer_id'], 'invoice_id' => $source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE ? (int) ($data['invoice_id'] ?? 0) : null, 'external_invoice_number' => $source === SalesReturnDocument::SOURCE_SAZEH_HESAB ? ($data['external_invoice_number'] ?? null) : null, 'external_invoice_date' => $source === SalesReturnDocument::SOURCE_SAZEH_HESAB ? ($data['external_invoice_date'] ?? null) : null, 'default_destination_warehouse_id' => (int) ($data['default_destination_warehouse_id'] ?? 0), 'return_reason' => $data['return_reason'] ?? null, 'commission_effect_type' => $data['commission_effect_type'] ?? $doc->commission_effect_type, 'reference_number' => array_key_exists('reference_number', $data) ? $data['reference_number'] : $doc->reference_number, 'description' => $data['description'] ?? null, 'updated_by' => $actorId]);
+        }
+
+        $returnReason = $data['return_reason'] ?? $doc->return_reason;
+        $commissionEffect = $source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE
+            ? $this->commissionPolicy->resolve(
+                $returnReason,
+                $data['commission_effect_type'] ?? $doc->commission_effect_type,
+            )
+            : ($data['commission_effect_type'] ?? $doc->commission_effect_type);
+
+        $doc->fill([
+            'source_type' => $source,
+            'customer_id' => (int) $data['customer_id'],
+            'invoice_id' => $source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE ? (int) ($data['invoice_id'] ?? 0) : null,
+            'external_invoice_number' => $source === SalesReturnDocument::SOURCE_SAZEH_HESAB ? ($data['external_invoice_number'] ?? null) : null,
+            'external_invoice_date' => $source === SalesReturnDocument::SOURCE_SAZEH_HESAB ? ($data['external_invoice_date'] ?? null) : null,
+            'default_destination_warehouse_id' => (int) ($data['default_destination_warehouse_id'] ?? 0),
+            'return_reason' => $returnReason,
+            'commission_effect_type' => $commissionEffect,
+            'reference_number' => array_key_exists('reference_number', $data) ? $data['reference_number'] : $doc->reference_number,
+            'description' => $data['description'] ?? null,
+            'updated_by' => $actorId,
+        ]);
         $doc->save();
         $doc->items()->delete();
         $items = $source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE ? $this->prepareInternalItems($doc, $data) : $this->prepareSazehItems($doc, $data);

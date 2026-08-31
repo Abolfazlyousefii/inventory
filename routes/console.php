@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Commissions\CommissionInvoiceSyncOutboxService;
+use App\Services\Commissions\CommissionReturnSyncOutboxService;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use App\Services\Sync\SiteCustomersSyncService;
@@ -44,6 +45,13 @@ Schedule::call(function () {
     app(CommissionInvoiceSyncOutboxService::class)->drain(100);
 })
     ->name('commission-incremental-sync-outbox')
+    ->everyTenSeconds()
+    ->withoutOverlapping();
+
+Schedule::call(function () {
+    app(CommissionReturnSyncOutboxService::class)->drain(100);
+})
+    ->name('commission-return-sync-outbox')
     ->everyTenSeconds()
     ->withoutOverlapping();
 
