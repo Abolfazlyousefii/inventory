@@ -5,6 +5,7 @@
 
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/commissions.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/commissions-phase4.css') }}">
 @endpush
 
 @php
@@ -226,4 +227,5 @@
 
 @push('scripts')
     <script src="{{ asset('js/commissions.js') }}" defer></script>
+    <script src="{{ asset('js/commissions-phase4.js') }}" defer></script>
 @endpush

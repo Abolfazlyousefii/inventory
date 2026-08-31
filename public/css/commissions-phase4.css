@@ -1,0 +1,941 @@
+/*
+ * Commission Phase 4.3 — Minimal Clarity UI
+ * Pure UI layer. Financial and commission logic are untouched.
+ */
+
+#commissionApp {
+    --p43-accent: #17445e;
+    --p43-accent-hover: #10364c;
+    --p43-accent-soft: #f1f7fa;
+    --p43-blue: #2563eb;
+    --p43-text: #172033;
+    --p43-muted: #6b7b8c;
+    --p43-line: #dfe7ec;
+    --p43-line-soft: #edf2f5;
+    --p43-bg-soft: #f8fafb;
+    --p43-warning-bg: #fffaf0;
+    --p43-warning-line: #f3d48a;
+    --p43-danger-bg: #fff7f7;
+    --p43-danger-line: #f4c5c5;
+    --p43-success-bg: #f4fbf6;
+    --p43-success-line: #ccebd5;
+    gap: .72rem;
+    color: var(--p43-text);
+}
+
+/* ------------------------------------------------------------------
+   Fix tab layout first: active tab content must start immediately.
+   This intentionally overrides any inherited min-height/flex alignment.
+   ------------------------------------------------------------------ */
+
+#commissionApp .tab-content {
+    min-height: 0 !important;
+    height: auto !important;
+}
+
+#commissionApp .tab-content > .tab-pane {
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+}
+
+#commissionApp .tab-content > .tab-pane.active {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    align-content: flex-start !important;
+    gap: .72rem !important;
+    padding-top: .72rem !important;
+}
+
+#commissionApp #commission-rates,
+#commissionApp #commission-documents {
+    min-height: 0 !important;
+    height: auto !important;
+}
+
+#commissionApp #commission-rates > *,
+#commissionApp #commission-documents > * {
+    margin-top: 0 !important;
+}
+
+/* ------------------------------------------------------------------
+   Page header — plain, compact, easy to scan
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-page-head {
+    min-height: 0;
+    padding: .82rem .95rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: none;
+    align-items: center;
+}
+
+#commissionApp .commission-page-head::before,
+#commissionApp .commission-page-head::after {
+    display: none !important;
+}
+
+#commissionApp .commission-page-head h1 {
+    margin: .12rem 0 .08rem;
+    color: var(--p43-text);
+    font-size: 1.32rem;
+    line-height: 1.55;
+    font-weight: 850;
+    letter-spacing: -.02em;
+}
+
+#commissionApp .commission-page-head p {
+    margin: 0;
+    color: var(--p43-muted);
+    font-size: .76rem;
+}
+
+#commissionApp .commission-eyebrow {
+    color: var(--p43-blue);
+    font-size: .69rem;
+    font-weight: 800;
+}
+
+#commissionApp .commission-page-head h1 .badge {
+    padding: .2rem .48rem;
+    border: 0;
+    border-radius: 999px;
+    background: #facc15 !important;
+    color: #423500 !important;
+    font-size: .62rem !important;
+    vertical-align: middle;
+}
+
+#commissionApp .commission-head-actions {
+    gap: .4rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    backdrop-filter: none;
+}
+
+#commissionApp .commission-period-picker {
+    min-width: 220px;
+}
+
+#commissionApp .commission-period-picker label {
+    font-size: .65rem;
+    color: var(--p43-muted);
+}
+
+#commissionApp .commission-head-actions .form-select,
+#commissionApp .commission-head-actions .btn {
+    min-height: 36px;
+    border-radius: 8px;
+    font-size: .72rem;
+}
+
+/* Pilot notice: one quiet status line */
+#commissionApp > .alert-warning.commission-feedback,
+#commissionApp .commission-pilot-banner {
+    min-height: 0;
+    margin: 0;
+    padding: .5rem .68rem;
+    border: 1px solid var(--p43-warning-line);
+    border-radius: 9px;
+    background: var(--p43-warning-bg);
+    color: #805d13;
+    box-shadow: none;
+    font-size: .71rem;
+}
+
+#commissionApp > .alert-warning.commission-feedback::before,
+#commissionApp .commission-pilot-banner::before {
+    display: none !important;
+}
+
+/* ------------------------------------------------------------------
+   Tabs — minimal nav, no large dark blocks
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-tabs {
+    padding: 0 .4rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: none;
+}
+
+#commissionApp .commission-tabs .nav-tabs {
+    display: flex;
+    gap: 1.1rem;
+    border: 0;
+}
+
+#commissionApp .commission-tabs .nav-link {
+    position: relative;
+    width: auto;
+    min-height: 39px;
+    padding: .55rem .4rem;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    color: #657587;
+    box-shadow: none !important;
+    font-size: .74rem;
+    font-weight: 800;
+}
+
+#commissionApp .commission-tabs .nav-link:hover {
+    color: var(--p43-accent);
+}
+
+#commissionApp .commission-tabs .nav-link.active {
+    color: var(--p43-accent);
+}
+
+#commissionApp .commission-tabs .nav-link.active::after {
+    content: "";
+    position: absolute;
+    inset-inline: .35rem;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--p43-accent);
+}
+
+/* ------------------------------------------------------------------
+   Overview order — attention before the operational table
+   ------------------------------------------------------------------ */
+
+#commissionApp #commission-overview {
+    display: flex;
+    flex-direction: column;
+    gap: .72rem;
+}
+
+#commissionApp #commission-overview > .commission-period-header { order: 10; }
+#commissionApp #commission-overview > .commission-section-heading { order: 20; }
+#commissionApp #commission-overview > .commission-kpi-grid { order: 30; }
+#commissionApp #commission-overview > .commission-finance-note { order: 35; }
+#commissionApp #commission-overview > .commission-attention { order: 40; }
+#commissionApp #commission-overview > .commission-card:not(.commission-attention),
+#commissionApp #commission-overview > .commission-seller-hero,
+#commissionApp #commission-overview > .commission-empty { order: 50; }
+
+/* ------------------------------------------------------------------
+   Period summary — one slim line
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-period-header {
+    min-height: 0;
+    padding: .68rem .78rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: none;
+    grid-template-columns: minmax(230px, 1fr) auto;
+    gap: .55rem 1rem;
+}
+
+#commissionApp .commission-period-header::before {
+    display: none !important;
+}
+
+#commissionApp .commission-period-header h2 {
+    margin: .08rem 0 0;
+    font-size: .92rem;
+    font-weight: 800;
+}
+
+#commissionApp .commission-period-header dl {
+    display: flex;
+    gap: .4rem;
+}
+
+#commissionApp .commission-period-header dl > div {
+    min-height: 44px;
+    min-width: 106px;
+    padding: .35rem .5rem;
+    border: 1px solid var(--p43-line-soft);
+    border-radius: 8px;
+    background: var(--p43-bg-soft);
+}
+
+#commissionApp .commission-period-header dt {
+    font-size: .61rem;
+    color: var(--p43-muted);
+}
+
+#commissionApp .commission-period-header dd {
+    margin: .12rem 0 0;
+    font-size: .7rem;
+    color: #27364a;
+}
+
+#commissionApp .commission-stale {
+    margin: .1rem -.78rem -.68rem;
+    padding: .55rem .78rem;
+    border-top-color: var(--p43-warning-line);
+    border-radius: 0 0 10px 10px;
+    background: var(--p43-warning-bg);
+}
+
+/* ------------------------------------------------------------------
+   Headings
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-section-heading {
+    margin: 0;
+    padding: .05rem 0;
+}
+
+#commissionApp .commission-section-heading h2,
+#commissionApp .commission-card__head h3 {
+    margin: 0;
+    color: var(--p43-text);
+    font-size: .91rem;
+    font-weight: 850;
+}
+
+#commissionApp .commission-section-heading h2 {
+    padding: 0;
+}
+
+#commissionApp .commission-section-heading h2::before {
+    display: none !important;
+}
+
+#commissionApp .commission-section-heading p,
+#commissionApp .commission-card__head p {
+    margin-top: .15rem;
+    color: var(--p43-muted);
+    font-size: .68rem;
+}
+
+/* ------------------------------------------------------------------
+   KPIs — fewer visual treatments, one clear primary number
+   ------------------------------------------------------------------ */
+
+#commissionApp #commission-overview .commission-kpi-grid--compact {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .48rem;
+}
+
+#commissionApp #commission-overview .commission-kpi-grid--compact > .commission-kpi:first-child {
+    grid-column: auto;
+}
+
+#commissionApp .commission-kpi {
+    min-height: 88px;
+    padding: .72rem .76rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: none;
+}
+
+#commissionApp .commission-kpi:hover {
+    transform: none;
+    border-color: var(--p43-line);
+    box-shadow: none;
+}
+
+#commissionApp .commission-kpi::after {
+    display: none;
+}
+
+#commissionApp .commission-kpi > span {
+    color: var(--p43-muted);
+    font-size: .67rem;
+    font-weight: 650;
+}
+
+#commissionApp .commission-kpi > strong {
+    margin-top: .06rem;
+    color: var(--p43-text);
+    font-size: 1rem;
+    font-weight: 850;
+    line-height: 1.55;
+    letter-spacing: -.02em;
+}
+
+#commissionApp .commission-kpi > small {
+    color: #8b99a7;
+    font-size: .61rem;
+}
+
+#commissionApp #commission-overview .commission-kpi-grid--compact > .commission-kpi:first-child,
+#commissionApp #commission-overview .commission-kpi--primary,
+#commissionApp #commission-overview .commission-kpi--phase4-primary {
+    border-color: #c9dce6;
+    background: var(--p43-accent-soft);
+    box-shadow: none;
+}
+
+#commissionApp #commission-overview .commission-kpi-grid--compact > .commission-kpi:first-child > span,
+#commissionApp #commission-overview .commission-kpi-grid--compact > .commission-kpi:first-child > small,
+#commissionApp #commission-overview .commission-kpi--primary > span,
+#commissionApp #commission-overview .commission-kpi--primary > small,
+#commissionApp #commission-overview .commission-kpi--phase4-primary > span {
+    color: #61798a;
+}
+
+#commissionApp #commission-overview .commission-kpi-grid--compact > .commission-kpi:first-child > strong,
+#commissionApp #commission-overview .commission-kpi--primary > strong,
+#commissionApp #commission-overview .commission-kpi--phase4-primary > strong {
+    color: var(--p43-accent);
+    font-size: 1.13rem;
+}
+
+#commissionApp .commission-finance-note {
+    min-height: 0;
+    padding: .4rem .55rem;
+    border: 0;
+    border-radius: 7px;
+    background: #f8fafb;
+    color: var(--p43-muted);
+    font-size: .65rem;
+}
+
+/* ------------------------------------------------------------------
+   Attention — one lightweight action strip
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-attention,
+#commissionApp .commission-attention--priority {
+    padding: .7rem;
+    border: 1px solid var(--p43-warning-line);
+    border-radius: 10px;
+    background: var(--p43-warning-bg);
+    box-shadow: none;
+}
+
+#commissionApp .commission-attention .commission-card__head {
+    margin-bottom: .45rem;
+}
+
+#commissionApp .commission-attention .commission-card__head h3::before {
+    display: none !important;
+}
+
+#commissionApp .commission-alert-grid,
+#commissionApp .commission-attention--priority .commission-alert-grid {
+    display: flex;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+
+#commissionApp .commission-alert,
+#commissionApp .commission-attention--priority .commission-alert {
+    flex: 1 1 210px;
+    min-height: 42px;
+    padding: .45rem .55rem;
+    border: 1px solid #ead9af;
+    border-radius: 8px;
+    background: #fffdfa;
+    font-size: .67rem;
+}
+
+#commissionApp .commission-alert strong {
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    border-radius: 0;
+    background: transparent !important;
+    color: inherit;
+    font-size: .82rem;
+}
+
+#commissionApp .commission-alert--warning {
+    border-color: var(--p43-warning-line);
+    background: #fffdf8;
+    color: #76571a;
+}
+
+#commissionApp .commission-alert--danger {
+    border-color: var(--p43-danger-line);
+    background: var(--p43-danger-bg);
+    color: #9b3b3b;
+}
+
+#commissionApp .commission-alert a,
+#commissionApp .commission-alert button {
+    margin-inline-start: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--p43-accent);
+    font-size: .64rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+/* ------------------------------------------------------------------
+   Seller table — compact, constrained, not the whole page
+   ------------------------------------------------------------------ */
+
+#commissionApp #commission-overview > .commission-card:not(.commission-attention) {
+    overflow: hidden;
+    padding: .72rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: none;
+}
+
+#commissionApp #commission-overview > .commission-card:not(.commission-attention) .commission-card__head {
+    padding: 0 0 .55rem;
+}
+
+#commissionApp #commission-overview > .commission-card:not(.commission-attention) .table-responsive {
+    max-height: 470px;
+    overflow: auto;
+    border: 1px solid var(--p43-line);
+    border-radius: 8px;
+    scrollbar-width: thin;
+}
+
+#commissionApp .commission-table {
+    font-size: .74rem;
+}
+
+#commissionApp .commission-table th,
+#commissionApp .commission-table td {
+    padding: .56rem .58rem;
+}
+
+#commissionApp .commission-table th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f7f9fa;
+    color: #516274;
+    font-size: .65rem;
+    font-weight: 800;
+    box-shadow: 0 1px 0 var(--p43-line);
+}
+
+#commissionApp .commission-table tbody tr:nth-child(even) td {
+    background: #fcfdfd;
+}
+
+#commissionApp .commission-table tbody tr:hover td {
+    background: #f8fbfc;
+}
+
+#commissionApp .commission-table tbody td:first-child strong {
+    color: #26384a;
+}
+
+#commissionApp .commission-table .btn-sm {
+    min-width: 50px;
+    padding: .22rem .42rem;
+    border-radius: 6px;
+    font-size: .63rem;
+}
+
+/* Seller quick filter */
+#commissionApp .commission-seller-filter {
+    margin: 0 0 .5rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+#commissionApp .commission-seller-filter__label {
+    color: var(--p43-muted);
+    font-size: .64rem;
+}
+
+#commissionApp .commission-seller-filter__options {
+    gap: .25rem;
+}
+
+#commissionApp .commission-seller-filter__button {
+    min-height: 28px;
+    padding: .22rem .43rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 7px;
+    background: #fff;
+    color: #5f7182;
+    font-size: .62rem;
+}
+
+#commissionApp .commission-seller-filter__button[aria-pressed="true"] {
+    border-color: #b8ced9;
+    background: var(--p43-accent-soft);
+    color: var(--p43-accent);
+}
+
+#commissionApp .commission-seller-filter__count {
+    background: #edf2f5;
+}
+
+#commissionApp .commission-seller-filter__button[aria-pressed="true"] .commission-seller-filter__count {
+    background: #dceaf1;
+}
+
+/* ------------------------------------------------------------------
+   Status pills
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-status,
+#commissionApp .commission-badge,
+#commissionApp .commission-campaign-chip {
+    padding: .17rem .42rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: .61rem;
+    font-weight: 750;
+}
+
+#commissionApp .commission-status--open,
+#commissionApp .commission-status--active,
+#commissionApp .commission-status--paid,
+#commissionApp .commission-status--finalized {
+    border-color: var(--p43-success-line);
+    background: var(--p43-success-bg);
+    color: #2f7a47;
+}
+
+#commissionApp .commission-status--review,
+#commissionApp .commission-status--scheduled {
+    border-color: var(--p43-warning-line);
+    background: var(--p43-warning-bg);
+    color: #825f17;
+}
+
+#commissionApp .commission-status--closed,
+#commissionApp .commission-status--expired,
+#commissionApp .commission-status--archived,
+#commissionApp .commission-status--draft,
+#commissionApp .commission-status--neutral {
+    border-color: var(--p43-line);
+    background: #f7f9fa;
+    color: #677889;
+}
+
+/* ------------------------------------------------------------------
+   Rates and campaigns — start at top, compact list
+   ------------------------------------------------------------------ */
+
+#commissionApp #commission-rates .commission-section-heading {
+    order: 1;
+}
+
+#commissionApp #commission-rates .commission-rates-layout {
+    order: 2;
+}
+
+#commissionApp .commission-rates-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(260px, .72fr);
+    gap: .7rem;
+    align-items: start;
+    margin: 0 !important;
+}
+
+#commissionApp .commission-tree-card,
+#commissionApp .commission-campaigns {
+    margin: 0;
+    padding: .72rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: none;
+}
+
+#commissionApp .commission-campaigns {
+    position: static;
+}
+
+#commissionApp .commission-tree-legend {
+    gap: .6rem;
+    padding: 0 0 .55rem;
+    color: var(--p43-muted);
+    font-size: .63rem;
+}
+
+#commissionApp .commission-node {
+    margin-top: .35rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+#commissionApp .commission-node:hover {
+    border-color: #cbd9e1;
+    box-shadow: none;
+}
+
+#commissionApp .commission-node__head {
+    padding: .47rem .52rem;
+}
+
+#commissionApp .commission-node__kind {
+    background: #f8fafb;
+    border-radius: 5px;
+    font-size: .61rem;
+}
+
+#commissionApp .commission-node__actions .btn,
+#commissionApp .commission-heading-actions .btn {
+    min-height: 31px;
+    padding: .28rem .48rem;
+    border-radius: 7px;
+    font-size: .64rem;
+}
+
+#commissionApp .commission-heading-actions .form-control {
+    min-height: 34px;
+    border-radius: 8px;
+    font-size: .69rem;
+}
+
+#commissionApp .commission-active-campaign {
+    gap: .45rem;
+    padding: .65rem;
+    border: 1px solid var(--p43-success-line);
+    border-radius: 9px;
+    background: var(--p43-success-bg);
+}
+
+#commissionApp .commission-active-campaign > strong {
+    color: #317b49;
+    font-size: 1.1rem;
+}
+
+#commissionApp .commission-active-campaign dl {
+    gap: .35rem;
+    font-size: .67rem;
+}
+
+#commissionApp .commission-campaign-list {
+    gap: .25rem;
+    margin-top: .5rem;
+}
+
+#commissionApp .commission-campaign-list > div {
+    padding: .45rem 0;
+}
+
+/* ------------------------------------------------------------------
+   Documents and settlement — no giant blank area
+   ------------------------------------------------------------------ */
+
+#commissionApp #commission-documents .commission-section-heading {
+    order: 1;
+}
+
+#commissionApp #commission-documents .commission-workflow {
+    order: 2;
+}
+
+#commissionApp #commission-documents .commission-kpi-grid {
+    order: 3;
+}
+
+#commissionApp #commission-documents > .commission-card {
+    order: 4;
+}
+
+#commissionApp #commission-documents > *:not(.commission-section-heading):not(.commission-workflow):not(.commission-kpi-grid):not(.commission-card) {
+    order: 5;
+}
+
+#commissionApp #commission-documents .commission-kpi-grid--compact {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .45rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+#commissionApp #commission-documents .commission-kpi {
+    min-height: 82px;
+    border: 1px solid var(--p43-line);
+    border-radius: 9px;
+    background: #fff;
+}
+
+#commissionApp #commission-documents > .commission-card {
+    margin: 0;
+    padding: .7rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 10px;
+    box-shadow: none;
+}
+
+#commissionApp #commission-documents > .commission-card .table-responsive {
+    max-height: 400px;
+    overflow: auto;
+    border: 1px solid var(--p43-line);
+    border-radius: 8px;
+}
+
+#commissionApp .commission-workflow {
+    margin: 0;
+    padding: .6rem .7rem;
+    border: 1px solid var(--p43-line);
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: none;
+}
+
+#commissionApp .commission-workflow__head strong {
+    font-size: .75rem;
+}
+
+#commissionApp .commission-workflow__head span,
+#commissionApp .commission-workflow__summary {
+    font-size: .63rem;
+}
+
+#commissionApp .commission-workflow__marker {
+    width: 23px;
+    height: 23px;
+    border-color: #cbd6dd;
+    font-size: .61rem;
+}
+
+/* Phase 5 blocks in documents */
+#commissionApp #commission-documents .commission-card + .commission-card {
+    margin-top: 0;
+}
+
+/* ------------------------------------------------------------------
+   General cards/buttons/empty states
+   ------------------------------------------------------------------ */
+
+#commissionApp .commission-card,
+#commissionApp .commission-seller-hero,
+#commissionApp .commission-period-header,
+#commissionApp .commission-kpi {
+    box-shadow: none;
+}
+
+#commissionApp .commission-empty {
+    padding: .95rem .7rem;
+    border: 1px dashed #cfdbe2;
+    border-radius: 9px;
+    background: #fafcfd;
+    color: #697989;
+    font-size: .7rem;
+}
+
+#commissionApp .commission-empty p {
+    font-size: .65rem;
+}
+
+#commissionApp .btn-primary {
+    border-color: var(--p43-accent);
+    background: var(--p43-accent);
+}
+
+#commissionApp .btn-primary:hover {
+    border-color: var(--p43-accent-hover);
+    background: var(--p43-accent-hover);
+}
+
+#commissionApp .btn-outline-primary {
+    border-color: #9fbfce;
+    color: var(--p43-accent);
+}
+
+#commissionApp .btn-outline-primary:hover {
+    border-color: var(--p43-accent);
+    background: var(--p43-accent);
+    color: #fff;
+}
+
+/* ------------------------------------------------------------------
+   Responsive
+   ------------------------------------------------------------------ */
+
+@media (max-width: 1199px) {
+    #commissionApp #commission-overview .commission-kpi-grid--compact,
+    #commissionApp #commission-documents .commission-kpi-grid--compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #commissionApp .commission-rates-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 767px) {
+    #commissionApp {
+        gap: .58rem;
+    }
+
+    #commissionApp .commission-page-head {
+        padding: .7rem;
+    }
+
+    #commissionApp .commission-page-head h1 {
+        font-size: 1.1rem;
+    }
+
+    #commissionApp .commission-head-actions,
+    #commissionApp .commission-period-picker {
+        width: 100%;
+    }
+
+    #commissionApp .commission-tabs {
+        overflow-x: auto;
+    }
+
+    #commissionApp .commission-tabs .nav-tabs {
+        min-width: max-content;
+        flex-wrap: nowrap;
+    }
+
+    #commissionApp .commission-tabs .nav-link {
+        min-width: 120px;
+    }
+
+    #commissionApp .commission-period-header {
+        grid-template-columns: 1fr;
+    }
+
+    #commissionApp .commission-period-header dl {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    #commissionApp .commission-period-header dl > div:last-child {
+        grid-column: span 2;
+    }
+
+    #commissionApp #commission-overview .commission-kpi-grid--compact,
+    #commissionApp #commission-documents .commission-kpi-grid--compact {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    #commissionApp .commission-kpi {
+        min-height: 78px;
+        padding: .62rem;
+    }
+
+    #commissionApp .commission-alert-grid,
+    #commissionApp .commission-attention--priority .commission-alert-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    #commissionApp .commission-seller-filter {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #commissionApp .commission-seller-filter__options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    #commissionApp #commission-overview > .commission-card:not(.commission-attention) .table-responsive {
+        max-height: 430px;
+    }
+}
