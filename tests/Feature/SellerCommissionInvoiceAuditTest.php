@@ -31,11 +31,14 @@ function sciaSeller(string $name): User
 
 function sciaInvoice(User $seller, string $number, string $customer = 'Audit Customer'): Invoice
 {
-    return Invoice::query()->create([
+    // This suite validates reporting/audit over explicit historical snapshots.
+    // Do not let the Phase 2 source observer manufacture ledger rows while the
+    // fixture is assembling those snapshots.
+    return Invoice::withoutEvents(fn () => Invoice::query()->create([
         'uuid' => $number, 'seller_id' => $seller->id, 'customer_name' => $customer,
         'subtotal' => 10_000_000, 'total' => 10_000_000, 'discount_amount' => 0,
         'document_date' => '2026-08-15', 'status' => Invoice::STATUS_SHIPPED,
-    ]);
+    ]));
 }
 
 function sciaLedger(CommissionPeriod $period, User $seller, Invoice $invoice, int $commission, array $overrides = []): CommissionLedgerEntry
@@ -46,10 +49,10 @@ function sciaLedger(CommissionPeriod $period, User $seller, Invoice $invoice, in
         'category_id' => $category->id, 'name' => 'Audit Product '.++$sequence,
         'sku' => (string) Str::uuid(), 'stock' => 1, 'reserved' => 0, 'price' => 10_000_000,
     ]);
-    $item = InvoiceItem::query()->create([
+    $item = InvoiceItem::withoutEvents(fn () => InvoiceItem::query()->create([
         'invoice_id' => $invoice->id, 'product_id' => $product->id,
         'quantity' => 1, 'price' => 10_000_000, 'line_discount_amount' => 0,
-    ]);
+    ]));
 
     return CommissionLedgerEntry::query()->create(array_merge([
         'commission_period_id' => $period->id, 'seller_id' => $seller->id,

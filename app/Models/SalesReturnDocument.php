@@ -117,7 +117,19 @@ class SalesReturnDocument extends Model
 
     public static function returnReasonLabels(): array
     {
-        return ['healthy_return' => 'برگشت سالم / بدون ایراد', 'damaged_product' => 'خرابی کالا', 'product_mismatch' => 'مغایرت کالا', 'wrong_dispatch' => 'اشتباه در ارسال', 'customer_cancellation' => 'انصراف مشتری', 'appearance_issue' => 'ایراد ظاهری', 'technical_issue' => 'ایراد فنی', 'registration_error' => 'ثبت اشتباه', 'other' => 'سایر'];
+        return [
+            'healthy_return' => 'برگشت سالم / بدون ایراد',
+            'warranty' => 'گارانتی',
+            'damaged_product' => 'خرابی کالا',
+            'product_mismatch' => 'مغایرت کالا',
+            'wrong_collection' => 'اشتباه در جمع‌آوری',
+            'wrong_dispatch' => 'اشتباه در ارسال',
+            'customer_cancellation' => 'انصراف مشتری',
+            'appearance_issue' => 'ایراد ظاهری',
+            'technical_issue' => 'ایراد فنی',
+            'registration_error' => 'ثبت اشتباه',
+            'other' => 'سایر',
+        ];
     }
 
     public static function commissionEffectLabels(): array

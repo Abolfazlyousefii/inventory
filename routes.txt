@@ -1,8 +1,0 @@
-// add to web.php inside auth route group
-
-use App\Http\Controllers\RecoveryImportController;
-
-Route::prefix('recovery')->group(function(){
-    Route::get('/import',[RecoveryImportController::class,'index'])->name('recovery.index');
-    Route::post('/import',[RecoveryImportController::class,'import'])->name('recovery.import');
-});
