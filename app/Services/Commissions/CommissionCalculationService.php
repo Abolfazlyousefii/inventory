@@ -26,14 +26,20 @@ class CommissionCalculationService
             $this->calculator->warm($period->start_at, $period->end_at);
             $seenItemIds = [];
             $invoices = Invoice::query()
-                ->with(['preinvoiceOrder', 'items.product.category.parent', 'items.variant'])
+                ->with([
+                    'seller',
+                    'preinvoiceOrder.seller',
+                    'preinvoiceOrder.creator',
+                    'items.product.category.parent',
+                    'items.variant',
+                ])
                 ->whereRaw('COALESCE(document_date, created_at) >= ?', [$period->start_at])
                 ->whereRaw('COALESCE(document_date, created_at) < ?', [$period->end_at])
                 ->whereNotIn('status', Invoice::cancelledStatuses())
                 ->orderBy('id')->get();
 
             foreach ($invoices as $invoice) {
-                $sellerId = $invoice->effective_seller_id;
+                $sellerId = $invoice->commissionSellerId();
                 if (! $sellerId) {
                     $this->warning($period, $invoice, null, 'missing_seller', 'فاکتور فروشنده معتبر ندارد.');
 
@@ -80,7 +86,12 @@ class CommissionCalculationService
     {
         CommissionCalculationWarning::query()->create([
             'commission_period_id' => $period->id, 'invoice_id' => $invoice->id, 'invoice_item_id' => $itemId,
-            'code' => $code, 'message' => $message, 'context' => ['invoice_number' => $invoice->uuid],
+            'code' => $code, 'message' => $message, 'context' => [
+                'invoice_number' => $invoice->uuid,
+                'invoice_seller_id' => $invoice->seller_id,
+                'preinvoice_seller_id' => $invoice->preinvoiceOrder?->seller_id,
+                'operator_id' => $invoice->preinvoiceOrder?->created_by,
+            ],
         ]);
     }
 }

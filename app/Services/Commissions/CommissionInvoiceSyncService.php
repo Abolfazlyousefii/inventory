@@ -57,7 +57,13 @@ class CommissionInvoiceSyncService
             // Re-read after locking the affected period(s) so we calculate from
             // the latest committed invoice/item state.
             $invoice = Invoice::query()
-                ->with(['preinvoiceOrder', 'items.product.category.parent', 'items.variant'])
+                ->with([
+                    'seller',
+                    'preinvoiceOrder.seller',
+                    'preinvoiceOrder.creator',
+                    'items.product.category.parent',
+                    'items.variant',
+                ])
                 ->find($invoiceId);
 
             $invoiceNumber = $invoice ? (string) $invoice->uuid : $invoiceNumberSnapshot;
@@ -86,7 +92,7 @@ class CommissionInvoiceSyncService
                     continue;
                 }
 
-                $sellerId = $invoice->effective_seller_id;
+                $sellerId = $invoice->commissionSellerId();
                 if (! $sellerId) {
                     $this->warning(
                         $period,
@@ -313,7 +319,12 @@ class CommissionInvoiceSyncService
             'invoice_item_id' => $itemId,
             'code' => $code,
             'message' => $message,
-            'context' => ['invoice_number' => $invoice->uuid],
+            'context' => [
+                'invoice_number' => $invoice->uuid,
+                'invoice_seller_id' => $invoice->seller_id,
+                'preinvoice_seller_id' => $invoice->preinvoiceOrder?->seller_id,
+                'operator_id' => $invoice->preinvoiceOrder?->created_by,
+            ],
         ]);
     }
 

@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -137,29 +139,36 @@ class PreinvoiceDraftReservationService
             ]);
     }
 
-    public function cleanupStaleTemporaryReservations(int $onlineMinutes = 5, int $inPersonMinutes = 15): array
+    public function cleanupStaleTemporaryReservations(
+        int $onlineMinutes = PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+        bool $dryRun = false,
+    ): array
     {
+        if ($dryRun) {
+            return $this->cleanupResult(
+                $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
+                    ->with([
+                        'product:id,name',
+                        'variant:id,variant_name,variety_name',
+                        'user:id,name',
+                    ])
+                    ->get(),
+                false,
+            );
+        }
+
         $releasedRows = 0;
         $releasedQty = 0;
+        $releasedReservations = collect();
 
-        DB::transaction(function () use ($onlineMinutes, $inPersonMinutes, &$releasedRows, &$releasedQty) {
-            $rows = PreinvoiceDraftReservation::query()
-                ->whereNull('converted_at')
-                ->whereNull('preinvoice_order_id')
-                ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
-                ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
-                ->where(function ($query) use ($onlineMinutes, $inPersonMinutes) {
-                    $query->where(function ($q) use ($onlineMinutes) {
-                        $q->where('reservation_scope', 'temporary_online')
-                            ->where(function ($qq) use ($onlineMinutes) {
-                                $qq->where('expires_at', '<=', now())
-                                    ->orWhere('last_seen_at', '<=', now()->subMinutes($onlineMinutes));
-                            });
-                    })->orWhere(function ($q) use ($inPersonMinutes) {
-                        $q->where('reservation_scope', 'temporary_in_person')
-                            ->where('last_seen_at', '<=', now()->subMinutes($inPersonMinutes));
-                    });
-                })
+        DB::transaction(function () use ($onlineMinutes, $inPersonMinutes, &$releasedRows, &$releasedQty, &$releasedReservations) {
+            $rows = $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
+                ->with([
+                    'product:id,name',
+                    'variant:id,variant_name,variety_name',
+                    'user:id,name',
+                ])
                 ->lockForUpdate()
                 ->get();
 
@@ -169,10 +178,25 @@ class PreinvoiceDraftReservationService
                 $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
                 $releasedRows++;
                 $releasedQty += $qty;
+                $releasedReservations->push($row);
             }
         });
 
-        return ['released_reservations' => $releasedRows, 'released_quantity' => $releasedQty];
+        return [
+            'released_reservations' => $releasedRows,
+            'released_quantity' => $releasedQty,
+            'reservations' => $releasedReservations,
+            'dry_run' => false,
+        ];
+    }
+
+    public function staleTemporaryReservationsQuery(
+        int $onlineMinutes = PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+    ): Builder {
+        return PreinvoiceDraftReservation::query()
+            ->abandonedTemporary(max(1, $onlineMinutes), max(1, $inPersonMinutes))
+            ->orderBy('id');
     }
 
     public function releaseExpiredDraftReservations(?string $token = null, ?int $userId = null): void
@@ -302,5 +326,15 @@ class PreinvoiceDraftReservationService
     private function reservationKey(int $productId, int $variantId): string
     {
         return $productId . ':' . $variantId;
+    }
+
+    private function cleanupResult(Collection $reservations, bool $changed): array
+    {
+        return [
+            'released_reservations' => $reservations->count(),
+            'released_quantity' => (int) $reservations->sum('quantity'),
+            'reservations' => $reservations,
+            'dry_run' => ! $changed,
+        ];
     }
 }

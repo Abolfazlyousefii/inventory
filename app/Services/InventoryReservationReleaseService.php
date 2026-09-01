@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\ActivityLog;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Support\ActivityLogger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -21,9 +21,9 @@ class InventoryReservationReleaseService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedReservation->preinvoice_order_id !== null || $lockedReservation->converted_at !== null || $lockedReservation->released_at !== null) {
+            if (! $lockedReservation->canBeManuallyReleased()) {
                 throw ValidationException::withMessages([
-                    'reservation' => 'این رزرو به سند ثبت‌شده متصل است و از این صفحه قابل آزادسازی نیست.',
+                    'reservation' => 'این رزرو دیگر قابل آزادسازی نیست؛ وضعیت آن در همین لحظه تغییر کرده است.',
                 ]);
             }
 
@@ -34,8 +34,24 @@ class InventoryReservationReleaseService
                 ]);
             }
 
-            $variant = ProductVariant::query()->whereKey($lockedReservation->variant_id)->lockForUpdate()->firstOrFail();
+            $variant = ProductVariant::query()
+                ->whereKey($lockedReservation->variant_id)
+                ->where('product_id', $lockedReservation->product_id)
+                ->lockForUpdate()
+                ->first();
             $product = Product::query()->whereKey($lockedReservation->product_id)->lockForUpdate()->first();
+
+            if (! $variant || ! $product) {
+                throw ValidationException::withMessages([
+                    'reservation' => 'ارتباط کالا یا تنوع این رزرو معتبر نیست. ابتدا گزارش یکپارچگی موجودی را بررسی کنید.',
+                ]);
+            }
+
+            if ((int) $variant->reserved < $quantity || (int) $product->reserved < $quantity) {
+                throw ValidationException::withMessages([
+                    'reservation' => 'مقدار رزرو ثبت‌شده با موجودی هم‌خوان نیست. هیچ تغییری انجام نشد؛ ابتدا گزارش یکپارچگی موجودی را بررسی کنید.',
+                ]);
+            }
 
             $before = [
                 'variant_stock' => (int) ($variant->stock ?? 0),
@@ -43,13 +59,11 @@ class InventoryReservationReleaseService
                 'product_reserved' => $product ? (int) ($product->reserved ?? 0) : null,
             ];
 
-            $variant->reserved = max(0, (int) $variant->reserved - $quantity);
+            $variant->reserved = (int) $variant->reserved - $quantity;
             $variant->save();
 
-            if ($product) {
-                $product->reserved = max(0, (int) $product->reserved - $quantity);
-                $product->save();
-            }
+            $product->reserved = (int) $product->reserved - $quantity;
+            $product->save();
 
             WarehouseStockService::change(
                 WarehouseStockService::centralWarehouseId(),
@@ -86,15 +100,12 @@ class InventoryReservationReleaseService
                 ],
             ];
 
-            ActivityLog::query()->create([
-                'user_id' => $user->id,
-                'action' => 'manual_inventory_reservation_released',
-                'subject_type' => PreinvoiceDraftReservation::class,
-                'subject_id' => $lockedReservation->id,
-                'description' => 'آزادسازی دستی رزرو موجودی',
-                'properties' => $properties,
-                'occurred_at' => now(),
-            ]);
+            ActivityLogger::log(
+                'reservation_manual_release',
+                $lockedReservation,
+                'آزادسازی دستی رزرو موجودی',
+                $properties,
+            );
 
             Log::info('MANUAL_INVENTORY_RESERVATION_RELEASED', $properties);
         });
