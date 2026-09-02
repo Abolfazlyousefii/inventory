@@ -11,8 +11,13 @@ class ActivityLogger
 {
     public static function log(string $action, Model $subject, string $description, array $properties = []): void
     {
+        self::logForActor(Auth::id(), $action, $subject, $description, $properties);
+    }
+
+    public static function logForActor(?int $userId, string $action, Model $subject, string $description, array $properties = []): void
+    {
         ActivityLog::query()->create([
-            'user_id' => Auth::id(),
+            'user_id' => $userId,
             'action' => $action,
             'subject_type' => $subject::class,
             'subject_id' => $subject->getKey(),

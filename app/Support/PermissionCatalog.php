@@ -154,6 +154,8 @@ class PermissionCatalog
                 'warehouse.shipping.queue.view' => 'مشاهده صف ارسال فاکتور',
                 'warehouse.shipping.view' => 'مشاهده جزئیات ارسال',
                 'warehouse.shipping.ship' => 'ثبت ارسال فاکتور',
+                'warehouse_reservations.view' => 'مشاهده مدیریت رزروهای موجودی',
+                'warehouse_reservations.release' => 'آزادسازی دستی رزرو موجودی',
             ],
             'انتقال بین انبار' => [
                 'transfers.view' => 'مشاهده انتقال‌ها',
@@ -640,6 +642,7 @@ class PermissionCatalog
             'customers.manage' => ['customers.view', 'customers.create', 'customers.edit'],
             'suppliers.manage' => ['suppliers.view', 'suppliers.create', 'suppliers.edit'],
             'export_products' => ['products.export'],
+            'warehouse_reservations.view' => ['page.warehouse.reservations'],
         ];
     }
 

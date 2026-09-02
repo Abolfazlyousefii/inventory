@@ -8,6 +8,20 @@ use Illuminate\Database\Eloquent\Model;
 
 class PreinvoiceDraftReservation extends Model
 {
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_EXPIRED = 'expired';
+
+    public const STATUS_ABANDONED = 'abandoned';
+
+    public const STATUS_RELEASABLE = 'releasable';
+
+    public const STATUS_CONNECTED = 'connected';
+
+    public const STATUS_RELEASED = 'released';
+
+    public const STATUS_UNKNOWN = 'unknown';
+
     public const SCOPE_TEMPORARY_ONLINE = 'temporary_online';
 
     public const SCOPE_TEMPORARY_IN_PERSON = 'temporary_in_person';
@@ -146,6 +160,95 @@ class PreinvoiceDraftReservation extends Model
         });
     }
 
+    public function scopeExpiredTemporary(Builder $query, ?CarbonInterface $at = null): Builder
+    {
+        $at ??= now();
+
+        return $query->openTemporary()
+            ->where($this->qualifyColumn('reservation_scope'), self::SCOPE_TEMPORARY_ONLINE)
+            ->whereNotNull($this->qualifyColumn('expires_at'))
+            ->where($this->qualifyColumn('expires_at'), '<=', $at);
+    }
+
+    public function scopeConnected(Builder $query): Builder
+    {
+        return $query
+            ->whereNull($this->qualifyColumn('released_at'))
+            ->where(function (Builder $query): void {
+                $query->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
+                    ->orWhereNotNull($this->qualifyColumn('converted_at'));
+            });
+    }
+
+    public function scopeForManagementStatus(Builder $query, ?string $status): Builder
+    {
+        return match ($status) {
+            self::STATUS_ACTIVE => $query->activeTemporary(),
+            self::STATUS_EXPIRED => $query->expiredTemporary(),
+            self::STATUS_ABANDONED, self::STATUS_RELEASABLE => $query->abandonedTemporary(),
+            self::STATUS_CONNECTED => $query->connected(),
+            self::STATUS_RELEASED => $query->whereNotNull($this->qualifyColumn('released_at')),
+            default => $query,
+        };
+    }
+
+    public function scopeManagementSearch(Builder $query, ?string $search): Builder
+    {
+        $search = trim((string) $search);
+        if ($search === '') {
+            return $query;
+        }
+
+        return $query->where(function (Builder $query) use ($search): void {
+            $query->where($this->qualifyColumn('token'), 'like', "%{$search}%")
+                ->orWhereHas('product', fn (Builder $product) => $product->where('name', 'like', "%{$search}%"))
+                ->orWhereHas('variant', function (Builder $variant) use ($search): void {
+                    $variant->where('variant_code', 'like', "%{$search}%")
+                        ->orWhere('variety_code', 'like', "%{$search}%");
+                });
+        });
+    }
+
+    /** @return array<int, string> */
+    public static function managementStatuses(): array
+    {
+        return [
+            self::STATUS_ACTIVE,
+            self::STATUS_EXPIRED,
+            self::STATUS_ABANDONED,
+            self::STATUS_RELEASABLE,
+            self::STATUS_CONNECTED,
+            self::STATUS_RELEASED,
+        ];
+    }
+
+    public function managementStatus(?CarbonInterface $at = null): string
+    {
+        $at ??= now();
+
+        if ($this->released_at !== null) {
+            return self::STATUS_RELEASED;
+        }
+
+        if ($this->isConnectedToPreinvoice()) {
+            return self::STATUS_CONNECTED;
+        }
+
+        if ($this->isExpiredTemporary($at)) {
+            return self::STATUS_EXPIRED;
+        }
+
+        if ($this->isAbandoned($at)) {
+            return self::STATUS_ABANDONED;
+        }
+
+        if ($this->isActiveTemporary($at)) {
+            return self::STATUS_ACTIVE;
+        }
+
+        return self::STATUS_UNKNOWN;
+    }
+
     public function isActiveTemporary(
         ?CarbonInterface $at = null,
         int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
@@ -173,6 +276,15 @@ class PreinvoiceDraftReservation extends Model
 
         return $this->reservation_scope === self::SCOPE_TEMPORARY_IN_PERSON
             && ($this->last_seen_at?->lte($at->copy()->subMinutes(max(1, $inPersonMinutes))) ?? false);
+    }
+
+    public function isExpiredTemporary(?CarbonInterface $at = null): bool
+    {
+        $at ??= now();
+
+        return $this->isOpenTemporary()
+            && $this->reservation_scope === self::SCOPE_TEMPORARY_ONLINE
+            && ($this->expires_at?->lte($at) ?? false);
     }
 
     public function canBeManuallyReleased(

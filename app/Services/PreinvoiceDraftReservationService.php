@@ -5,14 +5,18 @@ namespace App\Services;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Support\ActivityLogger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class PreinvoiceDraftReservationService
 {
+    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+
     public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false): array
     {
         $desired = $this->normalizeReservationItems($items);
@@ -158,34 +162,97 @@ class PreinvoiceDraftReservationService
             );
         }
 
-        $releasedRows = 0;
-        $releasedQty = 0;
         $releasedReservations = collect();
+        $warningCount = 0;
+        $candidateIds = $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
+            ->pluck('id');
 
-        DB::transaction(function () use ($onlineMinutes, $inPersonMinutes, &$releasedRows, &$releasedQty, &$releasedReservations) {
-            $rows = $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
-                ->with([
-                    'product:id,name',
-                    'variant:id,variant_name,variety_name',
-                    'user:id,name',
-                ])
-                ->lockForUpdate()
-                ->get();
+        foreach ($candidateIds as $reservationId) {
+            $warning = null;
 
-            foreach ($rows as $row) {
-                $qty = (int) $row->quantity;
-                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $qty);
-                $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
-                $releasedRows++;
-                $releasedQty += $qty;
-                $releasedReservations->push($row);
+            try {
+                $releasedReservation = DB::transaction(function () use ($reservationId, $onlineMinutes, $inPersonMinutes, &$warning) {
+                    $row = PreinvoiceDraftReservation::query()
+                        ->whereKey($reservationId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $row || ! $row->isAbandoned(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
+                        return null;
+                    }
+
+                    $qty = (int) $row->quantity;
+                    $release = $this->inventoryRelease->releaseReservedQuantity(
+                        (int) $row->product_id,
+                        (int) $row->variant_id,
+                        $qty,
+                    );
+
+                    if (! $release['released']) {
+                        $warning = array_merge($release['context'], [
+                            'reservation_id' => (int) $row->id,
+                            'reason' => $release['reason'],
+                            'audit_source' => 'automatic_reservation_cleanup',
+                            'actor_type' => 'system',
+                        ]);
+
+                        throw new RuntimeException('reservation_cleanup_validation_failed');
+                    }
+
+                    $this->markReleasedOrDelete($row, 0, 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
+
+                    ActivityLogger::logForActor(
+                        null,
+                        'reservation_cleanup_released',
+                        $row,
+                        'رزرو موقت رهاشده به‌صورت خودکار آزاد شد.',
+                        array_merge($release['context'], [
+                            'reservation_id' => (int) $row->id,
+                            'reason' => 'temporary_session_lost',
+                            'audit_source' => 'automatic_reservation_cleanup',
+                            'actor_type' => 'system',
+                            'before' => $release['before'],
+                            'after' => $release['after'],
+                        ]),
+                    );
+
+                    return $row->fresh()->load([
+                        'product:id,name',
+                        'variant:id,variant_name,variety_name',
+                        'user:id,name',
+                    ]);
+                });
+            } catch (RuntimeException $exception) {
+                if ($exception->getMessage() !== 'reservation_cleanup_validation_failed' || $warning === null) {
+                    throw $exception;
+                }
+
+                $warningReservation = PreinvoiceDraftReservation::query()->find($warning['reservation_id']);
+                if ($warningReservation) {
+                    ActivityLogger::logForActor(
+                        null,
+                        'reservation_cleanup_warning',
+                        $warningReservation,
+                        'آزادسازی خودکار رزرو به دلیل ناسازگاری موجودی انجام نشد.',
+                        $warning,
+                    );
+                }
+
+                $warningCount++;
+
+                continue;
             }
-        });
+
+            if ($releasedReservation) {
+                $releasedReservations->push($releasedReservation);
+            }
+        }
 
         return [
-            'released_reservations' => $releasedRows,
-            'released_quantity' => $releasedQty,
+            'released_reservations' => $releasedReservations->count(),
+            'released_quantity' => (int) $releasedReservations->sum('quantity'),
             'reservations' => $releasedReservations,
+            'warnings' => $warningCount,
             'dry_run' => false,
         ];
     }
@@ -308,19 +375,15 @@ class PreinvoiceDraftReservationService
             return;
         }
 
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-        if ($variant) {
-            $variant->reserved = max(0, (int) $variant->reserved - $delta);
-            $variant->save();
-        }
+        $release = $this->inventoryRelease->releaseReservedQuantity($productId, $variantId, $delta);
 
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = max(0, (int) $product->reserved - $delta);
-            $product->save();
+        if (! $release['released']) {
+            throw ValidationException::withMessages([
+                'items' => $release['reason'] === 'reserved_cache_mismatch'
+                    ? 'مقدار رزرو ثبت‌شده با موجودی هم‌خوان نیست و موجودی آزاد نشد.'
+                    : 'ارتباط کالا یا تنوع رزرو معتبر نیست و موجودی آزاد نشد.',
+            ]);
         }
-
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $delta, $variantId);
     }
 
     private function reservationKey(int $productId, int $variantId): string
@@ -334,6 +397,7 @@ class PreinvoiceDraftReservationService
             'released_reservations' => $reservations->count(),
             'released_quantity' => (int) $reservations->sum('quantity'),
             'reservations' => $reservations,
+            'warnings' => 0,
             'dry_run' => ! $changed,
         ];
     }

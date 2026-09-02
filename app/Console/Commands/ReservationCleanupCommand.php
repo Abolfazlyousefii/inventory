@@ -7,10 +7,12 @@ use Illuminate\Console\Command;
 
 class ReservationCleanupCommand extends Command
 {
-    protected $signature = 'reservations:cleanup-temporary
+    protected $signature = 'reservations:cleanup
                             {--online-minutes=5 : Minutes without an online heartbeat}
                             {--in-person-minutes=15 : Minutes without an in-person heartbeat}
                             {--dry-run : Show stale reservations without changing data}';
+
+    protected $aliases = ['reservations:cleanup-temporary'];
 
     protected $description = 'Release stale temporary preinvoice reservations that stopped sending heartbeat.';
 
@@ -24,10 +26,11 @@ class ReservationCleanupCommand extends Command
         );
 
         $this->info(sprintf(
-            '%s temporary reservations: %d | Reserved quantity: %d',
+            '%s temporary reservations: %d | Reserved quantity: %d | Warnings: %d',
             $dryRun ? 'Stale' : 'Released',
             (int) $result['released_reservations'],
-            (int) $result['released_quantity']
+            (int) $result['released_quantity'],
+            (int) ($result['warnings'] ?? 0),
         ));
 
         if ($dryRun) {
