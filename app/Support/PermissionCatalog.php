@@ -351,6 +351,7 @@ class PermissionCatalog
                 ['permission' => 'issues.view', 'label' => 'حواله‌های انبار'],
                 ['permission' => 'warehouse.collection.queue.view', 'label' => 'صف جمع‌آوری فاکتور'],
                 ['permission' => 'warehouse.shipping.queue.view', 'label' => 'صف ارسال فاکتور'],
+                ['permission' => 'warehouse_reservations.view', 'label' => 'مدیریت رزرو موجودی'],
                 ['permission' => 'assets.view', 'label' => 'امین اموال'],
                 ['permission' => 'warehouse_map.view', 'label' => 'نقشه انبار'],
                 ['permission' => 'inventory.count.view', 'label' => 'انبارگردانی'],

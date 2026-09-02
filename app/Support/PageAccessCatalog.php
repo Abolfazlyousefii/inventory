@@ -6,6 +6,13 @@ use App\Models\User;
 
 class PageAccessCatalog
 {
+    private const PAGE_ACTION_PERMISSIONS = [
+        'warehouse.reservations' => [
+            'warehouse_reservations.view',
+            'warehouse_reservations.release',
+        ],
+    ];
+
     /** Explicit runtime ownership. Legacy permissions are migration metadata only. */
     private const ROUTE_OWNERS = [
         'dashboard' => ['dashboard'],
@@ -540,6 +547,7 @@ class PageAccessCatalog
                 'description' => 'دسترسی کامل به صفحه یا فرآیند «'.$label.'» و عملیات وابسته آن',
                 'routes' => $pageRoutes,
                 'legacy_permissions' => $legacy,
+                'action_permissions' => self::PAGE_ACTION_PERMISSIONS[$key] ?? [],
                 'order' => (array_search($key, array_keys($definitions), true) + 1) * 10,
                 'sensitive' => in_array($key, ['users', 'roles', 'settings', 'activity_logs', 'integrations.inventory', 'commercial.commissions', 'commercial.invoice_reassignments', 'sales.preinvoice_finance_review', 'sales.preinvoice_warehouse_review', 'finance.accounts', 'finance.seller_sales_documents', 'finance.payments', 'warehouse.stocktake', 'warehouse.inbound_queue'], true),
                 // Migration is intentionally stricter than runtime route compatibility:

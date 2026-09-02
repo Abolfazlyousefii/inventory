@@ -201,13 +201,24 @@ class PreinvoiceDraftReservationService
 
                     $this->markReleasedOrDelete($row, 0, 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
 
+                    $row->loadMissing([
+                        'product:id,name',
+                        'variant:id,variant_name,variety_name,variant_code,variety_code',
+                    ]);
+
                     ActivityLogger::logForActor(
                         null,
-                        'reservation_cleanup_released',
+                        'reservation_auto_release',
                         $row,
                         'رزرو موقت رهاشده به‌صورت خودکار آزاد شد.',
                         array_merge($release['context'], [
                             'reservation_id' => (int) $row->id,
+                            'product' => $row->product?->name,
+                            'variant' => $row->variant?->variant_name
+                                ?? $row->variant?->variety_name
+                                ?? $row->variant?->variant_code
+                                ?? $row->variant?->variety_code,
+                            'quantity' => $qty,
                             'reason' => 'temporary_session_lost',
                             'audit_source' => 'automatic_reservation_cleanup',
                             'actor_type' => 'system',

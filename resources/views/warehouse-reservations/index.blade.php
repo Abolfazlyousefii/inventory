@@ -1,85 +1,349 @@
 @extends('layouts.app')
 
-@section('title', 'ردیابی رزروهای موجودی')
+@section('title', 'مدیریت رزرو موجودی')
+@section('page-title', 'مدیریت رزرو موجودی')
+
+@push('styles')
+<style>
+    .warehouse-reservations-page { --reservation-primary: #0f766e; }
+    .warehouse-reservations-page .page-intro { color: #64748b; max-width: 720px; }
+    .warehouse-reservations-page .summary-card,
+    .warehouse-reservations-page .filter-card,
+    .warehouse-reservations-page .table-card { border: 0; border-radius: 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, .06); }
+    .warehouse-reservations-page .summary-card { border-right: 4px solid var(--summary-color); }
+    .warehouse-reservations-page .summary-label { color: #64748b; font-size: .86rem; }
+    .warehouse-reservations-page .summary-value { color: #0f172a; font-size: 1.55rem; font-weight: 800; }
+    .warehouse-reservations-page .summary-meta { color: #64748b; font-size: .78rem; }
+    .warehouse-reservations-page .filter-title { color: #334155; font-size: .92rem; font-weight: 700; }
+    .warehouse-reservations-page .form-label { color: #475569; font-size: .82rem; font-weight: 600; }
+    .warehouse-reservations-page .table { min-width: 980px; }
+    .warehouse-reservations-page .table > :not(caption) > * > * { padding: .85rem .75rem; vertical-align: middle; }
+    .warehouse-reservations-page .table thead th { color: #64748b; font-size: .79rem; font-weight: 700; white-space: nowrap; }
+    .warehouse-reservations-page .product-name { color: #0f172a; font-weight: 700; }
+    .warehouse-reservations-page .muted-line { color: #64748b; font-size: .78rem; }
+    .warehouse-reservations-page .status-badge { border-radius: 999px; display: inline-flex; font-size: .76rem; font-weight: 700; padding: .38rem .65rem; }
+    .warehouse-reservations-page .status-active { background: #dcfce7; color: #166534; }
+    .warehouse-reservations-page .status-review { background: #fef3c7; color: #92400e; }
+    .warehouse-reservations-page .status-releasable { background: #fee2e2; color: #991b1b; }
+    .warehouse-reservations-page .status-neutral { background: #e2e8f0; color: #475569; }
+    .warehouse-reservations-page .quick-filter { background: #fff; border: 1px solid #e2e8f0; border-radius: 999px; color: #475569; font-size: .82rem; padding: .42rem .85rem; text-decoration: none; }
+    .warehouse-reservations-page .quick-filter:hover,
+    .warehouse-reservations-page .quick-filter.active { background: var(--reservation-primary); border-color: var(--reservation-primary); color: #fff; }
+    .warehouse-reservations-page .old-warning { color: #b45309; font-size: .76rem; font-weight: 700; }
+    .warehouse-reservations-page .old-reservation-row { background: #fffbeb; }
+    .warehouse-reservations-page .empty-state { color: #64748b; padding: 3rem 1rem; text-align: center; }
+    .warehouse-reservations-page .details-row td { background: #f8fafc; }
+    @media (max-width: 767.98px) {
+        .warehouse-reservations-page .summary-value { font-size: 1.3rem; }
+        .warehouse-reservations-page .filter-actions .btn { flex: 1 1 auto; }
+    }
+</style>
+@endpush
 
 @section('content')
-<style>
-    .reservation-tracker { overflow-x: hidden; }
-    .reservation-tracker .text-truncate-rtl { display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .reservation-tracker .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; align-items: end; }
-    .reservation-tracker .actions-wrap { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: flex-end; }
-    .reservation-tracker table { table-layout: fixed; min-width: 860px; }
-    .reservation-tracker th, .reservation-tracker td { vertical-align: middle; }
-</style>
+<div class="container-fluid py-3 warehouse-reservations-page" dir="rtl">
+    <div class="mb-4">
+        <h2 class="h4 fw-bold mb-2">مدیریت رزرو موجودی</h2>
+        <p class="page-intro mb-0">رزروهای موجودی را بررسی کنید. آزادسازی فقط برای رزروهایی فعال است که سامانه آن‌ها را قابل آزادسازی تشخیص داده باشد.</p>
+    </div>
 
-<div class="container-fluid reservation-tracker" dir="rtl">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div>
-            <h1 class="h4 mb-1">ردیابی رزروهای موجودی</h1>
-            <div class="text-muted small">نمایش محل درگیری موجودی‌های رزروشده؛ آزادسازی فقط برای رزرو موقت draft مجاز است.</div>
+    @if(session('success'))
+        <div class="alert alert-success border-0 shadow-sm" role="alert">{{ session('success') }}</div>
+    @endif
+    @if($errors->any())
+        <div class="alert alert-danger border-0 shadow-sm" role="alert">{{ $errors->first() }}</div>
+    @endif
+
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+            <div class="card summary-card h-100" style="--summary-color:#16a34a">
+                <div class="card-body">
+                    <div class="summary-label mb-1">رزرو فعال</div>
+                    <div class="summary-value">{{ number_format($stats['active']['count']) }}</div>
+                    <div class="summary-meta">{{ number_format($stats['active']['quantity']) }} واحد کالا</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card summary-card h-100" style="--summary-color:#d97706">
+                <div class="card-body">
+                    <div class="summary-label mb-1">رزرو نیاز بررسی</div>
+                    <div class="summary-value">{{ number_format($stats['needs_review']['count']) }}</div>
+                    <div class="summary-meta">{{ number_format($stats['needs_review']['quantity']) }} واحد کالا</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card summary-card h-100" style="--summary-color:#dc2626">
+                <div class="card-body">
+                    <div class="summary-label mb-1">رزرو قابل آزادسازی</div>
+                    <div class="summary-value">{{ number_format($stats['releasable']['count']) }}</div>
+                    <div class="summary-meta">{{ number_format($stats['releasable']['quantity']) }} واحد کالا</div>
+                </div>
+            </div>
         </div>
     </div>
 
-    @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
-    @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
-
-    <div class="row g-3 mb-3">
-        @foreach([
-            'کل رزروهای فعال' => $stats['total_active'],
-            'رزروهای موقت فعال' => $stats['draft_active'],
-            'موقت بالای ۲۰ ساعت' => $stats['draft_over_20h'],
-            'رزروهای پیش‌فاکتور فعال' => $stats['preinvoice_active'],
-            'مشکوک قابل آزادسازی' => $stats['suspicious_releasable'],
-        ] as $label => $value)
-            <div class="col-6 col-lg"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted small text-truncate">{{ $label }}</div><div class="fs-4 fw-bold">{{ number_format($value) }}</div></div></div></div>
-        @endforeach
-    </div>
-
-    <form class="card border-0 shadow-sm mb-3" method="GET" action="{{ route('warehouse.reservations.index') }}">
+    <form class="card filter-card mb-4" method="GET" action="{{ route('warehouse-reservations.index') }}">
         <div class="card-body">
-            <div class="filters-grid">
-                <div><label class="form-label">جستجوی کالا / کد / تنوع</label><input name="q" value="{{ $filters['q'] ?? '' }}" class="form-control"></div>
-                <div><label class="form-label">ثبت‌کننده</label><select name="user_id" class="form-select"><option value="">همه</option>@foreach($users as $user)<option value="{{ $user->id }}" @selected(($filters['user_id'] ?? '') == $user->id)>{{ $user->name }}</option>@endforeach</select></div>
-                <div><label class="form-label">مشتری</label><select name="customer_id" class="form-select"><option value="">همه</option>@foreach($customers as $customer)<option value="{{ $customer->id }}" @selected(($filters['customer_id'] ?? '') == $customer->id)>{{ $customer->display_name ?: $customer->mobile }}</option>@endforeach</select></div>
-                <div><label class="form-label">نوع رزرو</label><select name="type" class="form-select"><option value="">همه</option><option value="draft_reservation" @selected(($filters['type'] ?? '')==='draft_reservation')>رزرو موقت</option><option value="preinvoice_reservation" @selected(($filters['type'] ?? '')==='preinvoice_reservation')>رزرو پیش‌فاکتور</option></select></div>
-                <div><label class="form-label">از تاریخ</label><input type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="form-control"></div>
-                <div><label class="form-label">تا تاریخ</label><input type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="form-control"></div>
-                <div class="form-check"><input class="form-check-input" type="checkbox" name="older_than_20" value="1" @checked(!empty($filters['older_than_20'])) id="old20"><label class="form-check-label" for="old20">فقط بالای ۲۰ ساعت</label></div>
-                <div class="form-check"><input class="form-check-input" type="checkbox" name="releasable_only" value="1" @checked(!empty($filters['releasable_only'])) id="rel"><label class="form-check-label" for="rel">فقط قابل آزادسازی</label></div>
+            <div class="filter-title mb-3">جست‌وجو و فیلتر</div>
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-lg-4">
+                    <label class="form-label" for="reservation-search">نام کالا، کد تنوع یا فروشنده</label>
+                    <input class="form-control" id="reservation-search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="عبارت مورد نظر را وارد کنید">
+                </div>
+                <div class="col-12 col-md-4 col-lg-2">
+                    <label class="form-label" for="reservation-status">وضعیت</label>
+                    <select class="form-select" id="reservation-status" name="status">
+                        <option value="">همه وضعیت‌ها</option>
+                        <option value="active" @selected(($filters['status'] ?? '') === 'active')>فعال</option>
+                        <option value="abandoned" @selected(($filters['status'] ?? '') === 'abandoned')>نیاز بررسی</option>
+                        <option value="releasable" @selected(($filters['status'] ?? '') === 'releasable')>قابل آزادسازی</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label" for="reservation-date-from">از تاریخ</label>
+                    <input class="form-control" id="reservation-date-from" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label" for="reservation-date-to">تا تاریخ</label>
+                    <input class="form-control" id="reservation-date-to" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
+                </div>
+                <div class="col-12 col-lg-2">
+                    <div class="d-flex gap-2 filter-actions">
+                        <button class="btn btn-primary" type="submit">اعمال فیلتر</button>
+                        <a class="btn btn-outline-secondary" href="{{ route('warehouse-reservations.index') }}">پاک کردن</a>
+                    </div>
+                </div>
             </div>
-            <div class="d-flex flex-wrap justify-content-end gap-2 mt-3"><button class="btn btn-primary">اعمال فیلتر</button><a href="{{ route('warehouse.reservations.index') }}" class="btn btn-outline-secondary">پاک کردن</a></div>
         </div>
     </form>
 
-    <div class="card border-0 shadow-sm">
+    @php
+        $quickFilter = $filters['quick'] ?? '';
+        $quickBase = request()->except(['page', 'history_page', 'quick', 'status']);
+    @endphp
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3" aria-label="فیلتر سریع رزروها">
+        <span class="small fw-bold text-muted ms-1">فیلتر سریع:</span>
+        <a class="quick-filter {{ $quickFilter === '' ? 'active' : '' }}" href="{{ route('warehouse-reservations.index', $quickBase) }}">همه</a>
+        <a class="quick-filter {{ $quickFilter === 'actionable' ? 'active' : '' }}" href="{{ route('warehouse-reservations.index', array_merge($quickBase, ['quick' => 'actionable'])) }}">نیاز اقدام</a>
+        <a class="quick-filter {{ $quickFilter === 'review' ? 'active' : '' }}" href="{{ route('warehouse-reservations.index', array_merge($quickBase, ['quick' => 'review'])) }}">بررسی</a>
+        <a class="quick-filter {{ $quickFilter === 'active' ? 'active' : '' }}" href="{{ route('warehouse-reservations.index', array_merge($quickBase, ['quick' => 'active'])) }}">فعال</a>
+    </div>
+
+    <div class="card table-card overflow-hidden">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th style="width: 22%">کالا</th><th style="width: 16%">تنوع / کد</th><th style="width: 7%">تعداد</th><th style="width: 12%">نوع رزرو</th><th style="width: 10%">فروشنده</th><th style="width: 10%">مشتری</th><th style="width: 10%">پیش‌فاکتور / مدت</th><th style="width: 7%">وضعیت</th><th style="width: 6%">عملیات</th></tr></thead>
-                <tbody>
-                @forelse($rows as $row)
+                <thead class="table-light">
                     <tr>
-                        <td><span class="fw-bold text-truncate-rtl" title="{{ $row['product'] }}">{{ $row['product'] }}</span></td>
-                        <td><span class="small text-muted text-truncate-rtl" title="{{ $row['variant'] }} | {{ $row['sku'] }}">{{ $row['variant'] }} | {{ $row['sku'] }}</span></td>
-                        <td>{{ $row['quantity'] }}</td>
-                        <td><span class="text-truncate-rtl" title="{{ $row['type_label'] }}">{{ $row['type_label'] }}</span></td>
-                        <td><span class="text-truncate-rtl" title="{{ $row['user'] }}">{{ $row['user'] }}</span></td>
-                        <td><span class="text-truncate-rtl" title="{{ $row['customer'] }}">{{ $row['customer'] }}</span></td>
-                        <td><span class="text-truncate-rtl" title="{{ $row['document_no'] }}">{{ $row['document_no'] }}</span><span class="small text-muted">{{ $row['age_hours'] }} ساعت</span></td>
-                        <td>@if($row['alert']==='red')<span class="badge bg-danger">قرمز</span>@elseif($row['alert']==='yellow')<span class="badge bg-warning text-dark">زرد</span>@else<span class="badge bg-success">عادی</span>@endif @unless($row['releasable'])<span class="badge bg-secondary mt-1">متصل به سند</span>@endunless</td>
-                        <td><div class="actions-wrap">@if($row['releasable'] && $row['reservation']) @canPermission('warehouse.reservations.release')<button class="btn btn-sm btn-danger" type="button" data-bs-toggle="modal" data-bs-target="#release-{{ $row['source_id'] }}">آزادسازی رزرو</button>@endcanPermission <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ $row['source_id'] }}">جزئیات</button>@else @if($row['document_url'])<a class="btn btn-sm btn-outline-secondary" href="{{ $row['document_url'] }}">مشاهده</a>@endif @endif</div></td>
+                        <th>کالا</th>
+                        <th>تنوع</th>
+                        <th>تعداد</th>
+                        <th>فروشنده</th>
+                        <th>پیش‌فاکتور</th>
+                        <th>وضعیت</th>
+                        <th>زمان رزرو</th>
+                        <th>عملیات</th>
                     </tr>
-                    <tr class="collapse" id="details-{{ $row['source_id'] }}"><td colspan="9" class="bg-light small"><div class="d-flex flex-wrap gap-3"><span>شماره سند: {{ $row['document_no'] }}</span><span>وضعیت سند: {{ $row['document_status'] }}</span><span>زمان ایجاد: {{ $row['created_at']->format('Y-m-d H:i') }}</span>@if($row['reservation'])<span>توکن: <span dir="ltr">{{ $row['reservation']->token }}</span></span><span>expires_at: {{ $row['reservation']->expires_at?->format('Y-m-d H:i') ?? '—' }}</span>@else<span class="text-muted">از مسیر سند قابل اصلاح است.</span>@endif</div></td></tr>
-                @empty <tr><td colspan="9" class="text-center text-muted py-4">رزروی یافت نشد.</td></tr>@endforelse
+                </thead>
+                <tbody>
+                @forelse($reservations as $reservation)
+                    @php
+                        $status = $reservation->managementStatus();
+                        $releasable = $reservation->isActionableForManagement();
+                        $needsReview = $reservation->needsManagementReview();
+                        $warning = $reservation->managementWarning();
+                        $variantName = $reservation->variant?->variant_name ?: $reservation->variant?->variety_name;
+                        $variantCode = $reservation->variant?->variant_code ?: $reservation->variant?->variety_code;
+                    @endphp
+                    <tr @class(['old-reservation-row' => $warning !== null])>
+                        <td>
+                            <div class="product-name">{{ $reservation->product?->name ?? 'کالای نامشخص' }}</div>
+                            <div class="muted-line">{{ $reservation->product?->sku ?: $reservation->product?->code ?: 'بدون کد کالا' }}</div>
+                        </td>
+                        <td>
+                            <div>{{ $variantName ?: 'بدون عنوان تنوع' }}</div>
+                            <div class="muted-line" dir="ltr">{{ $variantCode ?: '—' }}</div>
+                        </td>
+                        <td class="fw-bold">{{ number_format($reservation->quantity) }}</td>
+                        <td>{{ $reservation->user?->name ?? 'نامشخص' }}</td>
+                        <td>
+                            @if($reservation->order)
+                                <span dir="ltr">{{ $reservation->order->uuid }}</span>
+                            @else
+                                <span class="text-muted">ثبت نشده</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if($releasable)
+                                <span class="status-badge status-releasable">قابل آزادسازی</span>
+                            @elseif($needsReview)
+                                <span class="status-badge status-review">نیاز بررسی</span>
+                            @elseif($status === \App\Models\PreinvoiceDraftReservation::STATUS_ACTIVE)
+                                <span class="status-badge status-active">فعال</span>
+                            @elseif($status === \App\Models\PreinvoiceDraftReservation::STATUS_CONNECTED)
+                                <span class="status-badge status-active">فعال</span>
+                                <div class="muted-line mt-1">متصل به پیش‌فاکتور</div>
+                            @elseif($status === \App\Models\PreinvoiceDraftReservation::STATUS_RELEASED)
+                                <span class="status-badge status-neutral">آزادشده</span>
+                            @else
+                                <span class="status-badge status-neutral">نامشخص</span>
+                            @endif
+                        </td>
+                        <td>
+                            <div>{{ $reservation->managementAgeLabel() }}</div>
+                            @if($warning)<div class="old-warning mt-1">{{ $warning }}</div>@endif
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#reservation-details-{{ $reservation->id }}">
+                                    مشاهده
+                                </button>
+                                @if($releasable)
+                                    @canPermission('warehouse_reservations.release')
+                                        <button class="btn btn-sm btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#release-reservation-{{ $reservation->id }}">
+                                            آزادسازی موجودی
+                                        </button>
+                                    @endcanPermission
+                                @endif
+                            </div>
+                        </td>
+                    </tr>
+                @empty
+                    <tr><td colspan="8"><div class="empty-state">رزروی با فیلترهای انتخاب‌شده پیدا نشد.</div></td></tr>
+                @endforelse
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white d-flex justify-content-center">{{ $rows->links() }}</div>
+        @if($reservations->hasPages())
+            <div class="card-footer bg-white border-0 d-flex justify-content-center pt-3">
+                {{ $reservations->links() }}
+            </div>
+        @endif
     </div>
 
-    @foreach($rows as $row)
-        @if($row['releasable'] && $row['reservation'])
-            <div class="modal fade" id="release-{{ $row['source_id'] }}" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="POST" action="{{ route('warehouse.reservations.draft.release', $row['reservation']) }}">@csrf<div class="modal-header"><h5 class="modal-title">آزادسازی رزرو موقت</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="form-label">دلیل آزادسازی</label><select name="release_reason" class="form-select" required>@foreach(['کاربر پیش‌فاکتور را ثبت نکرده','رزرو اشتباه ایجاد شده','مشتری منصرف شده','اصلاح موجودی','سایر'] as $reason)<option value="{{ $reason }}">{{ $reason }}</option>@endforeach</select><label class="form-label mt-3">توضیحات</label><textarea name="release_note" class="form-control" rows="3"></textarea></div><div class="modal-footer"><button class="btn btn-danger">آزادسازی امن</button><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button></div></form></div></div>
+    <div class="card table-card overflow-hidden mt-4">
+        <div class="card-header bg-white border-0 px-3 px-md-4 pt-4 pb-3">
+            <h3 class="h6 fw-bold mb-1">تاریخچه آزادسازی رزروها</h3>
+            <p class="muted-line mb-0">رزروهای آزادشده به‌ترتیب آخرین زمان آزادسازی نمایش داده می‌شوند.</p>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>کالا</th>
+                        <th>تنوع</th>
+                        <th>تعداد</th>
+                        <th>زمان آزادسازی</th>
+                        <th>آزادکننده</th>
+                        <th>دلیل آزادسازی</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @forelse($releasedReservations as $releasedReservation)
+                    @php
+                        $releasedVariantName = $releasedReservation->variant?->variant_name ?: $releasedReservation->variant?->variety_name;
+                        $releasedVariantCode = $releasedReservation->variant?->variant_code ?: $releasedReservation->variant?->variety_code;
+                    @endphp
+                    <tr>
+                        <td>
+                            <div class="product-name">{{ $releasedReservation->product?->name ?? 'کالای نامشخص' }}</div>
+                            <div class="muted-line">{{ $releasedReservation->product?->sku ?: $releasedReservation->product?->code ?: 'بدون کد کالا' }}</div>
+                        </td>
+                        <td>
+                            <div>{{ $releasedVariantName ?: 'بدون عنوان تنوع' }}</div>
+                            <div class="muted-line" dir="ltr">{{ $releasedVariantCode ?: '—' }}</div>
+                        </td>
+                        <td class="fw-bold">{{ number_format($releasedReservation->quantity) }}</td>
+                        <td dir="ltr">{{ $releasedReservation->released_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</td>
+                        <td>{{ $releasedReservation->releasedBy?->name ?? 'سیستم' }}</td>
+                        <td>
+                            <div>{{ $releasedReservation->releaseReasonLabel() }}</div>
+                            @if($releasedReservation->release_note)
+                                <div class="muted-line mt-1">{{ $releasedReservation->release_note }}</div>
+                            @endif
+                        </td>
+                    </tr>
+                @empty
+                    <tr><td colspan="6"><div class="empty-state">هنوز رزرو آزادشده‌ای ثبت نشده است.</div></td></tr>
+                @endforelse
+                </tbody>
+            </table>
+        </div>
+        @if($releasedReservations->hasPages())
+            <div class="card-footer bg-white border-0 d-flex justify-content-center pt-3">
+                {{ $releasedReservations->links() }}
+            </div>
         @endif
+    </div>
+
+    @foreach($reservations as $reservation)
+        <div class="modal fade" id="reservation-details-{{ $reservation->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0">
+                    <div class="modal-header">
+                        <h3 class="modal-title fs-6">جزئیات رزرو موجودی</h3>
+                        <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="بستن"></button>
+                    </div>
+                    <div class="modal-body">
+                        <dl class="row g-2 mb-0 small">
+                            <dt class="col-5 text-muted">سن رزرو</dt>
+                            <dd class="col-7 fw-bold">{{ $reservation->managementAgeLabel() }}</dd>
+                            <dt class="col-5 text-muted">آخرین فعالیت</dt>
+                            <dd class="col-7" dir="ltr">{{ $reservation->last_seen_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</dd>
+                            <dt class="col-5 text-muted">سطح اهمیت</dt>
+                            <dd class="col-7">{{ $reservation->managementImportanceLabel() }}</dd>
+                            <dt class="col-5 text-muted">شناسه رزرو</dt>
+                            <dd class="col-7">{{ $reservation->id }}</dd>
+                            <dt class="col-5 text-muted">مرجع رزرو</dt>
+                            <dd class="col-7 text-break" dir="ltr">{{ $reservation->token }}</dd>
+                        </dl>
+                        @if($reservation->managementWarning())
+                            <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">{{ $reservation->managementWarning() }}</div>
+                        @endif
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">بستن</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     @endforeach
+
+    @canPermission('warehouse_reservations.release')
+        @foreach($reservations as $reservation)
+            @if($reservation->canBeManuallyReleased())
+                <div class="modal fade" id="release-reservation-{{ $reservation->id }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <form class="modal-content border-0" method="POST" action="{{ route('warehouse-reservations.release', $reservation) }}">
+                            @csrf
+                            <div class="modal-header">
+                                <h3 class="modal-title fs-6">آزادسازی رزرو موجودی</h3>
+                                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="بستن"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="mb-3">رزرو <strong>{{ $reservation->product?->name ?? 'کالا' }}</strong> به تعداد <strong>{{ number_format($reservation->quantity) }}</strong> آزاد شود؟</p>
+                                <label class="form-label" for="release-reason-{{ $reservation->id }}">دلیل آزادسازی</label>
+                                <select class="form-select" id="release-reason-{{ $reservation->id }}" name="release_reason" required>
+                                    <option value="">انتخاب کنید</option>
+                                    <option value="عدم تکمیل پیش‌فاکتور">عدم تکمیل پیش‌فاکتور</option>
+                                    <option value="انصراف مشتری">انصراف مشتری</option>
+                                    <option value="رزرو اشتباه">رزرو اشتباه</option>
+                                    <option value="سایر">سایر</option>
+                                </select>
+                                <label class="form-label mt-3" for="release-note-{{ $reservation->id }}">توضیحات اختیاری</label>
+                                <textarea class="form-control" id="release-note-{{ $reservation->id }}" name="release_note" rows="3" maxlength="2000"></textarea>
+                                <div class="form-text">این عملیات ثبت و در گزارش فعالیت‌ها نگهداری می‌شود.</div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">انصراف</button>
+                                <button class="btn btn-danger" type="submit">تأیید آزادسازی</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            @endif
+        @endforeach
+    @endcanPermission
 </div>
 @endsection

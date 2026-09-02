@@ -8,7 +8,16 @@ use App\Services\Sync\SiteCustomersSyncService;
 use App\Services\Sync\SiteImageSyncService;
 use App\Services\Sync\SitePaidOrdersSyncService;
 use App\Services\Sync\SyncProductsToSite;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('reservations:cleanup')
+    ->name('warehouse-reservation-cleanup')
+    ->everyTenMinutes()
+    ->withoutOverlapping(15)
+    ->onFailure(function (): void {
+        Log::error('WAREHOUSE_RESERVATION_CLEANUP_SCHEDULE_FAILED');
+    });
 
 Schedule::call(function () {
     app(SyncProductsToSite::class)->syncAll();

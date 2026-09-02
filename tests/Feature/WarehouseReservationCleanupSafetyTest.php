@@ -90,7 +90,7 @@ it('releases a valid abandoned reservation exactly once', function () {
         ->and($variant->fresh()->reserved)->toBe(0)
         ->and($warehouseStock->fresh()->quantity)->toBe(25)
         ->and(ActivityLog::query()
-            ->where('action', 'reservation_cleanup_released')
+            ->where('action', 'reservation_auto_release')
             ->where('subject_id', $reservation->id)
             ->count())->toBe(1);
 });

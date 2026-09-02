@@ -22,6 +22,22 @@ class PreinvoiceDraftReservation extends Model
 
     public const STATUS_UNKNOWN = 'unknown';
 
+    public const IMPORTANCE_CRITICAL = 'critical';
+
+    public const IMPORTANCE_HIGH = 'high';
+
+    public const IMPORTANCE_REVIEW = 'review';
+
+    public const IMPORTANCE_NORMAL = 'normal';
+
+    public const QUICK_ACTIONABLE = 'actionable';
+
+    public const QUICK_REVIEW = 'review';
+
+    public const QUICK_ACTIVE = 'active';
+
+    public const OLD_RESERVATION_MINUTES = 60;
+
     public const SCOPE_TEMPORARY_ONLINE = 'temporary_online';
 
     public const SCOPE_TEMPORARY_IN_PERSON = 'temporary_in_person';
@@ -180,6 +196,79 @@ class PreinvoiceDraftReservation extends Model
             });
     }
 
+    public function scopeNeedsManagementReview(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->abandonedTemporary()
+                ->orWhere(function (Builder $query): void {
+                    $query->whereNull($this->qualifyColumn('preinvoice_order_id'))
+                        ->whereNull($this->qualifyColumn('converted_at'))
+                        ->whereNull($this->qualifyColumn('released_at'))
+                        ->where($this->qualifyColumn('quantity'), '>', 0)
+                        ->where(function (Builder $query): void {
+                            $query->whereNull($this->qualifyColumn('reservation_scope'))
+                                ->orWhereNotIn($this->qualifyColumn('reservation_scope'), [
+                                    self::SCOPE_TEMPORARY_ONLINE,
+                                    self::SCOPE_TEMPORARY_IN_PERSON,
+                                ]);
+                        });
+                });
+        });
+    }
+
+    public function scopeForManagementQuickFilter(Builder $query, ?string $filter): Builder
+    {
+        return match ($filter) {
+            self::QUICK_ACTIONABLE => $query->abandonedTemporary(),
+            self::QUICK_REVIEW => $query->needsManagementReview(),
+            self::QUICK_ACTIVE => $query->activeTemporary(),
+            default => $query,
+        };
+    }
+
+    public function scopeOrderByManagementPriority(
+        Builder $query,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+        ?CarbonInterface $at = null,
+    ): Builder {
+        $at ??= now();
+        $onlineCutoff = $at->copy()->subMinutes(max(1, $onlineMinutes));
+        $inPersonCutoff = $at->copy()->subMinutes(max(1, $inPersonMinutes));
+        $table = $this->getTable();
+        $scope = "{$table}.reservation_scope";
+        $lastSeen = "{$table}.last_seen_at";
+        $expires = "{$table}.expires_at";
+        $released = "{$table}.released_at";
+        $converted = "{$table}.converted_at";
+        $preinvoice = "{$table}.preinvoice_order_id";
+        $quantity = "{$table}.quantity";
+        $openSql = "{$preinvoice} IS NULL AND {$converted} IS NULL AND {$released} IS NULL AND {$quantity} > 0 AND {$scope} IN (?, ?)";
+        $abandonedSql = "(({$scope} = ? AND (({$expires} IS NOT NULL AND {$expires} <= ?) OR ({$lastSeen} IS NOT NULL AND {$lastSeen} <= ?))) OR ({$scope} = ? AND {$lastSeen} IS NOT NULL AND {$lastSeen} <= ?))";
+        $reviewSql = "{$preinvoice} IS NULL AND {$converted} IS NULL AND {$released} IS NULL AND {$quantity} > 0 AND ({$scope} IS NULL OR {$scope} NOT IN (?, ?))";
+        $connectedSql = "{$released} IS NULL AND ({$preinvoice} IS NOT NULL OR {$converted} IS NOT NULL)";
+
+        return $query
+            ->orderByRaw(
+                "CASE WHEN ({$openSql}) AND ({$abandonedSql}) THEN 1 WHEN ({$reviewSql}) THEN 2 WHEN ({$openSql}) OR ({$connectedSql}) THEN 3 ELSE 4 END",
+                [
+                    self::SCOPE_TEMPORARY_ONLINE,
+                    self::SCOPE_TEMPORARY_IN_PERSON,
+                    self::SCOPE_TEMPORARY_ONLINE,
+                    $at,
+                    $onlineCutoff,
+                    self::SCOPE_TEMPORARY_IN_PERSON,
+                    $inPersonCutoff,
+                    self::SCOPE_TEMPORARY_ONLINE,
+                    self::SCOPE_TEMPORARY_IN_PERSON,
+                    self::SCOPE_TEMPORARY_ONLINE,
+                    self::SCOPE_TEMPORARY_IN_PERSON,
+                ],
+            )
+            ->orderBy($this->qualifyColumn('created_at'))
+            ->orderBy($this->qualifyColumn('id'));
+    }
+
     public function scopeForManagementStatus(Builder $query, ?string $status): Builder
     {
         return match ($status) {
@@ -205,7 +294,8 @@ class PreinvoiceDraftReservation extends Model
                 ->orWhereHas('variant', function (Builder $variant) use ($search): void {
                     $variant->where('variant_code', 'like', "%{$search}%")
                         ->orWhere('variety_code', 'like', "%{$search}%");
-                });
+                })
+                ->orWhereHas('user', fn (Builder $user) => $user->where('name', 'like', "%{$search}%"));
         });
     }
 
@@ -220,6 +310,12 @@ class PreinvoiceDraftReservation extends Model
             self::STATUS_CONNECTED,
             self::STATUS_RELEASED,
         ];
+    }
+
+    /** @return array<int, string> */
+    public static function managementQuickFilters(): array
+    {
+        return [self::QUICK_ACTIONABLE, self::QUICK_REVIEW, self::QUICK_ACTIVE];
     }
 
     public function managementStatus(?CarbonInterface $at = null): string
@@ -247,6 +343,110 @@ class PreinvoiceDraftReservation extends Model
         }
 
         return self::STATUS_UNKNOWN;
+    }
+
+    public function managementPriority(?CarbonInterface $at = null): int
+    {
+        if ($this->isActionableForManagement($at)) {
+            return 1;
+        }
+
+        if ($this->needsManagementReview($at)) {
+            return 2;
+        }
+
+        if ($this->isActiveTemporary($at) || $this->isConnectedToPreinvoice()) {
+            return 3;
+        }
+
+        return 4;
+    }
+
+    public function isActionableForManagement(?CarbonInterface $at = null): bool
+    {
+        return $this->canBeManuallyReleased($at);
+    }
+
+    public function needsManagementReview(?CarbonInterface $at = null): bool
+    {
+        return $this->isAbandoned($at) || $this->managementStatus($at) === self::STATUS_UNKNOWN;
+    }
+
+    public function isOldForManagement(?CarbonInterface $at = null): bool
+    {
+        if ($this->released_at !== null || $this->created_at === null) {
+            return false;
+        }
+
+        $at ??= now();
+
+        return $this->created_at->lte($at->copy()->subMinutes(self::OLD_RESERVATION_MINUTES));
+    }
+
+    public function managementImportance(?CarbonInterface $at = null): string
+    {
+        if ($this->isActionableForManagement($at) && $this->isOldForManagement($at)) {
+            return self::IMPORTANCE_CRITICAL;
+        }
+
+        if ($this->isActionableForManagement($at)) {
+            return self::IMPORTANCE_HIGH;
+        }
+
+        if ($this->needsManagementReview($at)) {
+            return self::IMPORTANCE_REVIEW;
+        }
+
+        return self::IMPORTANCE_NORMAL;
+    }
+
+    public function managementImportanceLabel(?CarbonInterface $at = null): string
+    {
+        return match ($this->managementImportance($at)) {
+            self::IMPORTANCE_CRITICAL => 'فوری',
+            self::IMPORTANCE_HIGH => 'زیاد',
+            self::IMPORTANCE_REVIEW => 'نیازمند بررسی',
+            default => 'عادی',
+        };
+    }
+
+    public function managementAgeLabel(?CarbonInterface $at = null): string
+    {
+        if ($this->created_at === null) {
+            return 'نامشخص';
+        }
+
+        $at ??= now();
+        $minutes = max(0, (int) $this->created_at->diffInMinutes($at));
+
+        return match (true) {
+            $minutes < 1 => 'لحظاتی پیش',
+            $minutes < 60 => $minutes.' دقیقه قبل',
+            $minutes < 1440 => intdiv($minutes, 60).' ساعت قبل',
+            default => intdiv($minutes, 1440).' روز قبل',
+        };
+    }
+
+    public function managementWarning(?CarbonInterface $at = null): ?string
+    {
+        if (! $this->isOldForManagement($at)) {
+            return null;
+        }
+
+        return $this->isActionableForManagement($at)
+            ? 'رزرو قدیمی و قابل آزادسازی است.'
+            : 'رزرو قدیمی است و باید بررسی شود.';
+    }
+
+    public function releaseReasonLabel(): string
+    {
+        return match ($this->release_reason) {
+            'temporary_session_lost' => 'قطع فعالیت رزرو موقت',
+            'temporary_online_expired' => 'پایان زمان رزرو آنلاین',
+            'manual_release' => 'آزادسازی دستی',
+            null, '' => 'ثبت نشده',
+            default => $this->release_reason,
+        };
     }
 
     public function isActiveTemporary(
