@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PreinvoiceDraftReservation;
 use App\Services\InventoryReservationReleaseService;
 use App\Services\ReservationHealthService;
+use App\Support\JalaliDate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,13 +36,15 @@ class WarehouseReservationController extends Controller
                     'product:id,name,sku,code',
                     'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
                     'user:id,name',
-                    'order:id,uuid',
+                    'order:id,uuid,created_at,updated_at',
+                    'order.invoice:id,preinvoice_order_id',
                     'releasedBy:id,name',
                 ])
                 ->when(
                     ! $request->expectsJson() && ($filters['status'] ?? null) !== PreinvoiceDraftReservation::STATUS_RELEASED,
                     fn ($query) => $query->whereNull('released_at'),
                 )
+                ->visibleInWarehouseManagement()
                 ->excludeOrphaned(
                     PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
                     PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
@@ -63,15 +66,22 @@ class WarehouseReservationController extends Controller
                 'token' => $reservation->token,
                 'quantity' => $reservation->quantity,
                 'status' => $reservation->managementStatus(),
+                'business_status' => $reservation->businessStatus(),
+                'business_status_label' => $reservation->businessStatusLabel(),
+                'display_reason' => $reservation->businessDisplayReason(),
                 'releasable' => $reservation->isActionableForManagement(),
                 'priority' => $reservation->managementPriority(),
                 'importance' => $reservation->managementImportance(),
                 'age' => $reservation->managementAgeLabel(),
                 'warning' => $reservation->managementWarning(),
                 'created_at' => $reservation->created_at,
+                'created_at_jalali' => JalaliDate::dateTime($reservation->created_at),
                 'expires_at' => $reservation->expires_at,
                 'last_seen_at' => $reservation->last_seen_at,
+                'last_activity_at_jalali' => JalaliDate::dateTime($reservation->managementLastActivityAt()),
+                'preinvoice_connected_at_jalali' => JalaliDate::dateTime($reservation->preinvoiceConnectedAt()),
                 'released_at' => $reservation->released_at,
+                'released_at_jalali' => JalaliDate::dateTime($reservation->released_at),
                 'release_reason' => $reservation->release_reason,
                 'product' => $reservation->product,
                 'variant' => $reservation->variant,
@@ -88,6 +98,7 @@ class WarehouseReservationController extends Controller
             $healthIssues = $healthService->paginateIssues(20, 'health_page', $evaluatedAt);
         }
 
+        $reservationTable = (new PreinvoiceDraftReservation)->getTable();
         $orphanedQuery = PreinvoiceDraftReservation::query()
             ->orphaned(
                 PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
@@ -96,6 +107,17 @@ class WarehouseReservationController extends Controller
             );
         if ($activeTab === 'orphaned') {
             $orphanedReservations = $orphanedQuery
+                ->addSelect([
+                    'token_group_count' => PreinvoiceDraftReservation::query()
+                        ->from("{$reservationTable} as token_group_reservations")
+                        ->selectRaw('COUNT(*)')
+                        ->whereColumn('token_group_reservations.token', "{$reservationTable}.token")
+                        ->whereNull('token_group_reservations.preinvoice_order_id')
+                        ->whereNull('token_group_reservations.converted_at')
+                        ->whereNull('token_group_reservations.released_at')
+                        ->whereNull('token_group_reservations.release_reason')
+                        ->where('token_group_reservations.quantity', '>', 0),
+                ])
                 ->with([
                     'product:id,name,sku,code',
                     'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
@@ -115,6 +137,7 @@ class WarehouseReservationController extends Controller
         if ($activeTab === 'history') {
             $releasedReservations = PreinvoiceDraftReservation::query()
                 ->whereNotNull('released_at')
+                ->whereDoesntHave('order.invoice')
                 ->with([
                     'product:id,name,sku,code',
                     'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
@@ -126,18 +149,21 @@ class WarehouseReservationController extends Controller
                 ->withQueryString();
         }
 
-        $activeStats = PreinvoiceDraftReservation::query()
-            ->where(function ($query): void {
-                $query->activeTemporary()->orWhere(fn ($query) => $query->connected());
-            })
+        $visibleStats = PreinvoiceDraftReservation::query()->visibleInWarehouseManagement();
+        $activeStats = (clone $visibleStats)
+            ->businessActive($evaluatedAt)
             ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
             ->first();
-        $reviewStats = PreinvoiceDraftReservation::query()
-            ->needsManagementReview()
+        $reviewStats = (clone $visibleStats)
+            ->needsBusinessAttention($evaluatedAt)
             ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
             ->first();
-        $releasableStats = PreinvoiceDraftReservation::query()
-            ->abandonedTemporary()
+        $releasableStats = (clone $visibleStats)
+            ->abandonedTemporary(
+                PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+                PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+                $evaluatedAt,
+            )
             ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
             ->first();
 

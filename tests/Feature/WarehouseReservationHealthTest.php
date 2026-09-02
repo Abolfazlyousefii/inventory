@@ -127,6 +127,10 @@ it('detects orphan reservations in the health report', function () {
     $reservation = warehouseReservationHealthFixture('Health Orphan Detection', [
         'last_seen_at' => null,
     ])['reservation'];
+    $reservation->forceFill([
+        'created_at' => now()->subHours(2),
+        'updated_at' => now()->subHours(2),
+    ])->saveQuietly();
     $service = app(ReservationHealthService::class);
 
     expect($service->summary()['orphaned'])->toBe(1);

@@ -103,6 +103,7 @@ class ReservationHealthService
             ->where("{$table}.quantity", '>', 0)
             ->whereNull("{$table}.released_at")
             ->whereNull("{$table}.release_reason")
+            ->whereDoesntHave('order.invoice')
             ->where(function (EloquentBuilder $query) use ($table): void {
                 $query->whereNull("{$table}.reservation_scope")
                     ->orWhere("{$table}.reservation_scope", '!=', 'official')

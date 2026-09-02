@@ -3,6 +3,8 @@
 @section('title', 'مدیریت رزرو موجودی')
 @section('page-title', 'مدیریت رزرو موجودی')
 
+@php use App\Support\JalaliDate; @endphp
+
 @push('styles')
 <style>
     .warehouse-reservations-page { --reservation-primary: #0f766e; }
@@ -23,7 +25,9 @@
     .warehouse-reservations-page .muted-line { color: #64748b; font-size: .78rem; }
     .warehouse-reservations-page .status-badge { border-radius: 999px; display: inline-flex; font-size: .76rem; font-weight: 700; padding: .38rem .65rem; }
     .warehouse-reservations-page .status-active { background: #dcfce7; color: #166534; }
+    .warehouse-reservations-page .status-preinvoice { background: #dbeafe; color: #1d4ed8; }
     .warehouse-reservations-page .status-review { background: #fef3c7; color: #92400e; }
+    .warehouse-reservations-page .status-critical { background: #fee2e2; color: #991b1b; }
     .warehouse-reservations-page .status-releasable { background: #fee2e2; color: #991b1b; }
     .warehouse-reservations-page .status-neutral { background: #e2e8f0; color: #475569; }
     .warehouse-reservations-page .quick-filter { background: #fff; border: 1px solid #e2e8f0; border-radius: 999px; color: #475569; font-size: .82rem; padding: .42rem .85rem; text-decoration: none; }
@@ -122,7 +126,9 @@
                     <select class="form-select" id="reservation-status" name="status">
                         <option value="">همه وضعیت‌ها</option>
                         <option value="active" @selected(($filters['status'] ?? '') === 'active')>فعال</option>
-                        <option value="abandoned" @selected(($filters['status'] ?? '') === 'abandoned')>نیاز بررسی</option>
+                        <option value="preinvoice_active" @selected(($filters['status'] ?? '') === 'preinvoice_active')>پیش‌فاکتور فعال</option>
+                        <option value="needs_review" @selected(($filters['status'] ?? '') === 'needs_review')>نیاز بررسی</option>
+                        <option value="critical" @selected(($filters['status'] ?? '') === 'critical')>بحرانی</option>
                         <option value="releasable" @selected(($filters['status'] ?? '') === 'releasable')>قابل آزادسازی</option>
                     </select>
                 </div>
@@ -174,10 +180,10 @@
                 <tbody>
                 @forelse($reservations as $reservation)
                     @php
-                        $status = $reservation->managementStatus();
+                        $businessStatus = $reservation->businessStatus();
                         $releasable = $reservation->isActionableForManagement();
-                        $needsReview = $reservation->needsManagementReview();
                         $warning = $reservation->managementWarning();
+                        $displayReason = $reservation->businessDisplayReason();
                         $variantName = $reservation->variant?->variant_name ?: $reservation->variant?->variety_name;
                         $variantCode = $reservation->variant?->variant_code ?: $reservation->variant?->variety_code;
                     @endphp
@@ -195,28 +201,29 @@
                         <td>
                             @if($reservation->order)
                                 <span dir="ltr">{{ $reservation->order->uuid }}</span>
+                                <div class="muted-line mt-1">اتصال: {{ JalaliDate::dateTime($reservation->preinvoiceConnectedAt()) }}</div>
                             @else
                                 <span class="text-muted">ثبت نشده</span>
                             @endif
                         </td>
                         <td>
-                            @if($releasable)
-                                <span class="status-badge status-releasable">قابل آزادسازی</span>
-                            @elseif($needsReview)
+                            @if($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_CRITICAL)
+                                <span class="status-badge status-critical">بحرانی</span>
+                            @elseif($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_NEEDS_REVIEW)
                                 <span class="status-badge status-review">نیاز بررسی</span>
-                            @elseif($status === \App\Models\PreinvoiceDraftReservation::STATUS_ACTIVE)
+                            @elseif($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_PREINVOICE_ACTIVE)
+                                <span class="status-badge status-preinvoice">پیش‌فاکتور فعال</span>
+                            @elseif($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_ACTIVE)
                                 <span class="status-badge status-active">فعال</span>
-                            @elseif($status === \App\Models\PreinvoiceDraftReservation::STATUS_CONNECTED)
-                                <span class="status-badge status-active">فعال</span>
-                                <div class="muted-line mt-1">متصل به پیش‌فاکتور</div>
-                            @elseif($status === \App\Models\PreinvoiceDraftReservation::STATUS_RELEASED)
-                                <span class="status-badge status-neutral">آزادشده</span>
                             @else
                                 <span class="status-badge status-neutral">نامشخص</span>
                             @endif
+                            <div class="muted-line mt-1">{{ $displayReason }}</div>
+                            @if($releasable)<div class="old-warning mt-1">قابل آزادسازی توسط مدیر انبار</div>@endif
                         </td>
                         <td>
                             <div>{{ $reservation->managementAgeLabel() }}</div>
+                            <div class="muted-line mt-1">{{ JalaliDate::dateTime($reservation->created_at) }}</div>
                             @if($warning)<div class="old-warning mt-1">{{ $warning }}</div>@endif
                         </td>
                         <td>
@@ -317,7 +324,7 @@
                         @php
                             $healthVariantName = $healthIssue->variant_name ?: $healthIssue->variety_name;
                             $healthVariantCode = $healthIssue->variant_code ?: $healthIssue->variety_code;
-                            $healthTime = $healthIssue->occurred_at ? \Illuminate\Support\Carbon::parse($healthIssue->occurred_at)->format('Y/m/d H:i') : null;
+                            $healthTime = JalaliDate::dateTime($healthIssue->occurred_at, 'ثبت نشده');
                         @endphp
                         <tr>
                             <td><div class="product-name">{{ $healthIssue->product_name }}</div></td>
@@ -332,7 +339,7 @@
                                 @endif
                             </td>
                             <td>{{ $healthIssue->issue_label }}</td>
-                            <td dir="ltr">{{ $healthTime ?? 'ثبت نشده' }}</td>
+                            <td dir="ltr">{{ $healthTime }}</td>
                             <td>
                                 <span class="status-badge {{ $healthIssue->issue_type === 'orphaned' ? 'status-releasable' : 'status-review' }}">{{ $healthIssue->status_label }}</span>
                             </td>
@@ -363,7 +370,8 @@
                             <th>کالا</th>
                             <th>تنوع</th>
                             <th>تعداد</th>
-                            <th>زمان ایجاد</th>
+                            <th>گروه token</th>
+                            <th>سن رزرو</th>
                             <th>آخرین فعالیت</th>
                             <th>دلیل</th>
                             <th>عملیات</th>
@@ -385,8 +393,15 @@
                                 <div class="muted-line" dir="ltr">{{ $orphanVariantCode ?: '—' }}</div>
                             </td>
                             <td class="fw-bold">{{ number_format($orphanedReservation->quantity) }}</td>
-                            <td dir="ltr">{{ $orphanedReservation->created_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</td>
-                            <td dir="ltr">{{ $orphanedReservation->last_seen_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</td>
+                            <td>
+                                <div class="text-break" dir="ltr">{{ $orphanedReservation->token }}</div>
+                                <div class="muted-line mt-1">{{ number_format((int) $orphanedReservation->token_group_count) }} ردیف در این گروه</div>
+                            </td>
+                            <td>
+                                <div>{{ $orphanedReservation->managementAgeLabel() }}</div>
+                                <div class="muted-line mt-1" dir="ltr">{{ JalaliDate::dateTime($orphanedReservation->created_at, 'ثبت نشده') }}</div>
+                            </td>
+                            <td dir="ltr">{{ JalaliDate::dateTime($orphanedReservation->managementLastActivityAt(), 'ثبت نشده') }}</td>
                             <td><span class="status-badge status-releasable">رزرو رها شده</span></td>
                             <td>
                                 <div class="d-flex flex-wrap gap-2">
@@ -398,7 +413,7 @@
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="7"><div class="empty-state">رزرو رهاشده‌ای برای بررسی وجود ندارد.</div></td></tr>
+                        <tr><td colspan="8"><div class="empty-state">رزرو رهاشده‌ای برای بررسی وجود ندارد.</div></td></tr>
                     @endforelse
                     </tbody>
                 </table>
@@ -444,7 +459,7 @@
                             <div class="muted-line" dir="ltr">{{ $releasedVariantCode ?: '—' }}</div>
                         </td>
                         <td class="fw-bold">{{ number_format($releasedReservation->quantity) }}</td>
-                        <td dir="ltr">{{ $releasedReservation->released_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</td>
+                        <td dir="ltr">{{ JalaliDate::dateTime($releasedReservation->released_at, 'ثبت نشده') }}</td>
                         <td>{{ $releasedReservation->releasedBy?->name ?? 'سیستم' }}</td>
                         <td>
                             <div>{{ $releasedReservation->releaseReasonLabel() }}</div>
@@ -484,10 +499,16 @@
                                 <dd class="col-7">{{ $orphanedReservation->variant?->variant_name ?: $orphanedReservation->variant?->variety_name ?: 'بدون عنوان تنوع' }}</dd>
                                 <dt class="col-5 text-muted">تعداد</dt>
                                 <dd class="col-7">{{ number_format($orphanedReservation->quantity) }}</dd>
+                                <dt class="col-5 text-muted">گروه token</dt>
+                                <dd class="col-7 text-break" dir="ltr">{{ $orphanedReservation->token }}</dd>
+                                <dt class="col-5 text-muted">تعداد ردیف‌های گروه</dt>
+                                <dd class="col-7">{{ number_format((int) $orphanedReservation->token_group_count) }}</dd>
+                                <dt class="col-5 text-muted">سن رزرو</dt>
+                                <dd class="col-7">{{ $orphanedReservation->managementAgeLabel() }}</dd>
                                 <dt class="col-5 text-muted">زمان ایجاد</dt>
-                                <dd class="col-7" dir="ltr">{{ $orphanedReservation->created_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</dd>
+                                <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($orphanedReservation->created_at, 'ثبت نشده') }}</dd>
                                 <dt class="col-5 text-muted">آخرین فعالیت</dt>
-                                <dd class="col-7" dir="ltr">{{ $orphanedReservation->last_seen_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</dd>
+                                <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($orphanedReservation->managementLastActivityAt(), 'ثبت نشده') }}</dd>
                                 <dt class="col-5 text-muted">دلیل</dt>
                                 <dd class="col-7">رزرو رها شده</dd>
                             </dl>
@@ -543,8 +564,16 @@
                         <dl class="row g-2 mb-0 small">
                             <dt class="col-5 text-muted">سن رزرو</dt>
                             <dd class="col-7 fw-bold">{{ $reservation->managementAgeLabel() }}</dd>
+                            <dt class="col-5 text-muted">زمان ایجاد رزرو</dt>
+                            <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->created_at, 'ثبت نشده') }}</dd>
                             <dt class="col-5 text-muted">آخرین فعالیت</dt>
-                            <dd class="col-7" dir="ltr">{{ $reservation->last_seen_at?->format('Y/m/d H:i') ?? 'ثبت نشده' }}</dd>
+                            <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->managementLastActivityAt(), 'ثبت نشده') }}</dd>
+                            @if($reservation->isPreinvoiceReservationWithoutInvoice())
+                                <dt class="col-5 text-muted">زمان اتصال به پیش‌فاکتور</dt>
+                                <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->preinvoiceConnectedAt(), 'ثبت نشده') }}</dd>
+                            @endif
+                            <dt class="col-5 text-muted">دلیل نمایش</dt>
+                            <dd class="col-7">{{ $reservation->businessDisplayReason() }}</dd>
                             <dt class="col-5 text-muted">سطح اهمیت</dt>
                             <dd class="col-7">{{ $reservation->managementImportanceLabel() }}</dd>
                             <dt class="col-5 text-muted">شناسه رزرو</dt>

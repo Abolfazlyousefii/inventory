@@ -176,7 +176,11 @@ class PreinvoiceDraftReservationService
                         ->lockForUpdate()
                         ->first();
 
-                    if (! $row || ! $row->isCleanupCandidate(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
+                    if (! $row
+                        || $row->preinvoice_order_id !== null
+                        || $row->converted_at !== null
+                        || $row->released_at !== null
+                        || ! $row->isCleanupCandidate(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
                         return null;
                     }
 
