@@ -4,44 +4,58 @@ namespace App\Http\Controllers;
 
 use App\Models\PreinvoiceDraftReservation;
 use App\Services\InventoryReservationReleaseService;
+use App\Services\ReservationHealthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class WarehouseReservationController extends Controller
 {
-    public function index(Request $request): JsonResponse|View
+    public function index(Request $request, ReservationHealthService $healthService): JsonResponse|View
     {
         $filters = $request->validate([
+            'tab' => ['nullable', 'string', Rule::in(['reservations', 'health', 'orphaned', 'history'])],
             'status' => ['nullable', 'string', Rule::in(PreinvoiceDraftReservation::managementStatuses())],
             'quick' => ['nullable', 'string', Rule::in(PreinvoiceDraftReservation::managementQuickFilters())],
             'search' => ['nullable', 'string', 'max:150'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
+        $evaluatedAt = now();
+        $activeTab = $filters['tab'] ?? 'reservations';
 
-        $reservations = PreinvoiceDraftReservation::query()
-            ->with([
-                'product:id,name,sku,code',
-                'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
-                'user:id,name',
-                'order:id,uuid',
-                'releasedBy:id,name',
-            ])
-            ->when(
-                ! $request->expectsJson() && ($filters['status'] ?? null) !== PreinvoiceDraftReservation::STATUS_RELEASED,
-                fn ($query) => $query->whereNull('released_at'),
-            )
-            ->forManagementStatus($filters['status'] ?? null)
-            ->forManagementQuickFilter($filters['quick'] ?? null)
-            ->managementSearch($filters['search'] ?? null)
-            ->when($filters['date_from'] ?? null, fn ($query, $date) => $query->whereDate('created_at', '>=', $date))
-            ->when($filters['date_to'] ?? null, fn ($query, $date) => $query->whereDate('created_at', '<=', $date))
-            ->orderByManagementPriority()
-            ->paginate(20)
-            ->withQueryString();
+        $reservations = $this->emptyPaginator(20, 'page');
+        if ($request->expectsJson() || $activeTab === 'reservations') {
+            $reservations = PreinvoiceDraftReservation::query()
+                ->with([
+                    'product:id,name,sku,code',
+                    'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
+                    'user:id,name',
+                    'order:id,uuid',
+                    'releasedBy:id,name',
+                ])
+                ->when(
+                    ! $request->expectsJson() && ($filters['status'] ?? null) !== PreinvoiceDraftReservation::STATUS_RELEASED,
+                    fn ($query) => $query->whereNull('released_at'),
+                )
+                ->excludeOrphaned(
+                    PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+                    PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+                    $evaluatedAt,
+                )
+                ->forManagementStatus($filters['status'] ?? null)
+                ->forManagementQuickFilter($filters['quick'] ?? null)
+                ->managementSearch($filters['search'] ?? null)
+                ->when($filters['date_from'] ?? null, fn ($query, $date) => $query->whereDate('created_at', '>=', $date))
+                ->when($filters['date_to'] ?? null, fn ($query, $date) => $query->whereDate('created_at', '<=', $date))
+                ->orderByManagementPriority()
+                ->paginate(20)
+                ->withQueryString();
+        }
 
         if ($request->expectsJson()) {
             return response()->json($reservations->through(fn (PreinvoiceDraftReservation $reservation): array => [
@@ -67,17 +81,50 @@ class WarehouseReservationController extends Controller
             ]));
         }
 
-        $releasedReservations = PreinvoiceDraftReservation::query()
-            ->whereNotNull('released_at')
-            ->with([
-                'product:id,name,sku,code',
-                'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
-                'releasedBy:id,name',
-            ])
-            ->latest('released_at')
-            ->latest('id')
-            ->paginate(10, ['*'], 'history_page')
-            ->withQueryString();
+        $healthStats = null;
+        $healthIssues = null;
+        if ($activeTab === 'health') {
+            $healthStats = $healthService->summary($evaluatedAt);
+            $healthIssues = $healthService->paginateIssues(20, 'health_page', $evaluatedAt);
+        }
+
+        $orphanedQuery = PreinvoiceDraftReservation::query()
+            ->orphaned(
+                PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+                PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+                $evaluatedAt,
+            );
+        if ($activeTab === 'orphaned') {
+            $orphanedReservations = $orphanedQuery
+                ->with([
+                    'product:id,name,sku,code',
+                    'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
+                    'user:id,name',
+                ])
+                ->oldest('created_at')
+                ->oldest('id')
+                ->paginate(10, ['*'], 'orphan_page')
+                ->withQueryString();
+            $orphanedCount = $orphanedReservations->total();
+        } else {
+            $orphanedReservations = $this->emptyPaginator(10, 'orphan_page');
+            $orphanedCount = $orphanedQuery->count();
+        }
+
+        $releasedReservations = $this->emptyPaginator(10, 'history_page');
+        if ($activeTab === 'history') {
+            $releasedReservations = PreinvoiceDraftReservation::query()
+                ->whereNotNull('released_at')
+                ->with([
+                    'product:id,name,sku,code',
+                    'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
+                    'releasedBy:id,name',
+                ])
+                ->latest('released_at')
+                ->latest('id')
+                ->paginate(10, ['*'], 'history_page')
+                ->withQueryString();
+        }
 
         $activeStats = PreinvoiceDraftReservation::query()
             ->where(function ($query): void {
@@ -96,6 +143,10 @@ class WarehouseReservationController extends Controller
 
         return view('warehouse-reservations.index', [
             'reservations' => $reservations,
+            'orphanedReservations' => $orphanedReservations,
+            'orphanedCount' => $orphanedCount,
+            'healthStats' => $healthStats,
+            'healthIssues' => $healthIssues,
             'releasedReservations' => $releasedReservations,
             'filters' => $filters,
             'stats' => [
@@ -112,6 +163,37 @@ class WarehouseReservationController extends Controller
                     'quantity' => (int) $releasableStats->aggregate_quantity,
                 ],
             ],
+        ]);
+    }
+
+    public function exportHealth(ReservationHealthService $healthService): StreamedResponse
+    {
+        $evaluatedAt = now();
+
+        return response()->streamDownload(function () use ($healthService, $evaluatedAt): void {
+            $stream = fopen('php://output', 'wb');
+            if ($stream === false) {
+                return;
+            }
+
+            fwrite($stream, "\xEF\xBB\xBF");
+            fputcsv($stream, ['کالا', 'تنوع', 'تعداد رزرو', 'مقدار cache', 'نوع مشکل', 'زمان', 'وضعیت']);
+
+            foreach ($healthService->issueRows($evaluatedAt) as $issue) {
+                fputcsv($stream, array_map($this->escapeCsvCell(...), [
+                    $issue->product_name,
+                    $issue->variant_name ?: $issue->variety_name ?: $issue->variant_code ?: $issue->variety_code,
+                    (int) $issue->quantity,
+                    $issue->cached_quantity === null ? '' : (int) $issue->cached_quantity,
+                    $issue->issue_label,
+                    $issue->occurred_at,
+                    $issue->status_label,
+                ]));
+            }
+
+            fclose($stream);
+        }, 'reservation-health-'.now()->format('Y-m-d-His').'.csv', [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 
@@ -140,5 +222,20 @@ class WarehouseReservationController extends Controller
         }
 
         return back()->with('success', 'رزرو موجودی با موفقیت آزاد شد.');
+    }
+
+    private function emptyPaginator(int $perPage, string $pageName): LengthAwarePaginator
+    {
+        return new LengthAwarePaginator([], 0, $perPage, 1, [
+            'path' => LengthAwarePaginator::resolveCurrentPath(),
+            'pageName' => $pageName,
+        ]);
+    }
+
+    private function escapeCsvCell(mixed $value): string
+    {
+        $value = (string) ($value ?? '');
+
+        return preg_match('/^[\x00-\x20]*[=+\-@]/u', $value) === 1 ? "'{$value}" : $value;
     }
 }

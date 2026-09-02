@@ -118,7 +118,7 @@ it('shows released reservation history with actor and release reason', function 
     $manager->assignRole($role);
 
     $this->actingAs($manager)
-        ->get(route('warehouse-reservations.index'))
+        ->get(route('warehouse-reservations.index', ['tab' => 'history']))
         ->assertOk()
         ->assertSee('تاریخچه آزادسازی رزروها')
         ->assertSee('کالای چرخه کامل رزرو')

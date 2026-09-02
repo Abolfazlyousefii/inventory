@@ -626,6 +626,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/warehouse-reservations', [WarehouseReservationController::class, 'index'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.index');
+    Route::get('/warehouse-reservations/health/export', [WarehouseReservationController::class, 'exportHealth'])
+        ->middleware('route.permission:warehouse_reservations.view')
+        ->name('warehouse-reservations.health.export');
     Route::post('/warehouse-reservations/{reservation}/release', [WarehouseReservationController::class, 'release'])
         ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
         ->name('warehouse-reservations.release');

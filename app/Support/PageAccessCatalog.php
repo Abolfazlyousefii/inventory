@@ -159,6 +159,7 @@ class PageAccessCatalog
         'warehouse.shipping.index' => ['warehouse.shipping'],
         'warehouse.shipping.ship' => ['warehouse.shipping'],
         'warehouse-reservations.index' => ['warehouse.reservations'],
+        'warehouse-reservations.health.export' => ['warehouse.reservations'],
         'warehouse-reservations.release' => ['warehouse.reservations'],
         'warehouse.inbound.index' => ['warehouse.inbound_queue'],
         'warehouse.inbound.show' => ['warehouse.inbound_queue'],

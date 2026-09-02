@@ -96,10 +96,24 @@ it('forbids a user without view permission from accessing the index', function (
 
 it('filters the index by canonical reservation status', function () {
     $active = warehouseReservationFixture()['reservation'];
-    $abandoned = warehouseReservationFixture([
+    $abandonedFixture = warehouseReservationFixture([
         'expires_at' => now()->addHour(),
         'last_seen_at' => now()->subHour(),
-    ])['reservation'];
+    ]);
+    $abandoned = $abandonedFixture['reservation'];
+    PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'created_by' => $abandonedFixture['creator']->id,
+        'seller_id' => $abandonedFixture['creator']->id,
+        'document_date' => now(),
+        'status' => PreinvoiceOrder::STATUS_DRAFT,
+        'customer_name' => 'Active draft for status filter',
+        'customer_mobile' => '09120000000',
+        'total_price' => 100000,
+        'is_auto_draft' => true,
+        'auto_saved_at' => now(),
+        'draft_token' => $abandoned->token,
+    ]));
     $manager = warehouseReservationManager();
 
     $this->actingAs($manager)
@@ -238,4 +252,44 @@ it('requires the separate release permission and rejects connected reservations'
         ->assertJsonValidationErrors('reservation');
 
     expect($reservation->fresh()->released_at)->toBeNull();
+});
+
+it('does not let page access substitute for the release permission', function () {
+    ['reservation' => $reservation] = warehouseReservationFixture([
+        'expires_at' => now()->subHour(),
+        'last_seen_at' => now()->subHour(),
+    ]);
+
+    $this->actingAs(warehouseReservationManager(['page.warehouse.reservations']))
+        ->postJson(route('warehouse-reservations.release', $reservation), [
+            'release_reason' => 'Page access must not release stock',
+        ])
+        ->assertForbidden();
+
+    expect($reservation->fresh()->released_at)->toBeNull();
+});
+
+it('does not reactivate a terminal reservation when its released timestamp is missing', function () {
+    ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
+        = warehouseReservationFixture([
+            'release_reason' => 'consumed',
+            'released_at' => null,
+        ]);
+    $manager = warehouseReservationManager(['warehouse_reservations.view', 'warehouse_reservations.release']);
+
+    expect($reservation->isActiveTemporary())->toBeFalse()
+        ->and($reservation->isConnectedToPreinvoice())->toBeFalse()
+        ->and(PreinvoiceDraftReservation::query()->activeTemporary()->whereKey($reservation)->exists())->toBeFalse()
+        ->and(PreinvoiceDraftReservation::query()->connected()->whereKey($reservation)->exists())->toBeFalse();
+
+    $this->actingAs($manager)
+        ->postJson(route('warehouse-reservations.release', $reservation), [
+            'release_reason' => 'Must fail closed',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('reservation');
+
+    expect($product->fresh()->reserved)->toBe(5)
+        ->and($variant->fresh()->reserved)->toBe(5)
+        ->and($warehouseStock->fresh()->quantity)->toBe(20);
 });

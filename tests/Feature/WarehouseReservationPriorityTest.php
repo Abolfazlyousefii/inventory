@@ -2,6 +2,7 @@
 
 use App\Models\Category;
 use App\Models\PreinvoiceDraftReservation;
+use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
@@ -75,6 +76,19 @@ function warehouseReservationPriorityFixture(
         'created_at' => now()->subMinutes($ageMinutes),
         'updated_at' => now()->subMinutes($ageMinutes),
     ])->saveQuietly();
+    PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'created_by' => $seller->id,
+        'seller_id' => $seller->id,
+        'document_date' => now(),
+        'status' => PreinvoiceOrder::STATUS_DRAFT,
+        'customer_name' => 'Priority test active draft',
+        'customer_mobile' => '09120000000',
+        'total_price' => 100000,
+        'is_auto_draft' => true,
+        'auto_saved_at' => now(),
+        'draft_token' => $reservation->token,
+    ]));
 
     return $reservation->fresh();
 }

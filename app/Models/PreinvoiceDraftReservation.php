@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PreinvoiceDraftReservation extends Model
 {
@@ -108,12 +109,63 @@ class PreinvoiceDraftReservation extends Model
         return $this->belongsTo(User::class, 'released_by');
     }
 
+    public function activeDrafts(): HasMany
+    {
+        return $this->hasMany(PreinvoiceOrder::class, 'draft_token', 'token')
+            ->where('status', PreinvoiceOrder::STATUS_DRAFT);
+    }
+
+    public function scopeOrphaned(
+        Builder $query,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+        ?CarbonInterface $at = null,
+    ): Builder {
+        $at ??= now();
+        $onlineCutoff = $at->copy()->subMinutes(max(1, $onlineMinutes));
+        $inPersonCutoff = $at->copy()->subMinutes(max(1, $inPersonMinutes));
+
+        return $query
+            ->whereNull($this->qualifyColumn('released_at'))
+            ->whereNull($this->qualifyColumn('preinvoice_order_id'))
+            ->where($this->qualifyColumn('quantity'), '>', 0)
+            ->whereDoesntHave('activeDrafts')
+            ->where(function (Builder $query) use ($onlineCutoff, $inPersonCutoff): void {
+                $query->whereNull($this->qualifyColumn('last_seen_at'))
+                    ->orWhere(function (Builder $query) use ($inPersonCutoff): void {
+                        $query->where($this->qualifyColumn('reservation_scope'), self::SCOPE_TEMPORARY_IN_PERSON)
+                            ->where($this->qualifyColumn('last_seen_at'), '<=', $inPersonCutoff);
+                    })
+                    ->orWhere(function (Builder $query) use ($onlineCutoff): void {
+                        $query->where(function (Builder $query): void {
+                            $query->whereNull($this->qualifyColumn('reservation_scope'))
+                                ->orWhere($this->qualifyColumn('reservation_scope'), '!=', self::SCOPE_TEMPORARY_IN_PERSON);
+                        })->where($this->qualifyColumn('last_seen_at'), '<=', $onlineCutoff);
+                    });
+            });
+    }
+
+    public function scopeExcludeOrphaned(
+        Builder $query,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+        ?CarbonInterface $at = null,
+    ): Builder {
+        return $query->whereNotIn(
+            $this->qualifyColumn('id'),
+            self::query()
+                ->select($this->qualifyColumn('id'))
+                ->orphaned($onlineMinutes, $inPersonMinutes, $at),
+        );
+    }
+
     public function scopeOpenTemporary(Builder $query): Builder
     {
         return $query
             ->whereNull($this->qualifyColumn('preinvoice_order_id'))
             ->whereNull($this->qualifyColumn('converted_at'))
             ->whereNull($this->qualifyColumn('released_at'))
+            ->whereNull($this->qualifyColumn('release_reason'))
             ->where($this->qualifyColumn('quantity'), '>', 0)
             ->whereIn($this->qualifyColumn('reservation_scope'), [
                 self::SCOPE_TEMPORARY_ONLINE,
@@ -143,6 +195,36 @@ class PreinvoiceDraftReservation extends Model
                     ->where($this->qualifyColumn('last_seen_at'), '<=', $inPersonCutoff);
             });
         });
+    }
+
+    public function scopeCleanupCandidates(
+        Builder $query,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+        ?CarbonInterface $at = null,
+    ): Builder {
+        $at ??= now();
+        $onlineCutoff = $at->copy()->subMinutes(max(1, $onlineMinutes));
+        $inPersonCutoff = $at->copy()->subMinutes(max(1, $inPersonMinutes));
+
+        return $query
+            ->openTemporary()
+            ->whereDoesntHave('activeDrafts')
+            ->where(function (Builder $query) use ($onlineCutoff, $inPersonCutoff): void {
+                $query->where(function (Builder $query) use ($onlineCutoff): void {
+                    $query->where($this->qualifyColumn('reservation_scope'), self::SCOPE_TEMPORARY_ONLINE)
+                        ->where(function (Builder $query) use ($onlineCutoff): void {
+                            $query->whereNull($this->qualifyColumn('last_seen_at'))
+                                ->orWhere($this->qualifyColumn('last_seen_at'), '<=', $onlineCutoff);
+                        });
+                })->orWhere(function (Builder $query) use ($inPersonCutoff): void {
+                    $query->where($this->qualifyColumn('reservation_scope'), self::SCOPE_TEMPORARY_IN_PERSON)
+                        ->where(function (Builder $query) use ($inPersonCutoff): void {
+                            $query->whereNull($this->qualifyColumn('last_seen_at'))
+                                ->orWhere($this->qualifyColumn('last_seen_at'), '<=', $inPersonCutoff);
+                        });
+                });
+            });
     }
 
     public function scopeActiveTemporary(
@@ -190,6 +272,7 @@ class PreinvoiceDraftReservation extends Model
     {
         return $query
             ->whereNull($this->qualifyColumn('released_at'))
+            ->whereNull($this->qualifyColumn('release_reason'))
             ->where(function (Builder $query): void {
                 $query->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
                     ->orWhereNotNull($this->qualifyColumn('converted_at'));
@@ -204,6 +287,7 @@ class PreinvoiceDraftReservation extends Model
                     $query->whereNull($this->qualifyColumn('preinvoice_order_id'))
                         ->whereNull($this->qualifyColumn('converted_at'))
                         ->whereNull($this->qualifyColumn('released_at'))
+                        ->whereNull($this->qualifyColumn('release_reason'))
                         ->where($this->qualifyColumn('quantity'), '>', 0)
                         ->where(function (Builder $query): void {
                             $query->whereNull($this->qualifyColumn('reservation_scope'))
@@ -240,13 +324,14 @@ class PreinvoiceDraftReservation extends Model
         $lastSeen = "{$table}.last_seen_at";
         $expires = "{$table}.expires_at";
         $released = "{$table}.released_at";
+        $releaseReason = "{$table}.release_reason";
         $converted = "{$table}.converted_at";
         $preinvoice = "{$table}.preinvoice_order_id";
         $quantity = "{$table}.quantity";
-        $openSql = "{$preinvoice} IS NULL AND {$converted} IS NULL AND {$released} IS NULL AND {$quantity} > 0 AND {$scope} IN (?, ?)";
+        $openSql = "{$preinvoice} IS NULL AND {$converted} IS NULL AND {$released} IS NULL AND {$releaseReason} IS NULL AND {$quantity} > 0 AND {$scope} IN (?, ?)";
         $abandonedSql = "(({$scope} = ? AND (({$expires} IS NOT NULL AND {$expires} <= ?) OR ({$lastSeen} IS NOT NULL AND {$lastSeen} <= ?))) OR ({$scope} = ? AND {$lastSeen} IS NOT NULL AND {$lastSeen} <= ?))";
-        $reviewSql = "{$preinvoice} IS NULL AND {$converted} IS NULL AND {$released} IS NULL AND {$quantity} > 0 AND ({$scope} IS NULL OR {$scope} NOT IN (?, ?))";
-        $connectedSql = "{$released} IS NULL AND ({$preinvoice} IS NOT NULL OR {$converted} IS NOT NULL)";
+        $reviewSql = "{$preinvoice} IS NULL AND {$converted} IS NULL AND {$released} IS NULL AND {$releaseReason} IS NULL AND {$quantity} > 0 AND ({$scope} IS NULL OR {$scope} NOT IN (?, ?))";
+        $connectedSql = "{$released} IS NULL AND {$releaseReason} IS NULL AND ({$preinvoice} IS NOT NULL OR {$converted} IS NOT NULL)";
 
         return $query
             ->orderByRaw(
@@ -495,9 +580,64 @@ class PreinvoiceDraftReservation extends Model
         return $this->isAbandoned($at, $onlineMinutes, $inPersonMinutes);
     }
 
+    public function hasValidHeartbeat(
+        ?CarbonInterface $at = null,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+    ): bool {
+        if ($this->last_seen_at === null) {
+            return false;
+        }
+
+        $at ??= now();
+        $staleMinutes = $this->reservation_scope === self::SCOPE_TEMPORARY_IN_PERSON
+            ? max(1, $inPersonMinutes)
+            : max(1, $onlineMinutes);
+
+        return $this->last_seen_at->gt($at->copy()->subMinutes($staleMinutes));
+    }
+
+    public function hasActiveRelatedDraft(): bool
+    {
+        return $this->relationLoaded('activeDrafts')
+            ? $this->activeDrafts->isNotEmpty()
+            : $this->activeDrafts()->exists();
+    }
+
+    public function isOrphaned(
+        ?CarbonInterface $at = null,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+    ): bool {
+        return $this->released_at === null
+            && $this->preinvoice_order_id === null
+            && $this->quantity > 0
+            && ! $this->hasActiveRelatedDraft()
+            && ! $this->hasValidHeartbeat($at, $onlineMinutes, $inPersonMinutes);
+    }
+
+    public function isCleanupCandidate(
+        ?CarbonInterface $at = null,
+        int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = self::DEFAULT_IN_PERSON_STALE_MINUTES,
+    ): bool {
+        return $this->released_at === null
+            && $this->release_reason === null
+            && $this->preinvoice_order_id === null
+            && $this->converted_at === null
+            && $this->quantity > 0
+            && in_array($this->reservation_scope, [
+                self::SCOPE_TEMPORARY_ONLINE,
+                self::SCOPE_TEMPORARY_IN_PERSON,
+            ], true)
+            && ! $this->hasActiveRelatedDraft()
+            && ! $this->hasValidHeartbeat($at, $onlineMinutes, $inPersonMinutes);
+    }
+
     public function isConnectedToPreinvoice(): bool
     {
         return $this->released_at === null
+            && $this->release_reason === null
             && ($this->preinvoice_order_id !== null || $this->converted_at !== null);
     }
 
@@ -506,6 +646,7 @@ class PreinvoiceDraftReservation extends Model
         return $this->preinvoice_order_id === null
             && $this->converted_at === null
             && $this->released_at === null
+            && $this->release_reason === null
             && $this->quantity > 0
             && in_array($this->reservation_scope, [
                 self::SCOPE_TEMPORARY_ONLINE,

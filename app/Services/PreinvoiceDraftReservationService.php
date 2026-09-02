@@ -9,7 +9,6 @@ use App\Support\ActivityLogger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -75,14 +74,12 @@ class PreinvoiceDraftReservationService
                         'reservation_tier' => null,
                     ];
 
-                    if (Schema::hasColumn('preinvoice_draft_reservations', 'released_at')) {
-                        $reservationAttributes += [
-                            'released_at' => null,
-                            'released_by' => null,
-                            'release_reason' => null,
-                            'release_note' => null,
-                        ];
-                    }
+                    $reservationAttributes += [
+                        'released_at' => null,
+                        'released_by' => null,
+                        'release_reason' => null,
+                        'release_note' => null,
+                    ];
 
                     PreinvoiceDraftReservation::query()->updateOrCreate(
                         [
@@ -136,7 +133,8 @@ class PreinvoiceDraftReservationService
             ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')
             ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
-            ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
+            ->whereNull('released_at')
+            ->whereNull('release_reason')
             ->update([
                 'last_seen_at' => now(),
                 'browser_session_id' => $browserSessionId,
@@ -147,8 +145,7 @@ class PreinvoiceDraftReservationService
         int $onlineMinutes = PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
         int $inPersonMinutes = PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
         bool $dryRun = false,
-    ): array
-    {
+    ): array {
         if ($dryRun) {
             return $this->cleanupResult(
                 $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
@@ -164,10 +161,12 @@ class PreinvoiceDraftReservationService
 
         $releasedReservations = collect();
         $warningCount = 0;
-        $candidateIds = $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
-            ->pluck('id');
+        $candidates = $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
+            ->select('id')
+            ->lazyById(500);
 
-        foreach ($candidateIds as $reservationId) {
+        foreach ($candidates as $candidate) {
+            $reservationId = (int) $candidate->id;
             $warning = null;
 
             try {
@@ -177,7 +176,7 @@ class PreinvoiceDraftReservationService
                         ->lockForUpdate()
                         ->first();
 
-                    if (! $row || ! $row->isAbandoned(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
+                    if (! $row || ! $row->isCleanupCandidate(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
                         return null;
                     }
 
@@ -273,7 +272,7 @@ class PreinvoiceDraftReservationService
         int $inPersonMinutes = PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
     ): Builder {
         return PreinvoiceDraftReservation::query()
-            ->abandonedTemporary(max(1, $onlineMinutes), max(1, $inPersonMinutes))
+            ->cleanupCandidates(max(1, $onlineMinutes), max(1, $inPersonMinutes))
             ->orderBy('id');
     }
 
@@ -286,7 +285,8 @@ class PreinvoiceDraftReservationService
                 ->where('reservation_scope', 'temporary_online')
                 ->when($token, fn ($query) => $query->where('token', $token))
                 ->when($userId, fn ($query) => $query->where('user_id', $userId))
-                ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
+                ->whereNull('released_at')
+                ->whereNull('release_reason')
                 ->whereNotNull('expires_at')
                 ->where('expires_at', '<=', now())
                 ->lockForUpdate()
@@ -306,24 +306,19 @@ class PreinvoiceDraftReservationService
             ->where('user_id', $userId)
             ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')
-            ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'));
+            ->whereNull('released_at')
+            ->whereNull('release_reason');
     }
 
     private function markReleasedOrDelete(PreinvoiceDraftReservation $row, int $userId, string $reason, ?string $note): void
     {
-        if (Schema::hasColumn('preinvoice_draft_reservations', 'released_at')) {
-            $row->forceFill([
-                'released_at' => now(),
-                'released_by' => $userId > 0 ? $userId : null,
-                'release_reason' => $reason,
-                'release_note' => $note,
-                'expires_at' => null,
-            ])->save();
-
-            return;
-        }
-
-        $row->delete();
+        $row->forceFill([
+            'released_at' => now(),
+            'released_by' => $userId > 0 ? $userId : null,
+            'release_reason' => $reason,
+            'release_note' => $note,
+            'expires_at' => null,
+        ])->save();
     }
 
     private function normalizeReservationItems(array $items): array
@@ -399,7 +394,7 @@ class PreinvoiceDraftReservationService
 
     private function reservationKey(int $productId, int $variantId): string
     {
-        return $productId . ':' . $variantId;
+        return $productId.':'.$variantId;
     }
 
     private function cleanupResult(Collection $reservations, bool $changed): array

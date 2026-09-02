@@ -21,7 +21,8 @@ class InventoryReservationReleaseService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! $lockedReservation->canBeManuallyReleased()) {
+            if ($lockedReservation->release_reason !== null
+                || (! $lockedReservation->canBeManuallyReleased() && ! $lockedReservation->isOrphaned())) {
                 throw ValidationException::withMessages([
                     'reservation' => 'این رزرو دیگر قابل آزادسازی نیست؛ وضعیت آن در همین لحظه تغییر کرده است.',
                 ]);
