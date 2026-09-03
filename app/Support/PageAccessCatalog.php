@@ -6,6 +6,13 @@ use App\Models\User;
 
 class PageAccessCatalog
 {
+    private const PAGE_ACTION_PERMISSIONS = [
+        'warehouse.reservations' => [
+            'warehouse_reservations.view',
+            'warehouse_reservations.release',
+        ],
+    ];
+
     /** Explicit runtime ownership. Legacy permissions are migration metadata only. */
     private const ROUTE_OWNERS = [
         'dashboard' => ['dashboard'],
@@ -151,6 +158,9 @@ class PageAccessCatalog
         'vouchers.sales.shipped' => ['warehouse.shipping'],
         'warehouse.shipping.index' => ['warehouse.shipping'],
         'warehouse.shipping.ship' => ['warehouse.shipping'],
+        'warehouse-reservations.index' => ['warehouse.reservations'],
+        'warehouse-reservations.health.export' => ['warehouse.reservations'],
+        'warehouse-reservations.release' => ['warehouse.reservations'],
         'warehouse.inbound.index' => ['warehouse.inbound_queue'],
         'warehouse.inbound.show' => ['warehouse.inbound_queue'],
         'warehouse.inbound.receive' => ['warehouse.inbound_queue'],
@@ -538,6 +548,7 @@ class PageAccessCatalog
                 'description' => 'دسترسی کامل به صفحه یا فرآیند «'.$label.'» و عملیات وابسته آن',
                 'routes' => $pageRoutes,
                 'legacy_permissions' => $legacy,
+                'action_permissions' => self::PAGE_ACTION_PERMISSIONS[$key] ?? [],
                 'order' => (array_search($key, array_keys($definitions), true) + 1) * 10,
                 'sensitive' => in_array($key, ['users', 'roles', 'settings', 'activity_logs', 'integrations.inventory', 'commercial.commissions', 'commercial.invoice_reassignments', 'sales.preinvoice_finance_review', 'sales.preinvoice_warehouse_review', 'finance.accounts', 'finance.seller_sales_documents', 'finance.payments', 'warehouse.stocktake', 'warehouse.inbound_queue'], true),
                 // Migration is intentionally stricter than runtime route compatibility:
@@ -744,7 +755,7 @@ class PageAccessCatalog
             'categories' => 'categories.index', 'brands_models' => 'model-lists.index', 'shipping_methods' => 'shipping-methods.index',
             'warehouses' => 'warehouses.index', 'warehouse.stocks' => 'products.index', 'warehouse.stocktake' => 'stock-count-documents.index',
             'warehouse.purchases' => 'purchases.index', 'warehouse.issues' => 'vouchers.index', 'warehouse.collection' => 'vouchers.sales.queue',
-            'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'warehouse.map' => 'warehouse-map.index', 'assets' => 'asset.hub',
+            'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.reservations' => 'warehouse-reservations.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'warehouse.map' => 'warehouse-map.index', 'assets' => 'asset.hub',
             'sales.preinvoices' => 'preinvoice.create', 'commercial.commissions' => 'commercial.commissions.index', 'commercial.invoice_reassignments' => 'commercial.invoice-reassignments.index', 'sales.preinvoice_warehouse_review' => 'warehouse.reviews.index',
             'sales.preinvoice_finance_review' => 'preinvoice.draft.finance', 'sales.invoices' => 'invoices.index',
             'sales.returns' => 'vouchers.return-from-sale.index', 'customers' => 'customers.index', 'suppliers' => 'suppliers.index',

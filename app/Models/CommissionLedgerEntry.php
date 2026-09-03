@@ -28,6 +28,13 @@ class CommissionLedgerEntry extends Model
         'calculated_at' => 'datetime',
     ];
 
+    public function scopeActive($query)
+    {
+        return $query
+            ->where('status', self::STATUS_ACTIVE)
+            ->where('active_marker', 1);
+    }
+
     public function period()
     {
         return $this->belongsTo(CommissionPeriod::class, 'commission_period_id');

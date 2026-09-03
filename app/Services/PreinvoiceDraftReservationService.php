@@ -5,12 +5,17 @@ namespace App\Services;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Support\ActivityLogger;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class PreinvoiceDraftReservationService
 {
+    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+
     public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false): array
     {
         $desired = $this->normalizeReservationItems($items);
@@ -69,14 +74,12 @@ class PreinvoiceDraftReservationService
                         'reservation_tier' => null,
                     ];
 
-                    if (Schema::hasColumn('preinvoice_draft_reservations', 'released_at')) {
-                        $reservationAttributes += [
-                            'released_at' => null,
-                            'released_by' => null,
-                            'release_reason' => null,
-                            'release_note' => null,
-                        ];
-                    }
+                    $reservationAttributes += [
+                        'released_at' => null,
+                        'released_by' => null,
+                        'release_reason' => null,
+                        'release_note' => null,
+                    ];
 
                     PreinvoiceDraftReservation::query()->updateOrCreate(
                         [
@@ -130,49 +133,151 @@ class PreinvoiceDraftReservationService
             ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')
             ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
-            ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
+            ->whereNull('released_at')
+            ->whereNull('release_reason')
             ->update([
                 'last_seen_at' => now(),
                 'browser_session_id' => $browserSessionId,
             ]);
     }
 
-    public function cleanupStaleTemporaryReservations(int $onlineMinutes = 5, int $inPersonMinutes = 15): array
-    {
-        $releasedRows = 0;
-        $releasedQty = 0;
+    public function cleanupStaleTemporaryReservations(
+        int $onlineMinutes = PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+        bool $dryRun = false,
+    ): array {
+        if ($dryRun) {
+            return $this->cleanupResult(
+                $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
+                    ->with([
+                        'product:id,name',
+                        'variant:id,variant_name,variety_name',
+                        'user:id,name',
+                    ])
+                    ->get(),
+                false,
+            );
+        }
 
-        DB::transaction(function () use ($onlineMinutes, $inPersonMinutes, &$releasedRows, &$releasedQty) {
-            $rows = PreinvoiceDraftReservation::query()
-                ->whereNull('converted_at')
-                ->whereNull('preinvoice_order_id')
-                ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
-                ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
-                ->where(function ($query) use ($onlineMinutes, $inPersonMinutes) {
-                    $query->where(function ($q) use ($onlineMinutes) {
-                        $q->where('reservation_scope', 'temporary_online')
-                            ->where(function ($qq) use ($onlineMinutes) {
-                                $qq->where('expires_at', '<=', now())
-                                    ->orWhere('last_seen_at', '<=', now()->subMinutes($onlineMinutes));
-                            });
-                    })->orWhere(function ($q) use ($inPersonMinutes) {
-                        $q->where('reservation_scope', 'temporary_in_person')
-                            ->where('last_seen_at', '<=', now()->subMinutes($inPersonMinutes));
-                    });
-                })
-                ->lockForUpdate()
-                ->get();
+        $releasedReservations = collect();
+        $warningCount = 0;
+        $candidates = $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
+            ->select('id')
+            ->lazyById(500);
 
-            foreach ($rows as $row) {
-                $qty = (int) $row->quantity;
-                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $qty);
-                $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
-                $releasedRows++;
-                $releasedQty += $qty;
+        foreach ($candidates as $candidate) {
+            $reservationId = (int) $candidate->id;
+            $warning = null;
+
+            try {
+                $releasedReservation = DB::transaction(function () use ($reservationId, $onlineMinutes, $inPersonMinutes, &$warning) {
+                    $row = PreinvoiceDraftReservation::query()
+                        ->whereKey($reservationId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $row
+                        || $row->preinvoice_order_id !== null
+                        || $row->converted_at !== null
+                        || $row->released_at !== null
+                        || ! $row->isCleanupCandidate(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
+                        return null;
+                    }
+
+                    $qty = (int) $row->quantity;
+                    $release = $this->inventoryRelease->releaseReservedQuantity(
+                        (int) $row->product_id,
+                        (int) $row->variant_id,
+                        $qty,
+                    );
+
+                    if (! $release['released']) {
+                        $warning = array_merge($release['context'], [
+                            'reservation_id' => (int) $row->id,
+                            'reason' => $release['reason'],
+                            'audit_source' => 'automatic_reservation_cleanup',
+                            'actor_type' => 'system',
+                        ]);
+
+                        throw new RuntimeException('reservation_cleanup_validation_failed');
+                    }
+
+                    $this->markReleasedOrDelete($row, 0, 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
+
+                    $row->loadMissing([
+                        'product:id,name',
+                        'variant:id,variant_name,variety_name,variant_code,variety_code',
+                    ]);
+
+                    ActivityLogger::logForActor(
+                        null,
+                        'reservation_auto_release',
+                        $row,
+                        'رزرو موقت رهاشده به‌صورت خودکار آزاد شد.',
+                        array_merge($release['context'], [
+                            'reservation_id' => (int) $row->id,
+                            'product' => $row->product?->name,
+                            'variant' => $row->variant?->variant_name
+                                ?? $row->variant?->variety_name
+                                ?? $row->variant?->variant_code
+                                ?? $row->variant?->variety_code,
+                            'quantity' => $qty,
+                            'reason' => 'temporary_session_lost',
+                            'audit_source' => 'automatic_reservation_cleanup',
+                            'actor_type' => 'system',
+                            'before' => $release['before'],
+                            'after' => $release['after'],
+                        ]),
+                    );
+
+                    return $row->fresh()->load([
+                        'product:id,name',
+                        'variant:id,variant_name,variety_name',
+                        'user:id,name',
+                    ]);
+                });
+            } catch (RuntimeException $exception) {
+                if ($exception->getMessage() !== 'reservation_cleanup_validation_failed' || $warning === null) {
+                    throw $exception;
+                }
+
+                $warningReservation = PreinvoiceDraftReservation::query()->find($warning['reservation_id']);
+                if ($warningReservation) {
+                    ActivityLogger::logForActor(
+                        null,
+                        'reservation_cleanup_warning',
+                        $warningReservation,
+                        'آزادسازی خودکار رزرو به دلیل ناسازگاری موجودی انجام نشد.',
+                        $warning,
+                    );
+                }
+
+                $warningCount++;
+
+                continue;
             }
-        });
 
-        return ['released_reservations' => $releasedRows, 'released_quantity' => $releasedQty];
+            if ($releasedReservation) {
+                $releasedReservations->push($releasedReservation);
+            }
+        }
+
+        return [
+            'released_reservations' => $releasedReservations->count(),
+            'released_quantity' => (int) $releasedReservations->sum('quantity'),
+            'reservations' => $releasedReservations,
+            'warnings' => $warningCount,
+            'dry_run' => false,
+        ];
+    }
+
+    public function staleTemporaryReservationsQuery(
+        int $onlineMinutes = PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+        int $inPersonMinutes = PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+    ): Builder {
+        return PreinvoiceDraftReservation::query()
+            ->cleanupCandidates(max(1, $onlineMinutes), max(1, $inPersonMinutes))
+            ->orderBy('id');
     }
 
     public function releaseExpiredDraftReservations(?string $token = null, ?int $userId = null): void
@@ -184,7 +289,8 @@ class PreinvoiceDraftReservationService
                 ->where('reservation_scope', 'temporary_online')
                 ->when($token, fn ($query) => $query->where('token', $token))
                 ->when($userId, fn ($query) => $query->where('user_id', $userId))
-                ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'))
+                ->whereNull('released_at')
+                ->whereNull('release_reason')
                 ->whereNotNull('expires_at')
                 ->where('expires_at', '<=', now())
                 ->lockForUpdate()
@@ -204,24 +310,19 @@ class PreinvoiceDraftReservationService
             ->where('user_id', $userId)
             ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')
-            ->when(Schema::hasColumn('preinvoice_draft_reservations', 'released_at'), fn ($query) => $query->whereNull('released_at'));
+            ->whereNull('released_at')
+            ->whereNull('release_reason');
     }
 
     private function markReleasedOrDelete(PreinvoiceDraftReservation $row, int $userId, string $reason, ?string $note): void
     {
-        if (Schema::hasColumn('preinvoice_draft_reservations', 'released_at')) {
-            $row->forceFill([
-                'released_at' => now(),
-                'released_by' => $userId > 0 ? $userId : null,
-                'release_reason' => $reason,
-                'release_note' => $note,
-                'expires_at' => null,
-            ])->save();
-
-            return;
-        }
-
-        $row->delete();
+        $row->forceFill([
+            'released_at' => now(),
+            'released_by' => $userId > 0 ? $userId : null,
+            'release_reason' => $reason,
+            'release_note' => $note,
+            'expires_at' => null,
+        ])->save();
     }
 
     private function normalizeReservationItems(array $items): array
@@ -284,23 +385,30 @@ class PreinvoiceDraftReservationService
             return;
         }
 
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-        if ($variant) {
-            $variant->reserved = max(0, (int) $variant->reserved - $delta);
-            $variant->save();
-        }
+        $release = $this->inventoryRelease->releaseReservedQuantity($productId, $variantId, $delta);
 
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = max(0, (int) $product->reserved - $delta);
-            $product->save();
+        if (! $release['released']) {
+            throw ValidationException::withMessages([
+                'items' => $release['reason'] === 'reserved_cache_mismatch'
+                    ? 'مقدار رزرو ثبت‌شده با موجودی هم‌خوان نیست و موجودی آزاد نشد.'
+                    : 'ارتباط کالا یا تنوع رزرو معتبر نیست و موجودی آزاد نشد.',
+            ]);
         }
-
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $delta, $variantId);
     }
 
     private function reservationKey(int $productId, int $variantId): string
     {
-        return $productId . ':' . $variantId;
+        return $productId.':'.$variantId;
+    }
+
+    private function cleanupResult(Collection $reservations, bool $changed): array
+    {
+        return [
+            'released_reservations' => $reservations->count(),
+            'released_quantity' => (int) $reservations->sum('quantity'),
+            'reservations' => $reservations,
+            'warnings' => 0,
+            'dry_run' => ! $changed,
+        ];
     }
 }

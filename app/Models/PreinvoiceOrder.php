@@ -214,6 +214,18 @@ class PreinvoiceOrder extends Model
         ];
     }
 
+    public static function reservationHoldingStatuses(): array
+    {
+        return [
+            self::STATUS_RESERVED_WAITING_WAREHOUSE,
+            self::STATUS_WAREHOUSE_REVIEWING,
+            self::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+            self::STATUS_FINANCE_REVIEWING,
+            self::STATUS_PENDING_FINANCE,
+            self::STATUS_RETURNED_TO_WAREHOUSE,
+        ];
+    }
+
     public function getStatusLabelAttribute(): string
     {
         return self::statusLabels()[$this->status] ?? $this->status;

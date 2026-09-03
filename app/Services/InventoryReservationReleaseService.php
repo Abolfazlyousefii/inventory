@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\ActivityLog;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Support\ActivityLogger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -21,9 +21,10 @@ class InventoryReservationReleaseService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedReservation->preinvoice_order_id !== null || $lockedReservation->converted_at !== null || $lockedReservation->released_at !== null) {
+            if ($lockedReservation->release_reason !== null
+                || (! $lockedReservation->canBeManuallyReleased() && ! $lockedReservation->isOrphaned())) {
                 throw ValidationException::withMessages([
-                    'reservation' => 'این رزرو به سند ثبت‌شده متصل است و از این صفحه قابل آزادسازی نیست.',
+                    'reservation' => 'این رزرو دیگر قابل آزادسازی نیست؛ وضعیت آن در همین لحظه تغییر کرده است.',
                 ]);
             }
 
@@ -34,32 +35,23 @@ class InventoryReservationReleaseService
                 ]);
             }
 
-            $variant = ProductVariant::query()->whereKey($lockedReservation->variant_id)->lockForUpdate()->firstOrFail();
-            $product = Product::query()->whereKey($lockedReservation->product_id)->lockForUpdate()->first();
-
-            $before = [
-                'variant_stock' => (int) ($variant->stock ?? 0),
-                'variant_reserved' => (int) ($variant->reserved ?? 0),
-                'product_reserved' => $product ? (int) ($product->reserved ?? 0) : null,
-            ];
-
-            $variant->reserved = max(0, (int) $variant->reserved - $quantity);
-            $variant->save();
-
-            if ($product) {
-                $product->reserved = max(0, (int) $product->reserved - $quantity);
-                $product->save();
-            }
-
-            WarehouseStockService::change(
-                WarehouseStockService::centralWarehouseId(),
+            $release = $this->releaseReservedQuantity(
                 (int) $lockedReservation->product_id,
+                (int) $lockedReservation->variant_id,
                 $quantity,
-                (int) $lockedReservation->variant_id
             );
 
-            $variant->refresh();
-            $product?->refresh();
+            if (! $release['released'] && $release['reason'] === 'invalid_reservation_relation') {
+                throw ValidationException::withMessages([
+                    'reservation' => 'ارتباط کالا یا تنوع این رزرو معتبر نیست. ابتدا گزارش یکپارچگی موجودی را بررسی کنید.',
+                ]);
+            }
+
+            if (! $release['released']) {
+                throw ValidationException::withMessages([
+                    'reservation' => 'مقدار رزرو ثبت‌شده با موجودی هم‌خوان نیست. هیچ تغییری انجام نشد؛ ابتدا گزارش یکپارچگی موجودی را بررسی کنید.',
+                ]);
+            }
 
             $lockedReservation->forceFill([
                 'released_at' => now(),
@@ -78,25 +70,102 @@ class InventoryReservationReleaseService
                 'released_by' => $user->id,
                 'release_reason' => $reason,
                 'release_note' => $note,
-                'before' => $before,
-                'after' => [
-                    'variant_stock' => (int) ($variant->stock ?? 0),
-                    'variant_reserved' => (int) ($variant->reserved ?? 0),
-                    'product_reserved' => $product ? (int) ($product->reserved ?? 0) : null,
-                ],
+                'audit_source' => 'manual_release',
+                'actor_type' => 'user',
+                'before' => $release['before'],
+                'after' => $release['after'],
             ];
 
-            ActivityLog::query()->create([
-                'user_id' => $user->id,
-                'action' => 'manual_inventory_reservation_released',
-                'subject_type' => PreinvoiceDraftReservation::class,
-                'subject_id' => $lockedReservation->id,
-                'description' => 'آزادسازی دستی رزرو موجودی',
-                'properties' => $properties,
-                'occurred_at' => now(),
-            ]);
+            ActivityLogger::logForActor(
+                (int) $user->id,
+                'reservation_manual_release',
+                $lockedReservation,
+                'آزادسازی دستی رزرو موجودی',
+                $properties,
+            );
 
             Log::info('MANUAL_INVENTORY_RESERVATION_RELEASED', $properties);
         });
+    }
+
+    /**
+     * Release reserved cache and central sellable stock for an already locked workflow.
+     * The caller must run this method inside a database transaction.
+     *
+     * @return array{released: bool, reason: ?string, context: array<string, mixed>, before: array<string, int|null>, after: array<string, int|null>}
+     */
+    public function releaseReservedQuantity(int $productId, int $variantId, int $quantity): array
+    {
+        $variant = ProductVariant::query()
+            ->whereKey($variantId)
+            ->where('product_id', $productId)
+            ->lockForUpdate()
+            ->first();
+        $product = Product::query()
+            ->whereKey($productId)
+            ->lockForUpdate()
+            ->first();
+
+        $context = [
+            'product_id' => $productId,
+            'variant_id' => $variantId,
+            'release_quantity' => $quantity,
+            'current_product_reserved' => $product === null ? null : (int) $product->reserved,
+            'current_variant_reserved' => $variant === null ? null : (int) $variant->reserved,
+        ];
+
+        if ($quantity <= 0 || ! $variant || ! $product) {
+            return [
+                'released' => false,
+                'reason' => 'invalid_reservation_relation',
+                'context' => $context,
+                'before' => [],
+                'after' => [],
+            ];
+        }
+
+        if ((int) $variant->reserved < $quantity || (int) $product->reserved < $quantity) {
+            return [
+                'released' => false,
+                'reason' => 'reserved_cache_mismatch',
+                'context' => $context,
+                'before' => [],
+                'after' => [],
+            ];
+        }
+
+        $before = [
+            'variant_stock' => (int) ($variant->stock ?? 0),
+            'variant_reserved' => (int) $variant->reserved,
+            'product_reserved' => (int) $product->reserved,
+        ];
+
+        $variant->reserved = (int) $variant->reserved - $quantity;
+        $variant->save();
+
+        $product->reserved = (int) $product->reserved - $quantity;
+        $product->save();
+
+        WarehouseStockService::change(
+            WarehouseStockService::centralWarehouseId(),
+            $productId,
+            $quantity,
+            $variantId,
+        );
+
+        $variant->refresh();
+        $product->refresh();
+
+        return [
+            'released' => true,
+            'reason' => null,
+            'context' => $context,
+            'before' => $before,
+            'after' => [
+                'variant_stock' => (int) ($variant->stock ?? 0),
+                'variant_reserved' => (int) $variant->reserved,
+                'product_reserved' => (int) $product->reserved,
+            ],
+        ];
     }
 }

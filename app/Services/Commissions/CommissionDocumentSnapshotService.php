@@ -39,14 +39,14 @@ class CommissionDocumentSnapshotService
 
         return CommissionPeriod::query()
             ->where('start_at', '<=', $date)->where('end_at', '>', $date)
-            ->whereHas('ledgerEntries', fn ($query) => $query->where('invoice_id', $invoice->id)->where('status', CommissionLedgerEntry::STATUS_ACTIVE))
+            ->whereHas('ledgerEntries', fn ($query) => $query->where('invoice_id', $invoice->id)->active())
             ->latest('start_at')->first();
     }
 
     public function entries(Invoice $invoice, CommissionPeriod $period): Collection
     {
         return CommissionLedgerEntry::query()->where('commission_period_id', $period->id)
-            ->where('invoice_id', $invoice->id)->where('status', CommissionLedgerEntry::STATUS_ACTIVE)
+            ->where('invoice_id', $invoice->id)->active()
             ->with(['invoice', 'period'])->orderBy('id')->get();
     }
 

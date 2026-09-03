@@ -112,6 +112,36 @@ class Invoice extends Model
             ?? $this->preinvoiceOrder?->creator;
     }
 
+    /**
+     * Resolve the user who is entitled to commission for this invoice.
+     *
+     * seller_id fields represent explicit sales ownership. created_by is the
+     * internal operator and is accepted only for legacy records where that
+     * operator is still explicitly classified as an active ERP seller.
+     * Customer ownership is deliberately not part of this resolution.
+     */
+    public function commissionSellerId(): ?int
+    {
+        $this->loadMissing(['seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator']);
+
+        if ($this->seller_id !== null) {
+            return $this->seller?->is_seller ? (int) $this->seller->id : null;
+        }
+
+        if ($this->preinvoiceOrder?->seller_id !== null) {
+            return $this->preinvoiceOrder->seller?->is_seller
+                ? (int) $this->preinvoiceOrder->seller->id
+                : null;
+        }
+
+        $creator = $this->preinvoiceOrder?->creator;
+        if (! $creator?->is_seller || ! $creator->is_active || ! $creator->can_access_erp) {
+            return null;
+        }
+
+        return (int) $creator->id;
+    }
+
     public function recalculateSnapshotTotals(): void
     {
         $this->loadMissing('items');

@@ -62,11 +62,15 @@ class CommissionDocumentService
         return DB::transaction(function () use ($document, $invoice, $actor, $outsideReason) {
             $document = CommissionDocument::query()->with('period')->lockForUpdate()->findOrFail($document->id);
             $this->assertDraft($document);
-            $invoice = Invoice::query()->with('preinvoiceOrder')->lockForUpdate()->findOrFail($invoice->id);
+            $invoice = Invoice::query()->with([
+                'seller',
+                'preinvoiceOrder.seller',
+                'preinvoiceOrder.creator',
+            ])->lockForUpdate()->findOrFail($invoice->id);
             if ($invoice->isCancelled()) {
                 throw ValidationException::withMessages(['invoice' => 'فاکتور لغوشده قابل افزودن به سند پورسانت نیست.']);
             }
-            if ((int) $invoice->effective_seller_id !== (int) $document->seller_id) {
+            if ($invoice->commissionSellerId() !== (int) $document->seller_id) {
                 throw ValidationException::withMessages(['invoice' => 'فروشنده مؤثر فاکتور با فروشنده سند یکسان نیست.']);
             }
             $outside = ! $document->period->contains($invoice->display_document_date);
@@ -113,18 +117,20 @@ class CommissionDocumentService
         if ($document->period->needs_recalculation) {
             throw ValidationException::withMessages(['period' => 'محاسبات پورسانت این دوره نیازمند به‌روزرسانی است. ابتدا محاسبات دوره را به‌روزرسانی کنید.']);
         }
-        $invoiceIds = CommissionLedgerEntry::query()->where('commission_period_id', $document->commission_period_id)
-            ->where('seller_id', $document->seller_id)->where('status', CommissionLedgerEntry::STATUS_ACTIVE)
-            ->where('missing_rate', false)->whereNotNull('invoice_id')->distinct()->orderBy('invoice_id')->pluck('invoice_id');
+        $invoiceIds = CommissionLedgerEntry::query()
+            ->where('commission_period_id', $document->commission_period_id)
+            ->where('seller_id', $document->seller_id)
+            ->active()
+            ->whereNotNull('invoice_id')
+            ->groupBy('invoice_id')
+            ->havingRaw('SUM(CASE WHEN missing_rate = 1 THEN 1 ELSE 0 END) = 0')
+            ->orderBy('invoice_id')
+            ->pluck('invoice_id');
         $historyIds = $document->items()->pluck('invoice_id')->filter()->all();
         $added = 0;
         foreach ($invoiceIds->diff($historyIds) as $invoiceId) {
-            try {
-                $this->addInvoice($document, Invoice::query()->findOrFail($invoiceId), $actor);
-                $added++;
-            } catch (ValidationException) {
-                // A candidate can become unavailable between the bounded query and its claim transaction.
-            }
+            $this->addInvoice($document, Invoice::query()->findOrFail($invoiceId), $actor);
+            $added++;
         }
         if ($recordEvent) {
             $this->event($document, 'candidates_refreshed', $actor, null, null, ['added_count' => $added]);
