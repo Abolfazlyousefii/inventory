@@ -48,8 +48,23 @@ class PriceChangeDocumentController extends Controller
     {
         try {
             $payload = $this->validatedPayload($request, requireChange: true);
-            $preview = $this->service->buildPreview($payload, 50);
-            $summary = $this->service->previewSummary($payload);
+            // Return the complete scope so the client can see every invalid
+            // variant, not just the first page, while calculating the summary
+            // from the exact same collection.
+            $preview = $this->service->buildPreview($payload);
+            $valid = $preview->filter(fn ($item) => blank($item['error']));
+            $oldTotal = (int) $valid->sum('old_price');
+            $newTotal = (int) $valid->sum('new_price');
+            $summary = [
+                'products_count' => $preview->pluck('product_id')->unique()->count(),
+                'variants_count' => $preview->count(),
+                'valid_count' => $valid->count(),
+                'errors_count' => $preview->count() - $valid->count(),
+                'old_total' => $oldTotal,
+                'new_total' => $newTotal,
+                'average_percent' => $oldTotal > 0 ? round((($newTotal - $oldTotal) / $oldTotal) * 100, 2) : null,
+                'large_scope_warning' => $preview->count() > 500,
+            ];
 
             return response()->json([
                 'items' => $preview->values(),
