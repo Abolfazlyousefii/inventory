@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\PriceChangeDocument;
+use App\Models\PriceChangeDocumentItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\PriceChangeService;
@@ -52,7 +53,7 @@ class PriceChangeDocumentController extends Controller
             // variant, not just the first page, while calculating the summary
             // from the exact same collection.
             $preview = $this->service->buildPreview($payload);
-            $valid = $preview->filter(fn ($item) => blank($item['error']));
+            $valid = $preview->where('status', PriceChangeDocumentItem::STATUS_VALID);
             $oldTotal = (int) $valid->sum('old_price');
             $newTotal = (int) $valid->sum('new_price');
             $summary = [
@@ -85,8 +86,8 @@ class PriceChangeDocumentController extends Controller
         if ($preview->isEmpty()) {
             return back()->withInput()->withErrors(['scope' => 'هیچ تنوعی برای این محدوده پیدا نشد.']);
         }
-        if ($preview->contains(fn ($item) => filled($item['error']))) {
-            return back()->withInput()->withErrors(['change_value' => 'برخی آیتم‌ها خطای قیمت دارند و سند ذخیره نشد.']);
+        if ($preview->doesntContain(fn ($item) => $item['status'] === PriceChangeDocumentItem::STATUS_VALID)) {
+            return back()->withInput()->withErrors(['change_value' => 'هیچ آیتم معتبری برای ثبت وجود ندارد']);
         }
 
         $document = $this->service->storeDraft($payload, $preview);
