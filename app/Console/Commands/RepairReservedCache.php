@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\PreinvoiceDraftReservation;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
@@ -140,11 +141,9 @@ class RepairReservedCache extends Command
 
     private function protectedDemand(): array
     {
-        return DB::table('preinvoice_draft_reservations')
+        return PreinvoiceDraftReservation::query()
+            ->activeForReservedCache()
             ->whereNotNull('preinvoice_order_id')
-            ->whereNull('converted_at')
-            ->whereNull('released_at')
-            ->where('quantity', '>', 0)
             ->groupBy('variant_id')
             ->selectRaw('variant_id, SUM(quantity) qty')
             ->pluck('qty', 'variant_id')
@@ -154,7 +153,7 @@ class RepairReservedCache extends Command
 
     private function activeTemporary(): array
     {
-        return DB::table('preinvoice_draft_reservations')->whereNull('preinvoice_order_id')->whereNull('converted_at')->whereNull('released_at')->where('quantity', '>', 0)->groupBy('variant_id')->selectRaw('variant_id, SUM(quantity) qty')->pluck('qty', 'variant_id')->map(fn ($v) => (int) $v)->all();
+        return PreinvoiceDraftReservation::query()->activeForReservedCache()->whereNull('preinvoice_order_id')->groupBy('variant_id')->selectRaw('variant_id, SUM(quantity) qty')->pluck('qty', 'variant_id')->map(fn ($v) => (int) $v)->all();
     }
 
     private function excludedVariantIds(): array
