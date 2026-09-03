@@ -11,7 +11,14 @@ use Illuminate\Support\Facades\DB;
 
 class RepairConvertedReservations extends Command
 {
-    protected $signature = 'preinvoice:repair-converted-reservations
+    /**
+     * Keep the original preinvoice namespace while exposing the inventory
+     * namespace used by the repair runbook. Both names execute the exact same
+     * lifecycle-only repair.
+     */
+    protected $aliases = ['preinvoice:repair-converted-reservations'];
+
+    protected $signature = 'inventory:repair-converted-reservations
         {--dry-run : Report converted reservations without changing data}
         {--apply : Complete the converted reservation lifecycle}';
 
