@@ -75,7 +75,7 @@ class RepairReservedCacheCommandTest extends TestCase
     private function seedReservation(int $id, ?int $orderId, int $variantId, int $quantity, string $scope, mixed $convertedAt): void
     {
         $productId = (int) DB::table('product_variants')->where('id', $variantId)->value('product_id');
-        DB::table('preinvoice_draft_reservations')->insert(['id' => $id, 'token' => 'token-'.$id, 'preinvoice_order_id' => $orderId, 'product_id' => $productId, 'variant_id' => $variantId, 'quantity' => $quantity, 'reservation_scope' => $scope, 'converted_at' => $convertedAt, 'released_at' => null, 'release_reason' => null]);
+        DB::table('preinvoice_draft_reservations')->insert(['id' => $id, 'token' => 'token-'.$id, 'preinvoice_order_id' => $orderId, 'product_id' => $productId, 'variant_id' => $variantId, 'quantity' => $quantity, 'reservation_scope' => $scope, 'expires_at' => now()->addHour(), 'last_seen_at' => now(), 'converted_at' => $convertedAt, 'released_at' => null, 'release_reason' => null, 'created_at' => now(), 'updated_at' => now()]);
     }
 
     private function schema(): void
@@ -87,7 +87,7 @@ class RepairReservedCacheCommandTest extends TestCase
         Schema::create('warehouse_stocks', fn (Blueprint $t) => [$t->id(), $t->foreignId('warehouse_id')->nullable(), $t->foreignId('product_id'), $t->foreignId('product_variant_id'), $t->integer('quantity')->default(0)]);
         Schema::create('preinvoice_orders', fn (Blueprint $t) => [$t->id(), $t->string('uuid')->nullable(), $t->string('status'), $t->timestamp('stock_released_at')->nullable()]);
         Schema::create('preinvoice_order_items', fn (Blueprint $t) => [$t->id(), $t->foreignId('preinvoice_order_id'), $t->foreignId('product_id'), $t->foreignId('variant_id')->nullable(), $t->integer('quantity')->default(0)]);
-        Schema::create('preinvoice_draft_reservations', fn (Blueprint $t) => [$t->id(), $t->string('token'), $t->foreignId('preinvoice_order_id')->nullable(), $t->foreignId('product_id'), $t->foreignId('variant_id'), $t->integer('quantity')->default(0), $t->string('reservation_scope')->nullable(), $t->timestamp('converted_at')->nullable(), $t->timestamp('released_at')->nullable(), $t->string('release_reason')->nullable()]);
+        Schema::create('preinvoice_draft_reservations', fn (Blueprint $t) => [$t->id(), $t->string('token'), $t->foreignId('preinvoice_order_id')->nullable(), $t->foreignId('product_id'), $t->foreignId('variant_id'), $t->integer('quantity')->default(0), $t->timestamp('expires_at')->nullable(), $t->timestamp('last_seen_at')->nullable(), $t->string('reservation_scope')->nullable(), $t->timestamp('converted_at')->nullable(), $t->timestamp('released_at')->nullable(), $t->string('release_reason')->nullable(), $t->timestamps()]);
         Schema::create('invoices', fn (Blueprint $t) => [$t->id(), $t->foreignId('preinvoice_order_id')->nullable()]);
     }
 }
