@@ -4,6 +4,7 @@ use App\Models\ActivityLog;
 use App\Models\Category;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\PreinvoiceOrder;
+use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
@@ -266,11 +267,90 @@ it('connects a temporary reservation to a preinvoice through the submission flow
 
     expect($order->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
         ->and($reservation->preinvoice_order_id)->toBe($order->id)
-        ->and($reservation->converted_at)->not->toBeNull()
+        ->and($reservation->converted_at)->toBeNull()
         ->and($reservation->reservation_scope)->toBe('official')
         ->and($reservation->quantity)->toBe(4)
         ->and($inventory['warehouseStock']->fresh()->quantity)->toBe(16)
         ->and($inventory['variant']->fresh()->reserved)->toBe(4);
+});
+
+it('closes the reservation lifecycle when a preinvoice becomes an invoice', function () {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory);
+
+    $warehouseBefore = $inventory['warehouseStock']->fresh()->quantity;
+
+    $this->actingAs($finance)
+        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->assertSessionHasNoErrors();
+
+    $invoice = Invoice::query()->where('preinvoice_order_id', $order->id)->sole();
+    $reservation = $reservation->fresh();
+
+    expect($invoice)->not->toBeNull()
+        ->and($reservation->converted_at)->not->toBeNull()
+        ->and($reservation->released_at)->not->toBeNull()
+        ->and($reservation->release_reason)->toBe('consumed')
+        ->and($inventory['product']->fresh()->reserved)->toBe(0)
+        ->and($inventory['variant']->fresh()->reserved)->toBe(0)
+        ->and($inventory['warehouseStock']->fresh()->quantity)->toBe($warehouseBefore);
+});
+
+it('repairs only verified converted reservations and rebuilds product and variant caches without changing invoice or stock', function () {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory, 4);
+
+    $this->actingAs($finance)
+        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->assertSessionHasNoErrors();
+
+    $invoice = Invoice::query()->where('preinvoice_order_id', $order->id)->sole();
+    $reservation->refresh()->forceFill(['released_at' => null])->save();
+
+    PreinvoiceDraftReservation::query()->create([
+        'token' => (string) Str::uuid(),
+        'user_id' => $seller->id,
+        'product_id' => $inventory['product']->id,
+        'variant_id' => $inventory['variant']->id,
+        'quantity' => 2,
+        'expires_at' => now()->addHour(),
+        'last_seen_at' => now(),
+        'reservation_scope' => PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE,
+    ]);
+    $inventory['product']->forceFill(['reserved' => 99])->save();
+    $inventory['variant']->forceFill(['reserved' => 99])->save();
+
+    $invoiceBefore = DB::table('invoices')->where('id', $invoice->id)->first();
+    $warehouseBefore = DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+    $movementsBefore = DB::table('stock_movements')->count();
+    $activitiesBefore = DB::table('activity_logs')->count();
+
+    $this->artisan('preinvoice:repair-converted-reservations --dry-run')
+        ->expectsOutputToContain('"records": 1')
+        ->assertSuccessful();
+    expect($reservation->fresh()->released_at)->toBeNull();
+
+    $this->artisan('preinvoice:repair-converted-reservations --apply')
+        ->expectsOutputToContain('"released_records": 1')
+        ->assertSuccessful();
+    $this->artisan('inventory:repair-reserved-cache --apply --output=testing/converted-reservation-cache')
+        ->assertSuccessful();
+
+    expect($reservation->fresh()->released_at)->not->toBeNull()
+        ->and($inventory['product']->fresh()->reserved)->toBe(2)
+        ->and($inventory['variant']->fresh()->reserved)->toBe(2)
+        ->and(DB::table('invoices')->where('id', $invoice->id)->first())->toEqual($invoiceBefore)
+        ->and(DB::table('warehouse_stocks')->orderBy('id')->get()->toJson())->toBe($warehouseBefore)
+        ->and(DB::table('stock_movements')->count())->toBe($movementsBefore)
+        ->and(DB::table('activity_logs')->count())->toBe($activitiesBefore);
+
+    $this->artisan('preinvoice:repair-converted-reservations --apply')
+        ->expectsOutputToContain('"released_records": 0')
+        ->assertSuccessful();
 });
 
 it('shows a connected reservation in warehouse management', function () {

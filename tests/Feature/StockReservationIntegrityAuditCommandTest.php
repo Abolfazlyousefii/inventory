@@ -150,11 +150,11 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         DB::table('preinvoice_draft_reservations')->insert([
             ['id' => 101, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_online', 'expires_at' => now()->subMinute(), 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
             ['id' => 102, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_in_person', 'expires_at' => null, 'last_seen_at' => null, 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
-            ['id' => 103, 'preinvoice_order_id' => 501, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 2, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => null],
+            ['id' => 103, 'preinvoice_order_id' => 501, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 2, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
             ['id' => 104, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 8, 'reservation_scope' => 'temporary_online', 'expires_at' => now()->subHour(), 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => now(), 'release_reason' => 'manual_release'],
             ['id' => 105, 'preinvoice_order_id' => 501, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 8, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => 'consumed'],
             ['id' => 106, 'preinvoice_order_id' => 502, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => null],
-            ['id' => 107, 'preinvoice_order_id' => null, 'product_id' => 4, 'variant_id' => 40, 'quantity' => 5, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => null],
+            ['id' => 107, 'preinvoice_order_id' => null, 'product_id' => 4, 'variant_id' => 40, 'quantity' => 5, 'reservation_scope' => 'temporary_online', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
         ]);
     }
 

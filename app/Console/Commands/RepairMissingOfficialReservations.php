@@ -99,7 +99,7 @@ class RepairMissingOfficialReservations extends Command
                     'expires_at' => null,
                     'last_seen_at' => null,
                     'browser_session_id' => null,
-                    'converted_at' => now(),
+                    'converted_at' => null,
                     'released_at' => null,
                     'released_by' => null,
                     'release_reason' => null,

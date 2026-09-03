@@ -22,14 +22,12 @@ class PreinvoiceReservationAuditCommand extends Command
         PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
         PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
         PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE,
-        PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
         'warehouse_approved',
         'pending_finance',
         'waiting_finance',
         'pending_finance_approval',
         'pending_finance_reapproval',
         'finance_approved',
-        'invoiced',
     ];
 
     public function handle(): int
@@ -100,7 +98,7 @@ class PreinvoiceReservationAuditCommand extends Command
                 ->update(['stock_frozen_until' => null, 'updated_at' => now()]);
 
             DB::table('preinvoice_draft_reservations')
-                ->whereNotNull('converted_at')
+                ->whereNull('converted_at')
                 ->when($orderId, fn ($query) => $query->where('preinvoice_order_id', $orderId))
                 ->whereIn('preinvoice_order_id', $report['active_orders']->pluck('id')->all())
                 ->update(['expires_at' => null, 'updated_at' => now()]);
@@ -182,7 +180,8 @@ class PreinvoiceReservationAuditCommand extends Command
 
         $convertedByOrderVariant = empty($activeOrderIds) ? collect() : DB::table('preinvoice_draft_reservations')
             ->whereIn('preinvoice_order_id', $activeOrderIds)
-            ->whereNotNull('converted_at')
+            ->whereNull('converted_at')
+            ->whereNull('released_at')
             ->select('preinvoice_order_id', 'variant_id', DB::raw('SUM(quantity) AS quantity'))
             ->groupBy('preinvoice_order_id', 'variant_id')
             ->get()
@@ -232,7 +231,8 @@ class PreinvoiceReservationAuditCommand extends Command
 
         return DB::table('preinvoice_draft_reservations')
             ->whereIn('preinvoice_order_id', $activeOrderIds)
-            ->whereNotNull('converted_at')
+            ->whereNull('converted_at')
+            ->whereNull('released_at')
             ->whereNotNull('expires_at')
             ->get(['id AS reservation_id', 'preinvoice_order_id AS order_id', 'variant_id', 'quantity', 'expires_at']);
     }
@@ -243,7 +243,8 @@ class PreinvoiceReservationAuditCommand extends Command
             $rows = DB::table('preinvoice_draft_reservations')
                 ->where('preinvoice_order_id', (int) $row->order_id)
                 ->where('variant_id', (int) $row->variant_id)
-                ->whereNotNull('converted_at')
+                ->whereNull('converted_at')
+                ->whereNull('released_at')
                 ->lockForUpdate()
                 ->orderBy('id')
                 ->get();
@@ -261,7 +262,7 @@ class PreinvoiceReservationAuditCommand extends Command
                     'variant_id' => (int) $row->variant_id,
                     'quantity' => $requiredQty,
                     'expires_at' => null,
-                    'converted_at' => now(),
+                    'converted_at' => null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);

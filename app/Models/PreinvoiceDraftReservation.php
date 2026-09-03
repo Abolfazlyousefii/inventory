@@ -53,6 +53,8 @@ class PreinvoiceDraftReservation extends Model
 
     public const SCOPE_TEMPORARY_IN_PERSON = 'temporary_in_person';
 
+    public const SCOPE_OFFICIAL = 'official';
+
     public const DEFAULT_ONLINE_STALE_MINUTES = 5;
 
     public const DEFAULT_IN_PERSON_STALE_MINUTES = 15;
@@ -158,6 +160,34 @@ class PreinvoiceDraftReservation extends Model
             ->where($this->qualifyColumn('quantity'), '>', 0);
     }
 
+    public function scopeActiveForReservedCache(Builder $query, ?CarbonInterface $at = null): Builder
+    {
+        $at ??= now();
+
+        return $query->where(function (Builder $query) use ($at): void {
+            $query->activeTemporary(
+                self::DEFAULT_ONLINE_STALE_MINUTES,
+                self::DEFAULT_IN_PERSON_STALE_MINUTES,
+                $at,
+            )->orWhere(function (Builder $query): void {
+                $query->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
+                    ->whereNull($this->qualifyColumn('converted_at'))
+                    ->whereNull($this->qualifyColumn('released_at'))
+                    ->where($this->qualifyColumn('quantity'), '>', 0)
+                    ->whereHas('order')
+                    ->whereDoesntHave('order.invoice');
+            });
+        });
+    }
+
+    public function scopeConvertedUnreleased(Builder $query): Builder
+    {
+        return $query
+            ->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
+            ->whereNotNull($this->qualifyColumn('converted_at'))
+            ->whereNull($this->qualifyColumn('released_at'));
+    }
+
     public function scopeAbandonedTemporary(
         Builder $query,
         int $onlineMinutes = self::DEFAULT_ONLINE_STALE_MINUTES,
@@ -208,7 +238,7 @@ class PreinvoiceDraftReservation extends Model
         $inPersonCutoff = $at->copy()->subMinutes(max(1, $inPersonMinutes));
         $lastActivity = 'COALESCE('.$this->qualifyColumn('last_seen_at').', '.$this->qualifyColumn('created_at').')';
 
-        return $query->openTemporary()->where(function (Builder $query) use ($at, $onlineCutoff, $inPersonCutoff, $lastActivity): void {
+        return $query->openTemporary()->whereNotNull($this->qualifyColumn('last_seen_at'))->where(function (Builder $query) use ($at, $onlineCutoff, $inPersonCutoff, $lastActivity): void {
             $query->where(function (Builder $query) use ($inPersonCutoff, $lastActivity): void {
                 $query->where($this->qualifyColumn('reservation_scope'), self::SCOPE_TEMPORARY_IN_PERSON)
                     ->whereRaw("{$lastActivity} > ?", [$inPersonCutoff]);

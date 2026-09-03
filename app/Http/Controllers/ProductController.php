@@ -341,15 +341,10 @@ class ProductController extends Controller {
 
     private function reservedPreinvoiceQuantities( Product $product, array $variantIds ) {
         return PreinvoiceDraftReservation::query()
+            ->activeForReservedCache()
             ->where('product_id', $product->id)
             ->whereIn('variant_id', $variantIds)
-            ->where('reservation_scope', 'official')
-            ->whereNotNull('converted_at')
-            ->whereNull('released_at')
-            ->where(function ( $query ) {
-                $query->whereNull('release_reason')
-                    ->orWhere('release_reason', '<>', 'consumed');
-            })
+            ->whereNotNull('preinvoice_order_id')
             ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
             ->groupBy('variant_id')
             ->pluck('reserved_quantity', 'variant_id')
@@ -358,15 +353,10 @@ class ProductController extends Controller {
 
     private function draftReservationQuantities( Product $product, array $variantIds ) {
         return PreinvoiceDraftReservation::query()
+            ->activeForReservedCache()
             ->where('product_id', $product->id)
             ->whereIn('variant_id', $variantIds)
-            ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')
-            ->whereNull('released_at')
-            ->where(function ( $query ) {
-                $query->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            })
             ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
             ->groupBy('variant_id')
             ->pluck('reserved_quantity', 'variant_id')

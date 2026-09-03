@@ -13,6 +13,74 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryReservationReleaseService
 {
+    /**
+     * Finish a reservation consumed by an invoice without returning stock.
+     *
+     * Normal conversion decrements the reserved caches. Historical repair only
+     * completes the lifecycle because caches are rebuilt separately.
+     *
+     * @return array{released: bool, quantity: int}
+     */
+    public function releaseConvertedReservation(
+        PreinvoiceDraftReservation $reservation,
+        ?User $actor = null,
+        bool $decrementReservedCache = true,
+    ): array {
+        return DB::transaction(function () use ($reservation, $actor, $decrementReservedCache): array {
+            $lockedReservation = PreinvoiceDraftReservation::query()
+                ->whereKey($reservation->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedReservation->released_at !== null) {
+                return ['released' => false, 'quantity' => 0];
+            }
+
+            $quantity = (int) $lockedReservation->quantity;
+            if ($lockedReservation->preinvoice_order_id === null || $quantity <= 0) {
+                return ['released' => false, 'quantity' => 0];
+            }
+
+            if ($decrementReservedCache) {
+                $variant = ProductVariant::query()
+                    ->whereKey((int) $lockedReservation->variant_id)
+                    ->where('product_id', (int) $lockedReservation->product_id)
+                    ->lockForUpdate()
+                    ->first();
+                $product = Product::query()
+                    ->whereKey((int) $lockedReservation->product_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $variant || ! $product) {
+                    throw ValidationException::withMessages([
+                        'reservation' => 'The converted reservation has an invalid product or variant relation.',
+                    ]);
+                }
+
+                $variant->forceFill([
+                    'reserved' => max(0, (int) $variant->reserved - $quantity),
+                ])->save();
+                $product->forceFill([
+                    'reserved' => max(0, (int) $product->reserved - $quantity),
+                ])->save();
+            }
+
+            $convertedAt = $lockedReservation->converted_at ?? now();
+            $lockedReservation->forceFill([
+                'converted_at' => $convertedAt,
+                'released_at' => $convertedAt,
+                'released_by' => $actor?->id,
+                'release_reason' => 'consumed',
+                'release_note' => $decrementReservedCache
+                    ? 'Reservation consumed during final invoice conversion.'
+                    : 'Historical converted reservation lifecycle repaired.',
+            ])->save();
+
+            return ['released' => true, 'quantity' => $quantity];
+        });
+    }
+
     public function releaseDraftReservation(PreinvoiceDraftReservation $reservation, User $user, string $reason, ?string $note = null): void
     {
         DB::transaction(function () use ($reservation, $user, $reason, $note): void {

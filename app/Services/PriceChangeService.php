@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\PriceChangeDocument;
+use App\Models\PriceChangeDocumentItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
@@ -18,7 +19,7 @@ class PriceChangeService
     public function buildPreview(array $payload, ?int $perPage = null): Collection
     {
         $variants = $this->variantsForScope($payload)
-            ->with(['product:id,name,sku,code,category_id', 'modelList:id,name'])
+            ->with(['product:id,name,sku,code,category_id,is_sellable', 'modelList:id,name'])
             ->orderBy('product_id')
             ->orderBy('id')
             ->when($perPage, fn ($q) => $q->limit($perPage))
@@ -32,7 +33,7 @@ class PriceChangeService
     public function previewSummary(array $payload): array
     {
         $items = $this->buildPreview($payload);
-        $valid = $items->filter(fn ($item) => blank($item['error']));
+        $valid = $items->where('status', PriceChangeDocumentItem::STATUS_VALID);
         $oldTotal = (int) $valid->sum('old_price');
         $newTotal = (int) $valid->sum('new_price');
 
@@ -103,6 +104,8 @@ class PriceChangeService
                     'product_name_snapshot' => $item['product_name'], 'variant_name_snapshot' => $item['variant_name'], 'sku_snapshot' => $item['sku'],
                     'old_price' => $item['old_price'], 'new_price' => $item['new_price'], 'change_type' => $payload['change_type'],
                     'change_value' => $payload['change_value'] ?? null, 'rounding_mode' => $payload['rounding_mode'] ?? PriceChangeDocument::ROUND_NONE,
+                    'status' => $item['status'], 'error_message' => $item['error_message'],
+                    'validation_details' => $item['validation_details'] === null ? null : json_encode($item['validation_details'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                     'created_at' => $now, 'updated_at' => $now,
                 ])->all();
                 DB::table('price_change_document_items')->insert($rows);
@@ -117,13 +120,18 @@ class PriceChangeService
         return DB::transaction(function () use ($document, $user) {
             $lockedDocument = PriceChangeDocument::query()->whereKey($document->id)->lockForUpdate()->firstOrFail();
             if ($lockedDocument->status !== PriceChangeDocument::STATUS_DRAFT) throw new RuntimeException('فقط سند پیش‌نویس قابل اعمال است.');
-            $items = $lockedDocument->items()->lockForUpdate()->get(); $now = now();
+            $items = $lockedDocument->items()
+                ->where('status', PriceChangeDocumentItem::STATUS_VALID)
+                ->lockForUpdate()
+                ->get();
+            if ($items->isEmpty()) throw new RuntimeException('هیچ آیتم معتبری برای اعمال وجود ندارد.');
+            $now = now();
             foreach ($items as $item) {
                 $variant = ProductVariant::query()->whereKey($item->product_variant_id)->lockForUpdate()->first();
                 if (! $variant || (int) $variant->sell_price !== (int) $item->old_price) throw new RuntimeException('قیمت برخی تنوع‌ها پس از ثبت پیش‌نویس تغییر کرده است. لطفاً سند جدیدی با پیش‌نمایش به‌روز ثبت کنید.');
                 if ((int) $item->new_price <= 0) throw new RuntimeException('قیمت جدید باید بزرگ‌تر از صفر باشد.');
                 $variant->forceFill(['sell_price' => (int) $item->new_price])->save();
-                $item->forceFill(['applied_at' => $now])->save();
+                $item->forceFill(['status' => PriceChangeDocumentItem::STATUS_APPLIED, 'applied_at' => $now])->save();
             }
             $lockedDocument->forceFill(['status' => PriceChangeDocument::STATUS_APPLIED, 'applied_by' => $user->id, 'applied_at' => $now])->save();
             return $lockedDocument->refresh();
@@ -170,12 +178,22 @@ class PriceChangeService
         $oldPrice = (int) $variant->sell_price;
         $newPrice = $this->calculateNewPrice($oldPrice, $payload['change_type'], $payload['change_value'] ?? null, $payload['rounding_mode'] ?? PriceChangeDocument::ROUND_NONE);
         $difference = $newPrice - $oldPrice;
+        [$errorMessage, $validationType] = match (true) {
+            $oldPrice <= 0 => ['قیمت فروش قبلی معتبر نیست.', 'zero_price'],
+            $newPrice <= 0 => ['قیمت جدید باید بزرگ‌تر از صفر باشد.', 'non_positive_new_price'],
+            ! (bool) $variant->is_active => ['این تنوع فعال نیست.', 'inactive_variant'],
+            ! (bool) $variant->product?->is_sellable => ['محصول قابل فروش نیست.', 'unsellable_product'],
+            default => [null, null],
+        };
+
         return ['product_id' => $variant->product_id, 'variant_id' => $variant->id, 'product_name' => $variant->product?->name,
             'variant_name' => $variant->variant_name ?: $variant->variety_name ?: $variant->unique_key ?: 'تنوع اصلی',
             'sku' => $variant->variant_code ?: $variant->sku ?: $variant->product?->sku, 'old_price' => $oldPrice, 'new_price' => $newPrice,
             'difference' => $difference, 'difference_percent' => $oldPrice > 0 ? round(($difference / $oldPrice) * 100, 2) : null,
-            'status' => $newPrice > $oldPrice ? 'increase' : ($newPrice < $oldPrice ? 'decrease' : 'same'),
-            'error' => $newPrice <= 0 ? 'قیمت جدید باید بزرگ‌تر از صفر باشد.' : null];
+            'change_direction' => $newPrice > $oldPrice ? 'increase' : ($newPrice < $oldPrice ? 'decrease' : 'same'),
+            'status' => $errorMessage === null ? PriceChangeDocumentItem::STATUS_VALID : PriceChangeDocumentItem::STATUS_INVALID,
+            'error_message' => $errorMessage,
+            'validation_details' => $validationType === null ? null : ['type' => $validationType]];
     }
 
     public function assertScopeIsConsistent(array $payload): void
