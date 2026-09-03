@@ -16,6 +16,8 @@ use App\Services\NotificationService;
 
 class PreinvoiceReservationService
 {
+    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+
     public function expireOverdueReservations(): array
     {
         $temporaryResult = $this->expireTemporaryOnlineReservations();
@@ -284,23 +286,7 @@ class PreinvoiceReservationService
             }
 
             foreach ($reservations as $reservation) {
-                $quantity = (int) $reservation->quantity;
-                $variant = ProductVariant::query()->whereKey((int) $reservation->variant_id)->lockForUpdate()->first();
-                if ($variant) {
-                    $variant->forceFill(['reserved' => max(0, (int) $variant->reserved - $quantity)])->save();
-                }
-
-                $product = Product::query()->whereKey((int) $reservation->product_id)->lockForUpdate()->first();
-                if ($product) {
-                    $product->forceFill(['reserved' => max(0, (int) $product->reserved - $quantity)])->save();
-                }
-
-                $reservation->forceFill([
-                    'converted_at' => $reservation->converted_at ?? now(),
-                    'released_by' => $actor?->id,
-                    'release_reason' => 'consumed',
-                    'release_note' => 'رزرو هنگام تبدیل نهایی به فاکتور مصرف شد.',
-                ])->save();
+                $this->inventoryRelease->releaseConvertedReservation($reservation, $actor);
             }
 
             return ['consumed_reservations' => $reservations->count(), 'consumed_quantity' => (int) $reservations->sum('quantity')];

@@ -16,11 +16,11 @@ class RepairReservedCacheCommandTest extends TestCase
         $this->schema();
     }
 
-    public function test_expected_reserved_excludes_official_but_keeps_active_temporary_and_preinvoice_301(): void
+    public function test_expected_reserved_includes_active_official_and_temporary_reservations(): void
     {
         $this->seedVariant(10, 1, 99);
         $this->seedOrder(301, 'pending_finance', null, 10, 3);
-        $this->seedReservation(1, 301, 10, 3, 'official', now());
+        $this->seedReservation(1, 301, 10, 3, 'official', null);
         $this->seedReservation(2, null, 10, 4, 'temporary_online', null);
 
         $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-a')->assertExitCode(0);
@@ -52,10 +52,10 @@ class RepairReservedCacheCommandTest extends TestCase
         $this->assertSame(20, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
 
         $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-c1')->assertExitCode(0);
-        $this->assertSame(6, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
+        $this->assertSame(0, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
 
         $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-c2')->assertExitCode(0);
-        $this->assertSame(6, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
+        $this->assertSame(0, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
     }
 
     private function seedVariant(int $variantId, int $productId, int $reserved): void

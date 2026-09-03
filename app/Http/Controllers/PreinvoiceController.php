@@ -1619,7 +1619,6 @@ class PreinvoiceController extends Controller
 
         $reservedByVariant = PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
-            ->whereNotNull('converted_at')
             ->whereNull('released_at')
             ->whereNull('release_reason')
             ->whereIn('variant_id', $requiredByVariant->keys())
@@ -2007,7 +2006,7 @@ class PreinvoiceController extends Controller
             }
 
             $row->preinvoice_order_id = $order->id;
-            $row->converted_at = now();
+            $row->converted_at = null;
             $row->expires_at = $reservationMeta['expires_at'];
             $row->reservation_tier = $reservationMeta['tier'];
             $row->reservation_scope = 'official';
@@ -2039,7 +2038,6 @@ class PreinvoiceController extends Controller
 
         $rows = PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
-            ->whereNotNull('converted_at')
             ->whereNull('released_at')
             ->whereNull('release_reason')
             ->lockForUpdate()
@@ -2062,7 +2060,7 @@ class PreinvoiceController extends Controller
             if ($reservation) {
                 $reservation->quantity = $requiredQty;
                 $reservation->expires_at = $reservationMeta['expires_at'];
-                $reservation->converted_at = $reservation->converted_at ?? now();
+                $reservation->converted_at = null;
                 $reservation->reservation_tier = $reservationMeta['tier'];
                 $reservation->reservation_scope = 'official';
                 $reservation->save();
@@ -2077,7 +2075,7 @@ class PreinvoiceController extends Controller
                     'variant_id' => (int) $row['variant_id'],
                     'quantity' => $requiredQty,
                     'expires_at' => $reservationMeta['expires_at'],
-                    'converted_at' => now(),
+                    'converted_at' => null,
                     'reservation_tier' => $reservationMeta['tier'],
                     'reservation_scope' => 'official',
                 ]);
@@ -2243,8 +2241,8 @@ class PreinvoiceController extends Controller
 
         return PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
-            ->whereNotNull('converted_at')
             ->where('reservation_scope', 'official')
+            ->whereNull('released_at')
             ->exists();
     }
 
@@ -2311,7 +2309,7 @@ class PreinvoiceController extends Controller
 
         PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
-            ->whereNotNull('converted_at')
+            ->whereNull('released_at')
             ->delete();
     }
 
@@ -2323,8 +2321,8 @@ class PreinvoiceController extends Controller
 
         return PreinvoiceDraftReservation::query()
             ->where('preinvoice_order_id', $order->id)
-            ->whereNotNull('converted_at')
             ->where('reservation_scope', 'official')
+            ->whereNull('released_at')
             ->exists();
     }
 

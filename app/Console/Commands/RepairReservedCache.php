@@ -10,12 +10,9 @@ use Illuminate\Support\Facades\Storage;
 class RepairReservedCache extends Command
 {
     protected $signature = 'inventory:repair-reserved-cache {--dry-run : Preview only} {--apply : Persist reserved cache repair} {--output=reports/reserved-cache-repair} {--exclude-order=* : Additional preinvoice order IDs to exclude}';
-    protected $description = 'Safely rebuild product and variant reserved caches from protected preinvoice demand plus active temporary reservations.';
+    protected $description = 'Safely rebuild product and variant reserved caches from active reservation lifecycle rows.';
 
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
-    private const PROTECTED_STATUSES = ['reserved_waiting_warehouse','warehouse_reviewing','warehouse_approved_waiting_finance','finance_reviewing','pending_finance','returned_to_warehouse'];
-    private const TEMPORARY_SCOPES = ['temporary_online','temporary_in_person'];
-
     private static bool $writeGuardEnabled = false;
     private static ?\WeakMap $guardedConnections = null;
 
@@ -56,7 +53,8 @@ class RepairReservedCache extends Command
 
     private function buildReport(string $started, bool $afterApply, ?array $beforeReport = null): array
     {
-        $products = DB::table('products')->pluck('name', 'id')->all();
+        $productRows = DB::table('products')->get(['id', 'name', 'reserved'])->keyBy('id');
+        $products = $productRows->pluck('name', 'id')->all();
         $variants = DB::table('product_variants')->get(['id','product_id','variant_name','variant_code','reserved'])->keyBy('id');
         $protected = $this->protectedDemand();
         $temporary = $this->activeTemporary();
@@ -66,6 +64,7 @@ class RepairReservedCache extends Command
         $candidateIds = $variants->keys()->merge(array_keys($protected))->merge(array_keys($temporary))->unique()->reject(fn ($id) => isset($excluded[(int) $id]))->values();
 
         $changes = [];
+        $expectedByVariant = [];
         foreach ($candidateIds as $variantId) {
             $variant = $variants[(int) $variantId] ?? null;
             if (! $variant) {
@@ -73,6 +72,7 @@ class RepairReservedCache extends Command
             }
             $beforeReserved = $beforeReport['changes_by_variant'][(int) $variantId]['reserved_before'] ?? (int) $variant->reserved;
             $expected = (int) ($protected[(int) $variantId] ?? 0) + (int) ($temporary[(int) $variantId] ?? 0);
+            $expectedByVariant[(int) $variantId] = $expected;
             $current = (int) $variant->reserved;
             if ($beforeReserved !== $expected || (! $afterApply && $current !== $expected)) {
                 $changes[] = [
@@ -90,12 +90,39 @@ class RepairReservedCache extends Command
             }
         }
 
+        foreach ($variants as $variantId => $variant) {
+            $expectedByVariant[(int) $variantId] ??= (int) $variant->reserved;
+        }
+
+        $expectedByProduct = [];
+        foreach ($variants as $variantId => $variant) {
+            $productId = (int) $variant->product_id;
+            $expectedByProduct[$productId] = ($expectedByProduct[$productId] ?? 0) + $expectedByVariant[(int) $variantId];
+        }
+
+        $productChanges = [];
+        foreach ($productRows as $productId => $product) {
+            $current = (int) $product->reserved;
+            $expected = (int) ($expectedByProduct[(int) $productId] ?? 0);
+            $beforeReserved = $beforeReport['product_changes_by_id'][(int) $productId]['reserved_before'] ?? $current;
+            if ($beforeReserved !== $expected || (! $afterApply && $current !== $expected)) {
+                $productChanges[] = [
+                    'product_id' => (int) $productId,
+                    'product_name' => (string) $product->name,
+                    'reserved_before' => $beforeReserved,
+                    'expected_reserved' => $expected,
+                    'reserved_after' => $afterApply ? $current : $expected,
+                ];
+            }
+        }
+
         $summary = [
             'started_at' => $started,
             'finished_at' => now()->toISOString(),
             'mode' => $this->option('apply') ? 'apply' : 'dry-run',
             'variants_scanned' => $candidateIds->count(),
             'variants_changed' => count(array_filter($changes, fn ($r) => (int) $r['reserved_before'] !== (int) $r['reserved_after'])),
+            'products_changed' => count($productChanges),
             'reserved_before' => array_sum(array_column($changes, 'reserved_before')),
             'reserved_after' => array_sum(array_column($changes, 'reserved_after')),
             'reserved_reduced' => array_sum(array_map(fn ($r) => max(0, (int) $r['reserved_before'] - (int) $r['reserved_after']), $changes)),
@@ -108,21 +135,26 @@ class RepairReservedCache extends Command
             'preinvoices_changed' => false,
         ];
 
-        return ['summary' => $summary, 'changes' => $changes, 'changes_by_variant' => collect($changes)->keyBy('variant_id')->all(), 'excluded-active-reservations' => $excludedActive, 'unresolved-cancelled-finance' => $unresolved];
+        return ['summary' => $summary, 'changes' => $changes, 'changes_by_variant' => collect($changes)->keyBy('variant_id')->all(), 'product_changes' => $productChanges, 'product_changes_by_id' => collect($productChanges)->keyBy('product_id')->all(), 'excluded-active-reservations' => $excludedActive, 'unresolved-cancelled-finance' => $unresolved];
     }
 
     private function protectedDemand(): array
     {
-        return DB::table('preinvoice_order_items as i')
-            ->join('preinvoice_orders as o', 'o.id', '=', 'i.preinvoice_order_id')
-            ->where('i.quantity', '>', 0)->whereNotNull('i.variant_id')->whereIn('o.status', self::PROTECTED_STATUSES)->whereNull('o.stock_released_at')
-            ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('invoices as inv')->whereColumn('inv.preinvoice_order_id', 'o.id'))
-            ->groupBy('i.variant_id')->selectRaw('i.variant_id, SUM(i.quantity) qty')->pluck('qty', 'variant_id')->map(fn ($v) => (int) $v)->all();
+        return DB::table('preinvoice_draft_reservations')
+            ->whereNotNull('preinvoice_order_id')
+            ->whereNull('converted_at')
+            ->whereNull('released_at')
+            ->where('quantity', '>', 0)
+            ->groupBy('variant_id')
+            ->selectRaw('variant_id, SUM(quantity) qty')
+            ->pluck('qty', 'variant_id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
     }
 
     private function activeTemporary(): array
     {
-        return DB::table('preinvoice_draft_reservations')->whereIn('reservation_scope', self::TEMPORARY_SCOPES)->whereNull('preinvoice_order_id')->whereNull('converted_at')->whereNull('released_at')->where(fn ($q) => $q->whereNull('release_reason')->orWhere('release_reason', ''))->where('quantity', '>', 0)->groupBy('variant_id')->selectRaw('variant_id, SUM(quantity) qty')->pluck('qty', 'variant_id')->map(fn ($v) => (int) $v)->all();
+        return DB::table('preinvoice_draft_reservations')->whereNull('preinvoice_order_id')->whereNull('converted_at')->whereNull('released_at')->where('quantity', '>', 0)->groupBy('variant_id')->selectRaw('variant_id, SUM(quantity) qty')->pluck('qty', 'variant_id')->map(fn ($v) => (int) $v)->all();
     }
 
     private function excludedVariantIds(): array
@@ -152,9 +184,8 @@ class RepairReservedCache extends Command
         foreach ($report['changes'] as $row) {
             DB::table('product_variants')->where('id', $row['variant_id'])->lockForUpdate()->update(['reserved' => $row['expected_reserved'], 'updated_at' => now()]);
         }
-        foreach (array_unique(array_column($report['changes'], 'product_id')) as $productId) {
-            $sum = (int) DB::table('product_variants')->where('product_id', $productId)->sum('reserved');
-            DB::table('products')->where('id', $productId)->lockForUpdate()->update(['reserved' => $sum, 'updated_at' => now()]);
+        foreach ($report['product_changes'] as $row) {
+            DB::table('products')->where('id', $row['product_id'])->lockForUpdate()->update(['reserved' => $row['expected_reserved'], 'updated_at' => now()]);
         }
     }
 
@@ -171,6 +202,7 @@ class RepairReservedCache extends Command
         $paths = [];
         Storage::disk('local')->put("$base/summary.json", json_encode($report['summary'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)); $paths[] = "$base/summary.json";
         Storage::disk('local')->put("$base/reserved-cache-changes.csv", $this->csv($report['changes'], ['product_id','product_name','variant_id','variant_name','variant_code','reserved_before','protected_document_demand','active_temporary_quantity','expected_reserved','reserved_after'])); $paths[] = "$base/reserved-cache-changes.csv";
+        Storage::disk('local')->put("$base/product-reserved-cache-changes.csv", $this->csv($report['product_changes'], ['product_id','product_name','reserved_before','expected_reserved','reserved_after'])); $paths[] = "$base/product-reserved-cache-changes.csv";
         Storage::disk('local')->put("$base/excluded-active-reservations.csv", $this->csv($report['excluded-active-reservations'], ['id','preinvoice_order_id','product_id','variant_id','quantity','reservation_scope','converted_at','released_at','release_reason'])); $paths[] = "$base/excluded-active-reservations.csv";
         Storage::disk('local')->put("$base/unresolved-cancelled-finance.csv", $this->csv($report['unresolved-cancelled-finance'], ['preinvoice_order_id','status','stock_released_at','product_id','variant_id','variant_name','variant_code','quantity'])); $paths[] = "$base/unresolved-cancelled-finance.csv";
         return $paths;

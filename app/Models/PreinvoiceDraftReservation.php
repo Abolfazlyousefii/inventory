@@ -53,6 +53,8 @@ class PreinvoiceDraftReservation extends Model
 
     public const SCOPE_TEMPORARY_IN_PERSON = 'temporary_in_person';
 
+    public const SCOPE_OFFICIAL = 'official';
+
     public const DEFAULT_ONLINE_STALE_MINUTES = 5;
 
     public const DEFAULT_IN_PERSON_STALE_MINUTES = 15;
@@ -156,6 +158,22 @@ class PreinvoiceDraftReservation extends Model
             ->whereNull($this->qualifyColumn('released_at'))
             ->whereNull($this->qualifyColumn('release_reason'))
             ->where($this->qualifyColumn('quantity'), '>', 0);
+    }
+
+    public function scopeActiveForReservedCache(Builder $query): Builder
+    {
+        return $query
+            ->whereNull($this->qualifyColumn('converted_at'))
+            ->whereNull($this->qualifyColumn('released_at'))
+            ->where($this->qualifyColumn('quantity'), '>', 0);
+    }
+
+    public function scopeConvertedUnreleased(Builder $query): Builder
+    {
+        return $query
+            ->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
+            ->whereNotNull($this->qualifyColumn('converted_at'))
+            ->whereNull($this->qualifyColumn('released_at'));
     }
 
     public function scopeAbandonedTemporary(

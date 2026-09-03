@@ -300,6 +300,7 @@ class AuditStockReservationIntegrity extends Command
 
         $rows = DB::table('preinvoice_draft_reservations')
             ->where('quantity', '>', 0)
+            ->whereNull('converted_at')
             ->whereNull('released_at')
             ->whereNull('release_reason')
             ->whereNotExists(function ($query): void {
