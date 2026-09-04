@@ -232,7 +232,8 @@ class WarehouseCollectionService
             $oldStatus = (string) $invoice->status;
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
             $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
-            $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
+            $revisionId = $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
+
             $this->warehouseInbound->queueInvoiceAdjustment(
                 $invoice->fresh(),
                 $pendingInboundLines,
@@ -240,6 +241,16 @@ class WarehouseCollectionService
                 $reason ?: 'invoice_correction'
             );
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
+
+            \App\Services\InventoryWebhookService::send('invoice.items.updated', [
+                'invoice_id' => $invoice->id,
+                'external_order_id' => $invoice->external_order_id,
+                'crm_customer_id' => $invoice->customer?->crm_customer_id,
+                'revision_id' => $revisionId,
+                'old_total' => (int) $oldTotal,
+                'new_total' => (int) $total,
+                'difference' => (int) $total - (int) $oldTotal,
+            ]);
 
             return $invoice->fresh(['items.product', 'items.variant']);
         });
@@ -270,10 +281,10 @@ class WarehouseCollectionService
         ];
     }
 
-    private function storeCollectionRevision(Invoice $invoice, int $oldTotal, int $newTotal, string $reason, ?string $note, int $userId, array $items): void
+    private function storeCollectionRevision(Invoice $invoice, int $oldTotal, int $newTotal, string $reason, ?string $note, int $userId, array $items): ?int
     {
         if (! DB::getSchemaBuilder()->hasTable('invoice_collection_revisions')) {
-            return;
+            return null;
         }
         $revisionNumber = ((int) DB::table('invoice_collection_revisions')->where('invoice_id', $invoice->id)->max('revision_number')) + 1;
         $revisionId = DB::table('invoice_collection_revisions')->insertGetId(['invoice_id' => $invoice->id, 'revision_number' => $revisionNumber, 'old_total' => $oldTotal, 'new_total' => $newTotal, 'reason_type' => $reason, 'reason_note' => $note, 'changed_by' => $userId, 'created_at' => now(), 'updated_at' => now()]);
@@ -281,6 +292,8 @@ class WarehouseCollectionService
             $item['invoice_collection_revision_id'] = $revisionId;
             DB::table('invoice_collection_revision_items')->insert($item);
         }
+
+        return (int) $revisionId;
     }
 
     public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, bool $canEditPrices = false, ?string $reason = null, ?string $note = null): Invoice

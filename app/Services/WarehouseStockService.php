@@ -67,12 +67,15 @@ class WarehouseStockService
         });
     }
 
-    public static function available(int $warehouseId, int $productId, int $variantId): int
+    public static function available(int $warehouseId, int $productId, ?int $variantId = null): int
     {
+        // Treat 0 or negative as "no variant" (null)
+        if ($variantId !== null && $variantId <= 0) {
+            $variantId = null;
+        }
+
         self::assertVariantBelongsToProduct($productId, $variantId);
-
         $stock = self::ensureStockExists($warehouseId, $productId, $variantId);
-
         return max(0, (int) $stock->quantity);
     }
 
