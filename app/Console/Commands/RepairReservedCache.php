@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\PreinvoiceDraftReservation;
+use App\Services\ReservationQueryService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
@@ -17,8 +17,11 @@ class RepairReservedCache extends Command
     private static bool $writeGuardEnabled = false;
     private static ?\WeakMap $guardedConnections = null;
 
-    public function handle(): int
+    private ReservationQueryService $reservationQuantities;
+
+    public function handle(ReservationQueryService $reservationQuantities): int
     {
+        $this->reservationQuantities = $reservationQuantities;
         if ($this->option('apply') && $this->option('dry-run')) {
             $this->error('Use either --apply or --dry-run, not both.');
             return self::FAILURE;
@@ -141,19 +144,12 @@ class RepairReservedCache extends Command
 
     private function protectedDemand(): array
     {
-        return PreinvoiceDraftReservation::query()
-            ->activeForReservedCache()
-            ->whereNotNull('preinvoice_order_id')
-            ->groupBy('variant_id')
-            ->selectRaw('variant_id, SUM(quantity) qty')
-            ->pluck('qty', 'variant_id')
-            ->map(fn ($v) => (int) $v)
-            ->all();
+        return $this->reservationQuantities->quantitiesByVariant(official: true)->all();
     }
 
     private function activeTemporary(): array
     {
-        return PreinvoiceDraftReservation::query()->activeForReservedCache()->whereNull('preinvoice_order_id')->groupBy('variant_id')->selectRaw('variant_id, SUM(quantity) qty')->pluck('qty', 'variant_id')->map(fn ($v) => (int) $v)->all();
+        return $this->reservationQuantities->quantitiesByVariant(official: false)->all();
     }
 
     private function excludedVariantIds(): array

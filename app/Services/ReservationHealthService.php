@@ -19,6 +19,10 @@ class ReservationHealthService
 
     public const ISSUE_CACHE_MISMATCH = 'cache_mismatch';
 
+    public function __construct(private readonly ReservationQueryService $reservationQueries)
+    {
+    }
+
     /**
      * @return array{healthy: int, old: int, orphaned: int, cache_mismatch: int}
      */
@@ -97,21 +101,7 @@ class ReservationHealthService
 
     private function monitoredReservations(): EloquentBuilder
     {
-        $table = (new PreinvoiceDraftReservation)->getTable();
-
-        return PreinvoiceDraftReservation::query()
-            ->where("{$table}.quantity", '>', 0)
-            ->whereNull("{$table}.released_at")
-            ->whereNull("{$table}.release_reason")
-            ->whereDoesntHave('order.invoice')
-            ->where(function (EloquentBuilder $query) use ($table): void {
-                $query->whereNull("{$table}.reservation_scope")
-                    ->orWhere("{$table}.reservation_scope", '!=', 'official')
-                    ->orWhereDoesntHave('order', function (EloquentBuilder $order): void {
-                        $order->where('status', PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE)
-                            ->orWhereNotNull('stock_released_at');
-                    });
-            });
+        return $this->reservationQueries->healthMonitoredQuery();
     }
 
     private function applyValidHeartbeat(EloquentBuilder $query, CarbonInterface $at): void
