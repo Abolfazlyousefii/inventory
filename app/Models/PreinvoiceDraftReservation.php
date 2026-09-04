@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\ReservationClassificationService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class PreinvoiceDraftReservation extends Model
 {
@@ -48,6 +50,8 @@ class PreinvoiceDraftReservation extends Model
     public const PREINVOICE_REVIEW_AFTER_HOURS = 24;
 
     public const PREINVOICE_CRITICAL_AFTER_HOURS = 72;
+
+    public const LEGACY_STALE_HOURS = 72;
 
     public const SCOPE_TEMPORARY_ONLINE = 'temporary_online';
 
@@ -173,11 +177,64 @@ class PreinvoiceDraftReservation extends Model
                 $query->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
                     ->whereNull($this->qualifyColumn('converted_at'))
                     ->whereNull($this->qualifyColumn('released_at'))
+                    ->whereNull($this->qualifyColumn('release_reason'))
                     ->where($this->qualifyColumn('quantity'), '>', 0)
-                    ->whereHas('order')
-                    ->whereDoesntHave('order.invoice');
+                    ->whereHas('order', fn (Builder $order) => $order->whereIn('status', PreinvoiceOrder::reservationHoldingStatuses()));
+
+                if (Schema::hasTable('invoices')) {
+                    $query->whereDoesntHave('order.invoice');
+                }
             });
         });
+    }
+
+    public function scopeLegacyCleanupCandidates(
+        Builder $query,
+        int $staleHours = self::LEGACY_STALE_HOURS,
+        ?CarbonInterface $at = null,
+    ): Builder {
+        $at ??= now();
+        $cutoff = $at->copy()->subHours(max(1, $staleHours));
+        $lastActivity = 'COALESCE('.$this->qualifyColumn('last_seen_at').', '.$this->qualifyColumn('created_at').')';
+
+        return $query
+            ->whereNull($this->qualifyColumn('released_at'))
+            ->whereNull($this->qualifyColumn('release_reason'))
+            ->where($this->qualifyColumn('quantity'), '>', 0)
+            ->whereRaw("{$lastActivity} <= ?", [$cutoff])
+            ->where(function (Builder $query): void {
+                $query->where(function (Builder $temporary): void {
+                    $temporary->whereNull($this->qualifyColumn('preinvoice_order_id'));
+
+                    if (Schema::hasColumn('preinvoice_orders', 'draft_token')) {
+                        $temporary->whereDoesntHave('activeDrafts');
+                    }
+                })->orWhere(function (Builder $official): void {
+                    $official->whereNotNull($this->qualifyColumn('preinvoice_order_id'));
+
+                    if (Schema::hasTable('invoices')) {
+                        $official->whereDoesntHave('order.invoice');
+                    }
+
+                    $official->where(function (Builder $inactive): void {
+                            $inactive->whereDoesntHave('order')
+                                ->orWhereHas('order', fn (Builder $order) => $order->whereNotIn('status', PreinvoiceOrder::reservationHoldingStatuses()));
+                        });
+                });
+            });
+    }
+
+    public function legacyCleanupReason(): string
+    {
+        if ($this->preinvoice_order_id === null) {
+            return 'legacy_without_preinvoice';
+        }
+
+        if ($this->order === null) {
+            return 'legacy_missing_preinvoice';
+        }
+
+        return 'legacy_inactive_preinvoice';
     }
 
     public function scopeConvertedUnreleased(Builder $query): Builder
@@ -457,10 +514,159 @@ class PreinvoiceDraftReservation extends Model
                 ->orWhereHas('product', fn (Builder $product) => $product->where('name', 'like', "%{$search}%"))
                 ->orWhereHas('variant', function (Builder $variant) use ($search): void {
                     $variant->where('variant_code', 'like', "%{$search}%")
-                        ->orWhere('variety_code', 'like', "%{$search}%");
+                        ->orWhere('variety_code', 'like', "%{$search}%")
+                        ->orWhere('variant_name', 'like', "%{$search}%")
+                        ->orWhere('variety_name', 'like', "%{$search}%");
                 })
-                ->orWhereHas('user', fn (Builder $user) => $user->where('name', 'like', "%{$search}%"));
+                ->orWhereHas('user', fn (Builder $user) => $user->where('name', 'like', "%{$search}%"))
+                ->orWhereHas('order', function (Builder $order) use ($search): void {
+                    $order->where('customer_name', 'like', "%{$search}%")
+                        ->orWhere('customer_mobile', 'like', "%{$search}%");
+                });
         });
+    }
+
+    /**
+     * Age filter: reservations created at or before ($at - $hours). Reuses
+     * the same hour-based comparison already used by the health thresholds
+     * (PREINVOICE_REVIEW_AFTER_HOURS / PREINVOICE_CRITICAL_AFTER_HOURS) —
+     * just parameterized instead of fixed at 24/72. The UI's "older than 30
+     * days" preset is passed in as 720 hours by the caller; there is no
+     * separate day-based rule.
+     */
+    public function scopeOlderThanHours(Builder $query, ?int $hours, ?CarbonInterface $at = null): Builder
+    {
+        if ($hours === null) {
+            return $query;
+        }
+
+        $at ??= now();
+
+        return $query->where($this->qualifyColumn('created_at'), '<=', $at->copy()->subHours(max(0, $hours)));
+    }
+
+    /**
+     * Lifecycle filter: active / released / consumed only (no "converted" as
+     * a separate state — matches ReservationClassificationService::classifyLifecycle()
+     * exactly: released_at set wins first, then converted_at set, else active).
+     */
+    public function scopeForLifecycle(Builder $query, ?string $lifecycle): Builder
+    {
+        return match ($lifecycle) {
+            ReservationClassificationService::LIFECYCLE_RELEASED => $query->whereNotNull($this->qualifyColumn('released_at')),
+            ReservationClassificationService::LIFECYCLE_CONSUMED => $query
+                ->whereNull($this->qualifyColumn('released_at'))
+                ->whereNotNull($this->qualifyColumn('converted_at')),
+            ReservationClassificationService::LIFECYCLE_ACTIVE => $query
+                ->whereNull($this->qualifyColumn('released_at'))
+                ->whereNull($this->qualifyColumn('converted_at')),
+            default => $query,
+        };
+    }
+
+    public function scopeForCreator(Builder $query, ?int $userId): Builder
+    {
+        return $userId === null ? $query : $query->where($this->qualifyColumn('user_id'), $userId);
+    }
+
+    public function scopeForProduct(Builder $query, ?int $productId): Builder
+    {
+        return $productId === null ? $query : $query->where($this->qualifyColumn('product_id'), $productId);
+    }
+
+    public function scopeForVariant(Builder $query, ?int $variantId): Builder
+    {
+        return $variantId === null ? $query : $query->where($this->qualifyColumn('variant_id'), $variantId);
+    }
+
+    /**
+     * Customer filter, reached only through the related preinvoice order
+     * (PreinvoiceOrder::customer_id / customer_name / customer_mobile).
+     * Temporary reservations have no preinvoice_order_id and therefore no
+     * order to match — whereHas('order', ...) naturally excludes them. This
+     * is intentional, not a bug: a reservation with no preinvoice has no
+     * customer to filter by.
+     */
+    public function scopeForCustomer(Builder $query, ?int $customerId, ?string $customerSearch = null): Builder
+    {
+        $customerSearch = trim((string) $customerSearch);
+        if ($customerId === null && $customerSearch === '') {
+            return $query;
+        }
+
+        return $query->whereHas('order', function (Builder $order) use ($customerId, $customerSearch): void {
+            if ($customerId !== null) {
+                $order->where('customer_id', $customerId);
+            }
+
+            if ($customerSearch !== '') {
+                $order->where(function (Builder $order) use ($customerSearch): void {
+                    $order->where('customer_name', 'like', "%{$customerSearch}%")
+                        ->orWhere('customer_mobile', 'like', "%{$customerSearch}%");
+                });
+            }
+        });
+    }
+
+    /**
+     * Classification/management-label filter. This is a SQL mirror of
+     * ReservationClassificationService::classifyManagementLabel() and MUST
+     * be kept in the same precedence order as that method:
+     *   1. Consumed          (converted_at set, not released)
+     *   2. Legacy Candidate  (scopeLegacyCleanupCandidates)
+     *   3. Critical          (scopeCriticalPreinvoice, i.e. businessStatus() === STATUS_CRITICAL)
+     *   4. Official Preinvoice (has a preinvoice_order_id)
+     *   5. Temporary Orphan  (scopeCleanupCandidates — the 5/15-minute
+     *      heartbeat definition also used by the "orphaned" tab, matching
+     *      the model's isOrphaned()/isCleanupCandidate() instance methods)
+     *   6. Temporary Active  (fallback — everything else)
+     * If ReservationClassificationService::classifyManagementLabel() ever
+     * changes its precedence or predicates, this scope must change with it.
+     */
+    public function scopeManagementLabel(Builder $query, ?string $label, ?CarbonInterface $at = null): Builder
+    {
+        if ($label === null || $label === '') {
+            return $query;
+        }
+
+        $at ??= now();
+        $notReleasedOrConverted = fn (Builder $query): Builder => $query
+            ->whereNull($this->qualifyColumn('released_at'))
+            ->whereNull($this->qualifyColumn('converted_at'));
+
+        return match ($label) {
+            ReservationClassificationService::LABEL_CONSUMED => $query
+                ->whereNull($this->qualifyColumn('released_at'))
+                ->whereNotNull($this->qualifyColumn('converted_at')),
+
+            ReservationClassificationService::LABEL_LEGACY_CANDIDATE => $query
+                ->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at),
+
+            ReservationClassificationService::LABEL_CRITICAL => $query
+                ->where($notReleasedOrConverted)
+                ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
+                ->criticalPreinvoice($at),
+
+            ReservationClassificationService::LABEL_OFFICIAL_PREINVOICE => $query
+                ->where($notReleasedOrConverted)
+                ->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
+                ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
+                ->whereNot(fn (Builder $q) => $q->criticalPreinvoice($at)),
+
+            ReservationClassificationService::LABEL_TEMPORARY_ORPHAN => $query
+                ->where($notReleasedOrConverted)
+                ->whereNull($this->qualifyColumn('preinvoice_order_id'))
+                ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
+                ->cleanupCandidates(self::DEFAULT_ONLINE_STALE_MINUTES, self::DEFAULT_IN_PERSON_STALE_MINUTES, $at),
+
+            ReservationClassificationService::LABEL_TEMPORARY_ACTIVE => $query
+                ->where($notReleasedOrConverted)
+                ->whereNull($this->qualifyColumn('preinvoice_order_id'))
+                ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
+                ->whereNot(fn (Builder $q) => $q->cleanupCandidates(self::DEFAULT_ONLINE_STALE_MINUTES, self::DEFAULT_IN_PERSON_STALE_MINUTES, $at)),
+
+            default => $query,
+        };
     }
 
     /** @return array<int, string> */

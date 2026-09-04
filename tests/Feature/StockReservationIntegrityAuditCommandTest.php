@@ -45,12 +45,16 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $rows = collect($this->csv('reports/stock-reservation-integrity/reservation-cache-desync.csv'));
         $r01 = $rows->firstWhere('anomaly_code', 'R01');
 
+        // Reservations 101 (expired online) and 102 (no heartbeat) are excluded from the
+        // shared ReservationQueryService "active for reserved cache" definition, matching
+        // what the Product page and RepairReservedCache already use. Only the official
+        // reservation on an in-progress order (103) counts here.
         $this->assertNotNull($r01);
         $this->assertSame('20', $r01['variant_id']);
         $this->assertSame('1', $r01['cached_reserved']);
-        $this->assertSame('4', $r01['active_reserved_quantity']);
-        $this->assertSame('1', $r01['temporary_online_reserved']);
-        $this->assertSame('1', $r01['temporary_in_person_reserved']);
+        $this->assertSame('2', $r01['active_reserved_quantity']);
+        $this->assertSame('0', $r01['temporary_online_reserved']);
+        $this->assertSame('0', $r01['temporary_in_person_reserved']);
         $this->assertSame('2', $r01['official_reserved']);
         $this->assertStringNotContainsString('104', $r01['reservation_ids']);
         $this->assertStringNotContainsString('105', $r01['reservation_ids']);
@@ -204,6 +208,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
             $table->timestamp('released_at')->nullable();
             $table->string('release_reason')->nullable();
             $table->string('reservation_scope')->nullable();
+            $table->timestamps();
         });
     }
 

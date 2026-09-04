@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\ReservationQueryService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,6 @@ class AuditStockReservationIntegrity extends Command
     protected $description = 'Read-only audit for central stock caches and draft reservation integrity.';
 
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
-    private const RESERVATION_SCOPES = ['temporary_online', 'temporary_in_person', 'official'];
     private const ACTIVE_PREINVOICE_STATUSES = [
         'reserved_waiting_warehouse',
         'warehouse_reviewing',
@@ -51,8 +51,11 @@ class AuditStockReservationIntegrity extends Command
     private static ?\WeakMap $guardedConnections = null;
     private static bool $writeGuardEnabled = false;
 
-    public function handle(): int
+    private ReservationQueryService $reservationQuantities;
+
+    public function handle(ReservationQueryService $reservationQuantities): int
     {
+        $this->reservationQuantities = $reservationQuantities;
         $format = strtolower((string) $this->option('format'));
         if (! in_array($format, ['csv', 'json'], true)) {
             $this->error('--format must be csv or json.');
@@ -298,33 +301,21 @@ class AuditStockReservationIntegrity extends Command
             return [];
         }
 
-        $rows = DB::table('preinvoice_draft_reservations')
-            ->where('quantity', '>', 0)
-            ->whereNull('converted_at')
-            ->whereNull('released_at')
-            ->whereNull('release_reason')
-            ->whereNotExists(function ($query): void {
-                $query->selectRaw('1')
-                    ->from('preinvoice_orders as consumed_orders')
-                    ->whereColumn('consumed_orders.id', 'preinvoice_draft_reservations.preinvoice_order_id')
-                    ->where('preinvoice_draft_reservations.reservation_scope', 'official')
-                    ->where(function ($order): void {
-                        $order->where('consumed_orders.status', 'converted_to_invoice')
-                            ->orWhereNotNull('consumed_orders.stock_released_at');
-                    });
-            })
-            ->select('variant_id', 'reservation_scope', DB::raw('sum(quantity) as quantity'), DB::raw('group_concat(id) as reservation_ids'), DB::raw('group_concat(preinvoice_order_id) as preinvoice_order_ids'))
-            ->groupBy('variant_id', 'reservation_scope')
+        $rows = $this->reservationQuantities->activeQuery()
+            ->select('variant_id', 'reservation_scope', 'preinvoice_order_id', DB::raw('sum(quantity) as quantity'), DB::raw('group_concat(id) as reservation_ids'), DB::raw('group_concat(preinvoice_order_id) as preinvoice_order_ids'))
+            ->groupBy('variant_id', 'reservation_scope', 'preinvoice_order_id')
             ->get();
 
         $out = [];
         foreach ($rows as $row) {
-            if (! $row->variant_id || ! in_array($row->reservation_scope, self::RESERVATION_SCOPES, true)) {
+            if (! $row->variant_id) {
                 continue;
             }
             $variantId = (int) $row->variant_id;
             $out[$variantId] ??= $this->emptyReservation();
-            $scopeKey = $row->reservation_scope.'_reserved';
+            $scopeKey = $row->preinvoice_order_id !== null
+                ? 'official_reserved'
+                : ($row->reservation_scope === 'temporary_in_person' ? 'temporary_in_person_reserved' : 'temporary_online_reserved');
             $out[$variantId][$scopeKey] += (int) $row->quantity;
             $out[$variantId]['active_reserved_quantity'] += (int) $row->quantity;
             $out[$variantId]['reservation_ids'] = $this->appendCsv($out[$variantId]['reservation_ids'], (string) $row->reservation_ids);

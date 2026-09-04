@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\ModelList;
-use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Warehouse;
@@ -13,6 +12,7 @@ use App\Services\CrmProductSyncService;
 use App\Services\DefaultProductDesignService;
 use App\Services\ProductSearchService;
 use App\Services\ProductVariantStructureService;
+use App\Services\ReservationQueryService;
 use App\Services\WarehouseStockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -65,7 +65,7 @@ class ProductController extends Controller {
         ]);
     }
 
-    public function warehouseStock( Product $product, Request $request ) {
+    public function warehouseStock( Product $product, Request $request, ReservationQueryService $reservationQuantities ) {
         $variantId = $request->filled('variant_id') ? (int) $request->input('variant_id') : null;
         $limit     = min(50, max(1, (int) $request->integer('limit', 30)));
         $cursor    = max(0, (int) $request->integer('cursor', 0));
@@ -113,11 +113,9 @@ class ProductController extends Controller {
             ->pluck('available_quantity', 'variant_key')
             ->map(fn( $quantity ) => (int) $quantity);
 
-        $reservedByVariant = $hasVariants ? $this->reservedPreinvoiceQuantities($product, $allVariantIds->all()) : collect();
-
-        $draftReservedByVariant = $hasVariants ? $this->draftReservationQuantities($product, $allVariantIds->all()) : collect();
-
-        $reservedTotalByVariant = $allVariantIds->mapWithKeys(fn( $id ) => [ (int) $id => (int) ( $reservedByVariant[(int) $id] ?? 0 ) + (int) ( $draftReservedByVariant[(int) $id] ?? 0 ) ]);
+        $reservedTotalByVariant = $hasVariants
+            ? $reservationQuantities->quantitiesByVariant((int) $product->id, $allVariantIds->all())
+            : collect();
 
         $summaryAvailable = (int) $stockTotals->sum();
         $summaryReserved  = (int) $reservedTotalByVariant->sum();
@@ -337,30 +335,6 @@ class ProductController extends Controller {
         $previewSeq4 = $this->peekNextProductSeq4();
 
         return view('products.create', compact('categories', 'modelLists', 'previewSeq4'));
-    }
-
-    private function reservedPreinvoiceQuantities( Product $product, array $variantIds ) {
-        return PreinvoiceDraftReservation::query()
-            ->activeForReservedCache()
-            ->where('product_id', $product->id)
-            ->whereIn('variant_id', $variantIds)
-            ->whereNotNull('preinvoice_order_id')
-            ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
-            ->groupBy('variant_id')
-            ->pluck('reserved_quantity', 'variant_id')
-            ->map(fn( $quantity ) => (int) $quantity);
-    }
-
-    private function draftReservationQuantities( Product $product, array $variantIds ) {
-        return PreinvoiceDraftReservation::query()
-            ->activeForReservedCache()
-            ->where('product_id', $product->id)
-            ->whereIn('variant_id', $variantIds)
-            ->whereNull('preinvoice_order_id')
-            ->select('variant_id', DB::raw('SUM(quantity) as reserved_quantity'))
-            ->groupBy('variant_id')
-            ->pluck('reserved_quantity', 'variant_id')
-            ->map(fn( $quantity ) => (int) $quantity);
     }
 
     private function variantDisplayTitle( ProductVariant $variant ): string {

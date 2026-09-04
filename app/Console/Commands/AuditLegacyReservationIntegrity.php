@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\LegacyReservationCleanupService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\Storage;
 
 class AuditLegacyReservationIntegrity extends Command
 {
-    protected $signature = 'inventory:audit-legacy-reservation-integrity {--format=csv : csv or json} {--output=} {--order=} {--variant=} {--summary}';
+    protected $signature = 'inventory:audit-legacy-reservation-integrity {--format=csv : csv or json} {--output=} {--order=} {--variant=} {--summary} {--stale-hours=72 : Minimum age since reservation activity}';
     protected $description = 'Read-only audit for legacy reservation rows and reserved cache integrity.';
 
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
@@ -19,12 +20,16 @@ class AuditLegacyReservationIntegrity extends Command
     private const LEGACY_HEAD = ['reservation_id','token_prefix','user_id','preinvoice_order_id','order_uuid','order_status','invoice_id','stock_released_at','product_id','product_name','variant_id','variant_name','variant_code','quantity','reservation_scope','converted_at','released_at','release_reason','expires_at','last_seen_at','created_at','classification_code','severity','recommended_action'];
     private const VARIANT_HEAD = ['product_id','product_name','variant_id','variant_name','variant_code','cached_available_stock','central_available_stock','cached_reserved','protected_document_demand','active_temporary_quantity','recognized_official_quantity','legacy_quantity','expected_reserved','reservation_cache_difference','protected_order_ids','official_reservation_ids','legacy_reservation_ids','classification_code','severity','recommended_action'];
     private const MISSING_HEAD = ['preinvoice_order_id','order_uuid','order_status','product_id','product_name','variant_id','variant_name','required_quantity','official_quantity','legacy_quantity','covered_quantity','missing_quantity','cached_reserved','central_available_stock','classification_code','severity'];
+    private const CLEANUP_HEAD = ['reservation_id','product_id','product_name','variant_id','variant_name','quantity','token','age_hours','preinvoice_order_id','preinvoice_status','legacy_reason'];
 
     private static bool $writeGuardEnabled = false;
     private static ?\WeakMap $guardedConnections = null;
 
-    public function handle(): int
+    private LegacyReservationCleanupService $cleanup;
+
+    public function handle(LegacyReservationCleanupService $cleanup): int
     {
+        $this->cleanup = $cleanup;
         $format = strtolower((string) $this->option('format'));
         if (! in_array($format, ['csv', 'json'], true)) {
             $this->error('--format must be csv or json.');
@@ -41,6 +46,12 @@ class AuditLegacyReservationIntegrity extends Command
 
         $paths = $this->writeReports($report, $format);
         $this->line(json_encode(['summary' => $report['summary'], 'paths' => $paths], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        if (! $this->option('summary') && $report['cleanup-candidates'] !== []) {
+            $this->table(self::CLEANUP_HEAD, array_map(
+                fn (array $row): array => array_map(fn (string $column) => $row[$column] ?? '', self::CLEANUP_HEAD),
+                $report['cleanup-candidates'],
+            ));
+        }
 
         return self::SUCCESS;
     }
@@ -117,8 +128,20 @@ class AuditLegacyReservationIntegrity extends Command
         $variantRows = $this->variantRows($variants, $products, $central, $items, $active, $legacy, $byLine, $variantFilter);
         foreach ($variantRows as $vr) if (in_array($vr['classification_code'], ['L12_CACHE_OVER_RESERVED','L13_CACHE_UNDER_RESERVED'], true)) $actions[] = $this->actionRow($vr['classification_code'], $vr['recommended_action'], $vr);
 
-        $summary = $this->summary($legacyRows, $missingRows, $variantRows, $started);
-        return $this->bucket($legacyRows, $missingRows, $variantRows, $actions, $summary);
+        $cleanupRows = $this->cleanup->reportRows(
+            max(1, (int) $this->option('stale-hours')),
+            $now,
+            $orderFilter,
+            $variantFilter,
+        )->all();
+        $summary = $this->summary($legacyRows, $missingRows, $variantRows, $started) + [
+            'cleanup_legacy_rows_total' => count($cleanupRows),
+            'cleanup_legacy_quantity_total' => array_sum(array_column($cleanupRows, 'quantity')),
+            'cleanup_products_total' => count(array_unique(array_column($cleanupRows, 'product_id'))),
+            'cleanup_variants_total' => count(array_unique(array_column($cleanupRows, 'variant_id'))),
+            'cleanup_stale_hours' => max(1, (int) $this->option('stale-hours')),
+        ];
+        return $this->bucket($legacyRows, $missingRows, $variantRows, $actions, $summary, $cleanupRows);
     }
 
     private function classifyLegacy(object $r, ?object $order, ?object $invoice, bool $invalid, ?int $demand, int $covered, int $official, $recentCutoff, $now): array
@@ -157,13 +180,13 @@ class AuditLegacyReservationIntegrity extends Command
     { $req=(int)$item->required_quantity; $covered=$official+$legacy; return ['preinvoice_order_id'=>(int)$item->preinvoice_order_id,'order_uuid'=>$item->order_uuid,'order_status'=>$item->order_status,'product_id'=>(int)$item->product_id,'product_name'=>(string)($products[$item->product_id] ?? ''),'variant_id'=>(int)$item->variant_id,'variant_name'=>$variant->variant_name ?? null,'required_quantity'=>$req,'official_quantity'=>$official,'legacy_quantity'=>$legacy,'covered_quantity'=>$covered,'missing_quantity'=>$req-$covered,'cached_reserved'=>(int)($variant->reserved ?? 0),'central_available_stock'=>(int)($central[$item->variant_id] ?? 0),'classification_code'=>'L11_PROTECTED_DEMAND_WITHOUT_RESERVATION_ROW','severity'=>'High']; }
     private function summary(array $legacyRows, array $missingRows, array $variantRows, string $started): array
     { $c=fn($code)=>count(array_filter($legacyRows, fn($r)=>$r['classification_code']===$code)); return ['audit_started_at'=>$started,'audit_finished_at'=>now()->toISOString(),'legacy_rows_total'=>count($legacyRows),'legacy_quantity_total'=>array_sum(array_column($legacyRows,'quantity')),'active_document_exact'=>$c('L01_ACTIVE_DOCUMENT_EXACT'),'active_document_short'=>$c('L02_ACTIVE_DOCUMENT_SHORT'),'active_document_excess'=>$c('L03_ACTIVE_DOCUMENT_EXCESS'),'duplicate_legacy_and_official'=>$c('L04_DUPLICATE_LEGACY_AND_OFFICIAL'),'invoiced_or_converted'=>$c('L05_INVOICED_OR_CONVERTED'),'cancelled_expired_or_released'=>$c('L06_CANCELLED_EXPIRED_OR_RELEASED'),'unlinked_recent'=>$c('L07_UNLINKED_RECENT'),'unlinked_stale'=>$c('L08_UNLINKED_STALE'),'invalid_product_or_variant'=>$c('L09_INVALID_PRODUCT_OR_VARIANT'),'missing_order'=>$c('L10_MISSING_ORDER'),'protected_demand_without_reservation'=>count($missingRows),'cache_over_reserved_variants'=>count(array_filter($variantRows, fn($r)=>$r['classification_code']==='L12_CACHE_OVER_RESERVED')),'cache_under_reserved_variants'=>count(array_filter($variantRows, fn($r)=>$r['classification_code']==='L13_CACHE_UNDER_RESERVED')),'cache_matched_variants'=>count(array_filter($variantRows, fn($r)=>$r['classification_code']==='L14_CACHE_MATCHED')),'central_stock_cache_desync'=>0,'data_changed'=>false,'stock_changed'=>false,'reserved_cache_changed'=>false,'preinvoice_changed'=>false]; }
-    private function bucket($legacyRows,$missingRows,$variantRows,$actions,$summary): array
-    { return ['summary'=>$summary,'legacy-reservation-rows'=>$legacyRows,'active-document-exact'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L01_ACTIVE_DOCUMENT_EXACT')),'active-document-mismatch'=>array_values(array_filter($legacyRows,fn($r)=>in_array($r['classification_code'],['L02_ACTIVE_DOCUMENT_SHORT','L03_ACTIVE_DOCUMENT_EXCESS'],true))),'duplicate-legacy-and-official'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L04_DUPLICATE_LEGACY_AND_OFFICIAL')),'invoiced-or-converted'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L05_INVOICED_OR_CONVERTED')),'cancelled-expired-or-released'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L06_CANCELLED_EXPIRED_OR_RELEASED')),'unlinked-recent'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L07_UNLINKED_RECENT')),'unlinked-stale'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L08_UNLINKED_STALE')),'invalid-reference'=>array_values(array_filter($legacyRows,fn($r)=>in_array($r['classification_code'],['L09_INVALID_PRODUCT_OR_VARIANT','L10_MISSING_ORDER'],true))),'protected-demand-missing-reservation'=>$missingRows,'variant-reconciliation'=>$variantRows,'proposed-actions'=>$actions]; }
+    private function bucket($legacyRows,$missingRows,$variantRows,$actions,$summary,$cleanupRows): array
+    { return ['summary'=>$summary,'cleanup-candidates'=>$cleanupRows,'legacy-reservation-rows'=>$legacyRows,'active-document-exact'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L01_ACTIVE_DOCUMENT_EXACT')),'active-document-mismatch'=>array_values(array_filter($legacyRows,fn($r)=>in_array($r['classification_code'],['L02_ACTIVE_DOCUMENT_SHORT','L03_ACTIVE_DOCUMENT_EXCESS'],true))),'duplicate-legacy-and-official'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L04_DUPLICATE_LEGACY_AND_OFFICIAL')),'invoiced-or-converted'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L05_INVOICED_OR_CONVERTED')),'cancelled-expired-or-released'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L06_CANCELLED_EXPIRED_OR_RELEASED')),'unlinked-recent'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L07_UNLINKED_RECENT')),'unlinked-stale'=>array_values(array_filter($legacyRows,fn($r)=>$r['classification_code']==='L08_UNLINKED_STALE')),'invalid-reference'=>array_values(array_filter($legacyRows,fn($r)=>in_array($r['classification_code'],['L09_INVALID_PRODUCT_OR_VARIANT','L10_MISSING_ORDER'],true))),'protected-demand-missing-reservation'=>$missingRows,'variant-reconciliation'=>$variantRows,'proposed-actions'=>$actions]; }
     private function actionRow(string $code, string $action, array $row): array { return ['classification_code'=>$code,'action_type'=>$action,'severity'=>$row['severity'] ?? 'Info','product_id'=>$row['product_id'] ?? null,'variant_id'=>$row['variant_id'] ?? null,'preinvoice_order_id'=>$row['preinvoice_order_id'] ?? null,'reservation_id'=>$row['reservation_id'] ?? null,'note'=>'Proposed only; no automatic action was executed.']; }
     private function writeReports(array $report, string $format): array
     { $base = trim((string)($this->option('output') ?: 'reports/legacy-reservation-integrity'), '/'); $paths=[]; foreach ($report as $name=>$rows) { if ($name === 'summary') { $path="$base/summary.json"; Storage::disk('local')->put($path, json_encode($rows, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)); $paths[]=$path; continue; } $path="$base/$name.$format"; Storage::disk('local')->put($path, $format === 'json' ? json_encode($rows, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT) : $this->csv($rows, $this->head($name))); $paths[]=$path; } return $paths; }
     private function csv(array $rows, array $head): string { $h=fopen('php://temp','r+'); fputcsv($h,$head); foreach($rows as $r) fputcsv($h, array_map(fn($k)=>$r[$k] ?? '', $head)); rewind($h); return stream_get_contents($h); }
-    private function head(string $name): array { return $name==='variant-reconciliation'?self::VARIANT_HEAD:($name==='protected-demand-missing-reservation'?self::MISSING_HEAD:($name==='proposed-actions'?['classification_code','action_type','severity','product_id','variant_id','preinvoice_order_id','reservation_id','note']:self::LEGACY_HEAD)); }
+    private function head(string $name): array { return $name==='cleanup-candidates'?self::CLEANUP_HEAD:($name==='variant-reconciliation'?self::VARIANT_HEAD:($name==='protected-demand-missing-reservation'?self::MISSING_HEAD:($name==='proposed-actions'?['classification_code','action_type','severity','product_id','variant_id','preinvoice_order_id','reservation_id','note']:self::LEGACY_HEAD))); }
     private function lineKey($order,$product,$variant): string { return ((string)$order).'|'.((string)$product).'|'.((string)$variant); }
     private function intOption(string $name): ?int { $v=$this->option($name); return filled($v) && ctype_digit((string)$v) ? (int)$v : null; }
     private function installWriteQueryGuard(): void { self::$writeGuardEnabled=true; $c=DB::connection(); self::$guardedConnections ??= new \WeakMap(); if(isset(self::$guardedConnections[$c])) return; $c->beforeExecuting(function(string $q,array $b,Connection $c): void { if(self::$writeGuardEnabled && preg_match('/^('.self::WRITE_VERBS.')\b/i', ltrim(preg_replace('/^(?:\s|\/\*.*?\*\/|--[^\r\n]*(?:\r?\n|$)|#[^\r\n]*(?:\r?\n|$))+/s',' ',$q) ?? $q))) throw new \RuntimeException('Unsafe write query blocked before execution during legacy reservation integrity audit.'); }); self::$guardedConnections[$c]=true; }

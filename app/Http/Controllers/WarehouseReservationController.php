@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\PreinvoiceDraftReservation;
 use App\Services\InventoryReservationReleaseService;
+use App\Services\ReservationClassificationService;
 use App\Services\ReservationHealthService;
+use App\Services\ReservationQueryService;
 use App\Support\JalaliDate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -16,7 +18,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class WarehouseReservationController extends Controller
 {
-    public function index(Request $request, ReservationHealthService $healthService): JsonResponse|View
+    public function index(
+        Request $request,
+        ReservationHealthService $healthService,
+        ReservationQueryService $reservationQueries,
+        ReservationClassificationService $classificationService,
+    ): JsonResponse|View
     {
         $filters = $request->validate([
             'tab' => ['nullable', 'string', Rule::in(['reservations', 'health', 'orphaned', 'history'])],
@@ -25,37 +32,53 @@ class WarehouseReservationController extends Controller
             'search' => ['nullable', 'string', 'max:150'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'classification' => ['nullable', 'string', Rule::in([
+                ReservationClassificationService::LABEL_TEMPORARY_ACTIVE,
+                ReservationClassificationService::LABEL_TEMPORARY_ORPHAN,
+                ReservationClassificationService::LABEL_OFFICIAL_PREINVOICE,
+                ReservationClassificationService::LABEL_CRITICAL,
+                ReservationClassificationService::LABEL_LEGACY_CANDIDATE,
+                ReservationClassificationService::LABEL_CONSUMED,
+            ])],
+            'lifecycle' => ['nullable', 'string', Rule::in([
+                ReservationClassificationService::LIFECYCLE_ACTIVE,
+                ReservationClassificationService::LIFECYCLE_RELEASED,
+                ReservationClassificationService::LIFECYCLE_CONSUMED,
+            ])],
+            'age' => ['nullable', 'string', Rule::in(['24h', '72h', '30d'])],
+            'user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'product_id' => ['nullable', 'integer', 'exists:products,id'],
+            'variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
+            'customer_id' => ['nullable', 'integer'],
+            'customer_search' => ['nullable', 'string', 'max:150'],
         ]);
         $evaluatedAt = now();
         $activeTab = $filters['tab'] ?? 'reservations';
+        $ageHours = match ($filters['age'] ?? null) {
+            '24h' => 24,
+            '72h' => 72,
+            '30d' => 720,
+            default => null,
+        };
 
         $reservations = $this->emptyPaginator(20, 'page');
         if ($request->expectsJson() || $activeTab === 'reservations') {
-            $reservations = PreinvoiceDraftReservation::query()
-                ->with([
-                    'product:id,name,sku,code',
-                    'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
-                    'user:id,name',
-                    'order:id,uuid,created_at,updated_at',
-                    'order.invoice:id,preinvoice_order_id',
-                    'releasedBy:id,name',
-                ])
-                ->when(
-                    ! $request->expectsJson() && ($filters['status'] ?? null) !== PreinvoiceDraftReservation::STATUS_RELEASED,
-                    fn ($query) => $query->whereNull('released_at'),
-                )
-                ->visibleInWarehouseManagement()
-                ->excludeOrphaned(
-                    PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
-                    PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
-                    $evaluatedAt,
-                )
-                ->forManagementStatus($filters['status'] ?? null)
-                ->forManagementQuickFilter($filters['quick'] ?? null)
-                ->managementSearch($filters['search'] ?? null)
-                ->when($filters['date_from'] ?? null, fn ($query, $date) => $query->whereDate('created_at', '>=', $date))
-                ->when($filters['date_to'] ?? null, fn ($query, $date) => $query->whereDate('created_at', '<=', $date))
-                ->orderByManagementPriority()
+            $reservations = $reservationQueries
+                ->filteredManagementQuery([
+                    'status' => $filters['status'] ?? null,
+                    'quick' => $filters['quick'] ?? null,
+                    'search' => $filters['search'] ?? null,
+                    'date_from' => $filters['date_from'] ?? null,
+                    'date_to' => $filters['date_to'] ?? null,
+                    'classification' => $filters['classification'] ?? null,
+                    'lifecycle' => $filters['lifecycle'] ?? null,
+                    'age_hours' => $ageHours,
+                    'user_id' => $filters['user_id'] ?? null,
+                    'product_id' => $filters['product_id'] ?? null,
+                    'variant_id' => $filters['variant_id'] ?? null,
+                    'customer_id' => $filters['customer_id'] ?? null,
+                    'customer_search' => $filters['customer_search'] ?? null,
+                ], $evaluatedAt)
                 ->paginate(20)
                 ->withQueryString();
         }
@@ -68,6 +91,7 @@ class WarehouseReservationController extends Controller
                 'status' => $reservation->managementStatus(),
                 'business_status' => $reservation->businessStatus(),
                 'business_status_label' => $reservation->businessStatusLabel(),
+                'classification' => $classificationService->classify($reservation, $evaluatedAt),
                 'display_reason' => $reservation->businessDisplayReason(),
                 'releasable' => $reservation->isActionableForManagement(),
                 'priority' => $reservation->managementPriority(),
@@ -149,24 +173,6 @@ class WarehouseReservationController extends Controller
                 ->withQueryString();
         }
 
-        $visibleStats = PreinvoiceDraftReservation::query()->visibleInWarehouseManagement();
-        $activeStats = (clone $visibleStats)
-            ->businessActive($evaluatedAt)
-            ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
-            ->first();
-        $reviewStats = (clone $visibleStats)
-            ->needsBusinessAttention($evaluatedAt)
-            ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
-            ->first();
-        $releasableStats = (clone $visibleStats)
-            ->abandonedTemporary(
-                PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
-                PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
-                $evaluatedAt,
-            )
-            ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
-            ->first();
-
         return view('warehouse-reservations.index', [
             'reservations' => $reservations,
             'orphanedReservations' => $orphanedReservations,
@@ -175,20 +181,8 @@ class WarehouseReservationController extends Controller
             'healthIssues' => $healthIssues,
             'releasedReservations' => $releasedReservations,
             'filters' => $filters,
-            'stats' => [
-                'active' => [
-                    'count' => (int) $activeStats->aggregate_count,
-                    'quantity' => (int) $activeStats->aggregate_quantity,
-                ],
-                'needs_review' => [
-                    'count' => (int) $reviewStats->aggregate_count,
-                    'quantity' => (int) $reviewStats->aggregate_quantity,
-                ],
-                'releasable' => [
-                    'count' => (int) $releasableStats->aggregate_count,
-                    'quantity' => (int) $releasableStats->aggregate_quantity,
-                ],
-            ],
+            'stats' => $reservationQueries->dashboardStatistics($evaluatedAt),
+            'classificationService' => $classificationService,
         ]);
     }
 
