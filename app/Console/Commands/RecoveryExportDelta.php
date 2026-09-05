@@ -321,23 +321,23 @@ class RecoveryExportDelta extends Command
             $row = (array) DB::selectOne('SELECT CURRENT_TIMESTAMP AS database_now, CURRENT_TIMESTAMP AS database_utc_now');
 
             return $row + [
-                'database_session_timezone' => 'UTC',
-                'database_global_timezone' => 'UTC',
-                'database_system_timezone' => 'UTC',
-                'database_utc_offset_seconds' => 0,
-            ];
+                    'database_session_timezone' => 'UTC',
+                    'database_global_timezone' => 'UTC',
+                    'database_system_timezone' => 'UTC',
+                    'database_utc_offset_seconds' => 0,
+                ];
         }
 
         $this->warnings[] = "Database timezone metadata is limited for driver {$driver}.";
         $row = (array) DB::selectOne('SELECT CURRENT_TIMESTAMP AS database_now');
 
         return $row + [
-            'database_utc_now' => null,
-            'database_session_timezone' => null,
-            'database_global_timezone' => null,
-            'database_system_timezone' => null,
-            'database_utc_offset_seconds' => 0,
-        ];
+                'database_utc_now' => null,
+                'database_session_timezone' => null,
+                'database_global_timezone' => null,
+                'database_system_timezone' => null,
+                'database_utc_offset_seconds' => 0,
+            ];
     }
 
     private function offsetTimezone(int $seconds): string

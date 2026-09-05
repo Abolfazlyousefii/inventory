@@ -24,7 +24,7 @@ class RecoveryImportDelta extends Command {
         {--no-details : Do not print every row result to the console}
         {--stream-report : Stream row reports to disk to reduce memory usage}';
 
-    protected $description = 'Import a RecoveryExportDelta ZIP and report every inserted, updated, unchanged, skipped, or failed row';
+    protected $description = 'Validate and compare a RecoveryExportDelta ZIP. Database write mode is intentionally disabled until stable-ID remapping is implemented.';
 
     private const CHANGE_TIMESTAMPS = [
         'updated_at',
@@ -96,6 +96,7 @@ class RecoveryImportDelta extends Command {
         'warehouse_location_stocks',
     ];
 
+
     /** @var array<string, array<int, string>> */
     private array $columnNames = [];
 
@@ -148,6 +149,12 @@ class RecoveryImportDelta extends Command {
         ];
 
         try {
+            if ( !$this->option('dry-run') ) {
+                throw new RuntimeException(
+                    'Recovery write mode is disabled. This importer previously matched rows by raw numeric IDs, which is unsafe when source and destination databases have diverged. Run with --dry-run only until a schema-specific stable-ID remapping importer is deployed.'
+                );
+            }
+
             if ( true ) {
                 $this->streamReportFile   = storage_path('app/recovery-import-rows.ndjson');
                 $this->streamReportHandle = fopen($this->streamReportFile, 'wb');
@@ -570,6 +577,7 @@ class RecoveryImportDelta extends Command {
      * @return array<string, mixed>
      */
     private function applyRow( string $table, array $sourceRow, bool $dryRun ): array {
+
         $id = $this->rowId($sourceRow);
         if ( $id === null ) {
             throw new RuntimeException("Invalid id in {$table} row.");
@@ -873,9 +881,9 @@ class RecoveryImportDelta extends Command {
 
         if ( $this->streamReportHandle ) {
             fwrite($this->streamReportHandle, json_encode([
-                        'table' => $table,
-                        'row'   => $result,
-                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . PHP_EOL);
+                    'table' => $table,
+                    'row'   => $result,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . PHP_EOL);
         }
 
         if ( $this->report['tables'][$table]['status'] === 'pending' ) {
@@ -998,18 +1006,18 @@ class RecoveryImportDelta extends Command {
             }
 
             $this->table([
-                    'Table',
-                    'File',
-                    'Rows',
-                    'Inserted',
-                    'Updated',
-                    'Same',
-                    'Skipped',
-                    'Failed',
-                    'Would Insert',
-                    'Would Update',
-                    'Rolled Back',
-                ], $rows,);
+                'Table',
+                'File',
+                'Rows',
+                'Inserted',
+                'Updated',
+                'Same',
+                'Skipped',
+                'Failed',
+                'Would Insert',
+                'Would Update',
+                'Rolled Back',
+            ], $rows,);
         }
 
         if ( !$this->option('no-details') ) {

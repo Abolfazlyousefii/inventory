@@ -7,6 +7,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "ext-zip": "*",
         "dompdf/dompdf": "^3.1",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
@@ -15,9 +16,10 @@
         "maennchen/zipstream-php": "3.1",
         "morilog/jalali": "3.*",
         "mpdf/mpdf": "8.2.6",
+        "spatie/laravel-ignition": "^2.12",
         "spatie/laravel-permission": "^6.24",
-	  "ext-zip":"*"
-	},
+        "yajra/laravel-datatables-oracle": "^12.7"
+    },
     "require-dev": {
         "fakerphp/faker": "^1.23",
         "laravel/breeze": "^2.3",

@@ -9,6 +9,7 @@ use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Services\InventoryWebhookService;
 use App\Support\PermissionCatalog;
 use App\Support\PageAccessCatalog;
 use App\Support\Currency;
@@ -621,13 +622,29 @@ class InvoiceController extends Controller
                     'issues' => $integrityIssues,
                     'calculation_version' => SalesDocumentTotals::CALCULATION_VERSION,
                 ]);
-                abort(422, 'Invoice financial totals do not match its stored line snapshots. Run the sales discount integrity audit first.');
+                throw ValidationException::withMessages([
+                    'invoice' => 'این فاکتور به دلیل مغایرت مبلغ با snapshot اقلام قابل تایید نیست. ابتدا بررسی صحت فاکتور را انجام دهید.
+                    این فاکتور دارای مغایرت مالی است و نیاز به بررسی دارد، قیمت نهایی حاصل از تعداد کالاها با محاسبه تخفیف همخوانی ندارد.',
+                ]);
             }
             $canonicalTotals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $canonicalTotals['subtotal_before_discount'] + (int) $canonicalTotals['shipping'];
             $discount = (int) $canonicalTotals['total_discount'];
             abort_if((int) $invoice->total !== max($subtotal - $discount, 0), 422, 'جمع فاکتور با اقلام snapshot همخوانی ندارد.');
             $this->customerLedgerService->syncInvoiceDebit($invoice);
+            InventoryWebhookService::send(
+                'invoice.collection.completed',
+                [
+                    'invoice_id' => $invoice->id,
+                    'external_order_id' => $invoice->external_order_id,
+                    'crm_customer_id' => $invoice->customer?->crm_customer_id,
+                    'total' => (int) $invoice->total,
+                    'paid_amount' => (int) $invoice->paid_amount,
+                    'credit_amount' => max((int) ($invoice->payments?->sum('amount') ?? 0) - (int) $invoice->total, 0),
+                    'collection_adjustment_id' => 'invoice-' . $invoice->id,
+                ]
+            );
+
             $invoice->update(['status' => Invoice::STATUS_READY_TO_SHIP, 'status_changed_at' => now(), 'status_changed_by' => auth()->id()]);
             $this->warehouseCollectionServiceHistory($invoice, 'finance_reapproved', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP, 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
             return $invoice;

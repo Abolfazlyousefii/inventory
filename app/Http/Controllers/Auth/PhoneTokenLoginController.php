@@ -4,14 +4,15 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\CRM\User as CrmUser;
 use App\Services\Crm\CrmAuditLogger;
 use App\Services\Crm\TokenService;
 use App\Support\FirstAllowedPageResolver;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\View;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class PhoneTokenLoginController extends Controller {
@@ -26,32 +27,95 @@ class PhoneTokenLoginController extends Controller {
         }
 
         $validated = $validator->validated();
-        $phone     = $validated['phone'];
-        $token     = $validated['token'];
+
+        $phone = $validated['phone'];
+        $token = $validated['token'];
+
+        /*
+        |--------------------------------------------------------------------------
+        | Verify CRM Token
+        |--------------------------------------------------------------------------
+        */
 
         abort_unless($tokenService->verify($phone, $token), 403, 'توکن ورود نامعتبر یا منقضی شده است.');
 
+        /*
+        |--------------------------------------------------------------------------
+        | Find Inventory User
+        |--------------------------------------------------------------------------
+        */
+
         $user = User::where('phone', $phone)
-            ->where('is_active', true)
-            ->where('can_access_erp', true)
             ->first();
 
-        if ( !$user ) {
-            throw ValidationException::withMessages([
-                'phone' => 'حساب کاربری شما غیرفعال است.',
+        if ( $user ) {
+            if ( !$user->is_active || !$user->can_access_erp ) {
+                throw ValidationException::withMessages([
+                    'phone' => 'حساب کاربری شما غیرفعال است.',
+                ]);
+            }
+        }
+        else {
+            /*
+            |--------------------------------------------------------------------------
+            | User does not exist in Inventory
+            | Check CRM
+            |--------------------------------------------------------------------------
+            */
+
+            $crmUser = CrmUser::where('phone', $phone)
+                ->first();
+
+            if ( !$crmUser ) {
+                throw ValidationException::withMessages([
+                    'phone' => 'شما هنوز در سیستم CRM ثبت نشده‌اید.',
+                ]);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create Inventory User From CRM
+            |--------------------------------------------------------------------------
+            */
+
+            $user = User::create([
+                'crm_user_id' => $crmUser->id,
+                'external_crm_id' => $crmUser->id,
+                'name' => $crmUser->name,
+                'email' => $crmUser->email,
+                'phone' => $crmUser->phone,
+                'password' => Hash::make(Str::random()),
+                'is_active' => true,
+                'can_access_erp' => true,
+                'is_crm_managed' => true,
+                'sync_source' => 'crm',
+                'synced_at' => now(),
+            ]);
+
+            $audit->record('crm_user_created', $user, [
+                'crm_user_id' => $crmUser->id,
+                'status'      => 'created',
             ]);
         }
 
-        // The browser may already be authenticated in Inventory as a different
-        // user (for example, Admin). Replace that session with the CRM user
-        // represented by this fresh phone/token handoff.
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        /*
+        |--------------------------------------------------------------------------
+        | Replace Current Session
+        |--------------------------------------------------------------------------
+        */
 
-        // Do not create a persistent remember-me cookie for CRM handoff logins.
+        Auth::logout();
+
+        $request->session()
+            ->invalidate();
+
+        $request->session()
+            ->regenerateToken();
+
         Auth::login($user, false);
-        $request->session()->regenerate();
+
+        $request->session()
+            ->regenerate();
 
         if ( !$user->crm_user_id ) {
             $audit->record('local_emergency_login', $user, [
