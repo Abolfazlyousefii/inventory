@@ -72,7 +72,9 @@ class WarehouseCollectionService
 
     public function updateCollectedItems(Invoice $invoice, array $items, User $user, ?string $note = null, bool $canEditPrices = false, ?string $reason = null, ?string $openedAt = null): Invoice
     {
-        $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $note, $canEditPrices, $reason, $openedAt) {
+        $webhookPayload = null;
+
+        $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $note, $canEditPrices, $reason, $openedAt, &$webhookPayload) {
             $invoice = Invoice::query()->with(['payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertNotCancelled();
             $lockedItems = InvoiceItem::query()->with(['product', 'variant'])->where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
@@ -242,7 +244,7 @@ class WarehouseCollectionService
             );
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
 
-            \App\Services\InventoryWebhookService::send('invoice.items.updated', [
+            $webhookPayload = [
                 'invoice_id' => $invoice->id,
                 'external_order_id' => $invoice->external_order_id,
                 'crm_customer_id' => $invoice->customer?->crm_customer_id,
@@ -250,10 +252,17 @@ class WarehouseCollectionService
                 'old_total' => (int) $oldTotal,
                 'new_total' => (int) $total,
                 'difference' => (int) $total - (int) $oldTotal,
-            ]);
+            ];
 
             return $invoice->fresh(['items.product', 'items.variant']);
         });
+
+        // Sent only after the transaction has committed: a webhook dispatched inside
+        // the transaction would announce an item change that a later rollback undoes,
+        // and its own log row would be rolled back with it.
+        if ($webhookPayload !== null) {
+            InventoryWebhookService::send('invoice.items.updated', $webhookPayload);
+        }
 
         return $updatedInvoice;
     }

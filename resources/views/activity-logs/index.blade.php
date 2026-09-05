@@ -4,6 +4,10 @@
 	use Morilog\Jalali\Jalalian;
 @endphp
 
+@push('styles')
+	<link rel="stylesheet" href="{{ asset('lib/datatables.bootstrap5.min.css') }}">
+@endpush
+
 @section('content')
 
 	<div class="d-flex justify-content-between align-items-center mb-3">
@@ -14,7 +18,7 @@
 	<div class="card border-0 shadow-sm mb-3">
 		<div class="card-body">
 
-			<form method="GET" class="row g-2 align-items-end">
+			<form method="GET" id="activity-logs-filter" class="row g-2 align-items-end">
 
 				<div class="col-md-5">
 					<label class="form-label">جستجو</label>
@@ -101,16 +105,26 @@
 
 	@push('scripts')
 
+		<script src="{{ asset('lib/datatables.min.js') }}"></script>
+		<script src="{{ asset('lib/datatables.bootstrap5.min.js') }}"></script>
+
 		<script>
 
 			$(function () {
 
-				$('#activity-logs-table').DataTable({
+				var table = $('#activity-logs-table').DataTable({
 
 					processing: true,
 					serverSide: true,
+					order: [[1, 'desc']],
 
-					ajax: "{{ route('activity-logs.index') }}",
+					ajax: {
+						url: "{{ route('activity-logs.index') }}",
+						data: function (d) {
+							d.q = $('#activity-logs-filter [name="q"]').val();
+							d.action = $('#activity-logs-filter [name="action"]').val();
+						}
+					},
 
 					columns: [
 
@@ -126,7 +140,8 @@
 
 						{
 							data: 'user',
-							name: 'user.name'
+							name: 'user',
+							orderable: false
 						},
 
 						{
@@ -146,6 +161,19 @@
 
 					]
 
+				});
+
+				// Apply the q/action filters through the server-side AJAX request
+				// instead of reloading the whole page.
+				$('#activity-logs-filter').on('submit', function (e) {
+					e.preventDefault();
+					table.ajax.reload();
+				});
+
+				$('#activity-logs-filter').on('reset', function () {
+					window.setTimeout(function () {
+						table.ajax.reload();
+					}, 0);
 				});
 
 			});
