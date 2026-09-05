@@ -45,7 +45,7 @@ class LegacyReservationCleanupTest extends TestCase
         $warehouseQuantity = $fixture['warehouseStock']->quantity;
         $movementCount = DB::table('stock_movements')->count();
 
-        $this->artisan('inventory:cleanup-legacy-reservations --apply')
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --confirm --ids={$reservation->id}")
             ->expectsOutputToContain('Legacy reservations cleaned: 1')
             ->assertSuccessful();
 
@@ -58,12 +58,14 @@ class LegacyReservationCleanupTest extends TestCase
         $this->assertSame($warehouseQuantity, $fixture['warehouseStock']->fresh()->quantity);
         $this->assertSame($movementCount, DB::table('stock_movements')->count());
 
-        $activity = ActivityLog::query()->where('action', 'reservation_legacy_cleanup')->sole();
+        $activity = ActivityLog::query()->where('action', 'legacy_reservation_cleanup')->sole();
         $this->assertSame($reservation->id, $activity->properties['reservation_id']);
         $this->assertSame($fixture['product']->id, $activity->properties['product_id']);
         $this->assertSame($fixture['variant']->id, $activity->properties['variant_id']);
         $this->assertSame(5, $activity->properties['quantity']);
-        $this->assertSame('legacy_without_preinvoice', $activity->properties['reason']);
+        $this->assertSame('legacy_cleanup', $activity->properties['reason']);
+        $this->assertFalse($activity->properties['stock_return']);
+        $this->assertSame('legacy_without_preinvoice', $activity->properties['legacy_reason']);
         $this->assertNull($activity->properties['old_state']['released_at']);
     }
 
@@ -80,11 +82,11 @@ class LegacyReservationCleanupTest extends TestCase
             'status' => Invoice::STATUS_PENDING_COLLECTION,
         ]);
 
-        $this->artisan('inventory:cleanup-legacy-reservations --apply')->assertSuccessful();
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --confirm --ids={$reservation->id}")->assertSuccessful();
 
         $this->assertNull($reservation->fresh()->released_at);
         $this->assertSame(4, $fixture['variant']->fresh()->reserved);
-        $this->assertSame(0, ActivityLog::query()->where('action', 'reservation_legacy_cleanup')->where('subject_id', $reservation->id)->count());
+        $this->assertSame(0, ActivityLog::query()->where('action', 'legacy_reservation_cleanup')->where('subject_id', $reservation->id)->count());
     }
 
     public function test_active_preinvoice_reservation_is_protected_even_when_old(): void
@@ -93,7 +95,7 @@ class LegacyReservationCleanupTest extends TestCase
         $order = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: true);
         $reservation = $this->reservation($fixture, 6, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
 
-        $this->artisan('inventory:cleanup-legacy-reservations --apply')->assertSuccessful();
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --confirm --ids={$reservation->id}")->assertSuccessful();
 
         $this->assertNull($reservation->fresh()->released_at);
         $this->assertSame(6, $fixture['variant']->fresh()->reserved);
@@ -105,25 +107,52 @@ class LegacyReservationCleanupTest extends TestCase
         $fixture = $this->inventoryFixture(3);
         $reservation = $this->reservation($fixture, 3, old: true);
 
-        $this->artisan('inventory:cleanup-legacy-reservations --apply')->assertSuccessful();
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --confirm --ids={$reservation->id}")->assertSuccessful();
         $releasedAt = $reservation->fresh()->released_at;
-        $this->artisan('inventory:cleanup-legacy-reservations --apply')
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --confirm --ids={$reservation->id}")
             ->expectsOutputToContain('Legacy reservations cleaned: 0')
             ->assertSuccessful();
 
         $this->assertTrue($releasedAt->equalTo($reservation->fresh()->released_at));
-        $this->assertSame(1, ActivityLog::query()->where('action', 'reservation_legacy_cleanup')->count());
+        $this->assertSame(1, ActivityLog::query()->where('action', 'legacy_reservation_cleanup')->count());
+    }
+
+    public function test_apply_without_confirm_changes_nothing(): void
+    {
+        $fixture = $this->inventoryFixture(5);
+        $reservation = $this->reservation($fixture, 5, old: true);
+        $before = $this->snapshot($fixture);
+
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --ids={$reservation->id}")
+            ->assertFailed();
+
+        $this->assertSame($before, $this->snapshot($fixture));
+        $this->assertDatabaseCount('activity_logs', 0);
+    }
+
+    public function test_apply_without_ids_only_reports_and_changes_nothing(): void
+    {
+        $fixture = $this->inventoryFixture(5);
+        $this->reservation($fixture, 5, old: true);
+        $before = $this->snapshot($fixture);
+
+        $this->artisan('inventory:cleanup-legacy-reservations --apply --confirm')
+            ->expectsOutputToContain('No --ids provided')
+            ->assertSuccessful();
+
+        $this->assertSame($before, $this->snapshot($fixture));
+        $this->assertDatabaseCount('activity_logs', 0);
     }
 
     public function test_reserved_cache_and_repair_command_use_only_real_active_reservations(): void
     {
         $fixture = $this->inventoryFixture(10);
-        $this->reservation($fixture, 5, old: true);
+        $legacy = $this->reservation($fixture, 5, old: true);
         $activeOrder = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: true);
         $this->reservation($fixture, 3, $activeOrder, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
         $this->reservation($fixture, 2, old: false, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
 
-        $this->artisan('inventory:cleanup-legacy-reservations --apply')->assertSuccessful();
+        $this->artisan("inventory:cleanup-legacy-reservations --apply --confirm --ids={$legacy->id}")->assertSuccessful();
         $this->assertSame(5, $fixture['variant']->fresh()->reserved);
         $this->assertSame(5, $fixture['product']->fresh()->reserved);
 

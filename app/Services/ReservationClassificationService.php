@@ -160,6 +160,16 @@ class ReservationClassificationService
     }
 
     /** @return array<string, string> */
+    public function lifecycleLabels(): array
+    {
+        return [
+            self::LIFECYCLE_ACTIVE => 'فعال',
+            self::LIFECYCLE_CONSUMED => 'مصرف‌شده',
+            self::LIFECYCLE_RELEASED => 'آزادشده',
+        ];
+    }
+
+    /** @return array<string, string> */
     public function healthLabels(): array
     {
         return [

@@ -131,11 +131,26 @@ class ReservationQueryService
 
         // Critical: official preinvoice reservations without an invoice for
         // longer than PREINVOICE_CRITICAL_AFTER_HOURS (existing business rule).
-        $critical = $this->aggregate(PreinvoiceDraftReservation::query()->criticalPreinvoice($at));
+        //
+        // scopeCriticalPreinvoice() on its own only checks
+        // preinvoiceWithoutInvoice() + age — it does NOT exclude released rows
+        // or zero-quantity rows, because it is also used as an OR-branch inside
+        // scopeNeedsBusinessAttention() where the caller has already applied the
+        // visibility gate. Used bare here it counted every historically
+        // released/legacy-cleaned old preinvoice reservation as "critical", so
+        // the dashboard reported far more critical rows than are actually still
+        // being held (on the production dataset, more than double). Every card
+        // must describe the same population as the rest of the dashboard, so it
+        // is composed on the shared $visible base like the others.
+        $critical = $this->aggregate((clone $visible)->criticalPreinvoice($at));
 
         // Legacy candidates: rows the legacy cleanup workflow would consider
-        // (existing scope used by LegacyReservationCleanupService/its audit command).
-        $legacyCandidates = $this->aggregate(PreinvoiceDraftReservation::query()->legacyCleanupCandidates(
+        // (existing scope used by LegacyReservationCleanupService/its audit
+        // command), narrowed to the same visible base for the same reason.
+        // legacyCleanupCandidates() already excludes released/zero-quantity
+        // rows itself, so this only guarantees the card can never drift from
+        // the population the rest of the dashboard describes.
+        $legacyCandidates = $this->aggregate((clone $visible)->legacyCleanupCandidates(
             PreinvoiceDraftReservation::LEGACY_STALE_HOURS,
             $at,
         ));
@@ -221,6 +236,12 @@ class ReservationQueryService
                 'order:id,uuid,created_at,updated_at,customer_id,customer_name,customer_mobile',
                 'order.invoice:id,preinvoice_order_id',
                 'releasedBy:id,name',
+                // Classifying each row (ReservationClassificationService::classify(),
+                // called once per rendered row in the table view) checks
+                // hasActiveRelatedDraft() for temporary reservations, which runs a
+                // fresh query per row unless this relation is already loaded —
+                // eager-loading it here avoids that N+1 on the paginated listing.
+                'activeDrafts:id,draft_token,status',
             ]);
 
         if ($showReleased) {

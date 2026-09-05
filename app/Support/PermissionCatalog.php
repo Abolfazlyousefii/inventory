@@ -156,6 +156,7 @@ class PermissionCatalog
                 'warehouse.shipping.ship' => 'ثبت ارسال فاکتور',
                 'warehouse_reservations.view' => 'مشاهده مدیریت رزروهای موجودی',
                 'warehouse_reservations.release' => 'آزادسازی دستی رزرو موجودی',
+                'inventory.reservation.legacy_cleanup' => 'اجرای پاکسازی رزروهای Legacy (بدون بازگشت موجودی)',
             ],
             'انتقال بین انبار' => [
                 'transfers.view' => 'مشاهده انتقال‌ها',
@@ -413,7 +414,7 @@ class PermissionCatalog
             'products.delete', 'products.price_changes.apply', 'invoices.cancel',
             'inventory.adjust', 'stock_in.delete', 'settings.restore',
             'users.change_password', 'permissions.edit', 'permissions.sync',
-            'warehouse.collection.adjust_price',
+            'warehouse.collection.adjust_price', 'inventory.reservation.legacy_cleanup',
         ];
         $dependencies = [
             'products.show' => ['products.view'],
