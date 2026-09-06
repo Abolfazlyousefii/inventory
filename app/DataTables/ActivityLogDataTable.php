@@ -3,50 +3,142 @@
 namespace App\DataTables;
 
 use App\Models\ActivityLog;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Yajra\DataTables\Facades\DataTables;
 
 class ActivityLogDataTable
 {
-    /**
-     * Base query for the activity log grid, with the page filters applied.
-     */
-    public function query(Request $request): Builder
+    public function html()
     {
-        $query = ActivityLog::query()->with('user:id,name');
-
-        $action = trim((string) $request->input('action', ''));
-        if ($action !== '') {
-            $query->where('action', $action);
-        }
-
-        $term = trim((string) $request->input('q', ''));
-        if ($term !== '') {
-            $query->where(function (Builder $inner) use ($term): void {
-                $inner->where('description', 'like', '%' . $term . '%')
-                    ->orWhere('subject_type', 'like', '%' . $term . '%')
-                    ->orWhere('subject_id', 'like', '%' . $term . '%');
-            });
-        }
-
-        return $query;
+        return null;
     }
 
-    /**
-     * Server-side DataTables payload (draw / recordsTotal / recordsFiltered / data).
-     */
-    public function json(Request $request): JsonResponse
+
+    public function ajax()
     {
-        return DataTables::eloquent($this->query($request))
-            ->addColumn('user', function (ActivityLog $log): string {
+        $query = ActivityLog::query()
+            ->select([
+                'activity_logs.id',
+                'activity_logs.user_id',
+                'activity_logs.action',
+                'activity_logs.subject_type',
+                'activity_logs.subject_id',
+                'activity_logs.description',
+                'activity_logs.occurred_at',
+            ])
+            ->with('user:id,name');
+
+
+        if (request()->filled('action')) {
+
+            $query->where(
+                'activity_logs.action',
+                request('action')
+            );
+
+        }
+
+
+        if (request()->filled('q')) {
+
+            $search = request('q');
+
+
+            $query->where(function($q) use ($search){
+
+                $q->where(
+                    'activity_logs.description',
+                    'like',
+                    "%{$search}%"
+                )
+
+                    ->orWhere(
+                        'activity_logs.action',
+                        'like',
+                        "%{$search}%"
+                    )
+
+                    ->orWhere(
+                        'activity_logs.subject_type',
+                        'like',
+                        "%{$search}%"
+                    )
+
+                    ->orWhere(
+                        'activity_logs.subject_id',
+                        'like',
+                        "%{$search}%"
+                    );
+
+            });
+
+        }
+
+
+        return DataTables::eloquent($query)
+
+            ->addColumn('user', function (ActivityLog $log) {
+
                 return $log->user?->name ?? 'سیستم';
+
             })
-            ->addColumn('action_badge', function (ActivityLog $log): string {
-                return '<span class="badge bg-secondary">' . e($log->action) . '</span>';
+            ->addColumn('action_badge', function (ActivityLog $log) {
+
+                $colors = [
+
+                    'created' => 'success',
+                    'updated' => 'primary',
+                    'deleted' => 'danger',
+
+                    'invoice_shipped' => 'info',
+                    'invoice_cancelled' => 'danger',
+
+                    'preinvoice_draft_saved' => 'secondary',
+                    'preinvoice_draft_updated' => 'warning',
+                    'preinvoice_submitted' => 'success',
+
+                    'return_excluded_warranty' => 'dark',
+
+                    'permissions.updated' => 'primary',
+                    'role.updated' => 'warning',
+
+                    'commission_rate.set' => 'info',
+                    'commission_period.created' => 'success',
+                    'commission_period.recalculated' => 'primary',
+
+                    'seller_commission_reassigned' => 'warning',
+                    'seller_commission_document.created' => 'success',
+
+                    'finance_edited' => 'primary',
+                    'finance_returned_preinvoice' => 'danger',
+
+                    'invoice_payment_added' => 'success',
+
+                    'reservation_expired' => 'dark',
+
+                    'sales_return.applied_voided' => 'danger',
+
+                    'crm_user_created' => 'success',
+
+                    'electric_default_color_created' => 'success',
+
+                    'return_commission_reversal_updated' => 'warning',
+
+                    'commission_rate.revision_backdated' => 'dark',
+
+                ];
+
+
+                $class = $colors[$log->action] ?? 'secondary';
+
+
+                return '<span class="badge bg-'.$class.'">'
+                       . e($log->action)
+                       . '</span>';
+
             })
-            ->addColumn('record', function (ActivityLog $log): string {
+
+            ->addColumn('record', function (ActivityLog $log) {
+
                 $record = class_basename($log->subject_type);
 
                 if ($log->subject_id) {
@@ -54,43 +146,19 @@ class ActivityLogDataTable
                 }
 
                 return $record;
+
             })
-            ->editColumn('occurred_at', function (ActivityLog $log): string {
+            ->editColumn('occurred_at', function (ActivityLog $log) {
+
                 return $log->occurred_at
-                    ? \Morilog\Jalali\Jalalian::fromDateTime($log->occurred_at)->format('Y/m/d H:i:s')
+                    ? \Morilog\Jalali\Jalalian::fromDateTime($log->occurred_at)
+                        ->format('Y/m/d H:i:s')
                     : '—';
+
             })
-            ->filterColumn('user', function (Builder $query, string $keyword): void {
-                $query->whereHas('user', function (Builder $inner) use ($keyword): void {
-                    $inner->where('name', 'like', '%' . $keyword . '%');
-                });
-            })
-            ->rawColumns(['action_badge'])
+            ->rawColumns([
+                'action_badge'
+            ])
             ->toJson();
-    }
-
-    /**
-     * Distinct action values, used to build the action filter dropdown.
-     *
-     * @return array<int, string>
-     */
-    public function actions(): array
-    {
-        return ActivityLog::query()
-            ->select('action')
-            ->distinct()
-            ->orderBy('action')
-            ->pluck('action')
-            ->filter(fn ($action): bool => $action !== null && $action !== '')
-            ->values()
-            ->all();
-    }
-
-    /**
-     * Render the HTML page for a normal (non-AJAX) request.
-     */
-    public function render(string $view, array $data = [])
-    {
-        return view($view, $data + ['actions' => $this->actions()]);
     }
 }

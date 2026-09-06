@@ -146,11 +146,7 @@
                                          value="{{ $item->code }}"
                                          placeholder="---">
 
-                                  <input name="model_name"
-                                         class="form-control form-control-sm"
-                                         value="{{ $item->model_name }}"
-                                         placeholder="نام مدل"
-                                         required>
+
 
                                   <button class="btn btn-sm btn-outline-primary">ذخیره</button>
                                 </form>
