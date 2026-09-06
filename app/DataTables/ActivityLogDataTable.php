@@ -81,61 +81,61 @@ class ActivityLogDataTable
                 return $log->user?->name ?? 'سیستم';
 
             })
-                ->addColumn('action_badge', function (ActivityLog $log) {
+            ->addColumn('action_badge', function (ActivityLog $log) {
 
-                    $colors = [
+                $colors = [
 
-                        'created' => 'success',
-                        'updated' => 'primary',
-                        'deleted' => 'danger',
+                    'created' => 'success',
+                    'updated' => 'primary',
+                    'deleted' => 'danger',
 
-                        'invoice_shipped' => 'info',
-                        'invoice_cancelled' => 'danger',
+                    'invoice_shipped' => 'info',
+                    'invoice_cancelled' => 'danger',
 
-                        'preinvoice_draft_saved' => 'secondary',
-                        'preinvoice_draft_updated' => 'warning',
-                        'preinvoice_submitted' => 'success',
+                    'preinvoice_draft_saved' => 'secondary',
+                    'preinvoice_draft_updated' => 'warning',
+                    'preinvoice_submitted' => 'success',
 
-                        'return_excluded_warranty' => 'dark',
+                    'return_excluded_warranty' => 'dark',
 
-                        'permissions.updated' => 'primary',
-                        'role.updated' => 'warning',
+                    'permissions.updated' => 'primary',
+                    'role.updated' => 'warning',
 
-                        'commission_rate.set' => 'info',
-                        'commission_period.created' => 'success',
-                        'commission_period.recalculated' => 'primary',
+                    'commission_rate.set' => 'info',
+                    'commission_period.created' => 'success',
+                    'commission_period.recalculated' => 'primary',
 
-                        'seller_commission_reassigned' => 'warning',
-                        'seller_commission_document.created' => 'success',
+                    'seller_commission_reassigned' => 'warning',
+                    'seller_commission_document.created' => 'success',
 
-                        'finance_edited' => 'primary',
-                        'finance_returned_preinvoice' => 'danger',
+                    'finance_edited' => 'primary',
+                    'finance_returned_preinvoice' => 'danger',
 
-                        'invoice_payment_added' => 'success',
+                    'invoice_payment_added' => 'success',
 
-                        'reservation_expired' => 'dark',
+                    'reservation_expired' => 'dark',
 
-                        'sales_return.applied_voided' => 'danger',
+                    'sales_return.applied_voided' => 'danger',
 
-                        'crm_user_created' => 'success',
+                    'crm_user_created' => 'success',
 
-                        'electric_default_color_created' => 'success',
+                    'electric_default_color_created' => 'success',
 
-                        'return_commission_reversal_updated' => 'warning',
+                    'return_commission_reversal_updated' => 'warning',
 
-                        'commission_rate.revision_backdated' => 'dark',
+                    'commission_rate.revision_backdated' => 'dark',
 
-                    ];
-
-
-                    $class = $colors[$log->action] ?? 'secondary';
+                ];
 
 
-                    return '<span class="badge bg-'.$class.'">'
-                           . e($log->action)
-                           . '</span>';
+                $class = $colors[$log->action] ?? 'secondary';
 
-                })
+
+                return '<span class="badge bg-'.$class.'">'
+                       . e($log->action)
+                       . '</span>';
+
+            })
 
             ->addColumn('record', function (ActivityLog $log) {
 
