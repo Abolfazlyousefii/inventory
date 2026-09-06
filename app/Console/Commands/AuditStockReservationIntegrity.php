@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\PreinvoiceDraftReservation;
 use App\Services\ReservationQueryService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
@@ -72,6 +73,18 @@ class AuditStockReservationIntegrity extends Command
 
             $rows = $this->buildRows($centralWarehouseId);
             $summary = $this->buildSummary($rows);
+
+            // --summary is the production verification mode: print the counters
+            // and nothing else. It deliberately skips writeReports() so a quick
+            // read-only check on a production box does not leave CSV/JSON report
+            // files behind in storage. Without it the flag was accepted by the
+            // signature but had no effect at all.
+            if ($this->option('summary')) {
+                $this->line(json_encode(['summary' => $summary], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
+                return self::SUCCESS;
+            }
+
             $paths = $this->writeReports($rows, $summary, $format);
 
             $this->line(json_encode(['summary' => $summary, 'paths' => $paths], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
@@ -465,9 +478,25 @@ class AuditStockReservationIntegrity extends Command
             'non_central_stock_zero_prices' => count($rows['non-central-stock-zero-prices']),
             'zero_price_active_reservations' => count(array_filter($rows['reservation-cache-desync'], fn ($row) => $row['anomaly_code'] === 'P03')),
             'total_anomalies' => count($flat),
+            // Not an anomaly count and deliberately excluded from
+            // total_anomalies: legacy candidates are a manual-review queue, not
+            // an integrity defect. It is reported here only so one read-only
+            // command answers "what would legacy cleanup consider today?"
+            // without needing a second command. Same authoritative scope the
+            // cleanup service itself re-validates against.
+            'legacy_candidate_count' => $this->legacyCandidateCount(),
             'by_code' => array_count_values(array_column($flat, 'anomaly_code')),
             'data_changed' => false,
         ];
+    }
+
+    private function legacyCandidateCount(): int
+    {
+        return (int) PreinvoiceDraftReservation::query()
+            ->legacyCleanupCandidates(PreinvoiceDraftReservation::LEGACY_STALE_HOURS, now())
+            ->when($this->option('product'), fn ($query, $id) => $query->where('product_id', $id))
+            ->when($this->option('variant'), fn ($query, $id) => $query->where('variant_id', $id))
+            ->count();
     }
 
     private function writeReports(array $rows, array $summary, string $format): array

@@ -161,6 +161,10 @@ class PageAccessCatalog
         'warehouse-reservations.index' => ['warehouse.reservations'],
         'warehouse-reservations.health.export' => ['warehouse.reservations'],
         'warehouse-reservations.release' => ['warehouse.reservations'],
+        'warehouse-reservations.show' => ['warehouse.reservations'],
+        'warehouse-reservations.bulk-release' => ['warehouse.reservations'],
+        'warehouse-reservations.bulk-legacy-cleanup' => ['warehouse.reservations'],
+        'warehouse-reservations.bulk-export' => ['warehouse.reservations'],
         'warehouse.inbound.index' => ['warehouse.inbound_queue'],
         'warehouse.inbound.show' => ['warehouse.inbound_queue'],
         'warehouse.inbound.receive' => ['warehouse.inbound_queue'],
@@ -620,6 +624,13 @@ class PageAccessCatalog
             'sales_returns.override_invoice_status',
             'sales_returns.override_destination',
             'sales_returns.create_product',
+            // Not a legacy permission at all — it only shares the "inventory."
+            // textual prefix with the unrelated warehouse.stocks page's legacy
+            // permissions (products.warehouse-stock, inventory.count.*, ...).
+            // Without this exclusion, matchesAnyPrefix() would wrongly route
+            // this action permission through a page.warehouse.stocks check
+            // that has nothing to do with reservation legacy cleanup.
+            'inventory.reservation.legacy_cleanup',
         ], true)) {
             return null;
         }

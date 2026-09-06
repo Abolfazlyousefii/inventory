@@ -10,15 +10,6 @@
         </div>
     </div>
     <div class="col-6 col-xl-3">
-        <div class="card summary-card h-100" style="--summary-color:#0f766e">
-            <div class="card-body">
-                <div class="summary-label mb-1">جمع مقدار رزرو</div>
-                <div class="summary-value">{{ number_format($stats['active']['quantity']) }}</div>
-                <div class="summary-meta">واحد کالا در رزروهای فعال</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-xl-3">
         <div class="card summary-card h-100" style="--summary-color:#1d4ed8">
             <div class="card-body">
                 <div class="summary-label mb-1">پیش‌فاکتور رسمی</div>
@@ -48,7 +39,7 @@
     <div class="col-6 col-xl-3">
         <div class="card summary-card h-100" style="--summary-color:#0891b2">
             <div class="card-body">
-                <div class="summary-label mb-1">رزرو موقت</div>
+                <div class="summary-label mb-1">رزرو موقت (بدون پیش‌فاکتور)</div>
                 <div class="summary-value">{{ number_format($stats['temporary']['count']) }}</div>
                 <div class="summary-meta">{{ number_format($stats['temporary']['quantity']) }} واحد کالا</div>
             </div>

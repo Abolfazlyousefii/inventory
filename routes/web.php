@@ -629,6 +629,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/warehouse-reservations/health/export', [WarehouseReservationController::class, 'exportHealth'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.health.export');
+    Route::post('/warehouse-reservations/bulk-release', [WarehouseReservationController::class, 'bulkRelease'])
+        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
+        ->name('warehouse-reservations.bulk-release');
+    Route::post('/warehouse-reservations/bulk-legacy-cleanup', [WarehouseReservationController::class, 'bulkLegacyCleanup'])
+        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:inventory.reservation.legacy_cleanup'])
+        ->name('warehouse-reservations.bulk-legacy-cleanup');
+    Route::post('/warehouse-reservations/bulk-export', [WarehouseReservationController::class, 'bulkExport'])
+        ->middleware('route.permission:warehouse_reservations.view')
+        ->name('warehouse-reservations.bulk-export');
+    Route::get('/warehouse-reservations/{reservation}', [WarehouseReservationController::class, 'show'])
+        ->middleware('route.permission:warehouse_reservations.view')
+        ->name('warehouse-reservations.show');
     Route::post('/warehouse-reservations/{reservation}/release', [WarehouseReservationController::class, 'release'])
         ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
         ->name('warehouse-reservations.release');

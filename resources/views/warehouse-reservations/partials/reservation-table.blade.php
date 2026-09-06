@@ -112,11 +112,45 @@
     <a class="quick-filter {{ $quickFilter === 'active' ? 'active' : '' }}" href="{{ route('warehouse-reservations.index', array_merge($quickBase, ['quick' => 'active'])) }}">فعال</a>
 </div>
 
+{{-- Bulk selection/export is available to anyone who can view this page
+     (warehouse_reservations.view — already required to reach this route);
+     the release/legacy-cleanup buttons are separately gated below by their
+     own permissions, both here and (authoritatively) on the server. --}}
+@php $canBulkAny = true; @endphp
+
+<div class="card bulk-toolbar-card mb-3" id="reservation-bulk-toolbar" hidden>
+    <div class="card-body d-flex flex-wrap align-items-center gap-2 py-2 px-3">
+        <div class="form-check mb-0 ms-1">
+            <input class="form-check-input" type="checkbox" id="reservation-select-all-visible">
+            <label class="form-check-label small fw-bold" for="reservation-select-all-visible">انتخاب همه صفحه</label>
+        </div>
+        <span class="small text-muted" id="reservation-bulk-count">۰ مورد انتخاب شده</span>
+        <div class="d-flex flex-wrap gap-2 ms-auto">
+            @canPermission('warehouse_reservations.release')
+                <button class="btn btn-sm btn-outline-danger" type="button" id="reservation-bulk-release-btn" disabled data-bs-toggle="modal" data-bs-target="#bulk-release-modal">
+                    آزادسازی رزرو
+                </button>
+            @endcanPermission
+            @canPermission('inventory.reservation.legacy_cleanup')
+                <button class="btn btn-sm btn-outline-warning" type="button" id="reservation-bulk-legacy-btn" disabled data-bs-toggle="modal" data-bs-target="#bulk-legacy-modal">
+                    حذف Legacy
+                </button>
+            @endcanPermission
+            <button class="btn btn-sm btn-outline-success" type="button" id="reservation-bulk-export-btn" disabled>
+                خروجی CSV
+            </button>
+        </div>
+    </div>
+</div>
+
 <div class="card table-card overflow-hidden">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
+                    @if($canBulkAny)
+                        <th style="width:2.5rem"></th>
+                    @endif
                     <th>کالا</th>
                     <th>تنوع</th>
                     <th>تعداد</th>
@@ -140,8 +174,21 @@
                     $variantName = $reservation->variant?->variant_name ?: $reservation->variant?->variety_name;
                     $variantCode = $reservation->variant?->variant_code ?: $reservation->variant?->variety_code;
                     $classification = $classificationService->classify($reservation);
+                    $isLegacyCandidate = $classification['label'] === \App\Services\ReservationClassificationService::LABEL_LEGACY_CANDIDATE;
                 @endphp
                 <tr @class(['old-reservation-row' => $warning !== null])>
+                    @if($canBulkAny)
+                        <td>
+                            <input
+                                class="form-check-input reservation-select-row"
+                                type="checkbox"
+                                value="{{ $reservation->id }}"
+                                data-releasable="{{ $releasable ? '1' : '0' }}"
+                                data-legacy="{{ $isLegacyCandidate ? '1' : '0' }}"
+                                aria-label="انتخاب رزرو {{ $reservation->id }}"
+                            >
+                        </td>
+                    @endif
                     <td>
                         <div class="product-name">{{ $reservation->product?->name ?? 'کالای نامشخص' }}</div>
                         <div class="muted-line">{{ $reservation->product?->sku ?: $reservation->product?->code ?: 'بدون کد کالا' }}</div>
@@ -155,7 +202,16 @@
                     <td>
                         @if($reservation->order)
                             <span dir="ltr">{{ $reservation->order->uuid }}</span>
-                            <div class="muted-line mt-1">اتصال: {{ JalaliDate::dateTime($reservation->preinvoiceConnectedAt()) }}</div>
+                            {{-- preinvoiceConnectedAt() falls back to the preinvoice order's own
+                                 created_at when converted_at is missing; that timestamp is when the
+                                 preinvoice was created, not when this reservation was connected to
+                                 it. Label the two cases separately instead of implying they are the
+                                 same event. --}}
+                            @if($reservation->converted_at)
+                                <div class="muted-line mt-1">اتصال رزرو: {{ JalaliDate::dateTime($reservation->converted_at) }}</div>
+                            @else
+                                <div class="muted-line mt-1">ایجاد پیش‌فاکتور مرتبط: {{ JalaliDate::dateTime($reservation->order->created_at) }}</div>
+                            @endif
                         @else
                             <span class="text-muted">ثبت نشده</span>
                         @endif
@@ -193,8 +249,11 @@
                     </td>
                     <td>
                         <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#reservation-details-{{ $reservation->id }}">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ route('warehouse-reservations.show', $reservation) }}">
                                 مشاهده
+                            </a>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#reservation-details-{{ $reservation->id }}">
+                                جزئیات سریع
                             </button>
                             @if($releasable)
                                 @canPermission('warehouse_reservations.release')
@@ -207,7 +266,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="11"><div class="empty-state">رزروی با فیلترهای انتخاب‌شده پیدا نشد.</div></td></tr>
+                <tr><td colspan="{{ $canBulkAny ? 12 : 11 }}"><div class="empty-state">رزروی با فیلترهای انتخاب‌شده پیدا نشد.</div></td></tr>
             @endforelse
             </tbody>
         </table>
@@ -236,7 +295,9 @@
                         <dt class="col-5 text-muted">آخرین فعالیت</dt>
                         <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->managementLastActivityAt(), 'ثبت نشده') }}</dd>
                         @if($reservation->isPreinvoiceReservationWithoutInvoice())
-                            <dt class="col-5 text-muted">زمان اتصال به پیش‌فاکتور</dt>
+                            {{-- Same distinction as the summary column above: only converted_at is
+                                 a real reservation-connection timestamp. --}}
+                            <dt class="col-5 text-muted">{{ $reservation->converted_at ? 'زمان اتصال به پیش‌فاکتور' : 'زمان ایجاد پیش‌فاکتور مرتبط' }}</dt>
                             <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->preinvoiceConnectedAt(), 'ثبت نشده') }}</dd>
                         @endif
                         <dt class="col-5 text-muted">دلیل نمایش</dt>
@@ -295,3 +356,270 @@
         @endif
     @endforeach
 @endcanPermission
+
+{{-- Phase 5 — Bulk management: selection toolbar wiring, confirmation modals,
+     and result feedback. Each mutation action posts only to its own dedicated
+     endpoint (bulk-release vs bulk-legacy-cleanup) — never a shared/generic
+     one — so the two different stock semantics can never be conflated on the
+     client side either. The server independently re-validates every ID
+     regardless of what this page shows. --}}
+@canPermission('warehouse_reservations.release')
+    <div class="modal fade" id="bulk-release-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0">
+                <div class="modal-header bg-danger-subtle">
+                    <h3 class="modal-title fs-6">آزادسازی رزرو و برگشت موجودی به انبار مرکزی</h3>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="بستن"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2"><strong id="bulk-release-count-text">۰ رزرو</strong> انتخاب‌شده آزاد خواهند شد.</p>
+                    <ul class="small text-muted mb-3">
+                        <li>مقدار رزروشده آزاد و از cache رزرو کسر می‌شود.</li>
+                        <li>موجودی فیزیکی به انبار مرکزی برمی‌گردد.</li>
+                        <li>برای هر رزرو ممکن است سند گردش موجودی (stock movement) ایجاد شود.</li>
+                    </ul>
+                    <label class="form-label" for="bulk-release-reason">دلیل آزادسازی</label>
+                    <select class="form-select" id="bulk-release-reason" required>
+                        <option value="">انتخاب کنید</option>
+                        <option value="عدم تکمیل پیش‌فاکتور">عدم تکمیل پیش‌فاکتور</option>
+                        <option value="انصراف مشتری">انصراف مشتری</option>
+                        <option value="رزرو اشتباه">رزرو اشتباه</option>
+                        <option value="سایر">سایر</option>
+                    </select>
+                    <label class="form-label mt-3" for="bulk-release-note">توضیحات اختیاری</label>
+                    <textarea class="form-control" id="bulk-release-note" rows="3" maxlength="2000"></textarea>
+                    <div class="form-text">رزروهایی که دیگر قابل آزادسازی نیستند، رد (skip) می‌شوند و آزاد نمی‌شوند.</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">انصراف</button>
+                    <button class="btn btn-danger" type="button" id="bulk-release-confirm-btn">تأیید آزادسازی</button>
+                </div>
+            </div>
+        </div>
+    </div>
+@endcanPermission
+
+@canPermission('inventory.reservation.legacy_cleanup')
+    <div class="modal fade" id="bulk-legacy-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0">
+                <div class="modal-header bg-warning-subtle">
+                    <h3 class="modal-title fs-6">حذف رزرو قدیمی بدون برگشت موجودی</h3>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="بستن"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2"><strong id="bulk-legacy-count-text">۰ رزرو</strong> انتخاب‌شده بررسی خواهند شد.</p>
+                    <ul class="small text-muted mb-0">
+                        <li>فقط ردیف‌هایی که «کاندید Legacy» هستند پردازش می‌شوند؛ بقیه رد (skip) می‌شوند.</li>
+                        <li>چرخه عمر رزرو بسته و cache رزرو ترمیم می‌شود.</li>
+                        <li>موجودی فیزیکی انبار مرکزی افزایش <strong>پیدا نمی‌کند</strong> و هیچ سند گردش موجودی ایجاد نمی‌شود.</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">انصراف</button>
+                    <button class="btn btn-warning" type="button" id="bulk-legacy-confirm-btn">تأیید حذف Legacy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+@endcanPermission
+
+<div class="modal fade" id="bulk-result-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0">
+            <div class="modal-header">
+                <h3 class="modal-title fs-6" id="bulk-result-title">نتیجه عملیات</h3>
+                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="بستن"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bulk-result-summary" class="mb-3"></div>
+                <ul class="list-unstyled small mb-0" id="bulk-result-details"></ul>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" type="button" data-bs-dismiss="modal" onclick="window.location.reload()">بستن و بروزرسانی</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if($canBulkAny)
+@push('scripts')
+<script>
+(function () {
+    'use strict';
+
+    var toolbar = document.getElementById('reservation-bulk-toolbar');
+    var selectAll = document.getElementById('reservation-select-all-visible');
+    var countLabel = document.getElementById('reservation-bulk-count');
+    var releaseBtn = document.getElementById('reservation-bulk-release-btn');
+    var legacyBtn = document.getElementById('reservation-bulk-legacy-btn');
+    var exportBtn = document.getElementById('reservation-bulk-export-btn');
+    var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+    function rowCheckboxes() {
+        return Array.prototype.slice.call(document.querySelectorAll('.reservation-select-row'));
+    }
+
+    function selectedIds() {
+        return rowCheckboxes().filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.value; });
+    }
+
+    function toPersianDigits(value) {
+        var digits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+        return String(value).replace(/[0-9]/g, function (d) { return digits[d]; });
+    }
+
+    function refreshToolbar() {
+        var ids = selectedIds();
+        var count = ids.length;
+        toolbar.hidden = rowCheckboxes().length === 0;
+        countLabel.textContent = toPersianDigits(count) + ' مورد انتخاب شده';
+
+        if (releaseBtn) releaseBtn.disabled = count === 0;
+        if (legacyBtn) legacyBtn.disabled = count === 0;
+        if (exportBtn) exportBtn.disabled = count === 0;
+
+        var allChecked = rowCheckboxes().length > 0 && rowCheckboxes().every(function (cb) { return cb.checked; });
+        selectAll.checked = allChecked;
+
+        var releaseCountText = document.getElementById('bulk-release-count-text');
+        if (releaseCountText) releaseCountText.textContent = toPersianDigits(count) + ' رزرو';
+        var legacyCountText = document.getElementById('bulk-legacy-count-text');
+        if (legacyCountText) legacyCountText.textContent = toPersianDigits(count) + ' رزرو';
+    }
+
+    selectAll?.addEventListener('change', function () {
+        rowCheckboxes().forEach(function (cb) { cb.checked = selectAll.checked; });
+        refreshToolbar();
+    });
+
+    document.addEventListener('change', function (event) {
+        if (event.target && event.target.classList.contains('reservation-select-row')) {
+            refreshToolbar();
+        }
+    });
+
+    function showResult(title, summaryHtml, items, itemLabels) {
+        document.getElementById('bulk-result-title').textContent = title;
+        document.getElementById('bulk-result-summary').innerHTML = summaryHtml;
+
+        var list = document.getElementById('bulk-result-details');
+        list.innerHTML = '';
+        (items || []).forEach(function (item) {
+            if (!item.reason) { return; }
+            var li = document.createElement('li');
+            li.className = 'border-bottom py-1';
+            li.textContent = '#' + item.id + ' — ' + item.reason;
+            list.appendChild(li);
+        });
+
+        var resultModalEl = document.getElementById('bulk-result-modal');
+        var resultModal = bootstrap.Modal.getOrCreateInstance(resultModalEl);
+        resultModal.show();
+    }
+
+    function postBulk(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken || '',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify(body),
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                if (!response.ok) {
+                    var message = (data && data.message) || 'خطا در پردازش درخواست.';
+                    throw new Error(message);
+                }
+                return data;
+            });
+        });
+    }
+
+    function hideModal(id) {
+        var el = document.getElementById(id);
+        var instance = bootstrap.Modal.getInstance(el);
+        instance?.hide();
+    }
+
+    document.getElementById('bulk-release-confirm-btn')?.addEventListener('click', function () {
+        var ids = selectedIds();
+        var reasonField = document.getElementById('bulk-release-reason');
+        var reason = reasonField.value;
+        if (!reason) {
+            reasonField.reportValidity();
+            return;
+        }
+        var note = document.getElementById('bulk-release-note').value;
+
+        postBulk('{{ route('warehouse-reservations.bulk-release') }}', {
+            reservation_ids: ids,
+            release_reason: reason,
+            release_note: note || null,
+        }).then(function (data) {
+            hideModal('bulk-release-modal');
+            showResult(
+                'آزادسازی انجام شد',
+                'موفق: ' + toPersianDigits(data.released) + ' — رد شده: ' + toPersianDigits(data.skipped) + ' — ناموفق: ' + toPersianDigits(data.failed),
+                data.items
+            );
+        }).catch(function (error) {
+            hideModal('bulk-release-modal');
+            showResult('خطا در آزادسازی', error.message, []);
+        });
+    });
+
+    document.getElementById('bulk-legacy-confirm-btn')?.addEventListener('click', function () {
+        var ids = selectedIds();
+
+        postBulk('{{ route('warehouse-reservations.bulk-legacy-cleanup') }}', {
+            reservation_ids: ids,
+        }).then(function (data) {
+            hideModal('bulk-legacy-modal');
+            showResult(
+                'حذف Legacy انجام شد',
+                'بسته‌شده: ' + toPersianDigits(data.closed) + ' — رد شده: ' + toPersianDigits(data.skipped),
+                data.items
+            );
+        }).catch(function (error) {
+            hideModal('bulk-legacy-modal');
+            showResult('خطا در حذف Legacy', error.message, []);
+        });
+    });
+
+    exportBtn?.addEventListener('click', function () {
+        var ids = selectedIds();
+        if (ids.length === 0) { return; }
+
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ route('warehouse-reservations.bulk-export') }}';
+        form.style.display = 'none';
+
+        var tokenInput = document.createElement('input');
+        tokenInput.type = 'hidden';
+        tokenInput.name = '_token';
+        tokenInput.value = csrfToken || '';
+        form.appendChild(tokenInput);
+
+        ids.forEach(function (id) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'reservation_ids[]';
+            input.value = id;
+            form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    });
+
+    refreshToolbar();
+})();
+</script>
+@endpush
+@endif

@@ -106,11 +106,11 @@ it('calculates each invoice item from canonical discounts without shipping and s
 });
 
 it('uses historical invoice date and deterministic integer rounding while distinguishing missing and explicit zero', function () {
-    [, $product] = phaseTwoCatalog();
+    [, $product, $variant] = phaseTwoCatalog();
     $seller = phaseTwoSeller();
     $period = phaseTwoPeriod();
     phaseTwoRate('product', $product->id, '2.7500', $seller, '2026-01-01');
-    $invoice = phaseTwoInvoice($seller, $product, null, [], ['price' => 12_345_678]);
+    $invoice = phaseTwoInvoice($seller, $product, $variant, [], ['price' => 12_345_678]);
 
     app(CommissionCalculationService::class)->recalculate($period);
     expect(CommissionLedgerEntry::query()->where('invoice_id', $invoice->id)->firstOrFail()->total_commission_amount)->toBe(339_506);
@@ -129,11 +129,11 @@ it('uses historical invoice date and deterministic integer rounding while distin
 });
 
 it('recalculates idempotently and supersedes changed or cancelled invoice entries', function () {
-    [, $product] = phaseTwoCatalog();
+    [, $product, $variant] = phaseTwoCatalog();
     $seller = phaseTwoSeller();
     $period = phaseTwoPeriod();
     phaseTwoRate('product', $product->id, '2.0000', $seller);
-    $invoice = phaseTwoInvoice($seller, $product, null);
+    $invoice = phaseTwoInvoice($seller, $product, $variant);
     $service = app(CommissionCalculationService::class);
 
     $service->recalculate($period);
@@ -152,13 +152,13 @@ it('recalculates idempotently and supersedes changed or cancelled invoice entrie
 });
 
 it('includes the inclusive period start and excludes the exclusive end boundary', function () {
-    [, $product] = phaseTwoCatalog();
+    [, $product, $variant] = phaseTwoCatalog();
     $seller = phaseTwoSeller();
     $period = phaseTwoPeriod();
     phaseTwoRate('product', $product->id, '2.0000', $seller);
-    $included = phaseTwoInvoice($seller, $product, null, ['document_date' => $period->start_at]);
-    $alsoIncluded = phaseTwoInvoice($seller, $product, null, ['document_date' => $period->end_at->copy()->subSecond()]);
-    $excluded = phaseTwoInvoice($seller, $product, null, ['document_date' => $period->end_at]);
+    $included = phaseTwoInvoice($seller, $product, $variant, ['document_date' => $period->start_at]);
+    $alsoIncluded = phaseTwoInvoice($seller, $product, $variant, ['document_date' => $period->end_at->copy()->subSecond()]);
+    $excluded = phaseTwoInvoice($seller, $product, $variant, ['document_date' => $period->end_at]);
 
     app(CommissionCalculationService::class)->recalculate($period);
 
@@ -168,13 +168,13 @@ it('includes the inclusive period start and excludes the exclusive end boundary'
 });
 
 it('reconciles the canonical effective seller after reassignment in an open period', function () {
-    [, $product] = phaseTwoCatalog();
+    [, $product, $variant] = phaseTwoCatalog();
     $oldSeller = phaseTwoSeller('Old Seller');
     $newSeller = phaseTwoSeller('New Seller');
     $actor = phaseTwoSeller('Actor');
     $period = phaseTwoPeriod();
     phaseTwoRate('product', $product->id, '2.0000', $actor);
-    $invoice = phaseTwoInvoice($oldSeller, $product, null);
+    $invoice = phaseTwoInvoice($oldSeller, $product, $variant);
     $service = app(CommissionCalculationService::class);
     $service->recalculate($period);
 
@@ -186,11 +186,11 @@ it('reconciles the canonical effective seller after reassignment in an open peri
 });
 
 it('enforces one active ledger row per period and invoice item at database level', function () {
-    [, $product] = phaseTwoCatalog();
+    [, $product, $variant] = phaseTwoCatalog();
     $seller = phaseTwoSeller();
     $period = phaseTwoPeriod();
     phaseTwoRate('product', $product->id, '2.0000', $seller);
-    phaseTwoInvoice($seller, $product, null);
+    phaseTwoInvoice($seller, $product, $variant);
     app(CommissionCalculationService::class)->recalculate($period);
     $entry = CommissionLedgerEntry::query()->firstOrFail();
 
@@ -201,11 +201,11 @@ it('enforces one active ledger row per period and invoice item at database level
 });
 
 it('preserves historical snapshots without locking a deleted source item', function () {
-    [, $product] = phaseTwoCatalog();
+    [, $product, $variant] = phaseTwoCatalog();
     $seller = phaseTwoSeller();
     $period = phaseTwoPeriod();
     phaseTwoRate('product', $product->id, '2.0000', $seller);
-    $invoice = phaseTwoInvoice($seller, $product, null);
+    $invoice = phaseTwoInvoice($seller, $product, $variant);
     app(CommissionCalculationService::class)->recalculate($period);
 
     $invoice->items->first()->delete();
