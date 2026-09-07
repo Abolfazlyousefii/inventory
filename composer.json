@@ -18,6 +18,8 @@
         "mpdf/mpdf": "8.2.6",
         "spatie/laravel-ignition": "^2.12",
         "spatie/laravel-permission": "^6.24",
+        "yajra/laravel-datatables": "^12.0",
+        "yajra/laravel-datatables-html": "12",
         "yajra/laravel-datatables-oracle": "^12.7"
     },
     "require-dev": {
