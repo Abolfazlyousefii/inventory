@@ -1409,7 +1409,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                         </div>
                         <a href="{{ $customersPageUrl }}" class="btn btn-sm btn-outline-success rounded-3">افزودن</a>
                     </div>
-                    <select id="customer_search_select" class="form-select"></select>
+                    <select id="customer_search_select" class="form-select" aria-describedby="customer_search_error">
+                        <option value=""></option>
+                    </select>
+                    <div id="customer_search_error" class="text-danger small mt-2" role="alert" hidden></div>
                 </div>
                 <div class="col-lg-7">
                     <div id="customerSummaryBox" class="customer-box h-100 {{ old('customer_id') || $oldCustomerTitle ? 'is-selected' : '' }}">
@@ -1623,8 +1626,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             reservationsReleaseToken: @json(route('preinvoice.reservations.release-token', absolute: false)),
             csrfToken: @json(route('session.csrf-token', absolute: false)),
             area: '/preinvoice/api/area',
-            customers: '/preinvoice/api/customers',
-            customer: '/preinvoice/api/customers'
+            customers: @json(route('api.customers.search', absolute: false)),
+            customer: @json(route('api.customers.show', ['customer' => '__CUSTOMER_ID__'], absolute: false))
         },
         initRows: @json($initRows),
         oldCustomerId: @json(old('customer_id', $order->customer_id ?? '')),
@@ -2607,72 +2610,125 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     function preloadCustomerOption(selectEl, customer) {
-        if (!selectEl || !customer || !window.jQuery) return;
+        if (!selectEl || !customer) return;
         const text = customerFullName(customer) + (customer.mobile ? ' - ' + customer.mobile : '');
-        selectEl.add(new Option(text, customer.id, true, true));
-        $(selectEl).trigger('change');
+        let option = Array.from(selectEl.options).find(option => option.value === String(customer.id));
+        if (!option) {
+            option = new Option(text, customer.id);
+            selectEl.add(option);
+        }
+        option.text = text;
+        option.selected = true;
+        if (window.jQuery) window.jQuery(selectEl).trigger('change');
+    }
+
+    function customerPickerError(message = '', context = {}) {
+        const errorEl = document.getElementById('customer_search_error');
+        errorEl.textContent = message;
+        errorEl.hidden = !message;
+        if (message) console.error('[Preinvoice customer picker]', message, context);
+    }
+
+    async function fetchPickerCustomer(id) {
+        const url = API.customer.replace('__CUSTOMER_ID__', encodeURIComponent(id));
+        const res = await fetch(url, {headers: {'Accept': 'application/json'}});
+        if (!res.ok) throw new Error(`Customer detail HTTP ${res.status}: ${url}`);
+        const json = await res.json();
+        if (!json?.data?.customer?.id) throw new Error(`Invalid customer detail response: ${url}`);
+        return json.data.customer;
     }
 
     function initCustomerSearch() {
         const selectEl = document.getElementById('customer_search_select');
-        if (!window.jQuery || !window.jQuery.fn?.select2) return;
-        $(selectEl).select2({
-            width: '100%',
-            dir: 'rtl',
-            placeholder: 'نام یا شماره موبایل مشتری...',
-            allowClear: true,
-            minimumInputLength: 1,
-            ajax: {
-                url: API.customers,
-                dataType: 'json',
-                delay: 250,
-                data: params => ({
-                    q: params.term || ''
-                }),
-                processResults: resp => {
-                    const items = resp?.data?.customers || [];
-                    return {
-                        results: items.map(c => ({
-                            id: c.id,
-                            text: customerFullName(c) + ' - ' + (c.mobile || '')
-                        }))
-                    };
-                }
-            }
-        });
-        $(selectEl).on('select2:select', async function(e) {
-            const id = e?.params?.data?.id;
-            if (!id) return;
-            try {
-                const res = await fetch(API.customer + '/' + encodeURIComponent(id), {
-                    headers: {
-                        'Accept': 'application/json'
+        if (!selectEl) return;
+        if (!window.jQuery || !window.jQuery.fn?.select2) {
+            selectEl.disabled = true;
+            customerPickerError('امکان بارگذاری جستجوی مشتری وجود ندارد. صفحه را تازه‌سازی کنید.', {
+                jquery: !!window.jQuery, select2: !!window.jQuery?.fn?.select2
+            });
+            return;
+        }
+        const $ = window.jQuery;
+        if ($(selectEl).hasClass('select2-hidden-accessible')) return;
+        try {
+            $(selectEl).select2({
+                width: '100%',
+                dir: 'rtl',
+                placeholder: 'نام، موبایل یا کد مشتری...',
+                allowClear: true,
+                minimumInputLength: 0,
+                language: {errorLoading: () => 'خطا در دریافت مشتریان'},
+                ajax: {
+                    url: API.customers,
+                    dataType: 'json',
+                    delay: 250,
+                    data: params => ({
+                        q: params.term || ''
+                    }),
+                    transport: (params, success, failure) => {
+                        const request = $.ajax(params);
+                        request.done(resp => {
+                            if (!Array.isArray(resp?.data?.customers)) {
+                                customerPickerError('خطا در دریافت مشتریان', {url: API.customers, reason: 'Invalid response structure'});
+                                failure({status: 200});
+                                return;
+                            }
+                            customerPickerError();
+                            success(resp);
+                        });
+                        request.fail((xhr, status, error) => {
+                            if (status === 'abort') return;
+                            customerPickerError('خطا در دریافت مشتریان', {url: API.customers, status: xhr.status, reason: status, error});
+                            failure(xhr, status, error);
+                        });
+                        return request;
+                    },
+                    processResults: resp => {
+                        const items = resp?.data?.customers || [];
+                        return {
+                            results: items.map(c => ({
+                                id: c.id,
+                                text: [customerFullName(c), c.mobile, c.crm_customer_id].filter(Boolean).join(' - ')
+                            }))
+                        };
                     }
-                });
-                const json = await res.json();
-                const customer = json?.data?.customer || null;
-                if (customer) applyCustomerToForm(customer);
-            } catch (error) {}
-        });
-        $(selectEl).on('select2:clear', clearCustomer);
+                }
+            });
+            $(selectEl).on('select2:select', async function(e) {
+                const id = e?.params?.data?.id;
+                if (!id) return;
+                try {
+                    const customer = await fetchPickerCustomer(id);
+                    if (String(selectEl.value) !== String(id)) return;
+                    customerPickerError();
+                    applyCustomerToForm(customer);
+                } catch (error) {
+                    if (String(selectEl.value) !== String(id)) return;
+                    const previousId = document.getElementById('customer_id').value;
+                    $(selectEl).val(previousId || null).trigger('change');
+                    customerPickerError('خطا در دریافت مشتریان', {operation: 'select', id, error});
+                }
+            });
+            $(selectEl).on('select2:clear', clearCustomer);
+        } catch (error) {
+            selectEl.disabled = true;
+            customerPickerError('امکان بارگذاری جستجوی مشتری وجود ندارد. صفحه را تازه‌سازی کنید.', {operation: 'initialize', error});
+        }
     }
 
     async function loadOldCustomer() {
         const cid = document.getElementById('customer_id').value || OLD_CUSTOMER_ID || '';
         if (!cid) return;
         try {
-            const res = await fetch(API.customer + '/' + encodeURIComponent(cid), {
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-            const json = await res.json();
-            const customer = json?.data?.customer || null;
+            const customer = await fetchPickerCustomer(cid);
+            if (String(document.getElementById('customer_id').value || '') !== String(cid)) return;
             if (customer) {
                 applyCustomerToForm(customer);
                 preloadCustomerOption(document.getElementById('customer_search_select'), customer);
             }
-        } catch (e) {}
+        } catch (error) {
+            customerPickerError('خطا در دریافت مشتریان', {operation: 'preload', id: cid, error});
+        }
     }
 
     function getRecentProducts() {
@@ -3374,6 +3430,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     document.addEventListener('DOMContentLoaded', async function() {
+        initCustomerSearch();
+        const oldCustomerLoaded = loadOldCustomer();
         if (SUBMIT_SUCCEEDED && !IS_EDIT) {
             localStorage.removeItem(LOCAL_DRAFT_KEY);
             localStorage.removeItem(RESERVATION_TOKEN_KEY);
@@ -3385,8 +3443,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             await loadLatestDbAutosaveBanner();
         }
 
-        initCustomerSearch();
-        await loadOldCustomer();
+        await oldCustomerLoaded;
         renderRecentProducts();
 
         document.getElementById('clearCustomerBtn')?.addEventListener('click', clearCustomer);

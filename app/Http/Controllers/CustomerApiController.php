@@ -14,9 +14,6 @@ class CustomerApiController extends Controller
     public function search(Request $request)
     {
         $q = trim((string)$request->query('q',''));
-        if ($q === '') {
-            return response()->json(['data' => ['customers' => []]]);
-        }
 
         $terms = collect([
             $q,
@@ -24,7 +21,7 @@ class CustomerApiController extends Controller
             $this->toPersianDigits($q),
             $this->toArabicDigits($q),
         ])->map(fn ($term) => trim((string) $term))
-            ->filter()
+            ->filter(fn ($term) => $term !== '')
             ->unique()
             ->values();
         $fullNameExpression = DB::connection()->getDriverName() === 'sqlite'
@@ -32,22 +29,22 @@ class CustomerApiController extends Controller
             : "TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')))";
 
         $items = Customer::query()
-            ->withBalance()
-            ->where(function($qq) use ($terms, $fullNameExpression){
+            ->select(['id', 'name', 'first_name', 'last_name', 'mobile', 'crm_customer_id'])
+            ->when($q !== '', fn ($query) => $query->where(function($qq) use ($terms, $fullNameExpression){
                 foreach ($terms as $term) {
-                    $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
-                    $compactLike = '%' . str_replace(['%', '_'], ['\%', '\_'], preg_replace('/[\s\-()]+/u', '', $term)) . '%';
+                    $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term) . '%';
+                    $compactLike = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], preg_replace('/[\s\-()]+/u', '', $term)) . '%';
 
-                    $qq->orWhere('first_name', 'like', $like)
-                       ->orWhere('last_name', 'like', $like)
-                       ->orWhereRaw("{$fullNameExpression} LIKE ?", [$like])
-                       ->orWhere('mobile', 'like', $like);
+                    foreach (['first_name', 'last_name', 'name', 'mobile', 'crm_customer_id'] as $column) {
+                        $qq->orWhereRaw("{$column} LIKE ? ESCAPE '!'", [$like]);
+                    }
+                    $qq->orWhereRaw("{$fullNameExpression} LIKE ? ESCAPE '!'", [$like]);
 
                     if ($compactLike !== '%%') {
-                        $qq->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(mobile, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?", [$compactLike]);
+                        $qq->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(mobile, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ? ESCAPE '!'", [$compactLike]);
                     }
                 }
-            })
+            }))
             ->orderByDesc('id')
             ->limit(20)
             ->get()
@@ -57,17 +54,7 @@ class CustomerApiController extends Controller
                 'first_name' => $c->first_name,
                 'last_name' => $c->last_name,
                 'mobile' => $c->mobile,
-                'address' => $c->address,
-                'postal_code' => $c->postal_code,
-                'extra_description' => $c->extra_description,
-                'province_id' => (int)($c->province_id ?? 0),
-                'city_id' => (int)($c->city_id ?? 0),
-                'debt' => (int)$c->debt,
-                'credit' => (int)$c->credit,
-                'balance' => (int)$c->balance,
-                'reservation_tier' => $c->reservation_tier,
-                'reservation_tier_label' => $this->reservationTierLabel($c->reservation_tier),
-                'reservation_duration_label' => $this->reservationDurationLabel($c->reservation_tier),
+                'crm_customer_id' => $c->crm_customer_id,
             ])
             ->values();
 
