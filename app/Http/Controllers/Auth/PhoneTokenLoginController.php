@@ -11,6 +11,7 @@ use App\Support\FirstAllowedPageResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -63,8 +64,19 @@ class PhoneTokenLoginController extends Controller {
             |--------------------------------------------------------------------------
             */
 
-            $crmUser = CrmUser::where('phone', $phone)
-                ->first();
+            try {
+                $crmUser = CrmUser::where('phone', $phone)
+                    ->first();
+            } catch (\Illuminate\Database\QueryException $exception) {
+                Log::error('CRM user lookup failed.', [
+                    'phone' => $phone,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                throw ValidationException::withMessages([
+                    'phone' => 'امکان بررسی حساب کاربری در حال حاضر وجود ندارد.',
+                ]);
+            }
 
             if ( !$crmUser ) {
                 throw ValidationException::withMessages([

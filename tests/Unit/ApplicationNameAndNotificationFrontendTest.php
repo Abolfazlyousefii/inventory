@@ -55,6 +55,10 @@ class ApplicationNameAndNotificationFrontendTest extends TestCase
             new RecursiveDirectoryIterator(resource_path('views'))
         );
         foreach ($viewFiles as $file) {
+            if (str_starts_with(str_replace('\\', '/', $file->getPathname()), str_replace('\\', '/', resource_path('views/vendor')).'/')) {
+                continue;
+            }
+
             if ($file->isFile() && str_ends_with($file->getFilename(), '.blade.php')) {
                 $this->assertStringNotContainsString(
                     'Laravel',

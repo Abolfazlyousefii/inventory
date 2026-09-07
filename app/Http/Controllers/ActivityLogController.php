@@ -11,7 +11,7 @@ class ActivityLogController extends Controller
     public function index(Request $request, ActivityLogDataTable $dataTable)
     {
 
-        if ($request->ajax()) {
+        if ($request->expectsJson()) {
             return $dataTable->ajax();
         }
 
@@ -20,7 +20,7 @@ class ActivityLogController extends Controller
             'actions' => ActivityLog::query()
                 ->select('action')
                 ->distinct()
-                ->pluck('action'),
+                ->pluck('action')->all(),
         ]);
     }
 }
