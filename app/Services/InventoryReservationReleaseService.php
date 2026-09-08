@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Support\ActivityLogger;
+use App\Support\ReservationSideEffects;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -26,7 +27,7 @@ class InventoryReservationReleaseService
         ?User $actor = null,
         bool $decrementReservedCache = true,
     ): array {
-        return DB::transaction(function () use ($reservation, $actor, $decrementReservedCache): array {
+        return ReservationSideEffects::transaction(function () use ($reservation, $actor, $decrementReservedCache): array {
             $lockedReservation = PreinvoiceDraftReservation::query()
                 ->whereKey($reservation->getKey())
                 ->lockForUpdate()
@@ -83,7 +84,7 @@ class InventoryReservationReleaseService
 
     public function releaseDraftReservation(PreinvoiceDraftReservation $reservation, User $user, string $reason, ?string $note = null): void
     {
-        DB::transaction(function () use ($reservation, $user, $reason, $note): void {
+        ReservationSideEffects::transaction(function () use ($reservation, $user, $reason, $note): void {
             $lockedReservation = PreinvoiceDraftReservation::query()
                 ->whereKey($reservation->getKey())
                 ->lockForUpdate()
@@ -164,76 +165,79 @@ class InventoryReservationReleaseService
      */
     public function releaseReservedQuantity(int $productId, int $variantId, int $quantity): array
     {
-        $variant = ProductVariant::query()
-            ->whereKey($variantId)
-            ->where('product_id', $productId)
-            ->lockForUpdate()
-            ->first();
-        $product = Product::query()
-            ->whereKey($productId)
-            ->lockForUpdate()
-            ->first();
-
-        $context = [
-            'product_id' => $productId,
-            'variant_id' => $variantId,
-            'release_quantity' => $quantity,
-            'current_product_reserved' => $product === null ? null : (int) $product->reserved,
-            'current_variant_reserved' => $variant === null ? null : (int) $variant->reserved,
-        ];
-
-        if ($quantity <= 0 || ! $variant || ! $product) {
-            return [
-                'released' => false,
-                'reason' => 'invalid_reservation_relation',
-                'context' => $context,
-                'before' => [],
-                'after' => [],
+        return ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {    
+            $variant = ProductVariant::query()
+                ->whereKey($variantId)
+                ->where('product_id', $productId)
+                ->lockForUpdate()
+                ->first();
+            $product = Product::query()
+                ->whereKey($productId)
+                ->lockForUpdate()
+                ->first();
+    
+            $context = [
+                'product_id' => $productId,
+                'variant_id' => $variantId,
+                'release_quantity' => $quantity,
+                'current_product_reserved' => $product === null ? null : (int) $product->reserved,
+                'current_variant_reserved' => $variant === null ? null : (int) $variant->reserved,
             ];
-        }
-
-        if ((int) $variant->reserved < $quantity || (int) $product->reserved < $quantity) {
-            return [
-                'released' => false,
-                'reason' => 'reserved_cache_mismatch',
-                'context' => $context,
-                'before' => [],
-                'after' => [],
-            ];
-        }
-
-        $before = [
-            'variant_stock' => (int) ($variant->stock ?? 0),
-            'variant_reserved' => (int) $variant->reserved,
-            'product_reserved' => (int) $product->reserved,
-        ];
-
-        $variant->reserved = (int) $variant->reserved - $quantity;
-        $variant->save();
-
-        $product->reserved = (int) $product->reserved - $quantity;
-        $product->save();
-
-        WarehouseStockService::change(
-            WarehouseStockService::centralWarehouseId(),
-            $productId,
-            $quantity,
-            $variantId,
-        );
-
-        $variant->refresh();
-        $product->refresh();
-
-        return [
-            'released' => true,
-            'reason' => null,
-            'context' => $context,
-            'before' => $before,
-            'after' => [
+    
+            if ($quantity <= 0 || ! $variant || ! $product) {
+                return [
+                    'released' => false,
+                    'reason' => 'invalid_reservation_relation',
+                    'context' => $context,
+                    'before' => [],
+                    'after' => [],
+                ];
+            }
+    
+            if ((int) $variant->reserved < $quantity || (int) $product->reserved < $quantity) {
+                return [
+                    'released' => false,
+                    'reason' => 'reserved_cache_mismatch',
+                    'context' => $context,
+                    'before' => [],
+                    'after' => [],
+                ];
+            }
+    
+            $before = [
                 'variant_stock' => (int) ($variant->stock ?? 0),
                 'variant_reserved' => (int) $variant->reserved,
                 'product_reserved' => (int) $product->reserved,
-            ],
-        ];
+            ];
+    
+            $variant->reserved = (int) $variant->reserved - $quantity;
+            $variant->save();
+    
+            $product->reserved = (int) $product->reserved - $quantity;
+            $product->save();
+    
+            WarehouseStockService::change(
+                WarehouseStockService::centralWarehouseId(),
+                $productId,
+                $quantity,
+                $variantId,
+            );
+    
+            $variant->refresh();
+            $product->refresh();
+    
+            return [
+                'released' => true,
+                'reason' => null,
+                'context' => $context,
+                'before' => $before,
+                'after' => [
+                    'variant_stock' => (int) ($variant->stock ?? 0),
+                    'variant_reserved' => (int) $variant->reserved,
+                    'product_reserved' => (int) $product->reserved,
+                ],
+            ];
+        });
     }
+
 }

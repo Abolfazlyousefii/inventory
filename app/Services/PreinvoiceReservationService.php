@@ -9,6 +9,7 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\WarehouseStock;
 use App\Support\ActivityLogger;
+use App\Support\ReservationSideEffects;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -60,7 +61,7 @@ class PreinvoiceReservationService
 
     public function expireTemporaryOnlineReservations(): array
     {
-        return DB::transaction(function () {
+        return ReservationSideEffects::transaction(function () {
             $reservations = PreinvoiceDraftReservation::query()
                 ->whereNull('preinvoice_order_id')
                 ->whereNull('converted_at')
@@ -102,7 +103,7 @@ class PreinvoiceReservationService
 
     public function expirePreinvoiceReservations(PreinvoiceOrder $order, ?User $actor = null, string $reason = 'expired'): array
     {
-        return DB::transaction(function () use ($order, $actor, $reason) {
+        return ReservationSideEffects::transaction(function () use ($order, $actor, $reason) {
             $lockedOrder = PreinvoiceOrder::query()
                 ->whereKey($order->id)
                 ->lockForUpdate()
@@ -189,7 +190,7 @@ class PreinvoiceReservationService
 
     public function releaseReservation(PreinvoiceDraftReservation $reservation, ?User $actor, string $reason, ?string $note = null): array
     {
-        return DB::transaction(function () use ($reservation, $actor, $reason, $note) {
+        return ReservationSideEffects::transaction(function () use ($reservation, $actor, $reason, $note) {
             $lockedReservation = PreinvoiceDraftReservation::query()
                 ->whereKey($reservation->id)
                 ->lockForUpdate()
@@ -237,7 +238,7 @@ class PreinvoiceReservationService
 
     public function releaseOfficialReservationsForOrder(PreinvoiceOrder $order, string $reason, ?string $note = null, ?User $actor = null): array
     {
-        return DB::transaction(function () use ($order, $reason, $note, $actor) {
+        return ReservationSideEffects::transaction(function () use ($order, $reason, $note, $actor) {
             $lockedOrder = PreinvoiceOrder::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
             if ($lockedOrder->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE || $lockedOrder->invoice()->exists()) {
@@ -270,7 +271,7 @@ class PreinvoiceReservationService
 
     public function consumeOfficialReservationsForOrder(PreinvoiceOrder $order, ?User $actor = null): array
     {
-        return DB::transaction(function () use ($order, $actor) {
+        return ReservationSideEffects::transaction(function () use ($order, $actor) {
             $lockedOrder = PreinvoiceOrder::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             $reservations = PreinvoiceDraftReservation::query()
                 ->where('preinvoice_order_id', $lockedOrder->id)
@@ -296,92 +297,94 @@ class PreinvoiceReservationService
 
     public function adjustOfficialReservationDelta(PreinvoiceOrder $order, $item, int $delta, ?User $actor = null): void
     {
-        if ($delta === 0) {
-            return;
-        }
-
-        $productId = (int) $item->product_id;
-        $variantId = (int) $item->variant_id;
-
-        if ($delta > 0) {
-            $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-            $available = max(0, (int) $variant->stock);
-            if ($delta > $available) {
-                $name = trim(($variant->product?->name ?? $item->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?? '—'));
-                throw ValidationException::withMessages([
-                    'items.' . $item->id . '.quantity' => "موجودی کافی نیست. کالا: {$name} | موجودی آزاد: {$available} | مقدار درخواستی اضافه: {$delta}",
-                ]);
+        ReservationSideEffects::run(function () use ($order, $item, $delta, $actor) {    
+            if ($delta === 0) {
+                return;
             }
-
-            WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
-            $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-            $variant->forceFill(['reserved' => (int) $variant->reserved + $delta])->save();
-            $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-            if ($product) {
-                $product->forceFill(['reserved' => (int) $product->reserved + $delta])->save();
-            }
-
-            PreinvoiceDraftReservation::query()->create([
-                'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
-                'user_id' => $actor?->id,
-                'preinvoice_order_id' => $order->id,
-                'product_id' => $productId,
-                'variant_id' => $variantId,
-                'quantity' => $delta,
-                'expires_at' => $order->stock_frozen_until,
-                'last_seen_at' => now(),
-                'reservation_scope' => 'official',
-                'reservation_tier' => $order->customer?->reservation_tier,
-            ]);
-            return;
-        }
-
-        $remaining = abs($delta);
-        $reservations = PreinvoiceDraftReservation::query()
-            ->where('preinvoice_order_id', $order->id)
-            ->where('reservation_scope', 'official')
-            ->where('product_id', $productId)
-            ->where('variant_id', $variantId)
-            ->whereNull('released_at')
-            ->whereNull('release_reason')
-            ->where('quantity', '>', 0)
-            ->lockForUpdate()
-            ->orderByDesc('id')
-            ->get();
-
-        foreach ($reservations as $reservation) {
-            if ($remaining <= 0) {
-                break;
-            }
-            $take = min($remaining, (int) $reservation->quantity);
-            $this->releaseStockForReservation($productId, $variantId, $take);
-            if ($take === (int) $reservation->quantity) {
-                $reservation->forceFill(['released_at' => now(), 'released_by' => $actor?->id, 'release_reason' => 'finance_quantity_decreased', 'release_note' => 'کاهش تعداد توسط مالی.'])->save();
-            } else {
-                $reservation->forceFill(['quantity' => (int) $reservation->quantity - $take])->save();
+    
+            $productId = (int) $item->product_id;
+            $variantId = (int) $item->variant_id;
+    
+            if ($delta > 0) {
+                $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
+                $available = max(0, (int) $variant->stock);
+                if ($delta > $available) {
+                    $name = trim(($variant->product?->name ?? $item->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?? '—'));
+                    throw ValidationException::withMessages([
+                        'items.' . $item->id . '.quantity' => "موجودی کافی نیست. کالا: {$name} | موجودی آزاد: {$available} | مقدار درخواستی اضافه: {$delta}",
+                    ]);
+                }
+    
+                WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
+                $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
+                $variant->forceFill(['reserved' => (int) $variant->reserved + $delta])->save();
+                $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
+                if ($product) {
+                    $product->forceFill(['reserved' => (int) $product->reserved + $delta])->save();
+                }
+    
                 PreinvoiceDraftReservation::query()->create([
-                    'token' => 'finance-release-' . $reservation->id . '-' . now()->timestamp,
-                    'user_id' => $reservation->user_id,
+                    'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
+                    'user_id' => $actor?->id,
                     'preinvoice_order_id' => $order->id,
                     'product_id' => $productId,
                     'variant_id' => $variantId,
-                    'quantity' => $take,
-                    'expires_at' => $reservation->expires_at,
+                    'quantity' => $delta,
+                    'expires_at' => $order->stock_frozen_until,
                     'last_seen_at' => now(),
-                    'released_at' => now(),
-                    'released_by' => $actor?->id,
-                    'release_reason' => 'finance_quantity_decreased',
-                    'release_note' => 'کاهش تعداد توسط مالی.',
                     'reservation_scope' => 'official',
-                    'reservation_tier' => $reservation->reservation_tier,
+                    'reservation_tier' => $order->customer?->reservation_tier,
                 ]);
+                return;
             }
-            $remaining -= $take;
-        }
-
-        if ($remaining > 0) {
-            throw ValidationException::withMessages(['items.' . $item->id . '.quantity' => 'رزرو کافی برای آزادسازی کاهش تعداد وجود ندارد.']);
-        }
+    
+            $remaining = abs($delta);
+            $reservations = PreinvoiceDraftReservation::query()
+                ->where('preinvoice_order_id', $order->id)
+                ->where('reservation_scope', 'official')
+                ->where('product_id', $productId)
+                ->where('variant_id', $variantId)
+                ->whereNull('released_at')
+                ->whereNull('release_reason')
+                ->where('quantity', '>', 0)
+                ->lockForUpdate()
+                ->orderByDesc('id')
+                ->get();
+    
+            foreach ($reservations as $reservation) {
+                if ($remaining <= 0) {
+                    break;
+                }
+                $take = min($remaining, (int) $reservation->quantity);
+                $this->releaseStockForReservation($productId, $variantId, $take);
+                if ($take === (int) $reservation->quantity) {
+                    $reservation->forceFill(['released_at' => now(), 'released_by' => $actor?->id, 'release_reason' => 'finance_quantity_decreased', 'release_note' => 'کاهش تعداد توسط مالی.'])->save();
+                } else {
+                    $reservation->forceFill(['quantity' => (int) $reservation->quantity - $take])->save();
+                    PreinvoiceDraftReservation::query()->create([
+                        'token' => 'finance-release-' . $reservation->id . '-' . now()->timestamp,
+                        'user_id' => $reservation->user_id,
+                        'preinvoice_order_id' => $order->id,
+                        'product_id' => $productId,
+                        'variant_id' => $variantId,
+                        'quantity' => $take,
+                        'expires_at' => $reservation->expires_at,
+                        'last_seen_at' => now(),
+                        'released_at' => now(),
+                        'released_by' => $actor?->id,
+                        'release_reason' => 'finance_quantity_decreased',
+                        'release_note' => 'کاهش تعداد توسط مالی.',
+                        'reservation_scope' => 'official',
+                        'reservation_tier' => $reservation->reservation_tier,
+                    ]);
+                }
+                $remaining -= $take;
+            }
+    
+            if ($remaining > 0) {
+                throw ValidationException::withMessages(['items.' . $item->id . '.quantity' => 'رزرو کافی برای آزادسازی کاهش تعداد وجود ندارد.']);
+            }
+        });
     }
 
     public function expireOrderIfFrozenUntilPassed(PreinvoiceOrder $order): bool

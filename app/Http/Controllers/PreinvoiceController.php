@@ -17,6 +17,7 @@ use App\Support\Currency;
 use App\Support\IranLocations;
 use App\Support\DocumentCodeGenerator;
 use App\Support\ActivityLogger;
+use App\Support\ReservationSideEffects;
 use App\Services\WarehouseReviewAuditService;
 use App\Services\WarehousePendingRefreshService;
 use App\Services\WarehouseStockService;
@@ -32,6 +33,8 @@ use App\Services\FinancePreinvoiceEditorService;
 use App\Services\PreinvoiceReservationExpiryService;
 use App\Services\PreinvoiceDiscountHydrator;
 use App\Services\PreinvoiceDiscountService;
+use App\Services\ProductDiscountAllocator;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -40,6 +43,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
+use App\Http\Requests\PreinvoiceAutosaveRequest;
 use App\Support\SalesDocumentTotals;
 use App\Support\PageAccessCatalog;
 
@@ -724,28 +728,44 @@ class PreinvoiceController extends Controller
         return $this->submitPreinvoiceFromRequest($request);
     }
 
-    public function autosave(Request $request)
+    public function autosave(PreinvoiceAutosaveRequest $request)
     {
-        abort_unless(auth()->check(), 403);
-        $validated = $this->validateAutosavePayload($request);
+        $validated = $request->validated();
         $order = DB::transaction(function () use ($validated) {
+            // Serialize first saves too: there may not yet be a draft row to lock.
+            auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $order = null;
             if (! empty($validated['draft_uuid'])) {
                 $order = PreinvoiceOrder::query()
                     ->where('uuid', $validated['draft_uuid'])
                     ->where('created_by', auth()->id())
                     ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+                    ->where('is_auto_draft', true)
                     ->lockForUpdate()
                     ->first();
+
+                abort_unless($order, 409, 'پیش‌نویس دیگر قابل ذخیره خودکار نیست؛ نسخه ذخیره‌شده را بازیابی کنید.');
             }
 
-            $order ??= PreinvoiceOrder::query()
-                ->where('created_by', auth()->id())
-                ->where('status', PreinvoiceOrder::STATUS_DRAFT)
-                ->where('is_auto_draft', true)
-                ->latest('auto_saved_at')
-                ->lockForUpdate()
-                ->first();
+            if (! $order) {
+                $tokenAlreadyUsed = PreinvoiceOrder::query()
+                    ->where('created_by', auth()->id())
+                    ->where('draft_token', $validated['reservation_token'])
+                    ->exists();
+                abort_if($tokenAlreadyUsed, 409, 'این فرم قبلاً ذخیره شده است؛ قبل از ادامه نسخه سرور را بازیابی کنید.');
+            } else {
+                $order->load('items');
+                abort_unless(hash_equals($this->autosaveVersion($order), (string) ($validated['base_version'] ?? '')), 409,
+                    'نسخه جدیدتری از پیش‌نویس ذخیره شده است؛ برای جلوگیری از حذف اطلاعات، ابتدا آن را بازیابی کنید.');
+            }
+
+            // Omitted optional fields are not instructions to erase existing data.
+            $suppliedFields = array_keys($validated);
+            $validated += $order ? $order->only([
+                'customer_id', 'customer_address', 'description', 'payment_terms_note',
+                'is_in_person', 'province_id', 'city_id', 'shipping_id', 'shipping_price',
+                'discount_amount', 'discount_breakdown', 'invoice_discount_type', 'invoice_discount_value',
+            ]) : [];
 
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
@@ -775,6 +795,17 @@ class PreinvoiceController extends Controller
                 'draft_token' => $validated['reservation_token'] ?? null,
             ];
 
+            foreach (['customer_address', 'province_id', 'city_id'] as $field) {
+                if ($order && ! in_array($field, $suppliedFields, true) && ! in_array('shipping_id', $suppliedFields, true)) {
+                    $attrs[$field] = $order->{$field};
+                }
+            }
+
+            $candidateTotal = $this->autosaveCandidateTotal($validated, (int) $attrs['shipping_price']);
+            if ($order) {
+                $this->guardAutosaveSnapshot($order, $validated, $attrs, $candidateTotal);
+            }
+
             if (! $order) {
                 $order = PreinvoiceOrder::create($attrs + [
                     'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
@@ -791,7 +822,89 @@ class PreinvoiceController extends Controller
             return $order->fresh('items.product', 'items.variant');
         });
 
-        return response()->json(['ok' => true, 'uuid' => $order->uuid, 'saved_at' => optional($order->auto_saved_at)->toIso8601String()]);
+        return response()->json(['ok' => true, 'uuid' => $order->uuid, 'version' => $this->autosaveVersion($order), 'saved_at' => optional($order->auto_saved_at)->toIso8601String()]);
+    }
+
+    private function autosaveVersion(PreinvoiceOrder $order): string
+    {
+        $order->loadMissing('items');
+
+        // Include row identities as well as timestamps: updated_at has second precision.
+        return hash('sha256', json_encode([
+            $order->getAttributes(),
+            $order->items->map(fn ($item) => $item->getAttributes())->all(),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private function autosaveCandidateTotal(array $payload, int $shipping): int
+    {
+        $items = collect($payload['products'])->map(fn ($row, $index) => (object) [
+            'id' => $index + 1,
+            'product_id' => (int) $row['id'],
+            'quantity' => (int) $row['quantity'],
+            'price' => (int) $row['price'],
+        ]);
+        $breakdown = $this->decodeDiscountBreakdown($payload['discount_breakdown'] ?? null) ?? [];
+
+        try {
+            SalesDocumentTotals::calculate($items);
+            $allocation = app(ProductDiscountAllocator::class)->allocate($items, $breakdown['groups'] ?? []);
+            foreach ($items as $item) {
+                $item->line_discount_amount = $allocation['lines'][$item->id] ?? 0;
+            }
+            $base = SalesDocumentTotals::calculate($items)['subtotal_after_product_discount'];
+            $type = $breakdown['order_discount_type'] ?? $payload['invoice_discount_type'] ?? 'amount';
+            $value = max(0, (int) ($breakdown['order_discount_value'] ?? $payload['invoice_discount_value'] ?? 0));
+            $discount = $type === 'percent' ? (int) floor($base * min($value, 100) / 100) : min($value, $base);
+
+            return (int) SalesDocumentTotals::calculate($items, $discount, $shipping)['grand_total'];
+        } catch (\DomainException $exception) {
+            throw ValidationException::withMessages(['products' => 'مبلغ اقلام از محدوده مجاز بیشتر است.']);
+        }
+    }
+
+    private function guardAutosaveSnapshot(PreinvoiceOrder $order, array $payload, array $attrs, int $total): void
+    {
+        $incoming = collect($payload['products'])->keyBy('variety_id');
+        $reduced = $incoming->count() < $order->items->count() || $total < (int) $order->total_price;
+
+        foreach ($order->items->groupBy('variant_id') as $variantId => $items) {
+            $row = $incoming->get($variantId);
+            if (! $row || (int) $row['quantity'] < (int) $items->sum('quantity') || (int) $row['price'] < (int) $items->max('price')) {
+                $reduced = true;
+            }
+        }
+        foreach (['customer_id', 'customer_name', 'customer_mobile', 'customer_address', 'province_id', 'city_id', 'description', 'payment_terms_note'] as $field) {
+            $old = trim((string) $order->{$field});
+            $new = trim((string) ($attrs[$field] ?? ''));
+            if ($old !== '' && ($new === '' || mb_strlen($new) < mb_strlen($old) || (str_ends_with($field, '_id') && $old !== $new))) {
+                $reduced = true;
+            }
+        }
+
+        if (! $reduced) {
+            return;
+        }
+
+        $confirmationPayload = $payload;
+        unset($confirmationPayload['action'], $confirmationPayload['confirmation_token']);
+        ksort($confirmationPayload);
+        // The confirmation cannot authorize another payload, owner, or snapshot version.
+        $token = hash_hmac('sha256', json_encode([
+            auth()->id(), $this->autosaveVersion($order), $confirmationPayload,
+        ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+
+        if (($payload['action'] ?? 'autosave') === 'confirm_changes'
+            && hash_equals($token, (string) ($payload['confirmation_token'] ?? ''))) {
+            return;
+        }
+
+        throw new HttpResponseException(response()->json([
+            'ok' => false,
+            'code' => 'snapshot_reduction',
+            'message' => 'اطلاعات ارسالی از پیش‌نویس قبلی کمتر است؛ نسخه قبلی حفظ شد. کاهش نیاز به تأیید صریح دارد.',
+            'confirmation_token' => $token,
+        ], 422));
     }
 
     public function latestAutosave()
@@ -811,6 +924,7 @@ class PreinvoiceController extends Controller
 
         return response()->json(['ok' => true, 'draft' => [
             'uuid' => $order->uuid,
+            'version' => $this->autosaveVersion($order),
             'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
             'is_in_person' => (bool) $order->is_in_person,
             'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],
@@ -870,6 +984,7 @@ class PreinvoiceController extends Controller
         $validated = $this->validateDraftPayload($request);
 
         $reservationMeta = DB::transaction(function () use ($validated) {
+            auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
@@ -1037,6 +1152,7 @@ class PreinvoiceController extends Controller
         $validated = $this->validateDraftPayload($request, $isSubmit, $order);
 
         $reservationMeta = DB::transaction(function () use ($order, $validated, $isSubmit) {
+            auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $order = PreinvoiceOrder::query()
                 ->with(['items', 'invoice.items'])
                 ->whereKey($order->id)
@@ -1071,7 +1187,7 @@ class PreinvoiceController extends Controller
             ])->all();
 
             $stockLocked = $this->hasActiveFreeze($order);
-            if ($isSubmit && ($stockLocked || ! $order->invoice)) {
+            if ($isSubmit && $stockLocked) {
                 $this->assertCentralStockForPositiveDeltas($oldItems, $newItems);
             }
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
@@ -1357,50 +1473,6 @@ class PreinvoiceController extends Controller
 
         if ($checkCurrentStock) {
             $this->validateDraftItemsBusinessRules($validated['products'] ?? [], $validated['reservation_token'] ?? null);
-        }
-
-        return $validated;
-    }
-
-    private function validateAutosavePayload(Request $request): array
-    {
-        $validated = $request->validate([
-            'draft_uuid' => 'nullable|string',
-            'reservation_token' => 'nullable|uuid',
-            'customer_id' => 'nullable|integer|exists:customers,id',
-            'is_in_person' => 'nullable|boolean',
-            'customer_name' => 'nullable|string|max:255',
-            'customer_mobile' => 'nullable|string|max:20',
-            'customer_address' => 'nullable|string|max:1000',
-            'description' => 'nullable|string|max:2000',
-            'payment_terms_note' => 'nullable|string|max:2000',
-            'province_id' => 'nullable|integer',
-            'city_id' => 'nullable|integer',
-            'shipping_id' => 'nullable|integer|exists:shipping_methods,id',
-            'shipping_price' => 'nullable|integer|min:0',
-            'discount_amount' => 'nullable|integer|min:0',
-            'invoice_discount_type' => 'nullable|in:amount,percent,none',
-            'invoice_discount_value' => 'nullable|integer|min:0',
-            'products' => 'nullable|array',
-            'products.*.id' => 'required_with:products|integer|exists:products,id',
-            'products.*.variety_id' => ['required_with:products', 'integer', 'exists:product_variants,id'],
-            'products.*.quantity' => 'required_with:products|integer|min:0',
-            'products.*.price' => 'nullable|integer|min:0',
-            'products.*.line_discount_amount' => 'nullable|integer|min:0',
-            'discount_breakdown' => 'nullable|string',
-        ]);
-
-        $validated['products'] = collect($validated['products'] ?? [])
-            ->filter(fn ($row) => (int) ($row['quantity'] ?? 0) > 0)
-            ->values()
-            ->all();
-
-        foreach ($validated['products'] as $index => $productRow) {
-            $productId = (int) $productRow['id'];
-            $variantId = (int) $productRow['variety_id'];
-            if (! ProductVariant::query()->whereKey($variantId)->where('product_id', $productId)->exists()) {
-                throw ValidationException::withMessages(["products.{$index}.variety_id" => 'تنوع انتخابی برای این کالا معتبر نیست.']);
-            }
         }
 
         return $validated;
@@ -2125,65 +2197,69 @@ class PreinvoiceController extends Controller
 
     private function reserveStockForItem(int $productId, int $variantId, int $quantity): void
     {
-        if ($quantity <= 0) {
-            return;
-        }
-
-        $variant = ProductVariant::query()
-            ->with('product:id,name')
-            ->whereKey($variantId)
-            ->where('is_active', true)
-            ->where('sales_enabled', true)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        $centralStock = WarehouseStock::query()
-            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-            ->where('product_id', $productId)
-            ->where('product_variant_id', $variantId)
-            ->lockForUpdate()
-            ->first();
-
-        $available = max(0, (int) ($centralStock?->quantity ?? $variant->stock));
-        if ($available < $quantity) {
-            $productName = (string) ($variant->product?->name ?? 'نامشخص');
-            $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
-            throw ValidationException::withMessages([
-                'products' => "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$productName} | تنوع: {$variantName} | تعداد درخواستی: {$quantity} | موجودی قابل فروش: {$available}",
-            ]);
-        }
-
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$quantity, $variantId);
-
-        $variant->reserved = (int) $variant->reserved + $quantity;
-        $variant->save();
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = (int) $product->reserved + $quantity;
-            $product->save();
-        }
+        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {    
+            if ($quantity <= 0) {
+                return;
+            }
+    
+            $variant = ProductVariant::query()
+                ->with('product:id,name')
+                ->whereKey($variantId)
+                ->where('is_active', true)
+                ->where('sales_enabled', true)
+                ->lockForUpdate()
+                ->firstOrFail();
+    
+            $centralStock = WarehouseStock::query()
+                ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+                ->where('product_id', $productId)
+                ->where('product_variant_id', $variantId)
+                ->lockForUpdate()
+                ->first();
+    
+            $available = max(0, (int) ($centralStock?->quantity ?? $variant->stock));
+            if ($available < $quantity) {
+                $productName = (string) ($variant->product?->name ?? 'نامشخص');
+                $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
+                throw ValidationException::withMessages([
+                    'products' => "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$productName} | تنوع: {$variantName} | تعداد درخواستی: {$quantity} | موجودی قابل فروش: {$available}",
+                ]);
+            }
+    
+            WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$quantity, $variantId);
+    
+            $variant->reserved = (int) $variant->reserved + $quantity;
+            $variant->save();
+    
+            $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
+            if ($product) {
+                $product->reserved = (int) $product->reserved + $quantity;
+                $product->save();
+            }
+        });
     }
 
     private function releaseStockForItem(int $productId, int $variantId, int $quantity): void
     {
-        if ($quantity <= 0) {
-            return;
-        }
-
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-        if ($variant) {
-            $variant->reserved = max(0, (int) $variant->reserved - $quantity);
-            $variant->save();
-        }
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = max(0, (int) $product->reserved - $quantity);
-            $product->save();
-        }
-
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
+        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {    
+            if ($quantity <= 0) {
+                return;
+            }
+    
+            $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
+            if ($variant) {
+                $variant->reserved = max(0, (int) $variant->reserved - $quantity);
+                $variant->save();
+            }
+    
+            $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
+            if ($product) {
+                $product->reserved = max(0, (int) $product->reserved - $quantity);
+                $product->save();
+            }
+    
+            WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
+        });
     }
 
     private function reservationExpirationForCustomer(?Customer $customer): array

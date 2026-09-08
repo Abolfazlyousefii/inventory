@@ -1727,7 +1727,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         return 'نشست کاربری شما تغییر کرده یا منقضی شده است. اطلاعات فرم محفوظ است؛ صفحه را دوباره بارگذاری و وارد حساب شوید.';
     }
 
-    async function fetchJson(url, options = {}) {
+    async function fetchJson(url, options = {}, allowErrorResponse = false) {
         const headers = new Headers(options.headers || {});
         headers.set('Accept', 'application/json');
         if (options.method && options.method.toUpperCase() !== 'GET') {
@@ -1743,7 +1743,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             throw new SessionChangedError(sessionChangedMessage());
         }
         const json = await response.json();
-        if (!response.ok || json?.ok === false) {
+        if (!allowErrorResponse && (!response.ok || json?.ok === false)) {
             throw new Error(Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در ارتباط با سرور.');
         }
         return {response, json};
@@ -1802,6 +1802,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     const BROWSER_SESSION_KEY = 'aria_preinvoice_browser_session_v1';
     let isSyncingReservation = false;
     let currentAutosaveUuid = null;
+    let currentAutosaveVersion = null;
+    let autosaveQueue = Promise.resolve();
+    let confirmedAutosavePayload = null;
+    let autosaveConflict = false;
     let autosaveTimer = null;
     let autosaveDirty = false;
     let heartbeatTimer = null;
@@ -1816,7 +1820,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     function ensureReservationToken() {
-        if (IS_EDIT) return '';
+        if (IS_EDIT) {
+            const input = document.getElementById('reservation_token');
+            if (!input.value) input.value = window.crypto?.randomUUID ? window.crypto.randomUUID() : cryptoRandomUuidFallback();
+            return input.value;
+        }
         let token = normalize(document.getElementById('reservation_token')?.value);
         if (!token) token = normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
         if (!token) token = window.crypto?.randomUUID ? window.crypto.randomUUID() : cryptoRandomUuidFallback();
@@ -1899,17 +1907,26 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             : 'رزرو موقت کالاها ۱ ساعت اعتبار دارد. بعد از ثبت نهایی، زمان رزرو طبق سطح مشتری شروع می‌شود.';
     }
 
-    async function syncDraftReservation(sourceGroups = groupedSelections) {
-        if (IS_EDIT) return { ok: true };
+    let reservationSyncQueue = Promise.resolve();
+    function syncDraftReservation(sourceGroups = groupedSelections) {
+        const snapshot = JSON.parse(JSON.stringify(sourceGroups));
+        const pending = reservationSyncQueue.then(() => sendDraftReservation(snapshot));
+        reservationSyncQueue = pending.catch(() => {});
+        return pending;
+    }
+
+    async function sendDraftReservation(sourceGroups) {
         const token = ensureReservationToken();
         isSyncingReservation = true;
         try {
             const response = await postReservation(API.reservationsSync, {
                 reservation_token: token,
                 submission_token: token,
+                preinvoice_uuid: IS_EDIT ? EDIT_ORDER_UUID : null,
                 is_in_person: currentIsInPerson(),
                 items: reservationItemsFromGroups(sourceGroups)
             });
+            if (response?.data?.skipped) throw new Error('این رزرو قبلاً به سند متصل شده است؛ صفحه سند را دوباره باز کنید.');
             productCache.clear();
             return response;
         } finally {
@@ -2146,6 +2163,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     function collectLocalDraftPayload() {
         return {
             version: LOCAL_DRAFT_VERSION,
+            autosave_uuid: currentAutosaveUuid,
+            autosave_version: currentAutosaveVersion,
             saved_at: new Date().toISOString(),
             reservation_token: ensureReservationToken(),
             is_in_person: currentIsInPerson(),
@@ -2180,14 +2199,59 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 });
             });
         });
-        return rows.filter(row => row.id > 0 && row.variety_id > 0 && row.quantity > 0);
+        // Never turn malformed selections into a smaller, apparently valid snapshot.
+        if (rows.some(row => !Number.isSafeInteger(row.id) || row.id <= 0 ||
+            !Number.isSafeInteger(row.variety_id) || row.variety_id <= 0 ||
+            !Number.isSafeInteger(row.quantity) || row.quantity <= 0 ||
+            !Number.isSafeInteger(row.price) || row.price < 0)) {
+            throw new Error('اطلاعات اقلام ناقص است؛ پیش‌نویس قبلی حفظ شد.');
+        }
+        return rows;
     }
 
-    async function saveDbAutosaveNow() {
-        if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically || !hasAnyFormData()) return;
+    function collectAutosavePayload() {
+        return {
+            reservation_token: ensureReservationToken(),
+            customer_id: document.getElementById('customer_id')?.value || null,
+            customer_name: document.getElementById('customer_name')?.value || '',
+            customer_mobile: document.getElementById('customer_mobile')?.value || '',
+            payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
+            is_in_person: currentIsInPerson() ? 1 : 0,
+            discount_amount: toInt(document.getElementById('discount')?.value || 0),
+            invoice_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
+            invoice_discount_value: Number(document.getElementById('orderDiscountValue')?.value || 0),
+            discount_breakdown: document.getElementById('discount_breakdown')?.value || '',
+            products: collectProductsForAutosave()
+        };
+    }
+
+    function confirmAutosaveChanges() {
+        // Called only by explicit confirmation buttons, never by a timer or hydration.
+        confirmedAutosavePayload = JSON.stringify(collectAutosavePayload());
+    }
+
+    function saveDbAutosaveNow() {
+        const pending = autosaveQueue.then(persistDbAutosave);
+        autosaveQueue = pending.catch(() => {});
+        return pending;
+    }
+
+    async function persistDbAutosave() {
+        if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically ||
+            (!hasAnyFormData() && !confirmedAutosavePayload)) return;
+        if (autosaveConflict) throw new Error('نسخه جدیدتر پیش‌نویس را بازیابی کنید؛ اطلاعات این فرم روی آن نوشته نشد.');
+        const snapshot = collectAutosavePayload();
+        const signature = JSON.stringify(snapshot);
+        const explicitlyConfirmed = signature === confirmedAutosavePayload;
+        const payload = {
+            ...snapshot,
+            draft_uuid: currentAutosaveUuid,
+            base_version: currentAutosaveVersion,
+            action: explicitlyConfirmed ? 'confirm_changes' : 'autosave'
+        };
         autosaveDirty = false;
         updateLocalDraftStatus('در حال ذخیره...', false);
-        const {response: res, json} = await fetchJson(API.autosave, {
+        const send = () => fetchJson(API.autosave, {
             credentials: 'same-origin',
             method: 'POST',
             headers: {
@@ -2195,25 +2259,37 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
             },
-            body: JSON.stringify({
-                draft_uuid: currentAutosaveUuid,
-                reservation_token: ensureReservationToken(),
-                customer_id: document.getElementById('customer_id')?.value || null,
-                customer_name: document.getElementById('customer_name')?.value || '',
-                customer_mobile: document.getElementById('customer_mobile')?.value || '',
-                payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
-                is_in_person: currentIsInPerson() ? 1 : 0,
-                discount_amount: toInt(document.getElementById('discount')?.value || 0),
-                invoice_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
-                invoice_discount_value: Number(document.getElementById('orderDiscountValue')?.value || 0),
-                discount_breakdown: document.getElementById('discount_breakdown')?.value || '',
-                products: collectProductsForAutosave()
-            })
-        });
-        if (!res.ok || json?.ok === false) throw new Error(json?.message || 'خطا در ذخیره خودکار');
+            body: JSON.stringify(payload)
+        }, true);
+        let result;
+        try {
+            result = await send();
+            if (result.json?.code === 'snapshot_reduction' && explicitlyConfirmed &&
+                signature === confirmedAutosavePayload && signature === JSON.stringify(collectAutosavePayload())) {
+                payload.confirmation_token = result.json.confirmation_token;
+                result = await send();
+            }
+        } catch (error) {
+            autosaveDirty = true;
+            throw error;
+        }
+        const {response: res, json} = result;
+        if (!res.ok || json?.ok === false) {
+            autosaveConflict = res.status === 409;
+            autosaveDirty = res.status >= 500;
+            throw new Error(json?.message || 'ذخیره انجام نشد؛ پیش‌نویس قبلی حفظ شد.');
+        }
         currentAutosaveUuid = json.uuid || currentAutosaveUuid;
+        currentAutosaveVersion = json.version;
+        if (confirmedAutosavePayload === signature) confirmedAutosavePayload = null;
         const autosaveInput = document.getElementById('autosave_uuid');
         if (autosaveInput) autosaveInput.value = currentAutosaveUuid || '';
+        const local = getLocalDraft();
+        if (local && local.reservation_token === snapshot.reservation_token) {
+            local.autosave_uuid = currentAutosaveUuid;
+            local.autosave_version = currentAutosaveVersion;
+            try { localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(local)); } catch (e) {}
+        }
         const date = json.saved_at ? new Date(json.saved_at) : new Date();
         updateLocalDraftStatus('ذخیره شد در ' + date.toLocaleTimeString('fa-IR', {hour: '2-digit', minute: '2-digit'}), true);
     }
@@ -2223,7 +2299,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         autosaveDirty = true;
         clearTimeout(autosaveTimer);
         autosaveTimer = setTimeout(() => {
-            saveDbAutosaveNow().catch(() => updateLocalDraftStatus('خطا در ذخیره خودکار', false));
+            saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
         }, delay);
     }
 
@@ -2234,7 +2310,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         // اگر فرم خالی بود، پیش‌نویس قبلی را پاک نمی‌کنیم.
         // فقط ذخیره انجام نمی‌دهیم.
         // حذف پیش‌نویس فقط با دکمه حذف یا بعد از ثبت موفق انجام می‌شود.
-        if (!hasAnyFormData()) {
+        if (!hasAnyFormData() && !confirmedAutosavePayload) {
             updateLocalDraftStatus('ذخیره خودکار فعال', false);
             return;
         }
@@ -2242,11 +2318,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         try {
             localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(collectLocalDraftPayload()));
             scheduleDbAutosave();
-            updateLocalDraftStatus('ذخیره شد', true);
-
-            setTimeout(() => {
-                updateLocalDraftStatus('ذخیره خودکار فعال', false);
-            }, 1600);
+            updateLocalDraftStatus('ذخیره محلی انجام شد؛ در انتظار ذخیره سرور', false);
         } catch (e) {
             updateLocalDraftStatus('خطا در ذخیره محلی', false);
         }
@@ -2290,7 +2362,13 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
     async function applyLocalDraft(draft) {
         if (!draft) return;
+        await autosaveQueue;
         isHydratingLocalDraft = true;
+        currentAutosaveUuid = draft.autosave_uuid || null;
+        currentAutosaveVersion = draft.autosave_version || null;
+        autosaveConflict = false;
+        confirmedAutosavePayload = null;
+        document.getElementById('autosave_uuid').value = currentAutosaveUuid || '';
 
         clearVisibleFormOnly();
 
@@ -2327,7 +2405,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             await syncDraftReservation(groupedSelections);
         } catch (e) {
             alert(e.message || 'خطا در فریز موجودی پیش‌نویس.');
-            groupedSelections = {};
         }
         renderGroupSummary();
         updateTotal();
@@ -2341,8 +2418,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
     async function applyDbAutosaveDraft(draft) {
         if (!draft) return;
+        await autosaveQueue;
         isHydratingLocalDraft = true;
         currentAutosaveUuid = draft.uuid || null;
+        currentAutosaveVersion = draft.version || null;
+        autosaveConflict = false;
+        confirmedAutosavePayload = null;
         const autosaveInput = document.getElementById('autosave_uuid');
         if (autosaveInput) autosaveInput.value = currentAutosaveUuid || '';
         clearVisibleFormOnly();
@@ -2363,10 +2444,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             const varieties = getProductVarieties(product);
             const v = varieties.find(item => draftVariantId === variantId(item));
             if (!groupedSelections[productId]) {
+                const discount = (draft.discount_breakdown?.groups || []).find(group => Number(group.product_id) === productId);
                 groupedSelections[productId] = {
                     product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '' },
-                    discount_type: 'amount',
-                    discount_value: 0,
+                    discount_type: discount?.discount_type || 'amount',
+                    discount_value: Number(discount?.discount_value || 0),
                     items: []
                 };
             }
@@ -2374,7 +2456,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             groupedSelections[productId].items.push({
                 variant_id: draftVariantId,
                 quantity: Number(row.quantity || 0),
-                price: Number(row.price || (v ? variantPrice(v, product) : 0)),
+                price: Number(row.price ?? (v ? variantPrice(v, product) : 0)),
+                line_discount_amount: Number(row.line_discount_amount || 0),
                 model: v ? variantModel(v) : '—',
                 design: v ? variantDesign(v) : '—',
                 variant: v ? variantName(v) : '—',
@@ -2409,7 +2492,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     function bindLocalDraftEvents() {
-        document.getElementById('loadLocalDraftBtn')?.addEventListener('click', function() {
+        document.getElementById('loadLocalDraftBtn').onclick = function() {
             const draft = getLocalDraft();
             if (!draft) {
                 alert('پیش‌نویسی برای لود شدن پیدا نشد.');
@@ -2417,12 +2500,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 return;
             }
             applyLocalDraft(draft);
-        });
+        };
 
-        document.getElementById('discardLocalDraftBtn')?.addEventListener('click', async function() {
+        document.getElementById('discardLocalDraftBtn').onclick = async function() {
             if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
             await removeLocalDraft(true, true);
-        });
+        };
 
         document.getElementById('clearLocalDraftTopBtn')?.addEventListener('click', async function() {
             if (!confirm('پیش‌نویس محلی و فرم فعلی پاک شود؟')) return;
@@ -2467,7 +2550,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         window.addEventListener('beforeunload', releaseTokenWithBeacon);
         startReservationHeartbeat();
         setInterval(() => {
-            if (autosaveDirty) saveDbAutosaveNow().catch(() => updateLocalDraftStatus('خطا در ذخیره خودکار', false));
+            if (autosaveDirty) saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
         }, 30000);
     }
 
@@ -2977,6 +3060,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
         renderGroupSummary();
         updateTotal();
+        confirmAutosaveChanges();
         scheduleLocalDraftSave();
         groupPickerModal.hide();
         document.getElementById('motherCodeInput').value = '';
@@ -3002,6 +3086,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
         renderGroupSummary();
         updateTotal();
+        confirmAutosaveChanges();
         scheduleLocalDraftSave();
     }
 
@@ -3305,6 +3390,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         btn.disabled = true;
         saveLocalDraftNow();
         try {
+            confirmAutosaveChanges();
             await saveDbAutosaveNow();
             await refreshCsrfToken();
         } catch (err) {
@@ -3383,6 +3469,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             ensureReservationToken();
             bindLocalDraftEvents();
             await loadLatestDbAutosaveBanner();
+        } else {
+            ensureReservationToken();
+            window.addEventListener('pagehide', releaseTokenWithBeacon);
+            window.addEventListener('beforeunload', releaseTokenWithBeacon);
+            startReservationHeartbeat();
         }
 
         initCustomerSearch();

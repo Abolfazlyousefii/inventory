@@ -5,10 +5,14 @@ namespace App\Services;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\PreinvoiceOrder;
+use App\Models\User;
 use App\Support\ActivityLogger;
+use App\Support\ReservationSideEffects;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -16,11 +20,33 @@ class PreinvoiceDraftReservationService
 {
     public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
 
-    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false): array
+    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null): array
     {
         $desired = $this->normalizeReservationItems($items);
 
-        return DB::transaction(function () use ($token, $userId, $desired, $isInPerson) {
+        return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid) {
+            // A stable row exists even for the first request for an empty token.
+            $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
+            $tokenRows = PreinvoiceDraftReservation::query()->where('token', $token)->lockForUpdate()->get();
+            $protected = $tokenRows->first(fn ($row) => $row->preinvoice_order_id !== null
+                || $row->converted_at !== null || $row->reservation_scope === 'official'
+                || (int) $row->user_id !== $userId);
+            if ($protected) {
+                Log::warning('RESERVATION_SYNC_SKIPPED', [
+                    'reason' => 'protected_or_foreign_token', 'reservation_id' => $protected->id,
+                    'preinvoice_order_id' => $protected->preinvoice_order_id, 'actor_id' => $userId,
+                ]);
+                return ['reserved' => [], 'skipped' => true, 'reason' => 'protected_or_foreign_token'];
+            }
+
+            if ($preinvoiceUuid !== null) {
+                $order = PreinvoiceOrder::query()->where('uuid', $preinvoiceUuid)->lockForUpdate()->firstOrFail();
+                abort_unless(app(SalesDocumentAccessService::class)->canSellerEditPreinvoiceItems($order, $user), 403);
+                // Editable documents normally have no active official stock. Never reserve it twice.
+                abort_if(PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $order->id)->whereNull('released_at')->whereNull('release_reason')
+                    ->where('reservation_scope', 'official')->exists(), 409, 'رزرو رسمی سند باید پیش از ویرایش بررسی شود.');
+            }
+
             $this->releaseExpiredDraftReservations($token, $userId);
 
             $existingRows = $this->activeRowsQuery($token, $userId)
@@ -33,12 +59,13 @@ class PreinvoiceDraftReservationService
             }
 
             $allKeys = array_unique(array_merge(array_keys($existing), array_keys($desired)));
+            sort($allKeys, SORT_STRING);
             $expiresAt = $isInPerson ? null : now()->addHour();
             $reservationScope = $isInPerson ? 'temporary_in_person' : 'temporary_online';
 
             foreach ($allKeys as $key) {
                 [$productId, $variantId] = array_map('intval', explode(':', $key));
-                $oldQty = (int) ($existing[$key]?->quantity ?? 0);
+                $oldQty = (int) (($existing[$key] ?? null)?->quantity ?? 0);
                 $newQty = (int) ($desired[$key]['quantity'] ?? 0);
 
                 if ($newQty > 0) {
@@ -104,7 +131,8 @@ class PreinvoiceDraftReservationService
 
     public function releaseTokenReservations(string $token, int $userId, string $reason, ?string $note = null): array
     {
-        return DB::transaction(function () use ($token, $userId, $reason, $note) {
+        return ReservationSideEffects::transaction(function () use ($token, $userId, $reason, $note) {
+            User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
             $rows = $this->activeRowsQuery($token, $userId)
                 ->lockForUpdate()
                 ->get();
@@ -170,7 +198,7 @@ class PreinvoiceDraftReservationService
             $warning = null;
 
             try {
-                $releasedReservation = DB::transaction(function () use ($reservationId, $onlineMinutes, $inPersonMinutes, &$warning) {
+                $releasedReservation = ReservationSideEffects::transaction(function () use ($reservationId, $onlineMinutes, $inPersonMinutes, &$warning) {
                     $row = PreinvoiceDraftReservation::query()
                         ->whereKey($reservationId)
                         ->lockForUpdate()
@@ -282,7 +310,7 @@ class PreinvoiceDraftReservationService
 
     public function releaseExpiredDraftReservations(?string $token = null, ?int $userId = null): void
     {
-        DB::transaction(function () use ($token, $userId) {
+        ReservationSideEffects::transaction(function () use ($token, $userId) {
             $expiredRows = PreinvoiceDraftReservation::query()
                 ->whereNull('converted_at')
                 ->whereNull('preinvoice_order_id')
@@ -310,6 +338,7 @@ class PreinvoiceDraftReservationService
             ->where('user_id', $userId)
             ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')
+            ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
             ->whereNull('released_at')
             ->whereNull('release_reason');
     }

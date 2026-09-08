@@ -254,7 +254,8 @@ class PreinvoiceApiController extends Controller
         $data = $request->validate([
             'reservation_token' => ['required', 'uuid'],
             'submission_token' => ['required', 'uuid', 'same:reservation_token'],
-            'items' => ['required', 'array', 'max:500'],
+            'items' => ['present', 'array', 'max:500'],
+            'preinvoice_uuid' => ['nullable', 'string', 'max:255'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id,is_sellable,1'],
             'items.*.variant_id' => [
                 'required',
@@ -270,7 +271,8 @@ class PreinvoiceApiController extends Controller
             (string) $data['reservation_token'],
             (int) auth()->id(),
             $data['items'] ?? [],
-            (bool) ($data['is_in_person'] ?? false)
+            (bool) ($data['is_in_person'] ?? false),
+            $data['preinvoice_uuid'] ?? null,
         );
 
         return response()->json([
@@ -300,197 +302,28 @@ class PreinvoiceApiController extends Controller
         ]);
     }
 
-    private function syncReservationRows(string $token, int $userId, array $items): array
-    {
-        $desired = $this->normalizeReservationItems($items);
-
-        return DB::transaction(function () use ($token, $userId, $desired) {
-            $this->releaseExpiredDraftReservations();
-
-            $existingRows = PreinvoiceDraftReservation::query()
-                ->where('token', $token)
-                ->where('user_id', $userId)
-                ->whereNull('converted_at')
-                ->lockForUpdate()
-                ->get();
-
-            $existing = [];
-            foreach ($existingRows as $row) {
-                $existing[$this->reservationKey((int) $row->product_id, (int) $row->variant_id)] = $row;
-            }
-
-            $allKeys = array_unique(array_merge(array_keys($existing), array_keys($desired)));
-            $expiresAt = now()->addHours(4);
-
-            foreach ($allKeys as $key) {
-                [$productId, $variantId] = array_map('intval', explode(':', $key));
-                $oldQty = (int) ($existing[$key]?->quantity ?? 0);
-                $newQty = (int) ($desired[$key]['quantity'] ?? 0);
-
-                if ($newQty > 0) {
-                    $variantMatchesProduct = ProductVariant::query()
-                        ->whereKey($variantId)
-                        ->where('product_id', $productId)
-                        ->where('is_active', true)
-                        ->where('sales_enabled', true)
-                        ->exists();
-
-                    if (! $variantMatchesProduct) {
-                        throw ValidationException::withMessages([
-                            'items' => 'تنوع انتخابی برای کالا معتبر یا فعال نیست.',
-                        ]);
-                    }
-                }
-
-                $delta = $newQty - $oldQty;
-                if ($delta > 0) {
-                    $this->reserveVariantDelta($productId, $variantId, $delta);
-                } elseif ($delta < 0) {
-                    $this->releaseVariantDelta($productId, $variantId, abs($delta));
-                }
-
-                if ($newQty > 0) {
-                    PreinvoiceDraftReservation::query()->updateOrCreate(
-                        [
-                            'token' => $token,
-                            'product_id' => $productId,
-                            'variant_id' => $variantId,
-                        ],
-                        [
-                            'user_id' => $userId,
-                            'quantity' => $newQty,
-                            'expires_at' => $expiresAt,
-                            'converted_at' => null,
-                            'preinvoice_order_id' => null,
-                        ]
-                    );
-                } elseif (isset($existing[$key])) {
-                    $existing[$key]->delete();
-                }
-            }
-
-            return [
-                'reserved' => array_values($desired),
-                'expires_at' => $expiresAt->toIso8601String(),
-            ];
-        });
-    }
-
-    private function normalizeReservationItems(array $items): array
-    {
-        $normalized = [];
-
-        foreach ($items as $row) {
-            $productId = (int) ($row['product_id'] ?? $row['id'] ?? 0);
-            $variantId = (int) ($row['variant_id'] ?? $row['variety_id'] ?? 0);
-            $quantity = max(0, (int) ($row['quantity'] ?? 0));
-            if ($productId <= 0 || $variantId <= 0 || $quantity <= 0) {
-                continue;
-            }
-
-            $key = $this->reservationKey($productId, $variantId);
-            if (! isset($normalized[$key])) {
-                $normalized[$key] = [
-                    'product_id' => $productId,
-                    'variant_id' => $variantId,
-                    'quantity' => 0,
-                ];
-            }
-            $normalized[$key]['quantity'] += $quantity;
-        }
-
-        return $normalized;
-    }
-
     private function activeReservationQuantities(string $token): array
     {
         if ($token === '' || ! auth()->check()) {
             return [];
         }
 
-        $this->releaseExpiredDraftReservations();
+        $this->draftReservationService->releaseExpiredDraftReservations($token, (int) auth()->id());
 
         return PreinvoiceDraftReservation::query()
             ->where('token', $token)
             ->where('user_id', auth()->id())
             ->whereNull('converted_at')
+            ->whereNull('preinvoice_order_id')
+            ->whereIn('reservation_scope', ['temporary_online', 'temporary_in_person'])
+            ->whereNull('released_at')
+            ->whereNull('release_reason')
             ->where(function ($query) {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })
             ->pluck('quantity', 'variant_id')
             ->mapWithKeys(fn ($quantity, $variantId) => [(int) $variantId => (int) $quantity])
             ->all();
-    }
-
-    private function reserveVariantDelta(int $productId, int $variantId, int $delta): void
-    {
-        if ($delta <= 0) {
-            return;
-        }
-
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        $available = max(0, (int) $variant->stock);
-
-        if ($delta > $available) {
-            throw ValidationException::withMessages([
-                'items' => "موجودی قابل فریز برای تنوع انتخابی کافی نیست. موجودی انبار مرکزی: {$available} | درخواست جدید: {$delta}",
-            ]);
-        }
-
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
-
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        $variant->reserved = (int) $variant->reserved + $delta;
-        $variant->save();
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = (int) $product->reserved + $delta;
-            $product->save();
-        }
-    }
-
-    private function releaseVariantDelta(int $productId, int $variantId, int $delta): void
-    {
-        if ($delta <= 0) {
-            return;
-        }
-
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-        if ($variant) {
-            $variant->reserved = max(0, (int) $variant->reserved - $delta);
-            $variant->save();
-        }
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = max(0, (int) $product->reserved - $delta);
-            $product->save();
-        }
-
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $delta, $variantId);
-    }
-
-    private function releaseExpiredDraftReservations(): void
-    {
-        DB::transaction(function () {
-            $expiredRows = PreinvoiceDraftReservation::query()
-                ->whereNull('converted_at')
-                ->whereNotNull('expires_at')
-                ->where('expires_at', '<=', now())
-                ->lockForUpdate()
-                ->get();
-
-            foreach ($expiredRows as $row) {
-                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity);
-                $row->delete();
-            }
-        });
-    }
-
-    private function reservationKey(int $productId, int $variantId): string
-    {
-        return $productId.':'.$variantId;
     }
 
     public function area()
