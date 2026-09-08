@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\RoutePermissionMiddleware;
+use App\Models\PreinvoiceDraftReservation;
 use App\Models\PreinvoiceOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -186,4 +187,87 @@ it('recovers the same items and version after a refresh and preserves omitted op
     $payload['base_version'] = $latest['version'];
     $this->postJson(route('preinvoice.autosave'), $payload)->assertOk();
     $this->assertDatabaseHas('preinvoice_orders', ['uuid' => $latest['uuid'], 'payment_terms_note' => $this->payload['payment_terms_note']]);
+});
+
+it('keeps a large discounted draft intact through reservation autosave recovery and final submit', function () {
+    $rows = largePayloadProducts(20);
+    $token = (string) Str::uuid();
+    $discountBreakdown = [
+        'order_discount_type' => 'amount',
+        'order_discount_value' => 5_000,
+        'groups' => [[
+            'product_id' => $rows[0]['product_id'],
+            'discount_type' => 'amount',
+            'discount_value' => 1_000,
+        ]],
+    ];
+
+    $this->postJson(route('preinvoice.api.reservations.sync'), [
+        'reservation_token' => $token,
+        'submission_token' => $token,
+        'items' => collect($rows)->map(fn ($row) => [
+            'product_id' => $row['product_id'],
+            'variant_id' => $row['variant_id'],
+            'quantity' => $row['quantity'],
+        ])->all(),
+    ])->assertOk();
+
+    $autosavePayload = [
+        'reservation_token' => $token,
+        'customer_name' => 'Production UAT customer',
+        'customer_mobile' => '09121112233',
+        'customer_address' => 'Production UAT address',
+        'payment_terms_note' => 'Payment after delivery',
+        'invoice_discount_type' => 'amount',
+        'invoice_discount_value' => 5_000,
+        'discount_breakdown' => $discountBreakdown,
+        'products' => $rows,
+    ];
+    $saved = $this->postJson(route('preinvoice.autosave'), $autosavePayload)
+        ->assertOk()
+        ->json();
+    $draft = PreinvoiceOrder::query()->where('uuid', $saved['uuid'])->firstOrFail();
+
+    expect($draft->items()->count())->toBe(20)
+        ->and((int) $draft->items()->sum('quantity'))->toBe(40)
+        ->and((int) $draft->items()->sum('line_discount_amount'))->toBe(1_000)
+        ->and((int) $draft->invoice_discount_amount)->toBe(5_000)
+        ->and((int) $draft->total_price)->toBe(collect($rows)->sum(fn ($row) => $row['quantity'] * $row['price']) - 6_000)
+        ->and(PreinvoiceDraftReservation::query()->where('token', $token)->whereNull('preinvoice_order_id')->count())->toBe(20)
+        ->and((int) PreinvoiceDraftReservation::query()->where('token', $token)->sum('quantity'))->toBe(40);
+
+    $inventoryBeforeRecovery = autosaveInventoryState();
+    $latest = $this->getJson(route('preinvoice.autosave.latest'))
+        ->assertOk()
+        ->assertJsonCount(20, 'draft.items')
+        ->json('draft');
+
+    expect($latest['customer']['name'])->toBe($autosavePayload['customer_name'])
+        ->and($latest['customer']['mobile'])->toBe($autosavePayload['customer_mobile'])
+        ->and($latest['payment_terms_note'])->toBe($autosavePayload['payment_terms_note'])
+        ->and($latest['discount']['type'])->toBe('amount')
+        ->and($latest['discount']['value'])->toBe(5_000)
+        ->and(collect($latest['items'])->pluck('variant_id')->all())->toBe(collect($rows)->pluck('variant_id')->all())
+        ->and(collect($latest['items'])->pluck('quantity')->all())->toBe(collect($rows)->pluck('quantity')->all())
+        ->and(collect($latest['items'])->pluck('price')->all())->toBe(collect($rows)->pluck('price')->all())
+        ->and(autosaveInventoryState())->toBe($inventoryBeforeRecovery);
+
+    $submitPayload = largePayloadPost($rows, [
+        'reservation_token' => $token,
+        'autosave_uuid' => $draft->uuid,
+        'customer_name' => $autosavePayload['customer_name'],
+        'customer_mobile' => $autosavePayload['customer_mobile'],
+        'customer_address' => $autosavePayload['customer_address'],
+        'payment_terms_note' => $autosavePayload['payment_terms_note'],
+        'discount_breakdown' => json_encode($discountBreakdown, JSON_THROW_ON_ERROR),
+    ]);
+    $this->post(route('preinvoice.draft.save'), $submitPayload)->assertSessionHasNoErrors();
+
+    $submitted = $draft->fresh('items');
+    expect($submitted->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
+        ->and($submitted->is_auto_draft)->toBeFalse()
+        ->and($submitted->items)->toHaveCount(20)
+        ->and((int) $submitted->total_price)->toBe(collect($rows)->sum(fn ($row) => $row['quantity'] * $row['price']) - 6_000)
+        ->and(PreinvoiceDraftReservation::query()->where('token', $token)->where('preinvoice_order_id', $submitted->id)->where('reservation_scope', 'official')->count())->toBe(20)
+        ->and((int) PreinvoiceDraftReservation::query()->where('token', $token)->where('preinvoice_order_id', $submitted->id)->sum('quantity'))->toBe(40);
 });
