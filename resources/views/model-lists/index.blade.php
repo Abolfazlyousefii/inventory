@@ -96,13 +96,13 @@
           @php $accIndex = 0; @endphp
 
           @foreach(($groups ?? []) as $key => $group)
-            @php
-              $accIndex++;
-              $headingId = "heading_{$key}";
-              $collapseId = "collapse_{$key}";
-              $items = $group['items'] ?? collect();
-              $open = $accIndex === 1;
-            @endphp
+		        @php
+			        $accIndex++;
+					$headingId = "heading_{$key}";
+					$collapseId = "collapse_{$key}";
+					$items = $group['items'] ?? collect();
+					$open = false;
+		        @endphp
 
             <div class="accordion-item">
               <h2 class="accordion-header" id="{{ $headingId }}">
@@ -159,7 +159,7 @@
                                 @endif
                               </td>
 
-                              <td class="fw-semibold">{{ $item->model_name }}</td>
+                              <td class="fw-semibold">{{ $item->name ?: $item->model_name }}</td>
 
                               <td>
                                 <span class="badge bg-info-subtle text-dark ml-pill">

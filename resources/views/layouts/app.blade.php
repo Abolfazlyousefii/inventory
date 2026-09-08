@@ -21,14 +21,20 @@
     <title>{{ $documentTitle }}</title>
     @yield('meta')
 
-    <script src="{{ asset('lib/jquery-3.7.1.js') }}"></script>
-    <script src="{{ asset('lib/select2.min.js') }}"></script>
-    <script src="{{ asset('lib/bootstrap.bundle.min.js') }}"></script>
-    <script src="{{ asset('lib/jalalidatepicker.min.js') }}"></script>
+	<script src="{{ asset('lib/jquery-3.7.1.js') }}"></script>
 
-    <link rel="stylesheet" href="{{ asset('lib/bootstrap.rtl.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('lib/select2.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('lib/jalalidatepicker.min.css') }}">
+	<script src="{{ asset('lib/datatables.min.js') }}"></script>
+	<script src="{{ asset('lib/datatables.bootstrap5.min.js') }}"></script>
+
+	<script src="{{ asset('lib/select2.min.js') }}"></script>
+	<script src="{{ asset('lib/bootstrap.bundle.min.js') }}"></script>
+	<script src="{{ asset('lib/jalalidatepicker.min.js') }}"></script>
+
+	<link rel="stylesheet" href="{{ asset('lib/bootstrap.rtl.min.css') }}">
+	<link rel="stylesheet" href="{{ asset('lib/datatables.bootstrap5.min.css') }}">
+
+	<link rel="stylesheet" href="{{ asset('lib/select2.min.css') }}">
+	<link rel="stylesheet" href="{{ asset('lib/jalalidatepicker.min.css') }}">
     <link rel="stylesheet" href="{{ asset('css/Vazirmatn.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin-theme.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin.css') }}">

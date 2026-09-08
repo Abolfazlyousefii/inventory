@@ -128,6 +128,7 @@ class ModelListController extends Controller
 
             ModelList::create([
                 'brand' => $brand,
+                'name' => $this->buildDisplayName($brand, $modelName),
                 'model_name' => $modelName,
                 'code' => $this->nextCode3(),
             ]);
@@ -180,6 +181,7 @@ class ModelListController extends Controller
 
             $result['model'] = ModelList::create([
                 'brand' => $brand,
+                'name' => $this->buildDisplayName($brand, $modelName),
                 'model_name' => $modelName,
                 'code' => $this->nextCode3(),
             ]);
@@ -193,10 +195,10 @@ class ModelListController extends Controller
         return response()->json([
             'id' => (int) $model->id,
             'brand' => (string) ($model->brand ?? ''),
+            'name' => (string) ($model->name ?? ''),
             'model_name' => (string) ($model->model_name ?? ''),
             'code' => (string) ($model->code ?? ''),
-            'created' => $created,
-            'message' => $created
+            'created' => $created
                 ? 'مدل لیست جدید با موفقیت ثبت شد.'
                 : 'این مدل از قبل وجود دارد و انتخاب شد.',
         ]);
@@ -381,7 +383,8 @@ class ModelListController extends Controller
 
                 ModelList::create([
                     'brand' => $brand,
-                    'model_name' => $base,
+                    'name' => $this->buildDisplayName($brand, $modelName),
+                    'model_name' => $modelName,
                     'code' => $this->nextCode3(),
                 ]);
             }
@@ -430,7 +433,8 @@ class ModelListController extends Controller
 
                     ModelList::create([
                         'brand' => $brand,
-                        'model_name' => $normalizedName,
+                        'name' => $this->buildDisplayName($brand, $modelName),
+                        'model_name' => $modelName,
                         'code' => $this->nextCode3(),
                     ]);
                 }
@@ -597,5 +601,21 @@ class ModelListController extends Controller
 
             default => 'سایر',
         };
+    }
+
+    public function buildDisplayName(string $brand, string $model): string
+    {
+        $brand = trim($brand);
+        $model = trim($model);
+
+        if ($brand === 'Samsung' && !str_contains(strtolower($model), 'galaxy')) {
+            return 'Galaxy ' . $model;
+        }
+
+        if ($brand === 'Apple (iPhone)' && !str_contains(strtolower($model), 'iphone')) {
+            return 'iPhone ' . $model;
+        }
+
+        return trim($brand . ' ' . $model);
     }
 }
