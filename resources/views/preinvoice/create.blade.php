@@ -3388,9 +3388,13 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         });
     }
 
+    let submitGuardActive = false;
+
     async function submitGuard(e) {
         if (isSubmittingProgrammatically) return true;
         e.preventDefault();
+        if (submitGuardActive) return false;
+        submitGuardActive = true;
         const submitter = e.submitter || document.activeElement;
         const intent = submitter?.value === 'draft' ? 'draft' : 'submit';
         const customerName = normalize(document.getElementById('customer_name').value);
@@ -3400,14 +3404,17 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             rowsForSubmit = collectProductsForSubmit();
         } catch (err) {
             alert(err.message || 'اطلاعات یکی از اقلام پیش‌فاکتور ناقص است.\nهیچ تغییری ثبت نشد.');
+            submitGuardActive = false;
             return false;
         }
         if (!customerName || !customerMobile) {
             alert('لطفا مشتری را انتخاب کنید.');
+            submitGuardActive = false;
             return false;
         }
         if (!rowsForSubmit.length) {
             alert('حداقل یک کالا باید اضافه شود.');
+            submitGuardActive = false;
             return false;
         }
         const btn = intent === 'draft' ? document.getElementById('saveDraftBtn') : document.getElementById('submitOrderBtn');
@@ -3419,6 +3426,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             await saveDbAutosaveNow();
             await refreshCsrfToken();
         } catch (err) {
+            submitGuardActive = false;
             btn.disabled = false;
             btn.textContent = oldText;
             alert(err.message || sessionChangedMessage());
@@ -3430,6 +3438,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 prepareProductsPayloadForSubmit();
             } catch (err) {
                 alert(err.message || 'اطلاعات اقلام پیش‌فاکتور ناقص است.\nهیچ تغییری ثبت نشد.');
+                submitGuardActive = false;
                 btn.disabled = false;
                 btn.textContent = oldText;
                 return false;
@@ -3446,6 +3455,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             await syncDraftReservation(groupedSelections);
         } catch (err) {
             alert(err.message || 'فریز موجودی کامل نشد.');
+            submitGuardActive = false;
             btn.disabled = false;
             btn.textContent = oldText;
             return false;
@@ -3453,6 +3463,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         btn.textContent = 'کنترل موجودی...';
         const stockOk = await validateSelectedStockBeforeSubmit();
         if (!stockOk) {
+            submitGuardActive = false;
             btn.disabled = false;
             btn.textContent = oldText;
             return false;
@@ -3462,6 +3473,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             prepareProductsPayloadForSubmit();
         } catch (err) {
             alert(err.message || 'اطلاعات اقلام پیش‌فاکتور ناقص است.\nهیچ تغییری ثبت نشد.');
+            submitGuardActive = false;
             btn.disabled = false;
             btn.textContent = oldText;
             return false;

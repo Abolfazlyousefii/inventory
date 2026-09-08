@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\WarehouseStock;
 use App\Services\ReservationHealthService;
 use App\Services\WarehouseStockService;
+use App\Support\DocumentCodeGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -274,6 +275,29 @@ it('connects a temporary reservation to a preinvoice through the submission flow
         ->and($inventory['variant']->fresh()->reserved)->toBe(4);
 });
 
+it('rejects a repeated final submit with the same reservation token without changing stock twice', function () {
+    $seller = fullLifecycleSeller();
+    $inventory = fullLifecycleInventory();
+    $token = (string) Str::uuid();
+    fullLifecycleSyncReservation($this, $seller, $inventory, 4, $token);
+    $payload = fullLifecyclePreinvoicePayload($inventory, $token, 4);
+
+    $this->actingAs($seller)
+        ->post(route('preinvoice.draft.save'), $payload)
+        ->assertSessionHasNoErrors();
+
+    $stockAfterFirstSubmit = $inventory['warehouseStock']->fresh()->quantity;
+
+    $this->actingAs($seller)
+        ->post(route('preinvoice.draft.save'), $payload)
+        ->assertSessionHasErrors('preinvoice');
+
+    expect(PreinvoiceOrder::query()->where('created_by', $seller->id)->where('is_auto_draft', false)->count())->toBe(1)
+        ->and($inventory['warehouseStock']->fresh()->quantity)->toBe($stockAfterFirstSubmit)
+        ->and($inventory['variant']->fresh()->reserved)->toBe(4)
+        ->and(PreinvoiceDraftReservation::query()->where('token', $token)->count())->toBe(1);
+});
+
 it('closes the reservation lifecycle when a preinvoice becomes an invoice', function () {
     $seller = fullLifecycleSeller();
     $finance = fullLifecycleFinanceUser();
@@ -296,6 +320,36 @@ it('closes the reservation lifecycle when a preinvoice becomes an invoice', func
         ->and($inventory['product']->fresh()->reserved)->toBe(0)
         ->and($inventory['variant']->fresh()->reserved)->toBe(0)
         ->and($inventory['warehouseStock']->fresh()->quantity)->toBe($warehouseBefore);
+});
+
+it('does not let another order reservation cover a finance approval shortfall', function () {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory, 4);
+
+    $otherOrder = $order->replicate();
+    $otherOrder->uuid = DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class);
+    $otherOrder->save();
+    $reservation->forceFill(['quantity' => 1])->save();
+    PreinvoiceDraftReservation::query()->create([
+        'token' => (string) Str::uuid(),
+        'user_id' => $seller->id,
+        'preinvoice_order_id' => $otherOrder->id,
+        'product_id' => $inventory['product']->id,
+        'variant_id' => $inventory['variant']->id,
+        'quantity' => 3,
+        'expires_at' => now()->addHour(),
+        'reservation_scope' => PreinvoiceDraftReservation::SCOPE_OFFICIAL,
+    ]);
+    $before = fullLifecycleSnapshot();
+
+    $this->actingAs($finance)
+        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->assertSessionHasErrors('preinvoice');
+
+    expect(Invoice::query()->where('preinvoice_order_id', $order->id)->exists())->toBeFalse()
+        ->and(fullLifecycleSnapshot())->toBe($before);
 });
 
 it('repairs only verified converted reservations and rebuilds product and variant caches without changing invoice or stock', function () {
