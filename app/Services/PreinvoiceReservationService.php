@@ -437,6 +437,28 @@ class PreinvoiceReservationService
             $this->expirePreinvoiceReservations($order, $actor);
             throw ValidationException::withMessages(['preinvoice' => $this->expiredMessage()]);
         }
+
+        $order->loadMissing('items');
+        $required = $order->items
+            ->groupBy(fn ($item) => ((int) $item->product_id).':'.((int) $item->variant_id))
+            ->map(fn ($items) => (int) $items->sum('quantity'));
+        $reserved = $activeReservations
+            ->groupBy(fn (PreinvoiceDraftReservation $reservation) => ((int) $reservation->product_id).':'.((int) $reservation->variant_id))
+            ->map(fn ($reservations) => (int) $reservations->sum('quantity'));
+
+        foreach ($required as $key => $requiredQuantity) {
+            if ((int) ($reserved->get($key, 0)) !== (int) $requiredQuantity) {
+                throw ValidationException::withMessages([
+                    'preinvoice' => 'مقدار رزرو رسمی با اقلام این پیش‌فاکتور هم‌خوان نیست. تأیید مالی متوقف شد؛ ابتدا یکپارچگی رزرو بررسی شود.',
+                ]);
+            }
+        }
+
+        if ($reserved->keys()->diff($required->keys())->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'preinvoice' => 'رزرو رسمی اضافه و نامرتبط با اقلام پیش‌فاکتور وجود دارد. تأیید مالی متوقف شد؛ ابتدا یکپارچگی رزرو بررسی شود.',
+            ]);
+        }
     }
 
     public function expiredMessage(): string

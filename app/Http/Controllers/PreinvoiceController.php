@@ -985,6 +985,16 @@ class PreinvoiceController extends Controller
 
         $reservationMeta = DB::transaction(function () use ($validated) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
+            $reservationToken = $validated['reservation_token'] ?? null;
+            if ($reservationToken && PreinvoiceDraftReservation::query()
+                ->where('token', $reservationToken)
+                ->where('user_id', auth()->id())
+                ->whereNotNull('preinvoice_order_id')
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'preinvoice' => 'این درخواست قبلاً ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، صفحه پیش‌فاکتورها را بررسی کنید.',
+                ]);
+            }
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
@@ -2702,7 +2712,6 @@ class PreinvoiceController extends Controller
                 abort(403);
             }
 
-            $shouldConsumeReservedOnFinalize = true;
             $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
             foreach ($order->items as $it) {
