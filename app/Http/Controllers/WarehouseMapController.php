@@ -48,9 +48,19 @@ class WarehouseMapController extends Controller
             ->orderBy('code')
             ->get();
 
-        $variantRows = $this->variantRows($request, $service, $warehouseId);
-        $unmappedRows = $variantRows->filter(fn ($row) => $row['unmapped'] > 0)->values();
-        $summary = $this->summary($variantRows, $warehouseId);
+        $variantRows = collect();
+        $unmappedRows = collect();
+
+        $summary = [
+            'locations' => WarehouseLocation::query()
+                ->where('warehouse_id', $warehouseId)
+                ->where('is_active', true)
+                ->count(),
+            'mapped_variants' => 0,
+            'unmapped_variants' => 0,
+            'multi_location_variants' => 0,
+            'mismatches' => 0,
+        ];
 
         $movements = $this->movementsQuery($request, $warehouseId)
             ->latest()
@@ -302,5 +312,14 @@ class WarehouseMapController extends Controller
     private function normalizeFa(?string $value): string
     {
         return strtr((string) $value, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
+    }
+
+    public function variants(Request $request, WarehouseMapService $service)
+    {
+        $warehouseId = $this->selectedWarehouseId($request);
+
+        return response()->json(
+            $this->variantRows($request, $service, $warehouseId)
+        );
     }
 }

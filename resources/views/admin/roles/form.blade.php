@@ -1,6 +1,107 @@
 @extends('layouts.app')
 
 @section('content')
+	<style>
+
+		.role-form-title{
+			font-size:25px;
+			font-weight:900;
+		}
+
+
+		.role-form-card{
+			border-radius:24px;
+			overflow:hidden;
+			border:0;
+			box-shadow:0 15px 40px rgba(0,0,0,.07);
+		}
+
+
+
+		.permission-group{
+
+			background:white;
+			border:1px solid #edf0f5;
+			border-radius:20px;
+			padding:18px;
+			height:100%;
+			transition:.2s;
+
+		}
+
+
+		.permission-group:hover{
+
+			transform:translateY(-3px);
+			box-shadow:0 12px 25px rgba(0,0,0,.06);
+
+		}
+
+
+
+		.permission-header{
+
+			background:#f8fafc;
+			border-radius:14px;
+			padding:12px;
+			margin-bottom:15px;
+
+		}
+
+
+
+		.permission-item{
+
+			padding:10px;
+			border-radius:12px;
+			transition:.15s;
+
+		}
+
+
+
+		.permission-item:hover{
+
+			background:#f8f9fa;
+
+		}
+
+
+		.permission-item input{
+
+			width:18px;
+			height:18px;
+
+		}
+
+
+		.permission-title{
+
+			font-weight:700;
+
+		}
+
+
+		.permission-description{
+
+			font-size:12px;
+			color:#6c757d;
+
+		}
+
+
+
+		.special-box{
+
+			border-radius:20px;
+			background:#fffaf0;
+			border:1px solid #ffe8b5;
+
+		}
+
+
+	</style>
+
 <div class="container py-4" dir="rtl">
     <h1 class="h4 mb-3">{{ $role->exists ? 'ویرایش نقش' : 'ایجاد نقش' }}</h1>
     <form method="POST" action="{{ $role->exists ? route('admin.roles.update', $role) : route('admin.roles.store') }}" class="card border-0 shadow-sm">
@@ -16,18 +117,21 @@
             <div class="row g-3">
                 @foreach($permissions as $group => $items)
                     <div class="col-md-6 col-xl-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="fw-bold">{{ $group ?: 'سایر' }}</span>
+	                    <div class="permission-group">
+		                    <div class="permission-header d-flex justify-content-between align-items-center">
+			                    <span class="fw-bold">{{ $group ?: 'سایر' }}</span>
                                 <span class="btn-group btn-group-sm" role="group">
                                     <button type="button" class="btn btn-outline-secondary" data-page-group-select>انتخاب همه</button>
                                     <button type="button" class="btn btn-outline-secondary" data-page-group-clear>لغو همه</button>
                                 </span>
                             </div>
                             @foreach($items as $permission)
-                                <label class="d-flex gap-2 mb-2 small">
-                                    <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-key="{{ $permission->key }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
-                                    <span><strong>{{ $permission->name }}</strong><small class="d-block text-muted">{{ \App\Support\PageAccessCatalog::page(str($permission->key)->after('page.')->toString())['description'] ?? '' }}</small></span>
+			                    <label class="permission-item d-flex gap-2 mb-2 small">
+				                    <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-key="{{ $permission->key }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
+                                    <span><div class="permission-title">{{ $permission->name }}
+</div>
+
+<small class="permission-description d-block">{{ \App\Support\PageAccessCatalog::page(str($permission->key)->after('page.')->toString())['description'] ?? '' }}</small></span>
                                 </label>
                             @endforeach
                         </div>

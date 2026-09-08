@@ -10,8 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = document.getElementById('saveButton');
     const search = document.getElementById('permissionSearch');
     const moduleButtons = [...document.querySelectorAll('.permission-module')];
-    const permissionRows = [...document.querySelectorAll('.permission-row')];
-    const roleInputs = [...form.querySelectorAll('.role-check')];
+	const permissionSections = [...document.querySelectorAll('.permission-module-section')];
+	const roleInputs = [...form.querySelectorAll('.role-check')];
     const permissionInputs = [...form.querySelectorAll('.permission-check')];
     const rolesChanged = document.getElementById('rolesChanged');
     const directPermissionsChanged = document.getElementById('directPermissionsChanged');
@@ -99,8 +99,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             button.classList.remove('btn-outline-secondary');
             button.classList.add('btn-primary');
-            filterRows();
-        });
+	        const filterRows = () => {
+		        const activeModule =
+			              document.querySelector('.permission-module.btn-primary')?.dataset.module || 'all';
+
+		        permissionSections.forEach((section) => {
+			        section.hidden =
+				        activeModule !== 'all' &&
+				        section.dataset.module !== activeModule;
+		        });
+	        };
+		});
     });
 
     search?.addEventListener('input', filterRows);

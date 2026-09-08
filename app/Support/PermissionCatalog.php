@@ -475,10 +475,22 @@ class PermissionCatalog
             str_starts_with($key, 'warehouse.shipping') => 'warehouse_shipping',
             str_starts_with($key, 'stock_in') => 'purchases',
             str_starts_with($key, 'inventory.count') => 'stocktake',
-            str_starts_with($key, 'model_lists'), str_starts_with($key, 'brands') => 'brands_models',
-            str_starts_with($key, 'invoices'), str_starts_with($key, 'payments'), str_starts_with($key, 'cheques'), str_starts_with($key, 'account_statements'), str_starts_with($key, 'finance') => 'finance',
+
+            str_starts_with($key, 'model_lists'),
+            str_starts_with($key, 'brands') => 'brands_models',
+
+            str_starts_with($key, 'sales_returns') => 'sales',
+
+            str_starts_with($key, 'invoices'),
+            str_starts_with($key, 'payments'),
+            str_starts_with($key, 'cheques'),
+            str_starts_with($key, 'account_statements'),
+            str_starts_with($key, 'finance') => 'finance',
+
             str_starts_with($key, 'preinvoices') => 'sales',
+
             str_starts_with($key, 'inventory_webhooks') => 'api_webhooks',
+
             default => str($key)->before('.')->toString(),
         };
     }
