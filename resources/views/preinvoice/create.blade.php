@@ -2147,13 +2147,31 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     function showLocalDraftBanner() {
         const draft = getLocalDraft();
         if (!draft) return;
+        const localSavedAt = draft.saved_at ? new Date(draft.saved_at) : null;
+        const dbSavedAt = latestDbAutosaveDraft?.saved_at ? new Date(latestDbAutosaveDraft.saved_at) : null;
+        if (dbSavedAt && !Number.isNaN(dbSavedAt.getTime()) && (!localSavedAt || Number.isNaN(localSavedAt.getTime()) || dbSavedAt > localSavedAt)) {
+            showDbAutosaveBanner(latestDbAutosaveDraft);
+            return;
+        }
         const banner = document.getElementById('localDraftBanner');
         const text = document.getElementById('localDraftBannerText');
-        const savedAt = draft.saved_at ? new Date(draft.saved_at) : null;
-        const savedText = savedAt && !Number.isNaN(savedAt.getTime()) ? savedAt.toLocaleString('fa-IR') : 'زمان نامشخص';
+        const savedText = localSavedAt && !Number.isNaN(localSavedAt.getTime()) ? localSavedAt.toLocaleString('fa-IR') : 'زمان نامشخص';
         const groups = draft.groupedSelections ? Object.keys(draft.groupedSelections).length : 0;
         text.textContent = `آخرین ذخیره: ${savedText} | تعداد محصول: ${formatNum(groups)}`;
         banner.classList.add('is-visible');
+        document.getElementById('loadLocalDraftBtn').onclick = function() {
+            const d = getLocalDraft();
+            if (!d) {
+                alert('پیش‌نویسی برای لود شدن پیدا نشد.');
+                hideLocalDraftBanner();
+                return;
+            }
+            applyLocalDraft(d);
+        };
+        document.getElementById('discardLocalDraftBtn').onclick = async function() {
+            if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
+            await removeLocalDraft(true, true);
+        };
     }
 
     function hideLocalDraftBanner() {
@@ -2472,22 +2490,29 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         scheduleDbAutosave();
     }
 
+    let latestDbAutosaveDraft = null;
+
+    function showDbAutosaveBanner(draft) {
+        const banner = document.getElementById('localDraftBanner');
+        document.getElementById('localDraftBannerText').textContent = 'یک پیش‌نویس ذخیره‌شده پیدا شد. این پیش‌نویس بدون رزرو موجودی بازیابی می‌شود و موجودی کالاها هنگام ادامه کار دوباره بررسی خواهد شد.';
+        banner.classList.add('is-visible');
+        document.getElementById('loadLocalDraftBtn').onclick = () => applyDbAutosaveDraft(draft);
+        document.getElementById('discardLocalDraftBtn').onclick = async () => {
+            if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
+            await fetchJson(API.autosaveDiscardBase + '/' + encodeURIComponent(draft.uuid) + '/discard', {
+                method: 'POST',
+            });
+            banner.classList.remove('is-visible');
+        };
+    }
+
     async function loadLatestDbAutosaveBanner() {
         if (IS_EDIT) return;
         try {
             const {json} = await fetchJson(API.autosaveLatest);
             if (!json?.draft) return;
-            const banner = document.getElementById('localDraftBanner');
-            document.getElementById('localDraftBannerText').textContent = 'یک پیش‌نویس ذخیره‌شده پیدا شد. این پیش‌نویس بدون رزرو موجودی بازیابی می‌شود و موجودی کالاها هنگام ادامه کار دوباره بررسی خواهد شد.';
-            banner.classList.add('is-visible');
-            document.getElementById('loadLocalDraftBtn').onclick = () => applyDbAutosaveDraft(json.draft);
-            document.getElementById('discardLocalDraftBtn').onclick = async () => {
-                if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
-                await fetchJson(API.autosaveDiscardBase + '/' + encodeURIComponent(json.draft.uuid) + '/discard', {
-                    method: 'POST',
-                });
-                banner.classList.remove('is-visible');
-            };
+            latestDbAutosaveDraft = json.draft;
+            showDbAutosaveBanner(json.draft);
         } catch (e) {}
     }
 
