@@ -1208,8 +1208,8 @@ document.addEventListener('DOMContentLoaded', function () {
         items.forEach(function (m) {
             var tag = document.createElement('span');
             tag.className = 'picker-tag';
-            tag.textContent = m.model_name + (m.code ? ' (' + m.code + ')' : '');
-            modelSelectedTags.appendChild(tag);
+	        tag.textContent = (m.name || m.model_name) + (m.code ? ' (' + m.code + ')' : '');
+			modelSelectedTags.appendChild(tag);
         });
     }
 
@@ -1269,8 +1269,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             var textWrap = document.createElement('div');
             var title = document.createElement('div');
-            title.textContent = m.model_name || '—';
-
+	        title.textContent = m.name || m.model_name || '—';
             var small = document.createElement('small');
             small.textContent = 'کد مدل: ' + (m.code || '---');
 
@@ -1492,8 +1491,9 @@ document.addEventListener('DOMContentLoaded', function () {
             var row = {
                 id: parseInt(data.id, 10),
                 brand: String(data.brand || ''),
-                model_name: String(data.model_name || ''),
-                code: String(data.code || ''),
+	            name: String(data.name || ''),
+	            model_name: String(data.model_name || ''),
+	            code: String(data.code || ''),
             };
 
             if (idx === -1) {

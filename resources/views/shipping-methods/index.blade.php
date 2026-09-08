@@ -33,8 +33,8 @@
         <h6 class="mb-3">لیست روش‌های ارسال</h6>
 
         <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
+	        <table class="table table-sm align-middle shipping-methods-table">
+		        <thead>
               <tr>
                 <th>نام</th>
                 <th>هزینه</th>
@@ -45,12 +45,28 @@
               @forelse($shippingMethods as $method)
                 <tr>
                   <td>
-                    <form method="POST" action="{{ route('shipping-methods.update', $method) }}" class="d-flex gap-2 align-items-center">
-                      @csrf
+	                  <form
+			                  method="POST"
+			                  action="{{ route('shipping-methods.update', $method) }}"
+			                  class="d-flex gap-2 align-items-center shipping-method-edit-form"
+	                  >
+		                  @csrf
                       @method('PUT')
-                      <input name="name" class="form-control" value="{{ $method->name }}" required>
-                      <input type="number" min="0" name="price" class="form-control" value="{{ \App\Support\Currency::toRial($method->price) }}" style="max-width:170px" required>
-                      <button class="btn btn-outline-primary btn-sm">ذخیره</button>
+		                  <input
+				                  name="name"
+				                  class="form-control shipping-method-name"
+				                  value="{{ $method->name }}"
+				                  required
+		                  >
+		                  <input
+				                  type="number"
+				                  min="0"
+				                  name="price"
+				                  class="form-control shipping-method-price"
+				                  value="{{ \App\Support\Currency::toRial($method->price) }}"
+				                  required
+		                  >
+		                  <button class="btn btn-outline-primary btn-sm">ذخیره</button>
                     </form>
                   </td>
                   <td style="width:140px">{{ \App\Support\Currency::formatRial($method->price) }}</td>
@@ -77,3 +93,41 @@
   </div>
 </div>
 @endsection
+
+@push('styles')
+	<style>
+
+		.shipping-methods-table {
+			min-width: 760px;
+		}
+
+		.shipping-method-edit-form {
+			min-width: 500px;
+			flex-wrap: nowrap;
+		}
+
+		.shipping-method-name {
+			flex: 1 1 280px;
+			min-width: 220px;
+		}
+
+		.shipping-method-price {
+			flex: 0 0 170px;
+			width: 170px;
+			min-width: 170px;
+		}
+
+		@media (max-width: 767.98px) {
+
+			.shipping-methods-table {
+				min-width: 760px;
+			}
+
+			.shipping-method-edit-form {
+				min-width: 500px;
+			}
+
+		}
+
+	</style>
+@endpush
