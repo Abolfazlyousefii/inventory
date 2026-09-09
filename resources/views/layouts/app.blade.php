@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
+    @if(session('preinvoice_submit_succeeded'))
+        <script>
+            try {
+                localStorage.removeItem('aria_preinvoice_local_draft_create_v1');
+                localStorage.removeItem('aria_preinvoice_reservation_token_v1');
+            } catch (error) {
+                // Browser storage may be unavailable; server-side submit remains valid.
+            }
+        </script>
+    @endif
+
     @if(request()->routeIs('preinvoice.create'))
         <script src="{{ asset('js/preinvoice-submit-safety.js') }}"></script>
     @endif
