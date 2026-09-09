@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
+    @if(request()->routeIs('preinvoice.create'))
+        <script src="{{ asset('js/preinvoice-submit-safety.js') }}"></script>
+    @endif
+
     @php
         $appName = config('app.name', 'نرم افزار داخلی آریا گستر');
         $sectionDocumentTitle = trim((string) preg_replace('/\s+/u', ' ', strip_tags($__env->yieldContent('title'))));
