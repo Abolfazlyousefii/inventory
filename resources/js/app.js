@@ -1,5 +1,4 @@
 import './bootstrap';
-import './preinvoice-submit-safety';
 
 import Alpine from 'alpinejs';
 import jQuery from 'jquery';
