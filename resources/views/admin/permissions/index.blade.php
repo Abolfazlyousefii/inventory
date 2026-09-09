@@ -1,54 +1,94 @@
 @extends('layouts.app')
 
-@section('title', 'مدیریت نقش‌های کاربران')
+@push('styles')
+	<link rel="stylesheet" href="{{ asset('css/permissions.css') }}">
+@endpush
 
-@php
-    $permissionsCssPath = public_path('css/permissions.css');
-    $permissionsJsPath = public_path('js/permissions.js');
-@endphp
-@push('styles')<link rel="stylesheet" href="{{ asset('css/permissions.css') }}?v={{ is_file($permissionsCssPath) ? filemtime($permissionsCssPath) : 1 }}">@endpush
-@push('scripts')<script src="{{ asset('js/permissions.js') }}?v={{ is_file($permissionsJsPath) ? filemtime($permissionsJsPath) : 1 }}" defer></script>@endpush
+@section('title','مدیریت دسترسی کاربران')
 
 @section('content')
-<div class="container py-4" dir="rtl">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div><h1 class="h4 mb-1">مدیریت نقش‌های کاربران</h1><p class="text-muted mb-0">دسترسی صفحات فقط از نقش‌های کاربر محاسبه می‌شود.</p></div>
-        <a class="btn btn-outline-primary" href="{{ route('admin.roles.index') }}">مدیریت نقش‌ها و صفحات</a>
-    </div>
+	<div class="access-page">
 
-    @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
-    @if($errors->any())<div class="alert alert-danger">{{ collect($errors->all())->unique()->join(' ') }}</div>@endif
-    @if($requestedUserMissing)<div class="alert alert-warning">کاربر درخواستی پیدا نشد؛ یک کاربر معتبر را انتخاب کنید.</div>@endif
-    @if($missingActivePermissionKeys !== [])<div class="alert alert-warning">فهرست دسترسی‌های پایگاه داده با نسخه نرم‌افزار هماهنگ نیست.</div>@endif
+		<div class="access-hero">
+			<h1>🔐 مرکز مدیریت دسترسی</h1>
+			<p>مدیریت نقش‌ها و مجوزهای کاربران سیستم</p>
+		</div>
 
-    <div class="card mb-3"><div class="card-body">
-        <form method="GET" class="row g-2 align-items-end">
-            <div class="col-md-9"><label class="form-label" for="userPicker">کاربر</label><select id="userPicker" name="user_id" class="form-select">
-                @foreach($users as $userOption)<option value="{{ $userOption->id }}" @selected($selectedUser?->is($userOption))>{{ $userOption->name }} — {{ $userOption->role_labels ?: 'بدون نقش' }}</option>@endforeach
-            </select></div><div class="col-md-3 d-grid"><button class="btn btn-outline-primary">نمایش نقش‌ها</button></div>
-        </form>
-    </div></div>
+		<form method="POST" id="permissionForm"
+		      action="{{ $selectedUser ? route('admin.permissions.update',$selectedUser) : '#' }}">
 
-    @if($selectedUser)
-        <form method="POST" action="{{ route('admin.permissions.update', $selectedUser) }}" class="card">
-            @csrf @method('PUT')
-            <input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
-            <input type="hidden" name="permission_catalog_version" value="{{ \App\Support\PermissionCatalog::versionHash() }}">
-            <input type="hidden" name="roles_changed" value="1">
-            <input type="hidden" name="roles_submitted" value="1">
-            <input type="hidden" name="direct_permissions_changed" value="0">
-            <div class="card-header"><strong>نقش‌های {{ $selectedUser->name }}</strong></div>
-            <div class="card-body"><div class="row g-3">
-                @forelse($roles as $role)
-                    <div class="col-md-4"><label class="border rounded p-3 d-flex gap-2 h-100">
-                        <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role['name'] }}" @checked($role['selected']) @disabled(! $canAssignRoles)>
-                        <span><strong>{{ $role['label'] }}</strong><small class="d-block text-muted">{{ $role['permissions_count'] }} صفحه مجاز</small></span>
-                    </label></div>
-                @empty <p class="text-muted">نقشی تعریف نشده است.</p> @endforelse
-            </div></div>
-            @if($legacyPermissions->isNotEmpty())<div class="card-footer bg-warning-subtle small">{{ $legacyPermissions->count() }} دسترسی مستقیم/قدیمی فعلاً فقط برای مهاجرت نگهداری شده و از این صفحه قابل تخصیص نیست.</div>@endif
-            @if($canAssignRoles)<div class="card-footer bg-white"><button class="btn btn-primary">ذخیره نقش‌های کاربر</button></div>@endif
-        </form>
-    @endif
-</div>
+			@csrf
+			@method('PUT')
+
+			<input type="hidden" name="user_id" value="{{ $selectedUser?->id }}">
+			<input type="hidden" id="rolesChanged" name="roles_changed" value="0">
+			<input type="hidden" id="directPermissionsChanged" name="direct_permissions_changed" value="0">
+			<input type="hidden" name="roles_submitted" value="1">
+			<input type="hidden" name="direct_permissions_submitted" value="1">
+
+			<div class="access-card">
+				<h3>👤 انتخاب کاربر</h3>
+				<select class="form-select" onchange="location='?user_id='+this.value">
+					@foreach($users as $user)
+						<option value="{{ $user->id }}" @selected($selectedUser?->id === $user->id)>
+							{{ $user->name }}
+						</option>
+					@endforeach
+				</select>
+			</div>
+
+			<div class="access-card">
+				<h3>🛡 نقش‌ها</h3>
+				<div class="roles-grid">
+					@foreach($roles as $role)
+						<label class="role-card {{ $role['selected']?'selected':'' }}">
+							<input class="role-check" type="checkbox" name="roles[]" value="{{ $role['name'] }}" @checked($role['selected'])>
+							<b>{{ $role['label'] }}</b>
+							<span>{{ $role['permissions_count'] }} دسترسی</span>
+						</label>
+					@endforeach
+				</div>
+			</div>
+
+			<div class="access-card">
+				<h3>🔎 دسترسی‌ها</h3>
+
+				<input id="permissionSearch" class="form-control mb-3" placeholder="جستجو">
+
+
+
+				@foreach($modules as $module=>$items)
+
+					<div class="permission-module-section" data-module="{{ $module }}">
+
+						<h4>{{ $module }}</h4>
+
+						@foreach($items as $key=>$permission)
+							<div class="permission-row" data-module="{{ $module }}">
+								<label>
+									<input class="permission-check"
+									       type="checkbox"
+									       name="direct_permissions[]"
+									       value="{{ $key }}"
+											@checked($permission['granted'] ?? false)>
+
+									{{ $permission['label'] ?? $key }}
+								</label>
+							</div>
+						@endforeach
+
+					</div>
+
+				@endforeach
+
+			</div>
+
+			<div class="permission-savebar">
+				<span id="changeCount">بدون تغییر ذخیره نشده</span>
+				<span id="dependencyCount"></span>
+				<button id="saveButton" class="btn btn-primary" disabled>ذخیره تغییرات</button>
+			</div>
+
+		</form>
+	</div>
 @endsection

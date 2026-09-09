@@ -97,23 +97,21 @@ class SiteCustomersSyncService {
         }
 
         return DB::transaction(function () use ( $payload, $sourceId, $mobile ): string {
-            $bySourceId = Customer::where('crm_customer_id', $sourceId)
-                ->lockForUpdate()
-                ->first();
-            $byMobile   = Customer::where('mobile', $mobile)
+            $customer = Customer::where('mobile', $mobile)
                 ->lockForUpdate()
                 ->first();
 
-            if ( $bySourceId && $byMobile && !$bySourceId->is($byMobile) ) {
-                throw new RuntimeException('شناسه سایت و شماره موبایل به دو مشتری متفاوت متصل هستند.');
+            $created = false;
+
+            if ( !$customer ) {
+                $customer = new Customer();
+                $created  = true;
             }
 
-            $customer = $bySourceId ?? $byMobile ?? new Customer();
-            $created  = !$customer->exists;
-            $address  = $this->firstAddress($payload['addresses'] ?? []);
+            $address = $this->firstAddress($payload['addresses'] ?? []);
 
             $customer->fill([
-                'crm_customer_id'  => $sourceId,
+                'site_customer_id' => $sourceId,
                 'sync_source'      => 'site_registration',
                 'first_name'       => $this->text($payload['first_name'] ?? null) ?? 'بدون نام',
                 'last_name'        => $this->text($payload['last_name'] ?? null),

@@ -38,13 +38,16 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(OtpSender::class, LogOtpSender::class);
     }
 
+
     public function boot(Router $router): void
     {
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
 
+
         Gate::before(function ($user, $ability) {
             return PermissionCatalog::userHasPermission($user, $ability) ? true : null;
         });
+
 
         Product::observe(ActivityObserver::class);
         ProductVariant::observe(ActivityObserver::class);
@@ -54,8 +57,10 @@ class AppServiceProvider extends ServiceProvider
         PreinvoiceOrderItem::observe(ActivityObserver::class);
         Invoice::observe(ActivityObserver::class);
         InvoiceItem::observe(ActivityObserver::class);
+
         Invoice::observe(CommissionSourceObserver::class);
         InvoiceItem::observe(CommissionSourceObserver::class);
+
         InvoicePayment::observe(ActivityObserver::class);
         InvoiceNote::observe(ActivityObserver::class);
         Cheque::observe(ActivityObserver::class);
@@ -65,21 +70,29 @@ class AppServiceProvider extends ServiceProvider
         ProductVariant::observe(ProductVariantSyncObserver::class);
         WarehouseStock::observe(WarehouseStockObserver::class);
         StockMovement::observe(StockMovementObserver::class);
-        Paginator::useBootstrapFive(); // یا useBootstrapFour()
+
+        Paginator::useBootstrapFive();
+
 
         Blade::if('canPermission', function (string $permission): bool {
-            return auth()->check() && PermissionCatalog::userHasPermission(auth()->user(), $permission);
+            return auth()->check() 
+                && PermissionCatalog::userHasPermission(auth()->user(), $permission);
         });
 
+
         Blade::if('canAnyPermission', function (array|string $permissions): bool {
+
             if (! auth()->check()) {
                 return false;
             }
 
+
             foreach ((array) $permissions as $permission) {
+
                 if (PermissionCatalog::userHasPermission(auth()->user(), $permission)) {
                     return true;
                 }
+
             }
 
             return false;
