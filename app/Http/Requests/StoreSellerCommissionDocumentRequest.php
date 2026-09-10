@@ -19,6 +19,8 @@ class StoreSellerCommissionDocumentRequest extends FormRequest
         return $this->sellerCommissionDateRules() + [
             'invoice_ids' => ['required', 'array', 'min:1'],
             'invoice_ids.*' => ['required', 'integer', 'distinct', 'exists:invoices,id'],
+            'manual_invoice_ids' => ['nullable', 'array'],
+            'manual_invoice_ids.*' => ['integer', 'distinct', 'exists:invoices,id'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];
     }

@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\SellerSalesDocument;
 use App\Models\SellerSalesDocumentItem;
 use App\Models\User;
+use App\Services\Commissions\CommissionItemCalculator;
 use App\Support\ActivityLogger;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,6 +19,8 @@ use Illuminate\Validation\ValidationException;
 
 class SellerCommissionDocumentService
 {
+    public function __construct(private readonly CommissionItemCalculator $calculator) {}
+
     public const DUPLICATE_MESSAGE = 'یک یا چند فاکتور قبلاً در سند دیگری ثبت شده‌اند. فهرست را دوباره بررسی کنید.';
 
     public function paginateDocuments(array $filters): LengthAwarePaginator
@@ -47,7 +50,7 @@ class SellerCommissionDocumentService
             ->select('invoices.*')
             ->selectRaw("{$effectiveSeller} as effective_seller_id")
             ->leftJoin('preinvoice_orders as commission_preinvoices', 'commission_preinvoices.id', '=', 'invoices.preinvoice_order_id')
-            ->with(['customer:id,first_name,last_name', 'seller:id,name', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
+            ->with(['customer:id,first_name,last_name', 'seller:id,name,is_seller,is_active,can_access_erp', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name,is_seller,is_active,can_access_erp', 'preinvoiceOrder.creator:id,name,is_seller,is_active,can_access_erp'])
             ->whereRaw("{$effectiveSeller} = ?", [$userId])
             ->whereBetween(DB::raw('COALESCE(invoices.document_date, invoices.created_at)'), [$from, $to])
             ->where(function (Builder $query): void {
@@ -94,7 +97,10 @@ class SellerCommissionDocumentService
                     $user->id,
                     $data['date_from'],
                     $data['date_to'],
+                    null,
+                    $data['manual_invoice_ids'] ?? [],
                 );
+                $this->warmCalculator($invoices);
 
                 $document = SellerSalesDocument::query()->create([
                     'uuid' => (string) Str::uuid(),
@@ -107,6 +113,7 @@ class SellerCommissionDocumentService
                     'notes' => $data['notes'] ?? null,
                     'created_by' => $actor->id,
                     'updated_by' => $actor->id,
+                    'status' => SellerSalesDocument::STATUS_DRAFT,
                 ]);
 
                 $document->update([
@@ -146,7 +153,12 @@ class SellerCommissionDocumentService
                     $data['date_from'],
                     $data['date_to'],
                     $locked->id,
+                    $data['manual_invoice_ids'] ?? [],
                 );
+                if (! $locked->isDraft()) {
+                    throw ValidationException::withMessages(['document' => 'فقط گزارش پیش‌نویس قابل ویرایش است.']);
+                }
+                $this->warmCalculator($invoices);
 
                 $oldIds = $locked->activeItems->pluck('invoice_id')->map(fn ($id) => (int) $id);
                 $newIds = $invoices->pluck('id')->map(fn ($id) => (int) $id);
@@ -233,12 +245,13 @@ class SellerCommissionDocumentService
         string $dateFrom,
         string $dateTo,
         ?int $currentDocumentId = null,
+        array $manualInvoiceIds = [],
     ): Collection {
         $ids = array_values(array_unique(array_map('intval', $ids)));
         [$from, $to] = $this->dateBoundaries($dateFrom, $dateTo);
 
         $invoices = Invoice::query()
-            ->with(['customer:id,first_name,last_name', 'seller:id,name', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
+            ->with(['customer:id,first_name,last_name', 'seller:id,name,is_seller,is_active,can_access_erp', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name,is_seller,is_active,can_access_erp', 'preinvoiceOrder.creator:id,name,is_seller,is_active,can_access_erp'])
             ->whereIn('id', $ids)
             ->lockForUpdate()
             ->get()
@@ -254,8 +267,7 @@ class SellerCommissionDocumentService
             if (
                 $this->resolveInvoiceOwner($invoice) !== $userId
                 || ! $initialDate
-                || $initialDate->lt($from)
-                || $initialDate->gt($to)
+                || ((! in_array((int) $invoice->id, array_map('intval', $manualInvoiceIds), true)) && ($initialDate->lt($from) || $initialDate->gt($to)))
                 || $invoice->isCancelled()
             ) {
                 throw ValidationException::withMessages([
@@ -278,6 +290,15 @@ class SellerCommissionDocumentService
 
     private function snapshot(Invoice $invoice): array
     {
+        $sellerId = $invoice->commissionSellerId();
+        $calculations = $invoice->items->map(
+            fn ($item) => $this->calculator->calculate($invoice, $item, $sellerId, $invoice->display_document_date)->ledgerAttributes
+        );
+        $net = $calculations->isEmpty()
+            ? $this->resolveInvoiceFinalAmount($invoice)
+            : (int) $calculations->sum('net_amount_snapshot');
+        $commission = (int) $calculations->sum('total_commission_amount');
+
         return [
             'invoice_id' => $invoice->id,
             'status' => SellerSalesDocumentItem::STATUS_ACTIVE,
@@ -286,6 +307,16 @@ class SellerCommissionDocumentService
             'invoice_date_snapshot' => $this->resolveInvoiceInitialDate($invoice),
             'customer_name_snapshot' => $invoice->customer_name ?: $invoice->customer?->display_name ?: '—',
             'invoice_total_snapshot' => $this->resolveInvoiceFinalAmount($invoice),
+            'product_id' => $calculations->count() === 1 ? $calculations->first()['product_id'] : null,
+            'product_variant_id' => $calculations->count() === 1 ? $calculations->first()['product_variant_id'] : null,
+            'product_name_snapshot' => $calculations->count() === 1 ? $calculations->first()['product_name_snapshot'] : 'چند کالا',
+            'variant_name_snapshot' => $calculations->count() === 1 ? $calculations->first()['variant_name_snapshot'] : null,
+            'quantity_snapshot' => (int) $calculations->sum('quantity_snapshot'),
+            'rate_snapshot' => $net > 0 ? number_format($commission * 100 / $net, 4, '.', '') : '0.0000',
+            'item_net_amount' => $net,
+            'commission_amount' => $commission,
+            'missing_rate' => $calculations->contains('missing_rate', true),
+            'calculation_version' => (int) ($calculations->max('calculation_version') ?: 1),
         ];
     }
 
@@ -293,8 +324,30 @@ class SellerCommissionDocumentService
     {
         $document->update([
             'invoice_count' => $document->activeItems()->count(),
-            'total_sales_amount' => (int) $document->activeItems()->sum('invoice_total_snapshot'),
+            'total_sales_amount' => (int) $document->activeItems()->sum('item_net_amount'),
+            'total_commission_amount' => (int) $document->activeItems()->sum('commission_amount'),
+            'net_commission_amount' => (int) $document->activeItems()->sum('commission_amount'),
+            'missing_rate_count' => $document->activeItems()->where('missing_rate', true)->count(),
         ]);
+    }
+
+    public function deleteDraft(SellerSalesDocument $document): void
+    {
+        DB::transaction(function () use ($document): void {
+            $locked = SellerSalesDocument::query()->lockForUpdate()->findOrFail($document->id);
+            if (! $locked->isDraft()) {
+                throw ValidationException::withMessages(['document' => 'فقط گزارش پیش‌نویس قابل حذف است.']);
+            }
+            $locked->items()->delete();
+            $locked->delete();
+        });
+    }
+
+    private function warmCalculator(Collection $invoices): void
+    {
+        $invoices->loadMissing(['items.product.category.parent', 'items.variant', 'seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator']);
+        $dates = $invoices->map(fn (Invoice $invoice) => CarbonImmutable::parse($invoice->display_document_date));
+        $this->calculator->warm($dates->min()->startOfDay(), $dates->max()->addDay()->startOfDay());
     }
 
     private function dateBoundaries(string $dateFrom, string $dateTo): array

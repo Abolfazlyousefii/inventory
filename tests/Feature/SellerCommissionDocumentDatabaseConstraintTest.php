@@ -139,10 +139,26 @@ class SellerCommissionDocumentDatabaseConstraintTest extends TestCase
         }
     }
 
-    public function test_commission_amount_or_percentage_columns_do_not_exist(): void
+    public function test_new_commission_snapshot_columns_exist_without_legacy_percentage_column(): void
     {
         $this->assertFalse(Schema::hasColumn('seller_sales_documents', 'commission_amount'));
         $this->assertFalse(Schema::hasColumn('seller_sales_documents', 'commission_percentage'));
-        $this->assertFalse(Schema::hasColumn('seller_sales_document_items', 'commission_amount'));
+        $this->assertTrue(Schema::hasColumns('seller_sales_documents', [
+            'total_commission_amount',
+            'total_adjustment_amount',
+            'bonus_amount',
+            'cash_collected_amount',
+            'net_commission_amount',
+            'status',
+            'missing_rate_count',
+        ]));
+        $this->assertTrue(Schema::hasColumns('seller_sales_document_items', [
+            'product_id',
+            'product_variant_id',
+            'item_net_amount',
+            'commission_amount',
+            'missing_rate',
+            'calculation_version',
+        ]));
     }
 }

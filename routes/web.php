@@ -308,10 +308,14 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/', [SellerCommissionDocumentController::class, 'index'])->name('index');
         Route::get('/create', [SellerCommissionDocumentController::class, 'create'])->name('create');
         Route::get('/available-invoices', [SellerCommissionDocumentController::class, 'availableInvoices'])->name('available-invoices');
+        Route::get('/report-invoices', [SellerCommissionDocumentController::class, 'reportInvoices'])->name('report-invoices');
+        Route::get('/manual-invoice', [SellerCommissionDocumentController::class, 'manualInvoice'])->name('manual-invoice');
+        Route::post('/preview', [SellerCommissionDocumentController::class, 'preview'])->name('preview');
         Route::post('/', [SellerCommissionDocumentController::class, 'store'])->name('store');
         Route::get('/{document}', [SellerCommissionDocumentController::class, 'show'])->name('show');
         Route::get('/{document}/edit', [SellerCommissionDocumentController::class, 'edit'])->name('edit');
         Route::put('/{document}', [SellerCommissionDocumentController::class, 'update'])->name('update');
+        Route::delete('/{document}', [SellerCommissionDocumentController::class, 'destroy'])->name('destroy');
         Route::get('/{document}/print', [SellerCommissionDocumentController::class, 'print'])->name('print');
     });
 
