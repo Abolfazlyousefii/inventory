@@ -59,7 +59,6 @@ use App\Http\Controllers\Portal\CustomerAuthController;
 use App\Models\SalesReturnDocument;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
-use App\Services\Sync\SiteCustomersSyncService;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => redirect()->route('dashboard'));

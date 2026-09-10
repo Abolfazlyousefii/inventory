@@ -25,7 +25,6 @@ use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Support\PermissionCatalog;
 use App\Services\LogOtpSender;
-use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
@@ -59,8 +58,10 @@ class AppServiceProvider extends ServiceProvider
         PreinvoiceOrderItem::observe(ActivityObserver::class);
         Invoice::observe(ActivityObserver::class);
         InvoiceItem::observe(ActivityObserver::class);
+
         Invoice::observe(CommissionSourceObserver::class);
         InvoiceItem::observe(CommissionSourceObserver::class);
+
         InvoicePayment::observe(ActivityObserver::class);
         InvoiceNote::observe(ActivityObserver::class);
         Cheque::observe(ActivityObserver::class);
@@ -70,10 +71,13 @@ class AppServiceProvider extends ServiceProvider
         ProductVariant::observe(ProductVariantSyncObserver::class);
         WarehouseStock::observe(WarehouseStockObserver::class);
         StockMovement::observe(StockMovementObserver::class);
-        Paginator::useBootstrapFive(); // یا useBootstrapFour()
+
+        Paginator::useBootstrapFive();
+
 
         Blade::if('canPermission', function (string $permission): bool {
-            return auth()->check() && PermissionCatalog::userHasPermission(auth()->user(), $permission);
+            return auth()->check()
+                && PermissionCatalog::userHasPermission(auth()->user(), $permission);
         });
 
         Blade::if('canAnyPermission', function (array|string $permissions): bool {
