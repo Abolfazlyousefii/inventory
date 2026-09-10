@@ -46,13 +46,4 @@ class User extends Authenticatable implements WalletInterface {
         'is_active'         => 'boolean',
     ];
 
-    /**
-     * The accessors to append to the model's array form.
-     *
-     * @var array
-     */
-    protected $appends = [
-        'profile_photo_url',
-    ];
-
 }

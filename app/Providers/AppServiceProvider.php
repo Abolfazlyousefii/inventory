@@ -25,6 +25,7 @@ use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Support\PermissionCatalog;
 use App\Services\LogOtpSender;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
@@ -38,16 +39,17 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(OtpSender::class, LogOtpSender::class);
     }
 
-
     public function boot(Router $router): void
     {
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
 
+        Relation::morphMap([
+            'site_user' => \App\Models\Site\User::class,
+        ]);
 
         Gate::before(function ($user, $ability) {
             return PermissionCatalog::userHasPermission($user, $ability) ? true : null;
         });
-
 
         Product::observe(ActivityObserver::class);
         ProductVariant::observe(ActivityObserver::class);
@@ -75,24 +77,19 @@ class AppServiceProvider extends ServiceProvider
 
 
         Blade::if('canPermission', function (string $permission): bool {
-            return auth()->check() 
+            return auth()->check()
                 && PermissionCatalog::userHasPermission(auth()->user(), $permission);
         });
 
-
         Blade::if('canAnyPermission', function (array|string $permissions): bool {
-
             if (! auth()->check()) {
                 return false;
             }
 
-
             foreach ((array) $permissions as $permission) {
-
                 if (PermissionCatalog::userHasPermission(auth()->user(), $permission)) {
                     return true;
                 }
-
             }
 
             return false;
