@@ -25,6 +25,7 @@ use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Support\PermissionCatalog;
 use App\Services\LogOtpSender;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
@@ -42,7 +43,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
 
-        Relation::enforceMorphMap([
+        Relation::MorphMap([
             'user' => \App\Models\Site\User::class,
         ]);
 
