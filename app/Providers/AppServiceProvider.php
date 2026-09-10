@@ -43,8 +43,8 @@ class AppServiceProvider extends ServiceProvider
     {
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
 
-        Relation::MorphMap([
-            'user' => \App\Models\Site\User::class,
+        Relation::morphMap([
+            'site_user' => \App\Models\Site\User::class,
         ]);
 
         Gate::before(function ($user, $ability) {
