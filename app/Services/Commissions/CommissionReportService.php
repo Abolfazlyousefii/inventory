@@ -8,12 +8,73 @@ use App\Models\CommissionLedgerEntry;
 use App\Models\CommissionPeriod;
 use App\Models\Invoice;
 use App\Models\User;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use App\Support\JalaliDate;
+use Illuminate\Validation\ValidationException;
 
 class CommissionReportService
 {
+    public function __construct(private readonly CommissionItemCalculator $calculator) {}
+
+    public function availableInvoices(string $from, string $to, ?string $search = null, int $perPage = 25): LengthAwarePaginator
+    {
+        [$start, $end] = $this->boundaries($from, $to);
+        $seller = Invoice::effectiveSellerSql('invoices', 'report_preinvoices');
+        return Invoice::query()->select('invoices.*')->selectRaw("{$seller} as effective_seller_id")
+            ->leftJoin('preinvoice_orders as report_preinvoices', 'report_preinvoices.id', '=', 'invoices.preinvoice_order_id')
+            ->with(['customer:id,first_name,last_name', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
+            ->withSum('payments as paid_amount', 'amount')
+            ->whereNotNull(DB::raw($seller))->whereBetween(DB::raw('COALESCE(invoices.document_date, invoices.created_at)'), [$start, $end])
+            ->where(fn ($q) => $q->whereNull('invoices.status')->orWhereNotIn('invoices.status', Invoice::cancelledStatuses()))
+            ->when($search, fn ($q) => $q->where(fn ($x) => $x->where('invoices.uuid', 'like', "%{$search}%")->orWhere('invoices.customer_name', 'like', "%{$search}%")))
+            ->orderByDesc(DB::raw('COALESCE(invoices.document_date, invoices.created_at)'))->paginate($perPage)->withQueryString();
+    }
+
+    public function findInvoice(string $number): ?Invoice
+    {
+        $seller = Invoice::effectiveSellerSql('invoices', 'report_preinvoices');
+        return Invoice::query()->select('invoices.*')->selectRaw("{$seller} as effective_seller_id")
+            ->leftJoin('preinvoice_orders as report_preinvoices', 'report_preinvoices.id', '=', 'invoices.preinvoice_order_id')
+            ->with(['customer:id,first_name,last_name', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name'])
+            ->withSum('payments as paid_amount', 'amount')
+            ->where('invoices.uuid', $number)->whereNotNull(DB::raw($seller))
+            ->where(fn ($q) => $q->whereNull('invoices.status')->orWhereNotIn('invoices.status', Invoice::cancelledStatuses()))->first();
+    }
+
+    public function preview(array $ids): array
+    {
+        $invoices = Invoice::query()->with(['items.product.category.parent', 'items.variant', 'customer', 'seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator'])
+            ->whereIn('id', $ids)
+            ->where(fn ($q) => $q->whereNull('status')->orWhereNotIn('status', Invoice::cancelledStatuses()))
+            ->get();
+        if ($invoices->count() !== count(array_unique(array_map('intval', $ids)))) {
+            throw ValidationException::withMessages(['invoice_ids' => 'یک یا چند فاکتور انتخاب‌شده معتبر یا قابل محاسبه نیست.']);
+        }
+        $dates = $invoices->map(fn (Invoice $invoice) => CarbonImmutable::parse($invoice->display_document_date));
+        $this->calculator->warm($dates->min()->startOfDay(), $dates->max()->addDay()->startOfDay());
+        $rows = collect();
+        foreach ($invoices as $invoice) {
+            $seller = $invoice->commissionSellerId();
+            if (! $seller) {
+                throw ValidationException::withMessages(['invoice_ids' => "فاکتور {$invoice->uuid} فروشنده معتبر ندارد."]);
+            }
+            foreach ($invoice->items as $item) {
+                $rows->push(['invoice' => $invoice, 'calculation' => $this->calculator->calculate($invoice, $item, $seller, $invoice->display_document_date)]);
+            }
+        }
+        return ['invoices' => $invoices, 'rows' => $rows];
+    }
+
+    private function boundaries(string $from, string $to): array
+    {
+        $parse = fn ($value) => CarbonImmutable::createFromFormat('!Y-m-d', preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) ? $value : JalaliDate::toGregorianDate($value), config('app.timezone'));
+        $start = $parse($from)->startOfDay(); $end = $parse($to)->endOfDay();
+        abort_if($start->isAfter($end), 422, 'بازهٔ تاریخ نامعتبر است.'); return [$start, $end];
+    }
     public function periodSummary(CommissionPeriod $period, ?int $sellerId = null): array
     {
         $query = $this->active($period)->when($sellerId, fn ($builder) => $builder->where('seller_id', $sellerId));

@@ -15,69 +15,24 @@ use App\Models\SalesHavalehHistory;
 use App\Models\StockCountDocument;
 use App\Models\StockMovement;
 use App\Models\User;
-use App\Services\Commissions\CommissionDashboardService;
-use App\Services\Commissions\CommissionFeatureService;
-use App\Services\Commissions\CurrentCommissionPeriodResolver;
 use App\Support\Currency;
 use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Morilog\Jalali\Jalalian;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request, CurrentCommissionPeriodResolver $periodResolver, CommissionDashboardService $commissionDashboardService, CommissionFeatureService $commissionFeatures)
+    public function index(Request $request)
     {
         /** @var User $user */
         $user = $request->user();
         $now = now();
         $today = $now->copy()->startOfDay();
-
-        $canViewCommissionTeam = $this->userHasAnyPermission($user, [
-            'commissions.manage_rates',
-            'commissions.manage_campaigns',
-            'commissions.manage_periods',
-            'commissions.manage_targets',
-            'commissions.recalculate',
-            'commissions.view_seller_details',
-            'commissions.manage_documents',
-            'commissions.review_documents',
-            'commissions.finalize_documents',
-            'commissions.print_documents',
-            'commissions.close_periods',
-            'commissions.manage_adjustments',
-            'commissions.review_adjustments',
-            'commissions.record_payments',
-            'commissions.void_payments',
-            'commissions.mark_period_paid',
-            'commissions.view_settlements',
-        ]);
-        $commissionPilotMode = $commissionFeatures->isPilotMode();
-        $commissionSellerVisibilityEnabled = $commissionFeatures->isSellerVisibilityEnabled();
-        $commissionTargetsEnabled = $commissionFeatures->areTargetsEnabled();
-        $commissionDashboard = null;
-        $commissionPeriodUnavailable = false;
-        if ($canViewCommissionTeam || ($user->is_seller && $commissionSellerVisibilityEnabled)) {
-            try {
-                $commissionPeriod = $periodResolver->resolve($now);
-                $commissionDashboard = $commissionDashboardService->build(
-                    $commissionPeriod,
-                    $canViewCommissionTeam ? null : (int) $user->id,
-                    $commissionTargetsEnabled,
-                );
-            } catch (\Throwable $exception) {
-                $commissionPeriodUnavailable = true;
-                Log::error('Commission dashboard could not resolve the current period.', [
-                    'user_id' => $user->id,
-                    'exception' => $exception,
-                ]);
-            }
-        }
 
         $sellerDashboardEnabled = $this->userHasAnyPermission($user, [
             'preinvoices.create',
@@ -276,16 +231,6 @@ class DashboardController extends Controller
             'canViewManagementReports' => $canViewManagementReports,
             'canViewFinanceReports' => $canViewFinanceReports,
             'canViewWarehouseReports' => $canViewWarehouseReports,
-            'commissionDashboard' => $commissionDashboard,
-            'commissionPeriodUnavailable' => $commissionPeriodUnavailable,
-            'canViewCommissionTeam' => $canViewCommissionTeam,
-            'commissionPilotMode' => $commissionPilotMode,
-            'commissionSellerVisibilityEnabled' => $commissionSellerVisibilityEnabled,
-            'commissionTargetsEnabled' => $commissionTargetsEnabled,
-            'commissionPageUrl' => ($canViewCommissionTeam || $commissionSellerVisibilityEnabled)
-                && $this->canUseRoute($user, 'commercial.commissions.index')
-                ? route('commercial.commissions.index')
-                : null,
         ]));
     }
 

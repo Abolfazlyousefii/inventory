@@ -57,10 +57,6 @@
             </div>
         </header>
 
-        @if($commissionDashboard || $commissionPeriodUnavailable)
-            @include('dashboard.partials.commission-widget')
-        @endif
-
         @if($sellerQuickActions->isNotEmpty())
             <section class="seller-section" aria-labelledby="seller-quick-actions-title">
                 <div class="seller-section__heading">
@@ -271,9 +267,6 @@
             </div>
         </header>
 
-        @if($commissionDashboard || $commissionPeriodUnavailable)
-            @include('dashboard.partials.commission-widget')
-        @endif
     @endif
 
     @if($canViewManagementReports || $canViewFinanceReports || $canViewWarehouseReports)
