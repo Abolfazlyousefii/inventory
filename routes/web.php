@@ -59,6 +59,7 @@ use App\Http\Controllers\Portal\CustomerAuthController;
 use App\Models\SalesReturnDocument;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
+use App\Services\Sync\SiteCustomersSyncService;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
@@ -661,7 +662,15 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
-// Removed public test route. Sync/test endpoints must not be exposed in production.
+Route::get('/test', function () {
+    $customer = \App\Models\Customer::with('userSite')->find(3101);
 
+    dd(
+        $customer->site_customer_id,
+        $customer->userSite,
+        $customer->userSite->balance
+    );
+
+});
 
 require __DIR__ . '/auth.php';
