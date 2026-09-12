@@ -2507,31 +2507,15 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     async function loadLatestDbAutosaveBanner() {
-	    if (IS_EDIT) return;
-
-	    try {
-		    const {json} = await fetchJson(API.autosaveLatest);
-
-		    if (!json?.draft) return;
-
-		    latestDbAutosaveDraft = json.draft;
-
-		    const token = normalize(localStorage.getItem(RESERVATION_TOKEN_KEY));
-
-		    if (token && token === normalize(json.draft.draft_token)) {
-			    currentAutosaveUuid = json.draft.uuid || null;
-			    currentAutosaveVersion = json.draft.version || null;
-
-			    const autosaveInput = document.getElementById('autosave_uuid');
-			    if (autosaveInput) {
-				    autosaveInput.value = currentAutosaveUuid || '';
-			    }
-		    }
-
-		    showDbAutosaveBanner(json.draft);
-
-	    } catch (e) {}
+        if (IS_EDIT) return;
+        try {
+            const {json} = await fetchJson(API.autosaveLatest);
+            if (!json?.draft) return;
+            latestDbAutosaveDraft = json.draft;
+            showDbAutosaveBanner(json.draft);
+        } catch (e) {}
     }
+
     function bindLocalDraftEvents() {
         document.getElementById('loadLocalDraftBtn').onclick = function() {
             const draft = getLocalDraft();

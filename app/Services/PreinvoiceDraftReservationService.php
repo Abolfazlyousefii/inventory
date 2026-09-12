@@ -45,10 +45,12 @@ class PreinvoiceDraftReservationService
                 || $row->converted_at !== null || $row->reservation_scope === 'official'
                 || (int) $row->user_id !== $userId);
             if ($protected) {
+
                 Log::warning('RESERVATION_SYNC_SKIPPED', [
                     'reason' => 'protected_or_foreign_token', 'reservation_id' => $protected->id,
                     'preinvoice_order_id' => $protected->preinvoice_order_id, 'actor_id' => $userId,
                 ]);
+
                 return ['reserved' => [], 'skipped' => true, 'reason' => 'protected_or_foreign_token'];
             }
 
