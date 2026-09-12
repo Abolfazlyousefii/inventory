@@ -925,6 +925,7 @@ class PreinvoiceController extends Controller
         return response()->json(['ok' => true, 'draft' => [
             'uuid' => $order->uuid,
             'version' => $this->autosaveVersion($order),
+            'draft_token' => $order->draft_token,
             'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
             'is_in_person' => (bool) $order->is_in_person,
             'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],

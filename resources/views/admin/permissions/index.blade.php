@@ -7,6 +7,46 @@
 @section('title','مدیریت دسترسی کاربران')
 
 @section('content')
+
+	<style>
+		/* BARON modern dashboard redesign layer */
+		.access-page, .roles-page {
+			padding:30px;
+			background:#f6f7fb;
+			min-height:100%;
+		}
+		.access-hero, .roles-hero {
+			background:linear-gradient(135deg,#111827,#374151);
+			color:#fff;
+			border-radius:28px;
+			padding:35px;
+			box-shadow:0 20px 50px rgba(0,0,0,.12);
+		}
+		.access-card, .role-card, .permission-group {
+			background:#fff;
+			border-radius:22px;
+			border:1px solid #e8ebf2;
+			box-shadow:0 10px 35px rgba(0,0,0,.06);
+			transition:.25s;
+		}
+		.access-card:hover, .role-card:hover, .permission-group:hover {
+			transform:translateY(-4px);
+			box-shadow:0 20px 45px rgba(0,0,0,.1);
+		}
+		.roles-grid, .roles-grid, .permission-module-section {
+			gap:20px;
+		}
+		.role-card {
+			padding:24px;
+		}
+		.btn {
+			border-radius:14px !important;
+		}
+		.form-control, .form-select {
+			border-radius:14px;
+			padding:12px 15px;
+		}
+	</style>
 	<div class="access-page">
 
 		<div class="access-hero">

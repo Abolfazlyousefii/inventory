@@ -2,289 +2,285 @@
 
 @section('content')
 
+	<style>
+		/* BARON modern dashboard redesign layer */
+		.access-page, .roles-page {
+			padding    : 30px;
+			background : #f6f7fb;
+			min-height : 100%;
+		}
+
+		.access-hero, .roles-hero {
+			background    : linear-gradient(135deg, #111827, #374151);
+			color         : #fff;
+			border-radius : 28px;
+			padding       : 35px;
+			box-shadow    : 0 20px 50px rgba(0, 0, 0, .12);
+		}
+
+		.access-card, .role-card, .permission-group {
+			background    : #fff;
+			border-radius : 22px;
+			border        : 1px solid #e8ebf2;
+			box-shadow    : 0 10px 35px rgba(0, 0, 0, .06);
+			transition    : .25s;
+		}
+
+		.access-card:hover, .role-card:hover, .permission-group:hover {
+			transform  : translateY(-4px);
+			box-shadow : 0 20px 45px rgba(0, 0, 0, .1);
+		}
+
+		.roles-grid, .roles-grid, .permission-module-section {
+			gap : 20px;
+		}
+
+		.role-card {
+			padding : 24px;
+		}
+
+		.btn {
+			border-radius : 14px !important;
+		}
+
+		.form-control, .form-select {
+			border-radius : 14px;
+			padding       : 12px 15px;
+		}
+	</style>
+
 	<div class="roles-page" dir="rtl">
 
 		<style>
 
-			.roles-page{
-				padding:30px;
+			.roles-page {
+				padding : 30px;
 			}
-
 
 			/* Hero */
 
-			.roles-hero{
+			.roles-hero {
 
-				background:
-						linear-gradient(
-								135deg,
-								#ffffff,
-								#f4f7ff
-						);
+				background      : linear-gradient(
+						135deg,
+						#ffffff,
+						#f4f7ff
+				);
 
-				border-radius:32px;
+				border-radius   : 32px;
 
-				padding:35px;
+				padding         : 35px;
 
-				display:flex;
+				display         : flex;
 
-				justify-content:space-between;
+				justify-content : space-between;
 
-				align-items:center;
+				align-items     : center;
 
-				margin-bottom:35px;
+				margin-bottom   : 35px;
 
-				border:1px solid #edf0f7;
-
-			}
-
-
-			.roles-title{
-
-				font-size:32px;
-
-				font-weight:900;
-
-				margin:0;
+				border          : 1px solid #edf0f7;
 
 			}
 
+			.roles-title {
 
-			.roles-desc{
+				font-size   : 32px;
 
-				margin-top:10px;
+				font-weight : 900;
 
-				color:#6c757d;
+				margin      : 0;
 
 			}
 
+			.roles-desc {
 
+				margin-top : 10px;
+
+				color      : #6c757d;
+
+			}
 
 			/* Button */
 
+			.new-role {
 
-			.new-role{
+				padding       : 14px 28px;
 
-				padding:14px 28px;
+				border-radius : 18px;
 
-				border-radius:18px;
-
-				font-weight:800;
+				font-weight   : 800;
 
 			}
-
-
-
-
 
 			/* Cards */
 
+			.roles-grid {
 
-			.roles-grid{
+				display               : grid;
 
-				display:grid;
+				grid-template-columns :
+    repeat(auto-fill, minmax(280px, 1fr));
 
-				grid-template-columns:
-    repeat(auto-fill,minmax(280px,1fr));
-
-				gap:25px;
-
-			}
-
-
-
-
-
-			.role-card{
-
-				background:white;
-
-				border-radius:28px;
-
-				padding:25px;
-
-				border:1px solid #edf0f5;
-
-				position:relative;
-
-				overflow:hidden;
-
-				transition:.25s;
-
+				gap                   : 25px;
 
 			}
 
+			.role-card {
 
+				background    : white;
 
-			.role-card:hover{
+				border-radius : 28px;
 
-				transform:translateY(-8px);
+				padding       : 25px;
 
-				box-shadow:
-						0 25px 60px rgba(0,0,0,.10);
+				border        : 1px solid #edf0f5;
 
-			}
+				position      : relative;
 
+				overflow      : hidden;
 
-
-
-			.role-card::before{
-
-				content:"";
-
-				position:absolute;
-
-				top:0;
-
-				right:0;
-
-				width:100%;
-
-				height:5px;
-
-				background:
-						linear-gradient(
-								90deg,
-								#0d6efd,
-								#6f42c1
-						);
+				transition    : .25s;
 
 			}
 
+			.role-card:hover {
 
+				transform  : translateY(-8px);
 
-
-
-			.role-top{
-
-				display:flex;
-
-				align-items:center;
-
-				gap:15px;
+				box-shadow : 0 25px 60px rgba(0, 0, 0, .10);
 
 			}
 
+			.role-card::before {
 
+				content    : "";
 
+				position   : absolute;
 
-			.role-avatar{
+				top        : 0;
 
-				width:55px;
+				right      : 0;
 
-				height:55px;
+				width      : 100%;
 
-				border-radius:20px;
+				height     : 5px;
 
-				background:#eef5ff;
-
-				color:#0d6efd;
-
-				display:flex;
-
-				align-items:center;
-
-				justify-content:center;
-
-				font-size:24px;
-
-				font-weight:900;
+				background : linear-gradient(
+						90deg,
+						#0d6efd,
+						#6f42c1
+				);
 
 			}
 
+			.role-top {
 
+				display     : flex;
 
-			.role-name{
+				align-items : center;
 
-				font-size:20px;
-
-				font-weight:900;
-
-			}
-
-
-
-
-
-			.permission-pill{
-
-				margin-top:25px;
-
-				display:inline-flex;
-
-				padding:10px 18px;
-
-				border-radius:999px;
-
-				background:#f1f3f5;
-
-				font-weight:700;
+				gap         : 15px;
 
 			}
 
+			.role-avatar {
 
+				width           : 55px;
 
+				height          : 55px;
 
+				border-radius   : 20px;
 
-			.role-actions{
+				background      : #eef5ff;
 
-				display:flex;
+				color           : #0d6efd;
 
-				gap:10px;
+				display         : flex;
 
-				margin-top:25px;
+				align-items     : center;
 
-			}
+				justify-content : center;
 
+				font-size       : 24px;
 
-
-			.role-actions .btn{
-
-				flex:1;
-
-				border-radius:15px;
-
-				font-weight:700;
+				font-weight     : 900;
 
 			}
 
+			.role-name {
 
+				font-size   : 20px;
 
-			@media(max-width:700px){
+				font-weight : 900;
 
-				.roles-page{
+			}
 
-					padding:15px;
+			.permission-pill {
+
+				margin-top    : 25px;
+
+				display       : inline-flex;
+
+				padding       : 10px 18px;
+
+				border-radius : 999px;
+
+				background    : #f1f3f5;
+
+				font-weight   : 700;
+
+			}
+
+			.role-actions {
+
+				display    : flex;
+
+				gap        : 10px;
+
+				margin-top : 25px;
+
+			}
+
+			.role-actions .btn {
+
+				flex          : 1;
+
+				border-radius : 15px;
+
+				font-weight   : 700;
+
+			}
+
+			@media (max-width : 700px) {
+
+				.roles-page {
+
+					padding : 15px;
 
 				}
 
+				.roles-hero {
 
-				.roles-hero{
+					flex-direction : column;
 
-					flex-direction:column;
+					gap            : 20px;
 
-					gap:20px;
-
-					align-items:stretch;
+					align-items    : stretch;
 
 				}
 
+				.new-role {
 
-				.new-role{
-
-					width:100%;
+					width : 100%;
 
 				}
 
 			}
-
 
 		</style>
 
-
-
 		<div class="roles-hero">
-
 
 			<div>
 
@@ -294,44 +290,29 @@
 
 				</h1>
 
-
 				<div class="roles-desc">
 
 					کنترل سطح دسترسی کاربران سیستم
 
 				</div>
 
-
 			</div>
 
-
-
-			<a href="{{ route('admin.roles.create') }}"
-			   class="btn btn-primary new-role">
+			<a href="{{ route('admin.roles.create') }}" class="btn btn-primary new-role">
 
 				+ ایجاد نقش
 
 			</a>
 
-
 		</div>
-
-
-
-
 
 		<div class="roles-grid">
 
-
-
 			@foreach($roles as $role)
-
 
 				<div class="role-card">
 
-
 					<div class="role-top">
-
 
 						<div class="role-avatar">
 
@@ -339,18 +320,13 @@
 
 						</div>
 
-
 						<div class="role-name">
 
 							{{ $role->name }}
 
 						</div>
 
-
 					</div>
-
-
-
 
 					<div class="permission-pill">
 
@@ -362,37 +338,21 @@
 
 					</div>
 
-
-
-
-
 					<div class="role-actions">
 
-
-						<a href="{{ route('admin.roles.edit',$role) }}"
-						   class="btn btn-outline-primary">
-
+						<a href="{{ route('admin.roles.edit',$role) }}" class="btn btn-outline-primary">
 
 							ویرایش
 
 						</a>
 
-
-
-
 						@unless(in_array($role->name,$protectedRoleNames,true))
 
-
-							<form action="{{ route('admin.roles.destroy',$role) }}"
-							      method="POST"
-							      class="flex-fill"
-							      onsubmit="return confirm('آیا از حذف این نقش مطمئن هستید؟')">
-
+							<form action="{{ route('admin.roles.destroy',$role) }}" method="POST" class="flex-fill" onsubmit="return confirm('آیا از حذف این نقش مطمئن هستید؟')">
 
 								@csrf
 
 								@method('DELETE')
-
 
 								<button class="btn btn-outline-danger w-100">
 
@@ -400,31 +360,18 @@
 
 								</button>
 
-
 							</form>
-
 
 						@endunless
 
-
-
 					</div>
-
-
 
 				</div>
 
-
-
 			@endforeach
-
-
 
 		</div>
 
-
-
 	</div>
-
 
 @endsection

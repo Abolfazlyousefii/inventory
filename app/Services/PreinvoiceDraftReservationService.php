@@ -28,6 +28,19 @@ class PreinvoiceDraftReservationService
             // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
             $tokenRows = PreinvoiceDraftReservation::query()->where('token', $token)->lockForUpdate()->get();
+            Log::warning('RESERVATION_ROWS_DEBUG', [
+                'token' => $token,
+                'userId' => $userId,
+                'count' => $tokenRows->count(),
+                'rows' => $tokenRows->map(fn ($row) => [
+                    'id' => $row->id,
+                    'user_id' => $row->user_id,
+                    'preinvoice_order_id' => $row->preinvoice_order_id,
+                    'converted_at' => $row->converted_at,
+                    'reservation_scope' => $row->reservation_scope,
+                    'released_at' => $row->released_at,
+                ])->toArray(),
+            ]);
             $protected = $tokenRows->first(fn ($row) => $row->preinvoice_order_id !== null
                 || $row->converted_at !== null || $row->reservation_scope === 'official'
                 || (int) $row->user_id !== $userId);
