@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PreinvoiceDraftReservation;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\WarehouseStock;
 use App\Models\PreinvoiceOrder;
 use App\Models\User;
 use App\Support\ActivityLogger;
@@ -386,8 +387,34 @@ class PreinvoiceDraftReservationService
             return;
         }
 
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        $available = max(0, (int) $variant->stock);
+        $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
+        // The central warehouse row is the canonical, lockable sellable-stock source.
+        $centralStock = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->lockForUpdate()
+            ->first();
+        $available = max(0, (int) ($centralStock?->quantity ?? 0));
+
+        if ($delta > $available) {
+            $product = $variant->product;
+            $itemError = [
+                'product_id' => $productId,
+                'variant_id' => $variantId,
+                'product_name' => $product?->name ?? $product?->title ?? '',
+                'product_code' => $product?->code ?? '',
+                'variant_name' => $variant->variant_name ?? $variant->name ?? '',
+                'variant_code' => $variant->code ?? '',
+                'available_quantity' => $available,
+                'requested_quantity' => $delta,
+                'message' => "موجودی قابل فروش این تنوع کافی نیست. موجودی انبار مرکزی: {$available} | افزایش درخواستی: {$delta}",
+            ];
+            throw ValidationException::withMessages([
+                'items' => [$itemError['message']],
+                'item_errors' => [$itemError],
+            ]);
+        }
 
         if ($delta > $available) {
             throw ValidationException::withMessages([

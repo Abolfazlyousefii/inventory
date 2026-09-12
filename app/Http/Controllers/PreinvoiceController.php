@@ -755,8 +755,16 @@ class PreinvoiceController extends Controller
                 abort_if($tokenAlreadyUsed, 409, 'این فرم قبلاً ذخیره شده است؛ قبل از ادامه نسخه سرور را بازیابی کنید.');
             } else {
                 $order->load('items');
-                abort_unless(hash_equals($this->autosaveVersion($order), (string) ($validated['base_version'] ?? '')), 409,
-                    'نسخه جدیدتری از پیش‌نویس ذخیره شده است؛ برای جلوگیری از حذف اطلاعات، ابتدا آن را بازیابی کنید.');
+                if (! hash_equals($this->autosaveVersion($order), (string) ($validated['base_version'] ?? ''))) {
+                    throw new HttpResponseException(response()->json([
+                        'ok' => false,
+                        'code' => 'draft_version_conflict',
+                        'message' => 'نسخه جدیدتری از پیش‌نویس ذخیره شده است؛ برای جلوگیری از حذف اطلاعات، ابتدا آن را بازیابی کنید.',
+                        'draft_uuid' => $order->uuid,
+                        'server_version' => $this->autosaveVersion($order),
+                        'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
+                    ], 409));
+                }
             }
 
             // Omitted optional fields are not instructions to erase existing data.
@@ -907,7 +915,7 @@ class PreinvoiceController extends Controller
         ], 422));
     }
 
-    public function latestAutosave()
+    public function latestAutosave(Request $request)
     {
         abort_unless(auth()->check(), 403);
         $order = PreinvoiceOrder::query()
@@ -915,6 +923,7 @@ class PreinvoiceController extends Controller
             ->where('created_by', auth()->id())
             ->where('status', PreinvoiceOrder::STATUS_DRAFT)
             ->where('is_auto_draft', true)
+            ->when($request->filled('draft_uuid'), fn ($query) => $query->where('uuid', (string) $request->query('draft_uuid')))
             ->latest('auto_saved_at')
             ->first();
 
