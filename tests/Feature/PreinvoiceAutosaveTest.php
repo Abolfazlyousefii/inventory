@@ -142,6 +142,29 @@ it('rejects stale writes even within the same timestamp second and with a confir
         ->and($saved['version'])->not->toBe($old['base_version']);
 });
 
+it('loads the current server draft version and then accepts an edited autosave', function () {
+    $first = autosaveExistingPayload($this);
+    $concurrent = $first;
+    $concurrent['products'][] = $this->rows[2];
+    $saved = $this->postJson(route('preinvoice.autosave'), $concurrent)->assertOk()->json();
+
+    $this->postJson(route('preinvoice.autosave'), $first)
+        ->assertConflict()
+        ->assertJsonPath('code', 'draft_version_conflict')
+        ->assertJsonPath('draft_uuid', $first['draft_uuid'])
+        ->assertJsonStructure(['server_version', 'saved_at']);
+
+    $fresh = $this->getJson(route('preinvoice.autosave.latest', ['draft_uuid' => $first['draft_uuid']]))
+        ->assertOk()->json('draft');
+    expect($fresh['version'])->toBe($saved['version']);
+    $edited = array_merge($concurrent, [
+        'draft_uuid' => $fresh['uuid'],
+        'base_version' => $fresh['version'],
+    ]);
+    $edited['payment_terms_note'] = 'edited after loading the fresh server draft';
+    $this->postJson(route('preinvoice.autosave'), $edited)->assertOk();
+});
+
 it('requires the base version and never falls back to a different draft', function () {
     $payload = autosaveExistingPayload($this);
     $before = autosaveStoredState();

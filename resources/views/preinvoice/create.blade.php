@@ -1699,9 +1699,34 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     };
 
     const RECENT_PRODUCTS_KEY = 'aria_preinvoice_recent_mothers_v3';
-    const LOCAL_DRAFT_VERSION = 1;
-    const LOCAL_DRAFT_KEY = 'aria_preinvoice_local_draft_create_v1';
-    const RESERVATION_TOKEN_KEY = 'aria_preinvoice_reservation_token_v1';
+    const LOCAL_DRAFT_VERSION = 2;
+    const LEGACY_LOCAL_DRAFT_KEY = 'aria_preinvoice_local_draft_create_v1';
+    const LEGACY_RESERVATION_TOKEN_KEY = 'aria_preinvoice_reservation_token_v1_' + @json((string) auth()->id());
+    const FORM_INSTANCE_KEY = 'aria_preinvoice_create_form_instance_v2';
+
+    // A refresh keeps sessionStorage, whereas a new or duplicated tab starts a
+    // navigation and gets an independent draft/token namespace.
+    function createFormInstanceId() {
+        const navigationType = performance.getEntriesByType?.('navigation')?.[0]?.type;
+        let id = sessionStorage.getItem(FORM_INSTANCE_KEY);
+        if (!id || navigationType === 'navigate') {
+            id = window.crypto?.randomUUID ? window.crypto.randomUUID() : cryptoRandomUuidFallback();
+            sessionStorage.setItem(FORM_INSTANCE_KEY, id);
+        }
+        return id;
+    }
+    const FORM_INSTANCE_ID = IS_EDIT ? 'edit-' + (EDIT_ORDER_UUID || 'current') : createFormInstanceId();
+    const LOCAL_DRAFT_KEY = 'aria_preinvoice_local_draft_create_v2_' + FORM_INSTANCE_ID;
+    const RESERVATION_TOKEN_KEY = 'aria_preinvoice_reservation_token_v2_' + FORM_INSTANCE_ID;
+
+    // v1 state was shared between tabs; retire it, but never import its token or
+    // draft into a v2 form namespace.
+    if (!IS_EDIT && !localStorage.getItem(LOCAL_DRAFT_KEY)) {
+        try {
+            localStorage.removeItem(LEGACY_LOCAL_DRAFT_KEY);
+            localStorage.removeItem(LEGACY_RESERVATION_TOKEN_KEY);
+        } catch (e) {}
+    }
 
     const SERVER_ITEM_ERRORS = @json(session('preinvoice_item_errors', []));
 
@@ -1883,9 +1908,27 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const {response: res, json} = result;
         if (!res.ok || json?.ok === false) {
             const message = Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در فریز موجودی پیش‌فاکتور.';
-            throw new Error(message);
+            const error = new Error(message);
+            error.itemErrors = json?.item_errors || [];
+            if (error.itemErrors.length) showReservationItemErrors(error.itemErrors);
+            throw error;
         }
         return json;
+    }
+
+    function showReservationItemErrors(errors) {
+        (errors || []).forEach(error => {
+            const variantId = Number(error?.variant_id || 0);
+            document.querySelectorAll(`[data-variant-pill="${variantId}"]`).forEach(pill => {
+                pill.classList.add('border', 'border-danger', 'bg-danger-subtle');
+                const message = pill.querySelector('[data-stock-row-error]');
+                if (message) {
+                    message.textContent = error.message || `موجودی قابل فروش: ${formatNum(error.available_quantity || 0)} | درخواست: ${formatNum(error.requested_quantity || 0)}`;
+                    message.classList.remove('d-none');
+                }
+                pill.scrollIntoView({behavior: 'smooth', block: 'center'});
+            });
+        });
     }
 
     function currentIsInPerson() {
@@ -2295,6 +2338,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         if (!res.ok || json?.ok === false) {
             autosaveConflict = res.status === 409;
             autosaveDirty = res.status >= 500;
+            if (res.status === 409 && json?.code === 'draft_version_conflict') {
+                // Do not retry or reuse the cached banner object. Its load action
+                // always fetches this UUID again before hydrating.
+                showDbAutosaveBanner({uuid: json.draft_uuid, saved_at: json.saved_at});
+            }
             throw new Error(json?.message || 'ذخیره انجام نشد؛ پیش‌نویس قبلی حفظ شد.');
         }
         currentAutosaveUuid = json.uuid || currentAutosaveUuid;
@@ -2487,6 +2535,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         updateSubmitState();
         updateLocalDraftStatus('پیش‌نویس بدون رزرو موجودی بازیابی شد', true);
         isHydratingLocalDraft = false;
+        // The server version above is fresh. Queue exactly one post-hydration save.
         scheduleDbAutosave();
     }
 
@@ -2496,7 +2545,15 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const banner = document.getElementById('localDraftBanner');
         document.getElementById('localDraftBannerText').textContent = 'یک پیش‌نویس ذخیره‌شده پیدا شد. این پیش‌نویس بدون رزرو موجودی بازیابی می‌شود و موجودی کالاها هنگام ادامه کار دوباره بررسی خواهد شد.';
         banner.classList.add('is-visible');
-        document.getElementById('loadLocalDraftBtn').onclick = () => applyDbAutosaveDraft(draft);
+        document.getElementById('loadLocalDraftBtn').onclick = async () => {
+            try {
+                const fresh = await fetchFreshDbAutosaveDraft(draft.uuid);
+                if (!fresh) throw new Error('این پیش‌نویس دیگر قابل بازیابی خودکار نیست. اطلاعات فرم فعلی حفظ شد.');
+                await applyDbAutosaveDraft(fresh);
+            } catch (error) {
+                updateLocalDraftStatus(error.message || 'بازیابی نسخهٔ سرور انجام نشد.', false);
+            }
+        };
         document.getElementById('discardLocalDraftBtn').onclick = async () => {
             if (!confirm('پیش‌نویس ذخیره‌شده حذف شود؟')) return;
             await fetchJson(API.autosaveDiscardBase + '/' + encodeURIComponent(draft.uuid) + '/discard', {
@@ -2514,6 +2571,13 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             latestDbAutosaveDraft = json.draft;
             showDbAutosaveBanner(json.draft);
         } catch (e) {}
+    }
+
+    async function fetchFreshDbAutosaveDraft(uuid) {
+        const params = new URLSearchParams();
+        if (uuid) params.set('draft_uuid', uuid);
+        const {json} = await fetchJson(API.autosaveLatest + (params.size ? '?' + params.toString() : ''));
+        return json?.draft || null;
     }
 
     function bindLocalDraftEvents() {
