@@ -667,12 +667,12 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 Route::get('/test', function () {
-    $customer = \App\Models\Customer::with('userSite')->find(3101);
+    $customer = \App\Models\Customer::find(3101);
 
     dd(
         $customer->site_customer_id,
-        $customer->userSite,
-        $customer->userSite->balance
+        $customer->balance,
+        $customer->deposit(200)
     );
 
 });
