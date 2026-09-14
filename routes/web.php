@@ -60,6 +60,7 @@ use App\Models\SalesReturnDocument;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
 
@@ -673,6 +674,49 @@ Route::get('/test', function () {
         $customer->userSite,
         $customer->userSite->balance
     );
+
+});
+
+
+
+Route::get('/temp/customer-financials', function () {
+
+    $customers = DB::table('customers')->get();
+
+    $data = $customers->map(function ($customer) {
+
+        $ledgers = DB::table('customer_ledgers')
+            ->where('customer_id', $customer->id)
+            ->get();
+
+        $invoices = DB::table('invoices')
+            ->where('customer_id', $customer->id)
+            ->get();
+
+        return [
+            'customer' => $customer,
+
+            'debtor_ledger' => [
+                'total_debit' => $ledgers
+                    ->where('type', 'debit')
+                    ->sum('amount'),
+
+                'total_credit' => $ledgers
+                    ->where('type', 'credit')
+                    ->sum('amount'),
+
+                'entries' => $ledgers,
+            ],
+
+            'invoices' => $invoices,
+        ];
+
+    });
+
+    return response()->json([
+        'customers_count' => $data->count(),
+        'customers' => $data,
+    ]);
 
 });
 
