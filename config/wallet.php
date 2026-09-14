@@ -2,9 +2,9 @@
 
 declare( strict_types = 1 );
 
-use App\Models\Site\Transaction;
-use App\Models\Site\Transfer;
-use App\Models\Site\Wallet;
+use Bavix\Wallet\Models\Wallet;
+use Bavix\Wallet\Models\Transaction;
+use Bavix\Wallet\Models\Transfer;
 use Bavix\Wallet\Internal\Assembler\AvailabilityDtoAssembler;
 use Bavix\Wallet\Internal\Assembler\BalanceUpdatedEventAssembler;
 use Bavix\Wallet\Internal\Assembler\ExtraDtoAssembler;
@@ -414,7 +414,7 @@ return [
      * Base model 'wallet'.
      */
     'wallet'       => [
-        'table'    => 'wallet_service',
+        'table'    => 'wallet',
         'model'    => Wallet::class,
         'creating' => [],
         'default'  => [

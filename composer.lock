@@ -162,9 +162,15 @@
             "version": "11.5.2",
             "dist": {
                 "type": "zip",
-                "url": "https://mirrors.tencent.com/repository/composer/bavix/laravel-wallet/11.5.2/bavix-laravel-wallet-11.5.2.zip",
+                "url": "https://mirror.abrha.net/repository/fcomposer/bavix/laravel-wallet/11.5.2/bavix-laravel-wallet-11.5.2.zip",
                 "reference": "adf7c9674a8297bdae33913d9193ecfc3ff9c5e8",
-                "shasum": ""
+                "shasum": "",
+                "mirrors": [
+                    {
+                        "url": "https://mirror.abrha.net/repository/composer/mirror/packagist/zipball/%package%/%version%/ref%reference%.%type%",
+                        "preferred": true
+                    }
+                ]
             },
             "require": {
                 "brick/math": ">=0.12.0 <0.19.0",
@@ -233,6 +239,16 @@
                 "issues": "https://github.com/bavix/laravel-wallet/issues",
                 "source": "https://github.com/bavix/laravel-wallet/tree/11.5.2"
             },
+            "funding": [
+                {
+                    "url": "https://www.buymeacoffee.com/babichev",
+                    "type": "buy_me_a_coffee"
+                },
+                {
+                    "url": "https://opencollective.com/laravel-wallet",
+                    "type": "open_collective"
+                }
+            ],
             "time": "2026-08-08T07:50:10+00:00"
         },
         {
