@@ -221,6 +221,46 @@ class SellerCommissionDocumentService
         ];
     }
 
+    public function findInvoiceForManualAddition(string $invoiceNumber, int $userId, ?int $currentDocumentId = null): Invoice
+    {
+        $effectiveSeller = Invoice::effectiveSellerSql('invoices', 'commission_preinvoices');
+
+        $invoice = Invoice::query()
+            ->select('invoices.*')
+            ->selectRaw("{$effectiveSeller} as effective_seller_id")
+            ->leftJoin('preinvoice_orders as commission_preinvoices', 'commission_preinvoices.id', '=', 'invoices.preinvoice_order_id')
+            ->with(['customer:id,first_name,last_name', 'seller:id,name,is_seller,is_active,can_access_erp', 'preinvoiceOrder:id,created_by,seller_id', 'preinvoiceOrder.seller:id,name,is_seller,is_active,can_access_erp', 'preinvoiceOrder.creator:id,name,is_seller,is_active,can_access_erp'])
+            ->where('invoices.uuid', $invoiceNumber)
+            ->first();
+
+        if (! $invoice) {
+            abort(404, 'فاکتوری با این شماره یافت نشد.');
+        }
+
+        if ($this->resolveInvoiceOwner($invoice) !== $userId) {
+            abort(422, 'این فاکتور متعلق به فروشنده انتخاب‌شده نیست.');
+        }
+
+        if ($invoice->isCancelled()) {
+            abort(422, 'این فاکتور لغو شده و قابل استفاده نیست.');
+        }
+
+        if (! $this->resolveInvoiceInitialDate($invoice)) {
+            abort(422, 'این فاکتور تاریخ معتبر ندارد.');
+        }
+
+        $duplicate = DB::table('seller_sales_document_items')
+            ->where('active_invoice_id', $invoice->id)
+            ->when($currentDocumentId, fn ($query) => $query->where('seller_sales_document_id', '<>', $currentDocumentId))
+            ->exists();
+
+        if ($duplicate) {
+            abort(422, 'این فاکتور قبلاً در سند دیگری ثبت شده است.');
+        }
+
+        return $invoice;
+    }
+
     public function resolveInvoiceOwner(Invoice $invoice): ?int
     {
         return $invoice->effective_seller_id;
