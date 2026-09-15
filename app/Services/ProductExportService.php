@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class ProductExportService
 {
@@ -790,9 +791,27 @@ class ProductExportService
     {
         $path = trim((string) ($product->image_path ?? ''));
 
-        // Images are served via the products.image route (ArvanCloud storage),
-        // so we only need to verify the path is non-empty — no local file-system check.
-        return $path !== '' ? $path : null;
+        if ($path === '') {
+            return null;
+        }
+
+        // If already a full URL (e.g. synced from site CDN), use directly.
+        if (filter_var($path, FILTER_VALIDATE_URL)) {
+            return $path;
+        }
+
+        // Try to build a public CDN URL from the arvan (S3-compatible) disk.
+        try {
+            $url = Storage::disk('arvan')->url($path);
+            if ($url && str_starts_with($url, 'http')) {
+                return $url;
+            }
+        } catch (\Throwable) {
+            // arvan disk not configured; fall through
+        }
+
+        // Fall back to the image proxy route (same as product listing page).
+        return route('products.image', ['product' => $product->id]);
     }
 
     private function cleanText(mixed $value, string $fallback = ''): string
