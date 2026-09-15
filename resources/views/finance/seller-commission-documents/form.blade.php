@@ -16,6 +16,17 @@
             'total' => (int) $item->invoice_total_snapshot,
         ])->values()
         : collect(old('invoice_ids', []))->map(fn ($id) => ['id' => (int) $id, 'number' => '…', 'date' => null, 'date_display' => '—', 'customer' => 'در انتظار بارگذاری', 'total' => 0])->values();
+    $manualInvoiceIds = $editing
+        ? $document->items
+            ->where('status', App\Models\SellerSalesDocumentItem::STATUS_ACTIVE)
+            ->filter(function ($item) use ($document) {
+                $date = $item->invoice_date_snapshot;
+
+                return $date && ($date->lt($document->period_from) || $date->gt($document->period_to));
+            })
+            ->pluck('invoice_id')
+            ->values()
+        : collect();
 @endphp
 
 @section('title', $editing ? 'ویرایش سند '.$document->document_number : 'ثبت سند فروش جدید')
@@ -27,6 +38,7 @@
 @section('content')
 <div class="seller-commission-page" id="sellerCommissionApp"
      data-endpoint="{{ route('finance.seller-sales.available-invoices') }}"
+     data-lookup-endpoint="{{ route('finance.seller-sales.lookup-invoice') }}"
      data-document-id="{{ $document?->id }}">
     <div class="seller-commission-header">
         <div>
@@ -65,6 +77,23 @@
                 </div>
                 <div class="col-lg-2">
                     <button type="button" class="btn btn-primary w-100" id="loadInvoices">نمایش فاکتورها</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="seller-commission-card p-3 mb-3">
+            <h6 class="mb-2">افزودن فاکتور دستی (خارج بازه تاریخی)</h6>
+            <p class="text-muted small mb-2">اگر فاکتوری در بازه تاریخی انتخاب‌شده نیست ولی باید به این سند اضافه شود، شماره فاکتور را وارد کنید.</p>
+            <div class="row g-2 align-items-end">
+                <div class="col-lg-5 col-md-6">
+                    <label class="form-label" for="manualInvoiceNumber">شماره فاکتور</label>
+                    <input class="form-control" id="manualInvoiceNumber" placeholder="شماره فاکتور (UUID) را وارد کنید…">
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <button type="button" class="btn btn-outline-primary w-100" id="searchManualInvoice">جستجو و افزودن</button>
+                </div>
+                <div class="col-lg-5">
+                    <div id="manualInvoiceResult" class="small" hidden></div>
                 </div>
             </div>
         </div>
@@ -128,6 +157,7 @@
     </form>
 
     <script type="application/json" id="initialItems">{!! json_encode($initialItems, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+    <script type="application/json" id="initialManualIds">{!! json_encode($manualInvoiceIds, JSON_HEX_TAG) !!}</script>
 </div>
 @endsection
 
@@ -138,14 +168,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!app) return;
     const byId = id => document.getElementById(id);
     const selected = new Map(JSON.parse(byId('initialItems').textContent || '[]').map(item => [Number(item.id), item]));
+    const manualIds = new Set();
+    JSON.parse(byId('initialManualIds')?.textContent || '[]').forEach(id => manualIds.add(Number(id)));
     const numberFormat = new Intl.NumberFormat('fa-IR');
     let rows = [], page = 1, lastPage = 1, perPage = 20;
     let initialUser = byId('sellerUserId').value;
 
     const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[char]));
-    const resetSelection = () => { selected.clear(); rows = []; page = lastPage = 1; byId('invoiceRows').innerHTML = '<tr><td colspan="6" class="seller-commission-empty">برای مشاهده فاکتورها دکمه نمایش را بزنید.</td></tr>'; sync(); };
+    const resetSelection = () => { selected.clear(); manualIds.clear(); rows = []; page = lastPage = 1; byId('invoiceRows').innerHTML = '<tr><td colspan="6" class="seller-commission-empty">برای مشاهده فاکتورها دکمه نمایش را بزنید.</td></tr>'; sync(); };
     const sync = () => {
-        byId('hiddenInvoices').innerHTML = [...selected.keys()].map(id => `<input type="hidden" name="invoice_ids[]" value="${id}">`).join('');
+        byId('hiddenInvoices').innerHTML = [...selected.keys()].map(id => `<input type="hidden" name="invoice_ids[]" value="${id}">`).join('')
+            + [...manualIds].filter(id => selected.has(id)).map(id => `<input type="hidden" name="manual_invoice_ids[]" value="${id}">`).join('');
         const total = [...selected.values()].reduce((sum, item) => sum + Number(item.total || 0), 0);
         byId('selectedCount').textContent = numberFormat.format(selected.size);
         byId('selectedSummary').textContent = `${numberFormat.format(selected.size)} فاکتور`;
@@ -154,14 +187,32 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('selectPage').checked = rows.length > 0 && rows.every(item => selected.has(Number(item.id)));
     };
     const render = () => {
-        byId('invoiceRows').innerHTML = rows.length ? rows.map((item, index) => `<tr>
+        const manualRows = [...selected.entries()]
+            .filter(([id]) => manualIds.has(id) && !rows.find(r => Number(r.id) === id))
+            .map(([id, item]) => `<tr class="table-info">
+                <td><input class="form-check-input invoice-choice" type="checkbox" value="${id}" checked></td>
+                <td><span class="badge bg-warning text-dark">خارج بازه</span></td>
+                <td class="fw-bold">${escapeHtml(item.number)}</td>
+                <td>${escapeHtml(item.date_display)}</td>
+                <td>${escapeHtml(item.customer)}</td>
+                <td>${numberFormat.format(Number(item.total))} ریال</td>
+            </tr>`).join('');
+        const rowsHtml = rows.length ? rows.map((item, index) => `<tr>
             <td><input class="form-check-input invoice-choice" type="checkbox" value="${Number(item.id)}"></td>
             <td>${numberFormat.format(((page - 1) * perPage) + index + 1)}</td>
             <td class="fw-bold">${escapeHtml(item.number)}</td><td>${escapeHtml(item.date_display)}</td><td>${escapeHtml(item.customer)}</td>
-            <td>${numberFormat.format(Number(item.total))} ریال</td></tr>`).join('') : '<tr><td colspan="6" class="seller-commission-empty">فاکتور آزادی در این بازه پیدا نشد.</td></tr>';
+            <td>${numberFormat.format(Number(item.total))} ریال</td></tr>`).join('') : (manualRows ? '' : '<tr><td colspan="6" class="seller-commission-empty">فاکتور آزادی در این بازه پیدا نشد.</td></tr>');
+        byId('invoiceRows').innerHTML = manualRows + rowsHtml;
         document.querySelectorAll('.invoice-choice').forEach(input => input.addEventListener('change', () => {
             const item = rows.find(row => Number(row.id) === Number(input.value));
-            input.checked ? selected.set(Number(input.value), item) : selected.delete(Number(input.value));
+            if (item) {
+                input.checked ? selected.set(Number(input.value), item) : selected.delete(Number(input.value));
+            } else if (!input.checked) {
+                selected.delete(Number(input.value));
+                manualIds.delete(Number(input.value));
+                render();
+                return;
+            }
             sync();
         }));
         byId('pageLabel').textContent = `صفحه ${numberFormat.format(page)} از ${numberFormat.format(lastPage)}`;
@@ -201,6 +252,58 @@ document.addEventListener('DOMContentLoaded', () => {
         initialUser = byId('sellerUserId').value; resetSelection(); byId('foundCount').textContent = '۰';
         if (initialUser && byId('dateFrom').value && byId('dateTo').value) load(1);
     });
+    byId('searchManualInvoice').addEventListener('click', async () => {
+        const invoiceNumber = byId('manualInvoiceNumber').value.trim();
+        const sellerId = byId('sellerUserId').value;
+        const resultDiv = byId('manualInvoiceResult');
+
+        if (!invoiceNumber) {
+            resultDiv.innerHTML = '<span class="text-danger">شماره فاکتور را وارد کنید.</span>';
+            resultDiv.hidden = false;
+            return;
+        }
+        if (!sellerId) {
+            resultDiv.innerHTML = '<span class="text-danger">ابتدا فروشنده را انتخاب کنید.</span>';
+            resultDiv.hidden = false;
+            return;
+        }
+
+        resultDiv.innerHTML = '<span class="text-muted">در حال جستجو…</span>';
+        resultDiv.hidden = false;
+
+        try {
+            const documentId = app.dataset.documentId || '';
+            const query = new URLSearchParams({invoice_number: invoiceNumber, user_id: sellerId});
+            if (documentId) query.set('document_id', documentId);
+
+            const response = await fetch(`${app.dataset.lookupEndpoint}?${query}`, {
+                headers: {'Accept': 'application/json'},
+            });
+            const payload = await response.json();
+
+            if (!response.ok) {
+                resultDiv.innerHTML = `<span class="text-danger">${escapeHtml(payload.message || 'خطا در جستجو.')}</span>`;
+                return;
+            }
+
+            const invoice = payload.data;
+
+            if (selected.has(Number(invoice.id))) {
+                resultDiv.innerHTML = '<span class="text-warning">این فاکتور قبلاً انتخاب شده است.</span>';
+                return;
+            }
+
+            selected.set(Number(invoice.id), invoice);
+            manualIds.add(Number(invoice.id));
+
+            resultDiv.innerHTML = `<span class="text-success">✓ فاکتور ${escapeHtml(invoice.number)} — مشتری: ${escapeHtml(invoice.customer)} — مبلغ: ${numberFormat.format(invoice.total)} ریال — اضافه شد.</span>`;
+            byId('manualInvoiceNumber').value = '';
+            render();
+        } catch (error) {
+            resultDiv.innerHTML = `<span class="text-danger">${escapeHtml(error.message)}</span>`;
+        }
+    });
+
     byId('documentForm').addEventListener('submit', event => {
         if (!selected.size) { event.preventDefault(); window.alert('حداقل یک فاکتور انتخاب کنید.'); return; }
         byId('submitButton').disabled = true;

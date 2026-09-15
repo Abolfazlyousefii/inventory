@@ -195,6 +195,7 @@ class PageAccessCatalog
         'finance.seller-sales.index' => ['finance.seller_sales_documents'],
         'finance.seller-sales.create' => ['finance.seller_sales_documents'],
         'finance.seller-sales.available-invoices' => ['finance.seller_sales_documents'],
+        'finance.seller-sales.lookup-invoice' => ['finance.seller_sales_documents'],
         'finance.seller-sales.store' => ['finance.seller_sales_documents'],
         'finance.seller-sales.show' => ['finance.seller_sales_documents'],
         'finance.seller-sales.edit' => ['finance.seller_sales_documents'],

@@ -5,7 +5,7 @@ use App\Support\PageAccessCatalog;
 it('keeps seller sales documents registered after adding the commission page', function () {
     expect(PageAccessCatalog::pages())->toHaveCount(39)
         ->and(PageAccessCatalog::page('finance.seller_sales_documents')['permission'])->toBe('page.finance.seller_sales_documents')
-        ->and(PageAccessCatalog::page('finance.seller_sales_documents')['routes'])->toHaveCount(35) // 15 seller-sales + 5 commission-rates + 15 org-commission
+        ->and(PageAccessCatalog::page('finance.seller_sales_documents')['routes'])->toHaveCount(36) // 16 seller-sales (incl. lookup-invoice) + 5 commission-rates + 15 org-commission
         ->and(config('role_page_defaults.roles.Accountant.page_permissions'))->toContain('page.finance.seller_sales_documents')
         ->and(config('role_page_defaults.roles.Manager.page_permissions'))->toContain('page.finance.seller_sales_documents')
         ->and(config('role_page_defaults.roles.Sales.page_permissions'))->not->toContain('page.finance.seller_sales_documents')

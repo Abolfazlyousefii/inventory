@@ -312,6 +312,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/', [SellerCommissionDocumentController::class, 'index'])->name('index');
         Route::get('/create', [SellerCommissionDocumentController::class, 'create'])->name('create');
         Route::get('/available-invoices', [SellerCommissionDocumentController::class, 'availableInvoices'])->name('available-invoices');
+        Route::get('/lookup-invoice', [SellerCommissionDocumentController::class, 'lookupInvoice'])->name('lookup-invoice');
         Route::post('/', [SellerCommissionDocumentController::class, 'store'])->name('store');
         Route::get('/{document}', [SellerCommissionDocumentController::class, 'show'])->name('show');
         Route::get('/{document}/edit', [SellerCommissionDocumentController::class, 'edit'])->name('edit');

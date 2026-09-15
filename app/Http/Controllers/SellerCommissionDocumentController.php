@@ -92,6 +92,32 @@ class SellerCommissionDocumentController extends Controller
         ]);
     }
 
+    public function lookupInvoice(Request $request): JsonResponse
+    {
+        $request->validate([
+            'invoice_number' => ['required', 'string', 'max:100'],
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'document_id' => ['nullable', 'integer', 'exists:seller_sales_documents,id'],
+        ]);
+
+        $result = $this->service->findInvoiceForManualAddition(
+            $request->string('invoice_number')->trim()->toString(),
+            $request->integer('user_id'),
+            $request->integer('document_id') ?: null,
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $result->id,
+                'number' => (string) $result->uuid,
+                'date' => $this->service->resolveInvoiceInitialDate($result)?->format('Y-m-d'),
+                'date_display' => JalaliDate::date($this->service->resolveInvoiceInitialDate($result)),
+                'customer' => $result->customer_name ?: $result->customer?->display_name ?: '—',
+                'total' => $this->service->resolveInvoiceFinalAmount($result),
+            ],
+        ]);
+    }
+
     public function store(StoreSellerCommissionDocumentRequest $request): RedirectResponse
     {
         $document = $this->service->createDocument($request->validated(), $request->user());
