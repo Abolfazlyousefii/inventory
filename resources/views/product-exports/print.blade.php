@@ -124,7 +124,7 @@
                             <th colspan="5">
                                 <div class="product-heading">
                                     @if($product['has_real_image'])
-                                        <img class="product-image" src="{{ route('products.image', ['product' => $product['id']]) }}" alt="{{ $product['name'] }}">
+                                        <img class="product-image" src="{{ $product['image_path'] }}" alt="{{ $product['name'] }}">
                                     @endif
                                     <span><span class="product-name">{{ $product['name'] }}</span><span class="product-meta">دسته: {{ $product['category_name'] }} | {{ $product['variant_count'] ?: 'بدون' }} تنوع | موجودی کل: {{ number_format($product['total_stock']) }}</span></span>
                                 </div>
@@ -155,7 +155,7 @@
                             <th colspan="2">
                                 <div class="product-heading">
                                     @if($product['has_real_image'])
-                                        <img class="product-image" src="{{ route('products.image', ['product' => $product['id']]) }}" alt="{{ $product['name'] }}">
+                                        <img class="product-image" src="{{ $product['image_path'] }}" alt="{{ $product['name'] }}">
                                     @endif
                                     <span><span class="product-name">{{ $product['name'] }}</span><span class="product-meta">دسته: {{ $product['category_name'] }} | {{ $product['model_count'] }} مدل | {{ $product['color_count'] }} رنگ | {{ $product['variant_count'] }} تنوع</span></span>
                                 </div>
