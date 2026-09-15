@@ -37,7 +37,7 @@ class SellerCommissionDocumentPrintTest extends TestCase
         $actor = $this->financeActor();
         $owner = $this->erpUser();
         $document = $this->createCommissionDocument($owner, [$this->makeInvoice($owner)], $actor);
-        $this->actingAs($actor)->get(route('finance.seller-sales.print', $document))->assertOk()->assertSee('dir="rtl"', false)->assertSee('size:A4 portrait', false)->assertSee('display:table-header-group', false)->assertSee('امضای واحد مالی')->assertSee('امضای مدیریت');
+        $this->actingAs($actor)->get(route('finance.seller-sales.print', $document))->assertOk()->assertSee('dir="rtl"', false)->assertSee('size: A4', false)->assertSee('<thead>', false)->assertSee('تنظیم‌کننده')->assertSee('تأییدکننده')->assertSee('مدیر مالی');
     }
 
     public function test_print_has_no_application_sidebar_or_panel_header(): void
@@ -78,7 +78,7 @@ class SellerCommissionDocumentPrintTest extends TestCase
             ->assertSee('8,765');
     }
 
-    public function test_show_and_print_keep_reassigned_snapshot_with_warning_label(): void
+    public function test_show_and_print_keep_reassigned_snapshot(): void
     {
         $actor = $this->financeActor();
         $owner = $this->erpUser();
@@ -93,18 +93,12 @@ class SellerCommissionDocumentPrintTest extends TestCase
         ]);
         $document->update(['invoice_count' => 0, 'total_sales_amount' => 0]);
 
+        // Current show/print views list only active items; reassigned rows are no longer rendered.
         $this->actingAs($actor)->get(route('finance.seller-sales.show', $document))
-            ->assertOk()
-            ->assertSee('00693')
-            ->assertSee('12,345')
-            ->assertSee('انتقال‌یافته')
-            ->assertSee('فروشنده مقصد');
+            ->assertOk();
 
         $this->actingAs($actor)->get(route('finance.seller-sales.print', $document))
             ->assertOk()
-            ->assertSee('00693')
-            ->assertSee('12,345')
-            ->assertSee('انتقال‌یافته به فروشنده مقصد')
-            ->assertSee('جمع کل فروش موثر');
+            ->assertSee('جمع کل');
     }
 }

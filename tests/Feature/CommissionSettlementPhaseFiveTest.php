@@ -347,8 +347,11 @@ it('reports pending correction and adjustment blockers explicitly', function () 
 
 it('enforces workflow permissions seller isolation and settlement print contract', function () {
     $period = p5Period();
-    $this->actingAs(p5PageUser())->post(route('commercial.commissions.periods.review', $period))->assertForbidden();
-    $this->actingAs(p5PageUser('commissions.close_periods'))->post(route('commercial.commissions.periods.review', $period))->assertRedirect();
+    // Retired endpoints: mutations return 410 and GET pages redirect to the finance module.
+    $retired = route('finance.seller-sales.index');
+    $this->actingAs(p5PageUser())->post(route('commercial.commissions.periods.review', $period))->assertGone();
+    $this->actingAs(p5PageUser('commissions.close_periods'))->post(route('commercial.commissions.periods.review', $period))->assertGone();
+    expect($period->fresh()->status)->toBe($period->status);
 
     $sellerA = p5PageUser();
     $sellerB = p5PageUser();
@@ -361,7 +364,6 @@ it('enforces workflow permissions seller isolation and settlement print contract
         'seller_correction_snapshot' => 0, 'manual_adjustment_snapshot' => 0, 'net_payable' => 500,
         'paid_amount' => 0, 'remaining_amount' => 500, 'status' => 'unpaid', 'source_fingerprint' => hash('sha256', 'print'), 'settled_at' => now()]);
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
-    $this->actingAs($sellerA)->get(route('commercial.commissions.settlements.print', $settlement))->assertOk()
-        ->assertSee('SET-COM-000500')->assertSee('تسویه پورسانت فروشنده')->assertSee('مانده');
-    $this->actingAs($sellerB)->get(route('commercial.commissions.settlements.show', $settlement))->assertForbidden();
+    $this->actingAs($sellerA)->get(route('commercial.commissions.settlements.print', $settlement))->assertRedirect($retired);
+    $this->actingAs($sellerB)->get(route('commercial.commissions.settlements.show', $settlement))->assertRedirect($retired);
 });

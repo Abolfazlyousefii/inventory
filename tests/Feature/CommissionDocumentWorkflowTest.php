@@ -191,10 +191,13 @@ it('calculates approved totals only and protects manager reviewer and print endp
     $printer = phaseThreeDocumentUser('commissions.print_documents');
     $this->get(route('commercial.commissions.documents.show', $document))->assertRedirect(route('login'));
     $this->actingAs(User::factory()->create())->get(route('commercial.commissions.documents.show', $document))->assertForbidden();
-    $this->actingAs($viewer)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertForbidden();
-    $this->actingAs($manager)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertRedirect();
-    $this->actingAs($manager)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertForbidden();
-    $this->actingAs($reviewer)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertRedirect();
-    $this->actingAs($viewer)->get(route('commercial.commissions.documents.print', $document))->assertForbidden();
-    $this->actingAs($printer)->get(route('commercial.commissions.documents.print', $document))->assertOk()->assertSee($document->document_number)->assertSee('پرداخت نهایی ثبت نشده است');
+    // Retired endpoints: mutations return 410 and GET pages redirect to the finance module.
+    $retired = route('finance.seller-sales.index');
+    $this->actingAs($viewer)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertGone();
+    $this->actingAs($manager)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertGone();
+    $this->actingAs($manager)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertGone();
+    $this->actingAs($reviewer)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertGone();
+    expect(app(CommissionDocumentService::class)->totals($document->fresh())['approved_total_commission'])->toBe(200_000);
+    $this->actingAs($viewer)->get(route('commercial.commissions.documents.print', $document))->assertRedirect($retired);
+    $this->actingAs($printer)->get(route('commercial.commissions.documents.print', $document))->assertRedirect($retired);
 });

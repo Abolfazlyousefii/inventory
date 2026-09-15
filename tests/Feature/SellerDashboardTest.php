@@ -59,11 +59,15 @@ class SellerDashboardTest extends TestCase
             ->assertDontSee(number_format(17_000_000));
     }
 
-    public function test_temporary_autosave_is_excluded_from_dashboard_and_my_preinvoices(): void
+    public function test_autosave_is_excluded_from_dashboard_but_recoverable_in_my_drafts(): void
     {
         $seller = $this->seller();
         $this->order($seller, PreinvoiceOrder::STATUS_DRAFT, 'پیش‌نویس واقعی', 1_000_000);
         $this->order($seller, PreinvoiceOrder::STATUS_DRAFT, 'ذخیره خودکار موقت', 2_000_000, [
+            'is_auto_draft' => true,
+            'auto_saved_at' => now(),
+        ]);
+        $this->order($seller, PreinvoiceOrder::STATUS_DRAFT, 'ذخیره خودکار خالی', 0, [
             'is_auto_draft' => true,
             'auto_saved_at' => now(),
         ]);
@@ -78,6 +82,12 @@ class SellerDashboardTest extends TestCase
             ->get(route('preinvoice.my.index', ['tab' => 'drafts']))
             ->assertOk()
             ->assertSee('پیش‌نویس واقعی')
+            ->assertSee('ذخیره خودکار موقت')
+            ->assertDontSee('ذخیره خودکار خالی');
+
+        $this->actingAs($seller)
+            ->get(route('preinvoice.my.index', ['tab' => 'active']))
+            ->assertOk()
             ->assertDontSee('ذخیره خودکار موقت');
     }
 

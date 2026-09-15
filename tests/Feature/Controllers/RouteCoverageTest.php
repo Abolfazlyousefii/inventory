@@ -67,10 +67,15 @@ $routeCoverageRoutes = static function (): Collection {
              * مسیرهای مربوط به ابزارهای توسعه و خطایابی،
              * جزو منطق اصلی نرم‌افزار نیستند.
              */
+            /*
+             * مسیرهای داخلی Livewire (با پیشوند هش‌دار) به state کامپوننت
+             * نیاز دارند و با درخواست HTTP ساده قابل اجرا نیستند.
+             */
             return ! Str::startsWith($uri, [
                 '_ignition',
                 'telescope',
                 'horizon',
+                'livewire',
             ]);
         })
         ->values();

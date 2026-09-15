@@ -41,44 +41,43 @@ it('enforces page access for guests users and owners', function () {
     $this->get('/commercial/commissions')->assertRedirect(route('login'));
     $this->actingAs(User::factory()->create())->get('/commercial/commissions')->assertForbidden();
 
+    // The commercial commission pages are retired: authorized GET requests redirect to finance.
     $this->actingAs(commissionPageUser())->get('/commercial/commissions')
-        ->assertOk()
-        ->assertSee('نمای کلی')
-        ->assertSee('نرخ‌ها و کمپین‌ها')
-        ->assertSee('اسناد و تسویه')
-        ->assertSee('هنوز دسته‌ای برای مدیریت نرخ ثبت نشده است.');
+        ->assertRedirect(route('finance.seller-sales.index'));
 
     $owner = User::factory()->create();
     $owner->assignRole(Role::findOrCreate('Owner', 'web'));
-    $this->actingAs($owner)->get('/commercial/commissions')->assertOk();
+    $this->actingAs($owner)->get('/commercial/commissions')->assertRedirect(route('finance.seller-sales.index'));
 });
 
 it('keeps rate mutations behind their action permission', function () {
     $product = commissionUiProduct();
     $payload = ['target_type' => 'product', 'target_id' => $product->id, 'percentage' => '1.5'];
 
-    $this->actingAs(commissionPageUser())->post(route('commercial.commissions.rates.store'), $payload)->assertForbidden();
+    // Retired mutation routes return 410 for every authorized user and never persist.
+    $this->actingAs(commissionPageUser())->post(route('commercial.commissions.rates.store'), $payload)->assertGone();
     $this->actingAs(commissionPageUser('commissions.manage_rates'))->post(route('commercial.commissions.rates.store'), $payload)
-        ->assertRedirect(route('commercial.commissions.index'));
-    expect(CommissionRateRevision::query()->firstOrFail()->percentage)->toBe('1.5000');
+        ->assertGone();
+    expect(CommissionRateRevision::query()->count())->toBe(0);
 });
 
 it('separates campaign and period mutations from page access', function () {
     $viewer = commissionPageUser();
-    $this->actingAs($viewer)->post(route('commercial.commissions.campaigns.store'), [])->assertForbidden();
-    $this->actingAs($viewer)->put(route('commercial.commissions.settings.update'), ['cycle_day' => 5])->assertForbidden();
+    $this->actingAs($viewer)->post(route('commercial.commissions.campaigns.store'), [])->assertGone();
+    $this->actingAs($viewer)->put(route('commercial.commissions.settings.update'), ['cycle_day' => 5])->assertGone();
 
     $campaignManager = commissionPageUser('commissions.manage_campaigns');
-    $this->actingAs($campaignManager)->post(route('commercial.commissions.campaigns.store'), [])->assertSessionHasErrors(['name']);
+    $this->actingAs($campaignManager)->post(route('commercial.commissions.campaigns.store'), [])->assertGone();
     $periodManager = commissionPageUser('commissions.manage_periods');
     $this->actingAs($periodManager)->put(route('commercial.commissions.settings.update'), ['cycle_day' => '۵'])
-        ->assertRedirect(route('commercial.commissions.index'));
+        ->assertGone();
 });
 
 it('shows the commercial menu item only through page access', function () {
+    // The retired automation entry is no longer rendered for anyone.
     $withoutPage = User::factory()->create();
-    $this->actingAs($withoutPage)->view('layouts.sidebar')->assertDontSee('پورسانت');
-    $this->actingAs(commissionPageUser())->view('layouts.sidebar')->assertSee('پورسانت');
+    $this->actingAs($withoutPage)->view('layouts.sidebar')->assertDontSee(route('commercial.commissions.index'), false);
+    $this->actingAs(commissionPageUser())->view('layouts.sidebar')->assertDontSee(route('commercial.commissions.index'), false);
 });
 
 it('keeps the lazy rate tree query count bounded as the catalog grows', function () {
@@ -113,8 +112,7 @@ it('searches rate tree categories products and variants without loading the full
 
     $this->actingAs(commissionPageUser())
         ->getJson(route('commercial.commissions.tree', ['scope' => 'all', 'q' => 'یاقوت']))
-        ->assertOk()
-        ->assertJsonCount(3, 'items');
+        ->assertRedirect(route('finance.seller-sales.index'));
 });
 
 it('exposes own inherited effective and source values for the rate tree ui', function () {
@@ -156,12 +154,14 @@ it('protects recalculation and seller details with action and seller scope permi
     $otherSeller = commissionPageUser();
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
 
-    $this->actingAs($seller)->post(route('commercial.commissions.periods.recalculate', $period))->assertForbidden();
-    $this->actingAs($seller)->get(route('commercial.commissions.sellers.show', [$period, $seller]))->assertOk();
-    $this->actingAs($seller)->get(route('commercial.commissions.sellers.show', [$period, $otherSeller]))->assertForbidden();
+    $retired = route('finance.seller-sales.index');
+    $this->actingAs($seller)->post(route('commercial.commissions.periods.recalculate', $period))->assertGone();
+    $this->actingAs($seller)->get(route('commercial.commissions.sellers.show', [$period, $seller]))->assertRedirect($retired);
+    $this->actingAs($seller)->get(route('commercial.commissions.sellers.show', [$period, $otherSeller]))->assertRedirect($retired);
 
     $manager = commissionPageUser('commissions.view_seller_details');
-    $this->actingAs($manager)->get(route('commercial.commissions.sellers.show', [$period, $otherSeller]))->assertOk();
+    $this->actingAs($manager)->get(route('commercial.commissions.sellers.show', [$period, $otherSeller]))->assertRedirect($retired);
     $calculator = commissionPageUser('commissions.recalculate');
-    $this->actingAs($calculator)->post(route('commercial.commissions.periods.recalculate', $period))->assertRedirect();
+    $this->actingAs($calculator)->post(route('commercial.commissions.periods.recalculate', $period))->assertGone();
+    expect($period->fresh()->needs_recalculation)->toBeFalsy();
 });

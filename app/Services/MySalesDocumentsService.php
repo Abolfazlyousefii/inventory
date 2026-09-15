@@ -115,14 +115,21 @@ class MySalesDocumentsService
         return self::TAB_ACTIVE;
     }
 
-    public function baseQuery(int $sellerId): Builder
+    public function baseQuery(int $sellerId, ?string $bucket = null): Builder
     {
         $greatest = $this->greatestFunction();
         $invoiceActivitySql = "select {$greatest}(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
 
         return PreinvoiceOrder::query()
             ->createdBySeller($sellerId)
-            ->withoutTemporaryAutosaves()
+            ->when(
+                $bucket === self::BUCKET_DRAFT,
+                // Autosave drafts are recoverable seller drafts; only hide empty autosave stubs.
+                fn (Builder $query) => $query->where(fn (Builder $q) => $q->withoutTemporaryAutosaves()
+                    ->orWhere('preinvoice_orders.total_price', '>', 0)
+                    ->orWhereHas('items')),
+                fn (Builder $query) => $query->withoutTemporaryAutosaves(),
+            )
             ->select('preinvoice_orders.*')
             ->selectSub("coalesce(($invoiceActivitySql), preinvoice_orders.updated_at)", 'activity_at')
             ->withCount('items')
@@ -203,7 +210,8 @@ class MySalesDocumentsService
     {
         $out = [];
         foreach ([self::TAB_ACTIVE, self::TAB_DRAFTS, self::TAB_SHIPPED, self::TAB_NEEDS_CORRECTION] as $tab) {
-            $out[$tab] = (clone $this->applyBucket($this->baseQuery($sellerId), $this->tabToBucket($tab)))->toBase()->getCountForPagination();
+            $bucket = $this->tabToBucket($tab);
+            $out[$tab] = (clone $this->applyBucket($this->baseQuery($sellerId, $bucket), $bucket))->toBase()->getCountForPagination();
         }
 
         return $out;
@@ -212,7 +220,7 @@ class MySalesDocumentsService
     public function paginate(int $sellerId, string $tab, array $filters): LengthAwarePaginator
     {
         $bucket = $this->tabToBucket($tab);
-        $query = $this->applyBucket($this->baseQuery($sellerId), $bucket);
+        $query = $this->applyBucket($this->baseQuery($sellerId, $bucket), $bucket);
         $this->applyFilters($query, $filters, $this->bucketStatuses($bucket));
         if ($bucket === self::BUCKET_NEEDS_CORRECTION) {
             $greatest = $this->greatestFunction();

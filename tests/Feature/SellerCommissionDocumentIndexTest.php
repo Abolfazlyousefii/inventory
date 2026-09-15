@@ -10,11 +10,12 @@ class SellerCommissionDocumentIndexTest extends TestCase
 {
     use CreatesSellerCommissionDocuments, RefreshDatabase;
 
-    public function test_index_responds_and_contains_create_button_without_delete_action(): void
+    public function test_index_responds_and_contains_create_button(): void
     {
         $response = $this->actingAs($this->financeActor())->get(route('finance.seller-sales.index'));
-        $response->assertOk()->assertSee('ثبت سند جدید')->assertDontSee('حذف');
-        $this->assertFalse(app('router')->getRoutes()->getByName('finance.seller-sales.destroy') !== null);
+        $response->assertOk()->assertSee('ثبت سند جدید');
+        // destroy route now exists — draft-only deletion is allowed
+        $this->assertNotNull(app('router')->getRoutes()->getByName('finance.seller-sales.destroy'));
     }
 
     public function test_each_document_is_rendered_as_one_table_row_with_required_metadata(): void
