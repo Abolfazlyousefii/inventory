@@ -541,23 +541,45 @@ class ProductController extends Controller {
 
     public function image(Product $product)
     {
-        $path = ltrim($this->resolveProductImagePath($product), '/');
-        $stream = Storage::disk('arvan')->readStream($path);
+        $rawPath = $this->resolveProductImagePath($product);
 
+        abort_if($rawPath === null || $rawPath === '', 404);
+
+        // If the stored value is already a full URL (e.g. synced from site CDN),
+        // redirect directly to it instead of proxying through storage.
+        if (filter_var($rawPath, FILTER_VALIDATE_URL)) {
+            return redirect($rawPath, 302, ['Cache-Control' => 'public, max-age=86400']);
+        }
+
+        $path = ltrim($rawPath, '/');
+        $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'png'  => 'image/png',
+            'webp' => 'image/webp',
+            'gif'  => 'image/gif',
+            default => 'image/jpeg',
+        };
+        $headers = ['Content-Type' => $mime, 'Cache-Control' => 'public, max-age=86400'];
+
+        // Try local public disk first (images uploaded via this inventory app),
+        // then fall back to ArvanCloud (images synced from the website).
+        if (Storage::disk('public')->exists($path)) {
+            $stream = Storage::disk('public')->readStream($path);
+            abort_unless(is_resource($stream), 404);
+
+            return response()->stream(function () use ($stream) {
+                fpassthru($stream);
+                fclose($stream);
+            }, 200, $headers);
+        }
+
+        $stream = Storage::disk('arvan')->readStream($path);
         abort_unless(is_resource($stream), 404);
 
         return response()->stream(function () use ($stream) {
             fpassthru($stream);
             fclose($stream);
-        }, 200, [
-            'Content-Type' => match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
-                'png' => 'image/png',
-                'webp' => 'image/webp',
-                'gif' => 'image/gif',
-                default => 'image/jpeg',
-            },
-            'Cache-Control' => 'public, max-age=86400',
-        ]);
+        }, 200, $headers);
     }
 
     private function resolveProductImagePath( Product $product ): ?string {
