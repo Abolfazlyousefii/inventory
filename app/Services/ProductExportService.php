@@ -789,10 +789,10 @@ class ProductExportService
     public function imagePath(Product $product): ?string
     {
         $path = trim((string) ($product->image_path ?? ''));
-        if ($path === '' || filter_var($path, FILTER_VALIDATE_URL)) return null;
-        $candidates = [public_path($path), public_path('storage/'.ltrim($path, '/')), storage_path('app/public/'.ltrim($path, '/')), storage_path('app/'.ltrim($path, '/'))];
-        foreach ($candidates as $candidate) { if (is_file($candidate)) return $candidate; }
-        return null;
+
+        // Images are served via the products.image route (ArvanCloud storage),
+        // so we only need to verify the path is non-empty — no local file-system check.
+        return $path !== '' ? $path : null;
     }
 
     private function cleanText(mixed $value, string $fallback = ''): string
