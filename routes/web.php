@@ -667,7 +667,7 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 Route::get('/test', function () {
-    $customer = \App\Models\Customer::find(3101);
+    $customer = \App\Models\Customer::find(3097);
 
     dd(
         $customer->site_customer_id,
@@ -689,10 +689,6 @@ Route::get('/temp/customer-financials', function () {
             ->where('customer_id', $customer->id)
             ->get();
 
-        $invoices = DB::table('invoices')
-            ->where('customer_id', $customer->id)
-            ->get();
-
         return [
             'customer' => $customer,
 
@@ -705,10 +701,7 @@ Route::get('/temp/customer-financials', function () {
                     ->where('type', 'credit')
                     ->sum('amount'),
 
-                'entries' => $ledgers,
             ],
-
-            'invoices' => $invoices,
         ];
 
     });
