@@ -4,9 +4,11 @@ namespace App\Services\Finance;
 
 use App\Models\Invoice;
 use App\Models\SellerSalesDocument;
+use App\Models\SellerSalesDocumentAdjustment;
 use App\Models\SellerSalesDocumentItem;
 use App\Models\User;
-use App\Services\Commissions\CommissionItemCalculator;
+use App\Services\Commissions\CommissionMoney;
+use App\Services\Commissions\CommissionRateResolver;
 use App\Support\ActivityLogger;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,11 +21,11 @@ use Illuminate\Validation\ValidationException;
 
 class SellerCommissionDocumentService
 {
-    public function __construct(private readonly CommissionItemCalculator $calculator) {}
+    public function __construct(private readonly CommissionRateResolver $rates) {}
 
     public const DUPLICATE_MESSAGE = 'یک یا چند فاکتور قبلاً در سند دیگری ثبت شده‌اند. فهرست را دوباره بررسی کنید.';
 
-    public function paginateDocuments(array $filters): LengthAwarePaginator
+    public function paginateDocuments(array $filters, string $pageName = 'page'): LengthAwarePaginator
     {
         return SellerSalesDocument::query()
             ->with(['seller:id,name', 'creator:id,name'])
@@ -32,7 +34,7 @@ class SellerCommissionDocumentService
             ->when($filters['date_from'] ?? null, fn (Builder $query, $date) => $query->whereDate('period_from', '>=', $date))
             ->when($filters['date_to'] ?? null, fn (Builder $query, $date) => $query->whereDate('period_to', '<=', $date))
             ->latest('id')
-            ->paginate(20)
+            ->paginate(20, ['*'], $pageName)
             ->withQueryString();
     }
 
@@ -100,7 +102,7 @@ class SellerCommissionDocumentService
                     null,
                     $data['manual_invoice_ids'] ?? [],
                 );
-                $this->warmCalculator($invoices);
+                $this->warmRates($invoices);
 
                 $document = SellerSalesDocument::query()->create([
                     'uuid' => (string) Str::uuid(),
@@ -158,7 +160,7 @@ class SellerCommissionDocumentService
                 if (! $locked->isDraft()) {
                     throw ValidationException::withMessages(['document' => 'فقط گزارش پیش‌نویس قابل ویرایش است.']);
                 }
-                $this->warmCalculator($invoices);
+                $this->warmRates($invoices);
 
                 $oldIds = $locked->activeItems->pluck('invoice_id')->map(fn ($id) => (int) $id);
                 $newIds = $invoices->pluck('id')->map(fn ($id) => (int) $id);
@@ -172,6 +174,16 @@ class SellerCommissionDocumentService
 
                 foreach ($invoices->whereIn('id', $addedIds) as $invoice) {
                     $locked->items()->create($this->snapshot($invoice));
+                }
+
+                // Re-apply current rates to kept items so newly defined rates take effect on re-save.
+                $keptIds = $newIds->intersect($oldIds);
+                foreach ($locked->activeItems->whereIn('invoice_id', $keptIds) as $item) {
+                    $fresh = $this->snapshot($invoices->firstWhere('id', $item->invoice_id));
+                    $item->update(collect($fresh)->only([
+                        'invoice_total_snapshot', 'item_net_amount', 'rate_snapshot', 'rate_source_type',
+                        'rate_source_id', 'rate_rule_id', 'commission_amount', 'missing_rate', 'calculation_version',
+                    ])->all());
                 }
 
                 $locked->update([
@@ -290,14 +302,48 @@ class SellerCommissionDocumentService
 
     private function snapshot(Invoice $invoice): array
     {
-        $sellerId = $invoice->commissionSellerId();
-        $calculations = $invoice->items->map(
-            fn ($item) => $this->calculator->calculate($invoice, $item, $sellerId, $invoice->display_document_date)->ledgerAttributes
+        $items = $invoice->items->sortBy('id')->values();
+        $invoiceTotal = $this->resolveInvoiceFinalAmount($invoice);
+
+        $weights = $items->map(
+            fn ($item) => max(
+                (int) $item->quantity * (int) $item->price - (int) ($item->line_discount_amount ?? 0),
+                0
+            )
         );
-        $net = $calculations->isEmpty()
-            ? $this->resolveInvoiceFinalAmount($invoice)
-            : (int) $calculations->sum('net_amount_snapshot');
-        $commission = (int) $calculations->sum('total_commission_amount');
+        $weightTotal = $weights->sum();
+
+        $referenceDate = $invoice->display_document_date;
+        $remaining = $invoiceTotal;
+        $rows = collect();
+
+        foreach ($items as $index => $item) {
+            $base = ($index === $items->count() - 1)
+                ? $remaining
+                : ($weightTotal > 0 ? intdiv($weights[$index] * $invoiceTotal, $weightTotal) : 0);
+            $remaining -= $base;
+
+            $rate = $this->rates->resolve($item->product, $item->variant, $referenceDate);
+
+            $rows->push([
+                'product_id' => (int) $item->product_id,
+                'product_variant_id' => $item->variant_id,
+                'product_name' => $item->product?->name,
+                'variant_name' => $item->variant?->variant_name,
+                'quantity' => (int) $item->quantity,
+                'commission_base' => $base,
+                'rate_source_type' => $rate->sourceType,
+                'rate_source_id' => $rate->sourceId,
+                'rate_rule_id' => $rate->ruleId,
+                'calculated_commission' => $rate->isMissing
+                    ? null
+                    : CommissionMoney::percentageOf($base, $rate->percentage),
+                'missing_rate' => $rate->isMissing,
+            ]);
+        }
+
+        $activeRows = $rows->where('missing_rate', false);
+        $totalCommission = (int) $activeRows->sum('calculated_commission');
 
         return [
             'invoice_id' => $invoice->id,
@@ -306,28 +352,181 @@ class SellerCommissionDocumentService
             'invoice_number_snapshot' => (string) $invoice->uuid,
             'invoice_date_snapshot' => $this->resolveInvoiceInitialDate($invoice),
             'customer_name_snapshot' => $invoice->customer_name ?: $invoice->customer?->display_name ?: '—',
-            'invoice_total_snapshot' => $this->resolveInvoiceFinalAmount($invoice),
-            'product_id' => $calculations->count() === 1 ? $calculations->first()['product_id'] : null,
-            'product_variant_id' => $calculations->count() === 1 ? $calculations->first()['product_variant_id'] : null,
-            'product_name_snapshot' => $calculations->count() === 1 ? $calculations->first()['product_name_snapshot'] : 'چند کالا',
-            'variant_name_snapshot' => $calculations->count() === 1 ? $calculations->first()['variant_name_snapshot'] : null,
-            'quantity_snapshot' => (int) $calculations->sum('quantity_snapshot'),
-            'rate_snapshot' => $net > 0 ? number_format($commission * 100 / $net, 4, '.', '') : '0.0000',
-            'item_net_amount' => $net,
-            'commission_amount' => $commission,
-            'missing_rate' => $calculations->contains('missing_rate', true),
-            'calculation_version' => (int) ($calculations->max('calculation_version') ?: 1),
+            'invoice_total_snapshot' => $invoiceTotal,
+            'product_id' => $rows->count() === 1 ? $rows->first()['product_id'] : null,
+            'product_variant_id' => $rows->count() === 1 ? $rows->first()['product_variant_id'] : null,
+            'product_name_snapshot' => $rows->count() === 1 ? $rows->first()['product_name'] : 'چند کالا',
+            'variant_name_snapshot' => $rows->count() === 1 ? $rows->first()['variant_name'] : null,
+            'quantity_snapshot' => (int) $rows->sum('quantity'),
+            'rate_snapshot' => $invoiceTotal > 0
+                ? number_format($totalCommission * 100 / $invoiceTotal, 4, '.', '')
+                : '0.0000',
+            'rate_source_type' => $rows->count() === 1 ? $rows->first()['rate_source_type'] : null,
+            'rate_source_id' => $rows->count() === 1 ? $rows->first()['rate_source_id'] : null,
+            'rate_rule_id' => $rows->count() === 1 ? $rows->first()['rate_rule_id'] : null,
+            'item_net_amount' => $invoiceTotal,
+            'commission_amount' => $totalCommission,
+            'missing_rate' => $rows->contains('missing_rate', true),
+            'calculation_version' => 2,
         ];
+    }
+
+    private function assertEditable(SellerSalesDocument $document): void
+    {
+        if (! $document->isDraft()) {
+            throw ValidationException::withMessages(['document' => 'این سند در وضعیت پیش‌نویس نیست و قابل ویرایش نمی‌باشد.']);
+        }
+    }
+
+    public function addAdjustment(SellerSalesDocument $document, int $invoiceId, int $amount, string $reason, int $actorId): SellerSalesDocumentAdjustment
+    {
+        $this->assertEditable($document);
+
+        $exists = $document->items()
+            ->where('invoice_id', $invoiceId)
+            ->where('status', SellerSalesDocumentItem::STATUS_ACTIVE)
+            ->exists();
+
+        if (! $exists) {
+            throw ValidationException::withMessages(['invoice_id' => 'فاکتور مورد نظر در این سند وجود ندارد.']);
+        }
+
+        return DB::transaction(function () use ($document, $invoiceId, $amount, $reason, $actorId) {
+            $adjustment = $document->adjustments()->create([
+                'invoice_id' => $invoiceId,
+                'amount' => $amount,
+                'reason' => $reason,
+                'created_by' => $actorId,
+            ]);
+
+            $this->refreshTotals($document);
+
+            ActivityLogger::log('seller_commission_document.adjustment_added', $document, 'تنظیم دستی به سند اضافه شد.', [
+                'invoice_id' => $invoiceId,
+                'amount' => $amount,
+                'reason' => $reason,
+            ]);
+
+            return $adjustment;
+        });
+    }
+
+    public function removeAdjustment(SellerSalesDocument $document, SellerSalesDocumentAdjustment $adjustment, int $actorId): void
+    {
+        $this->assertEditable($document);
+
+        if ($adjustment->seller_sales_document_id !== $document->id) {
+            throw ValidationException::withMessages(['adjustment' => 'این تنظیم متعلق به سند جاری نیست.']);
+        }
+
+        DB::transaction(function () use ($document, $adjustment, $actorId) {
+            $adjustmentId = $adjustment->id;
+            $adjustment->delete();
+            $this->refreshTotals($document);
+
+            ActivityLogger::log('seller_commission_document.adjustment_removed', $document, 'تنظیم دستی از سند حذف شد.', [
+                'adjustment_id' => $adjustmentId,
+            ]);
+        });
+    }
+
+    public function setBonus(SellerSalesDocument $document, ?int $amount, ?string $reason, int $actorId): void
+    {
+        $this->assertEditable($document);
+
+        if ($amount !== null && $amount !== 0 && (! $reason || trim($reason) === '')) {
+            throw ValidationException::withMessages(['bonus_reason' => 'برای ثبت بونوس، درج دلیل الزامی است.']);
+        }
+
+        DB::transaction(function () use ($document, $amount, $reason, $actorId) {
+            $document->update([
+                'bonus_amount' => $amount ?? 0,
+                'bonus_reason' => $reason,
+            ]);
+
+            $this->refreshTotals($document);
+
+            ActivityLogger::log('seller_commission_document.bonus_set', $document, 'بونوس سند تنظیم شد.', [
+                'bonus_amount' => $amount,
+                'bonus_reason' => $reason,
+            ]);
+        });
+    }
+
+    public function confirmDocument(SellerSalesDocument $document, int $actorId): void
+    {
+        if (! $document->isDraft()) {
+            throw ValidationException::withMessages(['document' => 'فقط اسناد پیش‌نویس قابل تأیید هستند.']);
+        }
+
+        $missingCount = $document->items()->where('missing_rate', true)->count();
+        if ($missingCount > 0) {
+            throw ValidationException::withMessages(['document' => "این سند {$missingCount} آیتم بدون نرخ پورسانت دارد. پیش از تأیید، نرخ‌ها را تکمیل کنید."]);
+        }
+
+        DB::transaction(function () use ($document, $actorId) {
+            $document->update([
+                'status' => SellerSalesDocument::STATUS_CONFIRMED,
+                'confirmed_by' => $actorId,
+                'confirmed_at' => now(),
+            ]);
+
+            ActivityLogger::log('seller_commission_document.confirmed', $document, 'سند تأیید شد.');
+        });
+    }
+
+    public function finalizeDocument(SellerSalesDocument $document, int $actorId): void
+    {
+        if (! $document->isConfirmed()) {
+            throw ValidationException::withMessages(['document' => 'فقط اسناد تأیید‌شده قابل نهایی‌سازی هستند.']);
+        }
+
+        DB::transaction(function () use ($document, $actorId) {
+            $this->calculateCashCollected($document);
+
+            $document->update([
+                'status' => SellerSalesDocument::STATUS_FINALIZED,
+                'finalized_by' => $actorId,
+                'finalized_at' => now(),
+            ]);
+
+            ActivityLogger::log('seller_commission_document.finalized', $document, 'سند نهایی شد.');
+        });
+    }
+
+    public function calculateCashCollected(SellerSalesDocument $document): void
+    {
+        $invoiceIds = $document->items()
+            ->where('status', SellerSalesDocumentItem::STATUS_ACTIVE)
+            ->pluck('invoice_id')
+            ->unique();
+
+        $cashTotal = \App\Models\InvoicePayment::whereIn('invoice_id', $invoiceIds)
+            ->where('method', 'cash')
+            ->sum('amount');
+
+        $document->update([
+            'cash_collected_amount' => (int) $cashTotal,
+        ]);
     }
 
     private function refreshTotals(SellerSalesDocument $document): void
     {
+        $items = $document->items()->where('status', SellerSalesDocumentItem::STATUS_ACTIVE)->get();
+
+        $totalCommission = (int) $items->sum('commission_amount');
+        $totalAdjustment = (int) $document->adjustments()->sum('amount');
+        $bonus = (int) $document->bonus_amount;
+        $missingCount = $items->where('missing_rate', true)->count();
+
         $document->update([
-            'invoice_count' => $document->activeItems()->count(),
-            'total_sales_amount' => (int) $document->activeItems()->sum('item_net_amount'),
-            'total_commission_amount' => (int) $document->activeItems()->sum('commission_amount'),
-            'net_commission_amount' => (int) $document->activeItems()->sum('commission_amount'),
-            'missing_rate_count' => $document->activeItems()->where('missing_rate', true)->count(),
+            'invoice_count' => $items->count(),
+            'total_sales_amount' => (int) $items->sum('item_net_amount'),
+            'total_commission_amount' => $totalCommission,
+            'total_adjustment_amount' => $totalAdjustment,
+            'bonus_amount' => $bonus,
+            'net_commission_amount' => $totalCommission + $totalAdjustment + $bonus,
+            'missing_rate_count' => $missingCount,
         ]);
     }
 
@@ -343,11 +542,69 @@ class SellerCommissionDocumentService
         });
     }
 
-    private function warmCalculator(Collection $invoices): void
+    public function recalculateItems(SellerSalesDocument $document, User $actor): void
+    {
+        if (! $document->isDraft()) {
+            throw new \DomainException('فقط سند پیش‌نویس قابل بازمحاسبه است.');
+        }
+
+        DB::transaction(function () use ($document, $actor): void {
+            $locked = SellerSalesDocument::query()->lockForUpdate()->findOrFail($document->id);
+            if (! $locked->isDraft()) {
+                throw new \DomainException('فقط سند پیش‌نویس قابل بازمحاسبه است.');
+            }
+
+            $activeItems = $locked->items()
+                ->where('status', SellerSalesDocumentItem::STATUS_ACTIVE)
+                ->get();
+
+            $invoices = Invoice::query()
+                ->with(['items.product.category.parent', 'items.variant', 'customer', 'seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator'])
+                ->whereIn('id', $activeItems->pluck('invoice_id')->unique()->values())
+                ->get()
+                ->keyBy('id');
+
+            if ($invoices->isEmpty()) {
+                throw new \DomainException('آیتم فعالی برای بازمحاسبه در این سند وجود ندارد.');
+            }
+
+            $this->warmRates($invoices->values());
+
+            $oldCommission = (int) $locked->total_commission_amount;
+            $oldMissing = (int) $locked->missing_rate_count;
+
+            foreach ($activeItems as $item) {
+                $invoice = $invoices->get($item->invoice_id);
+                if (! $invoice) {
+                    continue;
+                }
+                $fresh = $this->snapshot($invoice);
+                $item->update(collect($fresh)->only([
+                    'invoice_total_snapshot', 'item_net_amount', 'rate_snapshot', 'rate_source_type',
+                    'rate_source_id', 'rate_rule_id', 'commission_amount', 'missing_rate', 'calculation_version',
+                    'product_name_snapshot', 'variant_name_snapshot', 'quantity_snapshot',
+                ])->all());
+            }
+
+            $locked->update(['updated_by' => $actor->id]);
+            $this->refreshTotals($locked);
+
+            ActivityLogger::log('seller_commission_document.recalculated', $locked, 'نرخ‌های سند بازمحاسبه شد.', [
+                'document_number' => $locked->document_number,
+                'actor_id' => $actor->id,
+                'old_total_commission' => $oldCommission,
+                'new_total_commission' => (int) $locked->total_commission_amount,
+                'old_missing_rate_count' => $oldMissing,
+                'new_missing_rate_count' => (int) $locked->missing_rate_count,
+            ]);
+        });
+    }
+
+    private function warmRates(Collection $invoices): void
     {
         $invoices->loadMissing(['items.product.category.parent', 'items.variant', 'seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator']);
         $dates = $invoices->map(fn (Invoice $invoice) => CarbonImmutable::parse($invoice->display_document_date));
-        $this->calculator->warm($dates->min()->startOfDay(), $dates->max()->addDay()->startOfDay());
+        $this->rates->warm($dates->min()->startOfDay(), $dates->max()->addDay()->startOfDay());
     }
 
     private function dateBoundaries(string $dateFrom, string $dateTo): array

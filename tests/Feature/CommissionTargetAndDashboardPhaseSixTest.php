@@ -220,16 +220,16 @@ it('keeps seller dashboard commission data isolated and exposes team data only t
     phaseSixLedger($period, $sellerB, 990_000_000);
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
 
+    // The dashboard commission widget is retired: no commission data is rendered for any user.
     $this->actingAs($sellerA)->get(route('dashboard'))->assertOk()
-        ->assertSee('پورسانت دوره جاری')
-        ->assertSee('10,000,000 تومان')
+        ->assertDontSee('seller-commission-widget', false)
         ->assertDontSee('فروشنده محرمانه ب')
         ->assertDontSee('99,000,000 تومان');
 
     $manager = phaseSixUserWithPermissions('phase-six-manager', ['dashboard.view', 'commissions.view_seller_details']);
     $this->actingAs($manager)->get(route('dashboard'))->assertOk()
-        ->assertSee('پورسانت دوره جاری')
-        ->assertSee('109,000,000 تومان');
+        ->assertDontSee('dashboard-commission-title', false)
+        ->assertDontSee('109,000,000 تومان');
 });
 
 it('protects target mutations with the target management permission', function () {
@@ -240,13 +240,12 @@ it('protects target mutations with the target management permission', function (
     $payload = ['target_amount' => '20,000,000'];
     CommissionSetting::current()->update(['targets_enabled' => true]);
 
-    $this->actingAs($viewer)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertForbidden();
-    $this->actingAs($manager)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertRedirect();
-    expect(CommissionTarget::query()->where('seller_id', $seller->id)->value('target_amount'))->toBe(200_000_000);
+    // Retired endpoints: mutations return 410 and never persist; GET pages redirect.
+    $this->actingAs($viewer)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertGone();
+    $this->actingAs($manager)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertGone();
+    expect(CommissionTarget::query()->where('seller_id', $seller->id)->exists())->toBeFalse();
     $this->actingAs($manager)->get(route('commercial.commissions.index', ['period' => $period->id]))
-        ->assertOk()
-        ->assertSee('commissionTargetForm'.$seller->id, false)
-        ->assertSee('20,000,000');
+        ->assertRedirect(route('finance.seller-sales.index'));
 });
 
 it('prevents a seller from viewing another seller commission document', function () {
@@ -265,8 +264,8 @@ it('prevents a seller from viewing another seller commission document', function
     ]);
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
 
-    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $ownDocument))->assertOk();
-    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $otherDocument))->assertForbidden();
+    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $ownDocument))->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $otherDocument))->assertRedirect(route('finance.seller-sales.index'));
 });
 
 it('surfaces dirty periods in dashboard summaries', function () {
@@ -307,12 +306,5 @@ it('renders real rate names distinct zero and missing states campaign terminolog
     $viewer = phaseSixUserWithPermissions('phase-six-ui-viewer', ['page.commercial.commissions']);
 
     $this->actingAs($viewer)->get(route('commercial.commissions.index', ['period' => $period->id]))
-        ->assertOk()
-        ->assertSee('دسته بدون پورسانت')
-        ->assertSee('دسته فاقد نرخ')
-        ->assertSee('بدون پورسانت')
-        ->assertSee('فاقد نرخ')
-        ->assertSee('اقلام کمپین')
-        ->assertDontSee('هدف کمپین')
-        ->assertSee('هنوز سند پورسانتی برای این دوره ثبت نشده است.');
+        ->assertRedirect(route('finance.seller-sales.index'));
 });

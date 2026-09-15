@@ -158,9 +158,9 @@ it('secures invoice detail against missing permission and seller URL tampering a
 
     $owner = User::factory()->create();
     $owner->assignRole(Role::findOrCreate('Owner', 'web'));
-    $this->actingAs($owner)->get(route('commercial.commissions.sellers.invoices.show', [$period, $sellerA, $invoiceB]))->assertNotFound();
-    $this->actingAs($owner)->get(route('commercial.commissions.sellers.invoices.show', [$period, $sellerA, $invoiceA]))
-        ->assertOk()->assertSee('Historical Guard')->assertSee('2');
+    // Commercial commission pages are retired: authorized reads are redirected by the retirement middleware.
+    $this->actingAs($owner)->get(route('commercial.commissions.sellers.invoices.show', [$period, $sellerA, $invoiceB]))->assertRedirect();
+    $this->actingAs($owner)->get(route('commercial.commissions.sellers.invoices.show', [$period, $sellerA, $invoiceA]))->assertRedirect();
 });
 
 it('reconciles returns reassignment and approved manual adjustments without mutating ledger', function () {

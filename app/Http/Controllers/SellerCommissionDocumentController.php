@@ -6,6 +6,7 @@ use App\Http\Requests\AvailableSellerCommissionInvoicesRequest;
 use App\Http\Requests\StoreSellerCommissionDocumentRequest;
 use App\Http\Requests\UpdateSellerCommissionDocumentRequest;
 use App\Models\SellerSalesDocument;
+use App\Models\SellerSalesDocumentAdjustment;
 use App\Models\User;
 use App\Services\Finance\SellerCommissionDocumentService;
 use App\Support\JalaliDate;
@@ -13,96 +14,57 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use Illuminate\Validation\ValidationException;
-use App\Http\Requests\CommissionInvoiceFilterRequest;
-use App\Http\Requests\CommissionPreviewRequest;
-use App\Services\Commissions\CommissionReportService;
+use App\Http\Requests\SellerCommissionSalesPreviewRequest;
+use App\Services\Finance\SellerCommissionSalesPreviewService;
 
 class SellerCommissionDocumentController extends Controller
 {
-    public function __construct(private readonly SellerCommissionDocumentService $service, private readonly CommissionReportService $reportService) {}
+    public function __construct(private readonly SellerCommissionDocumentService $service, private readonly SellerCommissionSalesPreviewService $salesPreviewService) {}
 
-    public function index(Request $request): View
+    public function index(SellerCommissionSalesPreviewRequest $request): View
     {
         $filters = [
-            'document_number' => $request->string('document_number')->toString(),
-            'user_id' => $request->integer('user_id') ?: null,
+            'seller_id' => $request->integer('seller_id') ?: null,
             'date_from' => $this->normalizeDate($request->query('date_from')),
             'date_to' => $this->normalizeDate($request->query('date_to')),
+            'invoice_number' => $request->string('invoice_number')->toString(), 'customer' => $request->string('customer')->toString(),
+        ];
+        $complete = $filters['seller_id'] && $filters['date_from'] && $filters['date_to'];
+        $rangeInvalid = $filters['date_from'] && $filters['date_to'] && $filters['date_from'] > $filters['date_to'];
+
+        $documentFilters = [
+            'user_id' => $request->integer('user_id') ?: null,
+            'document_number' => $request->string('document_number')->toString(),
+            'date_from' => $rangeInvalid ? null : $filters['date_from'],
+            'date_to' => $rangeInvalid ? null : $filters['date_to'],
         ];
 
         return view('finance.seller-commission-documents.index', [
-            'documents' => $this->service->paginateDocuments($filters),
             'users' => $this->users(),
             'filters' => $filters,
+            'documentFilters' => $documentFilters,
+            'documents' => $this->service->paginateDocuments($documentFilters, 'documents_page'),
+            'rangeError' => $rangeInvalid ? 'بازه تاریخ نامعتبر است؛ «از تاریخ» نمی‌تواند بعد از «تا تاریخ» باشد.' : null,
+            'canIssueDocument' => $complete && ! $rangeInvalid,
+            'activeTab' => $request->string('tab')->toString() === 'documents' ? 'documents' : 'report',
+            'report' => ($complete && ! $rangeInvalid) ? $this->salesPreviewService->report($filters) : null,
+            'selectedSeller' => $filters['seller_id'] ? User::find($filters['seller_id']) : null,
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
-        return view('finance.seller-commission-documents.report-form');
+        return view('finance.seller-commission-documents.form', [
+            'document' => null,
+            'users' => $this->users(),
+            'prefill' => [
+                'seller_id' => $request->integer('seller_id') ?: null,
+                'date_from' => $this->normalizeDate($request->query('date_from')) ?: '',
+                'date_to' => $this->normalizeDate($request->query('date_to')) ?: '',
+            ],
+        ]);
     }
 
-    public function reportInvoices(CommissionInvoiceFilterRequest $request): JsonResponse
-    {
-        $p = $this->reportService->availableInvoices($request->validated('date_from'), $request->validated('date_to'), $request->validated('search'));
-        return response()->json(['data' => collect($p->items())->map(fn ($i) => $this->invoicePayload($i)), 'current_page'=>$p->currentPage(), 'last_page'=>$p->lastPage(), 'total'=>$p->total()]);
-    }
-
-    public function manualInvoice(CommissionInvoiceFilterRequest $request): JsonResponse
-    {
-        $invoice = $this->reportService->findInvoice($request->validated('invoice_number'));
-        if (! $invoice) {
-            return response()->json(null, 404);
-        }
-        $payload = $this->invoicePayload($invoice);
-        $from = $this->normalizeDate($request->validated('date_from'));
-        $to = $this->normalizeDate($request->validated('date_to'));
-        $payload['outside_range'] = $from && $to
-            ? $payload['date_iso'] < $from || $payload['date_iso'] > $to
-            : false;
-
-        return response()->json($payload);
-    }
-
-    public function preview(CommissionPreviewRequest $request): View
-    {
-        $preview = $this->reportService->preview($request->validated('invoice_ids'));
-        $names = User::whereIn('id', $preview['rows']->map(fn ($r) => $r['calculation']->ledgerAttributes['seller_id'])->unique())->pluck('name', 'id');
-        $summary = $preview['rows']->groupBy(fn ($row) => $row['calculation']->ledgerAttributes['seller_id'])
-            ->map(fn ($rows, $sellerId) => [
-                'seller' => $names[$sellerId] ?? '—',
-                'invoice_count' => $rows->pluck('invoice.id')->unique()->count(),
-                'sales' => $rows->sum(fn ($row) => (int) $row['calculation']->ledgerAttributes['net_amount_snapshot']),
-                'base_commission' => $rows->sum(fn ($row) => (int) $row['calculation']->ledgerAttributes['base_commission_amount']),
-                'campaign_commission' => $rows->sum(fn ($row) => (int) $row['calculation']->ledgerAttributes['campaign_commission_amount']),
-                'final_commission' => $rows->sum(fn ($row) => (int) $row['calculation']->ledgerAttributes['total_commission_amount']),
-            ]);
-        $invoiceRows = $preview['rows']->groupBy(fn ($row) => $row['invoice']->id)->map(function ($rows) use ($names): array {
-            $invoice = $rows->first()['invoice'];
-            $sales = $rows->sum(fn ($row) => (int) $row['calculation']->ledgerAttributes['net_amount_snapshot']);
-            $commission = $rows->sum(fn ($row) => (int) $row['calculation']->ledgerAttributes['total_commission_amount']);
-            $sellerId = $rows->first()['calculation']->ledgerAttributes['seller_id'];
-            return ['number' => $invoice->uuid, 'customer' => $invoice->customer_name ?: $invoice->customer?->display_name ?: '—', 'seller' => $names[$sellerId] ?? '—', 'sales' => $sales, 'rate' => $sales > 0 ? $commission * 100 / $sales : 0, 'commission' => $commission];
-        })->values();
-        if ($summary->count() !== 1) {
-            throw ValidationException::withMessages(['invoice_ids' => 'برای هر گزارش فقط فاکتورهای یک فروشنده را انتخاب کنید.']);
-        }
-        $sellerId = (int) $preview['rows']->first()['calculation']->ledgerAttributes['seller_id'];
-        $dateFrom = $request->validated('date_from');
-        $dateTo = $request->validated('date_to');
-        $invoiceIds = array_map('intval', $request->validated('invoice_ids'));
-        $manualInvoiceIds = array_map('intval', $request->validated('manual_invoice_ids', []));
-
-        return view('finance.seller-commission-documents.preview', compact('summary', 'invoiceRows', 'sellerId', 'dateFrom', 'dateTo', 'invoiceIds', 'manualInvoiceIds'));
-    }
-
-    private function invoicePayload($invoice): array
-    {
-        $paid = (int) ($invoice->paid_amount ?? 0);
-        $total = (int) $invoice->total;
-        return ['id'=>(int)$invoice->id, 'number'=>(string)$invoice->uuid, 'date_iso'=>$invoice->display_document_date?->format('Y-m-d'), 'date'=>JalaliDate::date($invoice->display_document_date), 'customer'=>$invoice->customer_name ?: $invoice->customer?->display_name ?: '—', 'seller'=>$invoice->seller?->name ?: $invoice->preinvoiceOrder?->seller?->name ?: $invoice->preinvoiceOrder?->creator?->name ?: '—', 'total'=>$total, 'payment_status'=>$paid >= $total ? 'پرداخت‌شده' : ($paid > 0 ? 'پرداخت ناقص' : 'پرداخت‌نشده')];
-    }
 
     public function availableInvoices(AvailableSellerCommissionInvoicesRequest $request): JsonResponse
     {
@@ -139,7 +101,17 @@ class SellerCommissionDocumentController extends Controller
 
     public function show(SellerSalesDocument $document): View
     {
-        $document->load(['seller:id,name', 'creator:id,name', 'updater:id,name', 'items.reassignedToSeller:id,name']);
+        $document->load([
+            'seller:id,name',
+            'creator:id,name',
+            'updater:id,name',
+            'confirmer:id,name',
+            'finalizer:id,name',
+            'items' => fn ($q) => $q->where('status', \App\Models\SellerSalesDocumentItem::STATUS_ACTIVE)->orderBy('id'),
+            'items.reassignedToSeller:id,name',
+            'adjustments.invoice:id,uuid',
+            'adjustments.creator:id,name',
+        ]);
 
         return view('finance.seller-commission-documents.show', compact('document'));
     }
@@ -170,9 +142,94 @@ class SellerCommissionDocumentController extends Controller
 
     public function print(SellerSalesDocument $document): View
     {
-        $document->load(['seller:id,name', 'creator:id,name', 'items.reassignedToSeller:id,name']);
+        $document->load([
+            'seller:id,name',
+            'creator:id,name',
+            'confirmer:id,name',
+            'finalizer:id,name',
+            'items' => fn ($q) => $q->where('status', \App\Models\SellerSalesDocumentItem::STATUS_ACTIVE)->orderBy('id'),
+            'adjustments.invoice:id,uuid',
+            'adjustments.creator:id,name',
+        ]);
 
         return view('finance.seller-commission-documents.print', compact('document'));
+    }
+
+    public function storeAdjustment(Request $request, SellerSalesDocument $document): RedirectResponse
+    {
+        $data = $request->validate([
+            'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
+            'amount' => ['required', 'integer'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        try {
+            $this->service->addAdjustment($document, $data['invoice_id'], $data['amount'], $data['reason'], $request->user()->id);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'تنظیم دستی ثبت شد.');
+    }
+
+    public function destroyAdjustment(SellerSalesDocument $document, SellerSalesDocumentAdjustment $adjustment): RedirectResponse
+    {
+        try {
+            $this->service->removeAdjustment($document, $adjustment, request()->user()->id);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'تنظیم دستی حذف شد.');
+    }
+
+    public function setBonus(Request $request, SellerSalesDocument $document): RedirectResponse
+    {
+        $data = $request->validate([
+            'bonus_amount' => ['nullable', 'integer'],
+            'bonus_reason' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $this->service->setBonus($document, $data['bonus_amount'] ?? 0, $data['bonus_reason'] ?? null, $request->user()->id);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'بونوس ثبت شد.');
+    }
+
+    public function confirm(Request $request, SellerSalesDocument $document): RedirectResponse
+    {
+        try {
+            $this->service->confirmDocument($document, $request->user()->id);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'سند تأیید شد.');
+    }
+
+    public function finalize(Request $request, SellerSalesDocument $document): RedirectResponse
+    {
+        try {
+            $this->service->finalizeDocument($document, $request->user()->id);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'سند نهایی شد.');
+    }
+
+    public function recalculate(Request $request, SellerSalesDocument $document): RedirectResponse
+    {
+        try {
+            $this->service->recalculateItems($document, $request->user());
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'نرخ‌های سند با موفقیت بازمحاسبه شد.');
     }
 
     private function users()

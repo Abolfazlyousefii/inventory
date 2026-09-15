@@ -22,7 +22,7 @@ class User extends Authenticatable implements WalletInterface {
      *
      * @var array
      */
-    protected $guarded = [ 'id' ];
+    protected $guarded = [];
 
     /**
      * The attributes that should be hidden for arrays.

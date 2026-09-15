@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\OrgCommissionController;
+use App\Http\Controllers\CommissionRateSettingsController;
 use App\Http\Controllers\AccountStatementController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Admin\BugInvestigatorController;
@@ -98,7 +100,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/', [CommercialInvoiceReassignmentController::class, 'store'])->name('store');
     });
 
-    Route::prefix('commercial/commissions')->name('commercial.commissions.')->group(function () {
+    // Legacy automation endpoints remain registered for audit/history safety,
+    // but are centrally retired before any controller action can run.
+    Route::prefix('commercial/commissions')->name('commercial.commissions.')->middleware('retired.commission.automation')->group(function () {
         Route::get('/', [CommercialCommissionController::class, 'index'])->name('index');
         Route::get('/tree', [CommercialCommissionController::class, 'tree'])->name('tree');
         Route::post('/rates', [CommercialCommissionController::class, 'storeRate'])->name('rates.store');
@@ -308,15 +312,46 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/', [SellerCommissionDocumentController::class, 'index'])->name('index');
         Route::get('/create', [SellerCommissionDocumentController::class, 'create'])->name('create');
         Route::get('/available-invoices', [SellerCommissionDocumentController::class, 'availableInvoices'])->name('available-invoices');
-        Route::get('/report-invoices', [SellerCommissionDocumentController::class, 'reportInvoices'])->name('report-invoices');
-        Route::get('/manual-invoice', [SellerCommissionDocumentController::class, 'manualInvoice'])->name('manual-invoice');
-        Route::post('/preview', [SellerCommissionDocumentController::class, 'preview'])->name('preview');
         Route::post('/', [SellerCommissionDocumentController::class, 'store'])->name('store');
         Route::get('/{document}', [SellerCommissionDocumentController::class, 'show'])->name('show');
         Route::get('/{document}/edit', [SellerCommissionDocumentController::class, 'edit'])->name('edit');
         Route::put('/{document}', [SellerCommissionDocumentController::class, 'update'])->name('update');
         Route::delete('/{document}', [SellerCommissionDocumentController::class, 'destroy'])->name('destroy');
         Route::get('/{document}/print', [SellerCommissionDocumentController::class, 'print'])->name('print');
+        Route::post('/{document}/adjustments', [SellerCommissionDocumentController::class, 'storeAdjustment'])->name('adjustments.store');
+        Route::delete('/{document}/adjustments/{adjustment}', [SellerCommissionDocumentController::class, 'destroyAdjustment'])->name('adjustments.destroy');
+        Route::put('/{document}/bonus', [SellerCommissionDocumentController::class, 'setBonus'])->name('bonus');
+        Route::post('/{document}/confirm', [SellerCommissionDocumentController::class, 'confirm'])->name('confirm');
+        Route::post('/{document}/finalize', [SellerCommissionDocumentController::class, 'finalize'])->name('finalize');
+        Route::post('/{document}/recalculate', [SellerCommissionDocumentController::class, 'recalculate'])->name('recalculate');
+    });
+
+    Route::prefix('finance/reports/commission-rates')->name('finance.commission-rates.')->middleware(['auth', 'page.access:finance.seller_sales_documents'])->group(function () {
+        Route::get('/', [CommissionRateSettingsController::class, 'index'])->name('index');
+        Route::get('/tree', [CommissionRateSettingsController::class, 'tree'])->name('tree');
+        Route::post('/rates', [CommissionRateSettingsController::class, 'storeRate'])->name('rates.store');
+        Route::delete('/rates', [CommissionRateSettingsController::class, 'removeRate'])->name('rates.destroy');
+        Route::get('/rates/history', [CommissionRateSettingsController::class, 'rateHistory'])->name('rates.history');
+    });
+
+    Route::prefix('finance/reports/org-commission')->name('finance.org-commission.')->middleware(['auth', 'page.access:finance.seller_sales_documents'])->group(function () {
+        Route::get('/', [OrgCommissionController::class, 'index'])->name('index');
+
+        Route::post('/departments', [OrgCommissionController::class, 'storeDepartment'])->name('departments.store');
+        Route::put('/departments/{department}', [OrgCommissionController::class, 'updateDepartment'])->name('departments.update');
+        Route::post('/departments/{department}/toggle', [OrgCommissionController::class, 'toggleDepartment'])->name('departments.toggle');
+        Route::post('/departments/{department}/members', [OrgCommissionController::class, 'syncMembers'])->name('departments.members.sync');
+
+        Route::get('/documents/create', [OrgCommissionController::class, 'create'])->name('create');
+        Route::post('/documents', [OrgCommissionController::class, 'store'])->name('store');
+        Route::get('/documents/seller-total', [OrgCommissionController::class, 'sellerTotal'])->name('seller-total');
+        Route::get('/documents/{document}', [OrgCommissionController::class, 'show'])->name('show');
+        Route::get('/documents/{document}/edit', [OrgCommissionController::class, 'edit'])->name('edit');
+        Route::put('/documents/{document}', [OrgCommissionController::class, 'update'])->name('update');
+        Route::delete('/documents/{document}', [OrgCommissionController::class, 'destroy'])->name('destroy');
+        Route::post('/documents/{document}/confirm', [OrgCommissionController::class, 'confirm'])->name('confirm');
+        Route::post('/documents/{document}/finalize', [OrgCommissionController::class, 'finalize'])->name('finalize');
+        Route::get('/documents/{document}/print', [OrgCommissionController::class, 'print'])->name('print');
     });
 
     Route::prefix('vouchers/section/return-from-sale')
@@ -664,16 +699,5 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
 Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
-
-Route::get('/test', function () {
-    $customer = \App\Models\Customer::with('userSite')->find(3101);
-
-    dd(
-        $customer->site_customer_id,
-        $customer->userSite,
-        $customer->userSite->balance
-    );
-
-});
 
 require __DIR__ . '/auth.php';

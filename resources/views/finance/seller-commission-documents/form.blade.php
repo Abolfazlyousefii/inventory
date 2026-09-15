@@ -2,6 +2,10 @@
 
 @php
     $editing = (bool) $document;
+    $prefill = $prefill ?? [];
+    $prefillSeller = $document?->seller_id ?? ($prefill['seller_id'] ?? null);
+    $prefillFrom = $document ? App\Support\JalaliDate::date($document->period_from) : ($prefill['date_from'] ?? '');
+    $prefillTo = $document ? App\Support\JalaliDate::date($document->period_to) : ($prefill['date_to'] ?? '');
     $initialItems = $editing
         ? $document->items->where('status', App\Models\SellerSalesDocumentItem::STATUS_ACTIVE)->map(fn ($item) => [
             'id' => (int) $item->invoice_id,
@@ -43,17 +47,17 @@
                     <select class="form-select" id="sellerUserId" name="user_id" required>
                         <option value="">انتخاب کنید</option>
                         @foreach($users as $user)
-                            <option value="{{ $user->id }}" @selected((string) old('user_id', $document?->seller_id) === (string) $user->id)>{{ $user->name }} (#{{ $user->id }})</option>
+                            <option value="{{ $user->id }}" @selected((string) old('user_id', $prefillSeller) === (string) $user->id)>{{ $user->name }} (#{{ $user->id }})</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-lg-2 col-md-6">
                     <label class="form-label" for="dateFrom">از تاریخ فاکتور</label>
-                    <input class="form-control" id="dateFrom" name="date_from" data-jdp autocomplete="off" value="{{ old('date_from', $document ? App\Support\JalaliDate::date($document->period_from) : '') }}" required>
+                    <input class="form-control" id="dateFrom" name="date_from" data-jdp autocomplete="off" value="{{ old('date_from', $prefillFrom) }}" required>
                 </div>
                 <div class="col-lg-2 col-md-6">
                     <label class="form-label" for="dateTo">تا تاریخ فاکتور</label>
-                    <input class="form-control" id="dateTo" name="date_to" data-jdp autocomplete="off" value="{{ old('date_to', $document ? App\Support\JalaliDate::date($document->period_to) : '') }}" required>
+                    <input class="form-control" id="dateTo" name="date_to" data-jdp autocomplete="off" value="{{ old('date_to', $prefillTo) }}" required>
                 </div>
                 <div class="col-lg-3 col-md-6">
                     <label class="form-label" for="notes">توضیحات (اختیاری)</label>
