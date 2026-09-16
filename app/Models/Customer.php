@@ -2,18 +2,16 @@
 
 namespace App\Models;
 
-use Bavix\Wallet\Interfaces\Wallet;
-use Bavix\Wallet\Traits\HasWallet;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Foundation\Auth\User;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class Customer extends User implements Wallet {
-    use HasFactory, SoftDeletes, HasWallet;
+class Customer extends Authenticatable {
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'crm_customer_id',
@@ -71,18 +69,28 @@ class Customer extends User implements Wallet {
         return $this->belongsTo(City::class, 'city_id');
     }
 
+    public function scopeWithBalance( Builder $query ): Builder {
+        return $query->withSum([
+            'ledgers as debit_sum' => fn( $q ) => $q->effectiveForBalance()
+                ->where('type', 'debit'),
+        ], 'amount')
+            ->withSum([
+                'ledgers as credit_sum' => fn( $q ) => $q->effectiveForBalance()
+                    ->where('type', 'credit'),
+            ], 'amount');
+    }
 
-//    public function getBalanceAttribute(): int {
-//        return (int) ( $this->opening_balance ?? 0 ) + (int) ( $this->debit_sum ?? 0 ) - (int) ( $this->credit_sum ?? 0 );
-//    }
-//
-//    public function getDebtAttribute(): int {
-//        return max($this->balance, 0);
-//    }
-//
-//    public function getCreditAttribute(): int {
-//        return max(- $this->balance, 0);
-//    }
+    public function getBalanceAttribute(): int {
+        return (int) ( $this->opening_balance ?? 0 ) + (int) ( $this->debit_sum ?? 0 ) - (int) ( $this->credit_sum ?? 0 );
+    }
+
+    public function getDebtAttribute(): int {
+        return max($this->balance, 0);
+    }
+
+    public function getCreditAttribute(): int {
+        return max(- $this->balance, 0);
+    }
 
     public function getDisplayNameAttribute(): string {
         return (string) ( $this->name ? : trim(implode(' ', array_filter([ $this->first_name, $this->last_name ]))) );

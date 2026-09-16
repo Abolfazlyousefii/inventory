@@ -56,12 +56,10 @@ use App\Http\Controllers\WarehouseReservationController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\Portal\CustomerAuthController;
-use App\Models\Customer;
 use App\Models\SalesReturnDocument;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\DB;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
 
@@ -668,216 +666,14 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 Route::get('/test', function () {
-    $customer = \App\Models\Customer::find(3097);
+    $customer = \App\Models\Customer::with('userSite')->find(3101);
 
     dd(
         $customer->site_customer_id,
-        $customer->balance,
-        $customer->deposit(200)
+        $customer->userSite,
+        $customer->userSite->balance
     );
 
-});
-
-Route::get('/temp/customer-financials', function () {
-    $customers = \App\Models\Customer::query()
-        ->with([
-            'ledgers' => fn( $query ) => $query->effectiveForBalance()
-                ->orderBy('created_at')
-                ->orderBy('id'),
-        ])
-        ->orderBy('id')
-        ->get();
-
-    $summary = [
-        'customers_checked'    => 0,
-        'customers_skipped'    => 0,
-        'validated_customers'  => 0,
-        'transactions_created' => 0,
-        'transactions_skipped' => 0,
-        'old_syncs_reversed'   => 0,
-    ];
-
-    $results = [];
-
-    $applyDelta = function ( \App\Models\Customer $customer, int $amount, array $meta = [] ) {
-        if ( $amount === 0 ) {
-            return null;
-        }
-
-        if ( $amount > 0 ) {
-            return $customer->deposit($amount, $meta);
-        }
-
-        return $customer->forceWithdraw(abs($amount), $meta);
-    };
-
-    \Illuminate\Support\Facades\DB::transaction(function () use (
-        $customers, $applyDelta, &$summary, &$results
-    ) {
-        foreach ( $customers as $customer ) {
-            $openingBalance = (int) ( $customer->opening_balance ?? 0 );
-
-            $legacyDebit  = 0;
-            $legacyCredit = 0;
-
-            foreach ( $customer->ledgers as $ledger ) {
-                $amount = (int) $ledger->amount;
-
-                if ( $ledger->type === 'debit' ) {
-                    $legacyDebit += $amount;
-                }
-                elseif ( $ledger->type === 'credit' ) {
-                    $legacyCredit += $amount;
-                }
-                else {
-                    throw new \RuntimeException(sprintf('UNKNOWN LEDGER TYPE - Customer #%d | Ledger #%d | Type: %s', $customer->id, $ledger->id, (string) $ledger->type));
-                }
-            }
-
-            $expectedLegacyBalance = $openingBalance + $legacyCredit - $legacyDebit;
-
-            if ( $customer->ledgers->isEmpty() ) {
-                $summary['customers_skipped'] ++;
-
-                continue;
-            }
-
-            $summary['customers_checked'] ++;
-
-            $oldSyncId = 'legacy-sync-customer-' . $customer->id;
-
-            $oldTransaction = $customer->transactions()
-                ->where('meta->legacy_sync_id', $oldSyncId)
-                ->first();
-
-            if ( $oldTransaction ) {
-                $reversalNote = 'legacy-sync-reversal-customer-' . $customer->id;
-
-                $alreadyReversed = $customer->transactions()
-                    ->where('meta->note', $reversalNote)
-                    ->exists();
-
-                if ( !$alreadyReversed ) {
-                    $oldType = $oldTransaction->type;
-
-                    if ( $oldType instanceof \BackedEnum ) {
-                        $oldType = $oldType->value;
-                    }
-
-                    $oldType = (string) $oldType;
-
-                    $oldAmount = abs((int) $oldTransaction->amount);
-
-                    if ( $oldAmount > 0 ) {
-                        if ( $oldType === 'deposit' ) {
-                            $customer->forceWithdraw($oldAmount, [
-                                'note' => $reversalNote,
-                            ]);
-                        }
-                        elseif ( $oldType === 'withdraw' ) {
-                            $customer->deposit($oldAmount, [
-                                'note' => $reversalNote,
-                            ]);
-                        }
-                        else {
-                            throw new \RuntimeException(sprintf('UNKNOWN OLD WALLET TRANSACTION TYPE - Customer #%d | Transaction #%d | Type: %s', $customer->id, $oldTransaction->id, $oldType));
-                        }
-
-                        $summary['transactions_created'] ++;
-
-                        $summary['old_syncs_reversed'] ++;
-                    }
-                }
-            }
-
-            if ( $openingBalance !== 0 ) {
-                $openingNote = 'legacy-opening-balance-customer-' . $customer->id;
-
-                $openingAlreadyImported = $customer->transactions()
-                    ->where('meta->note', $openingNote)
-                    ->exists();
-
-                if ( !$openingAlreadyImported ) {
-                    $applyDelta($customer, $openingBalance, [
-                        'note' => $openingNote,
-                    ]);
-
-                    $summary['transactions_created'] ++;
-                }
-                else {
-                    $summary['transactions_skipped'] ++;
-                }
-            }
-
-            foreach ( $customer->ledgers as $ledger ) {
-                $amount = (int) $ledger->amount;
-
-                if ( $amount === 0 ) {
-                    $summary['transactions_skipped'] ++;
-
-                    continue;
-                }
-
-                if ( $ledger->type === 'debit' ) {
-                    // debit => کاهش موجودی => forceWithdraw
-                    $delta = - $amount;
-                }
-                elseif ( $ledger->type === 'credit' ) {
-                    // credit => افزایش موجودی => deposit
-                    $delta = $amount;
-                }
-                else {
-                    throw new \RuntimeException(sprintf('UNKNOWN LEDGER TYPE - Customer #%d | Ledger #%d | Type: %s', $customer->id, $ledger->id, (string) $ledger->type));
-                }
-
-                $importedByOldVersion = $customer->transactions()
-                    ->where('meta->legacy_sync_id', $ledger->id)
-                    ->exists();
-
-                if ( $importedByOldVersion ) {
-                    $summary['transactions_skipped'] ++;
-
-                    continue;
-                }
-
-                $applyDelta($customer, $delta, [
-                    'note' => $ledger->note,
-                ]);
-
-                $summary['transactions_created'] ++;
-            }
-
-            $walletBalance = (int) $customer->balanceInt;
-
-            if ( $walletBalance !== $expectedLegacyBalance ) {
-                throw new \RuntimeException(sprintf('WALLET BALANCE MISMATCH - Customer #%d | Name: %s | Expected Legacy Balance: %d | Laravel Wallet Balance: %d | Difference: %d | Opening: %d | Debit: %d | Credit: %d',
-                    $customer->id, $customer->display_name,
-                    $expectedLegacyBalance, $walletBalance, $walletBalance - $expectedLegacyBalance, $openingBalance, $legacyDebit, $legacyCredit));
-            }
-
-            $summary['validated_customers'] ++;
-
-            $results[] = [
-                'customer_id' => $customer->id,
-                'display_name' => $customer->display_name,
-                'opening_balance' => $openingBalance,
-                'total_debit' => $legacyDebit,
-                'total_credit' => $legacyCredit,
-                'expected_legacy_balance' => $expectedLegacyBalance,
-                'laravel_wallet_balance' => $walletBalance,
-                'difference' => 0,
-                'validation' => 'PASSED',
-                'effective_ledgers' => $customer->ledgers->count(),
-            ];
-        }
-    });
-
-    return response()->json([
-        'success' => true,
-        'message' => 'All customer financial balances were migrated and validated successfully.',
-        'summary' => $summary,
-        'results' => $results,
-    ]);
 });
 
 require __DIR__ . '/auth.php';

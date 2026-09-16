@@ -25,26 +25,24 @@
                     <tr>
                         <th>نام شخص</th>
                         <th>موبایل</th>
+                        <th>بدهکاری</th>
+                        <th>بستانکاری</th>
                         <th>وضعیت نهایی</th>
                         <th class="text-end">عملیات</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($customers as $customer)
-	                    @php
-		                    $balance = (int) $customer->balance;
-
-$statusLabel = $balance > 0
-	? 'بستانکار'
-	: ($balance < 0 ? 'بدهکار' : 'تسویه');
-
-$statusClass = $balance > 0
-	? 'text-success'
-	: ($balance < 0 ? 'text-danger' : 'text-muted');
-	                    @endphp
+                        @php
+                            $balance = (int) $customer->balance;
+                            $statusLabel = $balance > 0 ? 'بدهکار' : ($balance < 0 ? 'بستانکار' : 'تسویه');
+                            $statusClass = $balance > 0 ? 'text-danger' : ($balance < 0 ? 'text-success' : 'text-muted');
+                        @endphp
                         <tr>
                             <td>{{ $customer->display_name ?: '-' }}</td>
                             <td>{{ $customer->mobile ?: '-' }}</td>
+                            <td>{{ \App\Support\Currency::formatRial($customer->debt) }}</td>
+                            <td>{{ \App\Support\Currency::formatRial($customer->credit) }}</td>
                             <td class="fw-semibold {{ $statusClass }}">{{ $statusLabel }} {{ $balance === 0 ? '' : \App\Support\Currency::formatRial(abs($balance)) }}</td>
                             <td class="text-end">
                                 <a href="{{ route('account-statements.show', $customer->id) }}" class="btn btn-sm btn-primary">مشاهده گردش حساب</a>

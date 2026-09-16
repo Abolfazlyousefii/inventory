@@ -43,6 +43,7 @@ class InvoiceController extends Controller
         private readonly SalesDocumentAccessService $accessService,
         private readonly WarehousePendingRefreshService $warehousePendingRefreshService,
         private readonly WarehouseCollectionService $warehouseCollectionService,
+        private readonly CustomerLedgerService $customerLedgerService,
         private readonly NotificationService $notificationService,
         private readonly SalesDocumentSellerReassignmentService $sellerReassignmentService,
     ) {}
@@ -630,37 +631,7 @@ class InvoiceController extends Controller
             $subtotal = (int) $canonicalTotals['subtotal_before_discount'] + (int) $canonicalTotals['shipping'];
             $discount = (int) $canonicalTotals['total_discount'];
             abort_if((int) $invoice->total !== max($subtotal - $discount, 0), 422, 'جمع فاکتور با اقلام snapshot همخوانی ندارد.');
-            $customer = $invoice->customer;
-            // ثبت بدهکاری فاکتور روی کیف‌پول مشتری
-            if ($invoice->customer) {
-                $customer = $invoice->customer;
-
-                $existing = \Bavix\Wallet\Models\Transaction::query()
-                    ->where('payable_type', 'wallet')
-                    ->where('payable_id', $customer->id)
-                    ->where('type', 'withdraw')
-                    ->where('meta->type', 'invoice_debit')
-                    ->where('meta->invoice_id', $invoice->id)
-                    ->first();
-
-                if ($existing && (int) $existing->amount !== (int) $invoice->total) {
-                    $walletId = (int) $existing->wallet_id;
-                    $existing->delete();
-                    \Bavix\Wallet\Models\Wallet::query()->find($walletId)?->refreshBalance();
-                    $existing = null;
-                }
-
-                if (! $existing) {
-                    $customer->forceWithdraw((int) $invoice->total, [
-                        'type'           => 'invoice_debit',
-                        'reference_type' => Invoice::class,
-                        'reference_id'   => (int) $invoice->id,
-                        'invoice_id'     => (int) $invoice->id,
-                        'invoice_uuid'   => (string) $invoice->uuid,
-                        'note'           => 'ثبت بدهکاری بابت حواله فروش ' . $invoice->uuid,
-                    ]);
-                }
-            }
+            $this->customerLedgerService->syncInvoiceDebit($invoice);
             $invoice->update(['status' => Invoice::STATUS_READY_TO_SHIP, 'status_changed_at' => now(), 'status_changed_by' => auth()->id()]);
             $this->warehouseCollectionServiceHistory($invoice, 'finance_reapproved', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_READY_TO_SHIP, 'فاکتور تایید مجدد شد و به صف ارسال بار منتقل شد.');
             return $invoice;
@@ -1057,7 +1028,9 @@ class InvoiceController extends Controller
             ->select('invoices.*')
             ->selectSub('select count(*) from invoice_items where invoice_items.invoice_id = invoices.id and invoice_items.quantity > 0 and invoice_items.price <= 0', 'zero_price_items_count')
             ->selectSub('select coalesce(sum(case when (quantity * price) - coalesce(line_discount_amount, 0) > 0 then (quantity * price) - coalesce(line_discount_amount, 0) else 0 end), 0) from invoice_items where invoice_items.invoice_id = invoices.id', 'snapshot_items_total')
-            ->selectSub("select count(*) from wallet_transactions where wallet_transactions.payable_type = 'wallet' and wallet_transactions.payable_id = invoices.customer_id and wallet_transactions.type = 'withdraw' and wallet_transactions.deleted_at is null and wallet_transactions.meta->>'$.type' = 'invoice_debit' and wallet_transactions.meta->>'$.invoice_id' = cast(invoices.id as char)", 'ledger_debit_count');        if (($filters['customer_id'] ?? null) !== null) {
+            ->selectSub("select count(*) from customer_ledgers where customer_ledgers.reference_type = 'App\\Models\\Invoice' and customer_ledgers.reference_id = invoices.id and customer_ledgers.type = 'debit'", 'ledger_debit_count');
+
+        if (($filters['customer_id'] ?? null) !== null) {
             $query->where('invoices.customer_id', (int) $filters['customer_id']);
         }
         if ($dateFrom) {
@@ -1190,7 +1163,9 @@ class InvoiceController extends Controller
             ->selectSub('select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id', 'paid_total')
             ->selectSub('select count(*) from invoice_items where invoice_items.invoice_id = invoices.id and invoice_items.quantity > 0 and invoice_items.price <= 0', 'zero_price_items_count')
             ->selectSub('select coalesce(sum(greatest((quantity * price) - coalesce(line_discount_amount, 0), 0)), 0) from invoice_items where invoice_items.invoice_id = invoices.id', 'snapshot_items_total')
-            ->selectSub("select count(*) from wallet_transactions where wallet_transactions.payable_type = 'wallet' and wallet_transactions.payable_id = invoices.customer_id and wallet_transactions.type = 'withdraw' and wallet_transactions.deleted_at is null and wallet_transactions.meta->>'$.type' = 'invoice_debit' and wallet_transactions.meta->>'$.invoice_id' = cast(invoices.id as char)", 'ledger_debit_count')            ->when($filters['customer_name'] !== '', function ($query) use ($filters) {
+            ->selectSub("select count(*) from customer_ledgers where customer_ledgers.reference_type = 'App\\Models\\Invoice' and customer_ledgers.reference_id = invoices.id and customer_ledgers.type = 'debit'", 'ledger_debit_count')
+            ->when($filters['invoice_number'] !== '', fn ($q) => $q->where('uuid', 'like', '%' . $filters['invoice_number'] . '%'))
+            ->when($filters['customer_name'] !== '', function ($query) use ($filters) {
                 $name = $filters['customer_name'];
                 $query->where(function ($qq) use ($name) {
                     $qq->where('customer_name', 'like', "%{$name}%")
@@ -1255,10 +1230,9 @@ class InvoiceController extends Controller
                     ->orWhereNull('uuid')
                     ->orWhere('uuid', '')
                     ->orWhereIn('status', $this->invoiceLegacyStatuses())
-                    ->orWhereRaw("(select count(*) from wallet_transactions where wallet_transactions.payable_type = 'wallet' and wallet_transactions.payable_id = invoices.customer_id and wallet_transactions.type = 'withdraw' and wallet_transactions.deleted_at is null and wallet_transactions.meta->>'$.type' = 'invoice_debit' and wallet_transactions.meta->>'$.invoice_id' = cast(invoices.id as char)) > 1");
+                    ->orWhereRaw("(select count(*) from customer_ledgers where customer_ledgers.reference_type = 'App\\Models\\Invoice' and customer_ledgers.reference_id = invoices.id and customer_ledgers.type = 'debit') > 1");
             });
         }
-
         match ($filters['payment_status']) {
             'paid' => $query->whereRaw("{$paidExpr} = invoices.total"),
             'overpaid' => $query->whereRaw("{$paidExpr} > invoices.total"),
@@ -1437,7 +1411,7 @@ SQL)->first();
         if ($paid > $total) { $warnings[] = 'پرداخت اضافه'; }
         if (blank($invoice->uuid)) { $warnings[] = 'شماره نامعتبر'; }
         if (in_array((string) $invoice->status, $this->invoiceLegacyStatuses(), true)) { $warnings[] = 'وضعیت قدیمی'; }
-        if ((int) ($invoice->ledger_debit_count ?? 0) > 1) { $warnings[] = 'تراکنش کیف‌پول مشکوک'; }
+        if ((int) ($invoice->ledger_debit_count ?? 0) > 1) { $warnings[] = 'ledger مشکوک'; }
         return $warnings;
     }
 

@@ -32,6 +32,7 @@ class CustomerApiController extends Controller
             : "TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')))";
 
         $items = Customer::query()
+            ->withBalance()
             ->where(function($qq) use ($terms, $fullNameExpression){
                 foreach ($terms as $term) {
                     $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
@@ -61,6 +62,8 @@ class CustomerApiController extends Controller
                 'extra_description' => $c->extra_description,
                 'province_id' => (int)($c->province_id ?? 0),
                 'city_id' => (int)($c->city_id ?? 0),
+                'debt' => (int)$c->debt,
+                'credit' => (int)$c->credit,
                 'balance' => (int)$c->balance,
                 'reservation_tier' => $c->reservation_tier,
                 'reservation_tier_label' => $this->reservationTierLabel($c->reservation_tier),
@@ -119,6 +122,9 @@ class CustomerApiController extends Controller
 
     public function show(Customer $customer)
     {
+        $customer->loadSum(['ledgers as debit_sum' => fn($q)=>$q->where('type','debit')],'amount')
+                 ->loadSum(['ledgers as credit_sum' => fn($q)=>$q->where('type','credit')],'amount');
+
         return response()->json([
             'data' => [
                 'customer' => [
@@ -132,6 +138,8 @@ class CustomerApiController extends Controller
                     'extra_description' => $customer->extra_description,
                     'province_id' => (int)($customer->province_id ?? 0),
                     'city_id' => (int)($customer->city_id ?? 0),
+                    'debt' => (int)$customer->debt,
+                    'credit' => (int)$customer->credit,
                     'balance' => (int)$customer->balance,
                     'reservation_tier' => $customer->reservation_tier,
                     'reservation_tier_label' => $this->reservationTierLabel($customer->reservation_tier),

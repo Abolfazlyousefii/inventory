@@ -191,163 +191,92 @@
 </div>
 
 <div class="card">
-	<div class="card-header bg-white d-flex justify-content-between align-items-center">
-		<span>لیست گردش‌ها</span>
+    <div class="card-header bg-white">لیست گردش‌ها</div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>تاریخ</th>
+                    <th>شرح</th>
+                    <th>بدهکار</th>
+                    <th>بستانکار</th>
+                    <th class="text-end">مشاهده</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($ledgers as $ledger)
+                    @php
+                        $invoice = $ledger->reference_type === \App\Models\Invoice::class ? ($invoices[$ledger->reference_id] ?? null) : null;
+                        $payment = $ledger->reference_type === \App\Models\InvoicePayment::class ? ($payments[$ledger->reference_id] ?? null) : null;
+                        $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? ($transfers[$ledger->reference_id] ?? null) : null;
+                        $salesReturn = $ledger->reference_type === \App\Models\SalesReturnDocument::class ? ($salesReturnDocuments[$ledger->reference_id] ?? null) : null;
+                        $description = $ledger->note ?: '—';
+                        $viewUrl = null;
 
-		<span class="badge text-bg-light border">
-            Laravel Wallet
-        </span>
-	</div>
+                        if ($invoice) {
+                            $description = "فاکتور #{$invoice->id} | مبلغ فاکتور ".\App\Support\Currency::formatRial($invoice->total)." | این شخص بدهکار شد";
+                            $viewUrl = route('vouchers.sales.show', $invoice->uuid);
+                        }
 
-	<div class="table-responsive">
-		<table class="table align-middle mb-0">
-			<thead>
-			<tr>
-				<th>تاریخ</th>
-				<th>شرح</th>
-				<th>بدهکار</th>
-				<th>بستانکار</th>
-				<th>شناسه تراکنش</th>
-			</tr>
-			</thead>
+                        if ($payment) {
+                            $creatorName = $payment->creator?->name ?: 'نامشخص';
+                            $invoiceUuid = $payment->invoice?->uuid ?: ($invoices[$payment->invoice_id]->uuid ?? null);
 
-			<tbody>
-			@forelse($transactions as $transaction)
+                            if ($payment->method === 'cheque') {
+                                $cheque = $payment->cheque;
+                                $chNumber = $cheque?->cheque_number ?: '—';
+                                $description = "پرداخت چکی شماره {$chNumber} | مبلغ ".\App\Support\Currency::formatRial($payment->amount)." | ثبت‌کننده: {$creatorName}";
+                            } else {
+                                $bankName = $payment->bank_name ?: '—';
+                                $description = "پرداخت نقدی | مبلغ ".\App\Support\Currency::formatRial($payment->amount)." | بانک {$bankName} | ثبت‌کننده: {$creatorName}";
+                            }
 
-				@php
-					/*
-					 * در Laravel Wallet فیلد type
-					 * به TransactionType enum تبدیل می‌شود.
-					 */
-					$transactionType = $transaction->type instanceof \BackedEnum
-						? $transaction->type->value
-						: (string) $transaction->type;
+                            if ($invoiceUuid) {
+                                $description .= " | فاکتور {$invoiceUuid}";
+                            }
 
-					/*
-					 * مبلغ transaction ممکن است در withdraw
-					 * منفی ذخیره شده باشد.
-					 * برای نمایش همیشه مقدار مثبت را نشان می‌دهیم.
-					 */
-					$amount = abs((int) $transaction->amount);
+                            $viewUrl = route('account-statements.documents.payments.show', $payment->id);
+                        }
 
-					/*
-					 * meta توسط Laravel Wallet به array cast می‌شود.
-					 */
-					$meta = is_array($transaction->meta)
-						? $transaction->meta
-						: [];
+                        if ($salesReturn) {
+                            $source = \App\Models\SalesReturnDocument::sourceTypeLabels()[$salesReturn->source_type] ?? $salesReturn->source_type;
+                            $description = "سند برگشت از فروش {$salesReturn->document_number} | نوع: {$source} | مبلغ " . \App\Support\Currency::formatRial($salesReturn->total_refund_amount);
+                            $viewUrl = route('sales-returns.show', $salesReturn->id);
+                        }
 
-					/*
-					 * طبق ساختار فعلی شما note
-					 * داخل meta ذخیره شده است.
-					 */
-					$description = $meta['note'] ?? null;
+                        if ($transfer) {
+                            $transferRef = $transfer->reference ?: ('TR-' . $transfer->id);
+                            $transferTypeLabel = \App\Models\WarehouseTransfer::typeOptions()[$transfer->voucher_type] ?? $transfer->voucher_type;
+                            $description = "سند {$transferRef} | نوع: {$transferTypeLabel} | مبلغ " . \App\Support\Currency::formatRial($ledger->amount);
 
-					if (!$description) {
-						$description = match ($transactionType) {
-							'deposit' => 'افزایش بدهی / واریز به حساب',
-							'withdraw' => 'کاهش بدهی / پرداخت',
-							default => 'تراکنش کیف پول',
-						};
-					}
+                            if ($transfer->voucher_type === \App\Models\WarehouseTransfer::TYPE_CUSTOMER_RETURN) {
+                                $viewUrl = route('account-statements.documents.returns.show', $transfer->id);
+                            }
+                        }
+                    @endphp
+                    <tr>
+                        <td class="text-nowrap">{{ $ledger->created_at ? Jalalian::fromDateTime($ledger->created_at)->format('Y/m/d H:i') : '—' }}</td>
+                        <td>{{ $description }}</td>
+                        <td>{{ $ledger->type === 'debit' ? number_format((int) $ledger->amount) : '—' }}</td>
+                        <td>{{ $ledger->type === 'credit' ? number_format((int) $ledger->amount) : '—' }}</td>
+                        <td class="text-end">
+                            @if($viewUrl)
+                                <a href="{{ $viewUrl }}" class="btn btn-sm btn-primary">مشاهده</a>
+                            @else
+                                <span class="text-muted">—</span>
+                            @endif
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-muted">گردشی برای این شخص ثبت نشده است.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
 
-					/*
-					 * در سیستم حساب مشتری شما:
-					 *
-					 * deposit
-					 * باعث افزایش balance می‌شود
-					 * => بدهکار
-					 *
-					 * withdraw
-					 * باعث کاهش balance می‌شود
-					 * => بستانکار
-					 */
-					$isDebit = $transactionType === 'deposit';
-					$isCredit = $transactionType === 'withdraw';
-				@endphp
-
-				<tr>
-					{{-- تاریخ --}}
-					<td class="text-nowrap">
-						{{ $transaction->created_at
-							? Jalalian::fromDateTime($transaction->created_at)->format('Y/m/d H:i')
-							: '—'
-						}}
-					</td>
-
-					{{-- شرح --}}
-					<td>
-						<div class="d-flex align-items-center gap-2 flex-wrap">
-
-							@if($isDebit)
-								<span class="badge bg-danger-subtle text-danger border border-danger-subtle">
-                                        بدهکار
-                                    </span>
-							@elseif($isCredit)
-								<span class="badge bg-success-subtle text-success border border-success-subtle">
-                                        بستانکار
-                                    </span>
-							@else
-								<span class="badge bg-secondary-subtle text-secondary border">
-                                        {{ $transactionType }}
-                                    </span>
-							@endif
-
-							<span>
-                                    {{ $description }}
-                                </span>
-						</div>
-					</td>
-
-					{{-- بدهکار --}}
-					<td class="text-nowrap">
-						@if($isDebit)
-							<span class="fw-bold text-danger">
-                                    {{ number_format($amount) }}
-                                </span>
-						@else
-							<span class="text-muted">—</span>
-						@endif
-					</td>
-
-					{{-- بستانکار --}}
-					<td class="text-nowrap">
-						@if($isCredit)
-							<span class="fw-bold text-success">
-                                    {{ number_format($amount) }}
-                                </span>
-						@else
-							<span class="text-muted">—</span>
-						@endif
-					</td>
-
-					{{-- UUID --}}
-					<td>
-						<small
-								class="text-muted font-monospace"
-								title="{{ $transaction->uuid }}"
-						>
-							{{ $transaction->uuid }}
-						</small>
-					</td>
-				</tr>
-
-			@empty
-				<tr>
-					<td colspan="5" class="text-center py-4 text-muted">
-						تراکنشی برای این شخص در Laravel Wallet ثبت نشده است.
-					</td>
-				</tr>
-			@endforelse
-			</tbody>
-		</table>
-	</div>
-
-	@if($transactions->hasPages())
-		<div class="card-footer bg-white">
-			{{ $transactions->links() }}
-		</div>
-	@endif
+    <div class="card-footer bg-white">{{ $ledgers->links() }}</div>
 </div>
 
 <div class="payment-modal-backdrop" id="paymentModalBackdrop"></div>
