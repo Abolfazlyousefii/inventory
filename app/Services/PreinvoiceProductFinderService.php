@@ -155,7 +155,7 @@ class PreinvoiceProductFinderService
         return [
             'id' => (int) $product->id, 'name' => $product->name, 'title' => $product->name,
             'code' => $product->code, 'short_code' => $product->short_barcode, 'short_barcode' => $product->short_barcode,
-            'sku' => $product->sku, 'image' => $product->image_path ? asset('storage/'.$product->image_path) : null,
+            'sku' => $product->sku, 'image' => $product->image_path ? route('products.image', ['product' => $product->id]) : null,
             'category' => $product->category ? ['id' => (int) $product->category->id, 'name' => $product->category->name, 'path' => $paths[(int) $product->category_id] ?? $product->category->name] : null,
             'matched_variants_count' => (int) ($product->matched_variants_count ?? 0),
             'matched_variants' => $matched->map(fn (object $variant) => [
