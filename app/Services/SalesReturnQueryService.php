@@ -111,7 +111,14 @@ class SalesReturnQueryService
 
     public function appliedHealthCheck(SalesReturnDocument $document): array
     {
-        $ledgerAmount = (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->where('reference_id', $document->id)->where('type', 'credit')->sum('amount');
+        $ledgerAmount = (int) \Bavix\Wallet\Models\Transaction::query()
+            ->where('payable_type', 'wallet')
+            ->where('type', 'deposit')
+            ->where('meta->type', 'sales_return_credit')
+            ->where('meta->reference_type', SalesReturnDocument::class)
+            ->where('meta->reference_id', $document->id)
+            ->whereNull('deleted_at')
+            ->sum('amount');
         $positiveItems = $document->items->filter(fn ($item) => (int) $item->return_quantity > 0);
         $movementCount = $positiveItems->isEmpty()
             ? 0

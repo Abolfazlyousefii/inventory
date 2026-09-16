@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\InvoicePayment;
 use App\Models\SalesReturnDocument;
 use App\Models\WarehouseTransfer;
+use Bavix\Wallet\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -93,52 +94,50 @@ class AccountStatementController extends Controller
 
     public function show(Customer $customer)
     {
-        $ledgers = CustomerLedger::query()
-            ->where('customer_id', $customer->id)
+        /*
+         * گرفتن Default Wallet مشتری
+         */
+        $wallet = $customer->wallet;
+
+        /*
+         * گرفتن تراکنش‌های واقعی Laravel Wallet
+         *
+         * دیگر هیچ اطلاعاتی از customer_ledgers
+         * برای نمایش گردش حساب خوانده نمی‌شود.
+         */
+        $transactions = Transaction::query()
+            ->where('wallet_id', $wallet->id)
+            ->where('confirmed', true)
             ->orderByDesc('created_at')
-            ->paginate(25);
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString();
 
-        $invoiceIds = $ledgers->getCollection()->where('reference_type', Invoice::class)->pluck('reference_id')->filter()->unique()->values();
-        $paymentIds = $ledgers->getCollection()->where('reference_type', InvoicePayment::class)->pluck('reference_id')->filter()->unique()->values();
-        $transferIds = $ledgers->getCollection()->where('reference_type', WarehouseTransfer::class)->pluck('reference_id')->filter()->unique()->values();
-        $salesReturnIds = $ledgers->getCollection()->where('reference_type', SalesReturnDocument::class)->pluck('reference_id')->filter()->unique()->values();
+        /*
+         * موجودی نهایی مستقیماً از Laravel Wallet
+         *
+         * مثبت  => مشتری بدهکار
+         * منفی  => مشتری بستانکار
+         * صفر   => تسویه
+         */
+        $netBalance = (int) $customer->balanceInt;
 
-        $payments = InvoicePayment::query()
-            ->with(['cheque', 'creator:id,name', 'invoice:id,uuid,total,customer_name'])
-            ->whereIn('id', $paymentIds)
-            ->get(['id', 'invoice_id', 'customer_id', 'created_by', 'method', 'amount', 'paid_at', 'bank_name', 'note'])
-            ->keyBy('id');
-
-        $transfers = WarehouseTransfer::query()
-            ->whereIn('id', $transferIds)
-            ->get(['id', 'reference', 'voucher_type'])
-            ->keyBy('id');
-
-        $salesReturnDocuments = SalesReturnDocument::query()
-            ->whereIn('id', $salesReturnIds)
-            ->get(['id', 'document_number', 'source_type', 'total_refund_amount'])
-            ->keyBy('id');
-
-        $relatedInvoiceIds = $invoiceIds->merge($payments->pluck('invoice_id')->filter()->unique()->values())->unique()->values();
-
-        $invoices = Invoice::query()
-            ->whereIn('id', $relatedInvoiceIds)
-            ->get(['id', 'uuid', 'total'])
-            ->keyBy('id');
-
-        $totalDebit = (int) CustomerLedger::query()->where('customer_id', $customer->id)->where('type', 'debit')->sum('amount');
-        $totalCredit = (int) CustomerLedger::query()->where('customer_id', $customer->id)->where('type', 'credit')->sum('amount');
-        $netBalance = (int) $customer->opening_balance + $totalDebit - $totalCredit;
-
-        $customerInvoices = Invoice::query()->where('customer_id', $customer->id)->orderByDesc('id')->get(['id', 'uuid', 'total']);
+        /*
+         * این قسمت برای فرم «افزودن پرداخت» داخل Blade
+         * همچنان لازم است.
+         */
+        $customerInvoices = Invoice::query()
+            ->where('customer_id', $customer->id)
+            ->orderByDesc('id')
+            ->get([
+                'id',
+                'uuid',
+                'total',
+            ]);
 
         return view('account-statements.show', compact(
             'customer',
-            'ledgers',
-            'invoices',
-            'payments',
-            'transfers',
-            'salesReturnDocuments',
+            'transactions',
             'netBalance',
             'customerInvoices'
         ));

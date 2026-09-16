@@ -16,7 +16,6 @@ class WarehouseCollectionService
 {
     public function __construct(
         private readonly SalesHavalehHistoryService $historyService,
-        private readonly CustomerLedgerService $customerLedgerService,
         private readonly WarehouseInboundService $warehouseInbound,
     ) {}
 
@@ -233,7 +232,7 @@ class WarehouseCollectionService
 
             $oldStatus = (string) $invoice->status;
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
-            $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+            $this->applyInvoiceDebitToWallet($invoice->fresh());
             $revisionId = $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
 
             $this->warehouseInbound->queueInvoiceAdjustment(
@@ -469,7 +468,7 @@ class WarehouseCollectionService
                 throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است. ابتدا پرداخت‌ها را اصلاح کنید یا مبلغ فاکتور را بررسی کنید.']);
             }
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
-            $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+            $this->applyInvoiceDebitToWallet($invoice->fresh());
             $this->warehouseInbound->queueInvoiceAdjustment(
                 $invoice->fresh(),
                 $pendingInboundLines,
@@ -532,6 +531,46 @@ class WarehouseCollectionService
                 ['old_quantity' => $oldQuantity, 'new_quantity' => $newQuantity, 'change_reason' => $reason]
             );
         })->filter()->values()->all();
+    }
+
+
+    private function applyInvoiceDebitToWallet(Invoice $invoice): void
+    {
+        if (empty($invoice->customer_id)) {
+            return;
+        }
+
+        $customer = \App\Models\Customer::query()->find($invoice->customer_id);
+        if (! $customer) {
+            return;
+        }
+
+        $existing = \Bavix\Wallet\Models\Transaction::query()
+            ->where('payable_type', 'wallet')
+            ->where('payable_id', $customer->id)
+            ->where('type', 'withdraw')
+            ->where('meta->type', 'invoice_debit')
+            ->where('meta->invoice_id', (int) $invoice->id)
+            ->first();
+
+        if ($existing && (int) $existing->amount === (int) $invoice->total) {
+            return;
+        }
+
+        if ($existing) {
+            $walletId = (int) $existing->wallet_id;
+            $existing->delete();
+            \Bavix\Wallet\Models\Wallet::query()->find($walletId)?->refreshBalance();
+        }
+
+        $customer->forceWithdraw((int) $invoice->total, [
+            'type'           => 'invoice_debit',
+            'reference_type' => \App\Models\Invoice::class,
+            'reference_id'   => (int) $invoice->id,
+            'invoice_id'     => (int) $invoice->id,
+            'invoice_uuid'   => (string) $invoice->uuid,
+            'note'           => 'ثبت/بروزرسانی بدهکاری بابت حواله فروش ' . $invoice->uuid,
+        ]);
     }
 
     private function assertStatus(Invoice $invoice, array $allowed): void
