@@ -29,29 +29,14 @@ class PreinvoiceDraftReservationService
             // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
             $tokenRows = PreinvoiceDraftReservation::query()->where('token', $token)->lockForUpdate()->get();
-            Log::warning('RESERVATION_ROWS_DEBUG', [
-                'token' => $token,
-                'userId' => $userId,
-                'count' => $tokenRows->count(),
-                'rows' => $tokenRows->map(fn ($row) => [
-                    'id' => $row->id,
-                    'user_id' => $row->user_id,
-                    'preinvoice_order_id' => $row->preinvoice_order_id,
-                    'converted_at' => $row->converted_at,
-                    'reservation_scope' => $row->reservation_scope,
-                    'released_at' => $row->released_at,
-                ])->toArray(),
-            ]);
             $protected = $tokenRows->first(fn ($row) => $row->preinvoice_order_id !== null
                 || $row->converted_at !== null || $row->reservation_scope === 'official'
                 || (int) $row->user_id !== $userId);
             if ($protected) {
-
                 Log::warning('RESERVATION_SYNC_SKIPPED', [
                     'reason' => 'protected_or_foreign_token', 'reservation_id' => $protected->id,
                     'preinvoice_order_id' => $protected->preinvoice_order_id, 'actor_id' => $userId,
                 ]);
-
                 return ['reserved' => [], 'skipped' => true, 'reason' => 'protected_or_foreign_token'];
             }
 
@@ -403,9 +388,14 @@ class PreinvoiceDraftReservationService
         }
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
-
-        // مقدار در دسترس از خود مدل واریانت (ستون stock در جدول product_variants) خوانده می‌شود.
-        $available = max(0, (int) ($variant->stock ?? 0));
+        // The central warehouse row is the canonical, lockable sellable-stock source.
+        $centralStock = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->lockForUpdate()
+            ->first();
+        $available = max(0, (int) ($centralStock?->quantity ?? 0));
 
         if ($delta > $available) {
             $product = $variant->product;
@@ -418,11 +408,17 @@ class PreinvoiceDraftReservationService
                 'variant_code' => $variant->code ?? '',
                 'available_quantity' => $available,
                 'requested_quantity' => $delta,
-                'message' => "موجودی قابل فروش این تنوع کافی نیست. موجودی در دسترس: {$available} | افزایش درخواستی: {$delta}",
+                'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
             ];
             throw ValidationException::withMessages([
                 'items' => [$itemError['message']],
                 'item_errors' => [$itemError],
+            ]);
+        }
+
+        if ($delta > $available) {
+            throw ValidationException::withMessages([
+                'items' => "موجودی قابل فریز برای تنوع انتخابی کافی نیست. موجودی انبار مرکزی: {$available} | درخواست جدید: {$delta}",
             ]);
         }
 
