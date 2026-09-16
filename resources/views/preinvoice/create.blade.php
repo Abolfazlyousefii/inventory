@@ -2603,6 +2603,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 method: 'POST',
             });
             banner.classList.remove('is-visible');
+            await removeLocalDraft(false, true);
+            latestDbAutosaveDraft = null;
+            currentAutosaveUUID = null;
+            currentAutosaveVersion = null;
         };
     }
 

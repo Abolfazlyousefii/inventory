@@ -962,7 +962,18 @@ class PreinvoiceController extends Controller
             ->where('status', PreinvoiceOrder::STATUS_DRAFT)
             ->where('is_auto_draft', true)
             ->firstOrFail();
-        $order->delete();
+
+        DB::transaction(function () use ($order) {
+            if ($order->draft_token) {
+                $this->draftReservationService->releaseTokenReservations(
+                    (string) $order->draft_token,
+                    (int) auth()->id(),
+                    'draft_discarded',
+                    'پیش‌نویس خودکار حذف شد؛ رزرو موقت آزاد شد.'
+                );
+            }
+            $order->delete();
+        });
 
         return response()->json(['ok' => true]);
     }
