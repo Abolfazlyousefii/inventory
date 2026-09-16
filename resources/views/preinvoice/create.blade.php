@@ -2298,10 +2298,13 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     async function persistDbAutosave() {
-        if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically ||
-            (!hasAnyFormData() && !confirmedAutosavePayload)) return;
-        if (autosaveConflict) throw new Error('نسخه جدیدتر پیش‌نویس را بازیابی کنید؛ اطلاعات این فرم روی آن نوشته نشد.');
-        const snapshot = collectAutosavePayload();
+	    if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically ||
+		    (!hasAnyFormData() && !confirmedAutosavePayload)) return;
+	    if (autosaveConflict) {
+		    updateLocalDraftStatus('پیشنویس سرور جدیدتر است؛ ذخیره خودکار تا بازیابی متوقف شد', false);
+		    return;
+	    }
+		const snapshot = collectAutosavePayload();
         const signature = JSON.stringify(snapshot);
         const explicitlyConfirmed = signature === confirmedAutosavePayload;
         const payload = {

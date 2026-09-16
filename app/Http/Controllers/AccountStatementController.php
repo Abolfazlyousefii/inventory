@@ -22,7 +22,6 @@ class AccountStatementController extends Controller
 
         $customers = Customer::query()
             ->with('cityRelation:id,name')
-            ->withBalance()
             ->when($q !== '', function ($query) use ($q, $normalizedSearch, $numericSearch) {
                 $like = "%{$q}%";
                 $normalizedLike = "%{$normalizedSearch}%";

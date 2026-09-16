@@ -525,8 +525,7 @@ class DashboardController extends Controller
                     ->limit(5)
                     ->get(['uuid', 'customer_name', 'total', 'status', 'created_at']),
                 'importantAccounts' => Customer::query()
-                    ->withBalance()
-                    ->get(['id', 'first_name', 'last_name', 'opening_balance'])
+                    ->get(['id', 'first_name', 'last_name'])
                     ->sortByDesc(fn (Customer $customer): int => abs((int) $customer->balance))
                     ->take(5)
                     ->values(),

@@ -837,11 +837,36 @@ class PreinvoiceController extends Controller
     {
         $order->loadMissing('items');
 
-        // Include row identities as well as timestamps: updated_at has second precision.
-        return hash('sha256', json_encode([
-            $order->getAttributes(),
-            $order->items->map(fn ($item) => $item->getAttributes())->all(),
-        ], JSON_THROW_ON_ERROR));
+        // Hash only stable, meaningful fields. Hashing raw getAttributes() was
+        // fragile: key order differs between create()/fresh()/first() hydrations,
+        // and volatile fields (updated_at, auto_saved_at) can drift between the
+        // response and the next request, producing spurious 409 conflicts.
+        $payload = [
+            'order' => [
+                'customer_id'            => $order->customer_id !== null ? (int) $order->customer_id : null,
+                'customer_name'          => (string) ($order->customer_name ?? ''),
+                'customer_mobile'        => (string) ($order->customer_mobile ?? ''),
+                'is_in_person'           => (bool) $order->is_in_person,
+                'payment_terms_note'     => (string) ($order->payment_terms_note ?? ''),
+                'discount_amount'        => (int) ($order->discount_amount ?? 0),
+                'invoice_discount_type'  => (string) ($order->invoice_discount_type ?? ''),
+                'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                'discount_breakdown'     => $order->discount_breakdown ?: null,
+            ],
+            'items' => $order->items
+                ->sortBy('id')
+                ->values()
+                ->map(fn ($item) => [
+                    'product_id'           => (int) $item->product_id,
+                    'variant_id'           => (int) $item->variant_id,
+                    'quantity'             => (int) $item->quantity,
+                    'price'                => (int) $item->price,
+                    'line_discount_amount' => (int) ($item->line_discount_amount ?? 0),
+                ])
+                ->all(),
+        ];
+
+        return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
     }
 
     private function autosaveCandidateTotal(array $payload, int $shipping): int
@@ -2853,6 +2878,27 @@ class PreinvoiceController extends Controller
                     ]
                 );
             }
+
+                // ✅ جایگزین جدید
+                if (!empty($invoice->customer_id)) {
+                    $customer = Customer::find((int) $invoice->customer_id);
+
+                    if ($customer) {
+                        // منطق قدیمی: هر فاکتور یک debit به بدهی مشتری اضافه می‌کرد.
+                        // در پکیج wallet، این معادل "withdraw" (کسر از موجودی) است.
+                        // چون forceWithdraw اجازه‌ی منفی شدن می‌دهد، برای بدهکار شدن مشتری مناسب است.
+                        $customer->forceWithdraw(
+                            (int) $invoice->total,
+                            [
+                                'description' => 'ثبت/بروزرسانی بدهکاری بابت فاکتور فروش ' . $invoice->uuid,
+                                'invoice_uuid' => $invoice->uuid,
+                                'invoice_id' => $invoice->id,
+                                'reference_type' => 'invoice',
+                                'reference_id' => $invoice->id,
+                            ]
+                        );
+                    }
+                }
 
             foreach (($validated['payments'] ?? []) as $paymentRow) {
                 $payload = $paymentRow;

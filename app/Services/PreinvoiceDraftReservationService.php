@@ -403,14 +403,9 @@ class PreinvoiceDraftReservationService
         }
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        // The central warehouse row is the canonical, lockable sellable-stock source.
-        $centralStock = WarehouseStock::query()
-            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-            ->where('product_id', $productId)
-            ->where('product_variant_id', $variantId)
-            ->lockForUpdate()
-            ->first();
-        $available = max(0, (int) ($centralStock?->quantity ?? 0));
+
+        // مقدار در دسترس از خود مدل واریانت (ستون stock در جدول product_variants) خوانده می‌شود.
+        $available = max(0, (int) ($variant->stock ?? 0));
 
         if ($delta > $available) {
             $product = $variant->product;
@@ -423,17 +418,11 @@ class PreinvoiceDraftReservationService
                 'variant_code' => $variant->code ?? '',
                 'available_quantity' => $available,
                 'requested_quantity' => $delta,
-                'message' => "موجودی قابل فروش این تنوع کافی نیست. موجودی انبار مرکزی: {$available} | افزایش درخواستی: {$delta}",
+                'message' => "موجودی قابل فروش این تنوع کافی نیست. موجودی در دسترس: {$available} | افزایش درخواستی: {$delta}",
             ];
             throw ValidationException::withMessages([
                 'items' => [$itemError['message']],
                 'item_errors' => [$itemError],
-            ]);
-        }
-
-        if ($delta > $available) {
-            throw ValidationException::withMessages([
-                'items' => "موجودی قابل فریز برای تنوع انتخابی کافی نیست. موجودی انبار مرکزی: {$available} | درخواست جدید: {$delta}",
             ]);
         }
 

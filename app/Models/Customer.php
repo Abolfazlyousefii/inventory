@@ -71,16 +71,6 @@ class Customer extends User implements Wallet {
         return $this->belongsTo(City::class, 'city_id');
     }
 
-    public function scopeWithBalance( Builder $query ): Builder {
-        return $query->withSum([
-            'ledgers as debit_sum' => fn( $q ) => $q->effectiveForBalance()
-                ->where('type', 'debit'),
-        ], 'amount')
-            ->withSum([
-                'ledgers as credit_sum' => fn( $q ) => $q->effectiveForBalance()
-                    ->where('type', 'credit'),
-            ], 'amount');
-    }
 
 //    public function getBalanceAttribute(): int {
 //        return (int) ( $this->opening_balance ?? 0 ) + (int) ( $this->debit_sum ?? 0 ) - (int) ( $this->credit_sum ?? 0 );

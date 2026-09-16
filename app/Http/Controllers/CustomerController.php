@@ -24,7 +24,6 @@ class CustomerController extends Controller
         $status = (string) $request->get('status', '');
 
         $customersQuery = Customer::query()
-            ->withBalance()
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->where('first_name', 'like', "%{$q}%")

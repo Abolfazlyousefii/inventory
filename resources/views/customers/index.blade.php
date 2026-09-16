@@ -519,10 +519,10 @@
                 'reservation_tier' => $c->reservation_tier,
                 'update_url' => route('customers.update', $c),
               ];
-              $customerBalance = (int) ($c->balance ?? 0);
-              $balanceState = $customerBalance > 0 ? 'debit' : ($customerBalance < 0 ? 'credit' : 'settled');
-              $balanceLabel = ['debit' => 'بدهکار', 'credit' => 'بستانکار', 'settled' => 'تسویه'][$balanceState];
-              $balanceAmount = abs($customerBalance);
+                $customerBalance = (int) ($c->balance ?? 0);
+			    $balanceState    = $customerBalance < 0 ? 'debit' : ($customerBalance > 0 ? 'credit' : 'settled');
+			    $balanceLabel    = ['debit' => 'بدهکار', 'credit' => 'بستانکار', 'settled' => 'تسویه'][$balanceState];
+			    $balanceAmount   = abs($customerBalance);
             @endphp
 
             <tr>
