@@ -47,6 +47,7 @@
         .product-title-row th { padding: 5px 7px; background: var(--soft); border-top: 1.5px solid var(--brand); text-align: right; }
         .product-heading { display: flex; align-items: center; gap: 7px; }
         .product-image { width: 34px; height: 34px; flex: 0 0 auto; object-fit: contain; }
+        .print-output--catalog .product-image { width: 72px; height: 72px; }
         .product-name { display: block; font-size: 11px; font-weight: 700; }
         .product-meta { display: block; margin-top: 1px; color: var(--muted); font-size: 8px; font-weight: 400; }
         .product-summary { color: var(--accent); text-align: center !important; white-space: nowrap; }
@@ -123,7 +124,7 @@
                             <th colspan="5">
                                 <div class="product-heading">
                                     @if($product['has_real_image'])
-                                        <img class="product-image" src="{{ route('products.image', ['product' => $product['id']]) }}" alt="{{ $product['name'] }}">
+                                        <img class="product-image" src="{{ $product['image_path'] }}" alt="{{ $product['name'] }}">
                                     @endif
                                     <span><span class="product-name">{{ $product['name'] }}</span><span class="product-meta">دسته: {{ $product['category_name'] }} | {{ $product['variant_count'] ?: 'بدون' }} تنوع | موجودی کل: {{ number_format($product['total_stock']) }}</span></span>
                                 </div>
@@ -154,7 +155,7 @@
                             <th colspan="2">
                                 <div class="product-heading">
                                     @if($product['has_real_image'])
-                                        <img class="product-image" src="{{ route('products.image', ['product' => $product['id']]) }}" alt="{{ $product['name'] }}">
+                                        <img class="product-image" src="{{ $product['image_path'] }}" alt="{{ $product['name'] }}">
                                     @endif
                                     <span><span class="product-name">{{ $product['name'] }}</span><span class="product-meta">دسته: {{ $product['category_name'] }} | {{ $product['model_count'] }} مدل | {{ $product['color_count'] }} رنگ | {{ $product['variant_count'] }} تنوع</span></span>
                                 </div>

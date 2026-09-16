@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class ProductExportService
 {
@@ -789,10 +790,28 @@ class ProductExportService
     public function imagePath(Product $product): ?string
     {
         $path = trim((string) ($product->image_path ?? ''));
-        if ($path === '' || filter_var($path, FILTER_VALIDATE_URL)) return null;
-        $candidates = [public_path($path), public_path('storage/'.ltrim($path, '/')), storage_path('app/public/'.ltrim($path, '/')), storage_path('app/'.ltrim($path, '/'))];
-        foreach ($candidates as $candidate) { if (is_file($candidate)) return $candidate; }
-        return null;
+
+        if ($path === '') {
+            return null;
+        }
+
+        // If already a full URL (e.g. synced from site CDN), use directly.
+        if (filter_var($path, FILTER_VALIDATE_URL)) {
+            return $path;
+        }
+
+        // Try to build a public CDN URL from the arvan (S3-compatible) disk.
+        try {
+            $url = Storage::disk('arvan')->url($path);
+            if ($url && str_starts_with($url, 'http')) {
+                return $url;
+            }
+        } catch (\Throwable) {
+            // arvan disk not configured; fall through
+        }
+
+        // Fall back to the image proxy route (same as product listing page).
+        return route('products.image', ['product' => $product->id]);
     }
 
     private function cleanText(mixed $value, string $fallback = ''): string

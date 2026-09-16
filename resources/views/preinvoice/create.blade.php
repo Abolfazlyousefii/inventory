@@ -566,7 +566,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         background: linear-gradient(135deg, rgba(12, 83, 103, .96), rgba(51, 199, 192, .92));
         color: #fff;
         border-bottom: 0;
-        padding: 14px 16px;
+        padding: 10px 16px;
     }
 
     .picker-head .modal-title,
@@ -1003,8 +1003,22 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             padding: 5px;
         }
 
+        .variant-modal__footer-extra {
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .variant-modal__footer-extra .modal-discount-box {
+            min-width: 0;
+            width: 100%;
+        }
+
+        .variant-modal__footer-extra .modal-summary-bar {
+            width: 100%;
+        }
+
         .modal-discount-box {
-            margin-top: 12px;
+            margin-top: 0;
             padding: 8px 9px;
             position: static;
         }
@@ -1131,9 +1145,23 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     .variant-modal__footer-extra {
-        padding: 8px 12px;
+        padding: 6px 12px;
         background: #fffdf9;
         border-top: 1px solid rgba(12, 83, 103, .08);
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .variant-modal__footer-extra .modal-discount-box {
+        flex: 0 0 auto;
+        margin-top: 0;
+        min-width: 190px;
+    }
+
+    .variant-modal__footer-extra .modal-summary-bar {
+        flex: 1 1 auto;
+        margin-top: 0 !important;
     }
 
     .variant-modal__footer {
@@ -1247,6 +1275,21 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     .qty-input:disabled {
         opacity: .45;
         cursor: not-allowed;
+    }
+
+    @media (max-width: 991.98px) {
+        .variant-modal-dialog {
+            margin: 0;
+            max-width: none;
+            width: 100%;
+            height: 100dvh;
+        }
+
+        .variant-modal-content {
+            height: 100dvh;
+            max-height: 100dvh;
+            border-radius: 0;
+        }
     }
 
     @media (max-width: 575.98px) {

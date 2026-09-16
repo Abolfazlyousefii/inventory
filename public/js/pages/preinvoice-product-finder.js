@@ -43,16 +43,24 @@
         }
     }
 
+    function formatPrice(value) {
+        const num = Number(value);
+        if (!num || isNaN(num)) return '';
+        return num.toLocaleString('fa-IR') + ' تومان';
+    }
+
     function renderProducts(items) {
         productsById.clear();
         items.forEach(product => productsById.set(Number(product.id), product));
+        const stock = product => Number(product.total_available_stock || 0);
         results.innerHTML = items.map(product => {
-            const matched = product.matched_variants || [];
-            const remaining = Math.max(Number(product.matched_variants_count || 0) - matched.length, 0);
-            const matchText = matched.length ? `<div class="finder-product__matches"><strong>تطبیق در تنوع‌ها:</strong> ${matched.map(v => escapeHtml(v.name)).join('، ')}${remaining ? ` و ${remaining.toLocaleString('fa-IR')} تنوع دیگر` : ''}</div>` : '';
-            const stock = Number(product.total_available_stock || 0);
-            const image = product.image ? `<img class="finder-product__image" src="${escapeHtml(product.image)}" alt="">` : '<div class="finder-product__image finder-product__placeholder" aria-hidden="true">⌕</div>';
-            return `<article class="finder-product" data-product-id="${Number(product.id)}">${image}<div><div class="finder-product__title">${escapeHtml(product.name)}</div><div class="finder-product__meta">کد: ${escapeHtml(product.short_code || product.code || '—')} · ${escapeHtml(product.category?.path || 'بدون دسته‌بندی')}</div>${matchText}<div class="finder-product__badges"><span class="finder-product__badge">${Number(product.sellable_variants_count || 0).toLocaleString('fa-IR')} تنوع قابل‌فروش</span><span class="finder-product__badge ${stock <= 0 ? 'is-empty' : ''}">${stock > 0 ? `موجودی آزاد: ${stock.toLocaleString('fa-IR')}` : 'ناموجود'}</span></div></div><button type="button" class="btn btn-primary finder-product__select" data-select-product="${Number(product.id)}">انتخاب کالا</button></article>`;
+            const imageHtml = product.image
+                ? `<div class="finder-product__image-wrap"><img class="finder-product__image" src="${escapeHtml(product.image)}" alt="" loading="lazy"></div>`
+                : `<div class="finder-product__image-wrap"><div class="finder-product__placeholder" aria-hidden="true">📦</div></div>`;
+            const priceHtml = product.price ? `<div class="finder-product__price">${formatPrice(product.price)}</div>` : '';
+            const availableStock = stock(product);
+            const stockHtml = `<div class="finder-product__stock${availableStock <= 0 ? ' is-empty' : ''}">${availableStock > 0 ? `موجودی: ${availableStock.toLocaleString('fa-IR')}` : 'ناموجود'}</div>`;
+            return `<article class="finder-product" data-product-id="${Number(product.id)}" role="button" tabindex="0" aria-label="${escapeHtml(product.name)}">${imageHtml}<div class="finder-product__info"><div class="finder-product__title">${escapeHtml(product.name)}</div>${priceHtml}${stockHtml}</div></article>`;
         }).join('');
     }
 
@@ -69,7 +77,7 @@
         controller?.abort(); controller = new AbortController(); const sequence = ++requestSequence;
         clearResults(); setStatus('<div class="product-finder__spinner"></div>در حال جست‌وجوی کالاها...');
         const url = new URL(modalEl.dataset.searchUrl, window.location.origin);
-        Object.entries({q,category_id:categoryId,subcategory_id:subcategoryId,in_stock_only:inStock.checked ? '1' : '0',page,per_page:20}).forEach(([key,value]) => value !== '' && url.searchParams.set(key,value));
+        Object.entries({q,category_id:categoryId,subcategory_id:subcategoryId,in_stock_only:inStock.checked ? '1' : '0',page,per_page:40}).forEach(([key,value]) => value !== '' && url.searchParams.set(key,value));
         try {
             const response = await fetch(url.pathname + url.search, {headers:{Accept:'application/json'},credentials:'same-origin',signal:controller.signal});
             const json = await jsonResponse(response); if (sequence !== requestSequence) return;
@@ -81,6 +89,12 @@
         }
     }
 
+    function selectProduct(id) {
+        if (!id) return;
+        pendingProduct = productsById.get(id) || {id};
+        finderModal.hide();
+    }
+
     const schedule = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => search(1), 350); };
     query.addEventListener('input', schedule);
     query.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); clearTimeout(debounceTimer); search(1); } });
@@ -88,7 +102,18 @@
     category.addEventListener('change', async () => { subcategory.value=''; subcategory.disabled=true; await loadCategories(category.value); search(1); });
     subcategory.addEventListener('change', () => search(1));
     el('productFinderReset').addEventListener('click', () => { query.value='';category.value='';subcategory.innerHTML='<option value="">همه زیردسته‌ها</option>';subcategory.disabled=true;inStock.checked=true;controller?.abort();clearResults();setStatus('برای شروع حداقل دو حرف وارد کنید یا یک دسته‌بندی انتخاب کنید.');query.focus(); });
-    results.addEventListener('click', event => { const button=event.target.closest('[data-select-product]'); if(!button)return; const card=button.closest('[data-product-id]'); const id=Number(card?.dataset.productId); if(!id)return; pendingProduct=productsById.get(id) || {id}; finderModal.hide(); });
+    results.addEventListener('click', event => {
+        const card = event.target.closest('[data-product-id]');
+        if (!card) return;
+        selectProduct(Number(card.dataset.productId));
+    });
+    results.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const card = event.target.closest('[data-product-id]');
+        if (!card) return;
+        event.preventDefault();
+        selectProduct(Number(card.dataset.productId));
+    });
     pagination.addEventListener('click', event => { const button=event.target.closest('[data-finder-page]'); if(button)search(Number(button.dataset.finderPage)); });
     modalEl.addEventListener('shown.bs.modal', () => { if (!category.options.length || category.options.length === 1) loadCategories(); setTimeout(() => query.focus(), 50); });
     modalEl.addEventListener('hidden.bs.modal', () => { controller?.abort(); if (!pendingProduct) { el('openProductFinderBtn')?.focus(); window.PreinvoiceProductModalLifecycle?.scheduleCleanup(); return; } const product=pendingProduct; pendingProduct=null; document.dispatchEvent(new CustomEvent('preinvoice:product-selected',{detail:{productId:product.id,product}})); });
