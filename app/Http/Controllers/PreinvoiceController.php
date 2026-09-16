@@ -1766,6 +1766,7 @@ class PreinvoiceController extends Controller
     {
         $oldMap = $this->itemQuantityMap($oldItems);
         $newMap = $this->itemQuantityMap($newItems);
+        $itemErrors = [];
 
         foreach ($newMap as $key => $newQty) {
             $oldQty = (int) ($oldMap[$key] ?? 0);
@@ -1774,8 +1775,29 @@ class PreinvoiceController extends Controller
                 continue;
             }
 
-            [, $variantId] = array_map('intval', explode(':', $key));
-            $this->centralInventoryService->assertVariantAvailable($variantId, $delta);
+            [$productId, $variantId] = array_map('intval', explode(':', $key));
+            $available = $this->centralInventoryService->availableForVariant($variantId);
+            if ($available < $delta) {
+                $variant = ProductVariant::query()
+                    ->with('product:id,name,code,short_barcode,sku')
+                    ->whereKey($variantId)
+                    ->first();
+                $variantName = (string) ($variant?->variant_name ?: ($variant?->variety_name ?: $variantId));
+                $productName = (string) ($variant?->product?->name ?? 'نامشخص');
+                $itemErrors[] = [
+                    'variant_id' => $variantId,
+                    'product_id' => $productId,
+                    'variant_name' => $variantName,
+                    'product_name' => $productName,
+                    'requested_quantity' => $delta,
+                    'available_quantity' => $available,
+                    'message' => "موجودی قابل فروش «{$variantName}» ({$productName}) کافی نیست. موجودی: {$available} | افزایش درخواستی: {$delta}",
+                ];
+            }
+        }
+
+        if ($itemErrors !== []) {
+            throw new PreinvoiceItemStockException($itemErrors);
         }
     }
 

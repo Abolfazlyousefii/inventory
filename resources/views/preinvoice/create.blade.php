@@ -3565,7 +3565,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         try {
             await syncDraftReservation(groupedSelections);
         } catch (err) {
-            alert(err.message || 'فریز موجودی کامل نشد.');
+            if (err.itemErrors?.length) {
+                alert('موجودی ' + err.itemErrors.length + ' قلم کافی نیست. اقلام مشکل‌دار در سبد مشخص شده‌اند.');
+            } else {
+                alert(err.message || 'فریز موجودی کامل نشد.');
+            }
             submitGuardActive = false;
             btn.disabled = false;
             btn.textContent = oldText;
