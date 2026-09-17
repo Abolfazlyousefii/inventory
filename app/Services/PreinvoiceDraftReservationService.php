@@ -59,6 +59,18 @@ class PreinvoiceDraftReservationService
                 $existing[$this->reservationKey((int) $row->product_id, (int) $row->variant_id)] = $row;
             }
 
+            // ── FIX: هنگام ویرایش پیش‌فاکتور، آیتم‌هایی که قبلاً ذخیره شدن و
+            // موجودیشون از انبار کم شده رو در محاسبه delta حساب کن تا دوباره
+            // تلاش نکنه رزروشون کنه.
+            $committedQty = [];
+            if (isset($order)) {
+                $order->loadMissing('items');
+                foreach ($order->items as $orderItem) {
+                    $key = $this->reservationKey((int) $orderItem->product_id, (int) $orderItem->variant_id);
+                    $committedQty[$key] = ($committedQty[$key] ?? 0) + (int) $orderItem->quantity;
+                }
+            }
+
             $allKeys = array_unique(array_merge(array_keys($existing), array_keys($desired)));
             sort($allKeys, SORT_STRING);
             $expiresAt = $isInPerson ? null : now()->addHour();
@@ -67,6 +79,7 @@ class PreinvoiceDraftReservationService
             foreach ($allKeys as $key) {
                 [$productId, $variantId] = array_map('intval', explode(':', $key));
                 $oldQty = (int) (($existing[$key] ?? null)?->quantity ?? 0);
+                $committed = (int) ($committedQty[$key] ?? 0);
                 $newQty = (int) ($desired[$key]['quantity'] ?? 0);
 
                 if ($newQty > 0) {
@@ -83,17 +96,27 @@ class PreinvoiceDraftReservationService
                     }
                 }
 
-                $delta = $newQty - $oldQty;
+                // محاسبه delta با در نظر گرفتن موجودی committed
+                // oldQty = رزرو موقت فعلی، committed = قبلاً از انبار کم شده
+                $effectiveOld = $oldQty + $committed;
+                $delta = $newQty - $effectiveOld;
+
                 if ($delta > 0) {
                     $this->reserveVariantDelta($productId, $variantId, $delta);
                 } elseif ($delta < 0) {
-                    $this->releaseVariantDelta($productId, $variantId, abs($delta));
+                    // فقط از رزروهای موقت آزاد کن، نه از committed
+                    $releasable = min(abs($delta), $oldQty);
+                    if ($releasable > 0) {
+                        $this->releaseVariantDelta($productId, $variantId, $releasable);
+                    }
                 }
 
-                if ($newQty > 0) {
+                // فقط برای مقدار اضافه بر committed رزرو موقت بساز
+                $tempQty = max(0, $newQty - $committed);
+                if ($tempQty > 0) {
                     $reservationAttributes = [
                         'user_id' => $userId,
-                        'quantity' => $newQty,
+                        'quantity' => $tempQty,
                         'expires_at' => $expiresAt,
                         'last_seen_at' => now(),
                         'converted_at' => null,
@@ -118,6 +141,7 @@ class PreinvoiceDraftReservationService
                         $reservationAttributes
                     );
                 } elseif (isset($existing[$key])) {
+                    // اگه مقدار جدید کمتر یا مساوی committed هست، رزرو موقت لازم نیست
                     $this->markReleasedOrDelete($existing[$key], $userId, 'manual_release', null);
                 }
             }
