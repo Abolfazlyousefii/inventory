@@ -158,14 +158,23 @@ class PreinvoiceOrder extends Model
 
     public function scopeCreatedBySeller(Builder $query, int $sellerId): Builder
     {
-        return $query->where('seller_id', $sellerId);
+        // seller_id is set when the creator is a designated seller; fall back to
+        // created_by so records created by non-seller users (seller_id IS NULL)
+        // still appear in their own drafts list.
+        return $query->where(function (Builder $q) use ($sellerId): void {
+            $q->where('seller_id', $sellerId)
+              ->orWhere(fn (Builder $q2) => $q2->whereNull('seller_id')->where('created_by', $sellerId));
+        });
     }
 
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
         return $user->hasAnyRole(\App\Support\PermissionCatalog::administratorRoles())
             ? $query
-            : $query->where('seller_id', $user->id);
+            : $query->where(function (Builder $q) use ($user): void {
+                $q->where('seller_id', $user->id)
+                  ->orWhere(fn (Builder $q2) => $q2->whereNull('seller_id')->where('created_by', $user->id));
+            });
     }
 
     public function scopeWithoutTemporaryAutosaves(Builder $query): Builder
