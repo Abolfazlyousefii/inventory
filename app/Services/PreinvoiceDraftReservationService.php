@@ -418,7 +418,7 @@ class PreinvoiceDraftReservationService
                 'variant_code' => $variant->code ?? '',
                 'available_quantity' => $available,
                 'requested_quantity' => $delta,
-                'message' => "موجودی قابل فروش این تنوع کافی نیست. موجودی در دسترس: {$available} | افزایش درخواستی: {$delta}",
+                'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
             ];
             throw ValidationException::withMessages([
                 'items' => [$itemError['message']],
