@@ -1,5 +1,5 @@
 @push('styles')
-    <link rel="stylesheet" href="{{ asset('css/pages/preinvoice-product-finder.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/pages/preinvoice-product-finder.css') }}?v={{ filemtime(public_path('css/pages/preinvoice-product-finder.css')) }}">
 @endpush
 
 <div class="modal fade product-finder" id="productFinderModal" tabindex="-1" aria-labelledby="productFinderTitle" aria-hidden="true"
@@ -47,5 +47,5 @@
 </div>
 
 @push('scripts')
-    <script src="{{ asset('js/pages/preinvoice-product-finder.js') }}"></script>
+    <script src="{{ asset('js/pages/preinvoice-product-finder.js') }}?v={{ filemtime(public_path('js/pages/preinvoice-product-finder.js')) }}"></script>
 @endpush
