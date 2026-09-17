@@ -2524,8 +2524,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         hideLocalDraftBanner();
         updateLocalDraftStatus('پیش‌نویس لود شد', true);
 
-        isHydratingLocalDraft = false;
-        scheduleLocalDraftSave();
+	    isHydratingLocalDraft = false;
+	    confirmAutosaveChanges();
+	    scheduleLocalDraftSave();
     }
 
     async function applyDbAutosaveDraft(draft) {
@@ -2547,36 +2548,52 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
         setReservationMode(Boolean(draft.is_in_person));
         groupedSelections = {};
-        for (const row of (draft.items || [])) {
-            const productId = Number(row.product_id || 0);
-            const draftVariantId = Number(row.variant_id || 0);
-            if (!productId || !draftVariantId) continue;
-            let product = null;
-            try { product = await getProductDetails(productId, true); } catch (e) {}
-            const varieties = getProductVarieties(product);
-            const v = varieties.find(item => draftVariantId === variantId(item));
-            if (!groupedSelections[productId]) {
-                const discount = (draft.discount_breakdown?.groups || []).find(group => Number(group.product_id) === productId);
-                groupedSelections[productId] = {
-                    product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '' },
-                    discount_type: discount?.discount_type || 'amount',
-                    discount_value: Number(discount?.discount_value || 0),
-                    items: []
-                };
-            }
-            const warning = row.stock_warning ? ' — موجودی فعلی کافی نیست' : '';
-            groupedSelections[productId].items.push({
-                variant_id: draftVariantId,
-                quantity: Number(row.quantity || 0),
-                price: Number(row.price ?? (v ? variantPrice(v, product) : 0)),
-                line_discount_amount: Number(row.line_discount_amount || 0),
-                model: v ? variantModel(v) : '—',
-                design: v ? variantDesign(v) : '—',
-                variant: v ? variantName(v) : '—',
-                label: (v ? buildVariantTitle(v) : 'تنوع پیش‌فرض') + warning
-            });
-        }
-        renderGroupSummary();
+	    const clampedItems = [];
+	    for (const row of (draft.items || [])) {
+		    const productId = Number(row.product_id || 0);
+		    const draftVariantId = Number(row.variant_id || 0);
+		    if (!productId || !draftVariantId) continue;
+		    let product = null;
+		    try { product = await getProductDetails(productId, true); } catch (e) {}
+		    const varieties = getProductVarieties(product);
+		    const v = varieties.find(item => draftVariantId === variantId(item));
+		    if (!groupedSelections[productId]) {
+			    const discount = (draft.discount_breakdown?.groups || []).find(group => Number(group.product_id) === productId);
+			    groupedSelections[productId] = {
+				    product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '' },
+				    discount_type: discount?.discount_type || 'amount',
+				    discount_value: Number(discount?.discount_value || 0),
+				    items: []
+			    };
+		    }
+		    const requestedQty = Number(row.quantity || 0);
+		    const availability = v ? variantAvailability(v) : null;
+		    const maxAllowed = availability ? Math.max(0, availability.maxSelectable) : requestedQty;
+		    const effectiveQty = Math.min(requestedQty, maxAllowed);
+		    const wasClamped = effectiveQty < requestedQty;
+		    if (wasClamped) {
+			    clampedItems.push({
+				    product: productTitle(product) || ('محصول #' + productId),
+				    variant: v ? buildVariantTitle(v) : ('تنوع #' + draftVariantId),
+				    requested: requestedQty,
+				    effective: effectiveQty,
+			    });
+		    }
+		    const warning = wasClamped
+			    ? ` — تعداد از ${formatNum(requestedQty)} به ${formatNum(effectiveQty)} کاهش یافت`
+			    : (row.stock_warning ? ' — موجودی فعلی کافی نیست' : '');
+		    groupedSelections[productId].items.push({
+			    variant_id: draftVariantId,
+			    quantity: effectiveQty,
+			    price: Number(row.price ?? (v ? variantPrice(v, product) : 0)),
+			    line_discount_amount: Number(row.line_discount_amount || 0),
+			    model: v ? variantModel(v) : '—',
+			    design: v ? variantDesign(v) : '—',
+			    variant: v ? variantName(v) : '—',
+			    label: (v ? buildVariantTitle(v) : 'تنوع پیش‌فرض') + warning
+		    });
+	    }
+		renderGroupSummary();
         updateTotal();
         updateSubmitState();
         updateLocalDraftStatus('پیش‌نویس بدون رزرو موجودی بازیابی شد', true);
