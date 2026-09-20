@@ -198,6 +198,7 @@ class PreinvoiceDraftReservation extends Model
         $lastActivity = 'COALESCE('.$this->qualifyColumn('last_seen_at').', '.$this->qualifyColumn('created_at').')';
 
         return $query
+            ->whereNull($this->qualifyColumn('converted_at'))
             ->whereNull($this->qualifyColumn('released_at'))
             ->whereNull($this->qualifyColumn('release_reason'))
             ->where($this->qualifyColumn('quantity'), '>', 0)

@@ -71,9 +71,12 @@ class LegacyReservationCleanupService
         return $this->candidatesQuery($staleHours, $at)
             ->when($orderId !== null, fn (Builder $query) => $query->where('preinvoice_order_id', $orderId))
             ->when($variantId !== null, fn (Builder $query) => $query->where('variant_id', $variantId))
-            ->with(['product:id,name', 'variant:id,product_id,variant_name,variant_code', 'order:id,status'])
+            ->with(['product:id,name', 'variant:id,product_id,variant_name,variant_code', 'order.invoice', 'activeDrafts'])
             ->oldest('id')
             ->get()
+            ->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                $this->classification->classify($reservation, $at)['state'] === ReservationClassificationService::STATE_LEGACY_SAFE
+            )
             ->map(fn (PreinvoiceDraftReservation $reservation): array => [
                 'reservation_id' => (int) $reservation->id,
                 'product_id' => (int) $reservation->product_id,
@@ -138,9 +141,9 @@ class LegacyReservationCleanupService
 
             foreach ($reservations as $reservation) {
                 $classification = $this->classification->classify($reservation, $at);
-                $isLegacyCandidate = $classification['label'] === ReservationClassificationService::LABEL_LEGACY_CANDIDATE
+                $isLegacyCandidate = $classification['state'] === ReservationClassificationService::STATE_LEGACY_SAFE
                     // Belt-and-braces: also confirm the row still matches the
-                    // authoritative SQL scope at this exact instant, in case
+                    // conservative SQL prefilter at this exact instant, in case
                     // its state moved between listing and locking.
                     && $this->candidatesQuery($staleHours, $at)->whereKey($reservation->id)->exists();
 
