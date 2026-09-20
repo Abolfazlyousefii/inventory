@@ -69,7 +69,7 @@ class ReservationDetailTest extends TestCase
             ->get(route('warehouse-reservations.show', $reservation))
             ->assertOk();
 
-        $response->assertSee('پیش‌فاکتور رسمی');
+        $response->assertSee('رسمی فعال');
         $response->assertSee('فعال');
     }
 

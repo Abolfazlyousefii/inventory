@@ -192,7 +192,7 @@ class ReservationBulkManagementTest extends TestCase
     public function test_legacy_candidate_can_be_bulk_cleaned(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
 
         $response = $this->actingAs($this->legacyUser())
             ->postJson(route('warehouse-reservations.bulk-legacy-cleanup'), [
@@ -208,7 +208,7 @@ class ReservationBulkManagementTest extends TestCase
     public function test_legacy_cleanup_does_not_change_warehouse_stock(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $warehouseQuantityBefore = $fixture['warehouseStock']->quantity;
 
         $this->actingAs($this->legacyUser())
@@ -225,7 +225,7 @@ class ReservationBulkManagementTest extends TestCase
     public function test_legacy_cleanup_creates_no_stock_movement(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $movementCountBefore = DB::table('stock_movements')->count();
 
         $this->actingAs($this->legacyUser())
@@ -296,7 +296,7 @@ class ReservationBulkManagementTest extends TestCase
     public function test_mixed_legacy_selection_processes_only_eligible_rows(): void
     {
         $fixture = $this->inventoryFixture(15);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $order = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: true);
         $official = $this->reservation($fixture, 10, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
 
@@ -314,7 +314,7 @@ class ReservationBulkManagementTest extends TestCase
     public function test_user_without_legacy_cleanup_permission_cannot_bulk_cleanup(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
 
         $this->actingAs($this->viewOnlyUser())
             ->postJson(route('warehouse-reservations.bulk-legacy-cleanup'), [
@@ -499,16 +499,26 @@ class ReservationBulkManagementTest extends TestCase
             'variant_id' => $fixture['variant']->id,
             'quantity' => $quantity,
             'reservation_scope' => $scope,
-            'last_seen_at' => $old ? now()->subDays(10) : now(),
-            'expires_at' => $old ? now()->subDays(10) : now()->addMinutes(10),
+            'last_seen_at' => $old ? now()->subHour() : now(),
+            'expires_at' => $old ? now()->subHour() : now()->addMinutes(10),
         ]);
-        $timestamp = $old ? now()->subDays(10) : now();
+        $timestamp = $old ? now()->subHour() : now();
         DB::table('preinvoice_draft_reservations')->where('id', $reservation->id)->update([
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
         ]);
 
         return $reservation->refresh();
+    }
+
+    private function legacyReservation(array $fixture, int $quantity): PreinvoiceDraftReservation
+    {
+        $order = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+        $reservation = $this->reservation($fixture, $quantity, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+        $old = now()->subDays(10);
+        $reservation->forceFill(['created_at' => $old, 'updated_at' => $old, 'last_seen_at' => $old, 'expires_at' => $old])->save();
+
+        return $reservation->fresh();
     }
 
     private function order(string $status, bool $old, ?string $customerName = null): PreinvoiceOrder

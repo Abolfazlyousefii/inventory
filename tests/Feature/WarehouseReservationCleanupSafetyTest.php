@@ -95,6 +95,24 @@ it('releases a valid abandoned reservation exactly once', function () {
             ->count())->toBe(1);
 });
 
+it('never returns stock for a temporary reservation beyond the legacy boundary', function () {
+    ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
+        = warehouseCleanupSafetyFixture();
+    $reservation->forceFill([
+        'created_at' => now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS + 1),
+        'updated_at' => now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS + 1),
+        'last_seen_at' => now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS + 1),
+    ])->save();
+
+    $result = app(PreinvoiceDraftReservationService::class)->cleanupStaleTemporaryReservations();
+
+    expect($result['released_reservations'])->toBe(0)
+        ->and($reservation->fresh()->released_at)->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(5)
+        ->and($variant->fresh()->reserved)->toBe(5)
+        ->and($warehouseStock->fresh()->quantity)->toBe(20);
+});
+
 it('refuses cleanup when the product reserved cache is too low and records a warning', function () {
     ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
         = warehouseCleanupSafetyFixture(quantity: 10, productReserved: 5, variantReserved: 10);

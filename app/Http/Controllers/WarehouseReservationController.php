@@ -36,14 +36,10 @@ class WarehouseReservationController extends Controller
             'search' => ['nullable', 'string', 'max:150'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-            'classification' => ['nullable', 'string', Rule::in([
-                ReservationClassificationService::LABEL_TEMPORARY_ACTIVE,
-                ReservationClassificationService::LABEL_TEMPORARY_ORPHAN,
-                ReservationClassificationService::LABEL_OFFICIAL_PREINVOICE,
-                ReservationClassificationService::LABEL_CRITICAL,
-                ReservationClassificationService::LABEL_LEGACY_CANDIDATE,
-                ReservationClassificationService::LABEL_CONSUMED,
-            ])],
+            'classification' => ['nullable', 'string', Rule::in(array_unique(array_merge(
+                array_keys($classificationService->managementLabels()),
+                ['official_preinvoice', 'critical', 'legacy_candidate', 'temporary_orphan'],
+            )))],
             'lifecycle' => ['nullable', 'string', Rule::in([
                 ReservationClassificationService::LIFECYCLE_ACTIVE,
                 ReservationClassificationService::LIFECYCLE_RELEASED,

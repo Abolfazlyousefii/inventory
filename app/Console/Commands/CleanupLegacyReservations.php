@@ -81,7 +81,13 @@ class CleanupLegacyReservations extends Command
         $staleHours = max(1, (int) $this->option('stale-hours'));
         $ids = $this->parseIds();
 
-        $shouldApply = $this->option('apply') && $ids !== [];
+        if ($this->option('apply') && $ids === []) {
+            $this->error('Refusing to apply without explicit --ids.');
+
+            return self::FAILURE;
+        }
+
+        $shouldApply = $this->option('apply');
         if (! $shouldApply) {
             return $this->preview($service, $staleHours, $at, (bool) $this->option('apply'));
         }
@@ -146,9 +152,12 @@ class CleanupLegacyReservations extends Command
         $this->line('Warehouse stock changed: no');
 
         $report = [
-            'processed' => $result['processed'],
-            'closed' => $result['closed'],
+            'requested_count' => $result['requested_count'],
+            'eligible_count' => $result['eligible_count'],
+            'processed_count' => $result['processed_count'],
             'skipped' => $result['skipped'],
+            'skipped_count' => $result['skipped'],
+            'failed_count' => $result['failed_count'],
             'quantity_closed' => $result['quantity_closed'],
             'warehouse_stock_changed' => false,
             'stock_movement_created' => false,
@@ -186,8 +195,13 @@ class CleanupLegacyReservations extends Command
         Storage::disk('local')->put($summaryPath, json_encode([
             'executed_at' => $at->toISOString(),
             'processed' => $result['processed'],
+            'requested_count' => count($result['rows']),
+            'eligible_count' => $result['closed'],
+            'processed_count' => $result['closed'],
             'closed' => $result['closed'],
             'skipped' => $result['skipped'],
+            'skipped_count' => $result['skipped'],
+            'failed_count' => 0,
             'quantity_closed' => $result['quantity_closed'],
             'products_rebuilt' => $result['products_rebuilt'],
             'variants_rebuilt' => $result['variants_rebuilt'],

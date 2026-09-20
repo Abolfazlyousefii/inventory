@@ -9,6 +9,7 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\WarehouseStock;
 use App\Services\PreinvoiceDraftReservationService;
+use App\Services\WarehouseStockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -124,6 +125,34 @@ it('syncs add increase decrease and removal in an authorized edit without recrea
     hardeningStock($this->rows[1], 998, 2);
     $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload([], $this->token, $order->uuid))->assertOk();
     foreach ($this->rows as $item) hardeningStock($item, 1000, 0);
+});
+
+it('counts genuinely committed stock once across repeated authorized edit syncs', function () {
+    $order = largePayloadOrder($this->seller, [$this->rows[0]]);
+    $order->update([
+        'status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+        'stock_frozen_until' => now()->addHour(),
+    ]);
+
+    $row = $this->rows[0];
+    WarehouseStockService::change(
+        WarehouseStockService::centralWarehouseId(),
+        $row['product_id'],
+        -2,
+        $row['variant_id'],
+    );
+    ProductVariant::query()->whereKey($row['variant_id'])->update(['reserved' => 2]);
+    Product::query()->whereKey($row['product_id'])->update(['reserved' => 2]);
+
+    $row['quantity'] = 20;
+    $payload = hardeningPayload([$row], $this->token, $order->uuid);
+
+    foreach (range(1, 2) as $_) {
+        $this->postJson(route('preinvoice.api.reservations.sync'), $payload)->assertOk();
+        hardeningStock($row, 980, 20);
+    }
+
+    expect(PreinvoiceDraftReservation::sole()->quantity)->toBe(18);
 });
 
 it('submits an edited draft using its existing freeze even when free stock is exhausted', function () {

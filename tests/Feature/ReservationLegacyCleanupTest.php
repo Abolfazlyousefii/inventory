@@ -170,6 +170,10 @@ class ReservationLegacyCleanupTest extends TestCase
         bool $old = true,
         ?string $scope = null,
     ): PreinvoiceDraftReservation {
+        if ($old && $order === null) {
+            $order = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+            $scope = PreinvoiceDraftReservation::SCOPE_OFFICIAL;
+        }
         $reservation = PreinvoiceDraftReservation::query()->create([
             'token' => (string) Str::uuid(),
             'preinvoice_order_id' => $order?->id,

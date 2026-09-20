@@ -96,8 +96,8 @@ class ReservationDashboardTest extends TestCase
         $this->assertSame(1, $stats['critical']['count']);
         $this->assertSame(2, $stats['critical']['quantity']);
         $this->assertSame(
-            'critical',
-            $service->classify($criticalReservation->refresh()->load('order.invoice'))['label'],
+            'official_active',
+            $service->classify($criticalReservation->refresh()->load('order.invoice'))['state'],
         );
     }
 

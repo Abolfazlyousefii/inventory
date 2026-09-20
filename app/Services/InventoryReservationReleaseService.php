@@ -14,6 +14,8 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryReservationReleaseService
 {
+    public function __construct(private readonly ReservationClassificationService $classification) {}
+
     /**
      * Finish a reservation consumed by an invoice without returning stock.
      *
@@ -90,8 +92,10 @@ class InventoryReservationReleaseService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedReservation->release_reason !== null
-                || (! $lockedReservation->canBeManuallyReleased() && ! $lockedReservation->isOrphaned())) {
+            $lockedReservation->load(['order.invoice', 'activeDrafts']);
+            $classification = $this->classification->classify($lockedReservation, now());
+
+            if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
                 throw ValidationException::withMessages([
                     'reservation' => 'این رزرو دیگر قابل آزادسازی نیست؛ وضعیت آن در همین لحظه تغییر کرده است.',
                 ]);
