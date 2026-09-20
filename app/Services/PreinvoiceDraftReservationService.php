@@ -19,7 +19,10 @@ use RuntimeException;
 
 class PreinvoiceDraftReservationService
 {
-    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+    public function __construct(
+        private InventoryReservationReleaseService $inventoryRelease,
+        private ReservationClassificationService $classification,
+    ) {}
 
     public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null): array
     {
@@ -63,7 +66,7 @@ class PreinvoiceDraftReservationService
             // موجودیشون از انبار کم شده رو در محاسبه delta حساب کن تا دوباره
             // تلاش نکنه رزروشون کنه.
             $committedQty = [];
-            if (isset($order)) {
+            if (isset($order) && $this->hasCommittedCentralStock($order)) {
                 $order->loadMissing('items');
                 foreach ($order->items as $orderItem) {
                     $key = $this->reservationKey((int) $orderItem->product_id, (int) $orderItem->variant_id);
@@ -229,11 +232,13 @@ class PreinvoiceDraftReservationService
                         ->lockForUpdate()
                         ->first();
 
-                    if (! $row
-                        || $row->preinvoice_order_id !== null
-                        || $row->converted_at !== null
-                        || $row->released_at !== null
-                        || ! $row->isCleanupCandidate(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
+                    if (! $row) {
+                        return null;
+                    }
+
+                    $row->load(['order.invoice', 'activeDrafts']);
+                    $classification = $this->classification->classify($row, now());
+                    if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
                         return null;
                     }
 
@@ -330,6 +335,10 @@ class PreinvoiceDraftReservationService
     ): Builder {
         return PreinvoiceDraftReservation::query()
             ->cleanupCandidates(max(1, $onlineMinutes), max(1, $inPersonMinutes))
+            ->whereRaw(
+                'COALESCE(last_seen_at, created_at) > ?',
+                [now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS)],
+            )
             ->orderBy('id');
     }
 
@@ -479,6 +488,12 @@ class PreinvoiceDraftReservationService
     private function reservationKey(int $productId, int $variantId): string
     {
         return $productId.':'.$variantId;
+    }
+
+    private function hasCommittedCentralStock(PreinvoiceOrder $order): bool
+    {
+        return $order->stock_frozen_until !== null
+            && $order->stock_released_at === null;
     }
 
     private function cleanupResult(Collection $reservations, bool $changed): array

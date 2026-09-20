@@ -44,7 +44,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_dashboard_legacy_candidate_count_matches_authoritative_scope(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $this->reservation($fixture, 5, old: true);
+        $this->legacyReservation($fixture, 5);
         $queries = app(ReservationQueryService::class);
 
         $stats = $queries->dashboardStatistics(now());
@@ -118,7 +118,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_legacy_cleaned_reservation_is_excluded_from_reserved_cache(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
 
         app(LegacyReservationCleanupService::class)->cleanup(
             [$legacy->id],
@@ -137,7 +137,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_legacy_cleanup_does_not_change_physical_warehouse_stock(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $warehouseBefore = $fixture['warehouseStock']->quantity;
 
         app(LegacyReservationCleanupService::class)->cleanup([$legacy->id], PreinvoiceDraftReservation::LEGACY_STALE_HOURS, now());
@@ -345,7 +345,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_legacy_cleanup_creates_no_stock_movement_row(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $movementsBefore = DB::table('stock_movements')->count();
 
         app(LegacyReservationCleanupService::class)->cleanup([$legacy->id], PreinvoiceDraftReservation::LEGACY_STALE_HOURS, now());
@@ -371,7 +371,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_management_actions_never_change_unrelated_preinvoice_order_data(): void
     {
         $fixture = $this->inventoryFixture(20);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
 
         $unrelatedOrder = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: false, customerName: 'Untouched hardening customer');
         $this->reservation($fixture, 6, $unrelatedOrder, old: false, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
@@ -416,7 +416,8 @@ class ReservationProductionHardeningTest extends TestCase
     {
         $fixture = $this->inventoryFixture(7);
         $order = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: true);
-        $this->reservation($fixture, 7, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+        $critical = $this->reservation($fixture, 7, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+        $critical->forceFill(['created_at' => now()->subDays(10), 'updated_at' => now()->subDays(10)])->save();
 
         $stats = app(ReservationQueryService::class)->dashboardStatistics(now());
 
@@ -437,7 +438,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_bulk_legacy_cleanup_result_does_not_double_report_processed_rows(): void
     {
         $fixture = $this->inventoryFixture(9);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $active = $this->reservation($fixture, 4, old: false);
 
         $response = $this->actingAs($this->userWithPermissions([
@@ -458,7 +459,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_bulk_legacy_cleanup_still_reports_a_genuinely_missing_id(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $legacy = $this->reservation($fixture, 5, old: true);
+        $legacy = $this->legacyReservation($fixture, 5);
         $missingId = $legacy->id + 5000;
 
         $response = $this->actingAs($this->userWithPermissions([
@@ -503,7 +504,7 @@ class ReservationProductionHardeningTest extends TestCase
     public function test_audit_command_summary_reports_the_authoritative_legacy_candidate_count(): void
     {
         $fixture = $this->inventoryFixture(5);
-        $this->reservation($fixture, 5, old: true);
+        $this->legacyReservation($fixture, 5);
 
         $expected = PreinvoiceDraftReservation::query()
             ->legacyCleanupCandidates(PreinvoiceDraftReservation::LEGACY_STALE_HOURS, now())
@@ -597,16 +598,26 @@ class ReservationProductionHardeningTest extends TestCase
             'variant_id' => $fixture['variant']->id,
             'quantity' => $quantity,
             'reservation_scope' => $scope,
-            'last_seen_at' => $old ? now()->subDays(10) : now(),
-            'expires_at' => $old ? now()->subDays(10) : now()->addMinutes(10),
+            'last_seen_at' => $old ? now()->subHour() : now(),
+            'expires_at' => $old ? now()->subHour() : now()->addMinutes(10),
         ]);
-        $timestamp = $old ? now()->subDays(10) : now();
+        $timestamp = $old ? now()->subHour() : now();
         DB::table('preinvoice_draft_reservations')->where('id', $reservation->id)->update([
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
         ]);
 
         return $reservation->refresh();
+    }
+
+    private function legacyReservation(array $fixture, int $quantity): PreinvoiceDraftReservation
+    {
+        $order = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+        $reservation = $this->reservation($fixture, $quantity, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+        $old = now()->subDays(10);
+        $reservation->forceFill(['created_at' => $old, 'updated_at' => $old, 'last_seen_at' => $old, 'expires_at' => $old])->save();
+
+        return $reservation->fresh();
     }
 
     private function order(string $status, bool $old, ?string $customerName = null): PreinvoiceOrder

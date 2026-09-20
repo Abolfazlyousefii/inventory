@@ -35,8 +35,8 @@ class ReservationLegacyAuditTest extends TestCase
 
         $this->assertNotNull($row);
         $this->assertSame('temporary', $row['type']);
-        $this->assertSame('legacy_candidate', $row['classification']);
-        $this->assertSame('REMOVE_LEGACY', $row['recommended_action']);
+        $this->assertSame('historical_ambiguous', $row['classification']);
+        $this->assertSame('MANUAL_REVIEW', $row['recommended_action']);
         $this->assertGreaterThanOrEqual(80, (int) $row['age_days']);
     }
 
@@ -56,7 +56,7 @@ class ReservationLegacyAuditTest extends TestCase
 
         $this->assertNotNull($row);
         $this->assertSame('official', $row['type']);
-        $this->assertSame('official_preinvoice', $row['classification']);
+        $this->assertSame('official_active', $row['classification']);
         $this->assertSame('KEEP', $row['recommended_action']);
     }
 

@@ -65,7 +65,9 @@ class LegacyReservationCleanupTest extends TestCase
         $this->assertSame(5, $activity->properties['quantity']);
         $this->assertSame('legacy_cleanup', $activity->properties['reason']);
         $this->assertFalse($activity->properties['stock_return']);
-        $this->assertSame('legacy_without_preinvoice', $activity->properties['legacy_reason']);
+        $this->assertSame('legacy_inactive_preinvoice', $activity->properties['legacy_reason']);
+        $this->assertFalse($activity->properties['warehouse_stock_changed']);
+        $this->assertSame('legacy_safe', $activity->properties['classification']);
         $this->assertNull($activity->properties['old_state']['released_at']);
     }
 
@@ -130,15 +132,15 @@ class LegacyReservationCleanupTest extends TestCase
         $this->assertDatabaseCount('activity_logs', 0);
     }
 
-    public function test_apply_without_ids_only_reports_and_changes_nothing(): void
+    public function test_apply_without_ids_fails_and_changes_nothing(): void
     {
         $fixture = $this->inventoryFixture(5);
         $this->reservation($fixture, 5, old: true);
         $before = $this->snapshot($fixture);
 
         $this->artisan('inventory:cleanup-legacy-reservations --apply --confirm')
-            ->expectsOutputToContain('No --ids provided')
-            ->assertSuccessful();
+            ->expectsOutputToContain('explicit --ids')
+            ->assertFailed();
 
         $this->assertSame($before, $this->snapshot($fixture));
         $this->assertDatabaseCount('activity_logs', 0);
@@ -214,6 +216,10 @@ class LegacyReservationCleanupTest extends TestCase
         bool $old = true,
         ?string $scope = null,
     ): PreinvoiceDraftReservation {
+        if ($old && $order === null) {
+            $order = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+            $scope = PreinvoiceDraftReservation::SCOPE_OFFICIAL;
+        }
         $reservation = PreinvoiceDraftReservation::query()->create([
             'token' => (string) Str::uuid(),
             'preinvoice_order_id' => $order?->id,

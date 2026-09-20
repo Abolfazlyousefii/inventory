@@ -168,13 +168,13 @@
             @forelse($reservations as $reservation)
                 @php
                     $businessStatus = $reservation->businessStatus();
-                    $releasable = $reservation->isActionableForManagement();
                     $warning = $reservation->managementWarning();
                     $displayReason = $reservation->businessDisplayReason();
                     $variantName = $reservation->variant?->variant_name ?: $reservation->variant?->variety_name;
                     $variantCode = $reservation->variant?->variant_code ?: $reservation->variant?->variety_code;
                     $classification = $classificationService->classify($reservation);
-                    $isLegacyCandidate = $classification['label'] === \App\Services\ReservationClassificationService::LABEL_LEGACY_CANDIDATE;
+                    $releasable = $classification['state'] === \App\Services\ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE;
+                    $isLegacyCandidate = $classification['state'] === \App\Services\ReservationClassificationService::STATE_LEGACY_SAFE;
                 @endphp
                 <tr @class(['old-reservation-row' => $warning !== null])>
                     @if($canBulkAny)
@@ -239,8 +239,9 @@
                         <span class="status-badge {{ $healthClass }}">{{ $classificationService->healthLabels()[$classification['health']] }}</span>
                     </td>
                     <td>
-                        @php $labelClass = match($classification['label']) { 'critical', 'legacy_candidate' => 'status-critical', 'temporary_orphan' => 'status-review', 'consumed' => 'status-neutral', default => 'status-active' }; @endphp
-                        <span class="status-badge {{ $labelClass }}">{{ $classificationService->managementLabels()[$classification['label']] }}</span>
+                        @php $labelClass = match($classification['state']) { 'historical_ambiguous', 'invalid_official' => 'status-critical', 'temporary_stale_releasable', 'legacy_safe' => 'status-review', 'consumed', 'released' => 'status-neutral', default => 'status-active' }; @endphp
+                        <span class="status-badge {{ $labelClass }}">{{ $classificationService->managementLabels()[$classification['state']] }}</span>
+                        <div class="muted-line mt-1">{{ $classification['reason'] }}</div>
                     </td>
                     <td>
                         <div>{{ $reservation->managementAgeLabel() }}</div>
@@ -261,6 +262,13 @@
                                         آزادسازی موجودی
                                     </button>
                                 @endcanPermission
+                            @endif
+                            @if($isLegacyCandidate)
+                                @canPermission('inventory.reservation.legacy_cleanup')
+                                    <span class="badge text-bg-warning">Legacy قابل پاکسازی</span>
+                                @endcanPermission
+                            @elseif($classification['state'] === \App\Services\ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS)
+                                <span class="badge text-bg-secondary">فقط بررسی دستی</span>
                             @endif
                         </div>
                     </td>
@@ -323,7 +331,7 @@
 
 @canPermission('warehouse_reservations.release')
     @foreach($reservations as $reservation)
-        @if($reservation->canBeManuallyReleased())
+        @if($classificationService->classify($reservation)['state'] === \App\Services\ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE)
             <div class="modal fade" id="release-reservation-{{ $reservation->id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered">
                     <form class="modal-content border-0" method="POST" action="{{ route('warehouse-reservations.release', $reservation) }}">
