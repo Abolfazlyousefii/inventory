@@ -11,6 +11,8 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\WarehouseStock;
+use App\Services\LegacyReservationCleanupService;
+use App\Services\ReservationClassificationService;
 use App\Services\WarehouseStockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -174,6 +176,77 @@ class LegacyReservationCleanupTest extends TestCase
             ->expectsOutputToContain((string) $reservation->id)
             ->assertSuccessful();
 
+        $this->assertSame($before, $this->snapshot($fixture));
+    }
+
+    public function test_dry_run_uses_canonical_legacy_safe_classification_and_excludes_every_other_state(): void
+    {
+        $fixture = $this->inventoryFixture(25);
+        $legacySafe = $this->reservation($fixture, 5, old: true);
+
+        $inactiveOrder = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+        $consumed = $this->reservation($fixture, 4, $inactiveOrder, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+        $consumed->forceFill(['converted_at' => now()->subDays(5)])->save();
+
+        $historicalAmbiguous = $this->reservation($fixture, 3, old: false, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
+        $historicalAmbiguous->forceFill([
+            'last_seen_at' => now()->subDays(10),
+            'expires_at' => now()->subDays(10),
+        ])->save();
+
+        $activeValid = $this->reservation($fixture, 6, old: false, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
+        $activeValid->forceFill([
+            'last_seen_at' => now()->subDays(10),
+            'expires_at' => now()->subDays(10),
+        ])->save();
+        $activeDraft = $this->order(PreinvoiceOrder::STATUS_DRAFT, old: true);
+        $activeDraft->forceFill(['draft_token' => $activeValid->token])->save();
+
+        $activeOrder = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: true);
+        $officialActive = $this->reservation($fixture, 7, $activeOrder, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+
+        $at = now();
+        $reservations = collect([$legacySafe, $consumed, $historicalAmbiguous, $activeValid, $officialActive])
+            ->map(fn (PreinvoiceDraftReservation $reservation) => $reservation->fresh()->load(['order.invoice', 'activeDrafts']));
+        $classifier = app(ReservationClassificationService::class);
+        $states = $reservations->mapWithKeys(fn (PreinvoiceDraftReservation $reservation) => [
+            $reservation->id => $classifier->classify($reservation, $at)['state'],
+        ]);
+
+        $this->assertSame(ReservationClassificationService::STATE_CONSUMED, $states[$consumed->id]);
+        $this->assertSame(ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS, $states[$historicalAmbiguous->id]);
+        $this->assertSame(ReservationClassificationService::STATE_ACTIVE_VALID, $states[$activeValid->id]);
+        $this->assertSame(ReservationClassificationService::STATE_OFFICIAL_ACTIVE, $states[$officialActive->id]);
+
+        $before = $this->snapshot($fixture);
+        $service = app(LegacyReservationCleanupService::class);
+        $rows = $service->reportRows(PreinvoiceDraftReservation::LEGACY_STALE_HOURS, $at);
+        $canonicalLegacySafeIds = $states
+            ->filter(fn (string $state) => $state === ReservationClassificationService::STATE_LEGACY_SAFE)
+            ->keys()
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $this->assertSame($canonicalLegacySafeIds->all(), $rows->pluck('reservation_id')->all());
+        $this->assertCount($canonicalLegacySafeIds->count(), $rows);
+        $this->assertFalse($rows->pluck('reservation_id')->contains($consumed->id));
+        $this->assertFalse($rows->pluck('reservation_id')->contains($historicalAmbiguous->id));
+        $this->assertFalse($rows->pluck('reservation_id')->contains($activeValid->id));
+        $this->assertFalse($rows->pluck('reservation_id')->contains($officialActive->id));
+        $this->assertFalse($service->candidatesQuery(PreinvoiceDraftReservation::LEGACY_STALE_HOURS, $at)
+            ->whereKey($consumed->id)
+            ->exists());
+
+        $this->artisan('inventory:cleanup-legacy-reservations --dry-run')
+            ->expectsOutputToContain('Legacy reservations found: 1')
+            ->expectsOutputToContain('Total quantity: 5')
+            ->expectsOutputToContain('No data changed')
+            ->assertSuccessful();
+        $this->assertSame($before, $this->snapshot($fixture));
+
+        $cleanup = $service->cleanup([$consumed->id], PreinvoiceDraftReservation::LEGACY_STALE_HOURS, $at);
+        $this->assertSame(0, $cleanup['closed']);
+        $this->assertNull($consumed->fresh()->released_at);
         $this->assertSame($before, $this->snapshot($fixture));
     }
 
