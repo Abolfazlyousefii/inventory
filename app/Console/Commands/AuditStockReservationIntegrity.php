@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\PreinvoiceDraftReservation;
+use App\Services\ReservationClassificationService;
 use App\Services\ReservationQueryService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
@@ -16,13 +17,6 @@ class AuditStockReservationIntegrity extends Command
     protected $description = 'Read-only audit for central stock caches and draft reservation integrity.';
 
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
-    private const ACTIVE_PREINVOICE_STATUSES = [
-        'reserved_waiting_warehouse',
-        'warehouse_reviewing',
-        'warehouse_approved_waiting_finance',
-        'finance_reviewing',
-        'returned_to_warehouse',
-    ];
     private const CSV_HEAD = [
         'product_id',
         'product_name',
@@ -53,10 +47,15 @@ class AuditStockReservationIntegrity extends Command
     private static bool $writeGuardEnabled = false;
 
     private ReservationQueryService $reservationQuantities;
+    private ReservationClassificationService $classification;
 
-    public function handle(ReservationQueryService $reservationQuantities): int
+    public function handle(
+        ReservationQueryService $reservationQuantities,
+        ReservationClassificationService $classification,
+    ): int
     {
         $this->reservationQuantities = $reservationQuantities;
+        $this->classification = $classification;
         $format = strtolower((string) $this->option('format'));
         if (! in_array($format, ['csv', 'json'], true)) {
             $this->error('--format must be csv or json.');
@@ -382,15 +381,18 @@ class AuditStockReservationIntegrity extends Command
             return [];
         }
 
-        return DB::table('preinvoice_draft_reservations as r')
-            ->leftJoin('preinvoice_orders as o', 'o.id', '=', 'r.preinvoice_order_id')
-            ->where('r.quantity', '>', 0)
-            ->whereNull('r.released_at')
-            ->whereNull('r.release_reason')
-            ->where('r.reservation_scope', 'official')
-            ->where(fn ($q) => $q->whereNull('o.id')->orWhereNotIn('o.status', self::ACTIVE_PREINVOICE_STATUSES)->orWhereNotNull('o.stock_released_at')->orWhere('o.status', 'converted_to_invoice'))
-            ->select(['r.*'])
+        return PreinvoiceDraftReservation::query()
+            ->with(['order.invoice'])
+            ->where('reservation_scope', PreinvoiceDraftReservation::SCOPE_OFFICIAL)
+            ->when($this->option('product'), fn ($query, $id) => $query->where('product_id', $id))
+            ->when($this->option('variant'), fn ($query, $id) => $query->where('variant_id', $id))
+            ->orderBy('id')
             ->get()
+            ->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                $this->classification->classify($reservation, now())['state']
+                    === ReservationClassificationService::STATE_INVALID_OFFICIAL
+            )
+            ->values()
             ->all();
     }
 
