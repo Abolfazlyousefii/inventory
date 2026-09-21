@@ -149,7 +149,9 @@ it('counts genuinely committed stock once across repeated authorized edit syncs'
 
     foreach (range(1, 2) as $_) {
         $this->postJson(route('preinvoice.api.reservations.sync'), $payload)->assertOk();
-        hardeningStock($row, 980, 20);
+        // Physical stock includes the pre-existing committed quantity; the
+        // reserved projection includes canonical active reservation rows only.
+        hardeningStock($row, 980, 18);
     }
 
     expect(PreinvoiceDraftReservation::sole()->quantity)->toBe(18);

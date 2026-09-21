@@ -147,6 +147,8 @@ class PreinvoiceDraftReservationService
                     // اگه مقدار جدید کمتر یا مساوی committed هست، رزرو موقت لازم نیست
                     $this->markReleasedOrDelete($existing[$key], $userId, 'manual_release', null);
                 }
+
+                ReservationSideEffects::touchProduct($productId);
             }
 
             return [
@@ -170,6 +172,7 @@ class PreinvoiceDraftReservationService
                 $quantity = (int) $row->quantity;
                 $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $quantity);
                 $this->markReleasedOrDelete($row, $userId, $reason, $note);
+                ReservationSideEffects::touchProduct((int) $row->product_id);
                 $released[] = [
                     'product_id' => (int) $row->product_id,
                     'variant_id' => (int) $row->variant_id,
@@ -261,6 +264,7 @@ class PreinvoiceDraftReservationService
                     }
 
                     $this->markReleasedOrDelete($row, 0, 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
+                    ReservationSideEffects::touchProduct((int) $row->product_id);
 
                     $row->loadMissing([
                         'product:id,name',
@@ -361,6 +365,7 @@ class PreinvoiceDraftReservationService
             foreach ($expiredRows as $row) {
                 $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity);
                 $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_online_expired', 'رزرو موقت آنلاین منقضی شد.');
+                ReservationSideEffects::touchProduct((int) $row->product_id);
             }
         });
     }
@@ -457,15 +462,6 @@ class PreinvoiceDraftReservationService
 
         WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
 
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        $variant->reserved = (int) $variant->reserved + $delta;
-        $variant->save();
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = (int) $product->reserved + $delta;
-            $product->save();
-        }
     }
 
     private function releaseVariantDelta(int $productId, int $variantId, int $delta): void

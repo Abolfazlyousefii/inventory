@@ -75,8 +75,13 @@ class WarehouseStockService
         }
 
         self::assertVariantBelongsToProduct($productId, $variantId);
-        $stock = self::ensureStockExists($warehouseId, $productId, $variantId);
-        return max(0, (int) $stock->quantity);
+        $quantity = WarehouseStock::query()
+            ->where('warehouse_id', $warehouseId)
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->value('quantity');
+
+        return max(0, (int) ($quantity ?? 0));
     }
 
     public static function syncVariantStockFromCentral(int $variantId): void

@@ -60,36 +60,12 @@ class ReservationQueryService
      */
     public function rebuildForProducts(array $productIds, ?CarbonInterface $at = null): array
     {
-        $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
-        if ($productIds === []) {
-            return ['products' => 0, 'variants' => 0];
-        }
+        $report = app(ReservationProjectionService::class)->rebuild($productIds, $at);
 
-        $products = DB::table('products')->whereIn('id', $productIds)->lockForUpdate()->get(['id']);
-        $variants = DB::table('product_variants')->whereIn('product_id', $productIds)->lockForUpdate()->get(['id', 'product_id']);
-        $expected = $this->quantitiesByVariant(
-            variantIds: $variants->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(),
-            at: $at,
-        );
-        $productTotals = [];
-
-        foreach ($variants as $variant) {
-            $quantity = (int) ($expected[(int) $variant->id] ?? 0);
-            DB::table('product_variants')->where('id', $variant->id)->update([
-                'reserved' => $quantity,
-                'updated_at' => now(),
-            ]);
-            $productTotals[(int) $variant->product_id] = ($productTotals[(int) $variant->product_id] ?? 0) + $quantity;
-        }
-
-        foreach ($products as $product) {
-            DB::table('products')->where('id', $product->id)->update([
-                'reserved' => (int) ($productTotals[(int) $product->id] ?? 0),
-                'updated_at' => now(),
-            ]);
-        }
-
-        return ['products' => $products->count(), 'variants' => $variants->count()];
+        return [
+            'products' => count($report['products']),
+            'variants' => count($report['variants']),
+        ];
     }
 
     /**

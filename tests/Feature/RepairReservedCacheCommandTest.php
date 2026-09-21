@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class RepairReservedCacheCommandTest extends TestCase
@@ -14,6 +15,15 @@ class RepairReservedCacheCommandTest extends TestCase
         parent::setUp();
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         $this->schema();
+        Storage::fake('local');
+    }
+
+    public function test_requires_one_explicit_mode_and_confirmation_for_apply(): void
+    {
+        $this->artisan('inventory:repair-reserved-cache')->assertExitCode(1);
+        $this->artisan('inventory:repair-reserved-cache --dry-run --apply --confirm')->assertExitCode(1);
+        $this->artisan('inventory:repair-reserved-cache --apply')->assertExitCode(1);
+        $this->artisan('inventory:repair-reserved-cache --dry-run --confirm')->assertExitCode(1);
     }
 
     public function test_expected_reserved_includes_active_official_and_temporary_reservations(): void
@@ -23,7 +33,7 @@ class RepairReservedCacheCommandTest extends TestCase
         $this->seedReservation(1, 301, 10, 3, 'official', null);
         $this->seedReservation(2, null, 10, 4, 'temporary_online', null);
 
-        $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-a')->assertExitCode(0);
+        $this->artisan('inventory:repair-reserved-cache --apply --confirm --output=testing/reserved-a')->assertExitCode(0);
 
         $this->assertSame(7, (int) DB::table('product_variants')->where('id', 10)->value('reserved'));
         $this->assertSame(7, (int) DB::table('products')->where('id', 1)->value('reserved'));
@@ -31,16 +41,19 @@ class RepairReservedCacheCommandTest extends TestCase
         $this->assertSame(4, (int) DB::table('preinvoice_draft_reservations')->where('id', 2)->value('quantity'));
     }
 
-    public function test_cancelled_by_finance_unreleased_variants_are_excluded_and_warehouse_stocks_do_not_change(): void
+    public function test_apply_uses_canonical_rows_and_never_changes_physical_or_lifecycle_state(): void
     {
         $this->seedVariant(20, 2, 11);
         $this->seedOrder(400, 'cancelled_by_finance', null, 20, 5);
+        $this->seedReservation(3, 400, 20, 5, 'official', null);
         $beforeWarehouse = DB::table('warehouse_stocks')->get()->map(fn ($r) => (array) $r)->all();
+        $beforeReservations = DB::table('preinvoice_draft_reservations')->get()->map(fn ($r) => (array) $r)->all();
 
-        $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-b')->assertExitCode(0);
+        $this->artisan('inventory:repair-reserved-cache --apply --confirm --output=testing/reserved-b')->assertExitCode(0);
 
-        $this->assertSame(11, (int) DB::table('product_variants')->where('id', 20)->value('reserved'));
+        $this->assertSame(0, (int) DB::table('product_variants')->where('id', 20)->value('reserved'));
         $this->assertEquals($beforeWarehouse, DB::table('warehouse_stocks')->get()->map(fn ($r) => (array) $r)->all());
+        $this->assertEquals($beforeReservations, DB::table('preinvoice_draft_reservations')->get()->map(fn ($r) => (array) $r)->all());
     }
 
     public function test_dry_run_changes_nothing_and_apply_is_idempotent(): void
@@ -48,14 +61,17 @@ class RepairReservedCacheCommandTest extends TestCase
         $this->seedVariant(30, 3, 20);
         $this->seedOrder(500, 'finance_reviewing', null, 30, 6);
 
-        $this->artisan('inventory:repair-reserved-cache --output=testing/reserved-c')->assertExitCode(0);
+        $beforeWarehouse = DB::table('warehouse_stocks')->get()->map(fn ($r) => (array) $r)->all();
+        $this->artisan('inventory:repair-reserved-cache --dry-run --output=testing/reserved-c')->assertExitCode(0);
         $this->assertSame(20, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
 
-        $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-c1')->assertExitCode(0);
+        $this->artisan('inventory:repair-reserved-cache --apply --confirm --output=testing/reserved-c1')->assertExitCode(0);
         $this->assertSame(0, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
 
-        $this->artisan('inventory:repair-reserved-cache --apply --output=testing/reserved-c2')->assertExitCode(0);
+        $this->artisan('inventory:repair-reserved-cache --apply --confirm --output=testing/reserved-c2')->assertExitCode(0);
         $this->assertSame(0, (int) DB::table('product_variants')->where('id', 30)->value('reserved'));
+        $this->assertEquals($beforeWarehouse, DB::table('warehouse_stocks')->get()->map(fn ($r) => (array) $r)->all());
+        Storage::disk('local')->assertExists('testing/reserved-c/summary.json');
     }
 
     private function seedVariant(int $variantId, int $productId, int $reserved): void
