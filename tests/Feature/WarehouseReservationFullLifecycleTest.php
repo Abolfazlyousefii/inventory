@@ -391,7 +391,7 @@ it('repairs only verified converted reservations and rebuilds product and varian
     $this->artisan('preinvoice:repair-converted-reservations --apply')
         ->expectsOutputToContain('"released_records": 1')
         ->assertSuccessful();
-    $this->artisan('inventory:repair-reserved-cache --apply --output=testing/converted-reservation-cache')
+    $this->artisan('inventory:repair-reserved-cache --apply --confirm --output=testing/converted-reservation-cache')
         ->assertSuccessful();
 
     expect($reservation->fresh()->released_at)->not->toBeNull()

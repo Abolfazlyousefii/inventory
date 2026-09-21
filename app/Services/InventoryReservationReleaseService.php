@@ -44,29 +44,14 @@ class InventoryReservationReleaseService
                 return ['released' => false, 'quantity' => 0];
             }
 
-            if ($decrementReservedCache) {
-                $variant = ProductVariant::query()
-                    ->whereKey((int) $lockedReservation->variant_id)
-                    ->where('product_id', (int) $lockedReservation->product_id)
-                    ->lockForUpdate()
-                    ->first();
-                $product = Product::query()
-                    ->whereKey((int) $lockedReservation->product_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if (! $variant || ! $product) {
-                    throw ValidationException::withMessages([
-                        'reservation' => 'The converted reservation has an invalid product or variant relation.',
-                    ]);
-                }
-
-                $variant->forceFill([
-                    'reserved' => max(0, (int) $variant->reserved - $quantity),
-                ])->save();
-                $product->forceFill([
-                    'reserved' => max(0, (int) $product->reserved - $quantity),
-                ])->save();
+            $validVariant = ProductVariant::query()
+                ->whereKey((int) $lockedReservation->variant_id)
+                ->where('product_id', (int) $lockedReservation->product_id)
+                ->exists();
+            if (! $validVariant || ! Product::query()->whereKey((int) $lockedReservation->product_id)->exists()) {
+                throw ValidationException::withMessages([
+                    'reservation' => 'The converted reservation has an invalid product or variant relation.',
+                ]);
             }
 
             $convertedAt = $lockedReservation->converted_at ?? now();
@@ -79,6 +64,7 @@ class InventoryReservationReleaseService
                     ? 'Reservation consumed during final invoice conversion.'
                     : 'Historical converted reservation lifecycle repaired.',
             ])->save();
+            ReservationSideEffects::touchProduct((int) $lockedReservation->product_id);
 
             return ['released' => true, 'quantity' => $quantity];
         });
@@ -132,6 +118,7 @@ class InventoryReservationReleaseService
                 'release_reason' => $reason,
                 'release_note' => $note,
             ])->save();
+            ReservationSideEffects::touchProduct((int) $lockedReservation->product_id);
 
             $properties = [
                 'reservation_id' => $lockedReservation->id,
@@ -198,27 +185,11 @@ class InventoryReservationReleaseService
                 ];
             }
     
-            if ((int) $variant->reserved < $quantity || (int) $product->reserved < $quantity) {
-                return [
-                    'released' => false,
-                    'reason' => 'reserved_cache_mismatch',
-                    'context' => $context,
-                    'before' => [],
-                    'after' => [],
-                ];
-            }
-    
             $before = [
                 'variant_stock' => (int) ($variant->stock ?? 0),
                 'variant_reserved' => (int) $variant->reserved,
                 'product_reserved' => (int) $product->reserved,
             ];
-    
-            $variant->reserved = (int) $variant->reserved - $quantity;
-            $variant->save();
-    
-            $product->reserved = (int) $product->reserved - $quantity;
-            $product->save();
     
             WarehouseStockService::change(
                 WarehouseStockService::centralWarehouseId(),
@@ -226,6 +197,7 @@ class InventoryReservationReleaseService
                 $quantity,
                 $variantId,
             );
+            ReservationSideEffects::touchProduct($productId);
     
             $variant->refresh();
             $product->refresh();

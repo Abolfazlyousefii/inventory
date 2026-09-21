@@ -113,7 +113,7 @@ it('never returns stock for a temporary reservation beyond the legacy boundary',
         ->and($warehouseStock->fresh()->quantity)->toBe(20);
 });
 
-it('refuses cleanup when the product reserved cache is too low and records a warning', function () {
+it('uses canonical reservation rows when the product reserved projection is too low', function () {
     ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
         = warehouseCleanupSafetyFixture(quantity: 10, productReserved: 5, variantReserved: 10);
 
@@ -124,25 +124,16 @@ it('refuses cleanup when the product reserved cache is too low and records a war
         ->latest('id')
         ->first();
 
-    expect($result['released_reservations'])->toBe(0)
-        ->and($result['warnings'])->toBe(1)
-        ->and($reservation->fresh()->released_at)->toBeNull()
-        ->and($product->fresh()->reserved)->toBe(5)
-        ->and($variant->fresh()->reserved)->toBe(10)
-        ->and($warehouseStock->fresh()->quantity)->toBe(20)
-        ->and($warning)->not->toBeNull()
-        ->and($warning->user_id)->toBeNull()
-        ->and($warning->properties['reservation_id'])->toBe($reservation->id)
-        ->and($warning->properties['product_id'])->toBe($product->id)
-        ->and($warning->properties['variant_id'])->toBe($variant->id)
-        ->and($warning->properties['release_quantity'])->toBe(10)
-        ->and($warning->properties['current_product_reserved'])->toBe(5)
-        ->and($warning->properties['current_variant_reserved'])->toBe(10)
-        ->and($warning->properties['reason'])->toBe('reserved_cache_mismatch')
-        ->and($warning->properties['actor_type'])->toBe('system');
+    expect($result['released_reservations'])->toBe(1)
+        ->and($result['warnings'])->toBe(0)
+        ->and($reservation->fresh()->released_at)->not->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(0)
+        ->and($variant->fresh()->reserved)->toBe(0)
+        ->and($warehouseStock->fresh()->quantity)->toBe(30)
+        ->and($warning)->toBeNull();
 });
 
-it('refuses cleanup when the variant reserved cache is too low and records a warning', function () {
+it('uses canonical reservation rows when the variant reserved projection is too low', function () {
     ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
         = warehouseCleanupSafetyFixture(quantity: 10, productReserved: 10, variantReserved: 5);
 
@@ -153,17 +144,13 @@ it('refuses cleanup when the variant reserved cache is too low and records a war
         ->latest('id')
         ->first();
 
-    expect($result['released_reservations'])->toBe(0)
-        ->and($result['warnings'])->toBe(1)
-        ->and($reservation->fresh()->released_at)->toBeNull()
-        ->and($product->fresh()->reserved)->toBe(10)
-        ->and($variant->fresh()->reserved)->toBe(5)
-        ->and($warehouseStock->fresh()->quantity)->toBe(20)
-        ->and($warning)->not->toBeNull()
-        ->and($warning->properties['release_quantity'])->toBe(10)
-        ->and($warning->properties['current_product_reserved'])->toBe(10)
-        ->and($warning->properties['current_variant_reserved'])->toBe(5)
-        ->and($warning->properties['reason'])->toBe('reserved_cache_mismatch');
+    expect($result['released_reservations'])->toBe(1)
+        ->and($result['warnings'])->toBe(0)
+        ->and($reservation->fresh()->released_at)->not->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(0)
+        ->and($variant->fresh()->reserved)->toBe(0)
+        ->and($warehouseStock->fresh()->quantity)->toBe(30)
+        ->and($warning)->toBeNull();
 });
 
 it('reports abandoned reservations in dry run without changing the database', function () {
@@ -209,18 +196,17 @@ it('ignores reservations connected to a preinvoice order', function () {
         ->and(ActivityLog::query()->where('subject_id', $reservation->id)->count())->toBe(0);
 });
 
-it('uses the same fail closed cache validation for manual release', function () {
+it('manual release repairs stale projections from canonical lifecycle state', function () {
     ['user' => $user, 'product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
         = warehouseCleanupSafetyFixture(quantity: 10, productReserved: 5, variantReserved: 10);
 
-    expect(fn () => app(InventoryReservationReleaseService::class)
-        ->releaseDraftReservation($reservation, $user, 'cleanup safety test'))
-        ->toThrow(ValidationException::class);
+    app(InventoryReservationReleaseService::class)
+        ->releaseDraftReservation($reservation, $user, 'cleanup safety test');
 
-    expect($reservation->fresh()->released_at)->toBeNull()
-        ->and($product->fresh()->reserved)->toBe(5)
-        ->and($variant->fresh()->reserved)->toBe(10)
-        ->and($warehouseStock->fresh()->quantity)->toBe(20);
+    expect($reservation->fresh()->released_at)->not->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(0)
+        ->and($variant->fresh()->reserved)->toBe(0)
+        ->and($warehouseStock->fresh()->quantity)->toBe(30);
 });
 
 it('records the explicit manual release actor without relying on the auth facade', function () {

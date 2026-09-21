@@ -18,6 +18,10 @@ use Illuminate\Validation\ValidationException;
 
 class StockCountDocumentService
 {
+    public function __construct(private readonly ReservationQueryService $reservations)
+    {
+    }
+
     public function centralWarehouse(): Warehouse
     {
         return Warehouse::firstOrCreate(['type' => 'central', 'name' => 'انبار مرکزی'], ['is_active' => true]);
@@ -25,7 +29,10 @@ class StockCountDocumentService
 
     public function activeReserved(ProductVariant $variant): int
     {
-        return max(0, (int) $variant->reserved);
+        return (int) ($this->reservations->quantitiesByVariant(
+            productId: (int) $variant->product_id,
+            variantIds: [(int) $variant->id],
+        )->get((int) $variant->id, 0));
     }
 
     public function createProductDraft(array $payload, int $userId): StockCountDocument

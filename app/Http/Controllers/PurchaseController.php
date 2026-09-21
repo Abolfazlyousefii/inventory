@@ -912,17 +912,19 @@ class PurchaseController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $before = (int) $variant->stock;
+            $before = WarehouseStockService::available($warehouseId, $product->id, (int) $variant->id);
             $after = $before + $quantity;
 
-            $variantUpdates = ['stock' => $after];
+            $variantUpdates = [];
             if ($buyPrice > 0) {
                 $variantUpdates['buy_price'] = $buyPrice;
             }
             if ($sellPrice > 0) {
                 $variantUpdates['sell_price'] = $sellPrice;
             }
-            $variant->update($variantUpdates);
+            if ($variantUpdates !== []) {
+                $variant->update($variantUpdates);
+            }
 
             $this->recalcProductSummary($product);
 
@@ -1039,14 +1041,13 @@ class PurchaseController extends Controller
 
             if ($variantChanged && $oldQty > 0) {
                 $oldVariant = $variants->get($oldVariantId) ?: ProductVariant::whereKey($oldVariantId)->lockForUpdate()->first();
-                if ($oldVariant && (int) $oldVariant->stock < $oldQty) {
+                if ($oldVariant && WarehouseStockService::available($warehouseId, (int) $oldVariant->product_id, (int) $oldVariant->id) < $oldQty) {
                     throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
                 }
                 if ($oldVariant) {
                     $oldProduct = $products->get((int) $oldVariant->product_id) ?: Product::whereKey((int) $oldVariant->product_id)->lockForUpdate()->first();
-                    $before = (int) $oldVariant->stock;
+                    $before = WarehouseStockService::available($warehouseId, (int) $oldVariant->product_id, (int) $oldVariant->id);
                     $after = $before - $oldQty;
-                    $oldVariant->update(['stock' => $after]);
                     if ($oldProduct) {
                         $this->recordPurchaseAdjustmentMovement($purchase, $oldProduct, $oldVariant, $warehouseId, -$oldQty, $before, $after, StockMovement::REASON_PURCHASE_ITEM_CHANGED);
                         WarehouseStockService::change($warehouseId, $oldProduct->id, -$oldQty, (int) $oldVariant->id);
@@ -1055,21 +1056,19 @@ class PurchaseController extends Controller
                 }
 
                 if ($newQty > 0) {
-                    $before = (int) $newVariant->stock;
+                    $before = WarehouseStockService::available($warehouseId, $product->id, (int) $newVariant->id);
                     $after = $before + $newQty;
-                    $newVariant->update(['stock' => $after]);
                     $this->recordPurchaseAdjustmentMovement($purchase, $product, $newVariant, $warehouseId, $newQty, $before, $after, StockMovement::REASON_PURCHASE_ITEM_CHANGED);
                     WarehouseStockService::change($warehouseId, $product->id, $newQty, (int) $newVariant->id);
                 }
             } else {
                 $delta = $newQty - $oldQty;
-                if ($delta < 0 && (int) $newVariant->stock < abs($delta)) {
+                if ($delta < 0 && WarehouseStockService::available($warehouseId, $product->id, (int) $newVariant->id) < abs($delta)) {
                     throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
                 }
                 if ($delta !== 0) {
-                    $before = (int) $newVariant->stock;
+                    $before = WarehouseStockService::available($warehouseId, $product->id, (int) $newVariant->id);
                     $after = $before + $delta;
-                    $newVariant->update(['stock' => $after]);
                     $reason = $oldItem ? StockMovement::REASON_PURCHASE_ITEM_CHANGED : StockMovement::REASON_PURCHASE_ITEM_ADDED;
                     $this->recordPurchaseAdjustmentMovement($purchase, $product, $newVariant, $warehouseId, $delta, $before, $after, $reason);
                     WarehouseStockService::change($warehouseId, $product->id, $delta, (int) $newVariant->id);
@@ -1113,12 +1112,12 @@ class PurchaseController extends Controller
             $variant = $variants->get($variantId) ?: ProductVariant::whereKey($variantId)->lockForUpdate()->first();
             if (!$variant) { $removedItem->delete(); continue; }
             $quantity = (int) $removedItem->quantity;
-            if ($quantity > 0 && (int) $variant->stock < $quantity) {
+            if ($quantity > 0 && WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id) < $quantity) {
                 throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
             }
             $product = $products->get((int) $variant->product_id) ?: Product::whereKey((int) $variant->product_id)->lockForUpdate()->first();
             if ($product && $quantity > 0) {
-                $before = (int) $variant->stock; $after = $before - $quantity; $variant->update(['stock' => $after]);
+                $before = WarehouseStockService::available($warehouseId, $product->id, (int) $variant->id); $after = $before - $quantity;
                 $this->recordPurchaseAdjustmentMovement($purchase, $product, $variant, $warehouseId, -$quantity, $before, $after, StockMovement::REASON_PURCHASE_ITEM_REMOVED);
                 WarehouseStockService::change($warehouseId, $product->id, -$quantity, (int) $variant->id);
                 $affectedProductIds[] = $product->id;
@@ -1232,13 +1231,9 @@ class PurchaseController extends Controller
 
             if (!$variant) continue;
 
-            if ((int) $variant->stock < (int) $item->quantity) {
+            if (WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id) < (int) $item->quantity) {
                 abort(422, 'امکان ویرایش/حذف این سند وجود ندارد؛ موجودی فعلی یکی از مدل‌ها کمتر از مقدار خرید قبلی است.');
             }
-
-            $variant->update([
-                'stock' => (int) $variant->stock - (int) $item->quantity,
-            ]);
 
             WarehouseStockService::change($warehouseId, (int) $variant->product_id, -((int) $item->quantity), (int) $variant->id);
 

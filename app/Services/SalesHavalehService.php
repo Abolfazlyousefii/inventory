@@ -751,25 +751,6 @@ class SalesHavalehService
         return $code;
     }
 
-    private function changeReservedOnly(int $productId, int $variantId, int $delta): void
-    {
-        if ($delta === 0) {
-            return;
-        }
-
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-        if ($variant) {
-            $variant->reserved = max(0, (int) $variant->reserved + $delta);
-            $variant->save();
-        }
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = max(0, (int) $product->reserved + $delta);
-            $product->save();
-        }
-    }
-
     public function createFromFinancialRecord(int $preinvoiceOrderId, ?int $userId = null): Invoice
     {
         return DB::transaction(function () use ($preinvoiceOrderId, $userId) {

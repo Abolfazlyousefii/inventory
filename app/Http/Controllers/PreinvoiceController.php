@@ -95,7 +95,7 @@ class PreinvoiceController extends Controller
 
         abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
 
-        DB::transaction(function () use ($order) {
+        ReservationSideEffects::transaction(function () use ($order) {
             $lockedOrder = PreinvoiceOrder::query()
                 ->with('items')
                 ->whereKey($order->id)
@@ -136,7 +136,7 @@ class PreinvoiceController extends Controller
 
         $data = $this->validateWarehouseReviewPayload($request);
 
-        DB::transaction(function () use ($order, $data) {
+        ReservationSideEffects::transaction(function () use ($order, $data) {
             $order = PreinvoiceOrder::query()->with('items')->whereKey($order->id)->lockForUpdate()->firstOrFail();
             abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
             $this->assertWarehouseCanOnlyReduceOrDelete($order, $data['items']);
@@ -198,7 +198,7 @@ class PreinvoiceController extends Controller
 
         $data = $this->validateWarehouseReviewPayload($request, true);
 
-        DB::transaction(function () use ($order, $data) {
+        ReservationSideEffects::transaction(function () use ($order, $data) {
             $order = PreinvoiceOrder::query()->with('items')->whereKey($order->id)->lockForUpdate()->firstOrFail();
             abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
             $this->assertWarehouseCanOnlyReduceOrDelete($order, $data['items']);
@@ -272,7 +272,7 @@ class PreinvoiceController extends Controller
             'warehouse_reject_reason' => 'required|string|max:2000',
         ]);
 
-        DB::transaction(function () use ($order, $data) {
+        ReservationSideEffects::transaction(function () use ($order, $data) {
             $order = PreinvoiceOrder::query()->with('items')->whereKey($order->id)->lockForUpdate()->firstOrFail();
             abort_if($order->status !== PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE, 403);
             $this->warehouseReviewAuditService->ensureBeforeSnapshot($order->fresh(['items.product', 'items.variant', 'creator', 'customer']), auth()->id());
@@ -1003,7 +1003,7 @@ class PreinvoiceController extends Controller
     {
         $validated = $this->validateDraftPayload($request);
 
-        $reservationMeta = DB::transaction(function () use ($validated) {
+        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $reservationToken = $validated['reservation_token'] ?? null;
             if ($reservationToken && PreinvoiceDraftReservation::query()
@@ -1181,7 +1181,7 @@ class PreinvoiceController extends Controller
 
         $validated = $this->validateDraftPayload($request, $isSubmit, $order);
 
-        $reservationMeta = DB::transaction(function () use ($order, $validated, $isSubmit) {
+        $reservationMeta = ReservationSideEffects::transaction(function () use ($order, $validated, $isSubmit) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $order = PreinvoiceOrder::query()
                 ->with(['items', 'invoice.items'])
@@ -2279,15 +2279,7 @@ class PreinvoiceController extends Controller
             }
     
             WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$quantity, $variantId);
-    
-            $variant->reserved = (int) $variant->reserved + $quantity;
-            $variant->save();
-    
-            $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-            if ($product) {
-                $product->reserved = (int) $product->reserved + $quantity;
-                $product->save();
-            }
+            ReservationSideEffects::touchProduct($productId);
         });
     }
 
@@ -2298,19 +2290,8 @@ class PreinvoiceController extends Controller
                 return;
             }
     
-            $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-            if ($variant) {
-                $variant->reserved = max(0, (int) $variant->reserved - $quantity);
-                $variant->save();
-            }
-    
-            $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-            if ($product) {
-                $product->reserved = max(0, (int) $product->reserved - $quantity);
-                $product->save();
-            }
-    
             WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
+            ReservationSideEffects::touchProduct($productId);
         });
     }
 
@@ -2495,17 +2476,7 @@ class PreinvoiceController extends Controller
             return;
         }
 
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
-        if ($variant) {
-            $variant->reserved = max(0, (int) $variant->reserved + $delta);
-            $variant->save();
-        }
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = max(0, (int) $product->reserved + $delta);
-            $product->save();
-        }
+        ReservationSideEffects::touchProduct($productId);
     }
 
     private function officialCodeForPreinvoiceConversion(PreinvoiceOrder $order): string
@@ -2713,7 +2684,7 @@ class PreinvoiceController extends Controller
         ]);
 
         try {
-            $invoice = DB::transaction(function () use ($order, $validated) {
+            $invoice = ReservationSideEffects::transaction(function () use ($order, $validated) {
             $lockedOrder = PreinvoiceOrder::query()
                 ->whereKey($order->id)
                 ->lockForUpdate()

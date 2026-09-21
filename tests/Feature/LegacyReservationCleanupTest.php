@@ -160,7 +160,7 @@ class LegacyReservationCleanupTest extends TestCase
         $this->assertSame(5, $fixture['variant']->fresh()->reserved);
         $this->assertSame(5, $fixture['product']->fresh()->reserved);
 
-        $this->artisan('inventory:repair-reserved-cache --apply --output=testing/legacy-cache')->assertSuccessful();
+        $this->artisan('inventory:repair-reserved-cache --apply --confirm --output=testing/legacy-cache')->assertSuccessful();
         $this->assertSame(5, $fixture['variant']->fresh()->reserved);
         $this->assertSame(5, $fixture['product']->fresh()->reserved);
     }
