@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PreinvoiceOrder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -85,6 +86,46 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $this->assertNull(DB::table('preinvoice_draft_reservations')->where('id', 103)->value('released_at'));
     }
 
+    public function test_r05_uses_only_canonical_invalid_official_classification(): void
+    {
+        $this->seedBase();
+
+        $nextOrderId = 600;
+        $nextReservationId = 200;
+        foreach (PreinvoiceOrder::reservationHoldingStatuses() as $status) {
+            DB::table('preinvoice_orders')->insert([
+                'id' => $nextOrderId,
+                'status' => $status,
+                'stock_released_at' => null,
+            ]);
+            $this->insertOfficialReservation($nextReservationId, $nextOrderId);
+            $nextOrderId++;
+            $nextReservationId++;
+        }
+
+        // Terminal/protected canonical states must never be R05.
+        $this->insertOfficialReservation(301, 503, ['converted_at' => now()]);
+        $this->insertOfficialReservation(302, 503, ['released_at' => now(), 'release_reason' => 'manual_release']);
+
+        DB::table('preinvoice_orders')->insert(['id' => 700, 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE, 'stock_released_at' => null]);
+        $this->insertOfficialReservation(303, 700);
+        DB::table('invoices')->insert(['id' => 1, 'preinvoice_order_id' => 700]);
+
+        DB::table('preinvoice_orders')->insert(['id' => 701, 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE, 'stock_released_at' => now()]);
+        $this->insertOfficialReservation(304, 701);
+
+        DB::table('preinvoice_orders')->insert(['id' => 702, 'status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES, 'stock_released_at' => null]);
+        $this->insertOfficialReservation(305, 702, ['created_at' => now()->subHours(80), 'updated_at' => now()->subHours(80), 'last_seen_at' => now()->subHours(80)]);
+        $this->insertOfficialReservation(306, 9999);
+
+        $this->artisan('inventory:audit-stock-reservation-integrity')->assertExitCode(0);
+
+        $officialRows = collect($this->csv('reports/stock-reservation-integrity/invalid-official-reservations.csv'));
+        $this->assertSame(['108'], $officialRows->pluck('reservation_ids')->all());
+        $this->assertSame(1, $this->summary()['invalid_official_reservations']);
+        $this->assertFalse($this->summary()['data_changed']);
+    }
+
     public function test_zero_price_reports_distinguish_central_non_central_and_active_reservations(): void
     {
         $this->seedBase();
@@ -150,6 +191,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         DB::table('preinvoice_orders')->insert([
             ['id' => 501, 'status' => 'reserved_waiting_warehouse', 'stock_released_at' => null],
             ['id' => 502, 'status' => 'converted_to_invoice', 'stock_released_at' => null],
+            ['id' => 503, 'status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES, 'stock_released_at' => null],
         ]);
         DB::table('preinvoice_draft_reservations')->insert([
             ['id' => 101, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_online', 'expires_at' => now()->subMinute(), 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
@@ -159,6 +201,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
             ['id' => 105, 'preinvoice_order_id' => 501, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 8, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => 'consumed'],
             ['id' => 106, 'preinvoice_order_id' => 502, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => null],
             ['id' => 107, 'preinvoice_order_id' => null, 'product_id' => 4, 'variant_id' => 40, 'quantity' => 5, 'reservation_scope' => 'temporary_online', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
+            ['id' => 108, 'preinvoice_order_id' => 503, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
         ]);
     }
 
@@ -196,6 +239,10 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
             $table->string('status')->nullable();
             $table->timestamp('stock_released_at')->nullable();
         });
+        Schema::create('invoices', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('preinvoice_order_id')->nullable();
+        });
         Schema::create('preinvoice_draft_reservations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('preinvoice_order_id')->nullable();
@@ -218,6 +265,25 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $head = array_shift($lines);
 
         return array_map(fn ($row) => array_combine($head, $row), array_filter($lines));
+    }
+
+    private function insertOfficialReservation(int $id, int $orderId, array $overrides = []): void
+    {
+        DB::table('preinvoice_draft_reservations')->insert(array_replace([
+            'id' => $id,
+            'preinvoice_order_id' => $orderId,
+            'product_id' => 2,
+            'variant_id' => 20,
+            'quantity' => 1,
+            'reservation_scope' => 'official',
+            'expires_at' => null,
+            'last_seen_at' => now(),
+            'converted_at' => null,
+            'released_at' => null,
+            'release_reason' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
     }
 
     private function readJsonReport(string $path): array
