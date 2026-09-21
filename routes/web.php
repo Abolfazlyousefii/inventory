@@ -701,4 +701,9 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
 
+Route::get('/test', function () {
+    $auth = auth()->user();
+    dd($auth->roles, $auth->permissions, $auth);
+});
+
 require __DIR__ . '/auth.php';

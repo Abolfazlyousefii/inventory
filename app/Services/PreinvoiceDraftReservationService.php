@@ -412,14 +412,8 @@ class PreinvoiceDraftReservationService
         }
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        // The central warehouse row is the canonical, lockable sellable-stock source.
-        $centralStock = WarehouseStock::query()
-            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-            ->where('product_id', $productId)
-            ->where('product_variant_id', $variantId)
-            ->lockForUpdate()
-            ->first();
-        $available = max(0, (int) ($centralStock?->quantity ?? 0));
+        $available = max(0, (int) ($variant->stock ?? 0 ));
+//        dd($productId, $variantId, $delta, $variant, $available);
 
         if ($delta > $available) {
             $product = $variant->product;
