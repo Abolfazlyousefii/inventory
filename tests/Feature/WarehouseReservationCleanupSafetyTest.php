@@ -10,8 +10,10 @@ use App\Models\User;
 use App\Models\WarehouseStock;
 use App\Services\InventoryReservationReleaseService;
 use App\Services\PreinvoiceDraftReservationService;
+use App\Services\PreinvoiceReservationService;
 use App\Services\WarehouseStockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -113,6 +115,55 @@ it('never returns stock for a temporary reservation beyond the legacy boundary',
         ->and($warehouseStock->fresh()->quantity)->toBe(20);
 });
 
+it('draft expired cleanup refuses a canonical historical ambiguous reservation', function () {
+    ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
+        = warehouseCleanupSafetyFixture();
+    $reservation->forceFill([
+        'created_at' => now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS + 1),
+        'updated_at' => now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS + 1),
+        'last_seen_at' => now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS + 1),
+    ])->save();
+    $movements = DB::table('stock_movements')->count();
+
+    app(PreinvoiceDraftReservationService::class)->releaseExpiredDraftReservations(
+        $reservation->token,
+        (int) $reservation->user_id,
+    );
+
+    expect($reservation->fresh()->released_at)->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(5)
+        ->and($variant->fresh()->reserved)->toBe(5)
+        ->and($warehouseStock->fresh()->quantity)->toBe(20)
+        ->and(DB::table('stock_movements')->count())->toBe($movements);
+});
+
+it('overdue expired cleanup refuses a canonical active draft owned reservation', function () {
+    ['user' => $user, 'product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
+        = warehouseCleanupSafetyFixture();
+    PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'draft_token' => $reservation->token,
+        'created_by' => $user->id,
+        'seller_id' => $user->id,
+        'document_date' => now(),
+        'status' => PreinvoiceOrder::STATUS_DRAFT,
+        'customer_name' => 'Cleanup safety draft',
+        'customer_mobile' => '09120000000',
+        'total_price' => 100000,
+    ]));
+    $movements = DB::table('stock_movements')->count();
+
+    $result = app(PreinvoiceReservationService::class)->expireTemporaryOnlineReservations();
+
+    expect($result['released_reservations'])->toBe(0)
+        ->and($result['released_quantity'])->toBe(0)
+        ->and($reservation->fresh()->released_at)->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(5)
+        ->and($variant->fresh()->reserved)->toBe(5)
+        ->and($warehouseStock->fresh()->quantity)->toBe(20)
+        ->and(DB::table('stock_movements')->count())->toBe($movements);
+});
+
 it('uses canonical reservation rows when the product reserved projection is too low', function () {
     ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
         = warehouseCleanupSafetyFixture(quantity: 10, productReserved: 5, variantReserved: 10);
@@ -168,6 +219,22 @@ it('reports abandoned reservations in dry run without changing the database', fu
         ->and($variant->fresh()->reserved)->toBe(5)
         ->and($warehouseStock->fresh()->quantity)->toBe(20)
         ->and(ActivityLog::query()->count())->toBe($activityCount);
+});
+
+it('does not report an expired row with a fresh canonical heartbeat as releasable', function () {
+    ['product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
+        = warehouseCleanupSafetyFixture();
+    $reservation->forceFill(['last_seen_at' => now()])->save();
+
+    $this->artisan('reservations:cleanup --dry-run')
+        ->doesntExpectOutputToContain('#'.$reservation->id)
+        ->expectsOutputToContain('Stale temporary reservations: 0')
+        ->assertSuccessful();
+
+    expect($reservation->fresh()->released_at)->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(5)
+        ->and($variant->fresh()->reserved)->toBe(5)
+        ->and($warehouseStock->fresh()->quantity)->toBe(20);
 });
 
 it('ignores reservations connected to a preinvoice order', function () {
