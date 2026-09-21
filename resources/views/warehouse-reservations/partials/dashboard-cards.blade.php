@@ -63,4 +63,13 @@
             </div>
         </div>
     </div>
+    <div class="col-6 col-xl-3">
+        <div class="card summary-card h-100" style="--summary-color:#64748b">
+            <div class="card-body">
+                <div class="summary-label mb-1">ابهام تاریخی (فقط بررسی)</div>
+                <div class="summary-value">{{ number_format($stats['historical_ambiguous']['count']) }}</div>
+                <div class="summary-meta">{{ number_format($stats['historical_ambiguous']['quantity']) }} واحد کالا — غیرقابل آزادسازی خودکار</div>
+            </div>
+        </div>
+    </div>
 </div>

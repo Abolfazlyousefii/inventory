@@ -17,7 +17,10 @@ use App\Services\NotificationService;
 
 class PreinvoiceReservationService
 {
-    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+    public function __construct(
+        private InventoryReservationReleaseService $inventoryRelease,
+        private ReservationClassificationService $classification,
+    ) {}
 
     public function expireOverdueReservations(): array
     {
@@ -77,7 +80,9 @@ class PreinvoiceReservationService
             $releasedQuantity = 0;
 
             foreach ($reservations as $reservation) {
-                if ($reservation->released_at !== null) {
+                $reservation->load(['order.invoice', 'activeDrafts']);
+                $classification = $this->classification->classify($reservation, now());
+                if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
                     continue;
                 }
 

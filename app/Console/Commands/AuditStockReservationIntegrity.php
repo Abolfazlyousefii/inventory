@@ -41,6 +41,18 @@ class AuditStockReservationIntegrity extends Command
         'anomaly_code',
         'severity',
         'recommended_action',
+        'reservation_token',
+        'reservation_user_id',
+        'reservation_quantity',
+        'reservation_scope',
+        'preinvoice_status',
+        'invoice_relation_present',
+        'active_draft_relation_present',
+        'created_at',
+        'last_seen_at',
+        'expires_at',
+        'age_hours',
+        'classification_reason',
     ];
 
     private static ?\WeakMap $guardedConnections = null;
@@ -236,6 +248,7 @@ class AuditStockReservationIntegrity extends Command
         $reserved = $this->activeReservations();
         $variants = $this->variants();
         $rows = [];
+        $evaluatedAt = now();
 
         foreach ($variants as $variantId => $variant) {
             $row = $this->baseRow($variant, $central[$variantId] ?? 0, $nonCentral[$variantId] ?? 0, $reserved[$variantId] ?? $this->emptyReservation());
@@ -265,8 +278,35 @@ class AuditStockReservationIntegrity extends Command
             $rows['reservation-cache-desync'][] = $this->reservationAnomaly($reservation, $variants, $central, $nonCentral, $reserved, 'R02', 'Critical', 'Release or correct reservation linked to an invalid product or variant.');
         }
 
-        foreach ($this->staleTemporaryReservations() as $reservation) {
-            $rows['stale-temporary-reservations'][] = $this->reservationAnomaly($reservation, $variants, $central, $nonCentral, $reserved, $reservation->reservation_scope === 'temporary_online' ? 'R03' : 'R04', 'Medium', 'Review stale temporary reservation and release it through the existing safe workflow if needed.');
+        $signals = $this->classifiedReservationSignals($evaluatedAt);
+        foreach ($signals['stale'] as [$reservation, $classification]) {
+            $rows['stale-temporary-reservations'][] = $this->reservationAnomaly(
+                $reservation,
+                $variants,
+                $central,
+                $nonCentral,
+                $reserved,
+                $reservation->reservation_scope === PreinvoiceDraftReservation::SCOPE_TEMPORARY_IN_PERSON ? 'R04' : 'R03',
+                'Medium',
+                'Canonical stale temporary reservation; release only through the locked safe workflow.',
+                $classification,
+                $evaluatedAt,
+            );
+        }
+
+        foreach ($signals['historical'] as [$reservation, $classification]) {
+            $rows['historical-ambiguous-reservations'][] = $this->reservationAnomaly(
+                $reservation,
+                $variants,
+                $central,
+                $nonCentral,
+                $reserved,
+                'R06',
+                'Review',
+                'Manual review only; NO automatic release and NO automatic warehouse stock return.',
+                $classification,
+                $evaluatedAt,
+            );
         }
 
         foreach ($this->invalidOfficialReservations() as $reservation) {
@@ -355,24 +395,39 @@ class AuditStockReservationIntegrity extends Command
             ->all();
     }
 
-    private function staleTemporaryReservations(): array
+    /**
+     * @return array{
+     *     stale: array<int, array{PreinvoiceDraftReservation, array<string, mixed>}>,
+     *     historical: array<int, array{PreinvoiceDraftReservation, array<string, mixed>}>
+     * }
+     */
+    private function classifiedReservationSignals(\Carbon\CarbonInterface $evaluatedAt): array
     {
         if (! Schema::hasTable('preinvoice_draft_reservations')) {
-            return [];
+            return ['stale' => [], 'historical' => []];
         }
 
-        return DB::table('preinvoice_draft_reservations as r')
-            ->where('r.quantity', '>', 0)
-            ->whereNull('r.released_at')
-            ->whereNull('r.release_reason')
-            ->whereIn('r.reservation_scope', ['temporary_online', 'temporary_in_person'])
-            ->where(function ($query): void {
-                $query->where(fn ($q) => $q->where('r.reservation_scope', 'temporary_online')->where('r.expires_at', '<=', now()))
-                    ->orWhere(fn ($q) => $q->where('r.reservation_scope', 'temporary_in_person')->where(fn ($qq) => $qq->whereNull('r.last_seen_at')->orWhere('r.last_seen_at', '<=', now()->subMinutes(15))));
-            })
-            ->select(['r.*'])
+        $reservations = PreinvoiceDraftReservation::query()
+            ->with(['order.invoice', 'activeDrafts'])
+            ->when($this->option('product'), fn ($query, $id) => $query->where('product_id', $id))
+            ->when($this->option('variant'), fn ($query, $id) => $query->where('variant_id', $id))
+            ->orderBy('id')
             ->get()
-            ->all();
+            ->map(fn (PreinvoiceDraftReservation $reservation): array => [
+                $reservation,
+                $this->classification->classify($reservation, $evaluatedAt),
+            ]);
+
+        return [
+            'stale' => $reservations
+                ->filter(fn (array $entry): bool => $entry[1]['state'] === ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE)
+                ->values()
+                ->all(),
+            'historical' => $reservations
+                ->filter(fn (array $entry): bool => $entry[1]['state'] === ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS)
+                ->values()
+                ->all(),
+        ];
     }
 
     private function invalidOfficialReservations(): array
@@ -425,14 +480,50 @@ class AuditStockReservationIntegrity extends Command
         ];
     }
 
-    private function reservationAnomaly(object $reservation, array $variants, array $central, array $nonCentral, array $reserved, string $code, string $severity, string $action): array
+    private function reservationAnomaly(
+        object $reservation,
+        array $variants,
+        array $central,
+        array $nonCentral,
+        array $reserved,
+        string $code,
+        string $severity,
+        string $action,
+        ?array $classification = null,
+        ?\Carbon\CarbonInterface $evaluatedAt = null,
+    ): array
     {
         $variant = $variants[$reservation->variant_id] ?? (object) ['id' => $reservation->variant_id, 'product_id' => $reservation->product_id, 'product_name' => '', 'variant_name' => '', 'variant_code' => '', 'sell_price' => 0, 'stock' => 0, 'reserved' => 0, 'is_active' => false, 'sales_enabled' => false];
         $row = $this->baseRow($variant, $central[$reservation->variant_id] ?? 0, $nonCentral[$reservation->variant_id] ?? 0, $reserved[$reservation->variant_id] ?? $this->emptyReservation());
         $row['reservation_ids'] = (string) $reservation->id;
         $row['preinvoice_order_ids'] = (string) ($reservation->preinvoice_order_id ?? '');
+        $row['reservation_token'] = (string) ($reservation->token ?? '');
+        $row['reservation_user_id'] = (string) ($reservation->user_id ?? '');
+        $row['reservation_quantity'] = (int) ($reservation->quantity ?? 0);
+        $row['reservation_scope'] = (string) ($reservation->reservation_scope ?? '');
+        $row['created_at'] = $this->dateValue($reservation->created_at ?? null);
+        $row['last_seen_at'] = $this->dateValue($reservation->last_seen_at ?? null);
+        $row['expires_at'] = $this->dateValue($reservation->expires_at ?? null);
+        $row['classification_reason'] = (string) ($classification['reason'] ?? '');
+
+        if ($reservation instanceof PreinvoiceDraftReservation) {
+            $order = $reservation->relationLoaded('order') ? $reservation->getRelation('order') : null;
+            $row['preinvoice_status'] = (string) ($order?->status ?? '');
+            $row['invoice_relation_present'] = $order?->relationLoaded('invoice') && $order->getRelation('invoice') !== null ? 1 : 0;
+            $row['active_draft_relation_present'] = $reservation->relationLoaded('activeDrafts') && $reservation->activeDrafts->isNotEmpty() ? 1 : 0;
+        }
+
+        $activity = $reservation->last_seen_at ?? $reservation->created_at ?? null;
+        if ($activity !== null && $evaluatedAt !== null) {
+            $row['age_hours'] = max(0, (int) $activity->diffInHours($evaluatedAt));
+        }
 
         return $this->anomaly($row, $code, $severity, $action, (int) ($reservation->quantity ?? 0));
+    }
+
+    private function dateValue(mixed $value): string
+    {
+        return $value instanceof \DateTimeInterface ? $value->format(DATE_ATOM) : (string) ($value ?? '');
     }
 
     private function anomaly(array $row, string $code, string $severity, string $action, int $difference): array
@@ -459,7 +550,7 @@ class AuditStockReservationIntegrity extends Command
 
     private function categorizedRows(array $rows): array
     {
-        foreach (['central-stock-cache-desync', 'reservation-cache-desync', 'stale-temporary-reservations', 'invalid-official-reservations', 'central-stock-zero-prices', 'non-central-stock-zero-prices'] as $key) {
+        foreach (['central-stock-cache-desync', 'reservation-cache-desync', 'stale-temporary-reservations', 'historical-ambiguous-reservations', 'invalid-official-reservations', 'central-stock-zero-prices', 'non-central-stock-zero-prices'] as $key) {
             $rows[$key] ??= [];
         }
 
@@ -475,6 +566,8 @@ class AuditStockReservationIntegrity extends Command
             'reservation_cache_desync' => count(array_filter($rows['reservation-cache-desync'], fn ($row) => $row['anomaly_code'] === 'R01')),
             'invalid_reservations' => count(array_filter($rows['reservation-cache-desync'], fn ($row) => $row['anomaly_code'] === 'R02')),
             'stale_temporary_reservations' => count($rows['stale-temporary-reservations']),
+            'historical_ambiguous_reservations' => count($rows['historical-ambiguous-reservations']),
+            'historical_ambiguous_quantity' => array_sum(array_column($rows['historical-ambiguous-reservations'], 'reservation_quantity')),
             'invalid_official_reservations' => count($rows['invalid-official-reservations']),
             'central_stock_zero_prices' => count($rows['central-stock-zero-prices']),
             'non_central_stock_zero_prices' => count($rows['non-central-stock-zero-prices']),

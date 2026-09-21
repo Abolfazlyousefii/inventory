@@ -206,14 +206,23 @@ class PreinvoiceDraftReservationService
         bool $dryRun = false,
     ): array {
         if ($dryRun) {
+            $evaluatedAt = now();
+
             return $this->cleanupResult(
                 $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
                     ->with([
                         'product:id,name',
                         'variant:id,variant_name,variety_name',
                         'user:id,name',
+                        'order.invoice',
+                        'activeDrafts',
                     ])
-                    ->get(),
+                    ->get()
+                    ->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                        $this->classification->classify($reservation, $evaluatedAt)['state']
+                            === ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE
+                    )
+                    ->values(),
                 false,
             );
         }
@@ -363,6 +372,12 @@ class PreinvoiceDraftReservationService
                 ->get();
 
             foreach ($expiredRows as $row) {
+                $row->load(['order.invoice', 'activeDrafts']);
+                $classification = $this->classification->classify($row, now());
+                if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
+                    continue;
+                }
+
                 $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity);
                 $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_online_expired', 'رزرو موقت آنلاین منقضی شد.');
                 ReservationSideEffects::touchProduct((int) $row->product_id);

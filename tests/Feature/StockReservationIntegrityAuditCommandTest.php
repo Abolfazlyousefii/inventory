@@ -86,6 +86,61 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $this->assertNull(DB::table('preinvoice_draft_reservations')->where('id', 103)->value('released_at'));
     }
 
+    public function test_canonical_classification_drives_actionable_stale_and_historical_audit_rows(): void
+    {
+        $this->seedBase();
+        $at = now();
+
+        DB::table('preinvoice_orders')->insert([
+            ['id' => 800, 'status' => PreinvoiceOrder::STATUS_DRAFT, 'stock_released_at' => null, 'draft_token' => 'active-draft-token'],
+            ['id' => 801, 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE, 'stock_released_at' => $at, 'draft_token' => null],
+        ]);
+
+        DB::table('preinvoice_draft_reservations')->insert([
+            ['id' => 201, 'token' => 'fresh-token', 'user_id' => 91, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_online', 'expires_at' => $at->copy()->addMinutes(5), 'last_seen_at' => $at, 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at, 'updated_at' => $at],
+            ['id' => 202, 'token' => 'active-draft-token', 'user_id' => 92, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 2, 'reservation_scope' => 'temporary_online', 'expires_at' => $at->copy()->subMinute(), 'last_seen_at' => $at->copy()->subHours(80), 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at->copy()->subHours(80), 'updated_at' => $at],
+            ['id' => 203, 'token' => 'stale-online-token', 'user_id' => 93, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 3, 'reservation_scope' => 'temporary_online', 'expires_at' => $at->copy()->subMinute(), 'last_seen_at' => $at->copy()->subMinutes(10), 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at->copy()->subMinutes(10), 'updated_at' => $at],
+            ['id' => 204, 'token' => 'stale-person-token', 'user_id' => 94, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 4, 'reservation_scope' => 'temporary_in_person', 'expires_at' => null, 'last_seen_at' => $at->copy()->subMinutes(20), 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at->copy()->subMinutes(20), 'updated_at' => $at],
+            ['id' => 205, 'token' => 'historical-token', 'user_id' => 95, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 5, 'reservation_scope' => 'temporary_online', 'expires_at' => $at->copy()->subHours(79), 'last_seen_at' => $at->copy()->subHours(80), 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at->copy()->subHours(80), 'updated_at' => $at],
+            ['id' => 206, 'token' => 'stock-released-token', 'user_id' => 96, 'preinvoice_order_id' => 801, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 6, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => $at, 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at, 'updated_at' => $at],
+            ['id' => 207, 'token' => 'missing-order-token', 'user_id' => 97, 'preinvoice_order_id' => 9998, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 7, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => $at, 'converted_at' => null, 'released_at' => null, 'release_reason' => null, 'created_at' => $at, 'updated_at' => $at],
+        ]);
+
+        $this->artisan('inventory:audit-stock-reservation-integrity')->assertExitCode(0);
+
+        $stale = collect($this->csv('reports/stock-reservation-integrity/stale-temporary-reservations.csv'));
+        $historical = collect($this->csv('reports/stock-reservation-integrity/historical-ambiguous-reservations.csv'));
+
+        $this->assertEqualsCanonicalizing(['101', '102', '203', '204'], $stale->pluck('reservation_ids')->all());
+        $this->assertSame('R03', $stale->firstWhere('reservation_ids', '203')['anomaly_code']);
+        $this->assertSame('R04', $stale->firstWhere('reservation_ids', '204')['anomaly_code']);
+        $this->assertNull($stale->firstWhere('reservation_ids', '201'));
+        $this->assertNull($stale->firstWhere('reservation_ids', '202'));
+        $this->assertNull($stale->firstWhere('reservation_ids', '205'));
+
+        $this->assertEqualsCanonicalizing(['205', '206', '207'], $historical->pluck('reservation_ids')->all());
+        $row = $historical->firstWhere('reservation_ids', '205');
+        $this->assertSame('R06', $row['anomaly_code']);
+        $this->assertSame('historical-token', $row['reservation_token']);
+        $this->assertSame('95', $row['reservation_user_id']);
+        $this->assertSame('5', $row['reservation_quantity']);
+        $this->assertSame('temporary_online', $row['reservation_scope']);
+        $this->assertSame('', $row['preinvoice_status']);
+        $this->assertSame('0', $row['invoice_relation_present']);
+        $this->assertSame('0', $row['active_draft_relation_present']);
+        $this->assertNotSame('', $row['created_at']);
+        $this->assertNotSame('', $row['last_seen_at']);
+        $this->assertNotSame('', $row['expires_at']);
+        $this->assertGreaterThanOrEqual(79, (int) $row['age_hours']);
+        $this->assertSame('old_temporary_provenance_uncertain', $row['classification_reason']);
+        $this->assertStringContainsString('NO automatic', $row['recommended_action']);
+
+        $summary = $this->summary();
+        $this->assertSame(4, $summary['stale_temporary_reservations']);
+        $this->assertSame(3, $summary['historical_ambiguous_reservations']);
+        $this->assertSame(18, $summary['historical_ambiguous_quantity']);
+    }
+
     public function test_r05_uses_only_canonical_invalid_official_classification(): void
     {
         $this->seedBase();
@@ -194,14 +249,18 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
             ['id' => 503, 'status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES, 'stock_released_at' => null],
         ]);
         DB::table('preinvoice_draft_reservations')->insert([
-            ['id' => 101, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_online', 'expires_at' => now()->subMinute(), 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
-            ['id' => 102, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_in_person', 'expires_at' => null, 'last_seen_at' => null, 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
+            ['id' => 101, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_online', 'expires_at' => now()->subMinute(), 'last_seen_at' => now()->subMinutes(10), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
+            ['id' => 102, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'temporary_in_person', 'expires_at' => null, 'last_seen_at' => now()->subMinutes(20), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
             ['id' => 103, 'preinvoice_order_id' => 501, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 2, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
             ['id' => 104, 'preinvoice_order_id' => null, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 8, 'reservation_scope' => 'temporary_online', 'expires_at' => now()->subHour(), 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => now(), 'release_reason' => 'manual_release'],
             ['id' => 105, 'preinvoice_order_id' => 501, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 8, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => 'consumed'],
             ['id' => 106, 'preinvoice_order_id' => 502, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => now(), 'released_at' => null, 'release_reason' => null],
             ['id' => 107, 'preinvoice_order_id' => null, 'product_id' => 4, 'variant_id' => 40, 'quantity' => 5, 'reservation_scope' => 'temporary_online', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
             ['id' => 108, 'preinvoice_order_id' => 503, 'product_id' => 2, 'variant_id' => 20, 'quantity' => 1, 'reservation_scope' => 'official', 'expires_at' => null, 'last_seen_at' => now(), 'converted_at' => null, 'released_at' => null, 'release_reason' => null],
+        ]);
+        DB::table('preinvoice_draft_reservations')->whereIn('id', [101, 102])->update([
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now(),
         ]);
     }
 
@@ -238,6 +297,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
             $table->id();
             $table->string('status')->nullable();
             $table->timestamp('stock_released_at')->nullable();
+            $table->string('draft_token')->nullable();
         });
         Schema::create('invoices', function (Blueprint $table): void {
             $table->id();
@@ -245,6 +305,8 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         });
         Schema::create('preinvoice_draft_reservations', function (Blueprint $table): void {
             $table->id();
+            $table->string('token')->nullable();
+            $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('preinvoice_order_id')->nullable();
             $table->unsignedBigInteger('product_id');
             $table->unsignedBigInteger('variant_id')->nullable();

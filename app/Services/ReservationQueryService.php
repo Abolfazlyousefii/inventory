@@ -80,6 +80,7 @@ class ReservationQueryService
      *     active: array{count:int,quantity:int},
      *     needs_review: array{count:int,quantity:int},
      *     releasable: array{count:int,quantity:int},
+     *     historical_ambiguous: array{count:int,quantity:int},
      *     official: array{count:int,quantity:int},
      *     temporary: array{count:int,quantity:int},
      *     critical: array{count:int,quantity:int},
@@ -93,11 +94,33 @@ class ReservationQueryService
 
         $active = $this->aggregate((clone $visible)->activeForReservedCache($at));
         $needsReview = $this->aggregate((clone $visible)->needsBusinessAttention($at));
-        $releasable = $this->aggregate((clone $visible)->abandonedTemporary(
-            PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
-            PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
-            $at,
-        ));
+        // SQL is only a conservative population prefilter. Final membership
+        // in either counter is decided exclusively by canonical classification.
+        // This avoids hydrating every healthy temporary row on each dashboard read.
+        $classified = (clone $visible)
+            ->where(function (Builder $query) use ($at): void {
+                $query->where(function (Builder $temporary) use ($at): void {
+                    $temporary->abandonedTemporary(
+                        PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
+                        PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
+                        $at,
+                    );
+                })->orWhereNotNull('preinvoice_order_id');
+            })
+            ->with(['order.invoice', 'activeDrafts'])
+            ->get()
+            ->map(fn (PreinvoiceDraftReservation $reservation): array => [
+                'reservation' => $reservation,
+                'state' => $this->classification->classify($reservation, $at)['state'],
+            ]);
+        $releasable = $this->aggregateClassified(
+            $classified,
+            ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE,
+        );
+        $historicalAmbiguous = $this->aggregateClassified(
+            $classified,
+            ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS,
+        );
 
         // Official preinvoice reservations: visible rows tied to a preinvoice order.
         $official = $this->aggregate((clone $visible)->whereNotNull('preinvoice_order_id'));
@@ -135,6 +158,7 @@ class ReservationQueryService
             'active' => $active,
             'needs_review' => $needsReview,
             'releasable' => $releasable,
+            'historical_ambiguous' => $historicalAmbiguous,
             'official' => $official,
             'temporary' => $temporary,
             'critical' => $critical,
@@ -152,6 +176,19 @@ class ReservationQueryService
         return [
             'count' => (int) $row->aggregate_count,
             'quantity' => (int) $row->aggregate_quantity,
+        ];
+    }
+
+    /** @param Collection<int, array{reservation:PreinvoiceDraftReservation,state:string}> $classified */
+    private function aggregateClassified(Collection $classified, string $state): array
+    {
+        $reservations = $classified
+            ->filter(fn (array $entry): bool => $entry['state'] === $state)
+            ->pluck('reservation');
+
+        return [
+            'count' => $reservations->count(),
+            'quantity' => (int) $reservations->sum('quantity'),
         ];
     }
 
