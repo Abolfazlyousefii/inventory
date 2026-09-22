@@ -91,70 +91,8 @@ class ReservationQueryService
     public function dashboardStatistics(?CarbonInterface $at = null): array
     {
         $at ??= now();
-        $visible = PreinvoiceDraftReservation::query()->visibleInWarehouseManagement();
-
-        $active = $this->aggregate((clone $visible)->activeForReservedCache($at));
-        $needsReview = $this->aggregate((clone $visible)->needsBusinessAttention($at));
-        // SQL is only a conservative population prefilter. Final membership
-        // in either counter is decided exclusively by canonical classification.
-        // This avoids hydrating every healthy temporary row on each dashboard read.
-        $classified = (clone $visible)
-            ->where(function (Builder $query) use ($at): void {
-                $query->where(function (Builder $temporary) use ($at): void {
-                    $temporary->abandonedTemporary(
-                        PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
-                        PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
-                        $at,
-                    );
-                })->orWhereNotNull('preinvoice_order_id');
-            })
-            ->with(['order.invoice', 'activeDrafts'])
-            ->get()
-            ->map(fn (PreinvoiceDraftReservation $reservation): array => [
-                'reservation' => $reservation,
-                'state' => $this->classification->classify($reservation, $at)['state'],
-            ]);
-        $releasable = $this->aggregateClassified(
-            $classified,
-            ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE,
-        );
-        $historicalAmbiguous = $this->aggregateClassified(
-            $classified,
-            ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS,
-        );
-
-        // Official preinvoice reservations: visible rows tied to a preinvoice order.
-        $official = $this->aggregate((clone $visible)->whereNotNull('preinvoice_order_id'));
-
-        // Temporary reservations: visible rows with no preinvoice order.
-        $temporary = $this->aggregate((clone $visible)->whereNull('preinvoice_order_id'));
-
-        // Critical: official preinvoice reservations without an invoice for
-        // longer than PREINVOICE_CRITICAL_AFTER_HOURS (existing business rule).
-        //
-        // scopeCriticalPreinvoice() on its own only checks
-        // preinvoiceWithoutInvoice() + age — it does NOT exclude released rows
-        // or zero-quantity rows, because it is also used as an OR-branch inside
-        // scopeNeedsBusinessAttention() where the caller has already applied the
-        // visibility gate. Used bare here it counted every historically
-        // released/legacy-cleaned old preinvoice reservation as "critical", so
-        // the dashboard reported far more critical rows than are actually still
-        // being held (on the production dataset, more than double). Every card
-        // must describe the same population as the rest of the dashboard, so it
-        // is composed on the shared $visible base like the others.
-        $critical = $this->aggregate((clone $visible)->criticalPreinvoice($at));
-
-        // Legacy candidates: rows the legacy cleanup workflow would consider
-        // (existing scope used by LegacyReservationCleanupService/its audit
-        // command), narrowed to the same visible base for the same reason.
-        // legacyCleanupCandidates() already excludes released/zero-quantity
-        // rows itself, so this only guarantees the card can never drift from
-        // the population the rest of the dashboard describes.
-        $legacyCandidates = $this->aggregate((clone $visible)->legacyCleanupCandidates(
-            PreinvoiceDraftReservation::LEGACY_STALE_HOURS,
-            $at,
-        ));
-
+        // Every dashboard bucket is derived from the same canonical open-row
+        // classification pass so presentation counters cannot drift apart.
         $allClassified = PreinvoiceDraftReservation::query()
             ->whereNull('released_at')
             ->whereNull('release_reason')
@@ -258,32 +196,6 @@ class ReservationQueryService
             $rows->forPage($page, $perPage)->values(), $rows->count(), $perPage, $page,
             ['path' => LengthAwarePaginator::resolveCurrentPath(), 'pageName' => $pageName],
         );
-    }
-
-    /** @return array{count:int,quantity:int} */
-    private function aggregate(Builder $query): array
-    {
-        $row = $query
-            ->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(quantity), 0) as aggregate_quantity')
-            ->first();
-
-        return [
-            'count' => (int) $row->aggregate_count,
-            'quantity' => (int) $row->aggregate_quantity,
-        ];
-    }
-
-    /** @param Collection<int, array{reservation:PreinvoiceDraftReservation,state:string}> $classified */
-    private function aggregateClassified(Collection $classified, string $state): array
-    {
-        $reservations = $classified
-            ->filter(fn (array $entry): bool => $entry['state'] === $state)
-            ->pluck('reservation');
-
-        return [
-            'count' => $reservations->count(),
-            'quantity' => (int) $reservations->sum('quantity'),
-        ];
     }
 
     /**

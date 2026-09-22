@@ -70,6 +70,40 @@ class ArchiveHistoricalReservationsCommandTest extends TestCase
         $this->assertNull($active->fresh()->released_at);
     }
 
+    public function test_all_historical_dry_run_inspects_only_open_rows_and_keeps_classification_authoritative(): void
+    {
+        $historical = $this->reservation(old: true);
+        $active = $this->reservation(old: false);
+        $released = $this->reservation(old: true);
+        $released->forceFill([
+            'released_at' => now()->subMinute(),
+            'release_reason' => HistoricalReservationArchiveService::RELEASE_REASON,
+        ])->save();
+
+        $this->artisan('inventory:archive-historical-reservations --all-historical')
+            ->expectsOutputToContain('Selected: 2')
+            ->expectsOutputToContain('Eligible: 1')
+            ->assertSuccessful();
+
+        $this->assertNull($historical->fresh()->released_at);
+        $this->assertNull($active->fresh()->released_at);
+        $this->assertNotNull($released->fresh()->released_at);
+    }
+
+    public function test_explicit_released_id_is_still_reported_as_ineligible(): void
+    {
+        $released = $this->reservation(old: true);
+        $released->forceFill([
+            'released_at' => now()->subMinute(),
+            'release_reason' => HistoricalReservationArchiveService::RELEASE_REASON,
+        ])->save();
+
+        $this->artisan("inventory:archive-historical-reservations --ids={$released->id}")
+            ->expectsOutputToContain('Selected: 1')
+            ->expectsOutputToContain('Eligible: 0')
+            ->assertSuccessful();
+    }
+
     private function reservation(bool $old): PreinvoiceDraftReservation
     {
         $category = Category::withoutEvents(fn () => Category::query()->create(['name' => 'Archive command '.Str::uuid()]));

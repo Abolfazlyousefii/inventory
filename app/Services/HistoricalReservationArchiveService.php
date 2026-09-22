@@ -32,8 +32,11 @@ class HistoricalReservationArchiveService
     {
         $normalized = $this->normalizeIds($ids);
 
-        return PreinvoiceDraftReservation::query()
-            ->when($normalized !== [], fn (Builder $query) => $query->whereKey($normalized))
+        $query = $normalized === []
+            ? $this->candidatesQuery()
+            : PreinvoiceDraftReservation::query()->whereKey($normalized);
+
+        return $query
             ->with(['order.invoice', 'activeDrafts', 'product:id,name', 'variant:id,product_id,variant_name,variant_code'])
             ->orderBy('id')
             ->get()
