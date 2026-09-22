@@ -260,12 +260,7 @@ class DefaultProductDesignService
 
     private function recalculateProductSummary(Product $product): void
     {
-        $product->load('variants');
-
-        $product->update([
-            'stock' => max(0, (int) $product->variants->sum('stock')),
-            'price' => max(0, (int) ($product->variants->where('is_active', true)->min('sell_price') ?? 0)),
-        ]);
+        app(ProductVariantStructureService::class)->recalculateProductSummary($product);
     }
 
     private function logDefaultColorCreated(Product $product, ProductVariant $variant, string $colorName, ?int $userId): void

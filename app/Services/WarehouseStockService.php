@@ -125,6 +125,8 @@ class WarehouseStockService
 
     public static function syncProductSummaryFromVariants(int $productId): void
     {
+        // Compatibility projection for legacy inventory callers. The Phase 5
+        // commercial projection is ProductVariantStructureService::recalculateProductSummary().
         $product = Product::query()
             ->with('variants')
             ->whereKey($productId)
