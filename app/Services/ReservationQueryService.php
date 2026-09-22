@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PreinvoiceDraftReservation;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -154,6 +155,31 @@ class ReservationQueryService
             $at,
         ));
 
+        $allClassified = PreinvoiceDraftReservation::query()
+            ->whereNull('released_at')
+            ->whereNull('release_reason')
+            ->with(['order.invoice', 'activeDrafts'])
+            ->get()
+            ->map(fn (PreinvoiceDraftReservation $reservation): array => [
+                'reservation' => $reservation,
+                'state' => $this->classification->classify($reservation, $at)['state'],
+            ]);
+        $forStates = fn (array $states): Collection => $allClassified->filter(
+            fn (array $entry): bool => in_array($entry['state'], $states, true),
+        );
+        $canonicalAggregate = fn (Collection $entries): array => [
+            'count' => $entries->count(),
+            'quantity' => (int) $entries->sum(fn (array $entry): int => (int) $entry['reservation']->quantity),
+        ];
+        $active = $canonicalAggregate($forStates([ReservationClassificationService::STATE_ACTIVE_VALID, ReservationClassificationService::STATE_TEMPORARY_ACTIVE, ReservationClassificationService::STATE_OFFICIAL_ACTIVE]));
+        $needsReview = $canonicalAggregate($forStates([ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS, ReservationClassificationService::STATE_INVALID_OFFICIAL, ReservationClassificationService::STATE_LEGACY_SAFE]));
+        $releasable = $canonicalAggregate($forStates([ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE]));
+        $historicalAmbiguous = $canonicalAggregate($forStates([ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS]));
+        $official = $canonicalAggregate($forStates([ReservationClassificationService::STATE_OFFICIAL_ACTIVE]));
+        $temporary = $canonicalAggregate($forStates([ReservationClassificationService::STATE_ACTIVE_VALID, ReservationClassificationService::STATE_TEMPORARY_ACTIVE, ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE, ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS]));
+        $critical = $canonicalAggregate($forStates([ReservationClassificationService::STATE_INVALID_OFFICIAL]));
+        $legacyCandidates = $canonicalAggregate($forStates([ReservationClassificationService::STATE_LEGACY_SAFE]));
+
         return [
             'active' => $active,
             'needs_review' => $needsReview,
@@ -164,6 +190,74 @@ class ReservationQueryService
             'critical' => $critical,
             'legacy_candidates' => $legacyCandidates,
         ];
+    }
+
+    public function paginateCanonicalManagement(
+        array $filters,
+        ReservationManagementPresentationService $presenter,
+        int $perPage = 20,
+        string $pageName = 'page',
+        ?CarbonInterface $at = null,
+    ): LengthAwarePaginator {
+        $at ??= now();
+        $query = $this->filteredManagementQuery(array_merge($filters, [
+            'quick' => null,
+            'status' => null,
+            'classification' => null,
+        ]), $at);
+        $rows = $query->get()->map(function (PreinvoiceDraftReservation $reservation) use ($presenter, $at): PreinvoiceDraftReservation {
+            $reservation->setAttribute('management_presentation', $presenter->present($reservation, $at));
+            return $reservation;
+        });
+        $classification = match ($filters['classification'] ?? null) {
+            'official_preinvoice' => ReservationClassificationService::STATE_OFFICIAL_ACTIVE,
+            'temporary_orphan' => ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE,
+            'legacy_candidate' => ReservationClassificationService::STATE_LEGACY_SAFE,
+            'critical' => ReservationClassificationService::STATE_INVALID_OFFICIAL,
+            default => $filters['classification'] ?? null,
+        };
+        $bucket = match ($filters['quick'] ?? null) {
+            PreinvoiceDraftReservation::QUICK_ACTIONABLE => ReservationManagementPresentationService::BUCKET_ACTIONABLE,
+            PreinvoiceDraftReservation::QUICK_REVIEW => ReservationManagementPresentationService::BUCKET_REVIEW,
+            default => ReservationManagementPresentationService::BUCKET_CURRENT,
+        };
+        $bucket = match ($filters['status'] ?? null) {
+            PreinvoiceDraftReservation::STATUS_RELEASABLE,
+            PreinvoiceDraftReservation::STATUS_ABANDONED,
+            PreinvoiceDraftReservation::STATUS_EXPIRED => ReservationManagementPresentationService::BUCKET_ACTIONABLE,
+            PreinvoiceDraftReservation::STATUS_NEEDS_REVIEW,
+            PreinvoiceDraftReservation::STATUS_CRITICAL => ReservationManagementPresentationService::BUCKET_REVIEW,
+            PreinvoiceDraftReservation::STATUS_RELEASED => ReservationManagementPresentationService::BUCKET_HISTORY,
+            default => $bucket,
+        };
+        if ($classification !== null) {
+            $bucket = $presenter->presentClassification(['state' => $classification])['bucket'];
+        } elseif (in_array($filters['lifecycle'] ?? null, [
+            ReservationClassificationService::LIFECYCLE_CONSUMED,
+            ReservationClassificationService::LIFECYCLE_RELEASED,
+        ], true)) {
+            $bucket = ReservationManagementPresentationService::BUCKET_HISTORY;
+        }
+        $rows = $rows->filter(fn (PreinvoiceDraftReservation $reservation): bool => $reservation->management_presentation['bucket'] === $bucket);
+        if (($filters['status'] ?? null) === PreinvoiceDraftReservation::STATUS_PREINVOICE_ACTIVE) {
+            $rows = $rows->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                $reservation->management_presentation['classification']['state'] === ReservationClassificationService::STATE_OFFICIAL_ACTIVE
+            );
+        }
+        if ($classification !== null) {
+            $rows = $rows->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                $reservation->management_presentation['classification']['state'] === $classification
+            );
+        }
+        $rows = $rows->sortBy(fn (PreinvoiceDraftReservation $reservation): string => sprintf(
+            '%02d-%020d', $reservation->management_presentation['priority'], PHP_INT_MAX - (int) $reservation->id,
+        ))->values();
+        $page = max(1, LengthAwarePaginator::resolveCurrentPage($pageName));
+
+        return new LengthAwarePaginator(
+            $rows->forPage($page, $perPage)->values(), $rows->count(), $perPage, $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath(), 'pageName' => $pageName],
+        );
     }
 
     /** @return array{count:int,quantity:int} */
@@ -246,7 +340,7 @@ class ReservationQueryService
                 'product:id,name,sku,code',
                 'variant:id,product_id,variant_name,variety_name,variant_code,variety_code',
                 'user:id,name',
-                'order:id,uuid,created_at,updated_at,customer_id,customer_name,customer_mobile',
+                'order:id,uuid,status,stock_released_at,created_at,updated_at,customer_id,customer_name,customer_mobile',
                 'order.invoice:id,preinvoice_order_id',
                 'releasedBy:id,name',
                 // Classifying each row (ReservationClassificationService::classify(),
@@ -260,12 +354,7 @@ class ReservationQueryService
         if ($showReleased) {
             $query->whereNotNull('released_at');
         } else {
-            $query->visibleInWarehouseManagement()
-                ->excludeOrphaned(
-                    PreinvoiceDraftReservation::DEFAULT_ONLINE_STALE_MINUTES,
-                    PreinvoiceDraftReservation::DEFAULT_IN_PERSON_STALE_MINUTES,
-                    $at,
-                );
+            $query->whereNull('released_at')->whereNull('release_reason');
         }
 
         return $query

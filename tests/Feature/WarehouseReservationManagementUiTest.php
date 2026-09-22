@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Services\InventoryReservationReleaseService;
+use App\Services\HistoricalReservationArchiveService;
 use App\Support\PageAccessCatalog;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -171,4 +172,78 @@ it('delegates release requests to the inventory reservation release service', fu
             'release_reason' => 'تست سرویس آزادسازی',
         ])
         ->assertRedirect();
+});
+
+it('uses canonical state for protected active and historical review rows', function () {
+    ['seller' => $seller, 'product' => $activeProduct, 'variant' => $activeVariant, 'reservation' => $active] = warehouseReservationUiFixture([
+        'last_seen_at' => now()->subDays(10),
+        'expires_at' => now()->subDays(10),
+    ]);
+    $activeProduct->forceFill(['name' => 'Canonical protected active'])->save();
+    $activeVariant->forceFill(['variant_code' => 'UI-ACTIVE-'.Str::uuid()])->save();
+    PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'draft_token' => $active->token,
+        'created_by' => $seller->id,
+        'seller_id' => $seller->id,
+        'document_date' => now(),
+        'status' => PreinvoiceOrder::STATUS_DRAFT,
+        'customer_name' => 'Protected customer',
+        'customer_mobile' => '09120000000',
+        'total_price' => 100000,
+    ]));
+
+    ['product' => $historicalProduct] = warehouseReservationUiFixture([
+        'last_seen_at' => now()->subDays(10),
+        'expires_at' => now()->subDays(10),
+    ]);
+    $historicalProduct->forceFill(['name' => 'Canonical historical review'])->save();
+
+    $manager = warehouseReservationUiUser(['warehouse_reservations.view', 'warehouse_reservations.release']);
+
+    $this->actingAs($manager)
+        ->get(route('warehouse-reservations.index'))
+        ->assertOk()
+        ->assertSee('Canonical protected active')
+        ->assertSee('فعال و محافظت‌شده')
+        ->assertDontSee('Canonical historical review');
+
+    $this->actingAs($manager)
+        ->get(route('warehouse-reservations.index', ['quick' => 'review']))
+        ->assertOk()
+        ->assertSee('Canonical historical review')
+        ->assertSee('ابهام تاریخی — بررسی/بایگانی')
+        ->assertDontSee('آزادسازی موجودی');
+});
+
+it('shows normal release only in the canonical actionable bucket', function () {
+    ['product' => $product] = warehouseReservationUiFixture([
+        'expires_at' => now()->subMinute(),
+        'last_seen_at' => now()->subMinutes(10),
+    ]);
+    $product->forceFill(['name' => 'Canonical stale actionable'])->save();
+
+    $this->actingAs(warehouseReservationUiUser(['warehouse_reservations.view', 'warehouse_reservations.release']))
+        ->get(route('warehouse-reservations.index', ['quick' => 'actionable']))
+        ->assertOk()
+        ->assertSee('Canonical stale actionable')
+        ->assertSee('قابل آزادسازی')
+        ->assertSee('آزادسازی موجودی');
+});
+
+it('keeps stock neutral historical archives visible in history and detail audit', function () {
+    ['product' => $product, 'reservation' => $reservation] = warehouseReservationUiFixture([
+        'last_seen_at' => now()->subDays(10),
+        'expires_at' => now()->subDays(10),
+    ]);
+    $product->forceFill(['name' => 'Archived historical audit row'])->save();
+    app(HistoricalReservationArchiveService::class)->archive([$reservation->id], now());
+    $manager = warehouseReservationUiUser(['warehouse_reservations.view']);
+
+    $this->actingAs($manager)->get(route('warehouse-reservations.index'))
+        ->assertOk()->assertDontSee('Archived historical audit row');
+    $this->actingAs($manager)->get(route('warehouse-reservations.index', ['tab' => 'history']))
+        ->assertOk()->assertSee('Archived historical audit row')->assertSee('پاکسازی تاریخی — بدون تغییر موجودی');
+    $this->actingAs($manager)->get(route('warehouse-reservations.show', $reservation))
+        ->assertOk()->assertSee('پاکسازی تاریخی — بدون تغییر موجودی')->assertSee('پاکسازی تاریخی رزرو — بدون تغییر موجودی');
 });

@@ -899,6 +899,7 @@ class PreinvoiceDraftReservation extends Model
             'temporary_session_lost' => 'قطع فعالیت رزرو موقت',
             'temporary_online_expired' => 'پایان زمان رزرو آنلاین',
             'manual_release' => 'آزادسازی دستی',
+            'historical_reconciliation_stock_neutral' => 'پاکسازی تاریخی — بدون تغییر موجودی',
             null, '' => 'ثبت نشده',
             default => $this->release_reason,
         };

@@ -412,7 +412,7 @@ class ReservationProductionHardeningTest extends TestCase
         $this->assertSame(0, $stats['critical']['quantity']);
     }
 
-    public function test_dashboard_critical_count_still_reports_a_genuinely_critical_reservation(): void
+    public function test_dashboard_does_not_override_official_active_with_legacy_age_criticality(): void
     {
         $fixture = $this->inventoryFixture(7);
         $order = $this->order(PreinvoiceOrder::STATUS_PENDING_FINANCE, old: true);
@@ -421,11 +421,10 @@ class ReservationProductionHardeningTest extends TestCase
 
         $stats = app(ReservationQueryService::class)->dashboardStatistics(now());
 
-        $this->assertSame(1, $stats['critical']['count']);
-        $this->assertSame(7, $stats['critical']['quantity']);
-        // A critical row is by definition a still-held official reservation,
-        // so it can never outnumber the official card it is a subset of.
-        $this->assertLessThanOrEqual($stats['official']['count'], $stats['critical']['count']);
+        $this->assertSame(0, $stats['critical']['count']);
+        $this->assertSame(0, $stats['critical']['quantity']);
+        $this->assertSame(1, $stats['official']['count']);
+        $this->assertSame(7, $stats['official']['quantity']);
     }
 
     /**
