@@ -143,8 +143,8 @@ it('shows a healthy temporary reservation', function () {
         ->get(route('warehouse-reservations.index'))
         ->assertOk()
         ->assertSee($fixture['product']->name)
-        ->assertSee('فعال')
-        ->assertSee('در حال ثبت پیش‌فاکتور');
+        ->assertSee('رزرو موقت فعال')
+        ->assertSee('fresh_heartbeat');
 });
 
 it('keeps an abandoned temporary reservation eligible for cleanup', function () {
@@ -160,15 +160,19 @@ it('keeps an abandoned temporary reservation eligible for cleanup', function () 
         ->and($fixture['variant']->fresh()->reserved)->toBe(0);
 });
 
-it('shows a reservation connected to a preinvoice without an invoice', function () {
+it('shows a converted preinvoice reservation only in canonical history', function () {
     $fixture = warehouseReservationBusinessFixture('Preinvoice business reservation', withPreinvoice: true);
 
     $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
         ->get(route('warehouse-reservations.index'))
         ->assertOk()
+        ->assertDontSee($fixture['product']->name);
+
+    $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
+        ->get(route('warehouse-reservations.index', ['lifecycle' => 'consumed']))
+        ->assertOk()
         ->assertSee($fixture['product']->name)
-        ->assertSee('پیش‌فاکتور فعال')
-        ->assertSee('متصل به پیش‌فاکتور شماره '.$fixture['order']->uuid);
+        ->assertSee('مصرف‌شده');
 });
 
 it('never auto releases an old preinvoice reservation', function () {

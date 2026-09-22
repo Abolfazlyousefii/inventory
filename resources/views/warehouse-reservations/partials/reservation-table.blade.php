@@ -167,13 +167,12 @@
             <tbody>
             @forelse($reservations as $reservation)
                 @php
-                    $businessStatus = $reservation->businessStatus();
-                    $warning = $reservation->managementWarning();
-                    $displayReason = $reservation->businessDisplayReason();
                     $variantName = $reservation->variant?->variant_name ?: $reservation->variant?->variety_name;
                     $variantCode = $reservation->variant?->variant_code ?: $reservation->variant?->variety_code;
-                    $classification = $classificationService->classify($reservation);
-                    $releasable = $classification['state'] === \App\Services\ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE;
+                    $presentation = $reservation->management_presentation ?? $presentationService->present($reservation);
+                    $classification = $presentation['classification'];
+                    $warning = $presentation['warning'];
+                    $releasable = $presentation['can_release'];
                     $isLegacyCandidate = $classification['state'] === \App\Services\ReservationClassificationService::STATE_LEGACY_SAFE;
                 @endphp
                 <tr @class(['old-reservation-row' => $warning !== null])>
@@ -217,18 +216,8 @@
                         @endif
                     </td>
                     <td>
-                        @if($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_CRITICAL)
-                            <span class="status-badge status-critical">بحرانی</span>
-                        @elseif($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_NEEDS_REVIEW)
-                            <span class="status-badge status-review">نیاز بررسی</span>
-                        @elseif($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_PREINVOICE_ACTIVE)
-                            <span class="status-badge status-preinvoice">پیش‌فاکتور فعال</span>
-                        @elseif($businessStatus === \App\Models\PreinvoiceDraftReservation::STATUS_ACTIVE)
-                            <span class="status-badge status-active">فعال</span>
-                        @else
-                            <span class="status-badge status-neutral">نامشخص</span>
-                        @endif
-                        <div class="muted-line mt-1">{{ $displayReason }}</div>
+                        <span class="status-badge {{ $presentation['badge'] }}">{{ $presentation['label'] }}</span>
+                        <div class="muted-line mt-1">{{ $classification['reason'] }}</div>
                         @if($releasable)<div class="old-warning mt-1">قابل آزادسازی توسط مدیر انبار</div>@endif
                     </td>
                     <td>
@@ -239,8 +228,7 @@
                         <span class="status-badge {{ $healthClass }}">{{ $classificationService->healthLabels()[$classification['health']] }}</span>
                     </td>
                     <td>
-                        @php $labelClass = match($classification['state']) { 'historical_ambiguous', 'invalid_official' => 'status-critical', 'temporary_stale_releasable', 'legacy_safe' => 'status-review', 'consumed', 'released' => 'status-neutral', default => 'status-active' }; @endphp
-                        <span class="status-badge {{ $labelClass }}">{{ $classificationService->managementLabels()[$classification['state']] }}</span>
+                        <span class="status-badge {{ $presentation['badge'] }}">{{ $presentation['label'] }}</span>
                         <div class="muted-line mt-1">{{ $classification['reason'] }}</div>
                     </td>
                     <td>
@@ -309,16 +297,16 @@
                             <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->preinvoiceConnectedAt(), 'ثبت نشده') }}</dd>
                         @endif
                         <dt class="col-5 text-muted">دلیل نمایش</dt>
-                        <dd class="col-7">{{ $reservation->businessDisplayReason() }}</dd>
+                        <dd class="col-7">{{ ($reservation->management_presentation ?? $presentationService->present($reservation))['classification']['reason'] }}</dd>
                         <dt class="col-5 text-muted">سطح اهمیت</dt>
-                        <dd class="col-7">{{ $reservation->managementImportanceLabel() }}</dd>
+                        <dd class="col-7">{{ ($reservation->management_presentation ?? $presentationService->present($reservation))['label'] }}</dd>
                         <dt class="col-5 text-muted">شناسه رزرو</dt>
                         <dd class="col-7">{{ $reservation->id }}</dd>
                         <dt class="col-5 text-muted">مرجع رزرو</dt>
                         <dd class="col-7 text-break" dir="ltr">{{ $reservation->token }}</dd>
                     </dl>
-                    @if($reservation->managementWarning())
-                        <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">{{ $reservation->managementWarning() }}</div>
+                    @if(($reservation->management_presentation ?? $presentationService->present($reservation))['warning'])
+                        <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">{{ ($reservation->management_presentation ?? $presentationService->present($reservation))['warning'] }}</div>
                     @endif
                 </div>
                 <div class="modal-footer">
@@ -331,7 +319,7 @@
 
 @canPermission('warehouse_reservations.release')
     @foreach($reservations as $reservation)
-        @if($classificationService->classify($reservation)['state'] === \App\Services\ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE)
+        @if(($reservation->management_presentation ?? $presentationService->present($reservation))['can_release'])
             <div class="modal fade" id="release-reservation-{{ $reservation->id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered">
                     <form class="modal-content border-0" method="POST" action="{{ route('warehouse-reservations.release', $reservation) }}">

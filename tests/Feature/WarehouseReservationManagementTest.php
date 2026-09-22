@@ -119,17 +119,14 @@ it('filters the index by canonical reservation status', function () {
     $this->actingAs($manager)
         ->getJson(route('warehouse-reservations.index', ['status' => PreinvoiceDraftReservation::STATUS_ACTIVE]))
         ->assertOk()
-        ->assertJsonPath('total', 1)
-        ->assertJsonPath('data.0.id', $active->id)
-        ->assertJsonPath('data.0.status', PreinvoiceDraftReservation::STATUS_ACTIVE);
+        ->assertJsonPath('total', 2)
+        ->assertJsonPath('data.0.status', 'active_valid')
+        ->assertJsonPath('data.1.status', 'temporary_active');
 
     $this->actingAs($manager)
         ->getJson(route('warehouse-reservations.index', ['status' => PreinvoiceDraftReservation::STATUS_ABANDONED]))
         ->assertOk()
-        ->assertJsonPath('total', 1)
-        ->assertJsonPath('data.0.id', $abandoned->id)
-        ->assertJsonPath('data.0.status', PreinvoiceDraftReservation::STATUS_ABANDONED)
-        ->assertJsonPath('data.0.releasable', true);
+        ->assertJsonPath('total', 0);
 });
 
 it('searches reservations by product name variant code and token', function () {

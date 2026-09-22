@@ -110,7 +110,11 @@
                         <dt class="col-5">زمان آزادسازی</dt>
                         <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->released_at, 'آزاد نشده') }}</dd>
                         <dt class="col-5">دلیل آزادسازی</dt>
-                        <dd class="col-7">{{ $reservation->release_reason ?? '—' }}</dd>
+                        <dd class="col-7">{{ $reservation->releaseReasonLabel() }}</dd>
+                        @if($reservation->release_note)
+                            <dt class="col-5">یادداشت چرخه عمر</dt>
+                            <dd class="col-7">{{ $reservation->release_note }}</dd>
+                        @endif
                     </dl>
                 </div>
             </div>

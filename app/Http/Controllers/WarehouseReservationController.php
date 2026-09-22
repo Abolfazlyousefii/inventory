@@ -8,6 +8,7 @@ use App\Services\InventoryReservationReleaseService;
 use App\Services\LegacyReservationCleanupService;
 use App\Services\ReservationClassificationService;
 use App\Services\ReservationHealthService;
+use App\Services\ReservationManagementPresentationService;
 use App\Services\ReservationQueryService;
 use App\Support\JalaliDate;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +28,7 @@ class WarehouseReservationController extends Controller
         ReservationHealthService $healthService,
         ReservationQueryService $reservationQueries,
         ReservationClassificationService $classificationService,
+        ReservationManagementPresentationService $presentationService,
     ): JsonResponse|View
     {
         $filters = $request->validate([
@@ -64,7 +66,7 @@ class WarehouseReservationController extends Controller
         $reservations = $this->emptyPaginator(20, 'page');
         if ($request->expectsJson() || $activeTab === 'reservations') {
             $reservations = $reservationQueries
-                ->filteredManagementQuery([
+                ->paginateCanonicalManagement([
                     'status' => $filters['status'] ?? null,
                     'quick' => $filters['quick'] ?? null,
                     'search' => $filters['search'] ?? null,
@@ -78,26 +80,28 @@ class WarehouseReservationController extends Controller
                     'variant_id' => $filters['variant_id'] ?? null,
                     'customer_id' => $filters['customer_id'] ?? null,
                     'customer_search' => $filters['customer_search'] ?? null,
-                ], $evaluatedAt)
-                ->paginate(20)
+                ], $presentationService, 20, 'page', $evaluatedAt)
                 ->withQueryString();
         }
 
         if ($request->expectsJson()) {
-            return response()->json($reservations->through(fn (PreinvoiceDraftReservation $reservation): array => [
+            return response()->json($reservations->through(function (PreinvoiceDraftReservation $reservation) use ($presentationService, $evaluatedAt): array {
+                $presentation = $reservation->management_presentation ?? $presentationService->present($reservation, $evaluatedAt);
+
+                return [
                 'id' => $reservation->id,
                 'token' => $reservation->token,
                 'quantity' => $reservation->quantity,
-                'status' => $reservation->managementStatus(),
-                'business_status' => $reservation->businessStatus(),
-                'business_status_label' => $reservation->businessStatusLabel(),
-                'classification' => $classificationService->classify($reservation, $evaluatedAt),
-                'display_reason' => $reservation->businessDisplayReason(),
-                'releasable' => $reservation->isActionableForManagement(),
-                'priority' => $reservation->managementPriority(),
-                'importance' => $reservation->managementImportance(),
+                'status' => $presentation['classification']['state'],
+                'business_status' => $presentation['classification']['state'],
+                'business_status_label' => $presentation['label'],
+                'classification' => $presentation['classification'],
+                'display_reason' => $presentation['classification']['reason'],
+                'releasable' => $presentation['can_release'],
+                'priority' => $presentation['priority'],
+                'importance' => $presentation['bucket'],
                 'age' => $reservation->managementAgeLabel(),
-                'warning' => $reservation->managementWarning(),
+                'warning' => $presentation['warning'],
                 'created_at' => $reservation->created_at,
                 'created_at_jalali' => JalaliDate::dateTime($reservation->created_at),
                 'expires_at' => $reservation->expires_at,
@@ -112,7 +116,8 @@ class WarehouseReservationController extends Controller
                 'created_by' => $reservation->user,
                 'preinvoice' => $reservation->order,
                 'released_by' => $reservation->releasedBy,
-            ]));
+                ];
+            }));
         }
 
         $healthStats = null;
@@ -183,6 +188,7 @@ class WarehouseReservationController extends Controller
             'filters' => $filters,
             'stats' => $reservationQueries->dashboardStatistics($evaluatedAt),
             'classificationService' => $classificationService,
+            'presentationService' => $presentationService,
         ]);
     }
 
@@ -223,7 +229,7 @@ class WarehouseReservationController extends Controller
         $activityLogs = ActivityLog::query()
             ->where('subject_type', PreinvoiceDraftReservation::class)
             ->where('subject_id', $reservation->id)
-            ->whereIn('action', ['reservation_manual_release', 'legacy_reservation_cleanup'])
+            ->whereIn('action', ['reservation_manual_release', 'legacy_reservation_cleanup', 'historical_reservation_archive'])
             ->with('user:id,name')
             ->orderByDesc('occurred_at')
             ->get();

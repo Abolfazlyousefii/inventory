@@ -78,7 +78,7 @@ class ReservationDashboardTest extends TestCase
         $this->assertSame(5, $stats['official']['quantity']);
     }
 
-    public function test_critical_reservations_are_classified_correctly(): void
+    public function test_old_official_active_reservations_do_not_become_canonically_critical(): void
     {
         $fixture = $this->inventoryFixture();
 
@@ -93,8 +93,10 @@ class ReservationDashboardTest extends TestCase
         $service = app(ReservationQueryService::class);
         $stats = $service->dashboardStatistics(now());
 
-        $this->assertSame(1, $stats['critical']['count']);
-        $this->assertSame(2, $stats['critical']['quantity']);
+        $this->assertSame(0, $stats['critical']['count']);
+        $this->assertSame(0, $stats['critical']['quantity']);
+        $this->assertSame(2, $stats['official']['count']);
+        $this->assertSame(3, $stats['official']['quantity']);
         $this->assertSame(
             'official_active',
             $service->classify($criticalReservation->refresh()->load('order.invoice'))['state'],
