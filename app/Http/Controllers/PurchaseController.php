@@ -539,8 +539,8 @@ class PurchaseController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.id' => ['nullable', 'integer', 'exists:purchase_items,id'],
-            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            'items.*.product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
+            'items.*.variant_id' => ['nullable', 'integer'],
+            'items.*.product_variant_id' => ['nullable', 'integer'],
 
             'items.*.qty' => ['nullable', 'integer', 'min:1'],
             'items.*.quantity' => ['nullable', 'integer', 'min:' . ($allowZeroExistingItems ? '0' : '1')],
@@ -618,13 +618,14 @@ class PurchaseController extends Controller
 
         foreach ($data['items'] as $index => $item) {
             $product = Product::find((int) $item['product_id']);
-            $isValidVariant = $product
-                ? app(ProductVariantStructureService::class)->applyValidConstraints(ProductVariant::query(), $product)->whereKey($item['variant_id'])->exists()
-                : false;
-
-            if (!$isValidVariant) {
+            try {
+                $variant = app(\App\Services\PurchaseVariantResolver::class)
+                    ->resolve($product, $item['variant_id'] ?? null);
+                $data['items'][$index]['variant_id'] = (int) $variant->id;
+            } catch (ValidationException $exception) {
                 throw ValidationException::withMessages([
-                    "items.{$index}.variant_id" => 'تنوع انتخاب‌شده متعلق به این کالا نیست.',
+                    "items.{$index}.variant_id" => $exception->errors()['variant_id'][0]
+                        ?? 'The selected variant is not purchase eligible.',
                 ]);
             }
         }
