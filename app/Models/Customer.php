@@ -81,7 +81,18 @@ class Customer extends Authenticatable {
     }
 
     public function getBalanceAttribute(): int {
-        return (int) ( $this->opening_balance ?? 0 ) + (int) ( $this->debit_sum ?? 0 ) - (int) ( $this->credit_sum ?? 0 );
+        // withBalance() keeps list queries efficient. For a Customer model that was
+        // loaded without withBalance(), fall back to the real ledger sums so the
+        // displayed wallet/account balance never silently becomes zero.
+        $debit = array_key_exists('debit_sum', $this->attributes)
+            ? (int) ($this->attributes['debit_sum'] ?? 0)
+            : (int) $this->ledgers()->effectiveForBalance()->where('type', 'debit')->sum('amount');
+
+        $credit = array_key_exists('credit_sum', $this->attributes)
+            ? (int) ($this->attributes['credit_sum'] ?? 0)
+            : (int) $this->ledgers()->effectiveForBalance()->where('type', 'credit')->sum('amount');
+
+        return (int) ($this->opening_balance ?? 0) + $debit - $credit;
     }
 
     public function getDebtAttribute(): int {
@@ -89,7 +100,33 @@ class Customer extends Authenticatable {
     }
 
     public function getCreditAttribute(): int {
-        return max(- $this->balance, 0);
+        return max(-$this->balance, 0);
+    }
+
+    /**
+     * debtor: customer owes us, creditor: we owe/customer has usable credit,
+     * settled: account is balanced.
+     */
+    public function getBalanceStatusAttribute(): string {
+        return $this->balance > 0
+            ? 'debtor'
+            : ($this->balance < 0 ? 'creditor' : 'settled');
+    }
+
+    public function getBalanceStatusLabelAttribute(): string {
+        return match ($this->balance_status) {
+            'debtor' => 'بدهکار',
+            'creditor' => 'بستانکار',
+            default => 'تسویه',
+        };
+    }
+
+    public function getBalanceAmountAttribute(): int {
+        return abs($this->balance);
+    }
+
+    public function getUsableCreditAttribute(): int {
+        return $this->credit;
     }
 
     public function getDisplayNameAttribute(): string {

@@ -127,9 +127,26 @@ class AccountStatementController extends Controller
             ->get(['id', 'uuid', 'total'])
             ->keyBy('id');
 
-        $totalDebit = (int) CustomerLedger::query()->where('customer_id', $customer->id)->where('type', 'debit')->sum('amount');
-        $totalCredit = (int) CustomerLedger::query()->where('customer_id', $customer->id)->where('type', 'credit')->sum('amount');
+        $totalDebit = (int) CustomerLedger::query()
+            ->effectiveForBalance()
+            ->where('customer_id', $customer->id)
+            ->where('type', 'debit')
+            ->sum('amount');
+
+        $totalCredit = (int) CustomerLedger::query()
+            ->effectiveForBalance()
+            ->where('customer_id', $customer->id)
+            ->where('type', 'credit')
+            ->sum('amount');
+
         $netBalance = (int) $customer->opening_balance + $totalDebit - $totalCredit;
+        $balanceStatus = $netBalance > 0 ? 'debtor' : ($netBalance < 0 ? 'creditor' : 'settled');
+        $balanceStatusLabel = match ($balanceStatus) {
+            'debtor' => 'بدهکار',
+            'creditor' => 'بستانکار',
+            default => 'تسویه',
+        };
+        $balanceAmount = abs($netBalance);
 
         $customerInvoices = Invoice::query()->where('customer_id', $customer->id)->orderByDesc('id')->get(['id', 'uuid', 'total']);
 
@@ -141,6 +158,11 @@ class AccountStatementController extends Controller
             'transfers',
             'salesReturnDocuments',
             'netBalance',
+            'balanceStatus',
+            'balanceStatusLabel',
+            'balanceAmount',
+            'totalDebit',
+            'totalCredit',
             'customerInvoices'
         ));
     }

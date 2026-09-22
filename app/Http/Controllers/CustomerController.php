@@ -76,6 +76,10 @@ class CustomerController extends Controller
 
     public function show(Customer $customer)
     {
+        $customer = Customer::query()
+            ->withBalance()
+            ->findOrFail($customer->id);
+
         return view('customers.show', compact('customer'));
     }
 
@@ -111,28 +115,28 @@ class CustomerController extends Controller
             ->route('customers.index')
             ->with('success', "✅ مشتری {$title} حذف شد.");
     }
-private function parseAmount($value): ?int
-{
-    if ($value === null) {
-        return null;
+    private function parseAmount($value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = $this->toEnglishDigits((string) $value);
+        $value = trim($value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        $value = str_replace([',', '٬', ' '], '', $value);
+        $value = preg_replace('/[^\d\-]/', '', $value);
+
+        if ($value === '' || $value === '-') {
+            return null;
+        }
+
+        return (int) $value;
     }
-
-    $value = $this->toEnglishDigits((string) $value);
-    $value = trim($value);
-
-    if ($value === '') {
-        return null;
-    }
-
-    $value = str_replace([',', '٬', ' '], '', $value);
-    $value = preg_replace('/[^\d\-]/', '', $value);
-
-    if ($value === '' || $value === '-') {
-        return null;
-    }
-
-    return (int) $value;
-}
     public function import(Request $request)
     {
         $request->validate([
@@ -164,129 +168,129 @@ private function parseAmount($value): ?int
 
         DB::beginTransaction();
 
-       try {
-    foreach (array_slice($rows, 1) as $row) {
-        /*
-         فایل شما:
-         A = کد
-         B = نام
-         C = نام خانوادگی
-         D = ماهیت
-         J = آدرس
-         K = تلفن‌ها
-         L = نام معرف
-         M = کد ملی
+        try {
+            foreach (array_slice($rows, 1) as $row) {
+                /*
+                 فایل شما:
+                 A = کد
+                 B = نام
+                 C = نام خانوادگی
+                 D = ماهیت
+                 J = آدرس
+                 K = تلفن‌ها
+                 L = نام معرف
+                 M = کد ملی
 
-         اگر فایل شما این ستون‌ها را هم دارد:
-         N = بدهکار
-         O = بستانکار
-         P = مانده
-        */
+                 اگر فایل شما این ستون‌ها را هم دارد:
+                 N = بدهکار
+                 O = بستانکار
+                 P = مانده
+                */
 
-        $oldCode      = $this->cleanCell($row[0] ?? null);
-        $firstName    = $this->cleanCell($row[1] ?? null);
-        $lastNameRaw  = $this->cleanCell($row[2] ?? null);
-        $nature       = $this->cleanCell($row[3] ?? null);
-        $address      = $this->cleanCell($row[9] ?? null);
-        $phonesRaw    = $this->cleanCell($row[10] ?? null);
-        $referrer     = $this->cleanCell($row[11] ?? null);
-        $nationalCode = $this->cleanCell($row[12] ?? null);
+                $oldCode      = $this->cleanCell($row[0] ?? null);
+                $firstName    = $this->cleanCell($row[1] ?? null);
+                $lastNameRaw  = $this->cleanCell($row[2] ?? null);
+                $nature       = $this->cleanCell($row[3] ?? null);
+                $address      = $this->cleanCell($row[9] ?? null);
+                $phonesRaw    = $this->cleanCell($row[10] ?? null);
+                $referrer     = $this->cleanCell($row[11] ?? null);
+                $nationalCode = $this->cleanCell($row[12] ?? null);
 
-        // ستون‌های مالی
-        $debitRaw   = $this->cleanCell($row[5] ?? null); // N
-        $creditRaw  = $this->cleanCell($row[6] ?? null); // O
-        $balanceRaw = $this->cleanCell($row[4] ?? null); // P
+                // ستون‌های مالی
+                $debitRaw   = $this->cleanCell($row[5] ?? null); // N
+                $creditRaw  = $this->cleanCell($row[6] ?? null); // O
+                $balanceRaw = $this->cleanCell($row[4] ?? null); // P
 
-        $debitAmount   = $this->parseAmount($debitRaw);
-        $creditAmount  = $this->parseAmount($creditRaw);
-        $balanceAmount = $this->parseAmount($balanceRaw);
+                $debitAmount   = $this->parseAmount($debitRaw);
+                $creditAmount  = $this->parseAmount($creditRaw);
+                $balanceAmount = $this->parseAmount($balanceRaw);
 
 
-        // اولویت با ستون مانده است
-        if ($balanceAmount !== null) {
-            $openingBalance = $balanceAmount;
-        } elseif ($debitAmount !== null || $creditAmount !== null) {
-            $openingBalance = (int) ($debitAmount ?? 0) - (int) ($creditAmount ?? 0);
-        } else {
-            $openingBalance = null;
+                // اولویت با ستون مانده است
+                if ($balanceAmount !== null) {
+                    $openingBalance = $balanceAmount;
+                } elseif ($debitAmount !== null || $creditAmount !== null) {
+                    $openingBalance = (int) ($debitAmount ?? 0) - (int) ($creditAmount ?? 0);
+                } else {
+                    $openingBalance = null;
+                }
+
+                $mobiles = $this->extractMobiles($phonesRaw, $lastNameRaw);
+                $mobile = $mobiles[0] ?? null;
+
+                if (!$mobile) {
+                    $skippedNoMobile++;
+                    continue;
+                }
+
+                if (isset($seenMobiles[$mobile])) {
+                    $skippedDuplicateInFile++;
+                    continue;
+                }
+
+                $seenMobiles[$mobile] = true;
+
+                $lastName = $this->looksLikeMobile($lastNameRaw) ? null : $lastNameRaw;
+
+                $importDescription = $this->buildImportDescription(
+                    oldCode: $oldCode,
+                    nature: $nature,
+                    referrer: $referrer,
+                    nationalCode: $nationalCode,
+                    mobiles: $mobiles
+                );
+
+                $customer = Customer::where('mobile', $mobile)->first();
+
+                if ($customer) {
+                    $customer->update([
+                        'first_name' => $firstName ?: $customer->first_name,
+                        'last_name' => $lastName ?: $customer->last_name,
+                        'mobile' => $mobile,
+                        'address' => $address ?: $customer->address,
+                        'postal_code' => $customer->postal_code,
+                        'extra_description' => $this->mergeDescriptions(
+                            $customer->extra_description,
+                            $importDescription
+                        ),
+                        'province_id' => $customer->province_id,
+                        'city_id' => $customer->city_id,
+                        'opening_balance' => $balanceAmount ,
+                    ]);
+
+                    $updated++;
+                } else {
+                    Customer::create([
+                        'first_name' => $firstName ?: 'بدون نام',
+                        'last_name' => $lastName,
+                        'mobile' => $mobile,
+                        'address' => $address,
+                        'postal_code' => null,
+                        'extra_description' => $importDescription,
+                        'province_id' => null,
+                        'city_id' => null,
+                        'opening_balance' => $openingBalance ?? 0,
+                    ]);
+
+                    $created++;
+                }
+            }
+
+            DB::commit();
+
+            return redirect()
+                ->route('customers.index')
+                ->with(
+                    'success',
+                    "✅ ایمپورت انجام شد. {$created} مشتری جدید ساخته شد، {$updated} مشتری آپدیت شد، {$skippedNoMobile} ردیف بدون موبایل رد شد، {$skippedDuplicateInFile} ردیف تکراری داخل فایل رد شد."
+                );
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            return redirect()
+                ->route('customers.index')
+                ->with('error', 'هنگام ایمپورت خطا رخ داد: ' . $e->getMessage());
         }
-
-        $mobiles = $this->extractMobiles($phonesRaw, $lastNameRaw);
-        $mobile = $mobiles[0] ?? null;
-
-        if (!$mobile) {
-            $skippedNoMobile++;
-            continue;
-        }
-
-        if (isset($seenMobiles[$mobile])) {
-            $skippedDuplicateInFile++;
-            continue;
-        }
-
-        $seenMobiles[$mobile] = true;
-
-        $lastName = $this->looksLikeMobile($lastNameRaw) ? null : $lastNameRaw;
-
-        $importDescription = $this->buildImportDescription(
-            oldCode: $oldCode,
-            nature: $nature,
-            referrer: $referrer,
-            nationalCode: $nationalCode,
-            mobiles: $mobiles
-        );
-
-        $customer = Customer::where('mobile', $mobile)->first();
-
-        if ($customer) {
-            $customer->update([
-                'first_name' => $firstName ?: $customer->first_name,
-                'last_name' => $lastName ?: $customer->last_name,
-                'mobile' => $mobile,
-                'address' => $address ?: $customer->address,
-                'postal_code' => $customer->postal_code,
-                'extra_description' => $this->mergeDescriptions(
-                    $customer->extra_description,
-                    $importDescription
-                ),
-                'province_id' => $customer->province_id,
-                'city_id' => $customer->city_id,
-                'opening_balance' => $balanceAmount ,
-            ]);
-
-            $updated++;
-        } else {
-            Customer::create([
-                'first_name' => $firstName ?: 'بدون نام',
-                'last_name' => $lastName,
-                'mobile' => $mobile,
-                'address' => $address,
-                'postal_code' => null,
-                'extra_description' => $importDescription,
-                'province_id' => null,
-                'city_id' => null,
-                'opening_balance' => $openingBalance ?? 0,
-            ]);
-
-            $created++;
-        }
-    }
-
-    DB::commit();
-
-    return redirect()
-        ->route('customers.index')
-        ->with(
-            'success',
-            "✅ ایمپورت انجام شد. {$created} مشتری جدید ساخته شد، {$updated} مشتری آپدیت شد، {$skippedNoMobile} ردیف بدون موبایل رد شد، {$skippedDuplicateInFile} ردیف تکراری داخل فایل رد شد."
-        );
-} catch (Throwable $e) {
-    DB::rollBack();
-
-    return redirect()
-        ->route('customers.index')
-        ->with('error', 'هنگام ایمپورت خطا رخ داد: ' . $e->getMessage());
-}
     }
 
     private function validatedCustomerPayload(Request $request, ?Customer $customer = null): array

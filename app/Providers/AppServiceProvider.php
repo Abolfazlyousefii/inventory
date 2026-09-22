@@ -7,6 +7,7 @@ use App\Http\Middleware\RoutePermissionMiddleware;
 use App\Models\Category;
 use App\Models\Cheque;
 use App\Models\Customer;
+use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\InvoiceNote;
@@ -18,6 +19,9 @@ use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use App\Models\WarehouseStock;
 use App\Observers\ActivityObserver;
+use App\Observers\CustomerLedgerChangeAuditObserver;
+use App\Observers\InvoiceFinancialChangeAuditObserver;
+use App\Observers\InvoiceItemChangeAuditObserver;
 use App\Observers\CommissionSourceObserver;
 use App\Observers\ProductInventoryObserver;
 use App\Observers\ProductVariantSyncObserver;
@@ -59,6 +63,11 @@ class AppServiceProvider extends ServiceProvider
         PreinvoiceOrderItem::observe(ActivityObserver::class);
         Invoice::observe(ActivityObserver::class);
         InvoiceItem::observe(ActivityObserver::class);
+
+        Invoice::observe(InvoiceFinancialChangeAuditObserver::class);
+        InvoiceItem::observe(InvoiceItemChangeAuditObserver::class);
+        CustomerLedger::observe(CustomerLedgerChangeAuditObserver::class);
+
 
         Invoice::observe(CommissionSourceObserver::class);
         InvoiceItem::observe(CommissionSourceObserver::class);

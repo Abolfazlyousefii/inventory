@@ -39,9 +39,9 @@ class CustomerApiController extends Controller
                     $compactLike = '%' . str_replace(['%', '_'], ['\%', '\_'], preg_replace('/[\s\-()]+/u', '', $term)) . '%';
 
                     $qq->orWhere('first_name', 'like', $like)
-                       ->orWhere('last_name', 'like', $like)
-                       ->orWhereRaw("{$fullNameExpression} LIKE ?", [$like])
-                       ->orWhere('mobile', 'like', $like);
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhereRaw("{$fullNameExpression} LIKE ?", [$like])
+                        ->orWhere('mobile', 'like', $like);
 
                     if ($compactLike !== '%%') {
                         $qq->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(mobile, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?", [$compactLike]);
@@ -64,7 +64,10 @@ class CustomerApiController extends Controller
                 'city_id' => (int)($c->city_id ?? 0),
                 'debt' => (int)$c->debt,
                 'credit' => (int)$c->credit,
-                'balance' => (int)$c->balance,
+                'balance' => (int) $c->balance,
+                'balance_status' => $c->balance_status,
+                'balance_status_label' => $c->balance_status_label,
+                'balance_amount' => (int) $c->balance_amount,
                 'reservation_tier' => $c->reservation_tier,
                 'reservation_tier_label' => $this->reservationTierLabel($c->reservation_tier),
                 'reservation_duration_label' => $this->reservationDurationLabel($c->reservation_tier),
@@ -122,8 +125,11 @@ class CustomerApiController extends Controller
 
     public function show(Customer $customer)
     {
-        $customer->loadSum(['ledgers as debit_sum' => fn($q)=>$q->where('type','debit')],'amount')
-                 ->loadSum(['ledgers as credit_sum' => fn($q)=>$q->where('type','credit')],'amount');
+        $customer->loadSum([
+            'ledgers as debit_sum' => fn ($q) => $q->effectiveForBalance()->where('type', 'debit'),
+        ], 'amount')->loadSum([
+            'ledgers as credit_sum' => fn ($q) => $q->effectiveForBalance()->where('type', 'credit'),
+        ], 'amount');
 
         return response()->json([
             'data' => [
@@ -140,7 +146,10 @@ class CustomerApiController extends Controller
                     'city_id' => (int)($customer->city_id ?? 0),
                     'debt' => (int)$customer->debt,
                     'credit' => (int)$customer->credit,
-                    'balance' => (int)$customer->balance,
+                    'balance' => (int) $customer->balance,
+                    'balance_status' => $customer->balance_status,
+                    'balance_status_label' => $customer->balance_status_label,
+                    'balance_amount' => (int) $customer->balance_amount,
                     'reservation_tier' => $customer->reservation_tier,
                     'reservation_tier_label' => $this->reservationTierLabel($customer->reservation_tier),
                     'reservation_duration_label' => $this->reservationDurationLabel($customer->reservation_tier),

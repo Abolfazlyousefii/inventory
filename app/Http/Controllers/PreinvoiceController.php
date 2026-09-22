@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\InvoiceChangeAuditRequested;
 use App\Exceptions\PreinvoiceItemStockException;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
@@ -1829,7 +1830,12 @@ class PreinvoiceController extends Controller
         $totals = SalesDocumentTotals::fromDocument($order);
         $subtotal = (int) $totals['subtotal_before_discount'];
         $total = (int) $totals['grand_total'];
+        $oldInvoiceTotal = (int) $invoice->total;
+        $beforeInvoiceItems = $this->invoiceItemsAuditSnapshot($invoice);
 
+        // This is intentionally a bulk delete/recreate path. Eloquent model observers do not
+        // receive per-item deleted events for query-builder deletes, so we emit one explicit
+        // post-commit audit event with both snapshots.
         $invoice->items()->delete();
         foreach ($order->items as $item) {
             $invoice->items()->create([
@@ -1889,6 +1895,56 @@ class PreinvoiceController extends Controller
                 ]
             );
         }
+
+        $afterInvoiceItems = $this->invoiceItemsAuditSnapshot($invoice->fresh());
+        $this->dispatchInvoiceAuditAfterCommit('invoice_items_bulk_resynced_from_preinvoice', [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_uuid' => (string) $invoice->uuid,
+            'preinvoice_order_id' => (int) $order->id,
+            'customer_id' => $invoice->customer_id ? (int) $invoice->customer_id : null,
+            'notes_target' => 'invoice_items.notes',
+            'notes_candidate' => [
+                'schema_version' => 1,
+                'bulk_resync' => [
+                    'source' => 'preinvoice_reapproval_sync',
+                    'old_total' => $oldInvoiceTotal,
+                    'new_total' => (int) $total,
+                    'total_difference' => (int) $total - $oldInvoiceTotal,
+                    'warning' => 'این مسیر همه invoice_items را حذف و دوباره ایجاد می‌کند؛ notes آیتم‌ها در پیاده‌سازی آینده باید هنگام بازسازی preserve شوند.',
+                ],
+            ],
+            'before_items' => $beforeInvoiceItems,
+            'after_items' => $afterInvoiceItems,
+        ]);
+    }
+
+    private function invoiceItemsAuditSnapshot(Invoice $invoice): array
+    {
+        return $invoice->items()
+            ->orderBy('id')
+            ->get(['id', 'invoice_id', 'product_id', 'variant_id', 'quantity', 'price', 'line_discount_amount', 'line_total'])
+            ->map(fn (InvoiceItem $item) => [
+                'id' => (int) $item->id,
+                'invoice_id' => (int) $item->invoice_id,
+                'product_id' => (int) $item->product_id,
+                'variant_id' => $item->variant_id !== null ? (int) $item->variant_id : null,
+                'quantity' => (int) $item->quantity,
+                'price' => (int) $item->price,
+                'line_discount_amount' => (int) ($item->line_discount_amount ?? 0),
+                'line_total' => (int) $item->line_total,
+            ])->values()->all();
+    }
+
+    private function dispatchInvoiceAuditAfterCommit(string $action, array $payload): void
+    {
+        $dispatch = static fn () => InvoiceChangeAuditRequested::dispatch($action, $payload);
+
+        if (DB::transactionLevel() > 0) {
+            DB::afterCommit($dispatch);
+            return;
+        }
+
+        $dispatch();
     }
 
     private function resolveCustomer(array $validated): ?Customer
