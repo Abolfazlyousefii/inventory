@@ -2,14 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\ProductVariant;
-use Illuminate\Support\Collection;
-
 final readonly class SyntheticDefaultVariantEvidenceSnapshot
 {
     /**
      * @param  array<int,int>  $variantProducts
-     * @param  array<int,array<int,int>>  $creationLogIds
+     * @param  array<int,int>  $creationLogIds
      * @param  array<int,int>  $activityReferenceCounts
      */
     private function __construct(
@@ -18,12 +15,12 @@ final readonly class SyntheticDefaultVariantEvidenceSnapshot
         private array $activityReferenceCounts,
     ) {}
 
-    /** @param  Collection<int,ProductVariant>  $variants */
+    /** @param array<int,int> $variantProducts */
     public static function loadComplete(
-        Collection $variants,
+        array $variantProducts,
         SyntheticDefaultVariantEvidenceService $loader,
     ): self {
-        $evidence = $loader->completeScan($variants);
+        $evidence = $loader->completeScan($variantProducts);
 
         return new self(
             $evidence['variant_products'],
@@ -36,7 +33,13 @@ final readonly class SyntheticDefaultVariantEvidenceSnapshot
     {
         $this->assertInScope($variantId, $productId);
 
-        return $this->creationLogIds[$productId][$variantId] ?? null;
+        return $this->creationLogIds[$variantId] ?? null;
+    }
+
+    /** @return array<int,int> */
+    public function variantProducts(): array
+    {
+        return $this->variantProducts;
     }
 
     public function hasContraryEvidence(int $variantId): bool
