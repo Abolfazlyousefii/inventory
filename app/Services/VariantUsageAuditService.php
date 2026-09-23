@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\ActivityLog;
 use App\Models\ProductVariant;
 use App\Models\WarehouseStock;
 use Illuminate\Support\Collection;
@@ -13,23 +12,17 @@ class VariantUsageAuditService
     public function __construct(
         private readonly VariantReferenceDiscoveryService $references,
         private readonly ReservationQueryService $reservations,
+        private readonly FreshVariantActivityEvidenceService $freshActivity,
     ) {}
 
     /** @return array<string,mixed> */
     public function audit(ProductVariant $variant): array
     {
-        $variantId = (int) $variant->id;
-        $activityReferences = ActivityLog::query()
-            ->whereNotIn('action', ['created', 'electric_default_color_created'])
-            ->where(function ($query) use ($variantId): void {
-                $query->where(function ($subject) use ($variantId): void {
-                    $subject->where('subject_type', ProductVariant::class)
-                        ->where('subject_id', $variantId);
-                })->orWhereJsonContains('properties->variant_id', $variantId);
-            })
-            ->count();
+        // Bounded, chunked activity evidence: one JSON_CONTAINS scan over the
+        // whole ActivityLog table kills the MySQL connection in production.
+        $activityReferences = $this->freshActivity->count((int) $variant->id);
 
-        return $this->auditWithActivityReferenceCount($variant, (int) $activityReferences);
+        return $this->auditWithActivityReferenceCount($variant, $activityReferences);
     }
 
     /** @return array<string,mixed> */

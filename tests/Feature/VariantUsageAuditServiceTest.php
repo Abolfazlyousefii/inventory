@@ -9,6 +9,7 @@ use App\Models\Purchase;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Models\WarehouseStock;
+use App\Services\FreshVariantActivityEvidenceService;
 use App\Services\ReservationQueryService;
 use App\Services\SyntheticDefaultVariantEvidenceService;
 use App\Services\VariantReferenceDiscoveryService;
@@ -272,7 +273,7 @@ it('fails closed when a discovered bulk reference can no longer be queried', fun
     Schema::drop('phase_five_disappearing_refs');
     $snapshot = app(SyntheticDefaultVariantEvidenceService::class)->load(collect([$variant]));
 
-    $service = new VariantUsageAuditService($references, app(ReservationQueryService::class));
+    $service = new VariantUsageAuditService($references, app(ReservationQueryService::class), app(FreshVariantActivityEvidenceService::class));
 
     expect(fn () => $service->auditManyWithEvidence(collect([$variant]), $snapshot))
         ->toThrow(QueryException::class);

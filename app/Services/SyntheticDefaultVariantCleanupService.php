@@ -13,8 +13,7 @@ class SyntheticDefaultVariantCleanupService
         private readonly SyntheticDefaultVariantClassifier $classifier,
         private readonly VariantUsageAuditService $usage,
         private readonly ProductVariantStructureService $summaries,
-    ) {
-    }
+    ) {}
 
     /** @return array<string,mixed> */
     public function assess(int $variantId, bool $explicit): array
@@ -25,6 +24,48 @@ class SyntheticDefaultVariantCleanupService
         }
 
         return $this->assessment($variant, $explicit);
+    }
+
+    /**
+     * Dry-run assessment built from an already completed bulk/scoped audit row.
+     *
+     * The bulk audit has already produced the exact synthetic class, complete
+     * activity evidence, warehouse state, reservations, reference counts and
+     * blockers, so a dry run must not repeat the expensive fresh per-variant
+     * evidence work. A null row means the audit did not classify the variant
+     * as synthetic at all. This path never mutates.
+     *
+     * @param  array<string,mixed>|null  $row
+     * @return array<string,mixed>
+     */
+    public function assessAuditRow(int $variantId, ?array $row, bool $explicit): array
+    {
+        if ($row === null) {
+            return ProductVariant::query()->whereKey($variantId)->exists()
+                ? $this->skipped($variantId, ['not_synthetic'])
+                : $this->skipped($variantId, ['variant_not_found']);
+        }
+
+        $class = (string) $row['synthetic_class'];
+        $blocking = array_values(array_filter(
+            array_map('trim', explode(',', (string) $row['blocking_reasons'])),
+            fn (string $reason): bool => $reason !== '',
+        ));
+        if ($class === SyntheticDefaultVariantClassifier::NOT_SYNTHETIC) {
+            $blocking[] = 'not_synthetic';
+        }
+        if ($class === SyntheticDefaultVariantClassifier::PROBABLE_SYNTHETIC && ! $explicit) {
+            $blocking[] = 'probable_requires_explicit_id';
+        }
+        $blocking = array_values(array_unique($blocking));
+
+        return [
+            'variant_id' => $variantId,
+            'status' => $blocking === [] ? 'ELIGIBLE' : 'SKIPPED',
+            'eligible' => $blocking === [],
+            'synthetic_class' => $class,
+            'blocking_reasons' => $blocking,
+        ];
     }
 
     /** @return array<string,mixed> */
