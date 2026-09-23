@@ -9,7 +9,8 @@ class AuditSyntheticDefaultVariants extends Command
 {
     protected $signature = 'inventory:audit-synthetic-default-variants
         {--product-id= : Limit to one product ID}
-        {--variant-id= : Limit to one variant ID}';
+        {--variant-id= : Limit to one variant ID}
+        {--summary-only : Run the complete audit and print only summary counters}';
 
     protected $description = 'Read-only audit of legacy synthetic electrical default variants';
 
@@ -17,7 +18,20 @@ class AuditSyntheticDefaultVariants extends Command
     {
         $productId = $this->option('product-id') !== null ? (int) $this->option('product-id') : null;
         $variantId = $this->option('variant-id') !== null ? (int) $this->option('variant-id') : null;
-        $rows = $audit->rows($productId ?: null, $variantId ?: null);
+        $rows = $audit->rows($productId ?: null, $variantId ?: null, function (string $phase, array $metrics): void {
+            if ($phase === 'progress') {
+                $this->line(sprintf(
+                    'variants scanned %d / %d; synthetic candidates %d',
+                    $metrics['scanned'],
+                    $metrics['total'],
+                    $metrics['synthetic'],
+                ));
+
+                return;
+            }
+
+            $this->info($phase);
+        });
         $headers = [
             'product_id', 'product_name', 'variant_id', 'variant_name', 'variant_code',
             'synthetic_class', 'synthetic_evidence', 'warehouse_stock', 'reserved',
@@ -26,15 +40,18 @@ class AuditSyntheticDefaultVariants extends Command
             'safe_to_remove', 'blocking_reasons',
         ];
 
-        $this->line(implode(',', $headers));
-        $this->table($headers, $rows->map(function (array $row) use ($headers): array {
-            return collect($headers)->map(function (string $header) use ($row): mixed {
-                $value = $row[$header] ?? '';
+        if (! $this->option('summary-only')) {
+            $this->line(implode(',', $headers));
+            $this->table($headers, $rows->map(function (array $row) use ($headers): array {
+                return collect($headers)->map(function (string $header) use ($row): mixed {
+                    $value = $row[$header] ?? '';
 
-                return is_bool($value) ? ($value ? 'yes' : 'no') : $value;
-            })->all();
-        })->all());
+                    return is_bool($value) ? ($value ? 'yes' : 'no') : $value;
+                })->all();
+            })->all());
+        }
 
+        $this->info('Building summary...');
         $summary = $audit->summary($rows);
         foreach ($summary as $key => $count) {
             $this->line($key.'='.$count);

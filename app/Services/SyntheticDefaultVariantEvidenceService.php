@@ -21,24 +21,29 @@ class SyntheticDefaultVariantEvidenceService
      */
     public function load(Collection $variants): SyntheticDefaultVariantEvidenceSnapshot
     {
-        return SyntheticDefaultVariantEvidenceSnapshot::loadComplete($variants, $this);
+        return $this->loadScope($variants
+            ->mapWithKeys(fn (ProductVariant $variant): array => [(int) $variant->id => (int) $variant->product_id])
+            ->all());
+    }
+
+    /** @param array<int,int> $variantProducts */
+    public function loadScope(array $variantProducts): SyntheticDefaultVariantEvidenceSnapshot
+    {
+        return SyntheticDefaultVariantEvidenceSnapshot::loadComplete($variantProducts, $this);
     }
 
     /**
      * @internal Called by SyntheticDefaultVariantEvidenceSnapshot::loadComplete().
      *
-     * @param  Collection<int,ProductVariant>  $variants
+     * @param  array<int,int>  $variantProducts
      * @return array{
      *     variant_products:array<int,int>,
-     *     creation_log_ids:array<int,array<int,int>>,
+     *     creation_log_ids:array<int,int>,
      *     activity_reference_counts:array<int,int>
      * }
      */
-    public function completeScan(Collection $variants): array
+    public function completeScan(array $variantProducts): array
     {
-        $variantProducts = $variants
-            ->mapWithKeys(fn (ProductVariant $variant): array => [(int) $variant->id => (int) $variant->product_id])
-            ->all();
         $variantIds = array_keys($variantProducts);
         $productIds = array_values(array_unique(array_values($variantProducts)));
         $creationLogIds = [];
@@ -56,7 +61,7 @@ class SyntheticDefaultVariantEvidenceService
             ->select(['id', 'subject_id', 'properties'])
             ->where('action', 'electric_default_color_created')
             ->where('subject_type', Product::class)
-            ->whereIn('subject_id', $productIds)
+            ->whereIntegerInRaw('subject_id', $productIds)
             ->orderBy('id'), function (Collection $logs) use (&$creationLogIds, $variantProducts): void {
                 foreach ($logs as $log) {
                     $properties = $log->properties;
@@ -71,11 +76,11 @@ class SyntheticDefaultVariantEvidenceService
                     $variantId = $properties['variant_id'];
                     if ((int) $log->subject_id !== $productId
                         || ($variantProducts[$variantId] ?? null) !== $productId
-                        || isset($creationLogIds[$productId][$variantId])) {
+                        || isset($creationLogIds[$variantId])) {
                         continue;
                     }
 
-                    $creationLogIds[$productId][$variantId] = (int) $log->id;
+                    $creationLogIds[$variantId] = (int) $log->id;
                 }
             });
         if (! $creationComplete) {

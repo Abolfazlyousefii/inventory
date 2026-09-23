@@ -265,13 +265,16 @@ it('uses fresh activity queries for locked cleanup revalidation', function (): v
     ['synthetic' => $synthetic] = phaseFiveCleanupFixture();
     $activityQueries = [];
     DB::listen(function ($query) use (&$activityQueries): void {
-        if (str_contains(strtolower($query->sql), 'activity_logs')) {
+        if (str_starts_with(strtolower(ltrim($query->sql)), 'select')
+            && str_contains(strtolower($query->sql), 'activity_logs')) {
             $activityQueries[] = $query->sql;
         }
     });
 
     app(SyntheticDefaultVariantCleanupService::class)->cleanup($synthetic->id, true);
 
-    expect($activityQueries)->not->toBeEmpty()
-        ->and(collect($activityQueries)->contains(fn (string $sql): bool => str_contains(strtolower($sql), 'json')))->toBeTrue();
+    expect($activityQueries)->toHaveCount(4)
+        ->and(collect($activityQueries)->filter(fn (string $sql): bool => str_contains(strtolower($sql), 'json')))->toHaveCount(2)
+        ->and(file_get_contents(app_path('Services/SyntheticDefaultVariantCleanupService.php')))->not->toContain('auditManyWithEvidence')
+        ->and(file_get_contents(app_path('Services/SyntheticDefaultVariantCleanupService.php')))->not->toContain('SyntheticDefaultVariantEvidenceSnapshot');
 });

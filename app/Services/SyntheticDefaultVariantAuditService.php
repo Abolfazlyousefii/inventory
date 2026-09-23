@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ProductVariant;
+use Closure;
 use Illuminate\Support\Collection;
 
 class SyntheticDefaultVariantAuditService
@@ -15,22 +16,62 @@ class SyntheticDefaultVariantAuditService
     ) {}
 
     /** @return Collection<int,array<string,mixed>> */
-    public function rows(?int $productId = null, ?int $variantId = null): Collection
+    public function rows(?int $productId = null, ?int $variantId = null, ?Closure $progress = null): Collection
     {
         $rows = collect();
-        ProductVariant::query()
-            ->with('product.category.parent')
-            ->when($productId, fn ($query) => $query->where('product_id', $productId))
-            ->when($variantId, fn ($query) => $query->whereKey($variantId))
+        $variantProducts = [];
+        $scopeComplete = ProductVariant::query()
+            ->select(['id', 'product_id'])
+            ->when($productId !== null, fn ($query) => $query->where('product_id', $productId))
+            ->when($variantId !== null, fn ($query) => $query->whereKey($variantId))
             ->orderBy('id')
-            ->chunkById(200, function ($variants) use ($rows): void {
-                $evidence = $this->evidence->load($variants);
+            ->chunkById(1000, function ($variants) use (&$variantProducts): void {
                 foreach ($variants as $variant) {
+                    $variantProducts[(int) $variant->id] = (int) $variant->product_id;
+                }
+            });
+        if (! $scopeComplete) {
+            throw new \RuntimeException('ProductVariant audit scope scan did not complete.');
+        }
+        $total = count($variantProducts);
+        $progress?->__invoke('Scanning activity evidence...', ['scanned' => 0, 'total' => $total, 'synthetic' => 0]);
+        $evidence = $this->evidence->loadScope($variantProducts);
+        $progress?->__invoke('Classifying variants...', ['scanned' => 0, 'total' => $total, 'synthetic' => 0]);
+        $scanned = 0;
+        $synthetic = 0;
+        $processedVariantProducts = [];
+
+        $variantScanComplete = ProductVariant::query()
+            ->with('product.category.parent')
+            ->when($productId !== null, fn ($query) => $query->where('product_id', $productId))
+            ->when($variantId !== null, fn ($query) => $query->whereKey($variantId))
+            ->orderBy('id')
+            ->chunkById(200, function ($variants) use ($rows, $evidence, $progress, $total, &$scanned, &$synthetic, &$processedVariantProducts, $variantProducts): void {
+                $candidates = collect();
+                $classifications = [];
+                foreach ($variants as $variant) {
+                    $expectedProductId = $variantProducts[(int) $variant->id] ?? null;
+                    if ($expectedProductId !== (int) $variant->product_id) {
+                        throw new \RuntimeException('ProductVariant audit scope changed during the audit.');
+                    }
+                    $processedVariantProducts[(int) $variant->id] = (int) $variant->product_id;
                     $classification = $this->classifier->classifyWithEvidence($variant, $evidence);
                     if ($classification['class'] === SyntheticDefaultVariantClassifier::NOT_SYNTHETIC) {
                         continue;
                     }
-                    $usage = $this->usage->auditWithEvidence($variant, $evidence);
+                    $candidates->push($variant);
+                    $classifications[(int) $variant->id] = $classification;
+                }
+                $synthetic += $candidates->count();
+                $progress?->__invoke('Auditing usage...', [
+                    'scanned' => $scanned,
+                    'total' => $total,
+                    'synthetic' => $synthetic,
+                ]);
+                $usageByVariant = $this->usage->auditManyWithEvidence($candidates, $evidence);
+                foreach ($candidates as $variant) {
+                    $classification = $classifications[(int) $variant->id];
+                    $usage = $usageByVariant->get((int) $variant->id);
                     $rows->push([
                         'product_id' => (int) $variant->product_id,
                         'product_name' => (string) $variant->product->name,
@@ -56,7 +97,16 @@ class SyntheticDefaultVariantAuditService
                         '_sell_price' => (int) $variant->sell_price,
                     ]);
                 }
+                $scanned += $variants->count();
+                $progress?->__invoke('progress', [
+                    'scanned' => $scanned,
+                    'total' => $total,
+                    'synthetic' => $synthetic,
+                ]);
             });
+        if (! $variantScanComplete || $processedVariantProducts !== $variantProducts) {
+            throw new \RuntimeException('ProductVariant audit scope changed during the audit.');
+        }
 
         return $rows;
     }

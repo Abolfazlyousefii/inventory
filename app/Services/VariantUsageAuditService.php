@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ActivityLog;
 use App\Models\ProductVariant;
 use App\Models\WarehouseStock;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class VariantUsageAuditService
@@ -42,6 +43,81 @@ class VariantUsageAuditService
         );
     }
 
+    /**
+     * Audit-only bulk path. Cleanup must continue calling audit().
+     *
+     * @param  Collection<int,ProductVariant>  $variants
+     * @return Collection<int,array<string,mixed>> keyed by variant ID
+     */
+    public function auditManyWithEvidence(
+        Collection $variants,
+        SyntheticDefaultVariantEvidenceSnapshot $evidence,
+    ): Collection {
+        if ($variants->isEmpty()) {
+            return collect();
+        }
+
+        $variants->each(fn (ProductVariant $variant) => $variant->loadMissing('product'));
+        $variantIds = $variants->map(fn (ProductVariant $variant): int => (int) $variant->id)->all();
+        foreach ($variantIds as $variantId) {
+            $evidence->activityReferenceCount($variantId);
+        }
+
+        $warehouse = WarehouseStock::query()
+            ->whereIn('product_variant_id', $variantIds)
+            ->groupBy('product_variant_id')
+            ->selectRaw('product_variant_id, SUM(quantity) as total_quantity, MAX(CASE WHEN quantity <> 0 THEN 1 ELSE 0 END) as has_nonzero')
+            ->get()
+            ->keyBy(fn (WarehouseStock $row): int => (int) $row->product_variant_id);
+
+        $reserved = collect();
+        foreach ($variants->groupBy(fn (ProductVariant $variant): int => (int) $variant->product_id) as $productId => $productVariants) {
+            $productVariantIds = $productVariants->map(fn (ProductVariant $variant): int => (int) $variant->id)->all();
+            $reserved = $reserved->union($this->reservations->quantitiesByVariant((int) $productId, $productVariantIds));
+        }
+
+        $definitions = $this->references->discover();
+        $referenceCounts = [];
+        foreach ($variantIds as $variantId) {
+            $referenceCounts[$variantId] = [];
+        }
+        foreach ($definitions as $reference) {
+            $key = $reference['table'].'.'.$reference['column'];
+            foreach ($variantIds as $variantId) {
+                $referenceCounts[$variantId][$key] = 0;
+            }
+            $counts = DB::table($reference['table'])
+                ->whereIn($reference['column'], $variantIds)
+                ->groupBy($reference['column'])
+                ->selectRaw(DB::connection()->getQueryGrammar()->wrap($reference['column']).' as variant_reference_id, COUNT(*) as aggregate_count')
+                ->get();
+            foreach ($counts as $count) {
+                $referenceCounts[(int) $count->variant_reference_id][$key] = (int) $count->aggregate_count;
+            }
+        }
+
+        return $variants->mapWithKeys(function (ProductVariant $variant) use ($evidence, $warehouse, $reserved, $referenceCounts, $definitions): array {
+            $variantId = (int) $variant->id;
+            $warehouseRow = $warehouse->get($variantId);
+            $unknownReferences = $definitions
+                ->filter(fn (array $reference): bool => ! $reference['known']
+                    && ($referenceCounts[$variantId][$reference['table'].'.'.$reference['column']] ?? 0) > 0)
+                ->map(fn (array $reference): string => $reference['table'].'.'.$reference['column'])
+                ->values()
+                ->all();
+
+            return [$variantId => $this->assemble(
+                $variant,
+                $evidence->activityReferenceCount($variantId),
+                (int) ($warehouseRow?->total_quantity ?? 0),
+                (bool) ($warehouseRow?->has_nonzero ?? false),
+                (int) $reserved->get($variantId, 0),
+                $referenceCounts[$variantId],
+                $unknownReferences,
+            )];
+        });
+    }
+
     /** @return array<string,mixed> */
     private function auditWithActivityReferenceCount(ProductVariant $variant, int $activityReferences): array
     {
@@ -71,6 +147,27 @@ class VariantUsageAuditService
             }
         }
 
+        return $this->assemble(
+            $variant,
+            $activityReferences,
+            $warehouseStock,
+            $hasNonzeroWarehouseRow,
+            $reserved,
+            $referenceCounts,
+            $unknownReferences,
+        );
+    }
+
+    /** @param array<string,int> $referenceCounts @param array<int,string> $unknownReferences @return array<string,mixed> */
+    private function assemble(
+        ProductVariant $variant,
+        int $activityReferences,
+        int $warehouseStock,
+        bool $hasNonzeroWarehouseRow,
+        int $reserved,
+        array $referenceCounts,
+        array $unknownReferences,
+    ): array {
         $counts = [
             'purchase_refs' => $this->countGroup($referenceCounts, ['purchase_items.product_variant_id']),
             'invoice_refs' => $this->countGroup($referenceCounts, ['invoice_items.variant_id', 'invoice_collection_revision_items.product_variant_id']),
