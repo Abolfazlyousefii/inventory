@@ -4,9 +4,8 @@ use App\Models\ActivityLog;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\WarehouseStock;
 use App\Models\Warehouse;
-use App\Services\SyntheticDefaultVariantClassifier;
+use App\Models\WarehouseStock;
 use App\Services\SyntheticDefaultVariantCleanupService;
 use App\Services\WarehouseStockService;
 use Illuminate\Database\Schema\Blueprint;
@@ -260,4 +259,19 @@ it('preserves every nondeleted warehouse row and never nets nonzero rows to safe
     expect(app(SyntheticDefaultVariantCleanupService::class)->cleanup($netZeroCandidate->id, false)['status'])->toBe('SKIPPED')
         ->and($netZeroCandidate->fresh())->not->toBeNull()
         ->and(DB::table('warehouse_stocks')->where('product_variant_id', $netZeroCandidate->id)->orderBy('id')->get()->toJson())->toBe($candidateRowsBefore);
+});
+
+it('uses fresh activity queries for locked cleanup revalidation', function (): void {
+    ['synthetic' => $synthetic] = phaseFiveCleanupFixture();
+    $activityQueries = [];
+    DB::listen(function ($query) use (&$activityQueries): void {
+        if (str_contains(strtolower($query->sql), 'activity_logs')) {
+            $activityQueries[] = $query->sql;
+        }
+    });
+
+    app(SyntheticDefaultVariantCleanupService::class)->cleanup($synthetic->id, true);
+
+    expect($activityQueries)->not->toBeEmpty()
+        ->and(collect($activityQueries)->contains(fn (string $sql): bool => str_contains(strtolower($sql), 'json')))->toBeTrue();
 });

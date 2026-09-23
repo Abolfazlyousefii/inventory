@@ -6,6 +6,7 @@ use App\Models\ModelList;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\SyntheticDefaultVariantClassifier;
+use App\Services\SyntheticDefaultVariantEvidenceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -19,20 +20,20 @@ function phaseFiveClassifierVariant(array $variantAttributes = [], bool $electri
             'code' => uniqid('M'),
         ])->id;
     }
-    $parent = Category::query()->create([
-        'name' => $electrical ? 'برقیجات' : 'Unrelated root '.uniqid(),
-        'code' => uniqid('C'),
-    ]);
+    $parent = $electrical
+        ? Category::query()->firstOrCreate(['name' => 'برقیجات'], ['code' => uniqid('C')])
+        : Category::query()->create(['name' => 'Unrelated root '.uniqid(), 'code' => uniqid('C')]);
     $category = Category::query()->create([
         'name' => 'Classifier child '.uniqid(),
         'code' => uniqid('D'),
         'parent_id' => $parent->id,
     ]);
+    $productCode = '81'.str_pad((string) (Product::query()->count() + 1), 4, '0', STR_PAD_LEFT);
     $product = Product::query()->create([
         'category_id' => $category->id,
         'name' => 'Classifier product',
         'sku' => uniqid('CLASS-'),
-        'code' => '810001',
+        'code' => $productCode,
         'stock' => 0,
         'reserved' => 0,
         'price' => 100,
@@ -45,7 +46,7 @@ function phaseFiveClassifierVariant(array $variantAttributes = [], bool $electri
         'variant_name' => 'Classifier product مشکی',
         'variety_name' => 'مشکی',
         'variety_code' => '0001',
-        'variant_code' => '81000100001',
+        'variant_code' => $productCode.'00001',
         'sell_price' => 0,
         'stock' => 0,
         'reserved' => 0,
@@ -140,4 +141,44 @@ it('does not mutate any classified record', function (): void {
     expect($variant->product->fresh()->getRawOriginal())->toBe($before['product'])
         ->and($variant->fresh()->getRawOriginal())->toBe($before['variant'])
         ->and(ActivityLog::query()->orderBy('id')->get()->toArray())->toBe($before['activities']);
+});
+
+it('matches fresh classification when complete chunk evidence is supplied explicitly', function (): void {
+    $proven = phaseFiveClassifierVariant([], false);
+    phaseFiveDefaultCreationLog($proven);
+    $probable = phaseFiveClassifierVariant();
+    ActivityLog::query()->create([
+        'action' => 'created',
+        'subject_type' => ProductVariant::class,
+        'subject_id' => $probable->id,
+        'description' => 'neutral observer row',
+        'properties' => ['variant_id' => (int) $probable->id],
+        'occurred_at' => now(),
+    ]);
+    $directContrary = phaseFiveClassifierVariant();
+    ActivityLog::query()->create([
+        'action' => 'updated',
+        'subject_type' => ProductVariant::class,
+        'subject_id' => $directContrary->id,
+        'description' => 'direct contrary evidence',
+        'properties' => [],
+        'occurred_at' => now(),
+    ]);
+    $propertyContrary = phaseFiveClassifierVariant();
+    ActivityLog::query()->create([
+        'action' => 'updated',
+        'subject_type' => Product::class,
+        'subject_id' => $propertyContrary->product_id,
+        'description' => 'property contrary evidence',
+        'properties' => ['variant_id' => (int) $propertyContrary->id],
+        'occurred_at' => now(),
+    ]);
+    $variants = collect([$proven, $probable, $directContrary, $propertyContrary]);
+    $snapshot = app(SyntheticDefaultVariantEvidenceService::class)->load($variants);
+    $classifier = app(SyntheticDefaultVariantClassifier::class);
+
+    foreach ($variants as $variant) {
+        expect($classifier->classifyWithEvidence($variant, $snapshot))
+            ->toBe($classifier->classify($variant));
+    }
 });

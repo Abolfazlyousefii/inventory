@@ -12,11 +12,38 @@ class VariantUsageAuditService
     public function __construct(
         private readonly VariantReferenceDiscoveryService $references,
         private readonly ReservationQueryService $reservations,
-    ) {
-    }
+    ) {}
 
     /** @return array<string,mixed> */
     public function audit(ProductVariant $variant): array
+    {
+        $variantId = (int) $variant->id;
+        $activityReferences = ActivityLog::query()
+            ->whereNotIn('action', ['created', 'electric_default_color_created'])
+            ->where(function ($query) use ($variantId): void {
+                $query->where(function ($subject) use ($variantId): void {
+                    $subject->where('subject_type', ProductVariant::class)
+                        ->where('subject_id', $variantId);
+                })->orWhereJsonContains('properties->variant_id', $variantId);
+            })
+            ->count();
+
+        return $this->auditWithActivityReferenceCount($variant, (int) $activityReferences);
+    }
+
+    /** @return array<string,mixed> */
+    public function auditWithEvidence(
+        ProductVariant $variant,
+        SyntheticDefaultVariantEvidenceSnapshot $evidence,
+    ): array {
+        return $this->auditWithActivityReferenceCount(
+            $variant,
+            $evidence->activityReferenceCount((int) $variant->id),
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function auditWithActivityReferenceCount(ProductVariant $variant, int $activityReferences): array
     {
         $variant->loadMissing('product');
         $variantId = (int) $variant->id;
@@ -44,16 +71,6 @@ class VariantUsageAuditService
             }
         }
 
-        $activityReferences = ActivityLog::query()
-            ->whereNotIn('action', ['created', 'electric_default_color_created'])
-            ->where(function ($query) use ($variantId): void {
-                $query->where(function ($subject) use ($variantId): void {
-                    $subject->where('subject_type', ProductVariant::class)
-                        ->where('subject_id', $variantId);
-                })->orWhereJsonContains('properties->variant_id', $variantId);
-            })
-            ->count();
-
         $counts = [
             'purchase_refs' => $this->countGroup($referenceCounts, ['purchase_items.product_variant_id']),
             'invoice_refs' => $this->countGroup($referenceCounts, ['invoice_items.variant_id', 'invoice_collection_revision_items.product_variant_id']),
@@ -80,20 +97,34 @@ class VariantUsageAuditService
             ->all();
 
         $blockingReasons = [];
-        if ($hasNonzeroWarehouseRow) $blockingReasons[] = 'nonzero_warehouse_stock';
-        if ((int) $variant->stock !== 0) $blockingReasons[] = 'nonzero_cached_stock';
-        if ($reserved !== 0) $blockingReasons[] = 'canonical_reservations';
-        if ((int) $variant->reserved !== 0 || (int) $variant->product->reserved !== 0) $blockingReasons[] = 'nonzero_cached_reserved';
-        if ($variant->variety_id !== null) $blockingReasons[] = 'external_mapping';
-        if ($activityReferences > 0) $blockingReasons[] = 'audit_or_business_evidence';
+        if ($hasNonzeroWarehouseRow) {
+            $blockingReasons[] = 'nonzero_warehouse_stock';
+        }
+        if ((int) $variant->stock !== 0) {
+            $blockingReasons[] = 'nonzero_cached_stock';
+        }
+        if ($reserved !== 0) {
+            $blockingReasons[] = 'canonical_reservations';
+        }
+        if ((int) $variant->reserved !== 0 || (int) $variant->product->reserved !== 0) {
+            $blockingReasons[] = 'nonzero_cached_reserved';
+        }
+        if ($variant->variety_id !== null) {
+            $blockingReasons[] = 'external_mapping';
+        }
+        if ($activityReferences > 0) {
+            $blockingReasons[] = 'audit_or_business_evidence';
+        }
         foreach ($counts as $key => $count) {
-            if ($count > 0) $blockingReasons[] = match ($key) {
-                'purchase_refs' => 'purchase_references',
-                'invoice_refs' => 'invoice_references',
-                'preinvoice_refs' => 'preinvoice_references',
-                'reservation_refs' => 'reservation_references',
-                default => 'stock_movement_references',
-            };
+            if ($count > 0) {
+                $blockingReasons[] = match ($key) {
+                    'purchase_refs' => 'purchase_references',
+                    'invoice_refs' => 'invoice_references',
+                    'preinvoice_refs' => 'preinvoice_references',
+                    'reservation_refs' => 'reservation_references',
+                    default => 'stock_movement_references',
+                };
+            }
         }
 
         foreach ($referenceCounts as $key => $count) {

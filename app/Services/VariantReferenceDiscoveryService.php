@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\DB;
 
 class VariantReferenceDiscoveryService
 {
+    /** @var null|array<int,array{table:string,column:string,known:bool}> */
+    private ?array $discoveredReferences = null;
+
     /** @var array<string,array<int,string>> */
     public const KNOWN_REFERENCES = [
         'purchase_items' => ['product_variant_id'],
@@ -37,10 +40,14 @@ class VariantReferenceDiscoveryService
      */
     public function discover(): Collection
     {
+        if ($this->discoveredReferences !== null) {
+            return collect($this->discoveredReferences);
+        }
+
         $driver = DB::connection()->getDriverName();
         $pairs = $driver === 'sqlite' ? $this->sqlitePairs() : $this->mysqlPairs();
 
-        return collect($pairs)
+        $discovered = collect($pairs)
             ->unique(fn (array $row) => $row['table'].'.'.$row['column'])
             ->map(function (array $row): array {
                 $row['known'] = in_array($row['column'], self::KNOWN_REFERENCES[$row['table']] ?? [], true);
@@ -48,7 +55,12 @@ class VariantReferenceDiscoveryService
                 return $row;
             })
             ->sortBy(fn (array $row) => $row['table'].'.'.$row['column'])
-            ->values();
+            ->values()
+            ->all();
+
+        $this->discoveredReferences = $discovered;
+
+        return collect($discovered);
     }
 
     /** @return array<int,array{table:string,column:string}> */

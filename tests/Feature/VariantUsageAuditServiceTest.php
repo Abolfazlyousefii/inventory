@@ -4,9 +4,10 @@ use App\Models\ActivityLog;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\WarehouseStock;
 use App\Models\Purchase;
 use App\Models\Supplier;
+use App\Models\WarehouseStock;
+use App\Services\SyntheticDefaultVariantEvidenceService;
 use App\Services\VariantUsageAuditService;
 use App\Services\WarehouseStockService;
 use Illuminate\Database\Schema\Blueprint;
@@ -124,4 +125,23 @@ it('blocks known purchase references and unknown schema-discovered references', 
         ->and($audit['other_reference_tables'])->toContain('phase_five_unknown_refs.variant_id')
         ->and($audit['blocking_reasons'])->toContain('purchase_references')
         ->and($audit['blocking_reasons'])->toContain('unknown_reference:phase_five_unknown_refs.variant_id');
+});
+
+it('counts one activity row once when both direct and property routes reference the variant', function (): void {
+    $variant = phaseFiveUnusedVariant();
+    ActivityLog::query()->create([
+        'action' => 'updated',
+        'subject_type' => ProductVariant::class,
+        'subject_id' => $variant->id,
+        'description' => 'same variant through both routes',
+        'properties' => ['variant_id' => (int) $variant->id],
+        'occurred_at' => now(),
+    ]);
+    $snapshot = app(SyntheticDefaultVariantEvidenceService::class)->load(collect([$variant]));
+
+    $audit = app(VariantUsageAuditService::class)->auditWithEvidence($variant, $snapshot);
+
+    expect($audit['activity_refs'])->toBe(1)
+        ->and($audit['safe_to_remove'])->toBeFalse()
+        ->and($audit['blocking_reasons'])->toContain('audit_or_business_evidence');
 });

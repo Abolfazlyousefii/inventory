@@ -9,7 +9,9 @@ use App\Models\ProductVariant;
 class SyntheticDefaultVariantClassifier
 {
     public const PROVEN_SYNTHETIC = 'proven_synthetic';
+
     public const PROBABLE_SYNTHETIC = 'probable_synthetic';
+
     public const NOT_SYNTHETIC = 'not_synthetic';
 
     /**
@@ -38,19 +40,51 @@ class SyntheticDefaultVariantClassifier
             });
 
         if ($creationLog) {
-            return [
-                'class' => self::PROVEN_SYNTHETIC,
-                'reasons' => ['exact_electric_default_color_created_activity'],
-                'evidence' => ['activity_log_id' => (int) $creationLog->id],
-            ];
+            return $this->proven((int) $creationLog->id);
         }
+
+        return $this->classifySignals($variant, ! $this->hasContraryEvidence($variant));
+    }
+
+    /**
+     * Audit-only classification from a complete evidence snapshot.
+     *
+     * @return array{class:string,reasons:array<int,string>,evidence:array<string,mixed>}
+     */
+    public function classifyWithEvidence(
+        ProductVariant $variant,
+        SyntheticDefaultVariantEvidenceSnapshot $evidence,
+    ): array {
+        $variant->loadMissing('product.category.parent');
+        $creationLogId = $evidence->creationLogId((int) $variant->product_id, (int) $variant->id);
+        if ($creationLogId !== null) {
+            return $this->proven($creationLogId);
+        }
+
+        return $this->classifySignals($variant, ! $evidence->hasContraryEvidence((int) $variant->id));
+    }
+
+    /** @return array{class:string,reasons:array<int,string>,evidence:array<string,mixed>} */
+    private function proven(int $activityLogId): array
+    {
+        return [
+            'class' => self::PROVEN_SYNTHETIC,
+            'reasons' => ['exact_electric_default_color_created_activity'],
+            'evidence' => ['activity_log_id' => $activityLogId],
+        ];
+    }
+
+    /** @return array{class:string,reasons:array<int,string>,evidence:array<string,mixed>} */
+    private function classifySignals(ProductVariant $variant, bool $manualEvidenceAbsent): array
+    {
+        $product = $variant->product;
 
         $signals = [
             'electrical_category' => app(DefaultProductDesignService::class)->isElectricCategory($product->category),
             'null_model' => $variant->model_list_id === null,
             'default_color_name' => $this->isDefaultColor($variant),
             'legacy_code_shape' => $this->hasLegacyCodeShape($product, $variant),
-            'manual_evidence_absent' => ! $this->hasContraryEvidence($variant),
+            'manual_evidence_absent' => $manualEvidenceAbsent,
         ];
 
         if (! in_array(false, $signals, true)) {

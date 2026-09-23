@@ -1,15 +1,16 @@
 <?php
 
 use App\Models\Category;
+use App\Models\ModelList;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\WarehouseStock;
 use App\Services\CanonicalBaseVariantService;
+use App\Services\PurchaseVariantResolver;
 use App\Services\WarehouseStockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use App\Services\PurchaseVariantResolver;
 
 uses(RefreshDatabase::class);
 
@@ -145,4 +146,90 @@ it('blocks an inactive canonical base variant without reactivating it', function
         ->toThrow(ValidationException::class);
 
     expect($base->fresh()->is_active)->toBeFalse();
+});
+
+it('batch identifies exactly the products whose individual inspection has a missing base', function (): void {
+    $simple = phaseFiveSimpleProduct(['code' => '831001']);
+
+    $activeBase = phaseFiveSimpleProduct(['code' => '831002']);
+    ProductVariant::query()->create([
+        'product_id' => $activeBase->id, 'model_list_id' => null, 'variant_name' => 'Base',
+        'variety_name' => '—', 'variety_code' => '0000', 'variant_code' => '83100200000',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => true, 'sales_enabled' => true,
+    ]);
+
+    $inactiveBase = phaseFiveSimpleProduct(['code' => '831003']);
+    ProductVariant::query()->create([
+        'product_id' => $inactiveBase->id, 'model_list_id' => null, 'variant_name' => 'Inactive Base',
+        'variety_name' => '—', 'variety_code' => '0000', 'variant_code' => '83100300000',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => false, 'sales_enabled' => true,
+    ]);
+
+    $models = phaseFiveSimpleProduct(['code' => '831004', 'models' => [
+        'use_models' => true, 'model_list_ids' => [99], 'use_designs' => false, 'design_count' => 0,
+    ]]);
+    $designs = phaseFiveSimpleProduct(['code' => '831005', 'models' => [
+        'use_models' => false, 'model_list_ids' => [], 'use_designs' => true, 'design_count' => 2,
+    ]]);
+    $colors = phaseFiveSimpleProduct(['code' => '831006', 'has_colors' => true]);
+
+    $inferred = phaseFiveSimpleProduct(['code' => '831007', 'models' => []]);
+    $model = ModelList::query()->create(['brand' => 'Batch', 'model_name' => 'Inferred', 'code' => uniqid('BI')]);
+    ProductVariant::query()->create([
+        'product_id' => $inferred->id, 'model_list_id' => $model->id, 'variant_name' => 'Model',
+        'variety_name' => '—', 'variety_code' => '0000', 'variant_code' => '83100701000',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => true, 'sales_enabled' => true,
+    ]);
+
+    $inferredDesign = phaseFiveSimpleProduct(['code' => '831010', 'models' => []]);
+    ProductVariant::query()->create([
+        'product_id' => $inferredDesign->id, 'model_list_id' => null, 'variant_name' => 'Design',
+        'variety_name' => 'Design', 'variety_code' => '0002', 'variant_code' => '83101000002',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => true, 'sales_enabled' => true,
+    ]);
+
+    $zeroModel = phaseFiveSimpleProduct(['code' => '831011', 'models' => []]);
+    DB::table('model_lists')->insert([
+        'id' => 0,
+        'brand' => 'Legacy',
+        'model_name' => 'Zero sentinel',
+        'code' => uniqid('ZERO'),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    ProductVariant::query()->create([
+        'product_id' => $zeroModel->id, 'model_list_id' => 0, 'variant_name' => 'Legacy zero model',
+        'variety_name' => '—', 'variety_code' => '0000', 'variant_code' => '83101101000',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => true, 'sales_enabled' => true,
+    ]);
+
+    $canonicalColor = phaseFiveSimpleProduct(['code' => '831012', 'has_colors' => true]);
+    ProductVariant::query()->create([
+        'product_id' => $canonicalColor->id, 'model_list_id' => null, 'variant_name' => 'Canonical before structure',
+        'variety_name' => '—', 'variety_code' => '0000', 'variant_code' => '83101200000',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => true, 'sales_enabled' => true,
+    ]);
+
+    $conflicting = phaseFiveSimpleProduct(['code' => '831008']);
+    ProductVariant::query()->create([
+        'product_id' => $simple->id, 'model_list_id' => null, 'variant_name' => 'Conflicting code owner',
+        'variety_name' => 'Other', 'variety_code' => '0099', 'variant_code' => '83100800000',
+        'sell_price' => 1, 'stock' => 0, 'reserved' => 0, 'is_active' => true, 'sales_enabled' => true,
+    ]);
+
+    $ambiguous = phaseFiveSimpleProduct(['code' => '831009']);
+    WarehouseStock::query()->create([
+        'warehouse_id' => WarehouseStockService::centralWarehouseId(),
+        'product_id' => $ambiguous->id,
+        'product_variant_id' => null,
+        'quantity' => 0,
+    ]);
+
+    $ids = collect([$simple, $activeBase, $inactiveBase, $models, $designs, $colors, $inferred, $inferredDesign, $zeroModel, $canonicalColor, $conflicting, $ambiguous])
+        ->pluck('id');
+    $missing = app(CanonicalBaseVariantService::class)->missingBaseProductIds($ids)->sort()->values()->all();
+
+    expect(app(CanonicalBaseVariantService::class)->inspect($zeroModel)['state'])->not->toBe(CanonicalBaseVariantService::NOT_SIMPLE)
+        ->and(app(CanonicalBaseVariantService::class)->inspect($canonicalColor)['variant']?->id)->not->toBeNull()
+        ->and($missing)->toBe(collect([$simple, $zeroModel, $conflicting, $ambiguous])->pluck('id')->sort()->values()->all());
 });
