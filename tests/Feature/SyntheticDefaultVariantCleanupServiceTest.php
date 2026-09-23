@@ -273,8 +273,10 @@ it('uses fresh activity queries for locked cleanup revalidation', function (): v
 
     app(SyntheticDefaultVariantCleanupService::class)->cleanup($synthetic->id, true);
 
-    expect($activityQueries)->toHaveCount(4)
-        ->and(collect($activityQueries)->filter(fn (string $sql): bool => str_contains(strtolower($sql), 'json')))->toHaveCount(2)
+    expect($activityQueries)->not->toBeEmpty()
+        // Fresh revalidation must still read activity evidence, but never
+        // through an unbounded JSON scan of the whole ActivityLog table.
+        ->and(collect($activityQueries)->filter(fn (string $sql): bool => str_contains(strtolower($sql), 'json')))->toHaveCount(0)
         ->and(file_get_contents(app_path('Services/SyntheticDefaultVariantCleanupService.php')))->not->toContain('auditManyWithEvidence')
         ->and(file_get_contents(app_path('Services/SyntheticDefaultVariantCleanupService.php')))->not->toContain('SyntheticDefaultVariantEvidenceSnapshot');
 });

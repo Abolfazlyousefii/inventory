@@ -14,6 +14,10 @@ class SyntheticDefaultVariantClassifier
 
     public const NOT_SYNTHETIC = 'not_synthetic';
 
+    public function __construct(
+        private readonly FreshVariantActivityEvidenceService $freshActivity,
+    ) {}
+
     /**
      * @return array{class:string,reasons:array<int,string>,evidence:array<string,mixed>}
      */
@@ -128,18 +132,9 @@ class SyntheticDefaultVariantClassifier
 
     private function hasContraryEvidence(ProductVariant $variant): bool
     {
-        return ActivityLog::query()
-            // The global observer emits a generic `created` row for automatic
-            // variants too, so it is provenance-neutral rather than proof of
-            // manual creation.
-            ->whereNotIn('action', ['electric_default_color_created', 'created'])
-            ->where(function ($query) use ($variant): void {
-                $query->where(function ($subject) use ($variant): void {
-                    $subject->where('subject_type', ProductVariant::class)
-                        ->where('subject_id', $variant->id);
-                })->orWhereJsonContains('properties->variant_id', (int) $variant->id);
-            })
-            ->exists();
+        // Bounded, chunked scan over provenance-neutral-excluded activity rows;
+        // a single JSON_CONTAINS scan cannot survive a production ActivityLog.
+        return $this->freshActivity->exists((int) $variant->id);
     }
 
     private function normalize(string $value): string
