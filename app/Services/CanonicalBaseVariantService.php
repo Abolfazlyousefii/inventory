@@ -5,21 +5,24 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\WarehouseStock;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class CanonicalBaseVariantService
 {
     public const AVAILABLE = 'available';
+
     public const CREATED = 'created';
+
     public const NOT_SIMPLE = 'not_simple';
+
     public const BLOCKED_FOR_REVIEW = 'blocked_for_base_variant_review';
 
     public function __construct(
         private readonly ProductVariantStructureService $structure,
         private readonly VariantUsageAuditService $usage,
-    ) {
-    }
+    ) {}
 
     /** @return array{state:string,variant:?ProductVariant,created:bool,blocking_reasons:array<int,string>} */
     public function inspect(Product $product): array
@@ -81,6 +84,92 @@ class CanonicalBaseVariantService
             false,
             $blocking,
         );
+    }
+
+    /**
+     * Return product IDs matching the exact summary predicate from inspect():
+     * state is not NOT_SIMPLE and no canonical variant was returned.
+     *
+     * @param  Collection<int,int>  $productIds
+     * @return Collection<int,int>
+     */
+    public function missingBaseProductIds(Collection $productIds): Collection
+    {
+        $missing = collect();
+        $productIds->map(fn ($id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->chunk(200)
+            ->each(function (Collection $idChunk) use ($missing): void {
+                $products = Product::query()->whereKey($idChunk->all())->get()->keyBy('id');
+                if ($products->isEmpty()) {
+                    return;
+                }
+
+                $canonicalProductIds = [];
+                ProductVariant::query()
+                    ->select(['id', 'product_id', 'variant_code'])
+                    ->whereIn('product_id', $products->keys()->all())
+                    ->whereNull('model_list_id')
+                    ->where('variety_code', '0000')
+                    ->orderBy('id')
+                    ->chunkById(500, function (Collection $variants) use ($products, &$canonicalProductIds): void {
+                        foreach ($variants as $variant) {
+                            $product = $products->get((int) $variant->product_id);
+                            if ($product && (string) $variant->variant_code === $this->baseCode($product)) {
+                                $canonicalProductIds[(int) $product->id] = true;
+                            }
+                        }
+                    });
+
+                $withoutCanonical = $products->reject(
+                    fn (Product $product): bool => isset($canonicalProductIds[(int) $product->id]),
+                );
+                $emptyMetadataIds = $withoutCanonical
+                    ->filter(fn (Product $product): bool => empty(is_array($product->models) ? $product->models : []))
+                    ->keys()
+                    ->map(fn ($id): int => (int) $id)
+                    ->values();
+                $inferredModelProducts = $emptyMetadataIds->isEmpty()
+                    ? collect()
+                    : ProductVariant::query()
+                        ->whereIn('product_id', $emptyMetadataIds->all())
+                        ->whereNotNull('model_list_id')
+                        ->where('model_list_id', '<>', 0)
+                        ->distinct()
+                        ->pluck('product_id')
+                        ->mapWithKeys(fn ($id): array => [(int) $id => true]);
+                $inferredDesignProducts = $emptyMetadataIds->isEmpty()
+                    ? collect()
+                    : ProductVariant::query()
+                        ->whereIn('product_id', $emptyMetadataIds->all())
+                        ->whereNotNull('variety_code')
+                        ->where('variety_code', '<>', '0000')
+                        ->groupBy('product_id')
+                        ->selectRaw('product_id, MAX(CAST(variety_code AS UNSIGNED)) as max_design')
+                        ->pluck('max_design', 'product_id')
+                        ->filter(fn ($maximum): bool => (int) $maximum > 0)
+                        ->mapWithKeys(fn ($maximum, $productId): array => [(int) $productId => true]);
+
+                foreach ($withoutCanonical as $product) {
+                    $meta = is_array($product->models) ? $product->models : [];
+                    if ($meta === []) {
+                        $notSimple = (bool) $product->has_colors
+                            || $inferredModelProducts->has((int) $product->id)
+                            || $inferredDesignProducts->has((int) $product->id);
+                    } else {
+                        $structure = $this->structure->structure($product);
+                        $notSimple = $structure['uses_models'] || $structure['uses_designs'] || $structure['has_colors'];
+                    }
+
+                    if (! $notSimple) {
+                        $missing->push((int) $product->id);
+                    }
+                }
+            });
+
+        return $missing->unique()->values();
     }
 
     /** @return array{state:string,variant:?ProductVariant,created:bool,blocking_reasons:array<int,string>} */

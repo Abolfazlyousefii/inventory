@@ -10,8 +10,9 @@ class SyntheticDefaultVariantAuditService
     public function __construct(
         private readonly SyntheticDefaultVariantClassifier $classifier,
         private readonly VariantUsageAuditService $usage,
-    ) {
-    }
+        private readonly CanonicalBaseVariantService $canonicalBaseVariants,
+        private readonly SyntheticDefaultVariantEvidenceService $evidence,
+    ) {}
 
     /** @return Collection<int,array<string,mixed>> */
     public function rows(?int $productId = null, ?int $variantId = null): Collection
@@ -23,12 +24,13 @@ class SyntheticDefaultVariantAuditService
             ->when($variantId, fn ($query) => $query->whereKey($variantId))
             ->orderBy('id')
             ->chunkById(200, function ($variants) use ($rows): void {
+                $evidence = $this->evidence->load($variants);
                 foreach ($variants as $variant) {
-                    $classification = $this->classifier->classify($variant);
+                    $classification = $this->classifier->classifyWithEvidence($variant, $evidence);
                     if ($classification['class'] === SyntheticDefaultVariantClassifier::NOT_SYNTHETIC) {
                         continue;
                     }
-                    $usage = $this->usage->audit($variant);
+                    $usage = $this->usage->auditWithEvidence($variant, $evidence);
                     $rows->push([
                         'product_id' => (int) $variant->product_id,
                         'product_name' => (string) $variant->product->name,
@@ -62,16 +64,9 @@ class SyntheticDefaultVariantAuditService
     /** @param Collection<int,array<string,mixed>> $rows @return array<string,int> */
     public function summary(Collection $rows): array
     {
-        $missingBase = $rows->unique('product_id')->filter(function (array $row): bool {
-            $product = ProductVariant::query()->find($row['variant_id'])?->product;
-            if (! $product) {
-                return false;
-            }
-            $inspection = app(CanonicalBaseVariantService::class)->inspect($product);
-
-            return $inspection['state'] !== CanonicalBaseVariantService::NOT_SIMPLE
-                && $inspection['variant'] === null;
-        })->count();
+        $missingBase = $this->canonicalBaseVariants
+            ->missingBaseProductIds($rows->pluck('product_id'))
+            ->count();
 
         return [
             'proven' => $rows->where('synthetic_class', SyntheticDefaultVariantClassifier::PROVEN_SYNTHETIC)->count(),

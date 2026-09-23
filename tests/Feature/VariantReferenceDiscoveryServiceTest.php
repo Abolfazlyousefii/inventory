@@ -3,6 +3,7 @@
 use App\Services\VariantReferenceDiscoveryService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
@@ -40,4 +41,25 @@ it('discovers registered variant references and undeclared conventional columns'
     expect($references->get('phase_five_external_variant_links.product_variant_id')['known'])->toBeFalse();
     expect($references->filter(fn (array $row) => ! $row['known'])->keys()->values()->all())
         ->toBe(['phase_five_external_variant_links.product_variant_id']);
+});
+
+it('discovers schema metadata once per service instance', function (): void {
+    $metadataQueries = [];
+    DB::listen(function ($query) use (&$metadataQueries): void {
+        $sql = strtolower($query->sql);
+        if (str_contains($sql, 'sqlite_master') || str_contains($sql, 'pragma table_info') || str_contains($sql, 'pragma foreign_key_list')) {
+            $metadataQueries[] = $query->sql;
+        }
+    });
+    $service = app(VariantReferenceDiscoveryService::class);
+
+    $first = $service->discover();
+    $firstCount = count($metadataQueries);
+    $first->pop();
+    $second = $service->discover();
+
+    expect($firstCount)->toBeGreaterThan(0)
+        ->and(count($metadataQueries))->toBe($firstCount)
+        ->and($second)->not->toBeEmpty()
+        ->and($second->count())->toBeGreaterThan($first->count());
 });
