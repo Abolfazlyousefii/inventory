@@ -107,17 +107,18 @@ it('sorts reservations by management priority and then oldest first', function (
         ->toBe([$olderActionable->id, $newerActionable->id, $review->id, $active->id]);
 });
 
-it('shows an actionable releasable reservation before other statuses', function () {
+it('keeps a stale-looking reservation protected while its draft is active', function () {
     warehouseReservationPriorityFixture('Priority Normal Active', 200);
     warehouseReservationPriorityFixture('Priority Manual Review', 150, 'legacy_unknown', null);
     $actionable = warehouseReservationPriorityFixture('Priority Releasable First', 20, lastSeenMinutesAgo: 20);
 
     $this->actingAs(warehouseReservationPriorityViewer())
-        ->getJson(route('warehouse-reservations.index'))
+        ->getJson(route('warehouse-reservations.index', ['search' => 'Priority Releasable First']))
         ->assertOk()
         ->assertJsonPath('data.0.id', $actionable->id)
-        ->assertJsonPath('data.0.releasable', true)
-        ->assertJsonPath('data.0.priority', 1);
+        ->assertJsonPath('data.0.status', 'active_valid')
+        ->assertJsonPath('data.0.releasable', false)
+        ->assertJsonPath('data.0.priority', 3);
 });
 
 it('displays a readable reservation age', function () {
@@ -129,7 +130,7 @@ it('displays a readable reservation age', function () {
         ->assertSee('2 ساعت قبل');
 });
 
-it('shows old reservation warnings only when the reservation is old', function () {
+it('does not expose a legacy age warning when an active draft protects the reservation', function () {
     $old = warehouseReservationPriorityFixture('Priority Old Warning', 120, lastSeenMinutesAgo: 120);
     $recent = warehouseReservationPriorityFixture('Priority Recent Safe', 35);
 
@@ -140,8 +141,8 @@ it('shows old reservation warnings only when the reservation is old', function (
     $this->actingAs(warehouseReservationPriorityViewer())
         ->get(route('warehouse-reservations.index', ['search' => 'Priority Old Warning']))
         ->assertOk()
-        ->assertSee('رزرو قدیمی و قابل آزادسازی است.')
-        ->assertSee('فوری');
+        ->assertSee('فعال و محافظت‌شده')
+        ->assertDontSee('قابل آزادسازی توسط مدیر انبار');
 });
 
 it('does not change reservation data while displaying the prioritized list', function () {

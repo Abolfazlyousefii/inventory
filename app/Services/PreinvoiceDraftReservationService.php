@@ -19,7 +19,10 @@ use RuntimeException;
 
 class PreinvoiceDraftReservationService
 {
-    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+    public function __construct(
+        private InventoryReservationReleaseService $inventoryRelease,
+        private ReservationClassificationService $classification,
+    ) {}
 
     public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null): array
     {
@@ -63,7 +66,7 @@ class PreinvoiceDraftReservationService
             // موجودیشون از انبار کم شده رو در محاسبه delta حساب کن تا دوباره
             // تلاش نکنه رزروشون کنه.
             $committedQty = [];
-            if (isset($order)) {
+            if (isset($order) && $this->hasCommittedCentralStock($order)) {
                 $order->loadMissing('items');
                 foreach ($order->items as $orderItem) {
                     $key = $this->reservationKey((int) $orderItem->product_id, (int) $orderItem->variant_id);
@@ -144,6 +147,8 @@ class PreinvoiceDraftReservationService
                     // اگه مقدار جدید کمتر یا مساوی committed هست، رزرو موقت لازم نیست
                     $this->markReleasedOrDelete($existing[$key], $userId, 'manual_release', null);
                 }
+
+                ReservationSideEffects::touchProduct($productId);
             }
 
             return [
@@ -167,6 +172,7 @@ class PreinvoiceDraftReservationService
                 $quantity = (int) $row->quantity;
                 $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $quantity);
                 $this->markReleasedOrDelete($row, $userId, $reason, $note);
+                ReservationSideEffects::touchProduct((int) $row->product_id);
                 $released[] = [
                     'product_id' => (int) $row->product_id,
                     'variant_id' => (int) $row->variant_id,
@@ -200,14 +206,23 @@ class PreinvoiceDraftReservationService
         bool $dryRun = false,
     ): array {
         if ($dryRun) {
+            $evaluatedAt = now();
+
             return $this->cleanupResult(
                 $this->staleTemporaryReservationsQuery($onlineMinutes, $inPersonMinutes)
                     ->with([
                         'product:id,name',
                         'variant:id,variant_name,variety_name',
                         'user:id,name',
+                        'order.invoice',
+                        'activeDrafts',
                     ])
-                    ->get(),
+                    ->get()
+                    ->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                        $this->classification->classify($reservation, $evaluatedAt)['state']
+                            === ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE
+                    )
+                    ->values(),
                 false,
             );
         }
@@ -229,11 +244,13 @@ class PreinvoiceDraftReservationService
                         ->lockForUpdate()
                         ->first();
 
-                    if (! $row
-                        || $row->preinvoice_order_id !== null
-                        || $row->converted_at !== null
-                        || $row->released_at !== null
-                        || ! $row->isCleanupCandidate(now(), max(1, $onlineMinutes), max(1, $inPersonMinutes))) {
+                    if (! $row) {
+                        return null;
+                    }
+
+                    $row->load(['order.invoice', 'activeDrafts']);
+                    $classification = $this->classification->classify($row, now());
+                    if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
                         return null;
                     }
 
@@ -256,6 +273,7 @@ class PreinvoiceDraftReservationService
                     }
 
                     $this->markReleasedOrDelete($row, 0, 'temporary_session_lost', 'Heartbeat رزرو موقت قطع شد و رزرو آزاد شد.');
+                    ReservationSideEffects::touchProduct((int) $row->product_id);
 
                     $row->loadMissing([
                         'product:id,name',
@@ -330,6 +348,10 @@ class PreinvoiceDraftReservationService
     ): Builder {
         return PreinvoiceDraftReservation::query()
             ->cleanupCandidates(max(1, $onlineMinutes), max(1, $inPersonMinutes))
+            ->whereRaw(
+                'COALESCE(last_seen_at, created_at) > ?',
+                [now()->subHours(PreinvoiceDraftReservation::LEGACY_STALE_HOURS)],
+            )
             ->orderBy('id');
     }
 
@@ -350,8 +372,15 @@ class PreinvoiceDraftReservationService
                 ->get();
 
             foreach ($expiredRows as $row) {
+                $row->load(['order.invoice', 'activeDrafts']);
+                $classification = $this->classification->classify($row, now());
+                if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
+                    continue;
+                }
+
                 $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity);
                 $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_online_expired', 'رزرو موقت آنلاین منقضی شد.');
+                ReservationSideEffects::touchProduct((int) $row->product_id);
             }
         });
     }
@@ -442,15 +471,6 @@ class PreinvoiceDraftReservationService
 
         WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
 
-        $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        $variant->reserved = (int) $variant->reserved + $delta;
-        $variant->save();
-
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-        if ($product) {
-            $product->reserved = (int) $product->reserved + $delta;
-            $product->save();
-        }
     }
 
     private function releaseVariantDelta(int $productId, int $variantId, int $delta): void
@@ -473,6 +493,12 @@ class PreinvoiceDraftReservationService
     private function reservationKey(int $productId, int $variantId): string
     {
         return $productId.':'.$variantId;
+    }
+
+    private function hasCommittedCentralStock(PreinvoiceOrder $order): bool
+    {
+        return $order->stock_frozen_until !== null
+            && $order->stock_released_at === null;
     }
 
     private function cleanupResult(Collection $reservations, bool $changed): array

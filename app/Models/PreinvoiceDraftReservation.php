@@ -198,30 +198,18 @@ class PreinvoiceDraftReservation extends Model
         $lastActivity = 'COALESCE('.$this->qualifyColumn('last_seen_at').', '.$this->qualifyColumn('created_at').')';
 
         return $query
+            ->whereNull($this->qualifyColumn('converted_at'))
             ->whereNull($this->qualifyColumn('released_at'))
             ->whereNull($this->qualifyColumn('release_reason'))
             ->where($this->qualifyColumn('quantity'), '>', 0)
             ->whereRaw("{$lastActivity} <= ?", [$cutoff])
-            ->where(function (Builder $query): void {
-                $query->where(function (Builder $temporary): void {
-                    $temporary->whereNull($this->qualifyColumn('preinvoice_order_id'));
-
-                    if (Schema::hasColumn('preinvoice_orders', 'draft_token')) {
-                        $temporary->whereDoesntHave('activeDrafts');
-                    }
-                })->orWhere(function (Builder $official): void {
-                    $official->whereNotNull($this->qualifyColumn('preinvoice_order_id'));
-
-                    if (Schema::hasTable('invoices')) {
-                        $official->whereDoesntHave('order.invoice');
-                    }
-
-                    $official->where(function (Builder $inactive): void {
-                            $inactive->whereDoesntHave('order')
-                                ->orWhereHas('order', fn (Builder $order) => $order->whereNotIn('status', PreinvoiceOrder::reservationHoldingStatuses()));
-                        });
-                });
-            });
+            // Positive confidence only: an existing official order proves
+            // provenance. Missing/null relations remain historical ambiguity.
+            ->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
+            ->whereHas('order', fn (Builder $order) => $order
+                ->whereNotIn('status', PreinvoiceOrder::reservationHoldingStatuses())
+                ->whereNull('stock_released_at'))
+            ->when(Schema::hasTable('invoices'), fn (Builder $query) => $query->whereDoesntHave('order.invoice'));
     }
 
     public function legacyCleanupReason(): string
@@ -642,18 +630,18 @@ class PreinvoiceDraftReservation extends Model
             ReservationClassificationService::LABEL_LEGACY_CANDIDATE => $query
                 ->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at),
 
-            ReservationClassificationService::LABEL_CRITICAL => $query
+            ReservationClassificationService::LABEL_CRITICAL, 'critical' => $query
                 ->where($notReleasedOrConverted)
                 ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
                 ->criticalPreinvoice($at),
 
-            ReservationClassificationService::LABEL_OFFICIAL_PREINVOICE => $query
+            ReservationClassificationService::LABEL_OFFICIAL_PREINVOICE, 'official_preinvoice' => $query
                 ->where($notReleasedOrConverted)
                 ->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
                 ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
                 ->whereNot(fn (Builder $q) => $q->criticalPreinvoice($at)),
 
-            ReservationClassificationService::LABEL_TEMPORARY_ORPHAN => $query
+            ReservationClassificationService::LABEL_TEMPORARY_ORPHAN, 'temporary_orphan' => $query
                 ->where($notReleasedOrConverted)
                 ->whereNull($this->qualifyColumn('preinvoice_order_id'))
                 ->whereNot(fn (Builder $q) => $q->legacyCleanupCandidates(self::LEGACY_STALE_HOURS, $at))
@@ -911,6 +899,7 @@ class PreinvoiceDraftReservation extends Model
             'temporary_session_lost' => 'قطع فعالیت رزرو موقت',
             'temporary_online_expired' => 'پایان زمان رزرو آنلاین',
             'manual_release' => 'آزادسازی دستی',
+            'historical_reconciliation_stock_neutral' => 'پاکسازی تاریخی — بدون تغییر موجودی',
             null, '' => 'ثبت نشده',
             default => $this->release_reason,
         };

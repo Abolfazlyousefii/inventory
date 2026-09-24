@@ -17,7 +17,10 @@ use App\Services\NotificationService;
 
 class PreinvoiceReservationService
 {
-    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
+    public function __construct(
+        private InventoryReservationReleaseService $inventoryRelease,
+        private ReservationClassificationService $classification,
+    ) {}
 
     public function expireOverdueReservations(): array
     {
@@ -77,7 +80,9 @@ class PreinvoiceReservationService
             $releasedQuantity = 0;
 
             foreach ($reservations as $reservation) {
-                if ($reservation->released_at !== null) {
+                $reservation->load(['order.invoice', 'activeDrafts']);
+                $classification = $this->classification->classify($reservation, now());
+                if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
                     continue;
                 }
 
@@ -89,6 +94,7 @@ class PreinvoiceReservationService
                     'release_reason' => 'temporary_online_expired',
                     'release_note' => 'رزرو موقت آنلاین منقضی شد.',
                 ])->save();
+                ReservationSideEffects::touchProduct((int) $reservation->product_id);
 
                 $releasedReservations++;
                 $releasedQuantity += $quantity;
@@ -230,6 +236,7 @@ class PreinvoiceReservationService
                 'release_reason' => $reason,
                 'release_note' => $note,
             ])->save();
+            ReservationSideEffects::touchProduct((int) $lockedReservation->product_id);
 
             return ['released' => true, 'quantity' => $quantity];
         });
@@ -307,7 +314,7 @@ class PreinvoiceReservationService
     
             if ($delta > 0) {
                 $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-                $available = max(0, (int) $variant->stock);
+                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $productId, $variantId);
                 if ($delta > $available) {
                     $name = trim(($variant->product?->name ?? $item->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?? '—'));
                     throw ValidationException::withMessages([
@@ -316,12 +323,6 @@ class PreinvoiceReservationService
                 }
     
                 WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
-                $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-                $variant->forceFill(['reserved' => (int) $variant->reserved + $delta])->save();
-                $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-                if ($product) {
-                    $product->forceFill(['reserved' => (int) $product->reserved + $delta])->save();
-                }
     
                 PreinvoiceDraftReservation::query()->create([
                     'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
@@ -335,6 +336,7 @@ class PreinvoiceReservationService
                     'reservation_scope' => 'official',
                     'reservation_tier' => $order->customer?->reservation_tier,
                 ]);
+                ReservationSideEffects::touchProduct($productId);
                 return;
             }
     
@@ -384,6 +386,7 @@ class PreinvoiceReservationService
             if ($remaining > 0) {
                 throw ValidationException::withMessages(['items.' . $item->id . '.quantity' => 'رزرو کافی برای آزادسازی کاهش تعداد وجود ندارد.']);
             }
+            ReservationSideEffects::touchProduct($productId);
         });
     }
 
@@ -481,33 +484,6 @@ class PreinvoiceReservationService
             throw ValidationException::withMessages(['products' => 'تنوع رزرو شده با کالای پیش‌فاکتور همخوانی ندارد.']);
         }
 
-        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
-
-        $stock = WarehouseStock::query()
-            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-            ->where('product_id', $productId)
-            ->where('product_variant_id', $variantId)
-            ->lockForUpdate()
-            ->first();
-
-        if (! $stock) {
-            $stock = WarehouseStock::query()->create([
-                'warehouse_id' => WarehouseStockService::centralWarehouseId(),
-                'product_id' => $productId,
-                'product_variant_id' => $variantId,
-                'quantity' => 0,
-            ]);
-            $stock = WarehouseStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-        }
-
-        $stock->forceFill(['quantity' => (int) $stock->quantity + $quantity])->save();
-        $variant->forceFill(['reserved' => max(0, (int) $variant->reserved - $quantity)])->save();
-
-        if ($product) {
-            $product->forceFill(['reserved' => max(0, (int) $product->reserved - $quantity)])->save();
-        }
-
-        WarehouseStockService::syncVariantStockFromCentral($variantId);
-        WarehouseStockService::syncProductStockFromCentral($productId);
+        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
     }
 }

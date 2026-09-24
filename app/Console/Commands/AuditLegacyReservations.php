@@ -100,6 +100,7 @@ class AuditLegacyReservations extends Command
             'recommended_keep' => 0,
             'recommended_release' => 0,
             'recommended_remove_legacy' => 0,
+            'recommended_manual_review' => 0,
             'data_changed' => false,
             'stock_changed' => false,
             'reservations_changed' => false,
@@ -110,9 +111,14 @@ class AuditLegacyReservations extends Command
             $ageDays = (int) floor((float) ($reservation->created_at?->diffInDays($now) ?? 0));
             $classified = $classification->classify($reservation, $now);
             $type = $classified['type'];
-            $label = $classified['label'];
+            $label = $classified['state'];
             $hasInvoice = $reservation->order?->invoice !== null;
-            $action = $this->recommendedAction($label, $hasInvoice);
+            $action = match ($classified['recommended_action']) {
+                'normal_release_candidate' => 'RELEASE',
+                'legacy_cleanup_candidate' => 'REMOVE_LEGACY',
+                'manual_review' => 'MANUAL_REVIEW',
+                default => 'KEEP',
+            };
 
             $summary['total_reservations_scanned']++;
 
@@ -122,7 +128,7 @@ class AuditLegacyReservations extends Command
             if ($ageDays >= self::AGE_80_DAYS) {
                 $summary['age_80_plus_days_count']++;
             }
-            if ($label === ReservationClassificationService::LABEL_LEGACY_CANDIDATE) {
+            if ($label === ReservationClassificationService::STATE_LEGACY_SAFE) {
                 $summary['legacy_candidate_count']++;
                 $summary['total_reserved_quantity_affected'] += (int) $reservation->quantity;
             }
@@ -136,6 +142,7 @@ class AuditLegacyReservations extends Command
                 'KEEP' => $summary['recommended_keep']++,
                 'RELEASE' => $summary['recommended_release']++,
                 'REMOVE_LEGACY' => $summary['recommended_remove_legacy']++,
+                'MANUAL_REVIEW' => $summary['recommended_manual_review']++,
             };
 
             $rows[] = [
@@ -168,29 +175,9 @@ class AuditLegacyReservations extends Command
      *
      * - Invoice already linked -> KEEP (already consumed by a real sale,
      *   must never be touched by any future cleanup tooling).
-     * - legacy_candidate -> REMOVE_LEGACY (matches the existing
-     *   LegacyReservationCleanupService/scopeLegacyCleanupCandidates
-     *   definition already used elsewhere in the app).
-     * - critical or temporary_orphan -> RELEASE (needs a human to release it
-     *   through the existing InventoryReservationReleaseService; not old
-     *   enough / not unlinked enough yet to be an outright legacy removal).
-     * - official_preinvoice or temporary_active -> KEEP (still legitimately
-     *   in progress).
+     * The canonical classifier supplies the recommendation. This legacy
+     * report only translates its action names for backward-compatible CSVs.
      */
-    private function recommendedAction(string $label, bool $hasInvoice): string
-    {
-        if ($hasInvoice) {
-            return 'KEEP';
-        }
-
-        return match ($label) {
-            ReservationClassificationService::LABEL_LEGACY_CANDIDATE => 'REMOVE_LEGACY',
-            ReservationClassificationService::LABEL_CRITICAL,
-            ReservationClassificationService::LABEL_TEMPORARY_ORPHAN => 'RELEASE',
-            default => 'KEEP',
-        };
-    }
-
     /** @return array{summary: string, csv: string} */
     private function writeReport(array $report, string $startedAt): array
     {

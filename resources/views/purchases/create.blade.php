@@ -639,19 +639,21 @@
 			function productCardTemplate(product) {
 				const variants = realVariantsForProduct(product);
 				const variantsRows = variants.length ? variants.map((variant) => `
-            <tr class="purchase-variant-row" data-variant-row data-variant-id="${variant.id}" data-buy-overridden="0" data-sell-overridden="0" data-search="${escapeHtml(variantSearchText(product, variant))}" data-normalized-search="${escapeHtml(normalizePurchaseSearchText(variantSearchText(product, variant)))}">
+            <tr class="purchase-variant-row ${variant.purchase_blocked ? 'table-secondary' : ''}" data-variant-row data-variant-id="${variant.id}" ${variant.purchase_blocked ? 'data-purchase-blocked="1"' : ''} title="${escapeHtml(variant.purchase_blocked_message || '')}" data-buy-overridden="0" data-sell-overridden="0" data-search="${escapeHtml(variantSearchText(product, variant))}" data-normalized-search="${escapeHtml(normalizePurchaseSearchText(variantSearchText(product, variant)))}">
                 <td>
                     <div class="variant-title">${escapeHtml(variantLabel(variant))}</div>
                     <div class="small text-muted">${escapeHtml(variant.name || '')}</div>
+                    ${variant.purchase_blocked ? `<span class="badge text-bg-secondary mt-1">${escapeHtml(variant.purchase_blocked_label || 'تنوع قدیمی — غیرقابل خرید')}</span>` : ''}
+                    ${variant.is_base_redirect ? '<span class="badge text-bg-success mt-1">تنوع پایه — برای خرید</span>' : ''}
                 </td>
                 <td class="mono small">${escapeHtml(variant.code || '—')}</td>
                 <td>${formatFa(variant.stock || 0)}</td>
-                <td><input type="number" min="0" class="form-control form-control-sm qty-input" data-qty value=""></td>
-                <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-buy value=""></td>
-                <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-sell value=""></td>
+                <td><input type="number" min="0" class="form-control form-control-sm qty-input" data-qty value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
+                <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-buy value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
+                <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-sell value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
                 <td><span class="current-sale-price ${Number(variant.sell_price || 0) > 0 ? '' : 'missing'}" data-current-sale-price data-sale-price="${Number(variant.sell_price || 0)}">${escapeHtml(currentSalePriceMessage(variant.sell_price))}</span></td>
                 <td><span class="badge text-bg-warning d-none" data-price-badge>قیمت اختصاصی</span></td>
-                <td><button type="button" class="btn btn-sm btn-outline-secondary" data-clear-row>خالی</button></td>
+                <td><button type="button" class="btn btn-sm btn-outline-secondary" data-clear-row ${variant.purchase_blocked ? 'disabled' : ''}>خالی</button></td>
             </tr>
         `).join('') : `
             <tr>

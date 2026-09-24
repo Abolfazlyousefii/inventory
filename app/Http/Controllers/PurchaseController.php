@@ -14,6 +14,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Services\ProductVariantStructureService;
+use App\Services\PurchaseSyntheticVariantGuard;
 use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
 use App\Support\JalaliDate;
@@ -143,10 +144,36 @@ class PurchaseController extends Controller
 
     public function productVariants(Product $product)
     {
-        $variants = app(ProductVariantStructureService::class)->validVariants($product)
+        $validVariants = app(ProductVariantStructureService::class)->validVariants($product)
             ->unique('id')
-            ->values()
-            ->map(fn (ProductVariant $variant) => $this->variantPayload($variant));
+            ->values();
+        $variants = $validVariants->map(fn (ProductVariant $variant) => $this->variantPayload($variant));
+
+        // Mark legacy synthetic electrical variants as not purchasable and offer
+        // the Base instead, so the user never reaches the guard's error.
+        $guard = app(PurchaseSyntheticVariantGuard::class);
+        if ($guard->isElectric($product)) {
+            $redirectBase = null;
+            $variants = $validVariants->map(function (ProductVariant $variant) use ($guard, $product, &$redirectBase): array {
+                $payload = $this->variantPayload($variant);
+                $verdict = $guard->evaluate($product, $variant);
+                if ($verdict['blocked'] && $verdict['base']) {
+                    $redirectBase = $verdict['base'];
+                    $payload['purchase_blocked'] = true;
+                    $payload['purchase_blocked_label'] = PurchaseSyntheticVariantGuard::BLOCKED_LABEL;
+                    $payload['purchase_blocked_message'] = $guard->blockedMessage($verdict['base']);
+                }
+
+                return $payload;
+            });
+
+            if ($redirectBase && ! $validVariants->contains('id', $redirectBase->id)) {
+                $variants->prepend(array_merge(
+                    $this->variantPayload($redirectBase->loadMissing($this->variantRelations())),
+                    ['is_base_redirect' => true],
+                ));
+            }
+        }
 
         return response()->json([
             'product_id' => (int) $product->id,
@@ -255,7 +282,7 @@ class PurchaseController extends Controller
             $request->merge(['supplier_id' => $purchase->supplier_id]);
         }
 
-        $data = $this->validatePayload($request, true);
+        $data = $this->validatePayload($request, true, $purchase);
         $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
         try {
@@ -473,7 +500,7 @@ class PurchaseController extends Controller
         return null;
     }
 
-    private function validatePayload(Request $request, bool $allowZeroExistingItems = false): array
+    private function validatePayload(Request $request, bool $allowZeroExistingItems = false, ?Purchase $purchase = null): array
     {
         $this->mergeJsonPurchaseItems($request);
 
@@ -539,8 +566,8 @@ class PurchaseController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.id' => ['nullable', 'integer', 'exists:purchase_items,id'],
-            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            'items.*.product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
+            'items.*.variant_id' => ['nullable', 'integer'],
+            'items.*.product_variant_id' => ['nullable', 'integer'],
 
             'items.*.qty' => ['nullable', 'integer', 'min:1'],
             'items.*.quantity' => ['nullable', 'integer', 'min:' . ($allowZeroExistingItems ? '0' : '1')],
@@ -616,15 +643,28 @@ class PurchaseController extends Controller
             $data['invoice_discount_value'] = 0;
         }
 
+        // Existing rows keep the variant they were already recorded on; only
+        // new placements go through the synthetic-variant purchase guard.
+        $existingItemVariants = $purchase
+            ? PurchaseItem::query()
+                ->where('purchase_id', $purchase->id)
+                ->pluck('product_variant_id', 'id')
+                ->map(fn ($variantId) => (int) $variantId)
+            : collect();
+        $variantResolver = app(\App\Services\PurchaseVariantResolver::class);
+
         foreach ($data['items'] as $index => $item) {
             $product = Product::find((int) $item['product_id']);
-            $isValidVariant = $product
-                ? app(ProductVariantStructureService::class)->applyValidConstraints(ProductVariant::query(), $product)->whereKey($item['variant_id'])->exists()
-                : false;
-
-            if (!$isValidVariant) {
+            $existingLegacyRow = ! empty($item['id'])
+                && $existingItemVariants->get((int) $item['id']) === (int) ($item['variant_id'] ?? 0);
+            try {
+                $variant = $variantResolver
+                    ->resolve($product, $item['variant_id'] ?? null, $existingLegacyRow);
+                $data['items'][$index]['variant_id'] = (int) $variant->id;
+            } catch (ValidationException $exception) {
                 throw ValidationException::withMessages([
-                    "items.{$index}.variant_id" => 'تنوع انتخاب‌شده متعلق به این کالا نیست.',
+                    "items.{$index}.variant_id" => $exception->errors()['variant_id'][0]
+                        ?? 'The selected variant is not purchase eligible.',
                 ]);
             }
         }
@@ -912,17 +952,19 @@ class PurchaseController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $before = (int) $variant->stock;
+            $before = WarehouseStockService::available($warehouseId, $product->id, (int) $variant->id);
             $after = $before + $quantity;
 
-            $variantUpdates = ['stock' => $after];
+            $variantUpdates = [];
             if ($buyPrice > 0) {
                 $variantUpdates['buy_price'] = $buyPrice;
             }
             if ($sellPrice > 0) {
                 $variantUpdates['sell_price'] = $sellPrice;
             }
-            $variant->update($variantUpdates);
+            if ($variantUpdates !== []) {
+                $variant->update($variantUpdates);
+            }
 
             $this->recalcProductSummary($product);
 
@@ -1039,14 +1081,13 @@ class PurchaseController extends Controller
 
             if ($variantChanged && $oldQty > 0) {
                 $oldVariant = $variants->get($oldVariantId) ?: ProductVariant::whereKey($oldVariantId)->lockForUpdate()->first();
-                if ($oldVariant && (int) $oldVariant->stock < $oldQty) {
+                if ($oldVariant && WarehouseStockService::available($warehouseId, (int) $oldVariant->product_id, (int) $oldVariant->id) < $oldQty) {
                     throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
                 }
                 if ($oldVariant) {
                     $oldProduct = $products->get((int) $oldVariant->product_id) ?: Product::whereKey((int) $oldVariant->product_id)->lockForUpdate()->first();
-                    $before = (int) $oldVariant->stock;
+                    $before = WarehouseStockService::available($warehouseId, (int) $oldVariant->product_id, (int) $oldVariant->id);
                     $after = $before - $oldQty;
-                    $oldVariant->update(['stock' => $after]);
                     if ($oldProduct) {
                         $this->recordPurchaseAdjustmentMovement($purchase, $oldProduct, $oldVariant, $warehouseId, -$oldQty, $before, $after, StockMovement::REASON_PURCHASE_ITEM_CHANGED);
                         WarehouseStockService::change($warehouseId, $oldProduct->id, -$oldQty, (int) $oldVariant->id);
@@ -1055,21 +1096,19 @@ class PurchaseController extends Controller
                 }
 
                 if ($newQty > 0) {
-                    $before = (int) $newVariant->stock;
+                    $before = WarehouseStockService::available($warehouseId, $product->id, (int) $newVariant->id);
                     $after = $before + $newQty;
-                    $newVariant->update(['stock' => $after]);
                     $this->recordPurchaseAdjustmentMovement($purchase, $product, $newVariant, $warehouseId, $newQty, $before, $after, StockMovement::REASON_PURCHASE_ITEM_CHANGED);
                     WarehouseStockService::change($warehouseId, $product->id, $newQty, (int) $newVariant->id);
                 }
             } else {
                 $delta = $newQty - $oldQty;
-                if ($delta < 0 && (int) $newVariant->stock < abs($delta)) {
+                if ($delta < 0 && WarehouseStockService::available($warehouseId, $product->id, (int) $newVariant->id) < abs($delta)) {
                     throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
                 }
                 if ($delta !== 0) {
-                    $before = (int) $newVariant->stock;
+                    $before = WarehouseStockService::available($warehouseId, $product->id, (int) $newVariant->id);
                     $after = $before + $delta;
-                    $newVariant->update(['stock' => $after]);
                     $reason = $oldItem ? StockMovement::REASON_PURCHASE_ITEM_CHANGED : StockMovement::REASON_PURCHASE_ITEM_ADDED;
                     $this->recordPurchaseAdjustmentMovement($purchase, $product, $newVariant, $warehouseId, $delta, $before, $after, $reason);
                     WarehouseStockService::change($warehouseId, $product->id, $delta, (int) $newVariant->id);
@@ -1113,12 +1152,12 @@ class PurchaseController extends Controller
             $variant = $variants->get($variantId) ?: ProductVariant::whereKey($variantId)->lockForUpdate()->first();
             if (!$variant) { $removedItem->delete(); continue; }
             $quantity = (int) $removedItem->quantity;
-            if ($quantity > 0 && (int) $variant->stock < $quantity) {
+            if ($quantity > 0 && WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id) < $quantity) {
                 throw ValidationException::withMessages(['items' => 'امکان کم کردن یک محصول کمتر از موجودی نیست']);
             }
             $product = $products->get((int) $variant->product_id) ?: Product::whereKey((int) $variant->product_id)->lockForUpdate()->first();
             if ($product && $quantity > 0) {
-                $before = (int) $variant->stock; $after = $before - $quantity; $variant->update(['stock' => $after]);
+                $before = WarehouseStockService::available($warehouseId, $product->id, (int) $variant->id); $after = $before - $quantity;
                 $this->recordPurchaseAdjustmentMovement($purchase, $product, $variant, $warehouseId, -$quantity, $before, $after, StockMovement::REASON_PURCHASE_ITEM_REMOVED);
                 WarehouseStockService::change($warehouseId, $product->id, -$quantity, (int) $variant->id);
                 $affectedProductIds[] = $product->id;
@@ -1232,13 +1271,9 @@ class PurchaseController extends Controller
 
             if (!$variant) continue;
 
-            if ((int) $variant->stock < (int) $item->quantity) {
+            if (WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id) < (int) $item->quantity) {
                 abort(422, 'امکان ویرایش/حذف این سند وجود ندارد؛ موجودی فعلی یکی از مدل‌ها کمتر از مقدار خرید قبلی است.');
             }
-
-            $variant->update([
-                'stock' => (int) $variant->stock - (int) $item->quantity,
-            ]);
 
             WarehouseStockService::change($warehouseId, (int) $variant->product_id, -((int) $item->quantity), (int) $variant->id);
 

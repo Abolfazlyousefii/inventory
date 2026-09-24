@@ -78,7 +78,7 @@ class ReservationDashboardTest extends TestCase
         $this->assertSame(5, $stats['official']['quantity']);
     }
 
-    public function test_critical_reservations_are_classified_correctly(): void
+    public function test_old_official_active_reservations_do_not_become_canonically_critical(): void
     {
         $fixture = $this->inventoryFixture();
 
@@ -93,11 +93,13 @@ class ReservationDashboardTest extends TestCase
         $service = app(ReservationQueryService::class);
         $stats = $service->dashboardStatistics(now());
 
-        $this->assertSame(1, $stats['critical']['count']);
-        $this->assertSame(2, $stats['critical']['quantity']);
+        $this->assertSame(0, $stats['critical']['count']);
+        $this->assertSame(0, $stats['critical']['quantity']);
+        $this->assertSame(2, $stats['official']['count']);
+        $this->assertSame(3, $stats['official']['quantity']);
         $this->assertSame(
-            'critical',
-            $service->classify($criticalReservation->refresh()->load('order.invoice'))['label'],
+            'official_active',
+            $service->classify($criticalReservation->refresh()->load('order.invoice'))['state'],
         );
     }
 
@@ -117,6 +119,30 @@ class ReservationDashboardTest extends TestCase
 
         $this->assertSame($movementCount, DB::table('stock_movements')->count());
         $this->assertSame($warehouseQuantity, $fixture['warehouseStock']->fresh()->quantity);
+    }
+
+    public function test_dashboard_separates_canonical_releasable_from_historical_ambiguity_without_mutation(): void
+    {
+        $fixture = $this->inventoryFixture();
+        $historical = $this->reservation($fixture, 5, old: true, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
+        $releasable = $this->reservation($fixture, 3, old: false, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
+        $releasable->forceFill([
+            'last_seen_at' => now()->subMinutes(10),
+            'expires_at' => now()->subMinute(),
+        ])->save();
+        $warehouseBefore = $fixture['warehouseStock']->fresh()->quantity;
+        $movementsBefore = DB::table('stock_movements')->count();
+
+        $stats = app(ReservationQueryService::class)->dashboardStatistics(now());
+
+        $this->assertSame(1, $stats['releasable']['count']);
+        $this->assertSame(3, $stats['releasable']['quantity']);
+        $this->assertSame(1, $stats['historical_ambiguous']['count']);
+        $this->assertSame(5, $stats['historical_ambiguous']['quantity']);
+        $this->assertNull($historical->fresh()->released_at);
+        $this->assertNull($releasable->fresh()->released_at);
+        $this->assertSame($warehouseBefore, $fixture['warehouseStock']->fresh()->quantity);
+        $this->assertSame($movementsBefore, DB::table('stock_movements')->count());
     }
 
     private function inventoryFixture(): array

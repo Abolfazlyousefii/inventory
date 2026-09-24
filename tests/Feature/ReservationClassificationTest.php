@@ -30,6 +30,9 @@ class ReservationClassificationTest extends TestCase
         $this->assertSame('temporary', $classification['type']);
         $this->assertSame('active', $classification['lifecycle']);
         $this->assertSame('temporary_active', $classification['label']);
+        $this->assertSame('temporary_active', $classification['state']);
+        $this->assertSame('keep_active', $classification['recommended_action']);
+        $this->assertFalse($classification['would_change_warehouse_stock']);
     }
 
     public function test_official_preinvoice_classification(): void
@@ -43,7 +46,7 @@ class ReservationClassificationTest extends TestCase
 
         $this->assertSame('official', $classification['type']);
         $this->assertSame('active', $classification['lifecycle']);
-        $this->assertSame('official_preinvoice', $classification['label']);
+        $this->assertSame('official_active', $classification['state']);
     }
 
     public function test_critical_age_classification(): void
@@ -57,7 +60,7 @@ class ReservationClassificationTest extends TestCase
         $classification = $service->classify($reservation);
 
         $this->assertSame('critical', $classification['health']);
-        $this->assertSame('critical', $classification['label']);
+        $this->assertSame('official_active', $classification['state']);
     }
 
     public function test_consumed_reservation_classification(): void
@@ -77,13 +80,67 @@ class ReservationClassificationTest extends TestCase
     public function test_legacy_candidate_classification(): void
     {
         $fixture = $this->inventoryFixture();
-        // No preinvoice order, stale beyond LEGACY_STALE_HOURS (72h), no active draft.
-        $reservation = $this->reservation($fixture, 5, old: true, scope: null);
+        $order = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+        $reservation = $this->reservation($fixture, 5, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
         $reservation->load('order.invoice', 'activeDrafts');
 
         $classification = app(ReservationClassificationService::class)->classify($reservation, now());
 
-        $this->assertSame('legacy_candidate', $classification['label']);
+        $this->assertSame('legacy_safe', $classification['state']);
+        $this->assertSame('legacy_cleanup_candidate', $classification['recommended_action']);
+        $this->assertFalse($classification['would_change_warehouse_stock']);
+    }
+
+    public function test_old_null_preinvoice_is_historical_ambiguous_not_legacy_safe(): void
+    {
+        $fixture = $this->inventoryFixture();
+        $reservation = $this->reservation($fixture, 5, old: true, scope: null)->load('order.invoice', 'activeDrafts');
+
+        $classification = app(ReservationClassificationService::class)->classify($reservation, now());
+
+        $this->assertSame('historical_ambiguous', $classification['state']);
+        $this->assertSame('manual_review', $classification['recommended_action']);
+        $this->assertFalse($classification['would_change_warehouse_stock']);
+    }
+
+    public function test_missing_preinvoice_relation_is_historical_ambiguous(): void
+    {
+        $fixture = $this->inventoryFixture();
+        $order = $this->order(PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE, old: true);
+        $reservation = $this->reservation($fixture, 5, $order, old: true, scope: PreinvoiceDraftReservation::SCOPE_OFFICIAL);
+        $reservation->setRelation('order', null)->setRelation('activeDrafts', collect());
+
+        $classification = app(ReservationClassificationService::class)->classify($reservation, now());
+
+        $this->assertSame('historical_ambiguous', $classification['state']);
+        $this->assertSame('missing_official_relation', $classification['reason']);
+    }
+
+    public function test_stale_temporary_below_legacy_boundary_is_releasable(): void
+    {
+        $fixture = $this->inventoryFixture();
+        $reservation = $this->reservation($fixture, 2, old: false, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
+        $at = now();
+        $reservation->forceFill(['last_seen_at' => $at->copy()->subMinutes(10), 'expires_at' => $at->copy()->subMinute()])->save();
+
+        $classification = app(ReservationClassificationService::class)->classify($reservation->fresh()->load('order.invoice', 'activeDrafts'), $at);
+
+        $this->assertSame('temporary_stale_releasable', $classification['state']);
+        $this->assertSame('normal_release_candidate', $classification['recommended_action']);
+        $this->assertTrue($classification['would_change_warehouse_stock']);
+    }
+
+    public function test_active_draft_token_protects_old_temporary_reservation(): void
+    {
+        $fixture = $this->inventoryFixture();
+        $reservation = $this->reservation($fixture, 2, old: true, scope: PreinvoiceDraftReservation::SCOPE_TEMPORARY_ONLINE);
+        $draft = $this->order(PreinvoiceOrder::STATUS_DRAFT, old: true);
+        $draft->forceFill(['draft_token' => $reservation->token])->save();
+
+        $classification = app(ReservationClassificationService::class)->classify($reservation->fresh()->load('order.invoice', 'activeDrafts'), now());
+
+        $this->assertSame('active_valid', $classification['state']);
+        $this->assertSame('active_draft_owns_token', $classification['reason']);
     }
 
     public function test_no_stock_movement_happens_from_classification(): void

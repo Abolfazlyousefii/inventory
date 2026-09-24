@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ReservationQueryService;
+use App\Services\ReservationProjectionService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
@@ -10,200 +10,105 @@ use Illuminate\Support\Facades\Storage;
 
 class RepairReservedCache extends Command
 {
-    protected $signature = 'inventory:repair-reserved-cache {--dry-run : Preview only} {--apply : Persist reserved cache repair} {--output=reports/reserved-cache-repair} {--exclude-order=* : Additional preinvoice order IDs to exclude}';
-    protected $description = 'Safely rebuild product and variant reserved caches from active reservation lifecycle rows.';
+    protected $signature = 'inventory:repair-reserved-cache
+        {--dry-run : Preview canonical reserved projection differences}
+        {--apply : Persist canonical reserved projections}
+        {--confirm : Confirm an apply operation}
+        {--output=reports/reserved-cache-repair : Report directory on the local disk}';
+
+    protected $description = 'Inspect or rebuild reserved projections from canonical active reservation rows.';
 
     private const WRITE_VERBS = 'insert|update|delete|replace|truncate|alter|drop|create|rename|grant|revoke';
     private static bool $writeGuardEnabled = false;
     private static ?\WeakMap $guardedConnections = null;
 
-    private ReservationQueryService $reservationQuantities;
-
-    public function handle(ReservationQueryService $reservationQuantities): int
+    public function handle(ReservationProjectionService $projections): int
     {
-        $this->reservationQuantities = $reservationQuantities;
-        if ($this->option('apply') && $this->option('dry-run')) {
-            $this->error('Use either --apply or --dry-run, not both.');
+        $dryRun = (bool) $this->option('dry-run');
+        $apply = (bool) $this->option('apply');
+
+        if ($dryRun === $apply) {
+            $this->error('Choose exactly one mode: --dry-run or --apply --confirm.');
+            return self::FAILURE;
+        }
+        if ($apply && ! (bool) $this->option('confirm')) {
+            $this->error('Apply requires --confirm.');
+            return self::FAILURE;
+        }
+        if ($dryRun && (bool) $this->option('confirm')) {
+            $this->error('--confirm is valid only with --apply.');
             return self::FAILURE;
         }
 
-        $apply = (bool) $this->option('apply');
-        $started = now()->toISOString();
-
-        if (! $apply) {
+        if ($dryRun) {
             $this->installWriteQueryGuard();
         }
 
         try {
-            $report = DB::transaction(function () use ($apply, $started): array {
-                $this->lockInScopeRows($apply);
-                $report = $this->buildReport($started, false);
-                if ($apply) {
-                    $this->applyReport($report);
-                    $report = $this->buildReport($started, true, $report);
-                }
-
-                return $report;
-            }, 1);
+            // Apply deliberately does not reuse dry-run values: rebuild locks first,
+            // then obtains a fresh canonical reservation snapshot.
+            $report = $apply ? $projections->rebuild($this->allProductIds()) : $projections->inspect();
         } finally {
             $this->disableWriteQueryGuard();
         }
 
+        $report['summary']['mode'] = $apply ? 'apply' : 'dry-run';
+        $report['summary']['finished_at'] = now()->toISOString();
         $paths = $this->writeReports($report);
-        $this->line(json_encode(['mode' => $apply ? 'apply' : 'dry-run', 'summary' => $report['summary'], 'paths' => $paths], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        $this->line(json_encode(['mode' => $report['summary']['mode'], 'summary' => $report['summary'], 'paths' => $paths], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         return self::SUCCESS;
     }
 
-    private function buildReport(string $started, bool $afterApply, ?array $beforeReport = null): array
+    private function allProductIds(): array
     {
-        $productRows = DB::table('products')->get(['id', 'name', 'reserved'])->keyBy('id');
-        $products = $productRows->pluck('name', 'id')->all();
-        $variants = DB::table('product_variants')->get(['id','product_id','variant_name','variant_code','reserved'])->keyBy('id');
-        $protected = $this->protectedDemand();
-        $temporary = $this->activeTemporary();
-        $excluded = $this->excludedVariantIds();
-        $excludedActive = $this->excludedActiveReservations($excluded);
-        $unresolved = $this->unresolvedCancelledFinanceRows();
-        $candidateIds = $variants->keys()->merge(array_keys($protected))->merge(array_keys($temporary))->unique()->reject(fn ($id) => isset($excluded[(int) $id]))->values();
-
-        $changes = [];
-        $expectedByVariant = [];
-        foreach ($candidateIds as $variantId) {
-            $variant = $variants[(int) $variantId] ?? null;
-            if (! $variant) {
-                continue;
-            }
-            $beforeReserved = $beforeReport['changes_by_variant'][(int) $variantId]['reserved_before'] ?? (int) $variant->reserved;
-            $expected = (int) ($protected[(int) $variantId] ?? 0) + (int) ($temporary[(int) $variantId] ?? 0);
-            $expectedByVariant[(int) $variantId] = $expected;
-            $current = (int) $variant->reserved;
-            if ($beforeReserved !== $expected || (! $afterApply && $current !== $expected)) {
-                $changes[] = [
-                    'product_id' => (int) $variant->product_id,
-                    'product_name' => (string) ($products[$variant->product_id] ?? ''),
-                    'variant_id' => (int) $variantId,
-                    'variant_name' => (string) ($variant->variant_name ?? ''),
-                    'variant_code' => (string) ($variant->variant_code ?? ''),
-                    'reserved_before' => $beforeReserved,
-                    'protected_document_demand' => (int) ($protected[(int) $variantId] ?? 0),
-                    'active_temporary_quantity' => (int) ($temporary[(int) $variantId] ?? 0),
-                    'expected_reserved' => $expected,
-                    'reserved_after' => $afterApply ? $current : $expected,
-                ];
-            }
-        }
-
-        foreach ($variants as $variantId => $variant) {
-            $expectedByVariant[(int) $variantId] ??= (int) $variant->reserved;
-        }
-
-        $expectedByProduct = [];
-        foreach ($variants as $variantId => $variant) {
-            $productId = (int) $variant->product_id;
-            $expectedByProduct[$productId] = ($expectedByProduct[$productId] ?? 0) + $expectedByVariant[(int) $variantId];
-        }
-
-        $productChanges = [];
-        foreach ($productRows as $productId => $product) {
-            $current = (int) $product->reserved;
-            $expected = (int) ($expectedByProduct[(int) $productId] ?? 0);
-            $beforeReserved = $beforeReport['product_changes_by_id'][(int) $productId]['reserved_before'] ?? $current;
-            if ($beforeReserved !== $expected || (! $afterApply && $current !== $expected)) {
-                $productChanges[] = [
-                    'product_id' => (int) $productId,
-                    'product_name' => (string) $product->name,
-                    'reserved_before' => $beforeReserved,
-                    'expected_reserved' => $expected,
-                    'reserved_after' => $afterApply ? $current : $expected,
-                ];
-            }
-        }
-
-        $summary = [
-            'started_at' => $started,
-            'finished_at' => now()->toISOString(),
-            'mode' => $this->option('apply') ? 'apply' : 'dry-run',
-            'variants_scanned' => $candidateIds->count(),
-            'variants_changed' => count(array_filter($changes, fn ($r) => (int) $r['reserved_before'] !== (int) $r['reserved_after'])),
-            'products_changed' => count($productChanges),
-            'reserved_before' => array_sum(array_column($changes, 'reserved_before')),
-            'reserved_after' => array_sum(array_column($changes, 'reserved_after')),
-            'reserved_reduced' => array_sum(array_map(fn ($r) => max(0, (int) $r['reserved_before'] - (int) $r['reserved_after']), $changes)),
-            'reserved_increased' => array_sum(array_map(fn ($r) => max(0, (int) $r['reserved_after'] - (int) $r['reserved_before']), $changes)),
-            'excluded_variants' => count($excluded),
-            'unresolved_orders' => count(array_unique(array_column($unresolved, 'preinvoice_order_id'))),
-            'warehouse_stock_changed' => false,
-            'stock_cache_changed' => false,
-            'temporary_reservations_changed' => false,
-            'preinvoices_changed' => false,
-        ];
-
-        return ['summary' => $summary, 'changes' => $changes, 'changes_by_variant' => collect($changes)->keyBy('variant_id')->all(), 'product_changes' => $productChanges, 'product_changes_by_id' => collect($productChanges)->keyBy('product_id')->all(), 'excluded-active-reservations' => $excludedActive, 'unresolved-cancelled-finance' => $unresolved];
-    }
-
-    private function protectedDemand(): array
-    {
-        return $this->reservationQuantities->quantitiesByVariant(official: true)->all();
-    }
-
-    private function activeTemporary(): array
-    {
-        return $this->reservationQuantities->quantitiesByVariant(official: false)->all();
-    }
-
-    private function excludedVariantIds(): array
-    {
-        $ids = DB::table('preinvoice_order_items as i')->join('preinvoice_orders as o', 'o.id', '=', 'i.preinvoice_order_id')->where('o.status', 'cancelled_by_finance')->whereNull('o.stock_released_at')->whereNotNull('i.variant_id')->pluck('i.variant_id')->map(fn ($id) => (int) $id)->all();
-        foreach ((array) $this->option('exclude-order') as $orderId) {
-            if (ctype_digit((string) $orderId)) {
-                $ids = array_merge($ids, DB::table('preinvoice_order_items')->where('preinvoice_order_id', (int) $orderId)->whereNotNull('variant_id')->pluck('variant_id')->map(fn ($id) => (int) $id)->all());
-            }
-        }
-        return array_fill_keys(array_unique($ids), true);
-    }
-
-    private function excludedActiveReservations(array $excluded): array
-    {
-        if ($excluded === []) return [];
-        return DB::table('preinvoice_draft_reservations')->whereIn('variant_id', array_keys($excluded))->where('quantity', '>', 0)->whereNull('released_at')->get(['id','preinvoice_order_id','product_id','variant_id','quantity','reservation_scope','converted_at','released_at','release_reason'])->map(fn ($r) => (array) $r)->all();
-    }
-
-    private function unresolvedCancelledFinanceRows(): array
-    {
-        return DB::table('preinvoice_order_items as i')->join('preinvoice_orders as o', 'o.id', '=', 'i.preinvoice_order_id')->leftJoin('product_variants as v', 'v.id', '=', 'i.variant_id')->where('o.status', 'cancelled_by_finance')->whereNull('o.stock_released_at')->selectRaw('o.id as preinvoice_order_id, o.status, o.stock_released_at, i.product_id, i.variant_id, v.variant_name, v.variant_code, i.quantity')->get()->map(fn ($r) => (array) $r)->all();
-    }
-
-    private function applyReport(array $report): void
-    {
-        foreach ($report['changes'] as $row) {
-            DB::table('product_variants')->where('id', $row['variant_id'])->lockForUpdate()->update(['reserved' => $row['expected_reserved'], 'updated_at' => now()]);
-        }
-        foreach ($report['product_changes'] as $row) {
-            DB::table('products')->where('id', $row['product_id'])->lockForUpdate()->update(['reserved' => $row['expected_reserved'], 'updated_at' => now()]);
-        }
-    }
-
-    private function lockInScopeRows(bool $apply): void
-    {
-        if (! $apply) return;
-        DB::table('product_variants')->lockForUpdate()->get(['id']);
-        DB::table('products')->lockForUpdate()->get(['id']);
+        return DB::table('products')->orderBy('id')->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
     }
 
     private function writeReports(array $report): array
     {
         $base = trim((string) $this->option('output'), '/');
-        $paths = [];
-        Storage::disk('local')->put("$base/summary.json", json_encode($report['summary'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)); $paths[] = "$base/summary.json";
-        Storage::disk('local')->put("$base/reserved-cache-changes.csv", $this->csv($report['changes'], ['product_id','product_name','variant_id','variant_name','variant_code','reserved_before','protected_document_demand','active_temporary_quantity','expected_reserved','reserved_after'])); $paths[] = "$base/reserved-cache-changes.csv";
-        Storage::disk('local')->put("$base/product-reserved-cache-changes.csv", $this->csv($report['product_changes'], ['product_id','product_name','reserved_before','expected_reserved','reserved_after'])); $paths[] = "$base/product-reserved-cache-changes.csv";
-        Storage::disk('local')->put("$base/excluded-active-reservations.csv", $this->csv($report['excluded-active-reservations'], ['id','preinvoice_order_id','product_id','variant_id','quantity','reservation_scope','converted_at','released_at','release_reason'])); $paths[] = "$base/excluded-active-reservations.csv";
-        Storage::disk('local')->put("$base/unresolved-cancelled-finance.csv", $this->csv($report['unresolved-cancelled-finance'], ['preinvoice_order_id','status','stock_released_at','product_id','variant_id','variant_name','variant_code','quantity'])); $paths[] = "$base/unresolved-cancelled-finance.csv";
+        $variants = array_values(array_filter($report['variants'], fn (array $row): bool => $row['difference'] !== 0));
+        $products = array_values(array_filter($report['products'], fn (array $row): bool => $row['difference'] !== 0));
+        $paths = ["$base/summary.json", "$base/reserved-cache-changes.csv", "$base/product-reserved-cache-changes.csv"];
+        Storage::disk('local')->put($paths[0], json_encode($report['summary'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        Storage::disk('local')->put($paths[1], $this->csv($variants, ['product_id', 'variant_id', 'variant_name', 'variant_code', 'reserved_before', 'expected_reserved', 'difference']));
+        Storage::disk('local')->put($paths[2], $this->csv($products, ['product_id', 'product_name', 'reserved_before', 'expected_reserved', 'difference']));
+
         return $paths;
     }
 
-    private function csv(array $rows, array $head): string { $h=fopen('php://temp','r+'); fputcsv($h,$head); foreach($rows as $r) fputcsv($h, array_map(fn($k)=>$r[$k] ?? '', $head)); rewind($h); return stream_get_contents($h); }
-    private function installWriteQueryGuard(): void { self::$writeGuardEnabled=true; $c=DB::connection(); self::$guardedConnections ??= new \WeakMap(); if(isset(self::$guardedConnections[$c])) return; $c->beforeExecuting(function(string $q,array $b,Connection $c): void { if(self::$writeGuardEnabled && preg_match('/^('.self::WRITE_VERBS.')\b/i', ltrim(preg_replace('/^(?:\s|\/\*.*?\*\/|--[^\r\n]*(?:\r?\n|$)|#[^\r\n]*(?:\r?\n|$))+/s',' ',$q) ?? $q))) throw new \RuntimeException('Unsafe write query blocked before execution during reserved cache dry run.'); }); self::$guardedConnections[$c]=true; }
-    private function disableWriteQueryGuard(): void { self::$writeGuardEnabled=false; }
+    private function csv(array $rows, array $head): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, $head);
+        foreach ($rows as $row) {
+            fputcsv($handle, array_map(fn (string $key): mixed => $row[$key] ?? '', $head));
+        }
+        rewind($handle);
+
+        return stream_get_contents($handle);
+    }
+
+    private function installWriteQueryGuard(): void
+    {
+        self::$writeGuardEnabled = true;
+        $connection = DB::connection();
+        self::$guardedConnections ??= new \WeakMap();
+        if (isset(self::$guardedConnections[$connection])) {
+            return;
+        }
+        $connection->beforeExecuting(function (string $query, array $bindings, Connection $connection): void {
+            $normalized = ltrim(preg_replace('/^(?:\s|\/\*.*?\*\/|--[^\r\n]*(?:\r?\n|$)|#[^\r\n]*(?:\r?\n|$))+/s', ' ', $query) ?? $query);
+            if (self::$writeGuardEnabled && preg_match('/^('.self::WRITE_VERBS.')\b/i', $normalized)) {
+                throw new \RuntimeException('Unsafe write query blocked before execution during reserved cache dry run.');
+            }
+        });
+        self::$guardedConnections[$connection] = true;
+    }
+
+    private function disableWriteQueryGuard(): void
+    {
+        self::$writeGuardEnabled = false;
+    }
 }

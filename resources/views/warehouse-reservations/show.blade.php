@@ -38,10 +38,10 @@
                 <h2 class="h4 fw-bold mb-0">رزرو موجودی #{{ $reservation->id }}</h2>
                 <span class="status-badge status-neutral">{{ $classificationService->typeLabels()[$classification['type']] }}</span>
                 @php
-                    $labelClass = match($classification['label']) {
-                        'critical', 'legacy_candidate' => 'status-critical',
-                        'temporary_orphan' => 'status-review',
-                        'consumed' => 'status-neutral',
+                    $labelClass = match($classification['state']) {
+                        'historical_ambiguous', 'invalid_official' => 'status-critical',
+                        'temporary_stale_releasable', 'legacy_safe' => 'status-review',
+                        'consumed', 'released' => 'status-neutral',
                         default => 'status-active',
                     };
                     $healthClass = match($classification['health']) {
@@ -50,7 +50,7 @@
                         default => 'status-active',
                     };
                 @endphp
-                <span class="status-badge {{ $labelClass }}">{{ $classificationService->managementLabels()[$classification['label']] }}</span>
+                <span class="status-badge {{ $labelClass }}">{{ $classificationService->managementLabels()[$classification['state']] }}</span>
                 <span class="status-badge {{ $healthClass }}">سلامت: {{ $classificationService->healthLabels()[$classification['health']] }}</span>
             </div>
             <div class="muted-line" dir="ltr">{{ $reservation->token }}</div>
@@ -110,7 +110,11 @@
                         <dt class="col-5">زمان آزادسازی</dt>
                         <dd class="col-7" dir="ltr">{{ JalaliDate::dateTime($reservation->released_at, 'آزاد نشده') }}</dd>
                         <dt class="col-5">دلیل آزادسازی</dt>
-                        <dd class="col-7">{{ $reservation->release_reason ?? '—' }}</dd>
+                        <dd class="col-7">{{ $reservation->releaseReasonLabel() }}</dd>
+                        @if($reservation->release_note)
+                            <dt class="col-5">یادداشت چرخه عمر</dt>
+                            <dd class="col-7">{{ $reservation->release_note }}</dd>
+                        @endif
                     </dl>
                 </div>
             </div>

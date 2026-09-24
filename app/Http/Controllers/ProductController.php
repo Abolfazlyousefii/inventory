@@ -529,8 +529,6 @@ class ProductController extends Controller {
                 }
             }
 
-            app(DefaultProductDesignService::class)->ensureElectricDefaultColors($product, $sellPrice, $buyPrice);
-
             $this->recalcProductSummary($product);
         });
 
@@ -725,7 +723,6 @@ class ProductController extends Controller {
                     'variant_code'  => $variantCode,
                     'sell_price'    => $sellPrice,
                     'buy_price'     => $buyPrice,
-                    'is_active'     => (bool) ( $v['is_active'] ?? true ),
                     'variety_id'    => isset($v['variety_id']) && $v['variety_id'] !== '' ? (int) $v['variety_id'] : null,
                 ];
 
@@ -738,6 +735,7 @@ class ProductController extends Controller {
                         'product_id' => $product->id,
                         'reserved'   => 0,
                         'stock'      => 0,
+                        'is_active'  => true,
                     ]));
 
                     $keepIds[] = $variant->id;
@@ -754,8 +752,6 @@ class ProductController extends Controller {
             // ویرایش ساختار کالا نباید هیچ تنوع واقعی را صرفاً به‌خاطر نبودن در request حذف کند.
             // حذف/غیرفعال‌سازی واقعی باید بعداً از مسیر صریح و کنترل‌شده انجام شود.
             $this->syncProductVariants($product, $data);
-            app(ProductVariantStructureService::class)->deactivateInvalidVariants($product);
-
             foreach ( ( $data['variant_site_ids'] ?? [] ) as $variantId => $siteVariantId ) {
                 if ( $siteVariantId === null || $siteVariantId === '' ) {
                     continue;
@@ -765,8 +761,6 @@ class ProductController extends Controller {
                     ->where('id', (int) $variantId)
                     ->update([ 'variety_id' => (int) $siteVariantId ]);
             }
-
-            $defaultDesignService->ensureElectricDefaultColors($product);
 
             $this->recalcProductSummary($product);
         });
@@ -849,7 +843,6 @@ class ProductController extends Controller {
                     'variety_name'  => $designTitle,
                     'variety_code'  => $varietyCode,
                     'variant_code'  => $variantCode,
-                    'is_active'     => true,
                 ];
 
                 if ( $variant ) {

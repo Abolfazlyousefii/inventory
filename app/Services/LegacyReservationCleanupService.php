@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  * Phase 4-B — Safe Legacy Reservation Cleanup.
  *
  * This service closes the lifecycle of reservations that
- * ReservationClassificationService classifies as "legacy_candidate" and
+ * ReservationClassificationService classifies as "legacy_safe" and
  * repairs the reserved cache columns. It is deliberately NOT a release:
  *
  * - It never calls InventoryReservationReleaseService.
@@ -28,7 +28,10 @@ use Illuminate\Support\Facades\DB;
  * quantity was, in practice, never really backed by held stock in a way the
  * business still cares about — so cleanup only closes the reservation
  * lifecycle and brings the cached reserved counters back in line with
- * reality (via ReservationQueryService::rebuildForProducts(), which reads
+ * records with positive official-order provenance but unreliable historical
+ * stock provenance, so cleanup only closes lifecycle bookkeeping and brings
+ * cached reserved counters back in line with reality (via
+ * ReservationQueryService::rebuildForProducts(), which reads
  * the current set of still-active reservations and does not touch physical
  * stock tables at all).
  */
@@ -68,9 +71,12 @@ class LegacyReservationCleanupService
         return $this->candidatesQuery($staleHours, $at)
             ->when($orderId !== null, fn (Builder $query) => $query->where('preinvoice_order_id', $orderId))
             ->when($variantId !== null, fn (Builder $query) => $query->where('variant_id', $variantId))
-            ->with(['product:id,name', 'variant:id,product_id,variant_name,variant_code', 'order:id,status'])
+            ->with(['product:id,name', 'variant:id,product_id,variant_name,variant_code', 'order.invoice', 'activeDrafts'])
             ->oldest('id')
             ->get()
+            ->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
+                $this->classification->classify($reservation, $at)['state'] === ReservationClassificationService::STATE_LEGACY_SAFE
+            )
             ->map(fn (PreinvoiceDraftReservation $reservation): array => [
                 'reservation_id' => (int) $reservation->id,
                 'product_id' => (int) $reservation->product_id,
@@ -115,7 +121,6 @@ class LegacyReservationCleanupService
 
             $reservations = PreinvoiceDraftReservation::query()
                 ->whereKey($ids)
-                ->whereNull('released_at')
                 ->with(['order.invoice', 'activeDrafts', 'product:id,name', 'variant:id,product_id,variant_name,variant_code'])
                 ->lockForUpdate()
                 ->get();
@@ -125,11 +130,20 @@ class LegacyReservationCleanupService
             $closed = 0;
             $quantityClosed = 0;
 
+            foreach (array_diff($ids, $reservations->modelKeys()) as $missingId) {
+                $rows[] = [
+                    'reservation_id' => (int) $missingId,
+                    'product' => '', 'variant' => '', 'quantity' => 0,
+                    'classification' => 'not_found', 'action' => self::ACTION_SKIPPED,
+                    'timestamp' => $at->toDateTimeString(),
+                ];
+            }
+
             foreach ($reservations as $reservation) {
                 $classification = $this->classification->classify($reservation, $at);
-                $isLegacyCandidate = $classification['label'] === ReservationClassificationService::LABEL_LEGACY_CANDIDATE
+                $isLegacyCandidate = $classification['state'] === ReservationClassificationService::STATE_LEGACY_SAFE
                     // Belt-and-braces: also confirm the row still matches the
-                    // authoritative SQL scope at this exact instant, in case
+                    // conservative SQL prefilter at this exact instant, in case
                     // its state moved between listing and locking.
                     && $this->candidatesQuery($staleHours, $at)->whereKey($reservation->id)->exists();
 
@@ -167,11 +181,18 @@ class LegacyReservationCleanupService
                     'پاکسازی رزرو Legacy بدون بازگشت موجودی',
                     [
                         'reservation_id' => (int) $reservation->id,
+                        'token' => (string) $reservation->token,
+                        'user_id' => $reservation->user_id,
                         'product_id' => (int) $reservation->product_id,
                         'variant_id' => (int) $reservation->variant_id,
                         'quantity' => (int) $reservation->quantity,
+                        'preinvoice_order_id' => $reservation->preinvoice_order_id,
+                        'actor_id' => $actorId,
+                        'classification' => ReservationClassificationService::STATE_LEGACY_SAFE,
                         'reason' => self::RELEASE_REASON,
                         'stock_return' => false,
+                        'warehouse_stock_changed' => false,
+                        'timestamp' => $at->toISOString(),
                         'legacy_reason' => $reservation->legacyCleanupReason(),
                         'old_state' => $oldState,
                     ],
@@ -195,9 +216,13 @@ class LegacyReservationCleanupService
             $cache = $this->quantities->rebuildForProducts(array_values(array_unique($closedProductIds)), $at);
 
             return [
+                'requested_count' => count($ids),
+                'eligible_count' => $closed,
+                'processed_count' => $closed,
+                'failed_count' => 0,
                 'processed' => $reservations->count(),
                 'closed' => $closed,
-                'skipped' => $reservations->count() - $closed,
+                'skipped' => count($ids) - $closed,
                 'quantity_closed' => $quantityClosed,
                 'products_rebuilt' => $cache['products'],
                 'variants_rebuilt' => $cache['variants'],

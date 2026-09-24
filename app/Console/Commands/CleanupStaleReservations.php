@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\PreinvoiceDraftReservation;
+use App\Services\PreinvoiceDraftReservationService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class CleanupStaleReservations extends Command
@@ -16,9 +16,9 @@ class CleanupStaleReservations extends Command
                             {--in-person-minutes=15 : In-person heartbeat timeout}
                             {--output=reports/stale-reservation-cleanup : Report directory}';
 
-    protected $description = 'Safely complete stale temporary reservation lifecycles without returning warehouse stock.';
+    protected $description = 'Deprecated compatibility command delegating to canonical stale reservation release.';
 
-    public function handle(): int
+    public function handle(PreinvoiceDraftReservationService $service): int
     {
         if ((bool) $this->option('dry-run') === (bool) $this->option('apply')) {
             $this->error('Specify exactly one of --dry-run or --apply.');
@@ -29,12 +29,9 @@ class CleanupStaleReservations extends Command
         $at = now();
         $online = max(1, (int) $this->option('online-minutes'));
         $inPerson = max(1, (int) $this->option('in-person-minutes'));
-        $query = PreinvoiceDraftReservation::query()
-            ->cleanupCandidates($online, $inPerson, $at)
-            ->with(['order:id,status', 'order.invoice:id,preinvoice_order_id'])
-            ->oldest('id');
-
-        $reservations = $query->get();
+        $this->warn('Deprecated: delegates to canonical reservations:cleanup semantics.');
+        $result = $service->cleanupStaleTemporaryReservations($online, $inPerson, (bool) $this->option('dry-run'));
+        $reservations = collect($result['reservations']);
         $rows = $reservations->map(fn (PreinvoiceDraftReservation $reservation): array => [
             'reservation_id' => $reservation->id,
             'product_id' => $reservation->product_id,
@@ -46,20 +43,6 @@ class CleanupStaleReservations extends Command
             'reason' => 'stale_temporary_without_valid_heartbeat',
         ])->all();
 
-        if ($this->option('apply') && $reservations->isNotEmpty()) {
-            DB::transaction(function () use ($reservations, $at, $online, $inPerson): void {
-                PreinvoiceDraftReservation::query()
-                    ->whereKey($reservations->modelKeys())
-                    ->lockForUpdate()
-                    ->cleanupCandidates($online, $inPerson, $at)
-                    ->update([
-                        'released_at' => $at,
-                        'release_reason' => 'stale_cleanup',
-                        'updated_at' => $at,
-                    ]);
-            });
-        }
-
         $base = trim((string) $this->option('output'), '/');
         Storage::disk('local')->put("{$base}/legacy-reservation-audit.csv", $this->csv($rows));
         Storage::disk('local')->put("{$base}/summary.json", json_encode([
@@ -67,12 +50,12 @@ class CleanupStaleReservations extends Command
             'evaluated_at' => $at->toISOString(),
             'reservations' => count($rows),
             'quantity' => array_sum(array_column($rows, 'quantity')),
-            'warehouse_stock_changed' => false,
-            'reserved_cache_changed' => false,
+            'warehouse_stock_changed' => (bool) $this->option('apply') && count($rows) > 0,
+            'reserved_cache_changed' => (bool) $this->option('apply') && count($rows) > 0,
         ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         $this->info(sprintf('%s %d stale temporary reservations (%d units).', $this->option('apply') ? 'Released' : 'Found', count($rows), array_sum(array_column($rows, 'quantity'))));
-        $this->line('Warehouse stock and reserved caches were not changed.');
+        $this->line($this->option('apply') ? 'Canonical normal release returned held stock and updated reserved caches.' : 'No data changed.');
 
         return self::SUCCESS;
     }
