@@ -227,9 +227,10 @@ class WarehouseCollectionService
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];
-            if ($total < (int) $invoice->payments->sum('amount')) {
-                throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است.']);
-            }
+            // Overpayment is valid here.
+            // If warehouse changes reduce the invoice below the already-paid amount,
+            // keep existing payments unchanged. The debit is synced to the new total,
+            // so the difference naturally remains as customer credit.
 
             $oldStatus = (string) $invoice->status;
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
@@ -244,15 +245,17 @@ class WarehouseCollectionService
             );
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
 
-            $webhookPayload = [
-                'invoice_id' => $invoice->id,
-                'external_order_id' => $invoice->external_order_id,
-                'crm_customer_id' => $invoice->customer?->crm_customer_id,
-                'revision_id' => $revisionId,
-                'old_total' => (int) $oldTotal,
-                'new_total' => (int) $total,
-                'difference' => (int) $total - (int) $oldTotal,
-            ];
+            $webhookPayload = $this->buildInvoiceItemsWebhookPayload(
+                $invoice,
+                $revisionId,
+                $oldTotal,
+                $total,
+                $revisionRows,
+                $user,
+                (string) ($reason ?: 'warehouse_correction'),
+                $note,
+                'warehouse_collection'
+            );
 
             return $invoice->fresh(['items.product', 'items.variant']);
         });
@@ -307,16 +310,27 @@ class WarehouseCollectionService
 
     public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, bool $canEditPrices = false, ?string $reason = null, ?string $note = null): Invoice
     {
-        return DB::transaction(function () use ($invoice, $items, $user, $canEditPrices, $reason, $note) {
-            $invoice = Invoice::query()->with(['items', 'payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+        $webhookPayload = null;
+
+        $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $canEditPrices, $reason, $note, &$webhookPayload) {
+            $invoice = Invoice::query()
+                ->with(['items.product', 'items.variant', 'payments', 'customer'])
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
             if ((string) $invoice->status === Invoice::STATUS_SHIPPED) {
                 throw ValidationException::withMessages(['status' => 'فاکتور ارسال‌شده قابل تغییر اقلام نیست.']);
             }
 
+            $oldTotal = (int) $invoice->total;
+            $oldStatus = (string) $invoice->status;
+            $revisionReason = trim((string) $reason) !== '' ? (string) $reason : 'invoice_correction';
+
             $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
             $existingById = $invoice->items->keyBy('id');
             $normalized = [];
+            $revisionRows = [];
 
             foreach ($items as $row) {
                 $qty = (int) $row['quantity'];
@@ -333,7 +347,7 @@ class WarehouseCollectionService
 
                 $variantId = $existing ? (int) $existing->variant_id : (int) $row['variant_id'];
                 $productId = $existing ? (int) $existing->product_id : (int) $row['product_id'];
-                $variant = ProductVariant::query()->whereKey($variantId)->where('product_id', $productId)->lockForUpdate()->first();
+                $variant = ProductVariant::query()->with('product')->whereKey($variantId)->where('product_id', $productId)->lockForUpdate()->first();
                 if (! $variant) {
                     throw ValidationException::withMessages(['items' => 'تنوع انتخاب‌شده برای محصول معتبر نیست.']);
                 }
@@ -388,7 +402,7 @@ class WarehouseCollectionService
             $pendingInboundLines = $this->inboundLinesForReducedItems(
                 $invoice->items,
                 $normalized,
-                $reason ?: 'invoice_correction'
+                $revisionReason
             );
 
             $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
@@ -412,28 +426,62 @@ class WarehouseCollectionService
 
             $aggregated = collect($normalized)->groupBy('variantId')->map(function ($rows) {
                 $first = $rows->first();
-                $existing = $rows->firstWhere('existing', '!=', null)['existing'] ?? null;
+                $existingRow = $rows->first(fn ($row) => $row['existing'] !== null);
+                $existing = $existingRow['existing'] ?? null;
                 $qty = (int) $rows->sum('qty');
                 $subtotal = (int) $rows->sum(fn ($row) => (int) $row['qty'] * (int) $row['price']);
                 $discount = (int) $rows->sum('discount');
                 $price = $qty > 0 ? intdiv($subtotal, $qty) : (int) $first['price'];
-                return array_merge($first, ['existing' => $existing, 'itemId' => $existing ? (int) $existing->id : 0, 'qty' => $qty, 'price' => $price, 'discount' => min($discount, max($qty * $price, 0))]);
+
+                return array_merge($first, [
+                    'existing' => $existing,
+                    'itemId' => $existing ? (int) $existing->id : 0,
+                    'qty' => $qty,
+                    'price' => $price,
+                    'discount' => min($discount, max($qty * $price, 0)),
+                ]);
             })->values()->all();
 
             $priceChangeLogs = [];
             $seen = [];
+
             foreach ($aggregated as $row) {
                 $existing = $row['existing'];
                 $qty = (int) $row['qty'];
-                if ($existing && $qty <= 0) { $existing->delete(); continue; }
+
+                if ($existing && $qty <= 0) {
+                    $seen[] = (int) $existing->id;
+                    $revisionRows[] = $this->revisionItemPayload(
+                        $existing,
+                        [
+                            'quantity' => (int) $existing->quantity,
+                            'price' => (int) $existing->price,
+                            'discount' => (int) ($existing->line_discount_amount ?? 0),
+                            'line_total' => (int) $existing->line_total,
+                        ],
+                        'removed',
+                        true
+                    );
+                    $existing->delete();
+                    continue;
+                }
+
                 if ($existing) {
                     $seen[] = (int) $existing->id;
+                    $old = [
+                        'quantity' => (int) $existing->quantity,
+                        'price' => (int) $existing->price,
+                        'discount' => (int) ($existing->line_discount_amount ?? 0),
+                        'line_total' => (int) $existing->line_total,
+                    ];
+
                     if (((int) $existing->price !== (int) $row['price'] || (int) ($existing->line_discount_amount ?? 0) !== (int) $row['discount']) && trim((string) ($reason ?: $note)) === '') {
                         throw ValidationException::withMessages(['change_note' => 'برای تغییر قیمت یا تخفیف، توضیح تغییر الزامی است.']);
                     }
                     if ((int) $row['discount'] > $qty * (int) $row['price']) {
                         throw ValidationException::withMessages(['line_discount_amount' => 'تخفیف ردیف نباید بیشتر از جمع ردیف باشد.']);
                     }
+
                     if ((int) $existing->price !== (int) $row['price'] || (int) ($existing->line_discount_amount ?? 0) !== (int) $row['discount']) {
                         $priceChangeLogs[] = [
                             'product' => $existing->product?->name ?? ('#' . $existing->product_id),
@@ -444,40 +492,142 @@ class WarehouseCollectionService
                             'new_discount' => (int) $row['discount'],
                         ];
                     }
-                    $existing->update(['quantity' => $qty, 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0)]);
+
+                    $existing->update([
+                        'quantity' => $qty,
+                        'price' => (int) $row['price'],
+                        'line_discount_amount' => (int) $row['discount'],
+                        'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0),
+                    ]);
+
+                    $changed = $old['quantity'] !== $qty
+                               || $old['price'] !== (int) $row['price']
+                               || $old['discount'] !== (int) $row['discount'];
+
+                    if ($changed) {
+                        $revisionRows[] = $this->revisionItemPayload(
+                            $existing->fresh(['product', 'variant']),
+                            $old,
+                            'multiple_changes'
+                        );
+                    }
+
                     continue;
                 }
-                if ($qty <= 0) { continue; }
-                $created = InvoiceItem::query()->create(['invoice_id' => $invoice->id, 'product_id' => $row['productId'], 'variant_id' => $row['variantId'], 'quantity' => $qty, 'price' => (int) $row['price'], 'line_discount_amount' => (int) $row['discount'], 'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0)]);
+
+                if ($qty <= 0) {
+                    continue;
+                }
+
+                $created = InvoiceItem::query()->create([
+                    'invoice_id' => $invoice->id,
+                    'product_id' => $row['productId'],
+                    'variant_id' => $row['variantId'],
+                    'quantity' => $qty,
+                    'price' => (int) $row['price'],
+                    'line_discount_amount' => (int) $row['discount'],
+                    'line_total' => max($qty * (int) $row['price'] - (int) $row['discount'], 0),
+                ]);
                 $seen[] = (int) $created->id;
+                $revisionRows[] = $this->revisionItemPayload($created->fresh(['product', 'variant']), null, 'added');
             }
 
             foreach ($invoice->items as $item) {
-                if (! in_array((int) $item->id, $seen, true)) { $item->delete(); }
+                if (! in_array((int) $item->id, $seen, true)) {
+                    $revisionRows[] = $this->revisionItemPayload(
+                        $item,
+                        [
+                            'quantity' => (int) $item->quantity,
+                            'price' => (int) $item->price,
+                            'discount' => (int) ($item->line_discount_amount ?? 0),
+                            'line_total' => (int) $item->line_total,
+                        ],
+                        'removed',
+                        true
+                    );
+                    $item->delete();
+                }
             }
 
-            $invoice->refresh()->load('items');
+            $invoice->refresh()->load(['items', 'customer']);
             $documentDiscount = (int) ($invoice->invoice_discount_amount ?? 0);
             if ($documentDiscount <= 0 && (int) ($invoice->product_discount_amount ?? 0) <= 0) {
                 $documentDiscount = max((int) ($invoice->discount_amount ?? 0) - (int) $invoice->items->sum(fn (InvoiceItem $item) => SalesDocumentTotals::lineDiscount($item)), 0);
             }
+
             $totals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = (int) $totals['subtotal_before_discount'];
             $discount = (int) $totals['total_discount'];
             $total = (int) $totals['grand_total'];
-            if ($total < (int) $invoice->payments->sum('amount')) {
-                throw ValidationException::withMessages(['total' => 'مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است. ابتدا پرداخت‌ها را اصلاح کنید یا مبلغ فاکتور را بررسی کنید.']);
+            $hasItemChanges = $revisionRows !== [];
+
+            $needsFinanceReapproval = $hasItemChanges && in_array($oldStatus, [
+                    Invoice::STATUS_PENDING_COLLECTION,
+                    Invoice::STATUS_WAREHOUSE_RECEIVED,
+                    Invoice::STATUS_COLLECTING,
+                    Invoice::STATUS_READY_TO_SHIP,
+                    Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+                    Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION,
+                ], true);
+
+            $invoiceUpdate = [
+                'subtotal' => $subtotal,
+                'product_discount_amount' => (int) $totals['items_discount'],
+                'invoice_discount_amount' => (int) $totals['invoice_discount'],
+                'discount_amount' => $discount,
+                'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals),
+                'total' => $total,
+                'items_updated_at' => now(),
+                'items_updated_by' => $user->id,
+                'collection_note' => $note,
+            ];
+
+            if ($needsFinanceReapproval) {
+                $invoiceUpdate['status'] = Invoice::STATUS_PENDING_FINANCE_REAPPROVAL;
+                if ($oldStatus !== Invoice::STATUS_PENDING_FINANCE_REAPPROVAL) {
+                    $invoiceUpdate['status_changed_at'] = now();
+                    $invoiceUpdate['status_changed_by'] = $user->id;
+                }
             }
-            $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => $note]);
+
+            $invoice->update($invoiceUpdate);
             $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+
+            $revisionId = null;
+            if ($hasItemChanges) {
+                $revisionId = $this->storeCollectionRevision(
+                    $invoice,
+                    $oldTotal,
+                    $total,
+                    $revisionReason,
+                    $note,
+                    $user->id,
+                    $revisionRows
+                );
+            }
+
             $this->warehouseInbound->queueInvoiceAdjustment(
                 $invoice->fresh(),
                 $pendingInboundLines,
                 (int) $user->id,
-                $reason ?: 'invoice_correction'
+                $revisionReason
             );
-            $description = trim(($reason ? 'دلیل: ' . $reason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
+
+            $description = trim(($revisionReason ? 'دلیل: ' . $revisionReason . ' - ' : '') . ($note ?: 'تغییر اقلام فاکتور ثبت شد.'));
             $this->historyService->log($invoice, 'invoice_items_updated', 'items', null, null, $description, $user->id);
+
+            if ($needsFinanceReapproval && $oldStatus !== Invoice::STATUS_PENDING_FINANCE_REAPPROVAL) {
+                $this->historyService->log(
+                    $invoice,
+                    'invoice_items_reapproval',
+                    'status',
+                    $oldStatus,
+                    Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+                    'اقلام فاکتور تغییر کرد و فاکتور برای تأیید مجدد به مالی ارجاع شد.',
+                    $user->id
+                );
+            }
+
             foreach ($priceChangeLogs as $logRow) {
                 $this->historyService->log(
                     $invoice,
@@ -485,13 +635,122 @@ class WarehouseCollectionService
                     'price_discount',
                     json_encode(['price' => $logRow['old_price'], 'discount' => $logRow['old_discount']], JSON_UNESCAPED_UNICODE),
                     json_encode(['price' => $logRow['new_price'], 'discount' => $logRow['new_discount']], JSON_UNESCAPED_UNICODE),
-                    trim('کالا: ' . $logRow['product'] . ' / تنوع: ' . $logRow['variant'] . ' / قیمت قبلی: ' . $logRow['old_price'] . ' / قیمت جدید: ' . $logRow['new_price'] . ' / تخفیف قبلی: ' . $logRow['old_discount'] . ' / تخفیف جدید: ' . $logRow['new_discount'] . ' / کاربر: ' . $user->id . ' / زمان: ' . now()->toDateTimeString() . ($reason ? ' / دلیل: ' . $reason : '') . ($note ? ' / توضیح: ' . $note : '')),
+                    trim('کالا: ' . $logRow['product'] . ' / تنوع: ' . $logRow['variant'] . ' / قیمت قبلی: ' . $logRow['old_price'] . ' / قیمت جدید: ' . $logRow['new_price'] . ' / تخفیف قبلی: ' . $logRow['old_discount'] . ' / تخفیف جدید: ' . $logRow['new_discount'] . ' / کاربر: ' . $user->id . ' / زمان: ' . now()->toDateTimeString() . ($revisionReason ? ' / دلیل: ' . $revisionReason : '') . ($note ? ' / توضیح: ' . $note : '')),
                     $user->id
                 );
             }
 
-            return $invoice->fresh(['items.product', 'items.variant']);
+            if ($revisionId !== null) {
+                $webhookPayload = $this->buildInvoiceItemsWebhookPayload(
+                    $invoice,
+                    $revisionId,
+                    $oldTotal,
+                    $total,
+                    $revisionRows,
+                    $user,
+                    $revisionReason,
+                    $note,
+                    'invoice_edit'
+                );
+            }
+
+            return $invoice->fresh(['items.product', 'items.variant', 'preinvoiceOrder']);
         });
+
+        if ($webhookPayload !== null) {
+            InventoryWebhookService::send('invoice.items.updated', $webhookPayload);
+        }
+
+        return $updatedInvoice;
+    }
+
+    private function buildInvoiceItemsWebhookPayload(
+        Invoice $invoice,
+        ?int $revisionId,
+        int $oldTotal,
+        int $newTotal,
+        array $revisionRows,
+        User $user,
+        string $reason,
+        ?string $note,
+        string $source
+    ): array {
+        $invoice = $invoice->fresh(['items.product', 'items.variant', 'payments', 'customer']);
+
+        $revisionNumber = null;
+        if ($revisionId !== null && DB::getSchemaBuilder()->hasTable('invoice_collection_revisions')) {
+            $revisionNumber = DB::table('invoice_collection_revisions')
+                ->where('id', $revisionId)
+                ->value('revision_number');
+        }
+
+        $changes = collect($revisionRows)->map(function (array $row) {
+            return [
+                'invoice_item_id' => isset($row['invoice_item_id']) ? (int) $row['invoice_item_id'] : null,
+                'product_id' => isset($row['product_id']) ? (int) $row['product_id'] : null,
+                'product_variant_id' => isset($row['product_variant_id']) ? (int) $row['product_variant_id'] : null,
+                'change_type' => (string) ($row['change_type'] ?? ''),
+                'product_name' => $row['product_name_snapshot'] ?? null,
+                'variant_name' => $row['variant_name_snapshot'] ?? null,
+                'sku' => $row['sku_snapshot'] ?? null,
+                'old_quantity' => isset($row['old_quantity']) ? (int) $row['old_quantity'] : null,
+                'new_quantity' => isset($row['new_quantity']) ? (int) $row['new_quantity'] : null,
+                'old_price' => isset($row['old_price']) ? (int) $row['old_price'] : null,
+                'new_price' => isset($row['new_price']) ? (int) $row['new_price'] : null,
+                'old_discount' => isset($row['old_discount']) ? (int) $row['old_discount'] : null,
+                'new_discount' => isset($row['new_discount']) ? (int) $row['new_discount'] : null,
+                'old_line_total' => isset($row['old_line_total']) ? (int) $row['old_line_total'] : null,
+                'new_line_total' => isset($row['new_line_total']) ? (int) $row['new_line_total'] : null,
+            ];
+        })->values()->all();
+
+        $currentItems = $invoice->items->map(function (InvoiceItem $item) {
+            return [
+                'invoice_item_id' => (int) $item->id,
+                'product_id' => (int) $item->product_id,
+                'product_variant_id' => (int) $item->variant_id,
+                'product_name' => $item->product?->name,
+                'variant_name' => $item->variant?->variant_name ?: $item->variant?->variety_name,
+                'sku' => $item->variant?->variant_code ?: $item->variant?->variety_code,
+                'quantity' => (int) $item->quantity,
+                'price' => (int) $item->price,
+                'discount' => (int) ($item->line_discount_amount ?? 0),
+                'line_total' => (int) $item->line_total,
+            ];
+        })->values()->all();
+
+        return [
+            // Backward-compatible flat fields used by existing Site handlers.
+            'invoice_id' => (int) $invoice->id,
+            'invoice_uuid' => (string) $invoice->uuid,
+            'external_order_id' => $invoice->external_order_id !== null ? (int) $invoice->external_order_id : null,
+            'crm_customer_id' => $invoice->customer?->crm_customer_id,
+            'revision_id' => $revisionId,
+            'old_total' => $oldTotal,
+            'new_total' => $newTotal,
+            'difference' => $newTotal - $oldTotal,
+
+            // Rich revision snapshot for the Site order page. The Site stores the
+            // webhook body in inventory_inbound_events, so no destructive rewrite of
+            // the original order_items table is needed.
+            'status' => (string) $invoice->status,
+            'subtotal' => (int) ($invoice->subtotal ?? 0),
+            'discount_amount' => (int) ($invoice->discount_amount ?? 0),
+            'shipping_price' => (int) ($invoice->shipping_price ?? 0),
+            'paid_amount' => (int) $invoice->payments->sum('amount'),
+            'revision' => [
+                'id' => $revisionId,
+                'number' => $revisionNumber !== null ? (int) $revisionNumber : null,
+                'reason_type' => $reason,
+                'reason_note' => $note,
+                'changed_by' => (int) $user->id,
+                'changed_by_name' => $user->name,
+                'changed_at' => now()->toIso8601String(),
+                'source' => $source,
+            ],
+            'changes' => $changes,
+            'current_items' => $currentItems,
+        ];
     }
 
     private function centralAvailableStockForUpdate(int $productId, int $variantId): int

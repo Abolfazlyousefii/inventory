@@ -11,11 +11,84 @@
 	$paymentBadge = $paidTotal > $invoice->total ? 'text-bg-danger' : ($remainingAmount === 0 ? 'text-bg-success' : ($paidTotal > 0 ? 'text-bg-warning' : 'text-bg-secondary'));
 	$itemsTotal = (int) $invoice->items->sum(fn($item) => max(((int)$item->quantity * (int)$item->price) - (int)($item->line_discount_amount ?? 0), 0));
 	$hasZeroPrice = $invoice->items->contains(fn($item) => (int)$item->quantity > 0 && (int)$item->price <= 0);
-	$hasMismatch = abs((int)$invoice->total - $itemsTotal) > 1;
+	$canonicalTotals = \App\Support\SalesDocumentTotals::fromDocument($invoice);
+	$hasMismatch = abs((int)$invoice->total - (int)$canonicalTotals['grand_total']) > 1;
+
+  $removedReasonLabels = [
+      'physical_shortage' => 'کسری فیزیکی',
+      'customer_cancelled' => 'انصراف مشتری',
+      'wrong_item' => 'کالای اشتباه',
+      'warehouse_correction' => 'اصلاح انبار',
+      'replacement' => 'جایگزینی کالا',
+      'invoice_correction' => 'اصلاح فاکتور',
+      'other' => 'سایر',
+  ];
+  $removedItems = collect();
+  $currentItemRevisionHistory = collect();
+  if (
+      \Illuminate\Support\Facades\Schema::hasTable('invoice_collection_revisions')
+      && \Illuminate\Support\Facades\Schema::hasTable('invoice_collection_revision_items')
+  ) {
+      $baseRevisionQuery = \Illuminate\Support\Facades\DB::table('invoice_collection_revision_items as revision_item')
+          ->join('invoice_collection_revisions as revision', 'revision.id', '=', 'revision_item.invoice_collection_revision_id')
+          ->leftJoin('users as changer', 'changer.id', '=', 'revision.changed_by')
+          ->where('revision.invoice_id', $invoice->id);
+
+      $removedItems = (clone $baseRevisionQuery)
+          ->where('revision_item.change_type', 'removed')
+          ->select([
+              'revision_item.id',
+              'revision_item.product_id',
+              'revision_item.product_variant_id',
+              'revision_item.product_name_snapshot',
+              'revision_item.variant_name_snapshot',
+              'revision_item.sku_snapshot',
+              'revision_item.old_quantity',
+              'revision_item.old_price',
+              'revision_item.old_discount',
+              'revision_item.old_line_total',
+              'revision.revision_number',
+              'revision.reason_type',
+              'revision.reason_note',
+              'revision.changed_by',
+              'revision.created_at as changed_at',
+              'changer.name as changed_by_name',
+          ])
+          ->orderBy('revision.revision_number')
+          ->orderBy('revision_item.id')
+          ->get();
+
+      $currentItemRevisionHistory = (clone $baseRevisionQuery)
+          ->whereNotNull('revision_item.invoice_item_id')
+          ->whereIn('revision_item.change_type', ['added', 'multiple_changes'])
+          ->select([
+              'revision_item.id',
+              'revision_item.invoice_item_id',
+              'revision_item.change_type',
+              'revision_item.old_quantity',
+              'revision_item.new_quantity',
+              'revision_item.old_price',
+              'revision_item.new_price',
+              'revision_item.old_discount',
+              'revision_item.new_discount',
+              'revision_item.old_line_total',
+              'revision_item.new_line_total',
+              'revision.revision_number',
+              'revision.reason_type',
+              'revision.reason_note',
+              'revision.changed_by',
+              'revision.created_at as changed_at',
+              'changer.name as changed_by_name',
+          ])
+          ->orderBy('revision.revision_number')
+          ->orderBy('revision_item.id')
+          ->get()
+          ->groupBy('invoice_item_id');
+  }
 @endphp
 @section('content')
 	<style>
-		.invoice-page{background:#f8fbff}.invoice-card{border:1px solid #dbeafe;border-radius:16px;box-shadow:0 8px 24px rgba(30,64,175,.06)}.invoice-card .card-header{background:#eff6ff;border-bottom:1px solid #dbeafe;font-weight:700;color:#1e3a8a}.info-label{font-size:.78rem;color:#64748b}.info-value{font-weight:700;color:#0f172a}.money-row{display:flex;justify-content:space-between;border-bottom:1px dashed #dbeafe;padding:.45rem 0}.table thead th{background:#eff6ff;color:#1e3a8a}.readonly-note{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.75rem}
+		.invoice-page{background:#f8fbff}.invoice-card{border:1px solid #dbeafe;border-radius:16px;box-shadow:0 8px 24px rgba(30,64,175,.06)}.invoice-card .card-header{background:#eff6ff;border-bottom:1px solid #dbeafe;font-weight:700;color:#1e3a8a}.info-label{font-size:.78rem;color:#64748b}.info-value{font-weight:700;color:#0f172a}.money-row{display:flex;justify-content:space-between;border-bottom:1px dashed #dbeafe;padding:.45rem 0}.table thead th{background:#eff6ff;color:#1e3a8a}.readonly-note{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.75rem}.removed-history-row td{background:#f8fafc!important;color:#94a3b8!important}.removed-history-row .removed-history-text{text-decoration:line-through}.removed-history-badge,.revision-added-badge,.revision-changed-badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:.7rem;font-weight:900;white-space:nowrap}.removed-history-badge{border:1px solid #fecaca;background:#fef2f2;color:#991b1b}.revision-added-row td{background:#f0fdf4!important}.revision-changed-row td{background:#fffbeb!important}.revision-added-badge{border:1px solid #bbf7d0;background:#dcfce7;color:#166534}.revision-changed-badge{border:1px solid #fde68a;background:#fef3c7;color:#92400e}.removed-history-meta,.revision-meta{display:block;color:#64748b;font-size:.68rem;margin-top:4px;line-height:1.7}.revision-old{color:#94a3b8;text-decoration:line-through}.revision-arrow{color:#64748b;font-size:.75rem;margin:0 3px}
 	</style>
 	<div class="container py-4 invoice-page">
 		<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
@@ -53,11 +126,61 @@
 		</div>
 
 		<div class="card invoice-card mt-3"><div class="card-header">اقلام فاکتور</div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>محصول</th><th>تنوع/مدل</th><th>کد کالا</th><th>تعداد</th><th>قیمت snapshot</th><th>تخفیف ردیف</th><th>جمع</th></tr></thead><tbody>
-					@forelse($invoice->items as $item)<tr><td>{{ $item->product?->name ?? ('#'.$item->product_id) }}</td><td>{{ $item->variant?->variant_name ?? $item->variant?->name ?? '—' }}</td><td>{{ $item->variant?->sku ?? $item->product?->sku ?? '—' }}</td><td>{{ number_format((int)$item->quantity) }}</td><td>{{ $rial($item->price) }}</td><td>{{ $rial($item->line_discount_amount ?? 0) }}</td><td>{{ $rial($item->line_total ?? (((int)$item->quantity * (int)$item->price) - (int)($item->line_discount_amount ?? 0))) }}</td></tr>@empty<tr><td colspan="7" class="text-center text-muted py-4">قلمی ثبت نشده است.</td></tr>@endforelse
+					@foreach($invoice->items as $item)
+						@php
+							$itemRevisions = $currentItemRevisionHistory->get($item->id, collect());
+							$latestRevision = $itemRevisions->last();
+							$addedRevision = $itemRevisions->firstWhere('change_type', 'added');
+							$isChangedRevision = $latestRevision && $latestRevision->change_type === 'multiple_changes';
+							$revisionReason = $latestRevision ? ($removedReasonLabels[$latestRevision->reason_type] ?? ($latestRevision->reason_type ?: 'اصلاح فاکتور')) : null;
+							$revisionAt = $latestRevision?->changed_at ? \Morilog\Jalali\Jalalian::fromDateTime(\Illuminate\Support\Carbon::parse($latestRevision->changed_at))->format('Y/m/d H:i') : null;
+						@endphp
+						<tr class="{{ $addedRevision ? 'revision-added-row' : ($isChangedRevision ? 'revision-changed-row' : '') }}">
+							<td>
+								{{ $item->product?->name ?? ('#'.$item->product_id) }}
+								@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif
+								@if($isChangedRevision)<span class="revision-meta"><span class="revision-changed-badge">ویرایش‌شده</span> · اصلاح #{{ $latestRevision->revision_number }} · {{ $revisionReason }} · {{ $latestRevision->changed_by_name ?: ('کاربر #'.$latestRevision->changed_by) }} · {{ $revisionAt }}</span>@endif
+							</td>
+							<td>{{ $item->variant?->variant_name ?? $item->variant?->name ?? '—' }}</td>
+							<td>{{ $item->variant?->sku ?? $item->variant?->variant_code ?? $item->product?->sku ?? '—' }}</td>
+							<td>
+								@if($isChangedRevision && $latestRevision->old_quantity !== null && (int)$latestRevision->old_quantity !== (int)$latestRevision->new_quantity)<span class="revision-old">{{ number_format((int)$latestRevision->old_quantity) }}</span><span class="revision-arrow">←</span>@endif
+								{{ number_format((int)$item->quantity) }}
+							</td>
+							<td>
+								@if($isChangedRevision && $latestRevision->old_price !== null && (int)$latestRevision->old_price !== (int)$latestRevision->new_price)<span class="revision-old">{{ $rial($latestRevision->old_price) }}</span><span class="revision-arrow">←</span>@endif
+								{{ $rial($item->price) }}
+							</td>
+							<td>
+								@if($isChangedRevision && $latestRevision->old_discount !== null && (int)$latestRevision->old_discount !== (int)$latestRevision->new_discount)<span class="revision-old">{{ $rial($latestRevision->old_discount) }}</span><span class="revision-arrow">←</span>@endif
+								{{ $rial($item->line_discount_amount ?? 0) }}
+							</td>
+							<td>
+								@if($isChangedRevision && $latestRevision->old_line_total !== null && (int)$latestRevision->old_line_total !== (int)$latestRevision->new_line_total)<span class="revision-old">{{ $rial($latestRevision->old_line_total) }}</span><span class="revision-arrow">←</span>@endif
+								{{ $rial($item->line_total ?? (((int)$item->quantity * (int)$item->price) - (int)($item->line_discount_amount ?? 0))) }}
+							</td>
+						</tr>
+					@endforeach
+					@foreach($removedItems as $removed)
+						@php
+							$removedReason = $removedReasonLabels[$removed->reason_type] ?? ($removed->reason_type ?: 'اصلاح انبار');
+							$removedAt = $removed->changed_at ? \Morilog\Jalali\Jalalian::fromDateTime(\Illuminate\Support\Carbon::parse($removed->changed_at))->format('Y/m/d H:i') : '—';
+						@endphp
+						<tr class="removed-history-row">
+							<td><span class="removed-history-text">{{ $removed->product_name_snapshot ?: '#'.$removed->product_id }}</span><span class="removed-history-meta"><span class="removed-history-badge">حذف‌شده از فاکتور</span> · اصلاح #{{ $removed->revision_number }}</span></td>
+							<td><span class="removed-history-text">{{ $removed->variant_name_snapshot ?: '—' }}</span></td>
+							<td dir="ltr"><span class="removed-history-text">{{ $removed->sku_snapshot ?: '—' }}</span></td>
+							<td>{{ number_format((int)($removed->old_quantity ?? 0)) }} ← ۰</td>
+							<td>{{ $rial($removed->old_price ?? 0) }}</td>
+							<td>{{ $rial($removed->old_discount ?? 0) }}</td>
+							<td>{{ $rial($removed->old_line_total ?? 0) }}<span class="removed-history-meta">{{ $removedReason }} · {{ $removed->changed_by_name ?: ('کاربر #'.$removed->changed_by) }} · {{ $removedAt }}</span></td>
+						</tr>
+					@endforeach
+					@if($invoice->items->isEmpty() && $removedItems->isEmpty())<tr><td colspan="7" class="text-center text-muted py-4">قلمی ثبت نشده است.</td></tr>@endif
 					</tbody></table></div></div>
 
 
-		<div class="card invoice-card mt-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><span>پرداخت‌ها</span>@if($canRegisterPayments)<button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#showPaymentModal">افزودن پرداخت</button>@endif</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>روش</th><th>مبلغ</th><th>تاریخ</th><th>ثبت‌کننده</th><th>توضیحات</th></tr></thead><tbody>@forelse($invoice->payments as $payment)<tr><td>{{ $payment->method === 'cheque' ? 'چکی' : 'نقدی' }}</td><td>{{ $rial($payment->amount) }}</td><td>{{ $payment->paid_at ? Jalalian::fromDateTime($payment->paid_at)->format('Y/m/d') : '—' }}</td><td>{{ $payment->creator?->name ?? '—' }}</td><td>{{ $payment->note ?: '—' }}</td></tr>@empty<tr><td colspan="5" class="text-center text-muted py-3">پرداختی ثبت نشده است.</td></tr>@endforelse</tbody></table></div></div>
+		<div class="card invoice-card mt-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><span>پرداخت‌ها</span>@if($canRegisterPayments)<button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#showPaymentModal">افزودن پرداخت</button>@endif</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>روش</th><th>مبلغ</th><th>تاریخ</th><th>ثبت‌کننده</th><th>توضیحات</th></tr></thead><tbody>@forelse($invoice->payments as $payment)<tr><td>{{ match($payment->method){ 'cash' => 'نقدی', 'cheque' => 'چکی', 'card' => 'کارت', 'bank_transfer' => 'حواله بانکی', 'online' => 'آنلاین', 'wallet' => 'کیف پول', default => ($payment->method ?: 'نامشخص') } }}</td><td>{{ $rial($payment->amount) }}</td><td>{{ $payment->paid_at ? Jalalian::fromDateTime($payment->paid_at)->format('Y/m/d') : '—' }}</td><td>{{ $payment->creator?->name ?? '—' }}</td><td>{{ $payment->note ?: '—' }}</td></tr>@empty<tr><td colspan="5" class="text-center text-muted py-3">پرداختی ثبت نشده است.</td></tr>@endforelse</tbody></table></div></div>
 
 		@if($invoice->status === \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL && ($canHandleFinanceActions || $canCancelInvoice))
 			<div class="card invoice-card mt-3"><div class="card-header">عملیات مالی</div><div class="card-body d-flex gap-2 flex-wrap justify-content-end">@if($canHandleFinanceActions)<form method="POST" action="{{ route('finance.invoices.reapprove', $invoice->uuid) }}" data-guard-submit>@csrf<button class="btn btn-success">تأیید مالی و ارسال به صف ارسال</button></form>@endif @if($canCancelInvoice)<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelReapprovalInvoiceModal">لغو فاکتور</button>@endif</div></div>

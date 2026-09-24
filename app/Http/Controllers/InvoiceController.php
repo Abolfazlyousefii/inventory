@@ -644,12 +644,15 @@ class InvoiceController extends Controller
         InventoryWebhookService::send(
             'invoice.collection.completed',
             [
-                'invoice_id' => $invoice->id,
-                'external_order_id' => $invoice->external_order_id,
+                'invoice_id' => (int) $invoice->id,
+                'invoice_uuid' => (string) $invoice->uuid,
+                'external_order_id' => $invoice->external_order_id !== null ? (int) $invoice->external_order_id : null,
                 'crm_customer_id' => $invoice->customer?->crm_customer_id,
+                'status' => (string) $invoice->status,
                 'total' => (int) $invoice->total,
-                'paid_amount' => (int) $invoice->paid_amount,
+                'paid_amount' => (int) ($invoice->payments?->sum('amount') ?? 0),
                 'credit_amount' => max((int) ($invoice->payments?->sum('amount') ?? 0) - (int) $invoice->total, 0),
+                'completed_at' => now()->toIso8601String(),
                 'collection_adjustment_id' => 'invoice-' . $invoice->id,
             ]
         );
@@ -682,7 +685,7 @@ class InvoiceController extends Controller
     {
         try {
             $invoice = $invoice->fresh();
-            $this->notificationService->notifyRoleAfterCommit('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'فاکتور شماره «' . $invoice->uuid . '» پس از تغییر اقلام جمع‌آوری، برای تأیید مجدد مالی ارسال شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id]);
+            $this->notificationService->notifyRoleAfterCommit('finance', 'invoice_pending_finance_reapproval', 'فاکتور نیازمند تایید مجدد مالی است', 'فاکتور شماره «' . $invoice->uuid . '» پس از تغییر اقلام، برای تأیید مجدد مالی ارسال شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_pending_finance_reapproval:' . $invoice->id . ':' . (string) optional($invoice->items_updated_at)->timestamp]);
         } catch (\Throwable $exception) {
             report($exception);
         }
@@ -768,21 +771,26 @@ class InvoiceController extends Controller
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         abort_unless($this->canManageInvoice($invoice), 403);
 
-        $this->warehouseCollectionService->updateInvoiceItemsInPlace(
+        $updatedInvoice = $this->warehouseCollectionService->updateInvoiceItemsInPlace(
             $invoice,
             $data['items'],
             auth()->user(),
             $this->canHandleFinanceActions(),
-            $data['change_reason'] ?? null,
+            $data['change_reason'] ?? 'invoice_correction',
             $data['change_note'] ?? null
         );
 
-        if ($invoice->preinvoiceOrder?->created_by) {
-            $this->notificationService->notifyUserAfterCommit((int) $invoice->preinvoiceOrder->created_by, 'invoice_items_updated_in_edit', 'فاکتور مشتری شما به‌روزرسانی شد', 'اقلام یا مبلغ فاکتور شماره «' . $invoice->uuid . '» به‌روزرسانی شد.', route('preinvoice.my.index'), ['level' => 'info', 'priority' => 'normal', 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_items_updated_in_edit:' . $invoice->id . ':' . now()->timestamp]);
+        if ((string) $updatedInvoice->status === Invoice::STATUS_PENDING_FINANCE_REAPPROVAL) {
+            $this->notifyFinanceReapproval($updatedInvoice);
         }
 
-        return redirect()->route('invoices.edit', $invoice->uuid)
-            ->with('success', 'تغییرات اقلام فاکتور ذخیره شد.');
+        $updatedInvoice->loadMissing('preinvoiceOrder');
+        if ($updatedInvoice->preinvoiceOrder?->created_by) {
+            $this->notificationService->notifyUserAfterCommit((int) $updatedInvoice->preinvoiceOrder->created_by, 'invoice_items_updated_in_edit', 'فاکتور مشتری شما به‌روزرسانی شد', 'اقلام یا مبلغ فاکتور شماره «' . $updatedInvoice->uuid . '» به‌روزرسانی شد.', route('preinvoice.my.index'), ['level' => 'info', 'priority' => 'normal', 'notifiable_type' => Invoice::class, 'notifiable_id' => $updatedInvoice->id, 'unique_key' => 'invoice_items_updated_in_edit:' . $updatedInvoice->id . ':' . now()->timestamp]);
+        }
+
+        return redirect()->route('invoices.edit', $updatedInvoice->uuid)
+            ->with('success', 'تغییرات اقلام فاکتور ثبت شد و تاریخچه اصلاحات ذخیره شد.');
     }
 
     public function reassignSeller(string $uuid, Request $request)

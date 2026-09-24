@@ -97,6 +97,7 @@ class AccountStatementController extends Controller
         $ledgers = CustomerLedger::query()
             ->where('customer_id', $customer->id)
             ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->paginate(25);
 
         $invoiceIds = $ledgers->getCollection()->where('reference_type', Invoice::class)->pluck('reference_id')->filter()->unique()->values();
@@ -107,7 +108,18 @@ class AccountStatementController extends Controller
         $payments = InvoicePayment::query()
             ->with(['cheque', 'creator:id,name', 'invoice:id,uuid,total,customer_name'])
             ->whereIn('id', $paymentIds)
-            ->get(['id', 'invoice_id', 'customer_id', 'created_by', 'method', 'amount', 'paid_at', 'bank_name', 'note'])
+            ->get([
+                'id',
+                'invoice_id',
+                'customer_id',
+                'created_by',
+                'method',
+                'amount',
+                'paid_at',
+                'bank_name',
+                'payment_identifier',
+                'note',
+            ])
             ->keyBy('id');
 
         $transfers = WarehouseTransfer::query()
@@ -120,11 +132,25 @@ class AccountStatementController extends Controller
             ->get(['id', 'document_number', 'source_type', 'total_refund_amount'])
             ->keyBy('id');
 
-        $relatedInvoiceIds = $invoiceIds->merge($payments->pluck('invoice_id')->filter()->unique()->values())->unique()->values();
+        $relatedInvoiceIds = $invoiceIds
+            ->merge($payments->pluck('invoice_id')->filter()->unique()->values())
+            ->unique()
+            ->values();
 
         $invoices = Invoice::query()
             ->whereIn('id', $relatedInvoiceIds)
-            ->get(['id', 'uuid', 'total'])
+            ->get([
+                'id',
+                'uuid',
+                'subtotal',
+                'shipping_price',
+                'discount_amount',
+                'product_discount_amount',
+                'invoice_discount_amount',
+                'total',
+                'external_order_id',
+                'status',
+            ])
             ->keyBy('id');
 
         $totalDebit = (int) CustomerLedger::query()
@@ -148,7 +174,132 @@ class AccountStatementController extends Controller
         };
         $balanceAmount = abs($netBalance);
 
-        $customerInvoices = Invoice::query()->where('customer_id', $customer->id)->orderByDesc('id')->get(['id', 'uuid', 'total']);
+        /*
+         * Invoice settlement view:
+         * Keep ledger accounting untouched, but expose the financial story of each
+         * invoice (gross amount, discounts, warehouse revisions, payments, remaining
+         * debt / overpayment) in a human-readable way.
+         */
+        $customerInvoices = Invoice::query()
+            ->where('customer_id', $customer->id)
+            ->orderByDesc('id')
+            ->get([
+                'id',
+                'uuid',
+                'external_order_id',
+                'document_date',
+                'created_at',
+                'subtotal',
+                'shipping_price',
+                'discount_amount',
+                'product_discount_amount',
+                'invoice_discount_amount',
+                'discount_breakdown',
+                'total',
+                'status',
+                'items_updated_at',
+            ]);
+
+        $customerInvoiceIds = $customerInvoices->pluck('id');
+
+        $allInvoicePayments = InvoicePayment::query()
+            ->with(['cheque', 'creator:id,name'])
+            ->whereIn('invoice_id', $customerInvoiceIds)
+            ->orderBy('paid_at')
+            ->orderBy('id')
+            ->get([
+                'id',
+                'invoice_id',
+                'customer_id',
+                'created_by',
+                'method',
+                'amount',
+                'paid_at',
+                'bank_name',
+                'payment_identifier',
+                'note',
+                'created_at',
+            ])
+            ->groupBy('invoice_id');
+
+        $revisionsByInvoice = collect();
+
+        if (
+            $customerInvoiceIds->isNotEmpty()
+            && DB::getSchemaBuilder()->hasTable('invoice_collection_revisions')
+        ) {
+            $revisionsByInvoice = DB::table('invoice_collection_revisions')
+                ->whereIn('invoice_id', $customerInvoiceIds)
+                ->orderBy('invoice_id')
+                ->orderBy('revision_number')
+                ->get([
+                    'id',
+                    'invoice_id',
+                    'revision_number',
+                    'old_total',
+                    'new_total',
+                    'reason_type',
+                    'reason_note',
+                    'changed_by',
+                    'created_at',
+                ])
+                ->groupBy('invoice_id');
+        }
+
+        $invoiceSummaries = $customerInvoices
+            ->take(30)
+            ->map(function (Invoice $invoice) use ($allInvoicePayments, $revisionsByInvoice) {
+                $invoicePayments = $allInvoicePayments->get($invoice->id, collect());
+                $revisions = $revisionsByInvoice->get($invoice->id, collect());
+
+                $paidTotal = (int) $invoicePayments->sum('amount');
+                $finalTotal = (int) $invoice->total;
+                $remaining = max($finalTotal - $paidTotal, 0);
+                $overpayment = max($paidTotal - $finalTotal, 0);
+
+                $subtotal = (int) $invoice->subtotal;
+                $shipping = (int) $invoice->shipping_price;
+                $productDiscount = (int) $invoice->product_discount_amount;
+                $invoiceDiscount = (int) $invoice->invoice_discount_amount;
+                $totalDiscount = (int) $invoice->discount_amount;
+
+                // Legacy rows may only have discount_amount populated.
+                if ($productDiscount === 0 && $invoiceDiscount === 0 && $totalDiscount > 0) {
+                    $invoiceDiscount = $totalDiscount;
+                }
+
+                return [
+                    'invoice' => $invoice,
+                    'subtotal' => $subtotal,
+                    'shipping' => $shipping,
+                    'gross_before_discount' => $subtotal + $shipping,
+                    'product_discount' => $productDiscount,
+                    'invoice_discount' => $invoiceDiscount,
+                    'total_discount' => $totalDiscount,
+                    'final_total' => $finalTotal,
+                    'paid_total' => $paidTotal,
+                    'remaining' => $remaining,
+                    'overpayment' => $overpayment,
+                    'payments' => $invoicePayments,
+                    'revisions' => $revisions,
+                    'has_adjustment' => $revisions->isNotEmpty(),
+                    'first_total_before_adjustment' => $revisions->isNotEmpty()
+                        ? (int) $revisions->first()->old_total
+                        : null,
+                    'last_total_after_adjustment' => $revisions->isNotEmpty()
+                        ? (int) $revisions->last()->new_total
+                        : null,
+                ];
+            });
+
+        $statementTotals = [
+            'opening_balance' => (int) $customer->opening_balance,
+            'total_debit' => $totalDebit,
+            'total_credit' => $totalCredit,
+            'invoice_final_total' => (int) $customerInvoices->sum('total'),
+            'invoice_discount_total' => (int) $customerInvoices->sum('discount_amount'),
+            'invoice_payment_total' => (int) $allInvoicePayments->flatten(1)->sum('amount'),
+        ];
 
         return view('account-statements.show', compact(
             'customer',
@@ -163,7 +314,9 @@ class AccountStatementController extends Controller
             'balanceAmount',
             'totalDebit',
             'totalCredit',
-            'customerInvoices'
+            'customerInvoices',
+            'invoiceSummaries',
+            'statementTotals'
         ));
     }
 
