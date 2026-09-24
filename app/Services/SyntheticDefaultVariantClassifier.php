@@ -24,6 +24,37 @@ class SyntheticDefaultVariantClassifier
     public function classify(ProductVariant $variant): array
     {
         $variant->loadMissing('product.category.parent');
+
+        $creationLogId = $this->creationLogId($variant);
+        if ($creationLogId !== null) {
+            return $this->proven($creationLogId);
+        }
+
+        return $this->classifySignals($variant, ! $this->hasContraryEvidence($variant));
+    }
+
+    /**
+     * Cheap necessary-condition pre-check for hot paths such as purchasing.
+     *
+     * false guarantees classify() would return NOT_SYNTHETIC, so callers can
+     * skip classify() and its bounded-but-full ActivityLog scan. true only
+     * means classify() must be consulted for the exact answer.
+     */
+    public function mayBeSynthetic(ProductVariant $variant): bool
+    {
+        $variant->loadMissing('product');
+
+        if ($variant->model_list_id === null
+            && $this->isDefaultColor($variant)
+            && $this->hasLegacyCodeShape($variant->product, $variant)) {
+            return true;
+        }
+
+        return $this->creationLogId($variant) !== null;
+    }
+
+    private function creationLogId(ProductVariant $variant): ?int
+    {
         $product = $variant->product;
 
         $creationLog = ActivityLog::query()
@@ -43,11 +74,7 @@ class SyntheticDefaultVariantClassifier
                     && $properties['variant_id'] === (int) $variant->id;
             });
 
-        if ($creationLog) {
-            return $this->proven((int) $creationLog->id);
-        }
-
-        return $this->classifySignals($variant, ! $this->hasContraryEvidence($variant));
+        return $creationLog ? (int) $creationLog->id : null;
     }
 
     /**

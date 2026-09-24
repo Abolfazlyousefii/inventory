@@ -137,8 +137,23 @@ class ProductVariantStructureService
         ];
     }
 
-    public function deactivateInvalidVariants(Product $product): int
+    /**
+     * Bulk `is_active => false` for variants outside the product structure.
+     *
+     * Never runs implicitly. Without `$confirmed` it writes nothing and only
+     * reports what it *would* deactivate, so a structure change can never
+     * silently hide real (possibly stocked or sold) variants. Callers must
+     * name an explicit `$reason`.
+     *
+     * @return array{product_id:int,reason:string,confirmed:bool,variant_ids:array<int,int>,count:int,deactivated:int,invalid_with_stock_or_reserved:int,caller:string}
+     */
+    public function deactivateInvalidVariants(Product $product, string $reason, bool $confirmed = false): array
     {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \InvalidArgumentException('deactivateInvalidVariants() requires an explicit reason.');
+        }
+
         $activeBefore = (int) $product->variants()->where('is_active', true)->count();
         $validAfter = $this->validVariants($product)->count();
         $invalid = $this->invalidVariants($product);
@@ -146,27 +161,51 @@ class ProductVariantStructureService
             ->filter(fn (ProductVariant $variant) => (bool) $variant->is_active)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
+            ->values()
             ->all();
         $invalidWithStock = $invalid->filter(fn (ProductVariant $variant) => (int) ($variant->stock ?? 0) > 0 || (int) ($variant->reserved ?? 0) > 0);
+        $caller = $this->callerSummary();
 
         $deactivated = 0;
 
-        if (! empty($invalidActiveIds)) {
+        if ($confirmed && ! empty($invalidActiveIds)) {
             $deactivated = ProductVariant::query()
                 ->where('product_id', $product->id)
                 ->whereIn('id', $invalidActiveIds)
                 ->update(['is_active' => false]);
         }
 
-        Log::info('Product variant structure sync audit', [
+        $report = [
             'product_id' => (int) $product->id,
-            'active_before' => $activeBefore,
-            'valid_after' => $validAfter,
+            'reason' => $reason,
+            'confirmed' => $confirmed,
+            'variant_ids' => $invalidActiveIds,
+            'count' => count($invalidActiveIds),
             'deactivated' => $deactivated,
             'invalid_with_stock_or_reserved' => $invalidWithStock->count(),
-        ]);
+            'caller' => $caller,
+        ];
 
-        return $deactivated;
+        $context = $report + ['active_before' => $activeBefore, 'valid_after' => $validAfter];
+        if ($confirmed) {
+            Log::info('Product variant structure deactivation applied', $context);
+        } else {
+            Log::warning('Product variant structure deactivation skipped (not confirmed); nothing was written', $context);
+        }
+
+        return $report;
+    }
+
+    private function callerSummary(): string
+    {
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4) as $frame) {
+            $class = $frame['class'] ?? null;
+            if ($class !== null && $class !== self::class) {
+                return $class.'::'.($frame['function'] ?? '?');
+            }
+        }
+
+        return 'unknown';
     }
 
     public function recalculateProductSummary(Product $product): void
