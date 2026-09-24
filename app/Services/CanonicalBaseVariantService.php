@@ -29,12 +29,7 @@ class CanonicalBaseVariantService
     {
         $product = $product->fresh() ?? $product;
         $code = $this->baseCode($product);
-        $existing = ProductVariant::query()
-            ->where('product_id', $product->id)
-            ->whereNull('model_list_id')
-            ->where('variety_code', '0000')
-            ->where('variant_code', $code)
-            ->first();
+        $existing = $this->existingBase($product);
 
         if ($existing) {
             if (! $existing->is_active) {
@@ -199,6 +194,30 @@ class CanonicalBaseVariantService
 
             return $this->result(self::CREATED, $variant, true, []);
         });
+    }
+
+    /**
+     * The existing, active canonical Base Variant, or null.
+     *
+     * Equivalent to inspect() returning AVAILABLE together with a variant, but
+     * never reaches inspect()'s expensive "could a Base be created" audit, so
+     * it is safe on hot paths such as purchasing.
+     */
+    public function existingAvailableBase(Product $product): ?ProductVariant
+    {
+        $existing = $this->existingBase($product);
+
+        return $existing && $existing->is_active ? $existing : null;
+    }
+
+    private function existingBase(Product $product): ?ProductVariant
+    {
+        return ProductVariant::query()
+            ->where('product_id', $product->id)
+            ->whereNull('model_list_id')
+            ->where('variety_code', '0000')
+            ->where('variant_code', $this->baseCode($product))
+            ->first();
     }
 
     private function baseCode(Product $product): string

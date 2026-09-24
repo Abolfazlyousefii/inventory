@@ -14,6 +14,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Services\ProductVariantStructureService;
+use App\Services\PurchaseSyntheticVariantGuard;
 use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
 use App\Support\JalaliDate;
@@ -143,10 +144,36 @@ class PurchaseController extends Controller
 
     public function productVariants(Product $product)
     {
-        $variants = app(ProductVariantStructureService::class)->validVariants($product)
+        $validVariants = app(ProductVariantStructureService::class)->validVariants($product)
             ->unique('id')
-            ->values()
-            ->map(fn (ProductVariant $variant) => $this->variantPayload($variant));
+            ->values();
+        $variants = $validVariants->map(fn (ProductVariant $variant) => $this->variantPayload($variant));
+
+        // Mark legacy synthetic electrical variants as not purchasable and offer
+        // the Base instead, so the user never reaches the guard's error.
+        $guard = app(PurchaseSyntheticVariantGuard::class);
+        if ($guard->isElectric($product)) {
+            $redirectBase = null;
+            $variants = $validVariants->map(function (ProductVariant $variant) use ($guard, $product, &$redirectBase): array {
+                $payload = $this->variantPayload($variant);
+                $verdict = $guard->evaluate($product, $variant);
+                if ($verdict['blocked'] && $verdict['base']) {
+                    $redirectBase = $verdict['base'];
+                    $payload['purchase_blocked'] = true;
+                    $payload['purchase_blocked_label'] = PurchaseSyntheticVariantGuard::BLOCKED_LABEL;
+                    $payload['purchase_blocked_message'] = $guard->blockedMessage($verdict['base']);
+                }
+
+                return $payload;
+            });
+
+            if ($redirectBase && ! $validVariants->contains('id', $redirectBase->id)) {
+                $variants->prepend(array_merge(
+                    $this->variantPayload($redirectBase->loadMissing($this->variantRelations())),
+                    ['is_base_redirect' => true],
+                ));
+            }
+        }
 
         return response()->json([
             'product_id' => (int) $product->id,
@@ -255,7 +282,7 @@ class PurchaseController extends Controller
             $request->merge(['supplier_id' => $purchase->supplier_id]);
         }
 
-        $data = $this->validatePayload($request, true);
+        $data = $this->validatePayload($request, true, $purchase);
         $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
         try {
@@ -473,7 +500,7 @@ class PurchaseController extends Controller
         return null;
     }
 
-    private function validatePayload(Request $request, bool $allowZeroExistingItems = false): array
+    private function validatePayload(Request $request, bool $allowZeroExistingItems = false, ?Purchase $purchase = null): array
     {
         $this->mergeJsonPurchaseItems($request);
 
@@ -616,11 +643,23 @@ class PurchaseController extends Controller
             $data['invoice_discount_value'] = 0;
         }
 
+        // Existing rows keep the variant they were already recorded on; only
+        // new placements go through the synthetic-variant purchase guard.
+        $existingItemVariants = $purchase
+            ? PurchaseItem::query()
+                ->where('purchase_id', $purchase->id)
+                ->pluck('product_variant_id', 'id')
+                ->map(fn ($variantId) => (int) $variantId)
+            : collect();
+        $variantResolver = app(\App\Services\PurchaseVariantResolver::class);
+
         foreach ($data['items'] as $index => $item) {
             $product = Product::find((int) $item['product_id']);
+            $existingLegacyRow = ! empty($item['id'])
+                && $existingItemVariants->get((int) $item['id']) === (int) ($item['variant_id'] ?? 0);
             try {
-                $variant = app(\App\Services\PurchaseVariantResolver::class)
-                    ->resolve($product, $item['variant_id'] ?? null);
+                $variant = $variantResolver
+                    ->resolve($product, $item['variant_id'] ?? null, $existingLegacyRow);
                 $data['items'][$index]['variant_id'] = (int) $variant->id;
             } catch (ValidationException $exception) {
                 throw ValidationException::withMessages([
