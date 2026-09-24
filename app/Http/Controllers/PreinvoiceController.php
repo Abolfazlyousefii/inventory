@@ -382,7 +382,7 @@ class PreinvoiceController extends Controller
     {
         $expiresAt = $order->stock_frozen_until;
         $isExpired = $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
-            || ($expiresAt && $expiresAt->isPast());
+                     || ($expiresAt && $expiresAt->isPast());
         $secondsRemaining = $expiresAt ? max(0, now()->diffInSeconds($expiresAt, false)) : null;
 
         $order->setAttribute('finance_reservation_expired', $isExpired);
@@ -462,16 +462,16 @@ class PreinvoiceController extends Controller
         $reservationExpiresAt = $order->stock_frozen_until;
         $reservationReleasedAt = $order->stock_released_at;
         $reservationIsExpired = ! $hasInvoice && (
-            $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
-            || ($reservationExpiresAt && $reservationExpiresAt->isPast())
-        );
+                $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+                || ($reservationExpiresAt && $reservationExpiresAt->isPast())
+            );
         $reservationSecondsRemaining = $reservationExpiresAt && ! $reservationIsExpired
             ? max(0, now()->diffInSeconds($reservationExpiresAt, false))
             : 0;
         $showReservationTimer = ! $hasInvoice && (
-            (bool) $reservationExpiresAt
-            || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
-        );
+                (bool) $reservationExpiresAt
+                || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+            );
         $canEdit = $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
         $primaryActionLabel = match (true) {
             $canEdit && $statusKey === PreinvoiceOrder::STATUS_DRAFT => 'ادامه ویرایش',
@@ -817,9 +817,9 @@ class PreinvoiceController extends Controller
 
             if (! $order) {
                 $order = PreinvoiceOrder::create($attrs + [
-                    'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
-                    'total_price' => 0,
-                ]);
+                        'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
+                        'total_price' => 0,
+                    ]);
             } else {
                 $order->update($attrs + ['total_price' => 0]);
             }
@@ -1009,10 +1009,10 @@ class PreinvoiceController extends Controller
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $reservationToken = $validated['reservation_token'] ?? null;
             if ($reservationToken && PreinvoiceDraftReservation::query()
-                ->where('token', $reservationToken)
-                ->where('user_id', auth()->id())
-                ->whereNotNull('preinvoice_order_id')
-                ->exists()) {
+                    ->where('token', $reservationToken)
+                    ->where('user_id', auth()->id())
+                    ->whereNotNull('preinvoice_order_id')
+                    ->exists()) {
                 throw ValidationException::withMessages([
                     'preinvoice' => 'این درخواست قبلاً ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، صفحه پیش‌فاکتورها را بررسی کنید.',
                 ]);
@@ -1197,10 +1197,10 @@ class PreinvoiceController extends Controller
             }
 
             if ($isSubmit && ! in_array($order->status, [
-                PreinvoiceOrder::STATUS_DRAFT,
-                PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
-                PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
-            ], true)) {
+                    PreinvoiceOrder::STATUS_DRAFT,
+                    PreinvoiceOrder::STATUS_RETURNED_TO_SALES,
+                    PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
+                ], true)) {
                 throw ValidationException::withMessages([
                     'preinvoice' => 'ثبت نهایی فقط برای پیش‌نویس، ارجاع‌شده به فروشنده یا رزرو منقضی‌شده مجاز است.',
                 ]);
@@ -1868,18 +1868,35 @@ class PreinvoiceController extends Controller
             'discount_allocation_mode' => $order->discount_allocation_mode,
             'subtotal' => $subtotal,
             'total' => $total,
-            'status' => Invoice::STATUS_PENDING_COLLECTION,
+            'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
             'status_changed_at' => now(),
             'status_changed_by' => auth()->id(),
             'items_updated_at' => now(),
             'items_updated_by' => auth()->id(),
         ]);
 
-        ActivityLogger::log('invoice_items_reapproval', $invoice->fresh(), 'اقلام فاکتور تغییر کرد و فاکتور به وضعیت نیازمند تایید انبار برگشت.', [
+        ActivityLogger::log('invoice_items_reapproval', $invoice->fresh(), 'اقلام فاکتور تغییر کرد و فاکتور برای تأیید مجدد به مالی ارجاع شد.', [
             'old_status' => $oldStatus,
-            'new_status' => Invoice::STATUS_PENDING_COLLECTION,
+            'new_status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
             'preinvoice_order_id' => $order->id,
         ]);
+
+        $freshInvoice = $invoice->fresh();
+        $this->notificationService->notifyRoleAfterCommit(
+            'finance',
+            'invoice_pending_finance_reapproval',
+            'فاکتور نیازمند تأیید مجدد مالی است',
+            'فاکتور شماره «' . $freshInvoice->uuid . '» پس از اصلاح، برای تأیید مجدد مالی ارسال شد.',
+            route('invoices.show', $freshInvoice->uuid),
+            [
+                'level' => 'warning',
+                'priority' => 'urgent',
+                'data' => ['document_type' => 'فاکتور'],
+                'notifiable_type' => Invoice::class,
+                'notifiable_id' => $freshInvoice->id,
+                'unique_key' => 'invoice_pending_finance_reapproval:' . $freshInvoice->id . ':' . (string) optional($freshInvoice->items_updated_at)->timestamp,
+            ]
+        );
 
         if (!empty($invoice->customer_id)) {
             CustomerLedger::query()->updateOrCreate(
@@ -2274,10 +2291,10 @@ class PreinvoiceController extends Controller
             }
             foreach ($reservations as $reservation) {
                 $reservation->forceFill([
-                'released_at' => now(),
-                'released_by' => auth()->id(),
-                'release_reason' => 'preinvoice_item_removed',
-                'release_note' => 'ردیف پیش‌فاکتور حذف شد یا مقدار آن صفر شد.',
+                    'released_at' => now(),
+                    'released_by' => auth()->id(),
+                    'release_reason' => 'preinvoice_item_removed',
+                    'release_note' => 'ردیف پیش‌فاکتور حذف شد یا مقدار آن صفر شد.',
                 ])->save();
             }
         }
@@ -2306,11 +2323,11 @@ class PreinvoiceController extends Controller
 
     private function reserveStockForItem(int $productId, int $variantId, int $quantity): void
     {
-        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {    
+        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {
             if ($quantity <= 0) {
                 return;
             }
-    
+
             $variant = ProductVariant::query()
                 ->with('product:id,name')
                 ->whereKey($variantId)
@@ -2318,14 +2335,14 @@ class PreinvoiceController extends Controller
                 ->where('sales_enabled', true)
                 ->lockForUpdate()
                 ->firstOrFail();
-    
+
             $centralStock = WarehouseStock::query()
                 ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
                 ->where('product_id', $productId)
                 ->where('product_variant_id', $variantId)
                 ->lockForUpdate()
                 ->first();
-    
+
             $available = max(0, (int) ($centralStock?->quantity ?? $variant->stock));
             if ($available < $quantity) {
                 $productName = (string) ($variant->product?->name ?? 'نامشخص');
@@ -2334,12 +2351,12 @@ class PreinvoiceController extends Controller
                     'products' => "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$productName} | تنوع: {$variantName} | تعداد درخواستی: {$quantity} | موجودی قابل فروش: {$available}",
                 ]);
             }
-    
+
             WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$quantity, $variantId);
-    
+
             $variant->reserved = (int) $variant->reserved + $quantity;
             $variant->save();
-    
+
             $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
             if ($product) {
                 $product->reserved = (int) $product->reserved + $quantity;
@@ -2350,23 +2367,23 @@ class PreinvoiceController extends Controller
 
     private function releaseStockForItem(int $productId, int $variantId, int $quantity): void
     {
-        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {    
+        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {
             if ($quantity <= 0) {
                 return;
             }
-    
+
             $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->first();
             if ($variant) {
                 $variant->reserved = max(0, (int) $variant->reserved - $quantity);
                 $variant->save();
             }
-    
+
             $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
             if ($product) {
                 $product->reserved = max(0, (int) $product->reserved - $quantity);
                 $product->save();
             }
-    
+
             WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
         });
     }
@@ -2609,12 +2626,12 @@ class PreinvoiceController extends Controller
         }
 
         return in_array($order->status, [
-            PreinvoiceOrder::STATUS_PENDING_FINANCE,
-            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-            PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
-        ], true)
-            && ! $order->invoice()->exists()
-            && $order->status !== PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE;
+                PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+                PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
+            ], true)
+               && ! $order->invoice()->exists()
+               && $order->status !== PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE;
     }
 
     public function financeEdit(string $uuid)
@@ -2771,226 +2788,226 @@ class PreinvoiceController extends Controller
 
         try {
             $invoice = DB::transaction(function () use ($order, $validated) {
-            $lockedOrder = PreinvoiceOrder::query()
-                ->whereKey($order->id)
-                ->lockForUpdate()
-                ->with('items')
-                ->firstOrFail();
-            $order = $lockedOrder;
-            if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
-                $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
-                throw ValidationException::withMessages(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
-            }
-            $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
-            $existingInvoice = Invoice::query()
-                ->where('preinvoice_order_id', $order->id)
-                ->orWhere('uuid', $officialInvoiceUuid)
-                ->lockForUpdate()
-                ->first();
-
-            if ($existingInvoice && (int) $existingInvoice->preinvoice_order_id !== (int) $order->id) {
-                throw ValidationException::withMessages([
-                    'invoice' => "شماره فاکتور {$officialInvoiceUuid} قبلاً برای پیش‌فاکتور دیگری ثبت شده است. لطفاً با مدیر سیستم تماس بگیرید.",
-                ]);
-            }
-
-            if ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
-                if ($existingInvoice) {
-                    return $existingInvoice;
+                $lockedOrder = PreinvoiceOrder::query()
+                    ->whereKey($order->id)
+                    ->lockForUpdate()
+                    ->with('items')
+                    ->firstOrFail();
+                $order = $lockedOrder;
+                if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
+                    $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
+                    throw ValidationException::withMessages(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
                 }
+                $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
+                $existingInvoice = Invoice::query()
+                    ->where('preinvoice_order_id', $order->id)
+                    ->orWhere('uuid', $officialInvoiceUuid)
+                    ->lockForUpdate()
+                    ->first();
 
-                abort(409, 'این پیش‌فاکتور قبلاً تبدیل شده است، اما فاکتور مرتبط پیدا نشد.');
-            }
-
-            $this->reservationService->assertFinanceApprovable($order, auth()->user());
-
-            if (! in_array($order->status, [
-                PreinvoiceOrder::STATUS_PENDING_FINANCE,
-                PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-            ], true)) {
-                abort(403);
-            }
-
-            $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
-
-            foreach ($order->items as $it) {
-                $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
-                $snapshotPrice = (int) ($it->price ?? 0);
-
-                if ((int) $it->quantity > 0 && $snapshotPrice <= 0) {
-                    $name = trim(($variant?->product?->name ?? 'نامشخص') . ' / ' . ($variant?->variant_name ?: $variant?->variety_name ?: ('#' . (int) $it->variant_id)));
+                if ($existingInvoice && (int) $existingInvoice->preinvoice_order_id !== (int) $order->id) {
                     throw ValidationException::withMessages([
-                        'price' => "قیمت کالا/تنوع {$name} صفر است و امکان ثبت فاکتور وجود ندارد.",
+                        'invoice' => "شماره فاکتور {$officialInvoiceUuid} قبلاً برای پیش‌فاکتور دیگری ثبت شده است. لطفاً با مدیر سیستم تماس بگیرید.",
                     ]);
                 }
 
-                $it->price = $snapshotPrice;
-            }
-            $this->preinvoiceDiscountService->assertIntegrityOrRepair($order);
-            $order->refresh()->load('items');
-            $totals = SalesDocumentTotals::fromDocument($order);
-            $subtotal = (int) $totals['subtotal_before_discount'];
-            $discount = (int) $totals['total_discount'];
-            $total = (int) $totals['grand_total'];
+                if ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
+                    if ($existingInvoice) {
+                        return $existingInvoice;
+                    }
 
-            $requiredByVariant = $order->items
-                ->groupBy('variant_id')
-                ->map(fn($rows) => (int) $rows->sum('quantity'));
+                    abort(409, 'این پیش‌فاکتور قبلاً تبدیل شده است، اما فاکتور مرتبط پیدا نشد.');
+                }
 
-            $this->coverReservationShortfalls($requiredByVariant, $centralStockMovedToReserve);
+                $this->reservationService->assertFinanceApprovable($order, auth()->user());
 
-            $reservedByVariant = ProductVariant::query()
-                ->whereIn('id', $requiredByVariant->keys())
-                ->lockForUpdate()
-                ->pluck('reserved', 'id');
+                if (! in_array($order->status, [
+                    PreinvoiceOrder::STATUS_PENDING_FINANCE,
+                    PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+                ], true)) {
+                    abort(403);
+                }
 
-            foreach ($requiredByVariant as $variantId => $requiredQty) {
-                $reservedQty = (int) ($reservedByVariant[(int) $variantId] ?? 0);
+                $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
-                if ($reservedQty < $requiredQty) {
-                    $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $variantId)->first();
-                    $productName = (string) ($variant?->product?->name ?? 'نامشخص');
+                foreach ($order->items as $it) {
+                    $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
+                    $snapshotPrice = (int) ($it->price ?? 0);
 
-                    throw ValidationException::withMessages([
-                        'products' => "موجودی رزروشده برای محصول «{$productName}» کافی نیست. رزروشده: {$reservedQty} | درخواست: {$requiredQty}",
+                    if ((int) $it->quantity > 0 && $snapshotPrice <= 0) {
+                        $name = trim(($variant?->product?->name ?? 'نامشخص') . ' / ' . ($variant?->variant_name ?: $variant?->variety_name ?: ('#' . (int) $it->variant_id)));
+                        throw ValidationException::withMessages([
+                            'price' => "قیمت کالا/تنوع {$name} صفر است و امکان ثبت فاکتور وجود ندارد.",
+                        ]);
+                    }
+
+                    $it->price = $snapshotPrice;
+                }
+                $this->preinvoiceDiscountService->assertIntegrityOrRepair($order);
+                $order->refresh()->load('items');
+                $totals = SalesDocumentTotals::fromDocument($order);
+                $subtotal = (int) $totals['subtotal_before_discount'];
+                $discount = (int) $totals['total_discount'];
+                $total = (int) $totals['grand_total'];
+
+                $requiredByVariant = $order->items
+                    ->groupBy('variant_id')
+                    ->map(fn($rows) => (int) $rows->sum('quantity'));
+
+                $this->coverReservationShortfalls($requiredByVariant, $centralStockMovedToReserve);
+
+                $reservedByVariant = ProductVariant::query()
+                    ->whereIn('id', $requiredByVariant->keys())
+                    ->lockForUpdate()
+                    ->pluck('reserved', 'id');
+
+                foreach ($requiredByVariant as $variantId => $requiredQty) {
+                    $reservedQty = (int) ($reservedByVariant[(int) $variantId] ?? 0);
+
+                    if ($reservedQty < $requiredQty) {
+                        $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $variantId)->first();
+                        $productName = (string) ($variant?->product?->name ?? 'نامشخص');
+
+                        throw ValidationException::withMessages([
+                            'products' => "موجودی رزروشده برای محصول «{$productName}» کافی نیست. رزروشده: {$reservedQty} | درخواست: {$requiredQty}",
+                        ]);
+                    }
+                }
+
+                $invoice = $existingInvoice;
+
+                if ($invoice) {
+                    $invoice->items()->delete();
+                    $invoice->update([
+                        'seller_id' => $order->seller_id,
+                        'document_date' => $order->display_document_date,
+                        'customer_id' => $order->customer_id ?? null,
+                        'customer_name' => $order->customer_name,
+                        'customer_mobile' => $order->customer_mobile,
+                        'customer_address' => $order->customer_address,
+                        'province_id' => $order->province_id,
+                        'city_id' => $order->city_id,
+                        'shipping_id' => $order->shipping_id,
+                        'shipping_price' => (int) $order->shipping_price,
+                        'discount_amount' => (int) $discount,
+                        'discount_breakdown' => $order->discount_breakdown,
+                        'invoice_discount_type' => $order->invoice_discount_type,
+                        'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                        'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
+                        'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
+                        'discount_allocation_mode' => $order->discount_allocation_mode,
+                        'subtotal' => (int) $subtotal,
+                        'total' => (int) $total,
+                        'status' => Invoice::STATUS_PENDING_COLLECTION,
+                        'status_changed_at' => now(),
+                        'status_changed_by' => auth()->id(),
+                    ]);
+                } else {
+                    $invoice = Invoice::create([
+                        'uuid' => $officialInvoiceUuid,
+                        'preinvoice_order_id' => $order->id,
+                        'seller_id' => $order->seller_id,
+                        'document_date' => $order->display_document_date,
+
+                        'customer_id' => $order->customer_id ?? null,
+                        'customer_name' => $order->customer_name,
+                        'customer_mobile' => $order->customer_mobile,
+                        'customer_address' => $order->customer_address,
+                        'province_id' => $order->province_id,
+                        'city_id' => $order->city_id,
+
+                        'shipping_id' => $order->shipping_id,
+                        'shipping_price' => (int) $order->shipping_price,
+                        'discount_amount' => (int) $discount,
+                        'discount_breakdown' => $order->discount_breakdown,
+                        'invoice_discount_type' => $order->invoice_discount_type,
+                        'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                        'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
+                        'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
+                        'discount_allocation_mode' => $order->discount_allocation_mode,
+                        'subtotal' => (int) $subtotal,
+                        'total' => (int) $total,
+                        'status' => Invoice::STATUS_PENDING_COLLECTION,
                     ]);
                 }
-            }
 
-            $invoice = $existingInvoice;
+                foreach ($order->items as $it) {
+                    InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'product_id' => (int) $it->product_id,
+                        'variant_id' => (int) $it->variant_id,
+                        'quantity' => (int) $it->quantity,
+                        'price' => (int) $it->price,
+                        'line_total' => max(((int) $it->price * (int) $it->quantity) - (int) ($it->line_discount_amount ?? 0), 0),
+                        'sort_order' => (int) ($it->sort_order ?: 0),
+                        'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
+                    ]);
 
-            if ($invoice) {
-                $invoice->items()->delete();
-                $invoice->update([
-                    'seller_id' => $order->seller_id,
-                    'document_date' => $order->display_document_date,
-                    'customer_id' => $order->customer_id ?? null,
-                    'customer_name' => $order->customer_name,
-                    'customer_mobile' => $order->customer_mobile,
-                    'customer_address' => $order->customer_address,
-                    'province_id' => $order->province_id,
-                    'city_id' => $order->city_id,
-                    'shipping_id' => $order->shipping_id,
-                    'shipping_price' => (int) $order->shipping_price,
-                    'discount_amount' => (int) $discount,
-                    'discount_breakdown' => $order->discount_breakdown,
-                    'invoice_discount_type' => $order->invoice_discount_type,
-                    'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
-                    'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
-                    'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
-                    'discount_allocation_mode' => $order->discount_allocation_mode,
-                    'subtotal' => (int) $subtotal,
-                    'total' => (int) $total,
-                    'status' => Invoice::STATUS_PENDING_COLLECTION,
-                    'status_changed_at' => now(),
-                    'status_changed_by' => auth()->id(),
-                ]);
-            } else {
-                $invoice = Invoice::create([
-                    'uuid' => $officialInvoiceUuid,
-                    'preinvoice_order_id' => $order->id,
-                    'seller_id' => $order->seller_id,
-                    'document_date' => $order->display_document_date,
-
-                    'customer_id' => $order->customer_id ?? null,
-                    'customer_name' => $order->customer_name,
-                    'customer_mobile' => $order->customer_mobile,
-                    'customer_address' => $order->customer_address,
-                    'province_id' => $order->province_id,
-                    'city_id' => $order->city_id,
-
-                    'shipping_id' => $order->shipping_id,
-                    'shipping_price' => (int) $order->shipping_price,
-                    'discount_amount' => (int) $discount,
-                    'discount_breakdown' => $order->discount_breakdown,
-                    'invoice_discount_type' => $order->invoice_discount_type,
-                    'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
-                    'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
-                    'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
-                    'discount_allocation_mode' => $order->discount_allocation_mode,
-                    'subtotal' => (int) $subtotal,
-                    'total' => (int) $total,
-                    'status' => Invoice::STATUS_PENDING_COLLECTION,
-                ]);
-            }
-
-            foreach ($order->items as $it) {
-                InvoiceItem::create([
-                    'invoice_id' => $invoice->id,
-                    'product_id' => (int) $it->product_id,
-                    'variant_id' => (int) $it->variant_id,
-                    'quantity' => (int) $it->quantity,
-                    'price' => (int) $it->price,
-                    'line_total' => max(((int) $it->price * (int) $it->quantity) - (int) ($it->line_discount_amount ?? 0), 0),
-                    'sort_order' => (int) ($it->sort_order ?: 0),
-                    'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
-                ]);
-
-            }
-
-            if (!empty($invoice->customer_id)) {
-                CustomerLedger::query()->updateOrCreate(
-                    [
-                        'customer_id' => (int) $invoice->customer_id,
-                        'type' => 'debit',
-                        'reference_type' => Invoice::class,
-                        'reference_id' => $invoice->id,
-                    ],
-                    [
-                        'amount' => (int) $invoice->total,
-                        'note' => 'ثبت/بروزرسانی بدهکاری بابت فاکتور فروش ' . $invoice->uuid,
-                    ]
-                );
-            }
-
-            foreach (($validated['payments'] ?? []) as $paymentRow) {
-                $payload = $paymentRow;
-                if (($payload['method'] ?? null) === 'cheque') {
-                    $payload['cheque_amount'] = (int) ($payload['amount'] ?? 0);
                 }
 
-                $this->paymentService->registerForInvoice(
-                    $invoice,
-                    $payload,
-                    $invoice->customer_id ? (int) $invoice->customer_id : null,
-                    auth()->id()
-                );
-            }
+                if (!empty($invoice->customer_id)) {
+                    CustomerLedger::query()->updateOrCreate(
+                        [
+                            'customer_id' => (int) $invoice->customer_id,
+                            'type' => 'debit',
+                            'reference_type' => Invoice::class,
+                            'reference_id' => $invoice->id,
+                        ],
+                        [
+                            'amount' => (int) $invoice->total,
+                            'note' => 'ثبت/بروزرسانی بدهکاری بابت فاکتور فروش ' . $invoice->uuid,
+                        ]
+                    );
+                }
 
-            $this->reservationService->consumeOfficialReservationsForOrder($order, auth()->user());
+                foreach (($validated['payments'] ?? []) as $paymentRow) {
+                    $payload = $paymentRow;
+                    if (($payload['method'] ?? null) === 'cheque') {
+                        $payload['cheque_amount'] = (int) ($payload['amount'] ?? 0);
+                    }
 
-            $order->update([
-                'status' => PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
-                'total_price' => (int) $total,
-                'stock_frozen_until' => null,
-                'stock_released_at' => now(),
-            ]);
+                    $this->paymentService->registerForInvoice(
+                        $invoice,
+                        $payload,
+                        $invoice->customer_id ? (int) $invoice->customer_id : null,
+                        auth()->id()
+                    );
+                }
 
-            try {
-                $this->notificationService->notifyRoleAfterCommit(
-                    'warehouse',
-                    'invoice_created_for_collection',
-                    'فاکتور جدید آماده جمع‌آوری است',
-                    "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} تایید مالی شد و وارد صف جمع‌آوری انبار شد.",
-                    route('vouchers.sales.queue'),
-                    ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
-                );
-            } catch (\Throwable $exception) {
-                report($exception);
-            }
-            if (!empty($order->created_by)) {
-                $this->notificationService->notifyUserAfterCommit(
-                    (int)$order->created_by,
-                    'preinvoice_finance_approved',
-                    'پیش‌فاکتور شما تایید مالی شد',
-                    "پیش‌فاکتور مشتری «{$order->customer_name}» تایید مالی شد و به فاکتور شماره «{$invoice->uuid}» تبدیل شد. وضعیت فعلی: در صف جمع‌آوری انبار.",
-                    route('vouchers.sales.show', $invoice->uuid),
-                    ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "operator_finance_approved:{$order->id}:{$order->created_by}"]
-                );
-            }
+                $this->reservationService->consumeOfficialReservationsForOrder($order, auth()->user());
 
-            return $invoice;
-        });
+                $order->update([
+                    'status' => PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,
+                    'total_price' => (int) $total,
+                    'stock_frozen_until' => null,
+                    'stock_released_at' => now(),
+                ]);
+
+                try {
+                    $this->notificationService->notifyRoleAfterCommit(
+                        'warehouse',
+                        'invoice_created_for_collection',
+                        'فاکتور جدید آماده جمع‌آوری است',
+                        "فاکتور شماره {$invoice->uuid} برای مشتری {$invoice->customer_name} تایید مالی شد و وارد صف جمع‌آوری انبار شد.",
+                        route('vouchers.sales.queue'),
+                        ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "warehouse_invoice_ready:{$invoice->id}"]
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+                if (!empty($order->created_by)) {
+                    $this->notificationService->notifyUserAfterCommit(
+                        (int)$order->created_by,
+                        'preinvoice_finance_approved',
+                        'پیش‌فاکتور شما تایید مالی شد',
+                        "پیش‌فاکتور مشتری «{$order->customer_name}» تایید مالی شد و به فاکتور شماره «{$invoice->uuid}» تبدیل شد. وضعیت فعلی: در صف جمع‌آوری انبار.",
+                        route('vouchers.sales.show', $invoice->uuid),
+                        ['level' => 'success', 'priority' => 'important', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => "operator_finance_approved:{$order->id}:{$order->created_by}"]
+                    );
+                }
+
+                return $invoice;
+            });
 
         } catch (ValidationException $exception) {
             if (array_key_exists('price', $exception->errors())) {

@@ -30,7 +30,12 @@ class WarehouseCollectionService
                 throw ValidationException::withMessages(['status' => 'این فاکتور مربوط به روند قدیمی است و از صف جمع‌آوری جدید قابل دریافت نیست.']);
             }
 
-            $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION]);
+            $this->assertStatus($invoice, [
+                Invoice::STATUS_WAREHOUSE_RECEIVED,
+                Invoice::STATUS_COLLECTING,
+                Invoice::STATUS_READY_TO_SHIP,
+                Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+            ]);
             return $this->mark($invoice, Invoice::STATUS_WAREHOUSE_RECEIVED, [
                 'warehouse_received_at' => now(),
                 'warehouse_received_by' => $user->id,
@@ -79,7 +84,12 @@ class WarehouseCollectionService
             $invoice->assertNotCancelled();
             $lockedItems = InvoiceItem::query()->with(['product', 'variant'])->where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
-            $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
+            $this->assertStatus($invoice, [
+                Invoice::STATUS_WAREHOUSE_RECEIVED,
+                Invoice::STATUS_COLLECTING,
+                Invoice::STATUS_READY_TO_SHIP,
+                Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+            ]);
 
             $currentStamp = optional($invoice->items_updated_at ?: $invoice->updated_at)->toJSON();
             if ($openedAt && $currentStamp && Carbon::parse($openedAt)->ne(Carbon::parse($currentStamp))) {
@@ -234,7 +244,9 @@ class WarehouseCollectionService
 
             $oldStatus = (string) $invoice->status;
             $invoice->update(['subtotal' => $subtotal, 'product_discount_amount' => (int) $totals['items_discount'], 'invoice_discount_amount' => (int) $totals['invoice_discount'], 'discount_amount' => $discount, 'discount_breakdown' => SalesDocumentTotals::canonicalBreakdown($invoice, $totals), 'total' => $total, 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, 'status_changed_at' => now(), 'status_changed_by' => $user->id, 'items_updated_at' => now(), 'items_updated_by' => $user->id, 'collection_note' => trim((string) ($reason ? $reason . ' - ' : '') . (string) $note)]);
-            $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+            // Do not change the customer's financial balance before Finance approves
+            // the warehouse correction. financeReapproveInvoice() performs the final
+            // invoice-debit sync after approval.
             $revisionId = $this->storeCollectionRevision($invoice, $oldTotal, $total, (string) $reason, $note, $user->id, $revisionRows);
 
             $this->warehouseInbound->queueInvoiceAdjustment(
@@ -245,17 +257,15 @@ class WarehouseCollectionService
             );
             $this->historyService->log($invoice, 'collection_items_updated', 'status', $oldStatus, Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, $note ?: 'اقلام توسط انبار تغییر کرد و نیازمند تایید مجدد مالی شد.', $user->id);
 
-            $webhookPayload = $this->buildInvoiceItemsWebhookPayload(
-                $invoice,
-                $revisionId,
-                $oldTotal,
-                $total,
-                $revisionRows,
-                $user,
-                (string) ($reason ?: 'warehouse_correction'),
-                $note,
-                'warehouse_collection'
-            );
+            $webhookPayload = [
+                'invoice_id' => $invoice->id,
+                'external_order_id' => $invoice->external_order_id,
+                'crm_customer_id' => $invoice->customer?->crm_customer_id,
+                'revision_id' => $revisionId,
+                'old_total' => (int) $oldTotal,
+                'new_total' => (int) $total,
+                'difference' => (int) $total - (int) $oldTotal,
+            ];
 
             return $invoice->fresh(['items.product', 'items.variant']);
         });
@@ -561,13 +571,12 @@ class WarehouseCollectionService
             $total = (int) $totals['grand_total'];
             $hasItemChanges = $revisionRows !== [];
 
-            $needsFinanceReapproval = $hasItemChanges && in_array($oldStatus, [
-                    Invoice::STATUS_PENDING_COLLECTION,
-                    Invoice::STATUS_WAREHOUSE_RECEIVED,
-                    Invoice::STATUS_COLLECTING,
-                    Invoice::STATUS_READY_TO_SHIP,
-                    Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
-                    Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION,
+            // Any item/price/discount change on an active invoice must be reviewed by finance again,
+            // regardless of whether the edit came from finance, warehouse, sales, or the general invoice editor.
+            // Terminal invoices remain terminal and are not revived by an edit.
+            $needsFinanceReapproval = $hasItemChanges && ! in_array($oldStatus, [
+                    Invoice::STATUS_SHIPPED,
+                    Invoice::STATUS_NOT_SHIPPED,
                 ], true);
 
             $invoiceUpdate = [
@@ -591,7 +600,12 @@ class WarehouseCollectionService
             }
 
             $invoice->update($invoiceUpdate);
-            $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+
+            // Material item/price changes require Finance approval before they
+            // affect the customer's ledger. Non-reapproval edits may still sync.
+            if (! $needsFinanceReapproval) {
+                $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
+            }
 
             $revisionId = null;
             if ($hasItemChanges) {
@@ -641,17 +655,15 @@ class WarehouseCollectionService
             }
 
             if ($revisionId !== null) {
-                $webhookPayload = $this->buildInvoiceItemsWebhookPayload(
-                    $invoice,
-                    $revisionId,
-                    $oldTotal,
-                    $total,
-                    $revisionRows,
-                    $user,
-                    $revisionReason,
-                    $note,
-                    'invoice_edit'
-                );
+                $webhookPayload = [
+                    'invoice_id' => $invoice->id,
+                    'external_order_id' => $invoice->external_order_id,
+                    'crm_customer_id' => $invoice->customer?->crm_customer_id,
+                    'revision_id' => $revisionId,
+                    'old_total' => $oldTotal,
+                    'new_total' => $total,
+                    'difference' => $total - $oldTotal,
+                ];
             }
 
             return $invoice->fresh(['items.product', 'items.variant', 'preinvoiceOrder']);
@@ -662,95 +674,6 @@ class WarehouseCollectionService
         }
 
         return $updatedInvoice;
-    }
-
-    private function buildInvoiceItemsWebhookPayload(
-        Invoice $invoice,
-        ?int $revisionId,
-        int $oldTotal,
-        int $newTotal,
-        array $revisionRows,
-        User $user,
-        string $reason,
-        ?string $note,
-        string $source
-    ): array {
-        $invoice = $invoice->fresh(['items.product', 'items.variant', 'payments', 'customer']);
-
-        $revisionNumber = null;
-        if ($revisionId !== null && DB::getSchemaBuilder()->hasTable('invoice_collection_revisions')) {
-            $revisionNumber = DB::table('invoice_collection_revisions')
-                ->where('id', $revisionId)
-                ->value('revision_number');
-        }
-
-        $changes = collect($revisionRows)->map(function (array $row) {
-            return [
-                'invoice_item_id' => isset($row['invoice_item_id']) ? (int) $row['invoice_item_id'] : null,
-                'product_id' => isset($row['product_id']) ? (int) $row['product_id'] : null,
-                'product_variant_id' => isset($row['product_variant_id']) ? (int) $row['product_variant_id'] : null,
-                'change_type' => (string) ($row['change_type'] ?? ''),
-                'product_name' => $row['product_name_snapshot'] ?? null,
-                'variant_name' => $row['variant_name_snapshot'] ?? null,
-                'sku' => $row['sku_snapshot'] ?? null,
-                'old_quantity' => isset($row['old_quantity']) ? (int) $row['old_quantity'] : null,
-                'new_quantity' => isset($row['new_quantity']) ? (int) $row['new_quantity'] : null,
-                'old_price' => isset($row['old_price']) ? (int) $row['old_price'] : null,
-                'new_price' => isset($row['new_price']) ? (int) $row['new_price'] : null,
-                'old_discount' => isset($row['old_discount']) ? (int) $row['old_discount'] : null,
-                'new_discount' => isset($row['new_discount']) ? (int) $row['new_discount'] : null,
-                'old_line_total' => isset($row['old_line_total']) ? (int) $row['old_line_total'] : null,
-                'new_line_total' => isset($row['new_line_total']) ? (int) $row['new_line_total'] : null,
-            ];
-        })->values()->all();
-
-        $currentItems = $invoice->items->map(function (InvoiceItem $item) {
-            return [
-                'invoice_item_id' => (int) $item->id,
-                'product_id' => (int) $item->product_id,
-                'product_variant_id' => (int) $item->variant_id,
-                'product_name' => $item->product?->name,
-                'variant_name' => $item->variant?->variant_name ?: $item->variant?->variety_name,
-                'sku' => $item->variant?->variant_code ?: $item->variant?->variety_code,
-                'quantity' => (int) $item->quantity,
-                'price' => (int) $item->price,
-                'discount' => (int) ($item->line_discount_amount ?? 0),
-                'line_total' => (int) $item->line_total,
-            ];
-        })->values()->all();
-
-        return [
-            // Backward-compatible flat fields used by existing Site handlers.
-            'invoice_id' => (int) $invoice->id,
-            'invoice_uuid' => (string) $invoice->uuid,
-            'external_order_id' => $invoice->external_order_id !== null ? (int) $invoice->external_order_id : null,
-            'crm_customer_id' => $invoice->customer?->crm_customer_id,
-            'revision_id' => $revisionId,
-            'old_total' => $oldTotal,
-            'new_total' => $newTotal,
-            'difference' => $newTotal - $oldTotal,
-
-            // Rich revision snapshot for the Site order page. The Site stores the
-            // webhook body in inventory_inbound_events, so no destructive rewrite of
-            // the original order_items table is needed.
-            'status' => (string) $invoice->status,
-            'subtotal' => (int) ($invoice->subtotal ?? 0),
-            'discount_amount' => (int) ($invoice->discount_amount ?? 0),
-            'shipping_price' => (int) ($invoice->shipping_price ?? 0),
-            'paid_amount' => (int) $invoice->payments->sum('amount'),
-            'revision' => [
-                'id' => $revisionId,
-                'number' => $revisionNumber !== null ? (int) $revisionNumber : null,
-                'reason_type' => $reason,
-                'reason_note' => $note,
-                'changed_by' => (int) $user->id,
-                'changed_by_name' => $user->name,
-                'changed_at' => now()->toIso8601String(),
-                'source' => $source,
-            ],
-            'changes' => $changes,
-            'current_items' => $currentItems,
-        ];
     }
 
     private function centralAvailableStockForUpdate(int $productId, int $variantId): int

@@ -390,7 +390,19 @@ class InvoiceController extends Controller
             ->firstOrFail();
 
         $statusLabels = $this->statusService->labels();
-        $canEditItems = in_array((string) $invoice->status, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING], true);
+        // Warehouse corrections remain available after finance reapproval (READY_TO_SHIP).
+        // Saving any real item change will move the invoice back to
+        // PENDING_FINANCE_REAPPROVAL inside WarehouseCollectionService.
+        $canEditItems = in_array(
+            (string) $invoice->status,
+            [
+                Invoice::STATUS_WAREHOUSE_RECEIVED,
+                Invoice::STATUS_COLLECTING,
+                Invoice::STATUS_READY_TO_SHIP,
+                Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+            ],
+            true
+        );
 
         $canAdjustPrice = auth()->user()?->hasPermission('warehouse.collection.adjust_price')
                           || auth()->user()?->hasAnyRole(['admin', 'Admin', 'manager', 'Manager', 'finance', 'Finance', 'Accountant']);
