@@ -63,6 +63,13 @@ class PreinvoiceAutosaveRequest extends FormRequest
         ];
     }
 
+    public function messages(): array
+    {
+        return [
+            'base_version.required_with' => 'نسخه پیش‌نویس ذخیره‌شده همراه درخواست ارسال نشد. صفحه را یک بار دوباره بارگذاری کنید تا ذخیره خودکار دوباره فعال شود.',
+        ];
+    }
+
     public function after(): array
     {
         return [function (Validator $validator): void {

@@ -265,18 +265,22 @@ class PreinvoiceApiController extends Controller
             ],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'is_in_person' => ['nullable', 'boolean'],
+            'scope_product_ids' => ['nullable', 'array', 'max:50'],
+            'scope_product_ids.*' => ['integer', 'min:1'],
         ]);
 
         try {
             $payload = $this->draftReservationService->syncReservationRows(
                 (string) $data['reservation_token'], (int) auth()->id(), $data['items'] ?? [],
                 (bool) ($data['is_in_person'] ?? false), $data['preinvoice_uuid'] ?? null,
+                $data['scope_product_ids'] ?? null,
             );
         } catch (ValidationException $exception) {
             $errors = $exception->errors();
             $itemErrors = $errors['item_errors'] ?? [];
-            unset($errors['item_errors']);
-            return response()->json(['ok' => false, 'message' => 'موجودی یک یا چند قلم برای رزرو کافی نیست.', 'errors' => $errors, 'item_errors' => $itemErrors], 422);
+            $suggestedItems = $errors['suggested_items'] ?? [];
+            unset($errors['item_errors'], $errors['suggested_items']);
+            return response()->json(['ok' => false, 'message' => 'موجودی یک یا چند قلم برای رزرو کافی نیست.', 'errors' => $errors, 'item_errors' => $itemErrors, 'suggested_items' => $suggestedItems], 422);
         }
 
         return response()->json([

@@ -24,11 +24,17 @@ class PreinvoiceDraftReservationService
         private ReservationClassificationService $classification,
     ) {}
 
-    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null): array
+    /**
+     * @param  array<int>|null  $scopeProductIds  When non-empty, only keys of these products are
+     *                                            reserved/released; every other key is left untouched.
+     *                                            Null or empty keeps the whole-token behavior.
+     */
+    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null, ?array $scopeProductIds = null): array
     {
         $desired = $this->normalizeReservationItems($items);
+        $scope = array_values(array_unique(array_map('intval', $scopeProductIds ?? [])));
 
-        return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid) {
+        return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid, $scope) {
             // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
             $tokenRows = PreinvoiceDraftReservation::query()->where('token', $token)->lockForUpdate()->get();
@@ -76,8 +82,16 @@ class PreinvoiceDraftReservationService
 
             $allKeys = array_unique(array_merge(array_keys($existing), array_keys($desired)));
             sort($allKeys, SORT_STRING);
+            if ($scope !== []) {
+                // Product-scoped sync: keys of other products are neither checked, reserved nor released.
+                $allKeys = array_values(array_filter($allKeys, fn (string $key) => in_array((int) explode(':', $key)[0], $scope, true)));
+                $desired = array_intersect_key($desired, array_flip($allKeys));
+            }
             $expiresAt = $isInPerson ? null : now()->addHour();
             $reservationScope = $isInPerson ? 'temporary_in_person' : 'temporary_online';
+
+            // Read-only pass: report every short item at once instead of the first one.
+            $this->assertAllDeltasReservable($allKeys, $existing, $committedQty, $desired);
 
             foreach ($allKeys as $key) {
                 [$productId, $variantId] = array_map('intval', explode(':', $key));
@@ -105,7 +119,7 @@ class PreinvoiceDraftReservationService
                 $delta = $newQty - $effectiveOld;
 
                 if ($delta > 0) {
-                    $this->reserveVariantDelta($productId, $variantId, $delta);
+                    $this->reserveVariantDelta($productId, $variantId, $delta, $effectiveOld);
                 } elseif ($delta < 0) {
                     // فقط از رزروهای موقت آزاد کن، نه از committed
                     $releasable = min(abs($delta), $oldQty);
@@ -434,7 +448,108 @@ class PreinvoiceDraftReservationService
         return $normalized;
     }
 
-    private function reserveVariantDelta(int $productId, int $variantId, int $delta): void
+    /**
+     * Mirrors the reservation loop without writing: collects every key whose
+     * positive delta exceeds central stock and throws them together. The
+     * loop's own check in reserveVariantDelta stays as the safety net.
+     */
+    private function assertAllDeltasReservable(array $keys, array $existing, array $committedQty, array $desired): void
+    {
+        $itemErrors = [];
+
+        foreach ($keys as $key) {
+            [$productId, $variantId] = array_map('intval', explode(':', $key));
+            $newQty = (int) ($desired[$key]['quantity'] ?? 0);
+            if ($newQty <= 0) {
+                continue;
+            }
+
+            $variant = ProductVariant::query()
+                ->with('product')
+                ->whereKey($variantId)
+                ->where('product_id', $productId)
+                ->where('is_active', true)
+                ->first();
+            if (! $variant) {
+                // The loop reports an invalid variant itself; keep earlier shortfalls first.
+                break;
+            }
+
+            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0) + (int) ($committedQty[$key] ?? 0);
+            $delta = $newQty - $held;
+            if ($delta <= 0) {
+                continue;
+            }
+
+            $available = $this->centralAvailableQuantity($productId, $variantId);
+            if ($delta > $available) {
+                $itemErrors[] = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
+            }
+        }
+
+        if ($itemErrors !== []) {
+            throw ValidationException::withMessages([
+                'items' => array_column($itemErrors, 'message'),
+                'item_errors' => $itemErrors,
+                'suggested_items' => $this->suggestedItems($desired, $itemErrors),
+            ]);
+        }
+    }
+
+    private function centralAvailableQuantity(int $productId, int $variantId): int
+    {
+        $quantity = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->value('quantity');
+
+        return max(0, (int) ($quantity ?? 0));
+    }
+
+    private function shortfallItemError(ProductVariant $variant, int $productId, int $variantId, int $available, int $delta, int $held): array
+    {
+        $product = $variant->product;
+
+        return [
+            'product_id' => $productId,
+            'variant_id' => $variantId,
+            'product_name' => $product?->name ?? $product?->title ?? '',
+            'product_code' => $product?->code ?? '',
+            'variant_name' => $variant->variant_name ?? $variant->name ?? '',
+            'variant_code' => $variant->code ?? '',
+            'available_quantity' => $available,
+            'requested_quantity' => $delta,
+            // Largest total quantity this line can hold: what it already holds plus free central stock.
+            'max_allowed' => $held + $available,
+            'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
+        ];
+    }
+
+    /** The submitted list with each short line lowered to max_allowed, or flagged for removal at zero. */
+    private function suggestedItems(array $desired, array $itemErrors): array
+    {
+        $maxByKey = [];
+        foreach ($itemErrors as $error) {
+            $maxByKey[$this->reservationKey((int) $error['product_id'], (int) $error['variant_id'])] = (int) $error['max_allowed'];
+        }
+
+        $suggested = [];
+        foreach ($desired as $key => $row) {
+            $quantity = array_key_exists($key, $maxByKey) ? max(0, $maxByKey[$key]) : (int) $row['quantity'];
+            $suggested[] = [
+                'product_id' => (int) $row['product_id'],
+                'variant_id' => (int) $row['variant_id'],
+                'requested_quantity' => (int) $row['quantity'],
+                'quantity' => $quantity,
+                'remove' => $quantity <= 0,
+            ];
+        }
+
+        return $suggested;
+    }
+
+    private function reserveVariantDelta(int $productId, int $variantId, int $delta, int $held = 0): void
     {
         if ($delta <= 0) {
             return;
@@ -451,27 +566,10 @@ class PreinvoiceDraftReservationService
         $available = max(0, (int) ($centralStock?->quantity ?? 0));
 
         if ($delta > $available) {
-            $product = $variant->product;
-            $itemError = [
-                'product_id' => $productId,
-                'variant_id' => $variantId,
-                'product_name' => $product?->name ?? $product?->title ?? '',
-                'product_code' => $product?->code ?? '',
-                'variant_name' => $variant->variant_name ?? $variant->name ?? '',
-                'variant_code' => $variant->code ?? '',
-                'available_quantity' => $available,
-                'requested_quantity' => $delta,
-                'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
-            ];
+            $itemError = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
             throw ValidationException::withMessages([
                 'items' => [$itemError['message']],
                 'item_errors' => [$itemError],
-            ]);
-        }
-
-        if ($delta > $available) {
-            throw ValidationException::withMessages([
-                'items' => "موجودی قابل فریز برای تنوع انتخابی کافی نیست. موجودی انبار مرکزی: {$available} | درخواست جدید: {$delta}",
             ]);
         }
 

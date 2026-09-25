@@ -1220,6 +1220,10 @@ class PreinvoiceController extends Controller
             if ($isSubmit && $stockLocked) {
                 $this->assertCentralStockForPositiveDeltas($oldItems, $newItems);
             }
+            if (! $isSubmit && $stockLocked) {
+                // A draft must not retain the official reservation of its previous submitted state.
+                $this->releaseReservedStock($order);
+            }
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
 
             $order->update([
@@ -1254,9 +1258,9 @@ class PreinvoiceController extends Controller
             if ($isSubmit && ! $stockLocked) {
                 $this->finalizeDraftReservations($order->fresh('items'), $validated['reservation_token'] ?? null, $validated['products'], $reservationMeta);
                 $this->syncPreinvoiceReservations($order->fresh('items'), true, $reservationMeta);
-            } elseif ($stockLocked) {
+            } elseif ($isSubmit && $stockLocked) {
                 $this->syncPreinvoiceReservations($order->fresh('items'));
-            } elseif ($order->invoice) {
+            } elseif (! $stockLocked && $order->invoice) {
                 $this->moveConsumedInvoiceStockBackToReservation($oldItems, $newItems);
             }
 
@@ -1558,19 +1562,116 @@ class PreinvoiceController extends Controller
                 $itemErrors[] = [
                     'item_id' => (int) ($products[$firstIndex]['item_id'] ?? 0) ?: null,
                     'row_key' => 'variant-' . (int) $variantId,
+                    'product_id' => (int) $variant->product_id,
                     'variant_id' => (int) $variantId,
+                    'product_code' => (string) ($variant->product?->code ?? ''),
                     'variant_code' => (string) ($variant->variant_code ?: $variant->variety_code),
                     'product_name' => (string) ($variant->product?->name ?? 'نامشخص'),
                     'variant_name' => $variantName,
                     'requested_quantity' => (int) $requiredQty,
                     'available_quantity' => (int) $availableQty,
+                    'max_allowed' => (int) $availableQty,
                     'message' => "موجودی آزاد تنوع «{$variantName}» برابر {$availableQty} عدد است. مقدار درخواستی: {$requiredQty}. حداکثر قابل ثبت: {$availableQty}.",
                 ];
             }
         }
 
         if ($itemErrors !== []) {
-            throw new PreinvoiceItemStockException($itemErrors);
+            throw new PreinvoiceItemStockException($itemErrors, $this->suggestedStockItems($products, $itemErrors));
+        }
+    }
+
+    /**
+     * The submitted list with every short line lowered to its max_allowed;
+     * lines that cannot hold anything are flagged with remove=true.
+     */
+    private function suggestedStockItems(array $rows, array $itemErrors): array
+    {
+        $maxByVariant = [];
+        foreach ($itemErrors as $error) {
+            $maxByVariant[(int) $error['variant_id']] = max(0, (int) $error['max_allowed']);
+        }
+
+        return collect($rows)->map(function (array $row) use ($maxByVariant) {
+            $variantId = (int) ($row['variant_id'] ?? $row['variety_id'] ?? 0);
+            $requested = (int) ($row['quantity'] ?? 0);
+            $quantity = $maxByVariant[$variantId] ?? $requested;
+
+            return [
+                'item_id' => (int) ($row['item_id'] ?? 0) ?: null,
+                'product_id' => (int) ($row['product_id'] ?? $row['id'] ?? 0),
+                'variant_id' => $variantId,
+                'requested_quantity' => $requested,
+                'quantity' => $quantity,
+                'remove' => $quantity <= 0,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Read-only mirror of reserveStockForItem over a whole item list, run before
+     * the loop's first write so every shortfall is reported together. Each
+     * message is reserveStockForItem's legacy text, so a single shortfall reads
+     * exactly as before while still carrying item_errors and suggested_items.
+     *
+     * @param  array<int, array{product_id:int, variant_id:int, quantity:int, held?:int}>  $needs  quantity = what reserveStockForItem would be asked for; held = what the line already holds
+     * @param  array<int, array{product_id:int, variant_id:int, quantity:int}>  $lineItems  full list for suggested_items
+     */
+    private function assertStockForReservationNeeds(array $needs, array $lineItems): void
+    {
+        $itemErrors = [];
+
+        foreach ($needs as $need) {
+            $productId = (int) $need['product_id'];
+            $variantId = (int) $need['variant_id'];
+            $quantity = (int) $need['quantity'];
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $variant = ProductVariant::query()
+                ->with('product:id,name,code')
+                ->whereKey($variantId)
+                ->where('is_active', true)
+                ->where('sales_enabled', true)
+                ->first();
+            if (! $variant) {
+                // reserveStockForItem fails this line on its own; keep checking the rest.
+                continue;
+            }
+
+            $centralQuantity = WarehouseStock::query()
+                ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+                ->where('product_id', $productId)
+                ->where('product_variant_id', $variantId)
+                ->value('quantity');
+            $available = max(0, (int) ($centralQuantity ?? $variant->stock));
+            if ($available >= $quantity) {
+                continue;
+            }
+
+            $productName = (string) ($variant->product?->name ?? 'نامشخص');
+            $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
+            $itemErrors[] = [
+                'product_id' => $productId,
+                'variant_id' => $variantId,
+                'product_name' => $productName,
+                'product_code' => (string) ($variant->product?->code ?? ''),
+                'variant_name' => $variantName,
+                'variant_code' => (string) ($variant->variant_code ?: $variant->variety_code),
+                'available_quantity' => $available,
+                'requested_quantity' => $quantity,
+                'max_allowed' => (int) ($need['held'] ?? 0) + $available,
+                'message' => "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$productName} | تنوع: {$variantName} | تعداد درخواستی: {$quantity} | موجودی قابل فروش: {$available}",
+            ];
+        }
+
+        if ($itemErrors !== []) {
+            throw new PreinvoiceItemStockException(
+                $itemErrors,
+                $this->suggestedStockItems($lineItems, $itemErrors),
+                array_column($itemErrors, 'message'),
+            );
         }
     }
 
@@ -1789,15 +1890,18 @@ class PreinvoiceController extends Controller
                     'product_id' => $productId,
                     'variant_name' => $variantName,
                     'product_name' => $productName,
+                    'product_code' => (string) ($variant?->product?->code ?? ''),
+                    'variant_code' => (string) ($variant?->variant_code ?: $variant?->variety_code),
                     'requested_quantity' => $delta,
                     'available_quantity' => $available,
+                    'max_allowed' => $oldQty + $available,
                     'message' => "موجودی قابل فروش «{$variantName}» ({$productName}) کافی نیست. موجودی: {$available} | افزایش درخواستی: {$delta}",
                 ];
             }
         }
 
         if ($itemErrors !== []) {
-            throw new PreinvoiceItemStockException($itemErrors);
+            throw new PreinvoiceItemStockException($itemErrors, $this->suggestedStockItems($newItems, $itemErrors));
         }
     }
 
@@ -1905,12 +2009,16 @@ class PreinvoiceController extends Controller
             return null;
         }
 
-        return PreinvoiceOrder::query()
+        $order = PreinvoiceOrder::query()
             ->where('uuid', $uuid)
             ->where('created_by', auth()->id())
             ->where('status', PreinvoiceOrder::STATUS_DRAFT)
             ->lockForUpdate()
             ->first();
+
+        abort_unless($order, 409, 'این پیش‌نویس دیگر قابل ذخیره نیست؛ صفحه را دوباره بارگذاری کنید.');
+
+        return $order;
     }
 
     private function orderCustomerName(array $validated, ?Customer $customer): string
@@ -2105,6 +2213,17 @@ class PreinvoiceController extends Controller
             $reserved[$key] = ($reserved[$key] ?? 0) + (int) $row->quantity;
         }
 
+        $needs = [];
+        foreach ($required as $key => $row) {
+            $needs[] = [
+                'product_id' => (int) $row['product_id'],
+                'variant_id' => (int) $row['variant_id'],
+                'quantity' => max(0, (int) $row['quantity'] - (int) ($reserved[$key] ?? 0)),
+                'held' => (int) ($reserved[$key] ?? 0),
+            ];
+        }
+        $this->assertStockForReservationNeeds($needs, array_values($required));
+
         foreach ($required as $key => $row) {
             $coveredQty = (int) ($reserved[$key] ?? 0);
             $missingQty = max(0, (int) $row['quantity'] - $coveredQty);
@@ -2167,6 +2286,20 @@ class PreinvoiceController extends Controller
             ->lockForUpdate()
             ->get()
             ->groupBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
+
+        if (! $stockAlreadyAdjusted) {
+            $needs = [];
+            foreach ($required as $key => $row) {
+                $currentQty = (int) $rows->get($key, collect())->sum('quantity');
+                $needs[] = [
+                    'product_id' => (int) $row['product_id'],
+                    'variant_id' => (int) $row['variant_id'],
+                    'quantity' => (int) $row['quantity'] - $currentQty,
+                    'held' => $currentQty,
+                ];
+            }
+            $this->assertStockForReservationNeeds($needs, array_values($required));
+        }
 
         foreach ($required as $key => $row) {
             $reservations = $rows->get($key, collect());
@@ -2357,6 +2490,18 @@ class PreinvoiceController extends Controller
 
     private function moveConsumedInvoiceStockBackToReservation(array $oldItems, array $newItems): void
     {
+        // Old lines are released first, so each key can reserve its old quantity plus free stock.
+        $oldMap = $this->itemQuantityMap($oldItems);
+        $needs = [];
+        $lineItems = [];
+        foreach ($this->itemQuantityMap($newItems) as $key => $newQty) {
+            [$productId, $variantId] = array_map('intval', explode(':', $key));
+            $oldQty = (int) ($oldMap[$key] ?? 0);
+            $needs[] = ['product_id' => $productId, 'variant_id' => $variantId, 'quantity' => $newQty - $oldQty, 'held' => $oldQty];
+            $lineItems[] = ['product_id' => $productId, 'variant_id' => $variantId, 'quantity' => $newQty];
+        }
+        $this->assertStockForReservationNeeds($needs, $lineItems);
+
         foreach ($oldItems as $row) {
             $this->releaseStockForItem((int) $row['product_id'], (int) $row['variant_id'], (int) $row['quantity']);
         }
@@ -2433,6 +2578,33 @@ class PreinvoiceController extends Controller
             ->where('reservation_scope', 'official')
             ->whereNull('released_at')
             ->exists();
+    }
+
+    /** Read-only mirror of coverReservationShortfalls' stock-moving branch, run before finalize writes anything. */
+    private function assertCoverableReservationShortfalls(PreinvoiceOrder $order): void
+    {
+        $requiredByVariant = $order->items
+            ->groupBy('variant_id')
+            ->map(fn ($rows) => (int) $rows->sum('quantity'));
+        $variants = ProductVariant::query()
+            ->whereIn('id', $requiredByVariant->keys())
+            ->get(['id', 'product_id', 'reserved'])
+            ->keyBy('id');
+
+        $needs = [];
+        $lineItems = [];
+        foreach ($requiredByVariant as $variantId => $requiredQty) {
+            $variant = $variants->get((int) $variantId);
+            if (! $variant) {
+                continue;
+            }
+
+            $reserved = (int) $variant->reserved;
+            $needs[] = ['product_id' => (int) $variant->product_id, 'variant_id' => (int) $variant->id, 'quantity' => (int) $requiredQty - $reserved, 'held' => $reserved];
+            $lineItems[] = ['product_id' => (int) $variant->product_id, 'variant_id' => (int) $variant->id, 'quantity' => (int) $requiredQty];
+        }
+
+        $this->assertStockForReservationNeeds($needs, $lineItems);
     }
 
     private function coverReservationShortfalls($requiredByVariant, bool $centralStockMovedToReserve): void
@@ -2739,6 +2911,9 @@ class PreinvoiceController extends Controller
                 }
 
                 $it->price = $snapshotPrice;
+            }
+            if ($centralStockMovedToReserve) {
+                $this->assertCoverableReservationShortfalls($order);
             }
             $this->preinvoiceDiscountService->assertIntegrityOrRepair($order);
             $order->refresh()->load('items');

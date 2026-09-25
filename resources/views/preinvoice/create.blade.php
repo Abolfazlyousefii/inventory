@@ -1772,6 +1772,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     const SERVER_ITEM_ERRORS = @json(session('preinvoice_item_errors', []));
+    const SERVER_SUGGESTED_ITEMS = @json(session('preinvoice_suggested_items', []));
 
     class SessionChangedError extends Error {}
     class CsrfMismatchError extends Error {}
@@ -1865,12 +1866,112 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             firstPill.setAttribute('tabindex', '-1');
             firstPill.focus({preventScroll: true});
         }
+        showStockAutoFix(SERVER_ITEM_ERRORS, SERVER_SUGGESTED_ITEMS, null);
+    }
+
+    // Auto-fix: replace the whole list with the server's suggested_items
+    // (short lines lowered to max_allowed, remove=true lines dropped).
+    let stockAutoFixState = null;
+
+    function applySuggestedItemsToGroups(sourceGroups, suggestedItems) {
+        const byKey = new Map((suggestedItems || []).map(s => [`${Number(s.product_id)}:${Number(s.variant_id)}`, s]));
+        const fixed = JSON.parse(JSON.stringify(sourceGroups || {}));
+        Object.keys(fixed).forEach(groupKey => {
+            const group = fixed[groupKey];
+            const productId = Number(group?.product?.id || 0);
+            group.items = (group.items || []).filter(item => {
+                const suggestion = byKey.get(`${productId}:${Number(item.variant_id)}`);
+                if (!suggestion) return true;
+                if (suggestion.remove || Number(suggestion.quantity) <= 0) return false;
+                item.quantity = Number(suggestion.quantity);
+                return true;
+            });
+            if (!group.items.length) delete fixed[groupKey];
+        });
+        return fixed;
+    }
+
+    function showStockAutoFix(itemErrors, suggestedItems, sourceGroups) {
+        if (!Array.isArray(suggestedItems) || !suggestedItems.length) return;
+        stockAutoFixState = {
+            suggestedItems,
+            // null = apply to the current selections when clicked (server redirect case).
+            sourceGroups: sourceGroups ? JSON.parse(JSON.stringify(sourceGroups)) : null
+        };
+        document.getElementById('stockAutoFixPanel')?.remove();
+        const panel = document.createElement('div');
+        panel.id = 'stockAutoFixPanel';
+        panel.className = 'alert alert-warning shadow-sm rounded-4 py-2 px-3';
+        panel.setAttribute('role', 'alert');
+        const rows = (itemErrors || []).map(e => `<li>${esc(e.product_name || '')} / ${esc(e.variant_name || '')}: درخواست ${formatNum(e.requested_quantity || 0)} | حداکثر قابل ثبت ${formatNum(e.max_allowed ?? e.available_quantity ?? 0)}</li>`).join('');
+        panel.innerHTML = `
+            <div class="fw-bold mb-1">موجودی ${formatNum((itemErrors || []).length)} قلم کافی نیست.</div>
+            <ul class="small mb-2">${rows}</ul>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-warning rounded-3" data-stock-autofix-apply>اصلاح خودکار همه</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" data-stock-autofix-close>بستن</button>
+            </div>`;
+        // Inside the open picker the modal focus trap would swallow clicks on a body-level panel.
+        const modalBody = groupPickerElement.classList.contains('show') ? groupPickerElement.querySelector('.modal-body') : null;
+        if (modalBody) {
+            modalBody.prepend(panel);
+        } else {
+            panel.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:1085;width:min(560px,calc(100vw - 32px));max-height:60vh;overflow:auto;';
+            document.body.appendChild(panel);
+        }
+        panel.querySelector('[data-stock-autofix-apply]').addEventListener('click', applyStockAutoFix);
+        panel.querySelector('[data-stock-autofix-close]').addEventListener('click', hideStockAutoFix);
+    }
+
+    function hideStockAutoFix() {
+        stockAutoFixState = null;
+        document.getElementById('stockAutoFixPanel')?.remove();
+    }
+
+    async function applyStockAutoFix(event) {
+        if (!stockAutoFixState) return;
+        const btn = event?.currentTarget;
+        const {suggestedItems, sourceGroups} = stockAutoFixState;
+        const fixed = applySuggestedItemsToGroups(sourceGroups || groupedSelections, suggestedItems);
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'در حال اصلاح...';
+        }
+        try {
+            await syncDraftReservation(fixed);
+        } catch (e) {
+            // A fresh shortfall re-opens the panel with new suggestions.
+            if (!e.suggestedItems?.length) {
+                alert(e.message || 'اصلاح خودکار انجام نشد.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'اصلاح خودکار همه';
+                }
+            }
+            return;
+        }
+        hideStockAutoFix();
+        groupedSelections = fixed;
+        if (groupPickerElement.classList.contains('show')) groupPickerModal.hide();
+        document.querySelectorAll('[data-variant-pill]').forEach(pill => pill.classList.remove('border', 'border-danger', 'bg-danger-subtle'));
+        renderGroupSummary();
+        updateTotal();
+        confirmAutosaveChanges();
+        scheduleLocalDraftSave();
     }
 
     const BROWSER_SESSION_KEY = 'aria_preinvoice_browser_session_v1';
     let isSyncingReservation = false;
     let currentAutosaveUuid = null;
     let currentAutosaveVersion = null;
+
+    // The uuid and version identify one server autosave and must always be cleared together.
+    function resetAutosaveIdentity() {
+        currentAutosaveUuid = null;
+        currentAutosaveVersion = null;
+        const autosaveInput = document.getElementById('autosave_uuid');
+        if (autosaveInput) autosaveInput.value = '';
+    }
     let autosaveQueue = Promise.resolve();
     let confirmedAutosavePayload = null;
     let autosaveConflict = false;
@@ -1953,6 +2054,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             const message = Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در فریز موجودی پیش‌فاکتور.';
             const error = new Error(message);
             error.itemErrors = json?.item_errors || [];
+            error.suggestedItems = json?.suggested_items || [];
             if (error.itemErrors.length) showReservationItemErrors(error.itemErrors);
             throw error;
         }
@@ -1993,28 +2095,37 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             : 'رزرو موقت کالاها ۱ ساعت اعتبار دارد. بعد از ثبت نهایی، زمان رزرو طبق سطح مشتری شروع می‌شود.';
     }
 
+    // Calls are chained one after another, never merged or debounced: each request
+    // keeps its own snapshot and scope, so a scoped call cannot swallow an unscoped one.
     let reservationSyncQueue = Promise.resolve();
-    function syncDraftReservation(sourceGroups = groupedSelections) {
+    // scope: product ids to sync (e.g. the edited or deleted group); null = the whole list.
+    function syncDraftReservation(sourceGroups = groupedSelections, scope = null) {
         const snapshot = JSON.parse(JSON.stringify(sourceGroups));
-        const pending = reservationSyncQueue.then(() => sendDraftReservation(snapshot));
+        const scopeSnapshot = Array.isArray(scope) && scope.length ? scope.map(Number) : null;
+        const pending = reservationSyncQueue.then(() => sendDraftReservation(snapshot, scopeSnapshot));
         reservationSyncQueue = pending.catch(() => {});
         return pending;
     }
 
-    async function sendDraftReservation(sourceGroups) {
+    async function sendDraftReservation(sourceGroups, scope = null) {
         const token = ensureReservationToken();
         isSyncingReservation = true;
         try {
-            const response = await postReservation(API.reservationsSync, {
+            const body = {
                 reservation_token: token,
                 submission_token: token,
                 preinvoice_uuid: IS_EDIT ? EDIT_ORDER_UUID : null,
                 is_in_person: currentIsInPerson(),
                 items: reservationItemsFromGroups(sourceGroups)
-            });
+            };
+            if (scope) body.scope_product_ids = scope;
+            const response = await postReservation(API.reservationsSync, body);
             if (response?.data?.skipped) throw new Error('این رزرو قبلاً به سند متصل شده است؛ صفحه سند را دوباره باز کنید.');
             productCache.clear();
             return response;
+        } catch (error) {
+            if (error.suggestedItems?.length) showStockAutoFix(error.itemErrors, error.suggestedItems, sourceGroups);
+            throw error;
         } finally {
             isSyncingReservation = false;
         }
@@ -2344,6 +2455,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         if (IS_EDIT || isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically ||
             (!hasAnyFormData() && !confirmedAutosavePayload)) return;
         if (autosaveConflict) throw new Error('نسخه جدیدتر پیش‌نویس را بازیابی کنید؛ اطلاعات این فرم روی آن نوشته نشد.');
+        // A uuid without its version is rejected (base_version is required_with draft_uuid)
+        // and would lock every later save; start a fresh autosave instead.
+        if (currentAutosaveUuid && !currentAutosaveVersion) resetAutosaveIdentity();
         const snapshot = collectAutosavePayload();
         const signature = JSON.stringify(snapshot);
         const explicitlyConfirmed = signature === confirmedAutosavePayload;
@@ -2475,6 +2589,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         isHydratingLocalDraft = true;
         currentAutosaveUuid = draft.autosave_uuid || null;
         currentAutosaveVersion = draft.autosave_version || null;
+        // Older local drafts can hold a uuid without its version; drop both rather than keep that broken pair.
+        if (!currentAutosaveUuid || !currentAutosaveVersion) resetAutosaveIdentity();
         autosaveConflict = false;
         confirmedAutosavePayload = null;
         document.getElementById('autosave_uuid').value = currentAutosaveUuid || '';
@@ -2605,8 +2721,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             banner.classList.remove('is-visible');
             await removeLocalDraft(false, true);
             latestDbAutosaveDraft = null;
-            currentAutosaveUUID = null;
-            currentAutosaveVersion = null;
+            resetAutosaveIdentity();
         };
     }
 
@@ -3177,7 +3292,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         }
 
         try {
-            await syncDraftReservation(groupedSelections);
+            // Only this product: a shortfall in another group must not block or roll back this edit.
+            await syncDraftReservation(groupedSelections, [Number(activeProductId)]);
         } catch (e) {
             if (!(e instanceof CsrfMismatchError)) groupedSelections = previousSelections;
             alert(e.message || 'موجودی برای این انتخاب کافی نیست.');
@@ -3214,7 +3330,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         const previousSelections = JSON.parse(JSON.stringify(groupedSelections || {}));
         delete groupedSelections[productId];
         try {
-            await syncDraftReservation(groupedSelections);
+            // Only release this product; other groups (even short ones) stay as they are.
+            await syncDraftReservation(groupedSelections, [Number(productId)]);
         } catch (e) {
             groupedSelections = previousSelections;
             alert(e.message || 'خطا در آزادسازی موجودی محصول.');
@@ -3374,7 +3491,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                         variant_id: vid,
                         item_id: Number(row.item_id || row.id || 0),
                         quantity: Number(row.quantity || 0),
-                        price: Number(row.price || (v ? variantPrice(v, product) : 0)),
+                        price: Number(row.price ?? (v ? variantPrice(v, product) : 0)),
                         model: v ? variantModel(v) : '—',
                         design: v ? variantDesign(v) : '—',
                         variant: v ? variantName(v) : (row.variant_name || '—'),

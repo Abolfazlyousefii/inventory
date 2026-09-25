@@ -6,7 +6,11 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class PreinvoiceItemStockException extends HttpResponseException
 {
-    public function __construct(array $itemErrors)
+    /**
+     * @param  array  $suggestedItems  Full item list with short lines lowered to max_allowed (remove=true at zero).
+     * @param  array  $messages  Per-item messages for the error bag; the count summary is used when empty.
+     */
+    public function __construct(array $itemErrors, array $suggestedItems = [], array $messages = [])
     {
         $count = count($itemErrors);
         $message = $count > 0
@@ -16,11 +20,20 @@ class PreinvoiceItemStockException extends HttpResponseException
         $payload = [
             'message' => $message,
             'item_errors' => array_values($itemErrors),
+            'suggested_items' => array_values($suggestedItems),
         ];
 
+        if (count($messages) === 1) {
+            // Same top-level JSON message a single-message ValidationException would give.
+            $payload['message'] = (string) array_values($messages)[0];
+        }
+
         $response = request()->expectsJson()
-            ? response()->json($payload, 422)
-            : redirect()->back()->withInput()->withErrors(['products' => $message])->with('preinvoice_item_errors', $payload['item_errors']);
+            ? response()->json($messages === [] ? $payload : $payload + ['errors' => ['products' => array_values($messages)]], 422)
+            : redirect()->back()->withInput()
+                ->withErrors(['products' => $messages === [] ? $message : array_values($messages)])
+                ->with('preinvoice_item_errors', $payload['item_errors'])
+                ->with('preinvoice_suggested_items', $payload['suggested_items']);
 
         parent::__construct($response);
     }
