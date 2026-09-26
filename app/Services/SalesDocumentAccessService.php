@@ -85,6 +85,7 @@ class SalesDocumentAccessService
         return $this->isManager($user)
             || $this->isFinance($user)
             || $this->isWarehouse($user)
+            || ($user && (int) $invoice->effective_seller_id === (int) $user->id)
             || $this->isInvoiceOwner($invoice, $user);
     }
 

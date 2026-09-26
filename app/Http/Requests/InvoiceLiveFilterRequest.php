@@ -18,6 +18,7 @@ class InvoiceLiveFilterRequest extends FormRequest
     {
         $this->merge([
             'order_code' => self::normalizeDigits(trim((string) $this->query('order_code', ''))),
+            'seller_id' => self::normalizeDigits(trim((string) $this->query('seller_id', ''))),
             'date_from' => self::normalizeDate(trim((string) $this->query('date_from', ''))),
             'date_to' => self::normalizeDate(trim((string) $this->query('date_to', ''))),
             'quick_range' => trim((string) $this->query('quick_range', '')),
@@ -31,6 +32,7 @@ class InvoiceLiveFilterRequest extends FormRequest
         return [
             'order_code' => ['nullable', 'regex:/^\d{1,5}$/'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
+            'seller_id' => ['nullable', 'integer', 'exists:users,id'],
             'date_from' => ['nullable', 'regex:/^\d{4}\/\d{2}\/\d{2}$/'],
             'date_to' => ['nullable', 'regex:/^\d{4}\/\d{2}\/\d{2}$/'],
             'quick_range' => ['nullable', Rule::in(['today', 'week', 'month'])],

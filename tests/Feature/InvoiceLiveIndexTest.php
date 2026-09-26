@@ -29,6 +29,10 @@ class InvoiceLiveIndexTest extends TestCase
         $this->assertStringNotContainsString('خروجی CSV', $view);
         $this->assertStringNotContainsString('چاپ گزارش', $view);
         $this->assertStringContainsString("route('invoices.cancelled')", $view);
+        $this->assertStringContainsString('id="invoiceSellerSearch"', $view);
+        $this->assertStringNotContainsString('bulkSellerForm', $view);
+        $this->assertStringNotContainsString('bulkSellerForm', file_get_contents(resource_path('views/invoices/partials/table-rows.blade.php')));
+        $this->assertStringNotContainsString('bulkSellerForm', file_get_contents(resource_path('views/invoices/partials/mobile-cards.blade.php')));
     }
 
     public function test_data_uses_bounded_cursor_pagination_and_stable_order(): void
