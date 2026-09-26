@@ -6,7 +6,7 @@
     const stateNode = document.getElementById('invoiceInitialState');
     const initial = JSON.parse(stateNode?.textContent || '{}');
     const el = {
-        code: document.getElementById('invoiceOrderCode'), customerSearch: document.getElementById('invoiceCustomerSearch'),
+        code: document.getElementById('invoiceOrderCode'), customerSearch: document.getElementById('invoiceCustomerSearch'), seller: document.getElementById('invoiceSellerSearch'),
         customerId: document.getElementById('invoiceCustomerId'), customerResults: app.querySelector('.customer-picker__results'),
         from: document.getElementById('invoiceDateFrom'), to: document.getElementById('invoiceDateTo'), summary: document.getElementById('invoiceSummary'),
         desktop: document.getElementById('invoiceDesktopRows'), mobile: document.getElementById('invoiceMobileCards'),
@@ -14,7 +14,7 @@
         retry: document.getElementById('invoiceRetry'), clear: document.getElementById('invoiceClearFilters'), sentinel: document.getElementById('invoiceLoadSentinel'),
         more: document.getElementById('invoiceLoadMore'), results: app.querySelector('.invoice-results'), customerClear: document.getElementById('invoiceCustomerClear'), loadStatus: document.getElementById('invoiceLoadStatus')
     };
-    let filters = Object.assign({order_code:'', customer_id:'', date_from:'', date_to:'', quick_range:''}, initial.filters || {});
+    let filters = Object.assign({order_code:'', customer_id:'', seller_id:'', date_from:'', date_to:'', quick_range:''}, initial.filters || {});
     let cursor = null, hasMore = false, loading = false, requestId = 0, controller = null, customerController = null;
     let debounceTimer = null, customerTimer = null;
     const digits = value => String(value || '').replace(/[۰-۹٠-٩]/g, char => '۰۱۲۳۴۵۶۷۸۹'.includes(char) ? '۰۱۲۳۴۵۶۷۸۹'.indexOf(char) : '٠١٢٣٤٥٦٧٨٩'.indexOf(char));
@@ -23,13 +23,14 @@
     function hydrate() {
         el.code.value = filters.order_code || ''; el.from.value = filters.date_from || ''; el.to.value = filters.date_to || '';
         el.customerId.value = filters.customer_id || '';
+        el.seller.value = filters.seller_id || '';
         if (initial.customer) el.customerSearch.value = customerLabel(initial.customer);
         el.customerClear.hidden = !el.customerId.value;
         setActiveRange();
     }
     const customerLabel = c => `${c.name}${c.mobile ? ` · ${c.mobile}` : ''}${c.code ? ` · ${c.code}` : ''}`;
     function currentFilters() {
-        return {order_code: digits(el.code.value.trim()), customer_id: el.customerId.value, date_from: digits(el.from.value.trim()), date_to: digits(el.to.value.trim()), quick_range: filters.quick_range || ''};
+        return {order_code: digits(el.code.value.trim()), customer_id: el.customerId.value, seller_id: el.seller.value, date_from: digits(el.from.value.trim()), date_to: digits(el.to.value.trim()), quick_range: filters.quick_range || ''};
     }
     function setActiveRange() { app.querySelectorAll('[data-range]').forEach(button => button.classList.toggle('is-active', button.dataset.range === filters.quick_range)); }
     function syncUrl(serverFilters) {
@@ -68,8 +69,9 @@
         }
     }
     [el.code, el.from, el.to].forEach(input => input.addEventListener('input', () => { filters.quick_range = ''; setActiveRange(); debounceLoad(); }));
+    el.seller.addEventListener('change', () => load(false));
     app.querySelectorAll('[data-range]').forEach(button => button.addEventListener('click', () => { filters.quick_range = button.dataset.range; el.from.value = ''; el.to.value = ''; setActiveRange(); load(false); }));
-    el.clear.addEventListener('click', () => { filters = {order_code:'',customer_id:'',date_from:'',date_to:'',quick_range:''}; el.code.value='';el.customerId.value='';el.customerSearch.value='';el.customerClear.hidden=true;el.from.value='';el.to.value='';setActiveRange();load(false);el.code.focus(); });
+    el.clear.addEventListener('click', () => { filters = {order_code:'',customer_id:'',seller_id:'',date_from:'',date_to:'',quick_range:''}; el.code.value='';el.customerId.value='';el.customerSearch.value='';el.customerClear.hidden=true;el.seller.value='';el.from.value='';el.to.value='';setActiveRange();load(false);el.code.focus(); });
     app.querySelector('[data-clear-filters]').addEventListener('click', () => el.clear.click());
     el.retry.addEventListener('click', () => load(false)); el.more.addEventListener('click', () => hasMore && load(true));
 
@@ -91,7 +93,7 @@
 
     let cancelModal;
     function bindCancelButtons() { app.querySelectorAll('.js-invoice-cancel:not([data-bound])').forEach(button => { button.dataset.bound='1'; button.addEventListener('click', () => { const modal=document.getElementById('invoiceCancelModal'), form=modal.querySelector('#invoiceCancelForm'), confirm=modal.querySelector('#invoiceCancelConfirmation'), reason=modal.querySelector('#invoiceCancellationReason'), physical=modal.querySelector('#invoicePhysicalReturn'), submit=modal.querySelector('#invoiceCancelSubmit'), shipped=button.dataset.shipped==='1'; form.reset();form.action=button.dataset.url;modal.querySelector('[data-cancel-number]').textContent=button.dataset.number;modal.querySelector('[data-shipped-warning]').hidden=!shipped;confirm.placeholder=button.dataset.number; const validate=()=>{submit.disabled=!(reason.value.trim() && confirm.value.trim()===button.dataset.number && (!shipped || physical.checked));};[reason,confirm,physical].forEach(input=>{input.oninput=validate;input.onchange=validate;});validate();cancelModal=bootstrap.Modal.getOrCreateInstance(modal);cancelModal.show();setTimeout(()=>reason.focus(),150); }); }); }
-    window.addEventListener('popstate', () => { const params=new URLSearchParams(location.search); filters={order_code:params.get('order_code')||'',customer_id:params.get('customer_id')||'',date_from:params.get('date_from')||'',date_to:params.get('date_to')||'',quick_range:params.get('quick_range')||''};el.code.value=filters.order_code;el.customerId.value=filters.customer_id;el.from.value=filters.date_from;el.to.value=filters.date_to;if(!filters.customer_id){el.customerSearch.value='';el.customerClear.hidden=true;}setActiveRange();load(false); });
+    window.addEventListener('popstate', () => { const params=new URLSearchParams(location.search); filters={order_code:params.get('order_code')||'',customer_id:params.get('customer_id')||'',seller_id:params.get('seller_id')||'',date_from:params.get('date_from')||'',date_to:params.get('date_to')||'',quick_range:params.get('quick_range')||''};el.code.value=filters.order_code;el.customerId.value=filters.customer_id;el.seller.value=filters.seller_id;el.from.value=filters.date_from;el.to.value=filters.date_to;if(!filters.customer_id){el.customerSearch.value='';el.customerClear.hidden=true;}setActiveRange();load(false); });
     if ('IntersectionObserver' in window) new IntersectionObserver(entries => { if(entries[0].isIntersecting && hasMore && !loading) load(true); }, {rootMargin:'300px'}).observe(el.sentinel);
     hydrate(); load(false);
 })();

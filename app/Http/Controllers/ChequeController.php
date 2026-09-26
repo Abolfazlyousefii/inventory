@@ -81,7 +81,7 @@ class ChequeController extends Controller
             'account_number' => 'nullable|string|max:255',
             'account_holder' => 'nullable|string|max:255',
             'image' => 'nullable|image|max:4096',
-            'status' => 'nullable|in:pending,cleared,bounced,registered,unregistered',
+            'status' => 'nullable|in:registered,unregistered',
         ]);
 
         $path = null;

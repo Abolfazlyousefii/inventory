@@ -28,6 +28,7 @@ class SalesHavalehService
         private readonly SalesDocumentAccessService $accessService,
         private readonly SalePriceGuard $salePriceGuard,
         private readonly WarehouseInboundService $warehouseInbound,
+        private readonly InvoiceReapprovalRevisionRecorder $revisionRecorder,
     ) {}
 
     public function updateItemsForInvoice(
@@ -49,6 +50,7 @@ class SalesHavalehService
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertFinanciallyMutable();
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
+            $beforeItems = $lockedItems->map(fn (InvoiceItem $item) => clone $item);
             $invoice->setRelation('items', $lockedItems);
             $itemsById = $lockedItems->keyBy('id');
             $pendingInboundLines = [];
@@ -168,6 +170,17 @@ class SalesHavalehService
                 'items_updated_at' => now(),
                 'items_updated_by' => $userId,
             ]);
+
+            $this->revisionRecorder->record(
+                $invoice,
+                $beforeItems,
+                $invoice->items()->with(['product', 'variant'])->get(),
+                $oldTotal,
+                $newTotal,
+                $changeReason,
+                $changeNote,
+                $userId,
+            );
 
 
 

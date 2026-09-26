@@ -8,9 +8,9 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h4 class="mb-0">💳 نمایش جزئیات پرداخت</h4>
-        <div class="text-muted small">این بخش فقط نمایشی است و هیچ فیلدی قابل تغییر نیست.</div>
+        <div class="text-muted small">برای ویرایش یا حذف پرداخت، از فهرست گردش حساب شخص استفاده کنید.</div>
     </div>
-    <a href="{{ url()->previous() }}" class="btn btn-outline-secondary">بازگشت</a>
+    <a href="{{ $payment->customer_id ? route('account-statements.show', $payment->customer_id) : url()->previous() }}" class="btn btn-outline-secondary">بازگشت به گردش حساب</a>
 </div>
 
 <div class="card border-0 shadow-sm">

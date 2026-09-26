@@ -31,6 +31,7 @@ use App\Services\PreinvoiceDraftReservationService;
 use App\Services\PreinvoiceReservationService;
 use App\Services\MySalesDocumentsService;
 use App\Services\FinancePreinvoiceEditorService;
+use App\Services\FinanceReapprovalChangesService;
 use App\Services\PreinvoiceReservationExpiryService;
 use App\Services\PreinvoiceDiscountHydrator;
 use App\Services\PreinvoiceDiscountService;
@@ -61,6 +62,7 @@ class PreinvoiceController extends Controller
         private readonly PreinvoiceReservationService $reservationService,
         private readonly MySalesDocumentsService $mySalesDocumentsService,
         private readonly FinancePreinvoiceEditorService $financePreinvoiceEditorService,
+        private readonly FinanceReapprovalChangesService $financeReapprovalChangesService,
         private readonly PreinvoiceReservationExpiryService $reservationExpiryService,
         private readonly PreinvoiceDiscountHydrator $preinvoiceDiscountHydrator,
         private readonly PreinvoiceDiscountService $preinvoiceDiscountService,
@@ -314,24 +316,31 @@ class PreinvoiceController extends Controller
 
         $basePreinvoiceQuery = PreinvoiceOrder::query()
             ->with(['creator:id,name', 'customer:id,reservation_tier', 'items:id,preinvoice_order_id,quantity'])
-            ->whereIn('status', [
-                PreinvoiceOrder::STATUS_PENDING_FINANCE,
-                PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
-            ]);
+            ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
+            ->where(function ($query) {
+                $query->whereNull('stock_frozen_until')
+                    ->orWhere('stock_frozen_until', '>', now());
+            });
 
         $pendingQuery = (clone $basePreinvoiceQuery)
-            ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
             ->orderByRaw('stock_frozen_until IS NULL')
             ->orderBy('stock_frozen_until')
             ->orderByDesc('id');
 
-        $expiredQuery = (clone $basePreinvoiceQuery)
+        $todayStart = now()->startOfDay();
+        $expiredTodayQuery = PreinvoiceOrder::query()
             ->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)
+            ->where('stock_released_at', '>=', $todayStart)
+            ->where('stock_released_at', '<', $todayStart->copy()->addDay());
+
+        $expiredOrders = (clone $expiredTodayQuery)
+            ->with(['creator:id,name', 'items:id,preinvoice_order_id,quantity'])
             ->orderByDesc('stock_released_at')
-            ->orderByDesc('id');
+            ->orderByDesc('id')
+            ->paginate(20, ['*'], 'expired_page')
+            ->withQueryString();
 
         $orders = $pendingQuery->paginate(20, ['*'], 'preinvoices_page')->withQueryString();
-        $expiredOrders = $expiredQuery->paginate(20, ['*'], 'expired_page')->withQueryString();
 
         $financeReapprovalInvoices = Invoice::query()
             ->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
@@ -340,9 +349,12 @@ class PreinvoiceController extends Controller
             ->orderByDesc('id')
             ->paginate(20, ['*'], 'reapprovals_page')
             ->withQueryString();
+        $financeReapprovalChanges = $activeTab === 'reapprovals'
+            ? $this->financeReapprovalChangesService->forInvoices($financeReapprovalInvoices->getCollection())
+            : [];
 
-        $pendingCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)->count();
-        $expiredCount = PreinvoiceOrder::query()->where('status', PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)->count();
+        $pendingCount = (clone $basePreinvoiceQuery)->count();
+        $expiredCount = (clone $expiredTodayQuery)->count();
         $reapprovalCount = Invoice::query()->where('status', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)->count();
         $stats = [
             'pending_finance' => $pendingCount,
@@ -368,6 +380,7 @@ class PreinvoiceController extends Controller
             'orders',
             'expiredOrders',
             'financeReapprovalInvoices',
+            'financeReapprovalChanges',
             'canFinanceApprove',
             'activeTab',
             'pendingCount',
@@ -469,11 +482,15 @@ class PreinvoiceController extends Controller
             ? max(0, now()->diffInSeconds($reservationExpiresAt, false))
             : 0;
         $showReservationTimer = ! $hasInvoice && (
-                (bool) $reservationExpiresAt
-                || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
-            );
-        $canEdit = $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
+            (bool) $reservationExpiresAt
+            || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+        );
+        $canEdit = $hasInvoice
+            ? $statusKey === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION
+                && (int) $invoice->effective_seller_id === (int) auth()->id()
+            : $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
         $primaryActionLabel = match (true) {
+            $canEdit && $hasInvoice => 'اصلاح فاکتور و ارسال مجدد',
             $canEdit && $statusKey === PreinvoiceOrder::STATUS_DRAFT => 'ادامه ویرایش',
             $canEdit && $statusKey === PreinvoiceOrder::STATUS_RETURNED_TO_SALES => 'اصلاح و ارسال مجدد',
             $canEdit && $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED => 'بررسی و ثبت مجدد',
@@ -481,9 +498,13 @@ class PreinvoiceController extends Controller
             default => 'مشاهده',
         };
         $viewUrl = $hasInvoice ? route('vouchers.sales.show', $invoice->uuid) : route('preinvoice.my.show', $order->uuid);
-        $editUrl = $canEdit ? route('preinvoice.draft.edit', $order->uuid) : null;
+        $editUrl = $canEdit
+            ? ($hasInvoice
+                ? route('preinvoice.my.invoice-correction.edit', $invoice->uuid)
+                : route('preinvoice.draft.edit', $order->uuid))
+            : null;
         $disabledReason = match (true) {
-            $hasInvoice => 'این پیش‌فاکتور دارای فاکتور مرتبط است و فقط به صورت خواندنی قابل مشاهده است.',
+            $hasInvoice => 'فاکتور در وضعیت فعلی قابل اصلاح توسط فروشنده نیست.',
             ! in_array((string) $order->status, [PreinvoiceOrder::STATUS_DRAFT, PreinvoiceOrder::STATUS_RETURNED_TO_SALES, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED], true) => 'وضعیت فعلی سند امکان ویرایش توسط فروشنده را نمی‌دهد.',
             ! $canEdit => 'شما مالک این پیش‌فاکتور نیستید یا مجوز ویرایش آن را ندارید.',
             default => null,
@@ -626,14 +647,14 @@ class PreinvoiceController extends Controller
 
         if ($hasInvoice && $statusKey === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION) {
             return [
-                'label' => 'نیاز به بررسی',
-                'reason' => 'بازگشت بعد از جمع‌آوری',
-                'message' => 'این فاکتور پس از اصلاحات انبار برای بررسی بازگردانده شده است.',
+                'label' => 'نیازمند اصلاح و ثبت نهایی',
+                'reason' => 'ارجاع مالی پس از جمع‌آوری',
+                'message' => 'این فاکتور از مالی ارجاع شده است. آن را بررسی کنید و پس از اصلاح یا تأیید بدون تغییر، برای تأیید مجدد مالی بفرستید.',
                 'by' => $invoice?->statusChangedByUser?->name,
                 'at' => $invoice?->status_changed_at ?: $invoice?->updated_at,
                 'return_reason' => $invoice?->collection_note ?: null,
                 'note' => $invoice?->collection_note ?: null,
-                'unit' => 'انبار',
+                'unit' => 'مالی',
             ];
         }
 
@@ -667,7 +688,7 @@ class PreinvoiceController extends Controller
     private function myPreinvoiceNextActionLabel(bool $hasInvoice, string $status): string
     {
         if ($hasInvoice) {
-            return $status === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION ? 'مشاهده و پیگیری ارجاع' : 'مشاهده فاکتور فقط‌خواندنی';
+            return $status === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION ? 'اصلاح و ثبت نهایی برای تأیید مجدد مالی' : 'مشاهده فاکتور فقط‌خواندنی';
         }
 
         return match ($status) {

@@ -247,7 +247,7 @@
             </div>
             <div class="col-md-4">
               <label class="form-label">تاریخ پرداخت</label>
-              <input type="text" id="cashPaidAtInput" class="form-control" data-jdp data-jdp-only-date autocomplete="off" dir="ltr" placeholder="1405/01/15">
+              <input type="text" id="cashPaidAtInput" class="form-control" data-jdp data-jdp-only-date autocomplete="off" dir="ltr" value="{{ \Morilog\Jalali\Jalalian::fromCarbon(now())->format('Y/m/d') }}">
             </div>
             <div class="col-md-4">
               <label class="form-label">اسم بانک</label>
@@ -281,6 +281,13 @@
             <div class="col-md-6">
               <label class="form-label">تاریخ سررسید چک</label>
               <input type="text" id="chequeDueDateInput" class="form-control" data-jdp data-jdp-only-date autocomplete="off" dir="ltr" placeholder="1405/01/20">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">وضعیت چک</label>
+              <select id="chequeStatusInput" class="form-select">
+                <option value="unregistered">ثبت‌نشده</option>
+                <option value="registered">ثبت‌شده</option>
+              </select>
             </div>
             <div class="col-md-6">
               <label class="form-label">توضیحات اختیاری</label>
@@ -436,6 +443,7 @@
         paid_at: normalizeDate(document.getElementById('chequeReceivedAtInput').value),
         received_at: normalizeDate(document.getElementById('chequeReceivedAtInput').value),
         due_date: normalizeDate(document.getElementById('chequeDueDateInput').value),
+        cheque_status: document.getElementById('chequeStatusInput').value,
         cheque_number: (document.getElementById('chequeNumberInput').value || '').trim(),
         bank_name: (document.getElementById('chequeBankNameInput').value || '').trim(),
         note: (document.getElementById('chequeNoteInput').value || '').trim(),
@@ -450,9 +458,11 @@
 
     function clearModalFields() {
       paymentModalEl.querySelectorAll('input, textarea').forEach((el) => el.value = '');
+      document.getElementById('cashPaidAtInput').value = @json(\Morilog\Jalali\Jalalian::fromCarbon(now())->format('Y/m/d'));
       paymentModalError.classList.add('d-none');
       paymentModalError.textContent = '';
       paymentTypeInput.value = 'cash';
+      document.getElementById('chequeStatusInput').value = 'unregistered';
       togglePaymentTypeFields();
     }
 
@@ -473,6 +483,12 @@
     });
 
     paymentTypeInput.addEventListener('change', togglePaymentTypeFields);
+
+    paymentModalEl.querySelectorAll('input.money').forEach((input) => input.addEventListener('input', () => {
+      const digits = input.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+        .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
+      input.value = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }));
 
     document.getElementById('savePaymentBtn').addEventListener('click', () => {
       paymentModalError.classList.add('d-none');

@@ -14,6 +14,39 @@ class InvoiceEffectiveSellerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_invoice_live_seller_search_filters_rows_and_summary_by_displayed_seller(): void
+    {
+        $creator = $this->seller('Creator Alpha');
+        $preinvoiceSeller = $this->seller('Seller Beta');
+        $invoiceSeller = $this->seller('Seller Gamma');
+        $order = $this->preinvoice($creator, $preinvoiceSeller);
+        $assigned = $this->invoice($order, $invoiceSeller);
+        $fallback = $this->invoice($this->preinvoice($creator, $preinvoiceSeller), null);
+        $legacyOrder = $this->preinvoice($creator, $preinvoiceSeller);
+        $legacyOrder->update(['seller_id' => null]);
+        $legacy = $this->invoice($legacyOrder, null);
+        $this->actingAs($this->owner());
+
+        $this->get(route('invoices.index'))
+            ->assertOk()
+            ->assertSee('<select id="invoiceSellerSearch"', false)
+            ->assertSee('Seller Gamma');
+
+        foreach ([
+            [$invoiceSeller, $assigned, $fallback, $legacy],
+            [$preinvoiceSeller, $fallback, $assigned, $legacy],
+            [$creator, $legacy, $assigned, $fallback],
+        ] as [$seller, $included, $excludedOne, $excludedTwo]) {
+            $payload = $this->getJson(route('invoices.data', ['seller_id' => $seller->id, 'include_summary' => 1]))
+                ->assertOk()->json();
+            $this->assertStringContainsString($included->uuid, $payload['desktop_html']);
+            $this->assertStringNotContainsString($excludedOne->uuid, $payload['desktop_html']);
+            $this->assertStringNotContainsString($excludedTwo->uuid, $payload['desktop_html']);
+            $this->assertStringContainsString('1,000 ریال', $payload['summary_html']);
+            $this->assertSame((string) $seller->id, $payload['filters']['seller_id']);
+        }
+    }
+
     public function test_invoice_show_and_finance_report_use_transferred_seller_without_changing_creator(): void
     {
         $creator = $this->seller('Original creator');

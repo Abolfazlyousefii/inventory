@@ -8,6 +8,8 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\ShippingMethod;
+use App\Models\WarehouseStock;
 use App\Models\User;
 use App\Services\InventoryWebhookService;
 use App\Support\PermissionCatalog;
@@ -24,6 +26,7 @@ use App\Services\WarehouseStockService;
 use App\Services\CustomerLedgerService;
 use App\Services\NotificationService;
 use App\Services\SalesDocumentSellerReassignmentService;
+use App\Services\InvoiceSalesCorrectionService;
 use Carbon\Carbon;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Http\Request;
@@ -46,7 +49,105 @@ class InvoiceController extends Controller
         private readonly CustomerLedgerService $customerLedgerService,
         private readonly NotificationService $notificationService,
         private readonly SalesDocumentSellerReassignmentService $sellerReassignmentService,
+        private readonly InvoiceSalesCorrectionService $salesCorrectionService,
     ) {}
+
+    public function salesCorrectionEdit(string $uuid)
+    {
+        $invoice = Invoice::query()->with(['items.product', 'items.variant', 'preinvoiceOrder', 'payments'])
+            ->where('uuid', $uuid)->firstOrFail();
+        abort_unless($this->salesCorrectionService->canEdit($invoice, auth()->user()), 403);
+        $formItems = old('items');
+        if (! is_array($formItems)) {
+            $formItems = $invoice->items->map(fn ($item) => [
+                'id' => $item->id, 'product_id' => $item->product_id,
+                'variant_id' => $item->variant_id, 'quantity' => $item->quantity,
+                'price' => $item->price, 'line_discount_amount' => $item->line_discount_amount ?? 0,
+            ])->all();
+        }
+        $formItems = array_values($formItems);
+        $formVariants = ProductVariant::query()->with(['product', 'modelList'])
+            ->whereIn('id', collect($formItems)->pluck('variant_id')->filter()->all())
+            ->get()->keyBy('id');
+
+        return view('invoices.sales-correction', [
+            'invoice' => $invoice,
+            'formItems' => $formItems,
+            'formVariants' => $formVariants,
+            'openedFingerprint' => $this->salesCorrectionService->fingerprint($invoice),
+        ]);
+    }
+
+    public function salesCorrectionSearch(string $uuid, Request $request)
+    {
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        abort_unless($this->salesCorrectionService->canEdit($invoice, $request->user()), 403);
+        $data = $request->validate([
+            'kind' => ['required', Rule::in(['customers', 'products'])],
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+        ]);
+        $q = trim($data['q']);
+        if ($data['kind'] === 'customers') {
+            return response()->json(['items' => Customer::query()
+                ->where(fn ($query) => $query->where('first_name', 'like', "%{$q}%")
+                    ->orWhere('last_name', 'like', "%{$q}%")
+                    ->orWhere('mobile', 'like', "%{$q}%")
+                    ->orWhere('crm_customer_id', 'like', "%{$q}%"))
+                ->orderBy('id')->limit(20)->get()
+                ->map(fn (Customer $customer) => $this->customerSearchPayload($customer))]);
+        }
+
+        $variants = ProductVariant::query()->with('product:id,name,sku,code')
+            ->where('is_active', true)->where('sales_enabled', true)
+            ->whereHas('product', fn ($query) => $query->where('is_sellable', true))
+            ->where(fn ($query) => $query->where('variant_name', 'like', "%{$q}%")
+                ->orWhere('variant_code', 'like', "%{$q}%")
+                ->orWhereHas('product', fn ($product) => $product->where('name', 'like', "%{$q}%")
+                    ->orWhere('sku', 'like', "%{$q}%")
+                    ->orWhere('code', 'like', "%{$q}%")))
+            ->orderBy('id')->limit(30)->get();
+        $stock = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->whereIn('product_variant_id', $variants->pluck('id'))
+            ->pluck('quantity', 'product_variant_id');
+
+        return response()->json(['items' => $variants->map(fn (ProductVariant $variant) => [
+            'product_id' => (int) $variant->product_id,
+            'variant_id' => (int) $variant->id,
+            'title' => trim(($variant->product?->name ?? 'کالا').' / '.($variant->variant_name ?: $variant->variety_name ?: $variant->id)),
+            'code' => $variant->variant_code ?: $variant->variety_code,
+            'price' => (int) $variant->sell_price,
+            'available' => max(0, (int) ($stock[$variant->id] ?? 0)),
+        ])]);
+    }
+
+    public function salesCorrectionSubmit(string $uuid, Request $request)
+    {
+        $data = $request->validate([
+            // Seller corrections may only change items and discounts. Customer, sale mode, shipping,
+            // address and payment terms are not accepted here; the service keeps their current values.
+            'opened_fingerprint' => ['required', 'string', 'size:64'],
+            'invoice_discount_type' => ['required', Rule::in(['amount', 'percent'])],
+            'invoice_discount_value' => ['required', 'integer', 'min:0'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['nullable', 'integer', 'exists:invoice_items,id'],
+            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.variant_id' => ['required', 'integer', 'exists:product_variants,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:0'],
+            'items.*.price' => ['required', 'integer', 'min:1'],
+            'items.*.line_discount_amount' => ['required', 'integer', 'min:0'],
+            'change_note' => ['required', 'string', 'max:2000'],
+        ]);
+        if ($data['invoice_discount_type'] === 'percent' && (int) $data['invoice_discount_value'] > 100) {
+            throw ValidationException::withMessages(['invoice_discount_value' => 'درصد تخفیف باید بین صفر تا صد باشد.']);
+        }
+        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
+        $invoice = $this->salesCorrectionService->submit($invoice, $request->user(), $data);
+        $this->notifyFinanceReapproval($invoice);
+
+        return redirect()->route('preinvoice.my.index', ['tab' => 'active'])
+            ->with('success', 'اصلاحات فاکتور ثبت نهایی شد و برای تأیید مجدد مالی ارسال شد.');
+    }
 
     public function index(Request $request)
     {
@@ -59,13 +160,13 @@ class InvoiceController extends Controller
             'initialFilters' => [
                 'order_code' => InvoiceLiveFilterRequest::normalizeDigits(trim((string) $request->query('order_code', ''))),
                 'customer_id' => $customer?->id,
+                'seller_id' => InvoiceLiveFilterRequest::normalizeDigits(trim((string) $request->query('seller_id', ''))),
                 'date_from' => trim((string) $request->query('date_from', '')),
                 'date_to' => trim((string) $request->query('date_to', '')),
                 'quick_range' => trim((string) $request->query('quick_range', '')),
             ],
             'canViewCancelled' => PermissionCatalog::userHasPermission($request->user(), 'invoices.cancel'),
-            'canReassignSeller' => $this->canReassignSeller($request->user()),
-            'sellers' => $this->canReassignSeller($request->user()) ? User::activeSellers()->orderBy('name')->get(['id', 'name']) : collect(),
+            'filterUsers' => User::query()->where('can_access_erp', true)->orderBy('name')->get(['id', 'name']),
         ]);
 
         /* Legacy report implementation retained below temporarily for reference. */
@@ -194,7 +295,7 @@ class InvoiceController extends Controller
         foreach ($paginator->items() as $invoice) {
             $invoice->setAttribute('live_meta', $this->invoiceLiveMeta($invoice, $permissions));
         }
-        $viewData = ['invoices' => collect($paginator->items()), 'canReassignSeller' => $this->canReassignSeller($request->user())];
+        $viewData = ['invoices' => collect($paginator->items())];
 
         $effectiveDateFrom = $dateFrom ? Jalalian::fromCarbon($dateFrom)->format('Y/m/d') : ($filters['date_from'] ?? null);
         $effectiveDateTo = $dateTo ? Jalalian::fromCarbon($dateTo)->format('Y/m/d') : ($filters['date_to'] ?? null);
@@ -208,6 +309,7 @@ class InvoiceController extends Controller
             'filters' => array_filter([
                 'order_code' => $orderCode,
                 'customer_id' => $filters['customer_id'] ?? null,
+                'seller_id' => $filters['seller_id'] ?? null,
                 'date_from' => $effectiveDateFrom,
                 'date_to' => $effectiveDateTo,
                 'quick_range' => $filters['quick_range'] ?? null,
@@ -687,8 +789,8 @@ class InvoiceController extends Controller
             $this->warehouseCollectionServiceHistory($invoice, 'finance_returned_to_sales', Invoice::STATUS_PENDING_FINANCE_REAPPROVAL, Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION, trim($data['reason'] . (!empty($data['note']) ? ' - ' . $data['note'] : '')));
             return $invoice;
         });
-        if ($invoice->preinvoiceOrder?->created_by) {
-            $this->notificationService->notifyUserAfterCommit((int) $invoice->preinvoiceOrder->created_by, 'invoice_returned_to_sales_after_collection', 'فاکتور برای بررسی به شما ارجاع شد', 'فاکتور پس از حذف و اضافه انبار توسط مالی برای بررسی به شما ارجاع شد.', route('vouchers.sales.show', $invoice->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_returned_to_sales:' . $invoice->id]);
+        if ($invoice->effective_seller_id) {
+            $this->notificationService->notifyUserAfterCommit((int) $invoice->effective_seller_id, 'invoice_returned_to_sales_after_collection', 'فاکتور برای اصلاح به شما ارجاع شد', 'فاکتور شماره «' . $invoice->uuid . '» توسط مالی برای بررسی و اصلاح به شما ارجاع شد.', route('preinvoice.my.invoice-correction.edit', $invoice->uuid), ['level' => 'warning', 'priority' => 'urgent', 'data' => ['document_type' => 'فاکتور'], 'notifiable_type' => Invoice::class, 'notifiable_id' => $invoice->id, 'unique_key' => 'invoice_returned_to_sales:' . $invoice->id]);
         }
         return redirect()->route('preinvoice.draft.index')->with('success', 'فاکتور برای بررسی به اپراتور ارجاع شد.');
     }
@@ -1052,6 +1154,9 @@ class InvoiceController extends Controller
 
         if (($filters['customer_id'] ?? null) !== null) {
             $query->where('invoices.customer_id', (int) $filters['customer_id']);
+        }
+        if (! empty($filters['seller_id'])) {
+            $query->whereRaw('COALESCE(invoices.seller_id, (select COALESCE(preinvoice_orders.seller_id, preinvoice_orders.created_by) from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id)) = ?', [(int) $filters['seller_id']]);
         }
         if ($dateFrom) {
             $query->where('invoices.created_at', '>=', $dateFrom->copy()->startOfDay());
