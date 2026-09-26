@@ -31,6 +31,7 @@ class WarehouseCollectionService
             }
 
             $this->assertStatus($invoice, [
+                Invoice::STATUS_PENDING_COLLECTION,
                 Invoice::STATUS_WAREHOUSE_RECEIVED,
                 Invoice::STATUS_COLLECTING,
                 Invoice::STATUS_READY_TO_SHIP,
@@ -318,11 +319,11 @@ class WarehouseCollectionService
         return (int) $revisionId;
     }
 
-    public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, bool $canEditPrices = false, ?string $reason = null, ?string $note = null): Invoice
+    public function updateInvoiceItemsInPlace(Invoice $invoice, array $items, User $user, bool $canEditPrices = false, ?string $reason = null, ?string $note = null, bool $deferLedgerSync = false): Invoice
     {
         $webhookPayload = null;
 
-        $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $canEditPrices, $reason, $note, &$webhookPayload) {
+        $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $canEditPrices, $reason, $note, $deferLedgerSync, &$webhookPayload) {
             $invoice = Invoice::query()
                 ->with(['items.product', 'items.variant', 'payments', 'customer'])
                 ->whereKey($invoice->id)
@@ -603,7 +604,7 @@ class WarehouseCollectionService
 
             // Material item/price changes require Finance approval before they
             // affect the customer's ledger. Non-reapproval edits may still sync.
-            if (! $needsFinanceReapproval) {
+            if (! $needsFinanceReapproval && ! $deferLedgerSync) {
                 $this->customerLedgerService->syncInvoiceDebit($invoice->fresh());
             }
 

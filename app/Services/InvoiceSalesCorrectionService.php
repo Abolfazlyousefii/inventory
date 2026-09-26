@@ -58,6 +58,10 @@ class InvoiceSalesCorrectionService
             // the dispatch queue), whatever the request contains.
             $oldTotal = (int) $invoice->total;
             $before = $invoice->items->map(fn (InvoiceItem $item) => clone $item);
+            $revisionTableExists = DB::getSchemaBuilder()->hasTable('invoice_collection_revisions');
+            $previousRevisionId = $revisionTableExists
+                ? (int) DB::table('invoice_collection_revisions')->where('invoice_id', $invoice->id)->max('id')
+                : 0;
             $oldHeader = [
                 'discount_type' => (string) ($invoice->invoice_discount_type ?: 'amount'),
                 'discount_value' => (string) (int) ($invoice->invoice_discount_value ?? $invoice->invoice_discount_amount ?? 0),
@@ -82,7 +86,7 @@ class InvoiceSalesCorrectionService
             ]);
 
             $invoice = $this->collection->updateInvoiceItemsInPlace(
-                $invoice, $items, $user, true, 'seller_finance_correction', $note
+                $invoice, $items, $user, true, 'seller_finance_correction', $note, true
             );
             $invoice->refresh()->load(['items.product', 'items.variant', 'preinvoiceOrder']);
             if (SalesDocumentTotals::integrityIssues($invoice) !== []) {
@@ -105,10 +109,14 @@ class InvoiceSalesCorrectionService
                     $oldValue, $newHeader[$field], $labels[$field], $user->id,
                 );
             }
-            $this->revisions->record(
-                $invoice, $before, $invoice->items, $oldTotal, (int) $invoice->total,
-                'seller_finance_correction', $note, (int) $user->id,
-            );
+            $collectionRecordedRevision = $revisionTableExists
+                && (int) DB::table('invoice_collection_revisions')->where('invoice_id', $invoice->id)->max('id') > $previousRevisionId;
+            if (! $collectionRecordedRevision && ($oldHeader !== $newHeader || $oldTotal !== (int) $invoice->total)) {
+                $this->revisions->record(
+                    $invoice, $before, $invoice->items, $oldTotal, (int) $invoice->total,
+                    'seller_finance_correction', $note, (int) $user->id,
+                );
+            }
             $invoice->update([
                 'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
                 'status_changed_at' => now(),

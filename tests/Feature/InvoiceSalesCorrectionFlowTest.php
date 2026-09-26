@@ -137,6 +137,22 @@ it('accepts a reviewed invoice without item changes and blocks non owners', func
         ->and((int) $f['invoice']->fresh()->total)->toBe(10000);
 });
 
+it('keeps the customer ledger unchanged until finance reviews a discount-only correction', function () {
+    $this->withoutMiddleware(RoutePermissionMiddleware::class);
+    $f = sellerCorrectionFixture();
+    app(CustomerLedgerService::class)->syncInvoiceDebit($f['invoice']);
+
+    $this->actingAs($f['seller'])->post(
+        route('preinvoice.my.invoice-correction.submit', $f['invoice']->uuid),
+        correctionPayload($f, ['invoice_discount_value' => 1000]),
+    )->assertRedirect()->assertSessionHasNoErrors();
+
+    expect((int) $f['invoice']->fresh()->total)->toBe(9000)
+        ->and($f['invoice']->fresh()->status)->toBe(Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
+        ->and((int) DB::table('customer_ledgers')->where('reference_type', Invoice::class)->where('reference_id', $f['invoice']->id)->value('amount'))->toBe(10000)
+        ->and(DB::table('invoice_collection_revisions')->where('invoice_id', $f['invoice']->id)->count())->toBe(1);
+});
+
 it('ignores customer, sale mode, shipping, address and payment terms posted by the seller', function () {
     $this->withoutMiddleware(RoutePermissionMiddleware::class);
     $f = sellerCorrectionFixture();
