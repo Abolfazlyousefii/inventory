@@ -115,14 +115,13 @@ class MySalesDocumentsService
         return self::TAB_ACTIVE;
     }
 
-    public function baseQuery(int $sellerId): Builder
+    public function baseQuery(int $sellerId, bool $includeAutosaves = false): Builder
     {
         $greatest = $this->greatestFunction();
         $invoiceActivitySql = "select {$greatest}(coalesce(invoices.updated_at, '1000-01-01'), coalesce(invoices.items_updated_at, '1000-01-01'), coalesce(invoices.shipped_at, '1000-01-01'), coalesce(invoices.status_changed_at, '1000-01-01')) from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1";
 
-        return PreinvoiceOrder::query()
+        $query = PreinvoiceOrder::query()
             ->createdBySeller($sellerId)
-            ->withoutTemporaryAutosaves()
             ->select('preinvoice_orders.*')
             ->selectSub("coalesce(($invoiceActivitySql), preinvoice_orders.updated_at)", 'activity_at')
             ->withCount('items')
@@ -138,8 +137,13 @@ class MySalesDocumentsService
                     ->withSum('payments as paid_total', 'amount')
                     ->with(['shippingMethod:id,name', 'statusChangedByUser:id,name']),
             ]);
-    }
 
+        if (! $includeAutosaves) {
+            $query->withoutTemporaryAutosaves();
+        }
+
+        return $query;
+    }
     public function applyFilters(Builder $query, array $filters, array $allowedStatuses): Builder
     {
         if ($filters['q'] !== '') {
@@ -203,7 +207,12 @@ class MySalesDocumentsService
     {
         $out = [];
         foreach ([self::TAB_ACTIVE, self::TAB_DRAFTS, self::TAB_SHIPPED, self::TAB_NEEDS_CORRECTION] as $tab) {
-            $out[$tab] = (clone $this->applyBucket($this->baseQuery($sellerId), $this->tabToBucket($tab)))->toBase()->getCountForPagination();
+            $bucket = $this->tabToBucket($tab);
+            $includeAutosaves = $bucket === self::BUCKET_DRAFT;
+            $out[$tab] = (clone $this->applyBucket(
+                $this->baseQuery($sellerId, $includeAutosaves),
+                $bucket
+            ))->toBase()->getCountForPagination();
         }
 
         return $out;
@@ -212,19 +221,24 @@ class MySalesDocumentsService
     public function paginate(int $sellerId, string $tab, array $filters): LengthAwarePaginator
     {
         $bucket = $this->tabToBucket($tab);
-        $query = $this->applyBucket($this->baseQuery($sellerId), $bucket);
+        $includeAutosaves = $bucket === self::BUCKET_DRAFT;
+        $query = $this->applyBucket($this->baseQuery($sellerId, $includeAutosaves), $bucket);
         $this->applyFilters($query, $filters, $this->bucketStatuses($bucket));
+
         if ($bucket === self::BUCKET_NEEDS_CORRECTION) {
             $greatest = $this->greatestFunction();
             $query->selectRaw("{$greatest}(coalesce((select invoices.status_changed_at from invoices where invoices.preinvoice_order_id = preinvoice_orders.id order by invoices.id desc limit 1), '1000-01-01'), coalesce(preinvoice_orders.stock_released_at, '1000-01-01'), coalesce(preinvoice_orders.items_updated_at, '1000-01-01'), coalesce(preinvoice_orders.updated_at, '1000-01-01')) as action_required_at")
                 ->orderByDesc('action_required_at');
+        } elseif ($bucket === self::BUCKET_DRAFT) {
+            // Show the most recently autosaved draft at the top; fall back to updated_at
+            // for true drafts (is_auto_draft = false) that have no auto_saved_at.
+            $query->orderByRaw('coalesce(preinvoice_orders.auto_saved_at, preinvoice_orders.updated_at) desc');
         } else {
             $query->orderByDesc('activity_at');
         }
 
         return $query->orderByDesc('preinvoice_orders.id')->paginate(20)->withQueryString();
     }
-
     private function greatestFunction(): string
     {
         return PreinvoiceOrder::query()->getConnection()->getDriverName() === 'sqlite' ? 'max' : 'greatest';

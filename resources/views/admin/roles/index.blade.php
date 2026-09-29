@@ -84,7 +84,7 @@
 			}
 
 			.roles-title {
-
+				color       : #16354f;
 				font-size   : 32px;
 
 				font-weight : 900;

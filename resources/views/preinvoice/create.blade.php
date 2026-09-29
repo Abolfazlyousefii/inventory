@@ -1949,9 +1949,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             throw error;
         }
         const {response: res, json} = result;
-        if (!res.ok || json?.ok === false) {
-            const message = Object.values(json?.errors || {}).flat().join('\n') || json?.message || 'خطا در فریز موجودی پیش‌فاکتور.';
-            const error = new Error(message);
+	    if (!res.ok || json?.ok === false) {
+		    console.warn('[preinvoice autosave]', res.status, json?.code, json?.message, json?.errors);
+			const error = new Error(message);
             error.itemErrors = json?.item_errors || [];
             if (error.itemErrors.length) showReservationItemErrors(error.itemErrors);
             throw error;
@@ -2371,11 +2371,11 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         let result;
         try {
             result = await send();
-            if (result.json?.code === 'snapshot_reduction' && explicitlyConfirmed &&
-                signature === confirmedAutosavePayload && signature === JSON.stringify(collectAutosavePayload())) {
-                payload.confirmation_token = result.json.confirmation_token;
-                result = await send();
-            }
+	        if (result.json?.code === 'snapshot_reduction' && explicitlyConfirmed &&
+		        signature === confirmedAutosavePayload && signature === JSON.stringify(collectAutosavePayload())) {
+		        payload.confirmation_token = result.json.confirmation_token;
+		        result = await send();
+	        }
         } catch (error) {
             autosaveDirty = true;
             throw error;
@@ -2407,12 +2407,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
     }
 
     function scheduleDbAutosave(delay = 1500) {
-        if (IS_EDIT || isSubmittingProgrammatically) return;
-        autosaveDirty = true;
-        clearTimeout(autosaveTimer);
-        autosaveTimer = setTimeout(() => {
-            saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
-        }, delay);
+	    if (IS_EDIT || isSubmittingProgrammatically) return;
+	    autosaveDirty = true;
+	    clearTimeout(autosaveTimer);
+	    autosaveTimer = setTimeout(() => {
+		    // NEW: treat the timer as an intentional save so snapshot-reduction
+		    // guards don't reject a legitimate user edit (removing a row,
+		    // reducing quantity, shortening a note, etc.).
+		    try { confirmAutosaveChanges(); } catch (e) {}
+		    saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
+	    }, delay);
     }
 
     function saveLocalDraftNow() {
@@ -2705,9 +2709,13 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         window.addEventListener('pagehide', releaseTokenWithBeacon);
         window.addEventListener('beforeunload', releaseTokenWithBeacon);
         startReservationHeartbeat();
-        setInterval(() => {
-            if (autosaveDirty) saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
-        }, 30000);
+	    setInterval(() => {
+		    if (autosaveDirty) {
+			    // NEW: same reason as above.
+			    try { confirmAutosaveChanges(); } catch (e) {}
+			    saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
+		    }
+	    }, 30000);
     }
 
     function releaseTokenWithBeacon() {
