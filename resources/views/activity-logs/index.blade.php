@@ -42,43 +42,60 @@
 			/* Table */
 
 			.table-responsive {
-
 				border-radius: 18px;
-				overflow-x:auto;
-
+				overflow-x: auto;
 			}
-
 
 			#activity-logs-table {
-
-				margin-bottom:0 !important;
-
+				margin-bottom: 0 !important;
+				table-layout: auto !important;
+				width: 100% !important;
+				min-width: max-content !important;
 			}
 
-
-			#activity-logs-table thead th {
-
-				padding:16px 18px;
-				white-space:nowrap;
-				text-align:center;
-				vertical-align:middle;
-
-			}
-
-
+			/* Cells wrap inside their own column — long text stays in its cell */
+			#activity-logs-table thead th,
 			#activity-logs-table tbody td {
-
-				padding:15px 18px;
-				vertical-align:middle;
-				text-align:center;
-
+				padding: 16px 18px;
+				text-align: center;
+				vertical-align: middle;
+				white-space: normal !important;   /* allow wrapping */
+				word-break: break-word;
 			}
 
+			/* Badges / pills should stay on a single line */
+			#activity-logs-table .badge {
+				white-space: nowrap !important;
+			}
 
 			#activity-logs-table tbody tr:last-child td {
+				border-bottom: none;
+			}
 
-				border-bottom:none;
+			/* Keep the cloned header and body tables in sync */
+			.dt-scroll-head table,
+			.dt-scroll-body table {
+				table-layout: auto !important;
+				margin: 0 !important;
+			}
 
+			.dt-scroll-head {
+				overflow: hidden !important;
+			}
+
+			.dt-scroll {
+				overflow-x: auto !important;
+				overflow-y: hidden !important;
+				-webkit-overflow-scrolling: touch;
+			}
+
+			.dt-scroll-body > table > thead {
+				display: none !important;
+			}
+
+			.dt-scroll-head > table > thead {
+				display: table-header-group !important;
+				visibility: visible !important;
 			}
 
 
@@ -137,6 +154,9 @@
 
 			@media(max-width:768px){
 
+				#activity-logs-table {
+					min-width:900px;
+				}
 
 				.card-body {
 
@@ -361,6 +381,9 @@
 						processing:true,
 						serverSide:true,
 						searching: false,
+						scrollX: true,
+						scrollCollapse: true,
+						autoWidth: true,
 
 						language: {
 							search: "جستجو:",

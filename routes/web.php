@@ -651,6 +651,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Users (External CRM)
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
     Route::post('/users/sync', [UserController::class, 'sync'])->name('users.sync');
+    Route::patch('/users/{user}/status', [UserController::class, 'updateStatus'])
+        ->name('users.status.update');
 
     Route::prefix('admin/bug-investigator')->name('admin.bug-investigator.')->group(function () {
         Route::get('/', [BugInvestigatorController::class, 'index'])->name('index');

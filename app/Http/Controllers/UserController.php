@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\DataTables\UserDataTable;
 use App\Services\CrmUserService;
 use Illuminate\Http\Request;
+use App\Models\User;
 
 class UserController extends Controller
 {
@@ -40,5 +41,22 @@ class UserController extends Controller
                     $result['deactivated_count'] ?? 0
                 )
             );
+    }
+
+    public function updateStatus(Request $request, User $user)
+    {
+        $data = $request->validate([
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $user->update([
+            'is_active' => $data['is_active'],
+            'can_access_erp' => $data['is_active'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'وضعیت کاربر تغییر کرد.',
+        ]);
     }
 }
