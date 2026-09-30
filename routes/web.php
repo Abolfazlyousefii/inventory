@@ -35,6 +35,8 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductDeactivationDocumentController;
 use App\Http\Controllers\ProductSalesStatusBulkController;
 use App\Http\Controllers\ProductExportController;
+use App\Http\Controllers\ProductExportBuilderController;
+use App\Http\Controllers\ProductSelectionExportController;
 use App\Http\Controllers\ProductPurchaseLedgerController;
 use App\Http\Controllers\ProductSalesLedgerController;
 use App\Http\Controllers\ProfileController;
@@ -160,6 +162,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
+    Route::post('/products/selected-export', ProductSelectionExportController::class)
+        ->middleware('route.permission:products.export')->name('products.selected-export');
     Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
@@ -194,9 +198,13 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/pricelist', [ProductController::class, 'priceList'])->name('products.pricelist');
 
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
-        Route::get('/', [ProductExportController::class, 'index'])->name('index');
+        Route::get('/', [ProductExportBuilderController::class, 'index'])->name('index');
+        Route::get('/builder/products', [ProductExportBuilderController::class, 'products'])->name('builder.products');
+        Route::post('/builder/print', [ProductExportBuilderController::class, 'print'])->name('builder.print');
+        Route::post('/builder/preview', [ProductExportBuilderController::class, 'preview'])->name('builder.preview');
         Route::get('/data', [ProductExportController::class, 'filter'])->name('data');
         Route::get('/print', [ProductExportController::class, 'print'])->name('print');
+        Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
         Route::get('/download', [ProductExportController::class, 'download'])->name('download');
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
         Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->name('products.search');

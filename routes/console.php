@@ -19,6 +19,17 @@ Schedule::command('reservations:cleanup')
         Log::error('WAREHOUSE_RESERVATION_CLEANUP_SCHEDULE_FAILED');
     });
 
+// Official (submitted) preinvoice reservations expire at stock_frozen_until. Without this
+// schedule they only expired when the seller opened "my preinvoices", so an overdue
+// preinvoice disappeared from the finance queue while its stock stayed reserved.
+Schedule::command('preinvoices:expire-reservations')
+    ->name('preinvoice-official-reservation-expiry')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->onFailure(function (): void {
+        Log::error('PREINVOICE_OFFICIAL_RESERVATION_EXPIRY_SCHEDULE_FAILED');
+    });
+
 Schedule::call(function () {
     app(SyncProductsToSite::class)->syncAll();
 })
