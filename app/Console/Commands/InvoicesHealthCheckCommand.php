@@ -36,7 +36,7 @@ class InvoicesHealthCheckCommand extends Command
 
         $mismatched = Invoice::query()
             ->with('items:id,invoice_id,quantity,price,line_discount_amount')
-            ->get(['id', 'uuid', 'subtotal', 'discount_amount', 'total'])
+            ->get(['id', 'uuid', 'subtotal', 'discount_amount', 'total', 'shipping_price', 'invoice_discount_amount', 'product_discount_amount', 'discount_allocation_mode'])
             ->filter(fn (Invoice $invoice) => $invoice->hasTotalMismatch());
         $this->line('4) فاکتورهای دارای مغایرت مبلغ: ' . $mismatched->count());
         $mismatched->take(20)->each(fn (Invoice $invoice) => $this->warn("   {$invoice->uuid}"));

@@ -8,12 +8,12 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\WarehouseStock;
+use App\Services\NotificationService;
 use App\Support\ActivityLogger;
 use App\Support\ReservationSideEffects;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use App\Services\NotificationService;
 
 class PreinvoiceReservationService
 {
@@ -304,14 +304,14 @@ class PreinvoiceReservationService
 
     public function adjustOfficialReservationDelta(PreinvoiceOrder $order, $item, int $delta, ?User $actor = null): void
     {
-        ReservationSideEffects::run(function () use ($order, $item, $delta, $actor) {    
+        ReservationSideEffects::run(function () use ($order, $item, $delta, $actor) {
             if ($delta === 0) {
                 return;
             }
-    
+
             $productId = (int) $item->product_id;
             $variantId = (int) $item->variant_id;
-    
+
             if ($delta > 0) {
                 $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
                 $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $productId, $variantId);
@@ -321,9 +321,9 @@ class PreinvoiceReservationService
                         'items.' . $item->id . '.quantity' => "موجودی کافی نیست. کالا: {$name} | موجودی آزاد: {$available} | مقدار درخواستی اضافه: {$delta}",
                     ]);
                 }
-    
+
                 WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
-    
+
                 PreinvoiceDraftReservation::query()->create([
                     'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
                     'user_id' => $actor?->id,
@@ -339,7 +339,7 @@ class PreinvoiceReservationService
                 ReservationSideEffects::touchProduct($productId);
                 return;
             }
-    
+
             $remaining = abs($delta);
             $reservations = PreinvoiceDraftReservation::query()
                 ->where('preinvoice_order_id', $order->id)
@@ -352,7 +352,7 @@ class PreinvoiceReservationService
                 ->lockForUpdate()
                 ->orderByDesc('id')
                 ->get();
-    
+
             foreach ($reservations as $reservation) {
                 if ($remaining <= 0) {
                     break;
@@ -382,7 +382,7 @@ class PreinvoiceReservationService
                 }
                 $remaining -= $take;
             }
-    
+
             if ($remaining > 0) {
                 throw ValidationException::withMessages(['items.' . $item->id . '.quantity' => 'رزرو کافی برای آزادسازی کاهش تعداد وجود ندارد.']);
             }
@@ -399,7 +399,7 @@ class PreinvoiceReservationService
         return (bool) ($this->expirePreinvoiceReservations($order, null)['expired'] ?? false);
     }
 
-    public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null): void
+    public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null, bool $allowReviewing = false): void
     {
         if (in_array($order->status, [
             PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
@@ -411,10 +411,9 @@ class PreinvoiceReservationService
             throw ValidationException::withMessages(['preinvoice' => $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED ? $this->expiredMessage() : 'این پیش‌فاکتور در وضعیت مجاز برای تایید مالی نیست.']);
         }
 
-        if (! in_array($order->status, [
-            PreinvoiceOrder::STATUS_PENDING_FINANCE,
-            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
-        ], true)) {
+        $allowedStatuses = [PreinvoiceOrder::STATUS_PENDING_FINANCE, PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE];
+        if ($allowReviewing) $allowedStatuses[] = PreinvoiceOrder::STATUS_FINANCE_REVIEWING;
+        if (! in_array($order->status, $allowedStatuses, true)) {
             throw ValidationException::withMessages(['preinvoice' => 'این پیش‌فاکتور در صف مالی نیست.']);
         }
 
@@ -433,8 +432,8 @@ class PreinvoiceReservationService
 
         $isVip = $activeReservations->contains(fn (PreinvoiceDraftReservation $reservation) => $reservation->reservation_tier === 'vip');
         $expired = ! $isVip && $activeReservations
-            ->filter(fn (PreinvoiceDraftReservation $reservation) => $reservation->expires_at !== null && $reservation->expires_at->lte(now()))
-            ->isNotEmpty();
+                ->filter(fn (PreinvoiceDraftReservation $reservation) => $reservation->expires_at !== null && $reservation->expires_at->lte(now()))
+                ->isNotEmpty();
 
         if ($expired) {
             $this->expirePreinvoiceReservations($order, $actor);

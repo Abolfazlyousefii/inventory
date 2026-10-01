@@ -127,18 +127,18 @@ class PreinvoiceApiController extends Controller
 
         if ($editOrderUuid !== '' && auth()->check()) {
             $currentPreinvoiceItemVariantIds = PreinvoiceOrder::query()
-                ->where('uuid', $editOrderUuid)
-                ->whereHas('items', fn ($query) => $query->where('product_id', $product->id))
-                ->with(['items' => fn ($query) => $query
-                    ->select(['id', 'preinvoice_order_id', 'product_id', 'variant_id'])
-                    ->where('product_id', $product->id)])
-                ->first()?->items
-                ->pluck('variant_id')
-                ->filter()
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->values()
-                ->all() ?? [];
+                                                   ->where('uuid', $editOrderUuid)
+                                                   ->whereHas('items', fn ($query) => $query->where('product_id', $product->id))
+                                                   ->with(['items' => fn ($query) => $query
+                                                       ->select(['id', 'preinvoice_order_id', 'product_id', 'variant_id'])
+                                                       ->where('product_id', $product->id)])
+                                                   ->first()?->items
+                                                   ->pluck('variant_id')
+                                                   ->filter()
+                                                   ->map(fn ($id) => (int) $id)
+                                                   ->unique()
+                                                   ->values()
+                                                   ->all() ?? [];
         }
 
         abort_unless((bool) $product->is_sellable || ! empty($currentPreinvoiceItemVariantIds), 404);
@@ -276,7 +276,12 @@ class PreinvoiceApiController extends Controller
             $errors = $exception->errors();
             $itemErrors = $errors['item_errors'] ?? [];
             unset($errors['item_errors']);
-            return response()->json(['ok' => false, 'message' => 'موجودی یک یا چند قلم برای رزرو کافی نیست.', 'errors' => $errors, 'item_errors' => $itemErrors], 422);
+            return response()->json([
+                'ok' => false,
+                'message' => collect($errors)->flatten()->first() ?: 'امکان همگام‌سازی وضعیت پیش‌نویس وجود ندارد.',
+                'errors' => $errors,
+                'item_errors' => $itemErrors,
+            ], 422);
         }
 
         return response()->json([

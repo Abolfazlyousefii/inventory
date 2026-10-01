@@ -28,6 +28,7 @@ class PreinvoiceAutosaveRequest extends FormRequest
         return [
             'draft_uuid' => ['nullable', 'string', 'max:100'],
             'base_version' => ['required_with:draft_uuid', 'nullable', 'string', 'size:64'],
+            'edit_existing_draft' => ['sometimes', 'boolean'],
             'reservation_token' => ['required', 'uuid'],
             'action' => ['sometimes', 'in:autosave,confirm_changes'],
             'confirmation_token' => ['nullable', 'string', 'size:64'],

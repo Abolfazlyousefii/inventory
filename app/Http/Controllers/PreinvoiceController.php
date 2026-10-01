@@ -482,12 +482,12 @@ class PreinvoiceController extends Controller
             ? max(0, now()->diffInSeconds($reservationExpiresAt, false))
             : 0;
         $showReservationTimer = ! $hasInvoice && (
-            (bool) $reservationExpiresAt
-            || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
-        );
+                (bool) $reservationExpiresAt
+                || $statusKey === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+            );
         $canEdit = $hasInvoice
             ? $statusKey === Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION
-                && (int) $invoice->effective_seller_id === (int) auth()->id()
+              && (int) $invoice->effective_seller_id === (int) auth()->id()
             : $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
         $primaryActionLabel = match (true) {
             $canEdit && $hasInvoice => 'اصلاح فاکتور و ارسال مجدد',
@@ -753,20 +753,47 @@ class PreinvoiceController extends Controller
     public function autosave(PreinvoiceAutosaveRequest $request)
     {
         $validated = $request->validated();
-        $order = DB::transaction(function () use ($validated) {
+        $editingExistingDraft = (bool) ($validated['edit_existing_draft'] ?? false);
+        if ($editingExistingDraft && empty($validated['draft_uuid'])) {
+            throw ValidationException::withMessages([
+                'draft_uuid' => 'شناسه پیش‌نویس برای ذخیره خودکار الزامی است.',
+            ]);
+        }
+
+        $order = ReservationSideEffects::transaction(function () use ($validated, $editingExistingDraft) {
             // Serialize first saves too: there may not yet be a draft row to lock.
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $order = null;
             if (! empty($validated['draft_uuid'])) {
-                $order = PreinvoiceOrder::query()
+                $query = PreinvoiceOrder::query()
                     ->where('uuid', $validated['draft_uuid'])
                     ->where('created_by', auth()->id())
-                    ->where('status', PreinvoiceOrder::STATUS_DRAFT)
-                    ->where('is_auto_draft', true)
-                    ->lockForUpdate()
-                    ->first();
+                    ->where('status', PreinvoiceOrder::STATUS_DRAFT);
+
+                if (! $editingExistingDraft) {
+                    $query->where('is_auto_draft', true);
+                }
+
+                $order = $query->lockForUpdate()->first();
 
                 abort_unless($order, 409, 'پیش‌نویس دیگر قابل ذخیره خودکار نیست؛ نسخه ذخیره‌شده را بازیابی کنید.');
+
+                if ($editingExistingDraft) {
+                    $hasInvoice = $order->invoice()->exists();
+                    $hasOfficialReservation = PreinvoiceDraftReservation::query()
+                        ->where('preinvoice_order_id', $order->id)
+                        ->where('reservation_scope', 'official')
+                        ->whereNull('released_at')
+                        ->whereNull('release_reason')
+                        ->where('quantity', '>', 0)
+                        ->exists();
+
+                    if ($hasInvoice || $hasOfficialReservation) {
+                        throw ValidationException::withMessages([
+                            'preinvoice' => 'این سند دیگر یک پیش‌نویس عادی بدون رزرو رسمی نیست و ذخیره خودکار روی آن انجام نشد.',
+                        ]);
+                    }
+                }
             }
 
             if (! $order) {
@@ -788,6 +815,8 @@ class PreinvoiceController extends Controller
                     ], 409));
                 }
             }
+
+            $previousDraftToken = (string) ($order?->draft_token ?? '');
 
             // Omitted optional fields are not instructions to erase existing data.
             $suppliedFields = array_keys($validated);
@@ -820,7 +849,7 @@ class PreinvoiceController extends Controller
                 'invoice_discount_value' => (int) ($validated['invoice_discount_value'] ?? 0),
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
-                'is_auto_draft' => true,
+                'is_auto_draft' => $order ? (bool) $order->is_auto_draft : true,
                 'auto_saved_at' => now(),
                 'draft_token' => $validated['reservation_token'] ?? null,
             ];
@@ -832,22 +861,41 @@ class PreinvoiceController extends Controller
             }
 
             $candidateTotal = $this->autosaveCandidateTotal($validated, (int) $attrs['shipping_price']);
-            if ($order) {
+            if ($order && ! $editingExistingDraft) {
                 $this->guardAutosaveSnapshot($order, $validated, $attrs, $candidateTotal);
             }
 
             if (! $order) {
                 $order = PreinvoiceOrder::create($attrs + [
                         'uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class),
-                        'total_price' => 0,
+                        'total_price' => $candidateTotal,
                     ]);
             } else {
-                $order->update($attrs + ['total_price' => 0]);
+                $order->update($attrs + ['total_price' => $candidateTotal]);
             }
 
-            $order->items()->delete();
-            $this->syncItems($order, $validated['products'] ?? []);
+            $reservationResult = $this->draftReservationService->syncReservationRows(
+                (string) $validated['reservation_token'], (int) auth()->id(),
+                $validated['products'] ?? [], (bool) ($validated['is_in_person'] ?? false)
+            );
+            if (!empty($reservationResult['skipped'])) {
+                throw ValidationException::withMessages(['products' => 'توکن پیش‌نویس به سند دیگری متصل است؛ سند را دوباره باز کنید.']);
+            }
+            if ($previousDraftToken !== '' && $previousDraftToken !== (string) $validated['reservation_token']) {
+                $this->releaseTemporaryDraftTokens(
+                    [$previousDraftToken],
+                    'draft_no_reservation',
+                    'توکن قبلی پیش‌نویس هنگام ذخیره خودکار آزاد شد.'
+                );
+            }
+            $existingItems = $order->items()->get()->keyBy(fn ($item) => $item->product_id.':'.$item->variant_id);
+            $products = array_map(function ($row) use ($existingItems) {
+                $row['item_id'] = $existingItems->get($row['id'].':'.$row['variety_id'])?->id;
+                return $row;
+            }, $validated['products'] ?? []);
+            $this->syncItems($order, $products, true);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
+            $order->update(['total_price' => $this->calculateOrderTotal($order->fresh('items'))]);
 
             return $order->fresh('items.product', 'items.variant');
         });
@@ -976,6 +1024,58 @@ class PreinvoiceController extends Controller
         ]]);
     }
 
+    public function deleteMyDraft(string $uuid, Request $request)
+    {
+        abort_unless(auth()->check(), 403);
+        // This project's global CSRF exceptions include all paths. Protect this destructive action explicitly.
+        abort_unless($request->hasSession() && $request->session()->token()
+                     && hash_equals((string) $request->session()->token(), (string) $request->input('_token')), 419);
+
+        ReservationSideEffects::transaction(function () use ($uuid) {
+            auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
+            $order = PreinvoiceOrder::query()->where('uuid', $uuid)
+                ->where('created_by', auth()->id())->lockForUpdate()->firstOrFail();
+            if ($order->status !== PreinvoiceOrder::STATUS_DRAFT || $order->invoice()->exists()) {
+                throw ValidationException::withMessages(['draft' => 'فقط پیش‌نویس شخصی بدون فاکتور قابل حذف است. وضعیت سند تغییر کرده است.']);
+            }
+            $token = (string) ($order->draft_token ?? '');
+            if ($token !== '') {
+                $foreignActive = PreinvoiceDraftReservation::query()->where('token', $token)
+                    ->whereNull('released_at')->whereNull('release_reason')
+                    ->where(function ($query) use ($order) {
+                        $query->where('user_id', '!=', auth()->id())->orWhereNull('user_id')
+                            ->orWhere(function ($linked) use ($order) {
+                                $linked->whereNotNull('preinvoice_order_id')->where('preinvoice_order_id', '!=', $order->id);
+                            });
+                    })->exists();
+                if ($foreignActive) {
+                    throw ValidationException::withMessages(['draft' => 'رزرو این پیش‌نویس به سند یا کاربر دیگری متصل است؛ حذف انجام نشد.']);
+                }
+            }
+            $this->reservationService->releaseOfficialReservationsForOrder(
+                $order, 'draft_discarded', 'حذف پیش‌نویس توسط صاحب سند.', auth()->user()
+            );
+            if ($token !== '') {
+                $this->draftReservationService->releaseTokenReservations(
+                    $token, (int) auth()->id(), 'draft_discarded', 'حذف پیش‌نویس از فهرست پیش‌نویس‌های من.'
+                );
+            }
+            $remaining = PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $order->id)
+                ->whereNull('released_at')->whereNull('release_reason')->where('quantity', '>', 0)->exists();
+            if ($remaining) {
+                throw ValidationException::withMessages(['draft' => 'رزرو فعال سند آزاد نشد؛ پیش‌نویس حذف نشد.']);
+            }
+            ActivityLogger::log('preinvoice_draft_deleted', $order, 'پیش‌نویس توسط صاحب سند حذف شد.', [
+                'uuid' => $order->uuid, 'created_by' => $order->created_by,
+                'items' => $order->items()->get()->map->getAttributes()->all(),
+            ]);
+            $order->items()->delete();
+            $order->delete();
+        });
+        return redirect()->route('preinvoice.my.index', ['tab' => 'drafts'])
+            ->with('success', 'پیش‌نویس حذف و موجودی رزروشده آن آزاد شد.');
+    }
+
     public function discardAutosave(string $uuid)
     {
         abort_unless(auth()->check(), 403);
@@ -1022,9 +1122,30 @@ class PreinvoiceController extends Controller
         return response()->json(['ok' => true] + $this->draftReservationService->releaseTokenReservations($token, (int) auth()->id(), 'temporary_session_lost', 'صفحه پیش‌فاکتور بسته یا رفرش شد؛ رزرو موقت آزاد شد.'));
     }
 
+    private function releaseTemporaryDraftTokens(array $tokens, string $reason, string $note): void
+    {
+        if (! auth()->check()) {
+            return;
+        }
+
+        foreach (array_values(array_unique(array_filter(array_map(
+            fn ($token) => trim((string) $token),
+            $tokens
+        )))) as $token) {
+            $this->draftReservationService->releaseTokenReservations(
+                $token,
+                (int) auth()->id(),
+                $reason,
+                $note
+            );
+        }
+    }
+
     private function submitPreinvoiceFromRequest(Request $request)
     {
-        $validated = $this->validateDraftPayload($request);
+        // Structural validation happens first; authoritative stock validation/reservation
+        // happens under row locks inside the submission transaction below.
+        $validated = $this->validateDraftPayload($request, false);
 
         $reservationMeta = ReservationSideEffects::transaction(function () use ($validated) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
@@ -1075,8 +1196,15 @@ class PreinvoiceController extends Controller
 
             $this->syncItems($order, $validated['products']);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
-            $this->finalizeDraftReservations($order, $validated['reservation_token'] ?? null, $validated['products'], $reservationMeta);
-            $this->syncPreinvoiceReservations($order, true, $reservationMeta);
+
+            // Draft selections never carry stock. Release any legacy temporary hold first,
+            // then reserve the complete submitted document officially in this transaction.
+            $this->releaseTemporaryDraftTokens(
+                [$validated['reservation_token'] ?? null, $order->draft_token],
+                'submitted_to_finance',
+                'رزرو موقت قدیمی پیش از ایجاد رزرو رسمی آزاد شد.'
+            );
+            $this->syncPreinvoiceReservations($order->fresh('items'), false, $reservationMeta);
             $order->update([
                 'total_price' => $this->calculateOrderTotal($order),
                 'stock_frozen_until' => $reservationMeta['expires_at'],
@@ -1148,14 +1276,11 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => null,
             ]);
 
-            if (! empty($validated['reservation_token'])) {
-                $this->draftReservationService->releaseTokenReservations(
-                    (string) $validated['reservation_token'],
-                    (int) auth()->id(),
-                    'save_as_draft',
-                    'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت آزاد شد.'
-                );
-            }
+            $this->releaseTemporaryDraftTokens(
+                [$validated['reservation_token'] ?? null, $order->draft_token],
+                'save_as_draft',
+                'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت قدیمی آزاد شد.'
+            );
 
             ActivityLogger::log('preinvoice_draft_saved', $order->fresh(), 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.', [
                 'user_id' => auth()->id(),
@@ -1189,8 +1314,9 @@ class PreinvoiceController extends Controller
 
         $canFinanceApprove = $this->canHandleFinanceActions();
         $canEditItems = $this->accessService->canSellerEditPreinvoiceItems($order, auth()->user());
+        $editAutosaveVersion = $this->autosaveVersion($order);
 
-        return view('preinvoice.edit', compact('order', 'shippingMethods', 'canFinanceApprove', 'canEditItems'));
+        return view('preinvoice.edit', compact('order', 'shippingMethods', 'canFinanceApprove', 'canEditItems', 'editAutosaveVersion'));
     }
 
     public function updateDraft(string $uuid, Request $request)
@@ -1202,7 +1328,9 @@ class PreinvoiceController extends Controller
         $intent = (string) $request->input('intent', 'submit');
         $isSubmit = $intent !== 'draft';
 
-        $validated = $this->validateDraftPayload($request, $isSubmit, $order);
+        // Do not make a non-locking stock decision before the transaction. The final
+        // official reservation below is the authoritative, concurrent-safe stock check.
+        $validated = $this->validateDraftPayload($request, false, $order);
 
         $reservationMeta = ReservationSideEffects::transaction(function () use ($order, $validated, $isSubmit) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
@@ -1265,18 +1393,31 @@ class PreinvoiceController extends Controller
             $this->syncItems($order, $validated['products'], true);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
-            if (! $isSubmit && ! empty($validated['reservation_token'])) {
-                $this->draftReservationService->releaseTokenReservations(
-                    (string) $validated['reservation_token'],
-                    (int) auth()->id(),
-                    'save_as_draft',
-                    'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت آزاد شد.'
-                );
+            $this->releaseTemporaryDraftTokens(
+                [$validated['reservation_token'] ?? null, $order->draft_token],
+                $isSubmit ? 'submitted_to_finance' : 'save_as_draft',
+                $isSubmit
+                    ? 'رزرو موقت قدیمی پیش از ایجاد/همگام‌سازی رزرو رسمی آزاد شد.'
+                    : 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت قدیمی آزاد شد.'
+            );
+
+            if (! $isSubmit) {
+                $hasOfficial = PreinvoiceDraftReservation::query()
+                    ->where('preinvoice_order_id', $order->id)
+                    ->where('reservation_scope', 'official')
+                    ->whereNull('released_at')
+                    ->whereNull('release_reason')
+                    ->where('quantity', '>', 0)
+                    ->exists();
+                if ($hasOfficial) {
+                    throw ValidationException::withMessages([
+                        'preinvoice' => 'این سند رزرو رسمی فعال دارد و نمی‌تواند به پیش‌نویس بدون رزرو تبدیل شود.',
+                    ]);
+                }
             }
 
             if ($isSubmit && ! $stockLocked) {
-                $this->finalizeDraftReservations($order->fresh('items'), $validated['reservation_token'] ?? null, $validated['products'], $reservationMeta);
-                $this->syncPreinvoiceReservations($order->fresh('items'), true, $reservationMeta);
+                $this->syncPreinvoiceReservations($order->fresh('items'), false, $reservationMeta);
             } elseif ($stockLocked) {
                 $this->syncPreinvoiceReservations($order->fresh('items'));
             } elseif ($order->invoice) {
@@ -2741,18 +2882,17 @@ class PreinvoiceController extends Controller
         abort_unless($this->canHandleFinanceActions(), 403);
 
         $order = PreinvoiceOrder::with(['items', 'invoice'])->where('uuid', $uuid)->firstOrFail();
-        if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
-            $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
-            return redirect()->route('preinvoice.draft.index')->withErrors(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
-        }
-        $this->reservationService->assertFinanceApprovable($order, auth()->user());
-
         if ($order->invoice || $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
             if ($order->invoice) {
                 return redirect()->route('invoices.show', $order->invoice->uuid)->with('success', 'این پیش‌فاکتور قبلاً به فاکتور تبدیل شده است.');
             }
             abort(409, 'این پیش‌فاکتور قبلاً تبدیل شده است.');
         }
+        if ($order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
+            $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
+            return redirect()->route('preinvoice.draft.index')->withErrors(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
+        }
+        $this->reservationService->assertFinanceApprovable($order, auth()->user());
         abort_if(! in_array($order->status, [
             PreinvoiceOrder::STATUS_PENDING_FINANCE,
             PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
@@ -2863,6 +3003,7 @@ class PreinvoiceController extends Controller
 
                         throw ValidationException::withMessages([
                             'products' => "موجودی رزروشده برای محصول «{$productName}» کافی نیست. رزروشده: {$reservedQty} | درخواست: {$requiredQty}",
+                            //there product is reserved some other place in some other draft and is not in stocka anymore
                         ]);
                     }
                 }

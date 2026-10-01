@@ -1,3 +1,4 @@
+<!-- LOCAL-PERMISSION-VERSION-2026-10-01 -->
 @extends('layouts.app')
 
 @section('title', 'مدیریت نقش‌های کاربران')

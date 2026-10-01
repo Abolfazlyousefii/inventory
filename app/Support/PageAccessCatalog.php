@@ -356,6 +356,11 @@ class PageAccessCatalog
         'stock-count-documents.system-quantity' => ['warehouse.stocktake'],
         'preinvoice.create' => ['sales.preinvoices'],
         'preinvoice.draft.save' => ['sales.preinvoices'],
+        'preinvoice.collaborative' => ['sales.preinvoices', 'sales.preinvoice_finance_review'],
+        'preinvoice.collaborative.state' => ['sales.preinvoices', 'sales.preinvoice_finance_review'],
+        'preinvoice.collaborative.search' => ['sales.preinvoices', 'sales.preinvoice_finance_review'],
+        'preinvoice.collaborative.change' => ['sales.preinvoices', 'sales.preinvoice_finance_review'],
+        'preinvoice.my.drafts.destroy' => ['sales.preinvoices'],
         'preinvoice.autosave' => ['sales.preinvoices'],
         'preinvoice.autosave.latest' => ['sales.preinvoices'],
         'preinvoice.autosave.discard' => ['sales.preinvoices'],
@@ -787,26 +792,26 @@ class PageAccessCatalog
         }
 
         return collect($legacy)->filter(fn (string $permission) => str_ends_with($permission, '.view')
-            || str_ends_with($permission, '.index')
-            || preg_match('/(^|\.)(manage|reports)$/', $permission) === 1
-            || in_array($permission, ['dashboard', 'products', 'customers.manage', 'suppliers.manage', 'inventory', 'stock_in', 'stock_out'], true)
+                                                                   || str_ends_with($permission, '.index')
+                                                                   || preg_match('/(^|\.)(manage|reports)$/', $permission) === 1
+                                                                   || in_array($permission, ['dashboard', 'products', 'customers.manage', 'suppliers.manage', 'inventory', 'stock_in', 'stock_out'], true)
         )->values()->all();
     }
 
     private static function preferredLandingRoute(string $key): ?string
     {
         return [
-            'dashboard' => 'dashboard', 'products' => 'products.index', 'products.price_changes' => 'products.price-changes.index',
-            'categories' => 'categories.index', 'brands_models' => 'model-lists.index', 'shipping_methods' => 'shipping-methods.index',
-            'warehouses' => 'warehouses.index', 'warehouse.stocks' => 'products.index', 'warehouse.stocktake' => 'stock-count-documents.index',
-            'warehouse.purchases' => 'purchases.index', 'warehouse.issues' => 'vouchers.index', 'warehouse.collection' => 'vouchers.sales.queue',
-            'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.reservations' => 'warehouse-reservations.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'warehouse.map' => 'warehouse-map.index', 'assets' => 'asset.hub',
-            'sales.preinvoices' => 'preinvoice.create', 'commercial.commissions' => 'commercial.commissions.index', 'commercial.invoice_reassignments' => 'commercial.invoice-reassignments.index', 'sales.preinvoice_warehouse_review' => 'warehouse.reviews.index',
-            'sales.preinvoice_finance_review' => 'preinvoice.draft.finance', 'sales.invoices' => 'invoices.index',
-            'sales.returns' => 'vouchers.return-from-sale.index', 'customers' => 'customers.index', 'suppliers' => 'suppliers.index',
-            'finance.payments' => 'finance.cheques.index', 'finance.accounts' => 'account-statements.index', 'finance.seller_sales_documents' => 'finance.seller-sales.index', 'reports' => 'finance.reports.index',
-            'users' => 'users.index', 'roles' => 'admin.roles.index', 'activity_logs' => 'activity-logs.index',
-            'integrations.inventory' => 'inventory-webhooks.index',
-        ][$key] ?? null;
+                   'dashboard' => 'dashboard', 'products' => 'products.index', 'products.price_changes' => 'products.price-changes.index',
+                   'categories' => 'categories.index', 'brands_models' => 'model-lists.index', 'shipping_methods' => 'shipping-methods.index',
+                   'warehouses' => 'warehouses.index', 'warehouse.stocks' => 'products.index', 'warehouse.stocktake' => 'stock-count-documents.index',
+                   'warehouse.purchases' => 'purchases.index', 'warehouse.issues' => 'vouchers.index', 'warehouse.collection' => 'vouchers.sales.queue',
+                   'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.reservations' => 'warehouse-reservations.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'warehouse.map' => 'warehouse-map.index', 'assets' => 'asset.hub',
+                   'sales.preinvoices' => 'preinvoice.create', 'commercial.commissions' => 'commercial.commissions.index', 'commercial.invoice_reassignments' => 'commercial.invoice-reassignments.index', 'sales.preinvoice_warehouse_review' => 'warehouse.reviews.index',
+                   'sales.preinvoice_finance_review' => 'preinvoice.draft.finance', 'sales.invoices' => 'invoices.index',
+                   'sales.returns' => 'vouchers.return-from-sale.index', 'customers' => 'customers.index', 'suppliers' => 'suppliers.index',
+                   'finance.payments' => 'finance.cheques.index', 'finance.accounts' => 'account-statements.index', 'finance.seller_sales_documents' => 'finance.seller-sales.index', 'reports' => 'finance.reports.index',
+                   'users' => 'users.index', 'roles' => 'admin.roles.index', 'activity_logs' => 'activity-logs.index',
+                   'integrations.inventory' => 'inventory-webhooks.index',
+               ][$key] ?? null;
     }
 }
