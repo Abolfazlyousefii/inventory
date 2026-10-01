@@ -83,9 +83,9 @@ class UserPermissionController extends Controller
                 'legacy' => PermissionCatalog::isLegacyRole($role->name),
             ]);
 
-        $canEditPermissions = false;
-        $canAssignRoles = $request->user() && PageAccessCatalog::userCan($request->user(), 'page.roles');
-        $canSyncPermissions = false;
+        $canEditPermissions = $request->user() && PageAccessCatalog::userCan($request->user(), 'page.roles');
+        $canAssignRoles = $canEditPermissions;
+        $canSyncPermissions = $canEditPermissions;
         $missingActivePermissionKeys = PermissionCatalog::missingActiveKeys();
         $effectiveCount = collect($effective)->where('granted', true)->count();
         $directCount = collect($effective)->whereIn('source', ['direct', 'both'])->count();
@@ -115,8 +115,8 @@ class UserPermissionController extends Controller
 
         $data = $request->validated();
         $actor = $request->user();
-        $canEditPermissions = false;
-        $canAssignRoles = PageAccessCatalog::userCan($actor, 'page.roles');
+        $canEditPermissions = PageAccessCatalog::userCan($actor, 'page.roles');
+        $canAssignRoles = $canEditPermissions;
         $changeRoles = $canAssignRoles && $request->boolean('roles_changed');
         $changePermissions = $canEditPermissions && $request->boolean('direct_permissions_changed');
         $roles = $changeRoles
