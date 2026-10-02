@@ -11,6 +11,7 @@ use App\Http\Middleware\CheckRoleOrRoutePermission;
 use App\Http\Middleware\EnsurePageAccess;
 use App\Http\Middleware\EnsureActiveCustomer;
 use App\Http\Middleware\RetireCommercialCommissionAutomation;
+use App\Http\Middleware\SlowRequestDiagnosticsMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
@@ -38,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
             );
         }
 
+        $middleware->prependToGroup('web', SlowRequestDiagnosticsMiddleware::class);
         $middleware->appendToGroup('web', ConvertRialCurrencyInputs::class);
         $middleware->appendToGroup('web', EnsureActiveUser::class);
 
