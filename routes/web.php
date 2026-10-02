@@ -548,11 +548,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::patch('/stock-count-documents/{stockCountDocument}/cancel', [StocktakeController::class, 'cancel'])->name('stock-count-documents.cancel');
     Route::get('/stock-count-documents-system-quantity', [StocktakeController::class, 'systemQuantity'])->name('stock-count-documents.system-quantity');
 
-    Route::get('/preinvoice/live/{uuid}', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'show'])->name('preinvoice.collaborative');
-    Route::get('/preinvoice/live/{uuid}/state', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'state'])->name('preinvoice.collaborative.state');
-    Route::get('/preinvoice/live/{uuid}/search', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'search'])->name('preinvoice.collaborative.search');
-    Route::post('/preinvoice/live/{uuid}/change', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'change'])->name('preinvoice.collaborative.change');
-
     // Preinvoice pages
     Route::get('/preinvoice/create', [PreinvoiceController::class, 'create'])->name('preinvoice.create');
     Route::post('/preinvoice/draft', [PreinvoiceController::class, 'saveDraft'])->name('preinvoice.draft.save');
@@ -585,7 +580,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/preinvoice/drafts/{uuid}/cancel', [PreinvoiceController::class, 'financeCancel'])->name('preinvoice.draft.cancel');
     Route::get('/preinvoice/all', [PreinvoiceController::class, 'allIndex'])->name('preinvoice.all.index');
     Route::get('/preinvoice/my', [PreinvoiceController::class, 'myIndex'])->name('preinvoice.my.index');
-    Route::delete('/preinvoice/my/drafts/{uuid}', [PreinvoiceController::class, 'deleteMyDraft'])->name('preinvoice.my.drafts.destroy');
     Route::get('/preinvoice/my/invoices/{uuid}/correction', [InvoiceController::class, 'salesCorrectionEdit'])->name('preinvoice.my.invoice-correction.edit');
     Route::get('/preinvoice/my/invoices/{uuid}/correction/search', [InvoiceController::class, 'salesCorrectionSearch'])->name('preinvoice.my.invoice-correction.search');
     Route::post('/preinvoice/my/invoices/{uuid}/correction', [InvoiceController::class, 'salesCorrectionSubmit'])->name('preinvoice.my.invoice-correction.submit');
@@ -642,10 +636,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Account statements (گردش حساب اشخاص)
     Route::get('/account-statements', [AccountStatementController::class, 'index'])->name('account-statements.index');
-    Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
-    Route::put('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'updateForCustomer'])->name('account-statements.payments.update');
-    Route::delete('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'destroyForCustomer'])->name('account-statements.payments.destroy');
     Route::get('/account-statements/documents/invoices/{uuid}', [AccountStatementController::class, 'showInvoice'])->name('account-statements.documents.invoices.show');
     Route::get('/account-statements/documents/returns/{voucher}', [AccountStatementController::class, 'showReturnFromSale'])->name('account-statements.documents.returns.show');
     Route::get('/account-statements/documents/payments/{payment}', [AccountStatementController::class, 'showPayment'])->name('account-statements.documents.payments.show');
@@ -657,8 +648,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Users (External CRM)
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
     Route::post('/users/sync', [UserController::class, 'sync'])->name('users.sync');
-    Route::patch('/users/{user}/status', [UserController::class, 'updateStatus'])
-        ->name('users.status.update');
 
     Route::prefix('admin/bug-investigator')->name('admin.bug-investigator.')->group(function () {
         Route::get('/', [BugInvestigatorController::class, 'index'])->name('index');
@@ -714,10 +703,5 @@ Route::get('/vouchers/invoice/{uuid}/products', [VoucherController::class, 'invo
 Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->middleware(['auth', 'route.permission'])
     ->name('finance.cheques.index');
-
-Route::get('/test', function () {
-    $auth = auth()->user();
-    dd($auth->roles, $auth->permissions, $auth);
-});
 
 require __DIR__ . '/auth.php';

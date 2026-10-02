@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Color;
 use App\Models\ModelList;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -124,6 +126,33 @@ class ProductCatalogExportTest extends TestCase
         ]));
     }
 
+    public function test_preview_and_print_use_the_product_image_endpoint(): void
+    {
+        $this->signIn();
+        $product = $this->product('محصول دارای تصویر', null, 25000, 'products/demo.jpg');
+        $imageUrl = route('admin.product-exports.products.image', $product);
+
+        $this->get(route('admin.product-exports.data'))
+            ->assertOk()
+            ->assertSee('src="'.$imageUrl.'"', false);
+
+        $this->get(route('admin.product-exports.print'))
+            ->assertOk()
+            ->assertSee('src="'.$imageUrl.'"', false);
+    }
+
+    public function test_export_image_endpoint_streams_the_same_local_product_image(): void
+    {
+        $this->signIn();
+        Storage::fake('public');
+        Storage::disk('public')->put('products/demo.jpg', 'image-bytes');
+        $product = $this->product('محصول دارای تصویر', null, 25000, 'products/demo.jpg');
+
+        $this->get(route('admin.product-exports.products.image', $product))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/jpeg');
+    }
+
     public function test_screen_paginates_24_products_and_query_count_does_not_grow_linearly(): void
     {
         $this->signIn();
@@ -139,6 +168,76 @@ class ProductCatalogExportTest extends TestCase
 
         $response->assertOk()->assertSee('Performance 1')->assertDontSee('Performance 25');
         $this->assertLessThan(40, $queryCount);
+    }
+
+    public function test_builder_search_returns_real_models_and_prints_only_selected_model(): void
+    {
+        $this->signIn();
+        $product = $this->product('Customer guard', null, 5000);
+        $first = ModelList::create(['brand' => 'Brand', 'model_name' => 'Phone A']);
+        $second = ModelList::create(['brand' => 'Brand', 'model_name' => 'Phone B']);
+        $chosen = $this->variant($product, $first, 'Color one', 2, 12000);
+        $chosen->update(['color_id' => Color::create(['name' => 'مشکی', 'code' => 'CAT-BLACK'])->id]);
+        $this->variant($product, $first, 'Color two', 3, 13000)
+            ->update(['color_id' => Color::create(['name' => 'آبی', 'code' => 'CAT-BLUE'])->id]);
+        $this->variant($product, $second, 'Color three', 4, 22000);
+
+        $this->getJson(route('admin.product-exports.builder.products', ['q' => 'Phone A']))
+            ->assertOk()->assertJsonPath('total', 1)
+            ->assertJsonPath('items.0.name', 'Customer guard')
+            ->assertJsonPath('items.0.models.0.name', 'Phone A')
+            ->assertJsonPath('items.0.models.0.price_max', 13000);
+
+        $this->post(route('admin.product-exports.builder.print'), [
+            'selection' => [$product->id => [$chosen->id]],
+            'show_price' => 1,
+        ])->assertOk()->assertSee('Phone A')->assertDontSee('Phone B')
+            ->assertSee('قیمت حدودی')->assertSee('13,000')->assertSee('مشکی')->assertSee('آبی')
+            ->assertDontSee('12,000')->assertDontSee('12,500');
+
+        $this->post(route('admin.product-exports.builder.preview'), [
+            'selection' => [$product->id => [$chosen->id]],
+            'show_price' => 1,
+        ])->assertOk()->assertSee('Phone A')->assertDontSee('Phone B')
+            ->assertSee('قیمت حدودی')->assertSee('13,000')->assertSee('مشکی')->assertSee('آبی')
+            ->assertDontSee('12,000')->assertDontSee('12,500');
+    }
+
+    public function test_builder_preview_handles_a_model_with_more_than_five_hundred_variants(): void
+    {
+        $this->signIn();
+        $product = $this->product('Large model guard');
+        $model = ModelList::create(['brand' => 'Brand', 'model_name' => 'Phone Large']);
+        $rows = [];
+        for ($i = 1; $i <= 501; $i++) {
+            $rows[] = ['product_id' => $product->id, 'model_list_id' => $model->id, 'variant_name' => 'Color '.$i,
+                'sell_price' => 1000, 'stock' => 1, 'is_active' => true, 'sales_enabled' => true];
+        }
+        ProductVariant::insert($rows);
+        $representative = ProductVariant::where('product_id', $product->id)->firstOrFail();
+
+        $this->getJson(route('admin.product-exports.builder.products', ['q' => 'Large model guard']))
+            ->assertOk()->assertJsonPath('items.0.models.0.id', $representative->id)
+            ->assertJsonMissingPath('items.0.models.0.ids');
+
+        $this->post(route('admin.product-exports.builder.preview'), [
+            'selection' => [$product->id => [$representative->id]],
+            'show_price' => 1,
+        ])->assertOk()->assertSee('Phone Large');
+    }
+
+    public function test_builder_rejects_inactive_or_unrelated_model_selection(): void
+    {
+        $this->signIn();
+        $product = $this->product('First guard');
+        $other = $this->product('Other guard');
+        $model = ModelList::create(['brand' => 'Brand', 'model_name' => 'Phone A']);
+        $foreign = $this->variant($other, $model, 'Other color');
+        $inactive = $this->variant($product, $model, 'Inactive color');
+        $inactive->update(['is_active' => false]);
+
+        $this->post(route('admin.product-exports.builder.print'), ['selection' => [$product->id => [$foreign->id]]])->assertSessionHasErrors('selection');
+        $this->post(route('admin.product-exports.builder.print'), ['selection' => [$product->id => [$inactive->id]]])->assertSessionHasErrors('selection');
     }
 
     private function categoryTree(): array

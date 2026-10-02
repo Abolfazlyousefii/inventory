@@ -25,7 +25,7 @@ class UpdateUserPermissionsRequest extends FormRequest
         $prepared = [];
 
         $changeRoles = $this->authorize() && $this->boolean('roles_changed');
-        $changePermissions = false;
+        $changePermissions = $this->authorize() && $this->boolean('direct_permissions_changed');
 
         $this->catalogVersionChanged = ! hash_equals(
             PermissionCatalog::versionHash(),
@@ -36,12 +36,14 @@ class UpdateUserPermissionsRequest extends FormRequest
             $prepared['roles'] = [];
         }
 
-        if ($this->boolean('direct_permissions_changed')) {
+        if ($changePermissions) {
             $submitted = array_values(array_unique(array_filter(
                 (array) $this->input('direct_permissions', []),
                 'is_string'
             )));
-            $this->ignoredDirectPermissions = $submitted;
+            $activeKeys = PermissionCatalog::activeKeys();
+            $prepared['direct_permissions'] = array_values(array_intersect($submitted, $activeKeys));
+            $this->ignoredDirectPermissions = array_values(array_diff($submitted, $activeKeys));
 
             if ($this->ignoredDirectPermissions !== []) {
                 Log::warning('Stale or invalid direct permissions ignored', [
@@ -60,7 +62,7 @@ class UpdateUserPermissionsRequest extends FormRequest
     public function rules(): array
     {
         $canAssignRoles = $this->authorize();
-        $canEditPermissions = false;
+        $canEditPermissions = $this->authorize();
         $changeRoles = $canAssignRoles && $this->boolean('roles_changed');
         $changePermissions = $canEditPermissions && $this->boolean('direct_permissions_changed');
 

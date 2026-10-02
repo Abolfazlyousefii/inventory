@@ -24,49 +24,151 @@ class PreinvoiceDraftReservationService
         private ReservationClassificationService $classification,
     ) {}
 
-    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null): array
+    /**
+     * @param  array<int>|null  $scopeProductIds  When non-empty, only keys of these products are
+     *                                            reserved/released; every other key is left untouched.
+     *                                            Null or empty keeps the whole-token behavior.
+     */
+    public function syncReservationRows(string $token, int $userId, array $items, bool $isInPerson = false, ?string $preinvoiceUuid = null, ?array $scopeProductIds = null): array
     {
-        // Drafts are persistence-only. They must never consume sellable stock.
-        // Keep this legacy endpoint/service method as a compatibility cleanup path:
-        // any temporary hold created by an older tab/version is released safely
-        // through the reservation release service, while official reservations are untouched.
-        return ReservationSideEffects::transaction(function () use ($token, $userId, $preinvoiceUuid) {
+        $desired = $this->normalizeReservationItems($items);
+        $scope = array_values(array_unique(array_map('intval', $scopeProductIds ?? [])));
+
+        return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid, $scope) {
+            // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
-
-            if ($preinvoiceUuid !== null) {
-                $order = PreinvoiceOrder::query()->where('uuid', $preinvoiceUuid)->lockForUpdate()->firstOrFail();
-                if (! app(SalesDocumentAccessService::class)->canSellerEditPreinvoiceItems($order, $user)) {
-                    throw ValidationException::withMessages([
-                        'preinvoice' => 'این سند دیگر در وضعیت قابل ویرایش پیش‌نویس نیست. صفحه را تازه‌سازی کنید.',
-                    ]);
-                }
-            }
-
             $tokenRows = PreinvoiceDraftReservation::query()->where('token', $token)->lockForUpdate()->get();
             $protected = $tokenRows->first(fn ($row) => $row->preinvoice_order_id !== null
-                                                        || $row->converted_at !== null || $row->reservation_scope === 'official'
-                                                        || (int) $row->user_id !== $userId);
+                || $row->converted_at !== null || $row->reservation_scope === 'official'
+                || (int) $row->user_id !== $userId);
             if ($protected) {
                 Log::warning('RESERVATION_SYNC_SKIPPED', [
                     'reason' => 'protected_or_foreign_token', 'reservation_id' => $protected->id,
                     'preinvoice_order_id' => $protected->preinvoice_order_id, 'actor_id' => $userId,
                 ]);
-                return ['reserved' => [], 'released' => [], 'skipped' => true, 'reason' => 'protected_or_foreign_token'];
+                return ['reserved' => [], 'skipped' => true, 'reason' => 'protected_or_foreign_token'];
             }
 
-            $released = $this->releaseTokenReservations(
-                $token,
-                $userId,
-                'draft_no_reservation',
-                'پیش‌نویس فقط ذخیره شد؛ رزرو موقت نسخه‌های قبلی آزاد شد.'
-            );
+            if ($preinvoiceUuid !== null) {
+                $order = PreinvoiceOrder::query()->where('uuid', $preinvoiceUuid)->lockForUpdate()->firstOrFail();
+                abort_unless(app(SalesDocumentAccessService::class)->canSellerEditPreinvoiceItems($order, $user), 403);
+                // Editable documents normally have no active official stock. Never reserve it twice.
+                abort_if(PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $order->id)->whereNull('released_at')->whereNull('release_reason')
+                    ->where('reservation_scope', 'official')->exists(), 409, 'رزرو رسمی سند باید پیش از ویرایش بررسی شود.');
+            }
+
+            $this->releaseExpiredDraftReservations($token, $userId);
+
+            $existingRows = $this->activeRowsQuery($token, $userId)
+                ->lockForUpdate()
+                ->get();
+
+            $existing = [];
+            foreach ($existingRows as $row) {
+                $existing[$this->reservationKey((int) $row->product_id, (int) $row->variant_id)] = $row;
+            }
+
+            // ── FIX: هنگام ویرایش پیش‌فاکتور، آیتم‌هایی که قبلاً ذخیره شدن و
+            // موجودیشون از انبار کم شده رو در محاسبه delta حساب کن تا دوباره
+            // تلاش نکنه رزروشون کنه.
+            $committedQty = [];
+            if (isset($order) && $this->hasCommittedCentralStock($order)) {
+                $order->loadMissing('items');
+                foreach ($order->items as $orderItem) {
+                    $key = $this->reservationKey((int) $orderItem->product_id, (int) $orderItem->variant_id);
+                    $committedQty[$key] = ($committedQty[$key] ?? 0) + (int) $orderItem->quantity;
+                }
+            }
+
+            $allKeys = array_unique(array_merge(array_keys($existing), array_keys($desired)));
+            sort($allKeys, SORT_STRING);
+            if ($scope !== []) {
+                // Product-scoped sync: keys of other products are neither checked, reserved nor released.
+                $allKeys = array_values(array_filter($allKeys, fn (string $key) => in_array((int) explode(':', $key)[0], $scope, true)));
+                $desired = array_intersect_key($desired, array_flip($allKeys));
+            }
+            $expiresAt = $isInPerson ? null : now()->addHour();
+            $reservationScope = $isInPerson ? 'temporary_in_person' : 'temporary_online';
+
+            // Read-only pass: report every short item at once instead of the first one.
+            $this->assertAllDeltasReservable($allKeys, $existing, $committedQty, $desired);
+
+            foreach ($allKeys as $key) {
+                [$productId, $variantId] = array_map('intval', explode(':', $key));
+                $oldQty = (int) (($existing[$key] ?? null)?->quantity ?? 0);
+                $committed = (int) ($committedQty[$key] ?? 0);
+                $newQty = (int) ($desired[$key]['quantity'] ?? 0);
+
+                if ($newQty > 0) {
+                    $variantMatchesProduct = ProductVariant::query()
+                        ->whereKey($variantId)
+                        ->where('product_id', $productId)
+                        ->where('is_active', true)
+                        ->exists();
+
+                    if (! $variantMatchesProduct) {
+                        throw ValidationException::withMessages([
+                            'items' => 'تنوع انتخابی برای کالا معتبر یا فعال نیست.',
+                        ]);
+                    }
+                }
+
+                // محاسبه delta با در نظر گرفتن موجودی committed
+                // oldQty = رزرو موقت فعلی، committed = قبلاً از انبار کم شده
+                $effectiveOld = $oldQty + $committed;
+                $delta = $newQty - $effectiveOld;
+
+                if ($delta > 0) {
+                    $this->reserveVariantDelta($productId, $variantId, $delta, $effectiveOld);
+                } elseif ($delta < 0) {
+                    // فقط از رزروهای موقت آزاد کن، نه از committed
+                    $releasable = min(abs($delta), $oldQty);
+                    if ($releasable > 0) {
+                        $this->releaseVariantDelta($productId, $variantId, $releasable);
+                    }
+                }
+
+                // فقط برای مقدار اضافه بر committed رزرو موقت بساز
+                $tempQty = max(0, $newQty - $committed);
+                if ($tempQty > 0) {
+                    $reservationAttributes = [
+                        'user_id' => $userId,
+                        'quantity' => $tempQty,
+                        'expires_at' => $expiresAt,
+                        'last_seen_at' => now(),
+                        'converted_at' => null,
+                        'preinvoice_order_id' => null,
+                        'reservation_scope' => $reservationScope,
+                        'reservation_tier' => null,
+                    ];
+
+                    $reservationAttributes += [
+                        'released_at' => null,
+                        'released_by' => null,
+                        'release_reason' => null,
+                        'release_note' => null,
+                    ];
+
+                    PreinvoiceDraftReservation::query()->updateOrCreate(
+                        [
+                            'token' => $token,
+                            'product_id' => $productId,
+                            'variant_id' => $variantId,
+                        ],
+                        $reservationAttributes
+                    );
+                } elseif (isset($existing[$key])) {
+                    // اگه مقدار جدید کمتر یا مساوی committed هست، رزرو موقت لازم نیست
+                    $this->markReleasedOrDelete($existing[$key], $userId, 'manual_release', null);
+                }
+
+                ReservationSideEffects::touchProduct($productId);
+            }
 
             return [
-                'reserved' => [],
-                'released' => $released['released'] ?? [],
-                'expires_at' => null,
-                'reservation_scope' => null,
-                'draft_reservation_disabled' => true,
+                'reserved' => array_values($desired),
+                'expires_at' => $expiresAt?->toIso8601String(),
+                'reservation_scope' => $reservationScope,
             ];
         });
     }
@@ -132,7 +234,7 @@ class PreinvoiceDraftReservationService
                     ->get()
                     ->filter(fn (PreinvoiceDraftReservation $reservation): bool =>
                         $this->classification->classify($reservation, $evaluatedAt)['state']
-                        === ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE
+                            === ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE
                     )
                     ->values(),
                 false,
@@ -201,9 +303,9 @@ class PreinvoiceDraftReservationService
                             'reservation_id' => (int) $row->id,
                             'product' => $row->product?->name,
                             'variant' => $row->variant?->variant_name
-                                         ?? $row->variant?->variety_name
-                                            ?? $row->variant?->variant_code
-                                               ?? $row->variant?->variety_code,
+                                ?? $row->variant?->variety_name
+                                ?? $row->variant?->variant_code
+                                ?? $row->variant?->variety_code,
                             'quantity' => $qty,
                             'reason' => 'temporary_session_lost',
                             'audit_source' => 'automatic_reservation_cleanup',
@@ -346,38 +448,128 @@ class PreinvoiceDraftReservationService
         return $normalized;
     }
 
-    private function reserveVariantDelta(int $productId, int $variantId, int $delta): void
+    /**
+     * Mirrors the reservation loop without writing: collects every key whose
+     * positive delta exceeds central stock and throws them together. The
+     * loop's own check in reserveVariantDelta stays as the safety net.
+     */
+    private function assertAllDeltasReservable(array $keys, array $existing, array $committedQty, array $desired): void
+    {
+        $itemErrors = [];
+
+        foreach ($keys as $key) {
+            [$productId, $variantId] = array_map('intval', explode(':', $key));
+            $newQty = (int) ($desired[$key]['quantity'] ?? 0);
+            if ($newQty <= 0) {
+                continue;
+            }
+
+            $variant = ProductVariant::query()
+                ->with('product')
+                ->whereKey($variantId)
+                ->where('product_id', $productId)
+                ->where('is_active', true)
+                ->first();
+            if (! $variant) {
+                // The loop reports an invalid variant itself; keep earlier shortfalls first.
+                break;
+            }
+
+            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0) + (int) ($committedQty[$key] ?? 0);
+            $delta = $newQty - $held;
+            if ($delta <= 0) {
+                continue;
+            }
+
+            $available = $this->centralAvailableQuantity($productId, $variantId);
+            if ($delta > $available) {
+                $itemErrors[] = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
+            }
+        }
+
+        if ($itemErrors !== []) {
+            throw ValidationException::withMessages([
+                'items' => array_column($itemErrors, 'message'),
+                'item_errors' => $itemErrors,
+                'suggested_items' => $this->suggestedItems($desired, $itemErrors),
+            ]);
+        }
+    }
+
+    private function centralAvailableQuantity(int $productId, int $variantId): int
+    {
+        $quantity = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->value('quantity');
+
+        return max(0, (int) ($quantity ?? 0));
+    }
+
+    private function shortfallItemError(ProductVariant $variant, int $productId, int $variantId, int $available, int $delta, int $held): array
+    {
+        $product = $variant->product;
+
+        return [
+            'product_id' => $productId,
+            'variant_id' => $variantId,
+            'product_name' => $product?->name ?? $product?->title ?? '',
+            'product_code' => $product?->code ?? '',
+            'variant_name' => $variant->variant_name ?? $variant->name ?? '',
+            'variant_code' => $variant->code ?? '',
+            'available_quantity' => $available,
+            'requested_quantity' => $delta,
+            // Largest total quantity this line can hold: what it already holds plus free central stock.
+            'max_allowed' => $held + $available,
+            'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
+        ];
+    }
+
+    /** The submitted list with each short line lowered to max_allowed, or flagged for removal at zero. */
+    private function suggestedItems(array $desired, array $itemErrors): array
+    {
+        $maxByKey = [];
+        foreach ($itemErrors as $error) {
+            $maxByKey[$this->reservationKey((int) $error['product_id'], (int) $error['variant_id'])] = (int) $error['max_allowed'];
+        }
+
+        $suggested = [];
+        foreach ($desired as $key => $row) {
+            $quantity = array_key_exists($key, $maxByKey) ? max(0, $maxByKey[$key]) : (int) $row['quantity'];
+            $suggested[] = [
+                'product_id' => (int) $row['product_id'],
+                'variant_id' => (int) $row['variant_id'],
+                'requested_quantity' => (int) $row['quantity'],
+                'quantity' => $quantity,
+                'remove' => $quantity <= 0,
+            ];
+        }
+
+        return $suggested;
+    }
+
+    private function reserveVariantDelta(int $productId, int $variantId, int $delta, int $held = 0): void
     {
         if ($delta <= 0) {
             return;
         }
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        $available = max(0, (int) ($variant->stock ?? 0 ));
-        //        dd($productId, $variantId, $delta, $variant, $available);
+        // The central warehouse row is the canonical, lockable sellable-stock source.
+        $centralStock = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->lockForUpdate()
+            ->first();
+        $available = max(0, (int) ($centralStock?->quantity ?? 0));
 
         if ($delta > $available) {
-            $product = $variant->product;
-            $itemError = [
-                'product_id' => $productId,
-                'variant_id' => $variantId,
-                'product_name' => $product?->name ?? $product?->title ?? '',
-                'product_code' => $product?->code ?? '',
-                'variant_name' => $variant->variant_name ?? $variant->name ?? '',
-                'variant_code' => $variant->code ?? '',
-                'available_quantity' => $available,
-                'requested_quantity' => $delta,
-                'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
-            ];
+            $itemError = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
             throw ValidationException::withMessages([
                 'items' => [$itemError['message']],
                 'item_errors' => [$itemError],
-            ]);
-        }
-
-        if ($delta > $available) {
-            throw ValidationException::withMessages([
-                'items' => "موجودی قابل فریز برای تنوع انتخابی کافی نیست. موجودی انبار مرکزی: {$available} | درخواست جدید: {$delta}",
             ]);
         }
 
@@ -410,7 +602,7 @@ class PreinvoiceDraftReservationService
     private function hasCommittedCentralStock(PreinvoiceOrder $order): bool
     {
         return $order->stock_frozen_until !== null
-               && $order->stock_released_at === null;
+            && $order->stock_released_at === null;
     }
 
     private function cleanupResult(Collection $reservations, bool $changed): array

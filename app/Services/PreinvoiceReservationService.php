@@ -8,19 +8,16 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\WarehouseStock;
-use App\Services\NotificationService;
 use App\Support\ActivityLogger;
 use App\Support\ReservationSideEffects;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use App\Services\NotificationService;
 
 class PreinvoiceReservationService
 {
-    public function __construct(
-        private InventoryReservationReleaseService $inventoryRelease,
-        private ReservationClassificationService $classification,
-    ) {}
+    public function __construct(private InventoryReservationReleaseService $inventoryRelease) {}
 
     public function expireOverdueReservations(): array
     {
@@ -80,9 +77,7 @@ class PreinvoiceReservationService
             $releasedQuantity = 0;
 
             foreach ($reservations as $reservation) {
-                $reservation->load(['order.invoice', 'activeDrafts']);
-                $classification = $this->classification->classify($reservation, now());
-                if ($classification['state'] !== ReservationClassificationService::STATE_TEMPORARY_STALE_RELEASABLE) {
+                if ($reservation->released_at !== null) {
                     continue;
                 }
 
@@ -94,7 +89,6 @@ class PreinvoiceReservationService
                     'release_reason' => 'temporary_online_expired',
                     'release_note' => 'رزرو موقت آنلاین منقضی شد.',
                 ])->save();
-                ReservationSideEffects::touchProduct((int) $reservation->product_id);
 
                 $releasedReservations++;
                 $releasedQuantity += $quantity;
@@ -236,7 +230,6 @@ class PreinvoiceReservationService
                 'release_reason' => $reason,
                 'release_note' => $note,
             ])->save();
-            ReservationSideEffects::touchProduct((int) $lockedReservation->product_id);
 
             return ['released' => true, 'quantity' => $quantity];
         });
@@ -304,26 +297,25 @@ class PreinvoiceReservationService
 
     public function adjustOfficialReservationDelta(PreinvoiceOrder $order, $item, int $delta, ?User $actor = null): void
     {
-        ReservationSideEffects::run(function () use ($order, $item, $delta, $actor) {
+        ReservationSideEffects::run(function () use ($order, $item, $delta, $actor) {    
             if ($delta === 0) {
                 return;
             }
-
+    
             $productId = (int) $item->product_id;
             $variantId = (int) $item->variant_id;
-
+    
             if ($delta > 0) {
                 $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $productId, $variantId);
+                $available = max(0, (int) $variant->stock);
                 if ($delta > $available) {
                     $name = trim(($variant->product?->name ?? $item->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?? '—'));
                     throw ValidationException::withMessages([
                         'items.' . $item->id . '.quantity' => "موجودی کافی نیست. کالا: {$name} | موجودی آزاد: {$available} | مقدار درخواستی اضافه: {$delta}",
                     ]);
                 }
-
+    
                 WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
-
                 PreinvoiceDraftReservation::query()->create([
                     'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
                     'user_id' => $actor?->id,
@@ -336,10 +328,9 @@ class PreinvoiceReservationService
                     'reservation_scope' => 'official',
                     'reservation_tier' => $order->customer?->reservation_tier,
                 ]);
-                ReservationSideEffects::touchProduct($productId);
                 return;
             }
-
+    
             $remaining = abs($delta);
             $reservations = PreinvoiceDraftReservation::query()
                 ->where('preinvoice_order_id', $order->id)
@@ -352,7 +343,7 @@ class PreinvoiceReservationService
                 ->lockForUpdate()
                 ->orderByDesc('id')
                 ->get();
-
+    
             foreach ($reservations as $reservation) {
                 if ($remaining <= 0) {
                     break;
@@ -382,11 +373,10 @@ class PreinvoiceReservationService
                 }
                 $remaining -= $take;
             }
-
+    
             if ($remaining > 0) {
                 throw ValidationException::withMessages(['items.' . $item->id . '.quantity' => 'رزرو کافی برای آزادسازی کاهش تعداد وجود ندارد.']);
             }
-            ReservationSideEffects::touchProduct($productId);
         });
     }
 
@@ -399,7 +389,7 @@ class PreinvoiceReservationService
         return (bool) ($this->expirePreinvoiceReservations($order, null)['expired'] ?? false);
     }
 
-    public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null, bool $allowReviewing = false): void
+    public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null): void
     {
         if (in_array($order->status, [
             PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
@@ -411,9 +401,10 @@ class PreinvoiceReservationService
             throw ValidationException::withMessages(['preinvoice' => $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED ? $this->expiredMessage() : 'این پیش‌فاکتور در وضعیت مجاز برای تایید مالی نیست.']);
         }
 
-        $allowedStatuses = [PreinvoiceOrder::STATUS_PENDING_FINANCE, PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE];
-        if ($allowReviewing) $allowedStatuses[] = PreinvoiceOrder::STATUS_FINANCE_REVIEWING;
-        if (! in_array($order->status, $allowedStatuses, true)) {
+        if (! in_array($order->status, [
+            PreinvoiceOrder::STATUS_PENDING_FINANCE,
+            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+        ], true)) {
             throw ValidationException::withMessages(['preinvoice' => 'این پیش‌فاکتور در صف مالی نیست.']);
         }
 
@@ -432,8 +423,8 @@ class PreinvoiceReservationService
 
         $isVip = $activeReservations->contains(fn (PreinvoiceDraftReservation $reservation) => $reservation->reservation_tier === 'vip');
         $expired = ! $isVip && $activeReservations
-                ->filter(fn (PreinvoiceDraftReservation $reservation) => $reservation->expires_at !== null && $reservation->expires_at->lte(now()))
-                ->isNotEmpty();
+            ->filter(fn (PreinvoiceDraftReservation $reservation) => $reservation->expires_at !== null && $reservation->expires_at->lte(now()))
+            ->isNotEmpty();
 
         if ($expired) {
             $this->expirePreinvoiceReservations($order, $actor);
@@ -483,6 +474,33 @@ class PreinvoiceReservationService
             throw ValidationException::withMessages(['products' => 'تنوع رزرو شده با کالای پیش‌فاکتور همخوانی ندارد.']);
         }
 
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
+        $product = Product::query()->whereKey($productId)->lockForUpdate()->first();
+
+        $stock = WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            $stock = WarehouseStock::query()->create([
+                'warehouse_id' => WarehouseStockService::centralWarehouseId(),
+                'product_id' => $productId,
+                'product_variant_id' => $variantId,
+                'quantity' => 0,
+            ]);
+            $stock = WarehouseStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
+        }
+
+        $stock->forceFill(['quantity' => (int) $stock->quantity + $quantity])->save();
+        $variant->forceFill(['reserved' => max(0, (int) $variant->reserved - $quantity)])->save();
+
+        if ($product) {
+            $product->forceFill(['reserved' => max(0, (int) $product->reserved - $quantity)])->save();
+        }
+
+        WarehouseStockService::syncVariantStockFromCentral($variantId);
+        WarehouseStockService::syncProductStockFromCentral($productId);
     }
 }

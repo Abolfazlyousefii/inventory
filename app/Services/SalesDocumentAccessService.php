@@ -30,17 +30,6 @@ class SalesDocumentAccessService
         return $hasRole || (method_exists($user, 'can') && $user->can('warehouse.approve'));
     }
 
-    public function isMarketer(?User $user): bool
-    {
-        if (! $user) {
-            return false;
-        }
-
-        return method_exists($user, 'hasAnyRole')
-            ? $user->hasAnyRole(['Marketer', 'Sales'])
-            : false;
-    }
-
     public function isFinance(?User $user): bool
     {
         if (! $user) {

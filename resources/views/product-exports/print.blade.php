@@ -65,6 +65,30 @@
         .catalog-models { direction: rtl; unicode-bidi: plaintext; text-align: right; }
         .catalog-colors { text-align: right; }
         .catalog-price { text-align: center; font-weight: 700; white-space: nowrap; }
+        .catalog-print-card { margin-bottom: 5px; border-color: #cddfe5; }
+        .print-output--catalog .document-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; }
+        .print-output--catalog .document-heading h1 { font-size: 14px; }
+        .print-output--catalog .document-meta { display: flex; flex-wrap: wrap; gap: 3px 7px; padding: 4px 0; border-top: 1px solid var(--line); }
+        .print-output--catalog .document-meta div,
+        .print-output--catalog .document-meta div:nth-child(4n) { display: inline-flex; align-items: baseline; gap: 3px; width: auto; padding: 1px 4px; border: 0; border-radius: 3px; background: #f1f7f9; }
+        .print-output--catalog .document-meta span,
+        .print-output--catalog .document-meta strong { display: inline; margin: 0; font-size: 7px; }
+        .catalog-print-head th { padding: 4px 6px; background: #f2f8fa; border-top: 2px solid #23667e; }
+        .catalog-print-hero { display: flex; align-items: center; gap: 9px; min-height: 62px; }
+        .catalog-print-photo { display: grid; place-items: center; width: 78px; height: 78px; flex: none; border: 1px solid #dbe7eb; border-radius: 5px; background: #fff; }
+        .print-output--catalog .product-image { width: 74px; height: 74px; margin: 0; padding: 2px; }
+        .catalog-print-info { min-width: 0; flex: 1; }
+        .catalog-print-category { display: block; color: #367984; font-size: 8px; font-weight: 700; }
+        .catalog-print-info .product-name { margin-top: 2px; color: var(--ink); font-size: 12px; line-height: 1.5; }
+        .catalog-print-info .product-meta { margin-top: 2px; font-size: 8px; }
+        .catalog-print-summary { display: block; max-width: 30%; padding-right: 10px; border-right: 1px solid #d9e6e9; color: #176a68; text-align: left; overflow-wrap: anywhere; }
+        .catalog-print-summary small { display: block; color: var(--muted); font-size: 7px; font-weight: 400; }
+        .catalog-print-summary strong { display: block; font-size: 10px; line-height: 1.5; }
+        .catalog-print-group td { padding: 3px 6px; line-height: 1.55; vertical-align: top; }
+        .catalog-print-group td small { display: block; margin-bottom: 1px; color: #718793; font-size: 7px; font-weight: 400; }
+        .catalog-print-group .catalog-price { color: #176a68; text-align: right; white-space: normal; }
+        .catalog-color { display: inline-block; margin: 0 0 1px 5px; white-space: nowrap; }
+        .catalog-color__dot { display: inline-block; width: 6px; height: 6px; margin-left: 2px; border: 1px solid #a7b5bd; border-radius: 50%; vertical-align: middle; }
         .print-product--small { break-inside: avoid; page-break-inside: avoid; }
         .print-product--large { break-inside: auto; page-break-inside: auto; }
         .empty-result { padding: 30px; border: 1px solid var(--line); color: var(--muted); text-align: center; }
@@ -84,6 +108,21 @@
             .document-meta div:nth-child(2n) { border-left: 0; }
             .print-document { overflow-x: auto; }
             .print-product { min-width: 720px; }
+            .print-output--catalog .print-product { display: block; min-width: 0; }
+            .print-output--catalog .document-heading { justify-content: center; }
+            .print-output--catalog .document-heading h1 { width: 100%; order: -1; }
+            .print-output--catalog .catalog-print-card colgroup { display: none; }
+            .print-output--catalog .catalog-print-card thead,
+            .print-output--catalog .catalog-print-card tbody,
+            .print-output--catalog .catalog-print-card tr { display: block; }
+            .print-output--catalog .catalog-print-head th { display: block; width: 100%; }
+            .print-output--catalog .catalog-print-hero { flex-wrap: wrap; }
+            .print-output--catalog .catalog-print-info { flex-basis: calc(100% - 92px); }
+            .print-output--catalog .catalog-print-group td { font-size: 11px; }
+            .print-output--catalog .catalog-print-summary { max-width: none; width: 100%; padding: 3px 0 0; border-right: 0; border-top: 1px solid #d9e6e9; text-align: right; }
+            .print-output--catalog .catalog-print-group { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; padding: 5px 7px; border-bottom: 1px solid #e2e9ed; }
+            .print-output--catalog .catalog-print-group td { display: block; width: auto; padding: 0; border: 0; }
+            .print-output--catalog .catalog-print-group .catalog-models { grid-column: 1 / -1; }
         }
     </style>
 </head>
@@ -148,28 +187,27 @@
                 </table>
             @else
                 @php $isLarge = count($product['groups']) > 4 || collect($product['groups'])->contains(fn ($group) => count($group['colors']) > 24 || count($group['models']) > 25); @endphp
-                <table class="print-product catalog-print-table {{ $isLarge ? 'print-product--large' : 'print-product--small' }}">
-                    <colgroup><col style="width:46%"><col style="width:38%"><col style="width:16%"></colgroup>
+                <table class="print-product catalog-print-table catalog-print-card {{ $isLarge ? 'print-product--large' : 'print-product--small' }}">
+                    <colgroup><col style="width:42%"><col style="width:38%"><col style="width:20%"></colgroup>
                     <thead>
-                        <tr class="product-title-row">
-                            <th colspan="2">
-                                <div class="product-heading">
+                        <tr class="product-title-row catalog-print-head">
+                            <th colspan="3">
+                                <div class="catalog-print-hero">
                                     @if($product['has_real_image'])
-                                        <img class="product-image" src="{{ $product['image_path'] }}" alt="{{ $product['name'] }}">
+                                        <span class="catalog-print-photo"><img class="product-image" src="{{ $product['image_path'] }}" alt="{{ $product['name'] }}"></span>
                                     @endif
-                                    <span><span class="product-name">{{ $product['name'] }}</span><span class="product-meta">دسته: {{ $product['category_name'] }} | {{ $product['model_count'] }} مدل | {{ $product['color_count'] }} رنگ | {{ $product['variant_count'] }} تنوع</span></span>
+                                    <span class="catalog-print-info"><span class="catalog-print-category">{{ $product['category_name'] }}</span><span class="product-name">{{ $product['name'] }}</span><span class="product-meta">{{ $product['model_count'] }} مدل · {{ $product['color_count'] }} رنگ · {{ $product['variant_count'] }} تنوع</span></span>
+                                    <span class="catalog-print-summary"><small>قیمت</small><strong>{{ $product['price_summary'] }}</strong></span>
                                 </div>
                             </th>
-                            <th class="product-summary">{{ $product['price_summary'] }}</th>
                         </tr>
-                        <tr class="column-heading"><th>مدل‌های سازگار</th><th>رنگ‌های قابل سفارش</th><th>قیمت</th></tr>
                     </thead>
                     <tbody>
                         @foreach($product['groups'] as $group)
-                            <tr class="data-row catalog-group-row">
-                                <td class="catalog-models">@foreach($group['models'] as $model)<span class="model-token">{{ $model }}</span>{{ $loop->last ? '' : '، ' }}@endforeach</td>
-                                <td class="catalog-colors">@include('product-exports.partials.color-list', ['colors' => $group['colors']])</td>
-                                <td class="catalog-price">{{ $group['price_label'] }}</td>
+                            <tr class="data-row catalog-group-row catalog-print-group">
+                                <td class="catalog-models"><small>مدل‌های سازگار</small>@foreach($group['models'] as $model)<span class="model-token">{{ $model }}</span>{{ $loop->last ? '' : '، ' }}@endforeach</td>
+                                <td class="catalog-colors"><small>رنگ‌ها</small>@include('product-exports.partials.catalog-colors', ['colors' => $group['colors']])</td>
+                                <td class="catalog-price"><small>قیمت گروه</small>{{ $group['price_label'] }}</td>
                             </tr>
                         @endforeach
                     </tbody>

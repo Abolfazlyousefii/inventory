@@ -58,10 +58,6 @@ class InvoiceSalesCorrectionService
             // the dispatch queue), whatever the request contains.
             $oldTotal = (int) $invoice->total;
             $before = $invoice->items->map(fn (InvoiceItem $item) => clone $item);
-            $revisionTableExists = DB::getSchemaBuilder()->hasTable('invoice_collection_revisions');
-            $previousRevisionId = $revisionTableExists
-                ? (int) DB::table('invoice_collection_revisions')->where('invoice_id', $invoice->id)->max('id')
-                : 0;
             $oldHeader = [
                 'discount_type' => (string) ($invoice->invoice_discount_type ?: 'amount'),
                 'discount_value' => (string) (int) ($invoice->invoice_discount_value ?? $invoice->invoice_discount_amount ?? 0),

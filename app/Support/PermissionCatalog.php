@@ -715,6 +715,10 @@ class PermissionCatalog
     {
         return [
             'admin.product-exports.print' => 'products.export',
+            'admin.product-exports.builder.products' => 'products.export',
+            'admin.product-exports.builder.print' => 'products.export',
+            'admin.product-exports.builder.preview' => 'products.export',
+            'admin.product-exports.products.image' => 'products.export',
             'admin.product-exports.download' => 'products.export',
             'admin.product-exports.model-lists' => 'products.export',
             'admin.product-exports.products.search' => 'products.export',
@@ -815,6 +819,7 @@ class PermissionCatalog
             'notifications.read' => 'notifications.manage',
             'notifications.read-all' => 'notifications.manage',
             'products.index' => 'products.view',
+            'products.selected-export' => 'products.export',
             'products.data' => 'products.view',
             'products.variants' => 'products.view',
             'products.create' => 'products.create',

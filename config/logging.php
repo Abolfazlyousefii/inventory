@@ -73,6 +73,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'slowdiag' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/slowdiag.log'),
+            'level' => 'info',
+            'days' => (int) env('SLOW_DIAG_LOG_DAYS', 3),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

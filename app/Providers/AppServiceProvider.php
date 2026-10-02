@@ -28,11 +28,14 @@ use App\Observers\ProductVariantSyncObserver;
 use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Support\PermissionCatalog;
+use App\Support\SlowRequestDiagnostics;
 use App\Services\LogOtpSender;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -41,11 +44,18 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(OtpSender::class, LogOtpSender::class);
+        $this->app->scoped(SlowRequestDiagnostics::class, fn () => new SlowRequestDiagnostics());
     }
 
     public function boot(Router $router): void
     {
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
+
+        if (! $this->app->runningInConsole() && (bool) config('slowdiag.enabled')) {
+            DB::listen(function (QueryExecuted $query): void {
+                app(SlowRequestDiagnostics::class)->recordQuery($query);
+            });
+        }
 
         Relation::morphMap([
             'site_user' => \App\Models\Site\User::class,

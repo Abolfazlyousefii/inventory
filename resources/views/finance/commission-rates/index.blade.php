@@ -39,7 +39,10 @@
             <h1 class="h3 mb-1">تنظیمات نرخ پورسانت</h1>
             <p class="text-muted mb-0">نرخ اختصاصی، ارث‌بری و نرخ مؤثر هر سطح از درخت کالا</p>
         </div>
-        <a href="{{ route('finance.seller-sales.index') }}" class="btn btn-outline-secondary">بازگشت به اسناد پورسانت</a>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ route('finance.commission-rates.import.create') }}" class="btn btn-primary">ورود نرخ‌ها از اکسل</a>
+            <a href="{{ route('finance.seller-sales.index') }}" class="btn btn-outline-secondary">بازگشت به اسناد پورسانت</a>
+        </div>
     </div>
 
     @if(session('success'))
