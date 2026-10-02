@@ -5,11 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\CommissionRateRevision;
 use App\Models\Product;
 use App\Services\Commissions\CommissionRateService;
-use App\Support\JalaliDate;
 use App\Support\Percentage;
-use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -26,24 +25,20 @@ class CommissionRateImportController extends Controller
 
     public function create(): View
     {
-        return view('finance.commission-rates.import', [
-            'defaultEffectiveFrom' => JalaliDate::date(now()->addDay()),
-        ]);
+        return view('finance.commission-rates.import');
     }
 
     public function preview(Request $request): View
     {
-        $data = $request->validate([
+        $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240'],
-            'effective_from' => ['required', 'string', 'max:20'],
         ]);
 
-        $effectiveFrom = $this->parseEffectiveFrom($data['effective_from']);
         $analysis = $this->analyzeSpreadsheet($request->file('file')->getRealPath());
 
-        if (($analysis['summary']['entered'] ?? 0) === 0) {
+        if (($analysis['summary']['total_rows'] ?? 0) === 0) {
             throw ValidationException::withMessages([
-                'file' => 'هیچ ردیف دارای مبلغ پورسانت در فایل پیدا نشد.',
+                'file' => 'هیچ ردیف کالایی در فایل پیدا نشد.',
             ]);
         }
 
@@ -51,7 +46,7 @@ class CommissionRateImportController extends Controller
         $manifestPath = "commission-rate-imports/{$token}.json";
         $manifest = [
             'created_at' => now()->toIso8601String(),
-            'effective_from' => $effectiveFrom->toDateTimeString(),
+            'effective_from' => null,
             'source_name' => $request->file('file')->getClientOriginalName(),
             'summary' => $analysis['summary'],
             'rows' => $analysis['rows'],
@@ -70,7 +65,6 @@ class CommissionRateImportController extends Controller
         return view('finance.commission-rates.import-preview', [
             'token' => $token,
             'manifest' => $manifest,
-            'effectiveFromDisplay' => JalaliDate::date($effectiveFrom),
         ]);
     }
 
@@ -100,6 +94,17 @@ class CommissionRateImportController extends Controller
         }
 
         $manifest = json_decode(Storage::disk('local')->get($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+
+        if (empty($manifest['effective_from'])) {
+            // One timestamp is frozen for the whole import so all products switch together,
+            // even though the browser applies the rows in multiple small batches.
+            $manifest['effective_from'] = now()->toDateTimeString();
+            Storage::disk('local')->put(
+                $manifestPath,
+                json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)
+            );
+        }
+
         $readyRows = array_values(array_filter(
             $manifest['rows'] ?? [],
             fn (array $row) => ($row['status'] ?? null) === 'ready'
@@ -111,18 +116,39 @@ class CommissionRateImportController extends Controller
         $actor = $request->user();
 
         $applied = 0;
+        $inherited = 0;
         $unchanged = 0;
         $errors = [];
 
         foreach ($batch as $row) {
             $productId = (int) $row['product_id'];
-            $percentage = Percentage::normalize($row['percentage']);
 
             try {
                 $active = CommissionRateRevision::query()
                     ->where('target_key', 'product:'.$productId)
                     ->where('active_marker', 1)
                     ->first();
+
+                if (($row['action'] ?? null) === 'inherit') {
+                    if (! $active) {
+                        $unchanged++;
+
+                        continue;
+                    }
+
+                    if ($effectiveFrom->lte($active->effective_from)) {
+                        throw ValidationException::withMessages([
+                            'rate' => 'شروع نرخ فعال این محصول بعد از زمان Import است و حذف خودکار آن امن نیست.',
+                        ]);
+                    }
+
+                    $service->removeRate('product', $productId, $actor, $effectiveFrom);
+                    $inherited++;
+
+                    continue;
+                }
+
+                $percentage = Percentage::normalize($row['percentage']);
 
                 if ($active && Percentage::normalize($active->percentage) === $percentage) {
                     $unchanged++;
@@ -148,7 +174,7 @@ class CommissionRateImportController extends Controller
         $nextOffset = $offset + count($batch);
         $done = $nextOffset >= count($readyRows);
 
-        if ($done && $errors === []) {
+        if ($done) {
             Storage::disk('local')->delete($manifestPath);
             $request->session()->forget(self::SESSION_KEY.'.'.$token);
         }
@@ -157,11 +183,13 @@ class CommissionRateImportController extends Controller
             'ok' => true,
             'processed' => count($batch),
             'applied' => $applied,
+            'inherited' => $inherited,
             'unchanged' => $unchanged,
             'errors' => $errors,
             'next_offset' => $nextOffset,
             'total' => count($readyRows),
             'done' => $done,
+            'effective_from' => $manifest['effective_from'],
         ]);
     }
 
@@ -190,11 +218,16 @@ class CommissionRateImportController extends Controller
             ->keyBy('target_id');
 
         $rows = [];
+        $seenProductIds = [];
         $summary = [
-            'entered' => 0,
-            'ready' => 0,
+            'total_rows' => 0,
+            'with_rate' => 0,
+            'inherit' => 0,
+            'ready_set' => 0,
+            'ready_inherit' => 0,
             'missing_product' => 0,
             'ambiguous' => 0,
+            'duplicate_product' => 0,
             'missing_price' => 0,
             'invalid_percentage' => 0,
         ];
@@ -205,17 +238,16 @@ class CommissionRateImportController extends Controller
                 continue;
             }
 
-            $commissionRaw = $this->cellValue($sheet, $columns['commission'], $rowNumber);
-            if ($commissionRaw === null || $commissionRaw === '') {
-                continue;
-            }
-
-            $summary['entered']++;
+            $summary['total_rows']++;
 
             $category = trim((string) $this->cellValue($sheet, $columns['category'], $rowNumber));
             $priceRaw = $this->cellValue($sheet, $columns['price'], $rowNumber);
+            $commissionRaw = $this->cellValue($sheet, $columns['commission'], $rowNumber);
             $price = is_numeric($priceRaw) ? (int) round((float) $priceRaw) : null;
-            $commission = is_numeric($commissionRaw) ? (int) round((float) $commissionRaw) : null;
+            $commissionIsBlank = $commissionRaw === null || trim((string) $commissionRaw) === '';
+            $commission = ! $commissionIsBlank && is_numeric($commissionRaw)
+                ? (int) round((float) $commissionRaw)
+                : null;
 
             $base = [
                 'excel_row' => $rowNumber,
@@ -229,30 +261,41 @@ class CommissionRateImportController extends Controller
                 'match_type' => null,
                 'current_rate' => null,
                 'current_rate_effective_from' => null,
+                'action' => $commissionIsBlank ? 'inherit' : 'set_rate',
                 'status' => null,
                 'message' => null,
             ];
 
-            if (! $price || $price <= 0 || $commission === null) {
+            if ($commissionIsBlank) {
+                $summary['inherit']++;
+            } else {
+                $summary['with_rate']++;
+            }
+
+            if (! $commissionIsBlank && (! $price || $price <= 0 || $commission === null)) {
                 $summary['missing_price']++;
                 $rows[] = array_merge($base, [
                     'status' => 'missing_price',
-                    'message' => 'قیمت معتبر برای محاسبه درصد وجود ندارد.',
+                    'message' => 'پورسانت وارد شده ولی قیمت معتبر برای محاسبه درصد وجود ندارد.',
                 ]);
 
                 continue;
             }
 
-            $percentage = (int) ceil(($commission * 100) / $price);
-            if ($percentage < 0 || $percentage > 100) {
-                $summary['invalid_percentage']++;
-                $rows[] = array_merge($base, [
-                    'percentage' => $percentage,
-                    'status' => 'invalid_percentage',
-                    'message' => 'درصد محاسبه‌شده خارج از بازه ۰ تا ۱۰۰ است.',
-                ]);
+            $percentage = null;
+            if (! $commissionIsBlank) {
+                $percentage = (int) ceil(($commission * 100) / $price);
 
-                continue;
+                if ($percentage < 0 || $percentage > 100) {
+                    $summary['invalid_percentage']++;
+                    $rows[] = array_merge($base, [
+                        'percentage' => $percentage,
+                        'status' => 'invalid_percentage',
+                        'message' => 'درصد محاسبه‌شده خارج از بازه ۰ تا ۱۰۰ است.',
+                    ]);
+
+                    continue;
+                }
             }
 
             [$product, $matchType, $matchStatus] = $this->matchProduct(
@@ -277,9 +320,7 @@ class CommissionRateImportController extends Controller
             }
 
             $active = $activeProductRates->get($product->id);
-            $summary['ready']++;
-
-            $rows[] = array_merge($base, [
+            $row = array_merge($base, [
                 'percentage' => $percentage,
                 'product_id' => (int) $product->id,
                 'product_name' => (string) $product->name,
@@ -287,10 +328,45 @@ class CommissionRateImportController extends Controller
                 'current_rate' => $active?->percentage,
                 'current_rate_effective_from' => $active?->effective_from?->toDateTimeString(),
                 'status' => 'ready',
-                'message' => $matchType === 'compact'
-                    ? 'تطبیق با حذف فاصله‌های اضافی انجام شد.'
-                    : 'تطبیق قطعی نام کالا.',
+                'message' => $commissionIsBlank
+                    ? 'پورسانت اکسل خالی است؛ نرخ اختصاصی محصول بسته می‌شود تا نرخ دسته‌بندی اعمال شود.'
+                    : ($matchType === 'compact'
+                        ? 'تطبیق با نرمال‌سازی فاصله و علائم انجام شد.'
+                        : 'تطبیق قطعی نام کالا.'),
             ]);
+
+            if (isset($seenProductIds[$product->id])) {
+                $previousIndex = $seenProductIds[$product->id];
+
+                if (($rows[$previousIndex]['status'] ?? null) === 'ready') {
+                    if (($rows[$previousIndex]['action'] ?? null) === 'inherit') {
+                        $summary['ready_inherit']--;
+                    } else {
+                        $summary['ready_set']--;
+                    }
+                    $summary['duplicate_product']++;
+
+                    $rows[$previousIndex]['status'] = 'duplicate_product';
+                    $rows[$previousIndex]['message'] = 'بیش از یک ردیف اکسل به همین محصول متصل شده است؛ هیچ‌کدام خودکار ثبت نمی‌شوند.';
+                }
+
+                $summary['duplicate_product']++;
+                $row['status'] = 'duplicate_product';
+                $row['message'] = 'بیش از یک ردیف اکسل به همین محصول متصل شده است؛ هیچ‌کدام خودکار ثبت نمی‌شوند.';
+                $rows[] = $row;
+
+                continue;
+            }
+
+            $seenProductIds[$product->id] = count($rows);
+
+            if ($commissionIsBlank) {
+                $summary['ready_inherit']++;
+            } else {
+                $summary['ready_set']++;
+            }
+
+            $rows[] = $row;
         }
 
         return compact('rows', 'summary');
@@ -299,7 +375,7 @@ class CommissionRateImportController extends Controller
     private function matchProduct(
         string $name,
         string $category,
-        int $price,
+        ?int $price,
         array $exactIndex,
         array $compactIndex
     ): array {
@@ -328,7 +404,7 @@ class CommissionRateImportController extends Controller
         return [null, null, 'missing_product'];
     }
 
-    private function pickCandidate(array $candidates, string $category, int $price): ?Product
+    private function pickCandidate(array $candidates, string $category, ?int $price): ?Product
     {
         if (count($candidates) === 1) {
             return $candidates[0];
@@ -354,12 +430,18 @@ class CommissionRateImportController extends Controller
             }
         }
 
-        $priceMatches = array_values(array_filter(
-            $candidates,
-            fn (Product $product) => (int) $product->price === $price
-        ));
+        if ($price !== null) {
+            $priceMatches = array_values(array_filter(
+                $candidates,
+                fn (Product $product) => (int) $product->price === $price
+            ));
 
-        return count($priceMatches) === 1 ? $priceMatches[0] : null;
+            if (count($priceMatches) === 1) {
+                return $priceMatches[0];
+            }
+        }
+
+        return null;
     }
 
     private function findColumns(Worksheet $sheet): array
@@ -426,23 +508,5 @@ class CommissionRateImportController extends Controller
     private function compact(string $value): string
     {
         return preg_replace('/[\s\-_\.\/]+/u', '', $this->normalize($value)) ?? '';
-    }
-
-    private function parseEffectiveFrom(string $value): Carbon
-    {
-        $value = trim($value);
-
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-            return Carbon::createFromFormat('!Y-m-d', $value, config('app.timezone'))->startOfDay();
-        }
-
-        $gregorian = JalaliDate::toGregorianDate($value);
-        if ($gregorian === null) {
-            throw ValidationException::withMessages([
-                'effective_from' => 'تاریخ شروع اعمال نامعتبر است؛ نمونه صحیح: ۱۴۰۵/۰۷/۱۱',
-            ]);
-        }
-
-        return Carbon::parse($gregorian, config('app.timezone'))->startOfDay();
     }
 }
