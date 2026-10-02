@@ -580,6 +580,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/preinvoice/drafts/{uuid}/cancel', [PreinvoiceController::class, 'financeCancel'])->name('preinvoice.draft.cancel');
     Route::get('/preinvoice/all', [PreinvoiceController::class, 'allIndex'])->name('preinvoice.all.index');
     Route::get('/preinvoice/my', [PreinvoiceController::class, 'myIndex'])->name('preinvoice.my.index');
+    Route::delete('/preinvoice/my/drafts/{uuid}', [PreinvoiceController::class, 'deleteMyDraft'])->name('preinvoice.my.drafts.destroy');
     Route::get('/preinvoice/my/invoices/{uuid}/correction', [InvoiceController::class, 'salesCorrectionEdit'])->name('preinvoice.my.invoice-correction.edit');
     Route::get('/preinvoice/my/invoices/{uuid}/correction/search', [InvoiceController::class, 'salesCorrectionSearch'])->name('preinvoice.my.invoice-correction.search');
     Route::post('/preinvoice/my/invoices/{uuid}/correction', [InvoiceController::class, 'salesCorrectionSubmit'])->name('preinvoice.my.invoice-correction.submit');

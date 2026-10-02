@@ -10,6 +10,7 @@
         "ext-zip": "*",
         "bavix/laravel-wallet": "^11.5",
         "dompdf/dompdf": "^3.1",
+        "fruitcake/laravel-debugbar": "*",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "league/flysystem-aws-s3-v3": "3.0",
@@ -101,6 +102,10 @@
     "minimum-stability": "stable",
     "prefer-stable": true,
     "repositories": [{
+        "name": "packagist",
+        "type": "composer",
+        "url": "https://mirror.abrha.net/repository/composer"
+    },{
         "packagist.org": false
     }]
 }
