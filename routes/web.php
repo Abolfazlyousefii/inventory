@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\OrgCommissionController;
 use App\Http\Controllers\CommissionRateSettingsController;
+use App\Http\Controllers\CommissionRateImportController;
 use App\Http\Controllers\AccountStatementController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Admin\BugInvestigatorController;
@@ -341,6 +342,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/rates', [CommissionRateSettingsController::class, 'storeRate'])->name('rates.store');
         Route::delete('/rates', [CommissionRateSettingsController::class, 'removeRate'])->name('rates.destroy');
         Route::get('/rates/history', [CommissionRateSettingsController::class, 'rateHistory'])->name('rates.history');
+        Route::get('/import', [CommissionRateImportController::class, 'create'])->name('import.create');
+        Route::post('/import/preview', [CommissionRateImportController::class, 'preview'])->name('import.preview');
+        Route::post('/import/apply', [CommissionRateImportController::class, 'apply'])->name('import.apply');
     });
 
     Route::prefix('finance/reports/org-commission')->name('finance.org-commission.')->middleware(['auth', 'page.access:finance.seller_sales_documents'])->group(function () {
