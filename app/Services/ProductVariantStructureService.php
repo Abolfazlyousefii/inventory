@@ -25,25 +25,59 @@ class ProductVariantStructureService
         }
 
         if ($modelIds->isEmpty() && empty($meta)) {
-            $modelIds = $product->variants()
-                ->whereNotNull('model_list_id')
-                ->distinct()
-                ->pluck('model_list_id')
-                ->map(fn ($id) => (int) $id)
-                ->filter()
-                ->values();
+            if ($product->relationLoaded('variants')) {
+                $modelIds = $product->getRelation('variants')
+                    ->pluck('model_list_id')
+                    ->filter(fn ($id) => $id !== null)
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->unique()
+                    ->values();
+            } else {
+                $modelIds = $product->variants()
+                    ->whereNotNull('model_list_id')
+                    ->distinct()
+                    ->pluck('model_list_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->values();
+            }
         }
 
         $designCount = isset($meta['design_count']) ? (int) $meta['design_count'] : null;
 
         if ($designCount === null && empty($meta)) {
-            $designCount = (int) $product->variants()
-                ->whereNotNull('variety_code')
-                ->where('variety_code', '<>', '0000')
-                ->selectRaw('MAX(CAST(variety_code AS UNSIGNED)) as max_design')
-                ->value('max_design');
-            $designCount = $designCount > 0 ? $designCount : null;
+            if ($product->relationLoaded('variants')) {
+                $designCount = $product->getRelation('variants')
+                    ->filter(
+                        fn (ProductVariant $variant) =>
+                            $variant->variety_code !== null
+                            && (string) $variant->variety_code !== '0000'
+                    )
+                    ->map(
+                        fn (ProductVariant $variant) =>
+                        (int) $variant->variety_code
+                    )
+                    ->max();
+
+                $designCount = $designCount && $designCount > 0
+                    ? (int) $designCount
+                    : null;
+            } else {
+                $designCount = (int) $product->variants()
+                    ->whereNotNull('variety_code')
+                    ->where('variety_code', '<>', '0000')
+                    ->selectRaw(
+                        'MAX(CAST(variety_code AS UNSIGNED)) as max_design'
+                    )
+                    ->value('max_design');
+
+                $designCount = $designCount > 0
+                    ? $designCount
+                    : null;
+            }
         }
+
         if ($designCount !== null) {
             $designCount = max(0, min(99, $designCount));
         }
@@ -102,6 +136,111 @@ class ProductVariantStructureService
             ->orderBy('variant_code')
             ->orderBy('id')
             ->get();
+    }
+
+    public function validLoadedVariants(
+        Product $product,
+        bool $activeOnly = true
+    ): Collection {
+        if (! $product->relationLoaded('variants')) {
+            return $this->validVariants($product, $activeOnly);
+        }
+
+        $structure = $this->structure($product);
+
+        $modelIds = array_map(
+            'intval',
+            $structure['model_ids'] ?? []
+        );
+
+        if (
+            $structure['uses_designs']
+            && $structure['design_count'] !== null
+        ) {
+            if ($structure['design_count'] <= 0) {
+                $validDesignCodes = ['0000'];
+            } else {
+                $validDesignCodes = collect(
+                    range(1, $structure['design_count'])
+                )
+                    ->map(
+                        fn ($index) =>
+                        str_pad(
+                            (string) $index,
+                            4,
+                            '0',
+                            STR_PAD_LEFT
+                        )
+                    )
+                    ->all();
+            }
+        } else {
+            $validDesignCodes = ['0000'];
+        }
+
+        return $product->getRelation('variants')
+            ->filter(function (
+                ProductVariant $variant
+            ) use (
+                $product,
+                $activeOnly,
+                $structure,
+                $modelIds,
+                $validDesignCodes
+            ): bool {
+
+                if (
+                    (int) $variant->product_id
+                    !== (int) $product->id
+                ) {
+                    return false;
+                }
+
+                if (
+                    $activeOnly
+                    && ! (bool) $variant->is_active
+                ) {
+                    return false;
+                }
+
+                if ($structure['uses_models']) {
+
+                    if (
+                        $modelIds === []
+                        || ! in_array(
+                            (int) $variant->model_list_id,
+                            $modelIds,
+                            true
+                        )
+                    ) {
+                        return false;
+                    }
+
+                } elseif ($variant->model_list_id !== null) {
+                    return false;
+                }
+
+                return in_array(
+                    (string) $variant->variety_code,
+                    $validDesignCodes,
+                    true
+                );
+            })
+            ->sort(function (
+                ProductVariant $a,
+                ProductVariant $b
+            ): int {
+
+                $codeCompare = strcmp(
+                    (string) $a->variant_code,
+                    (string) $b->variant_code
+                );
+
+                return $codeCompare !== 0
+                    ? $codeCompare
+                    : ((int) $a->id <=> (int) $b->id);
+            })
+            ->values();
     }
 
     public function invalidVariants(Product $product): Collection

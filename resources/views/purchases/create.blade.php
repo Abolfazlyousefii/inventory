@@ -29,33 +29,20 @@
 				: [];
 		}
 
-		$productsPayload = $products->map(function ($p) {
-			return [
-				'id' => (int) $p->id,
-				'name' => (string) $p->name,
-				'code' => (string) ($p->code ?: $p->short_barcode),
-				'short_barcode' => (string) ($p->short_barcode ?? ''),
-				'sku' => (string) ($p->sku ?? ''),
-				'category_id' => $p->category_id ? (int) $p->category_id : null,
-				'variants' => $p->variants->map(function ($v) {
-					return [
-						'id' => (int) $v->id,
-						'name' => (string) $v->variant_name,
-						'model_name' => (string) ($v->modelList?->model_name ?? ''),
-						'model_code' => (string) ($v->modelList?->code ?? ''),
-						'variety_name' => (string) ($v->variety_name ?? ''),
-						'code' => (string) ($v->variant_code ?? ''),
-						'buy_price' => \App\Support\Currency::toRial($v->buy_price ?? 0),
-						'sell_price' => \App\Support\Currency::toRial($v->sell_price ?? 0),
-						'stock' => (int) ($v->stock ?? 0),
-						'reserved' => (int) ($v->reserved ?? 0),
-						'barcode' => (string) ($v->barcode ?? ''),
-						'color_name' => (string) ($v->relationLoaded('color') ? ($v->color?->name ?? '') : ''),
-						'color_code' => (string) ($v->relationLoaded('color') ? ($v->color?->code ?? '') : ''),
-					];
-				})->values()->all(),
-			];
-		})->values()->all();
+$productsPayload = $products->map(function ($p) {
+    return [
+        'id' => (int) $p->id,
+        'name' => (string) $p->name,
+        'code' => (string) ($p->code ?: $p->short_barcode),
+        'short_barcode' => (string) ($p->short_barcode ?? ''),
+        'sku' => (string) ($p->sku ?? ''),
+        'category_id' => $p->category_id ? (int) $p->category_id : null,
+
+        // Keep the field.
+        // It gets filled by fetchRealProductVariants().
+        'variants' => [],
+    ];
+})->values()->all();
 
 		$categoriesPayload = ($categories ?? collect())->map(fn ($category) => [
 			'id' => (int) $category->id,
@@ -754,15 +741,11 @@
 					return existing;
 				}
 
-				if (!initialRows.length) {
-					try {
-						await fetchRealProductVariants(product);
-					} catch (error) {
-						alert(error.message || 'خطا در دریافت تنوع‌های محصول.');
-						return null;
-					}
-				} else {
-					product.variants = realVariantsForProduct(product);
+				try {
+					await fetchRealProductVariants(product);
+				} catch (error) {
+					alert(error.message || 'خطا در دریافت تنوع‌های محصول.');
+					return null;
 				}
 
 				productCardsEl.insertAdjacentHTML('beforeend', productCardTemplate(product));
