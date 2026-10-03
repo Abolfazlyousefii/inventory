@@ -91,6 +91,20 @@ it('expired_preinvoice_is_visible_in_active_tab', function () {
         ->assertSee('بررسی و ثبت مجدد');
 });
 
+it('expired_submitted_preinvoice_remains_visible_when_legacy_autosave_marker_is_set', function () {
+    $seller = User::factory()->create();
+    ['order' => $order] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, null, now()->subMinute());
+    $order->update(['is_auto_draft' => true]);
+
+    $service = app(MySalesDocumentsService::class);
+    expect($service->counts($seller->id)[MySalesDocumentsService::TAB_ACTIVE])->toBe(1);
+
+    $this->actingAs($seller)->get(route('preinvoice.my.index', ['tab' => MySalesDocumentsService::TAB_ACTIVE]))
+        ->assertOk()
+        ->assertSee($order->uuid)
+        ->assertSee('بررسی و ثبت مجدد');
+});
+
 it('expired_preinvoice_is_not_duplicated_in_needs_correction', function () {
     $seller = User::factory()->create();
     ['order' => $order] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, null, now()->subMinute());

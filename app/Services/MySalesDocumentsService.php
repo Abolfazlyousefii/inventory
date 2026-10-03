@@ -128,7 +128,10 @@ class MySalesDocumentsService
                 fn (Builder $query) => $query->where(fn (Builder $q) => $q->withoutTemporaryAutosaves()
                     ->orWhere('preinvoice_orders.total_price', '>', 0)
                     ->orWhereHas('items')),
-                fn (Builder $query) => $query->withoutTemporaryAutosaves(),
+                // A submitted document can retain the autosave marker after editing.
+                // Hide only actual temporary drafts; non-draft documents must remain visible.
+                fn (Builder $query) => $query->where(fn (Builder $q) => $q->withoutTemporaryAutosaves()
+                    ->orWhere('preinvoice_orders.status', '!=', PreinvoiceOrder::STATUS_DRAFT)),
             )
             ->select('preinvoice_orders.*')
             ->selectSub("coalesce(($invoiceActivitySql), preinvoice_orders.updated_at)", 'activity_at')
