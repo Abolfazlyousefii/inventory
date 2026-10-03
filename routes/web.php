@@ -4,6 +4,7 @@ use App\Http\Controllers\OrgCommissionController;
 use App\Http\Controllers\CommissionRateSettingsController;
 use App\Http\Controllers\CommissionRateImportController;
 use App\Http\Controllers\AccountStatementController;
+use App\Http\Controllers\AccountStatementImportController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Admin\BugInvestigatorController;
 use App\Http\Controllers\Admin\RoleController;
@@ -648,6 +649,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Account statements (گردش حساب اشخاص)
     Route::get('/account-statements', [AccountStatementController::class, 'index'])->name('account-statements.index');
+    Route::get('/account-statements/import', [AccountStatementImportController::class, 'create'])->name('account-statements.import.create');
+    Route::post('/account-statements/import/preview', [AccountStatementImportController::class, 'preview'])->name('account-statements.import.preview');
+    Route::post('/account-statements/import/apply', [AccountStatementImportController::class, 'apply'])->name('account-statements.import.apply');
     Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
     Route::put('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'updateForCustomer'])->name('account-statements.payments.update');

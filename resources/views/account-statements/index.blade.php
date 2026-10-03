@@ -17,6 +17,7 @@
         <h4 class="mb-0">📒 گردش حساب اشخاص</h4>
         <div class="text-muted small">لیست کامل اشخاص (مشتریان) و وضعیت حساب هر شخص</div>
     </div>
+    <a class="btn btn-outline-primary" href="{{ route('account-statements.import.create') }}">ورود اکسل مانده‌ها</a>
 </div>
 
 <div class="card mb-3">
