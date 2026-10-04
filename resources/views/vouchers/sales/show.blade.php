@@ -20,8 +20,7 @@
 		default => 'is-default',
 	};
 	$noteRows = collect([
-		['title' => 'یادداشت جمع‌آوری', 'body' => $invoice->collection_note],
-		['title' => 'توضیحات ارسال', 'body' => $invoice->shipping_note],
+		['title' => 'یادداشت سفارش', 'body' => $invoice->preinvoiceOrder?->payment_terms_note],
 	])->filter(fn($row) => filled($row['body']));
 
 	$removedReasonLabels = [
@@ -250,13 +249,10 @@
 
 		<div class="invoice-view-card">
 			<div class="invoice-view-card-title">یادداشت‌ها</div>
-			@if($noteRows->isNotEmpty() || $invoice->notes->isNotEmpty())
+			@if($noteRows->isNotEmpty())
 				<div class="d-grid gap-2">
 					@foreach($noteRows as $row)
 						<div class="invoice-note-card"><strong>{{ $row['title'] }}:</strong> {{ $row['body'] }}</div>
-					@endforeach
-					@foreach($invoice->notes as $note)
-						<div class="invoice-note-card">{{ $note->body ?? $note->note ?? $note->description ?? '—' }}</div>
 					@endforeach
 				</div>
 			@else

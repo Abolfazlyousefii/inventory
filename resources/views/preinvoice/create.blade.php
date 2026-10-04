@@ -1411,34 +1411,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			<input type="hidden" name="products_payload_gross_total" id="products_payload_gross_total" value="0">
 
 
-			<div class="soft-card compact-card mb-3">
-				<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
-					<div>
-						<h2 class="section-title mb-1">نوع ثبت</h2>
-						<div class="hint" id="reservationModeHint">پیش‌نویس موجودی را رزرو نمی‌کند؛ کنترل و رزرو رسمی موجودی هنگام ثبت نهایی انجام می‌شود.</div>
-					</div>
-				</div>
-				<div class="row g-2">
-					<div class="col-md-6">
-						<label class="border rounded-4 p-3 d-flex gap-2 h-100" style="cursor:pointer">
-							<input class="form-check-input mt-1" type="radio" name="is_in_person" value="0" @checked(! (bool) old('is_in_person', $order->is_in_person ?? false))>
-							<span>
-                            <span class="fw-bold d-block">آنلاین / غیرحضوری</span>
-                            <span class="hint">انتخاب‌های پیش‌نویس بدون رزرو موجودی ذخیره می‌شوند.</span>
-                        </span>
-						</label>
-					</div>
-					<div class="col-md-6">
-						<label class="border rounded-4 p-3 d-flex gap-2 h-100" style="cursor:pointer">
-							<input class="form-check-input mt-1" type="radio" name="is_in_person" value="1" @checked((bool) old('is_in_person', $order->is_in_person ?? false))>
-							<span>
-                            <span class="fw-bold d-block">حضوری</span>
-                            <span class="hint">انتخاب‌های پیش‌نویس بدون رزرو موجودی ذخیره می‌شوند.</span>
-                        </span>
-						</label>
-					</div>
-				</div>
-			</div>
 
 			<div class="soft-card compact-card mb-3">
 				<div class="row g-2 align-items-end">
@@ -1471,11 +1443,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				</div>
 			</div>
 
-			<div class="soft-card compact-card mb-3">
-				<h2 class="section-title mb-1">شرایط پرداخت پیشنهادی</h2>
-				<div class="hint mb-2">مثلاً: ۲۰٪ نقدی، ۸۰٪ چک سه‌ماهه در سه فقره</div>
-				<textarea id="payment_terms_note" name="payment_terms_note" class="form-control form-control-sm" rows="2" placeholder="مثلاً ۲۰٪ نقدی، ۸۰٪ چک سه‌ماهه در سه فقره...">{{ $oldPaymentTermsNote }}</textarea>
-			</div>
 
 			<div class="soft-card-lg product-focus mb-3">
 				<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -1525,6 +1492,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					<div id="groupSummaryList"></div>
 					<div id="groupProductsInputs"></div>
 				</div>
+			</div>
+
+			<div class="soft-card compact-card mb-3">
+				<h2 class="section-title mb-1">یادداشت سفارش</h2>
+				<div class="hint mb-2">مثلاً: ۲۰٪ نقدی، ۸۰٪ چک سه‌ماهه در سه فقره</div>
+				<textarea id="payment_terms_note" name="payment_terms_note" class="form-control form-control-sm" rows="2" placeholder="مثلاً ۲۰٪ نقدی، ۸۰٪ چک سه‌ماهه در سه فقره...">{{ $oldPaymentTermsNote }}</textarea>
 			</div>
 
 			<div class="soft-card final-card">
@@ -1992,24 +1965,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			});
 		}
 
-		function currentIsInPerson() {
-			return document.querySelector('input[name="is_in_person"]:checked')?.value === '1';
-		}
-
-		function setReservationMode(isInPerson) {
-			const value = isInPerson ? '1' : '0';
-			const input = document.querySelector(`input[name="is_in_person"][value="${value}"]`);
-			if (input) input.checked = true;
-			updateReservationModeHint();
-		}
-
-		function updateReservationModeHint() {
-			const hint = document.getElementById('reservationModeHint');
-			if (!hint) return;
-			hint.textContent = currentIsInPerson()
-				? 'پیش‌نویس فروش حضوری نیز موجودی را رزرو نمی‌کند؛ رزرو رسمی هنگام ثبت نهایی ایجاد می‌شود.'
-				: 'پیش‌نویس موجودی را رزرو نمی‌کند؛ رزرو رسمی هنگام ثبت نهایی ایجاد می‌شود.';
-		}
 
 		let reservationSyncQueue = Promise.resolve();
 		function syncDraftReservation(sourceGroups = groupedSelections) {
@@ -2253,7 +2208,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				autosave_version: currentAutosaveVersion,
 				saved_at: new Date().toISOString(),
 				reservation_token: ensureReservationToken(),
-				is_in_person: currentIsInPerson(),
 				customer: {
 					id: document.getElementById('customer_id')?.value || '',
 					name: document.getElementById('customer_name')?.value || '',
@@ -2303,7 +2257,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				customer_name: document.getElementById('customer_name')?.value || '',
 				customer_mobile: document.getElementById('customer_mobile')?.value || '',
 				payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
-				is_in_person: currentIsInPerson() ? 1 : 0,
 				discount_amount: toInt(document.getElementById('discount')?.value || 0),
 				invoice_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
 				invoice_discount_value: Number(document.getElementById('orderDiscountValue')?.value || 0),
@@ -2467,7 +2420,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			document.getElementById('customer_balance_hint').textContent = '';
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 			document.getElementById('customerSummaryBox').classList.remove('is-selected');
-			setReservationMode(false);
 			if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
 
 
@@ -2515,7 +2467,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			if (paymentTermsEl) paymentTermsEl.value = draft.payment_terms_note || '';
 			document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
 			document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
-			setReservationMode(Boolean(draft.is_in_person));
 			groupedSelections = draft.groupedSelections || {};
 
 			if (draft.reservation_token) {
@@ -2560,7 +2511,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			document.getElementById('payment_terms_note').value = draft.payment_terms_note || '';
 			document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
 			document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
-			setReservationMode(Boolean(draft.is_in_person));
 			groupedSelections = {};
 			const clampedItems = [];
 			for (const row of (draft.items || [])) {
@@ -2621,7 +2571,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				reservation_token: draft.draft_token || ensureReservationToken(),
 				customer_id: draft.customer?.id ? String(draft.customer.id) : null,
 				customer_name: draft.customer?.name || '', customer_mobile: draft.customer?.mobile || '',
-				payment_terms_note: draft.payment_terms_note || '', is_in_person: draft.is_in_person ? 1 : 0,
+				payment_terms_note: draft.payment_terms_note || '',
 				discount_amount: Number(draft.discount_breakdown?.total_discount ?? 0),
 				invoice_discount_type: draft.discount?.type || 'amount',
 				invoice_discount_value: Number(draft.discount?.value || 0),
@@ -2640,7 +2590,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				document.getElementById('selectedCustomerTitle').textContent = [payload.customer_name, payload.customer_mobile].filter(Boolean).join(' - ');
 				document.getElementById('orderDiscountType').value = payload.invoice_discount_type;
 				document.getElementById('orderDiscountValue').value = payload.invoice_discount_value;
-				setReservationMode(!!payload.is_in_person);
 				const previous = groupedSelections;
 				groupedSelections = {};
 				for (const row of payload.products) {
@@ -2770,19 +2719,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function bindLocalDraftEvents() {
-			document.querySelectorAll('input[name="is_in_person"]').forEach(input => {
-				input.addEventListener('change', async function() {
-					updateReservationModeHint();
-					scheduleLocalDraftSave();
-					if (!Object.keys(groupedSelections || {}).length) return;
-					try {
-						await syncDraftReservation(groupedSelections);
-					} catch (e) {
-						alert(e.message || 'خطا در همگام‌سازی پیش‌نویس.');
-					}
-				});
-			});
-
 			['payment_terms_note', 'orderDiscountType', 'orderDiscountValue'].forEach(id => {
 				const el = document.getElementById(id);
 				if (!el) return;
@@ -2836,7 +2772,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			heartbeatTimer = setInterval(beat, 30000);
 		}
 
-		updateReservationModeHint();
 
 		async function getProductDetails(productId, fresh = false) {
 			const id = String(productId || '');
@@ -2941,7 +2876,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			document.getElementById('customer_balance_hint').textContent = '';
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 			document.getElementById('customerSummaryBox').classList.remove('is-selected');
-			setReservationMode(false);
 			if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
 			updateSubmitState();
 			scheduleLocalDraftSave();
