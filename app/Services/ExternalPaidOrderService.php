@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Province;
+use App\Models\User;
 use App\Support\DocumentCodeGenerator;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -17,6 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 class ExternalPaidOrderService
 {
+    private const SITE_SELLER_USERNAME = 'ariya_site';
     public function __construct(
         private readonly CustomerLedgerService $customerLedgerService,
         private readonly PaymentRegistrationService $paymentRegistrationService,
@@ -66,6 +68,17 @@ class ExternalPaidOrderService
                 $occurredAt = $this->occurredAt($payload);
                 [$provinceId, $cityId] = $this->resolveLocationIds($shippingAddress);
 
+                $siteSellerId = User::query()
+                    ->where('username', self::SITE_SELLER_USERNAME)
+                    ->where('is_seller', true)
+                    ->value('id');
+
+                if (! $siteSellerId) {
+                    throw ValidationException::withMessages([
+                        'seller' => 'Ariya Site seller account does not exist in Inventory.',
+                    ]);
+                }
+
                 $initialStatus = $startCollection
                     ? Invoice::STATUS_COLLECTING
                     : Invoice::STATUS_PENDING_COLLECTION;
@@ -73,6 +86,7 @@ class ExternalPaidOrderService
                 $invoice = Invoice::create([
                     'uuid' => $invoiceNumber,
                     'external_order_id' => $externalOrderId,
+                    'seller_id' => $siteSellerId,
                     'document_date' => $occurredAt,
                     'customer_id' => $customer->id,
                     'customer_name' => $this->customerName($payload, $shippingAddress, $customer),
