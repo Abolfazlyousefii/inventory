@@ -114,7 +114,7 @@
 				<div class="invoice-summary-item"><div class="invoice-summary-label">وضعیت فعلی</div><div class="invoice-summary-value"><span class="invoice-status-badge {{ $statusClass }}">{{ $statusLabels[$invoice->status] ?? 'نامشخص' }}</span></div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">مبلغ کل</div><div class="invoice-summary-value">{{ $money($invoice->total) }}</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تعداد اقلام</div><div class="invoice-summary-value">{{ number_format($itemsCount) }} قلم</div></div>
-				<div class="invoice-summary-item"><div class="invoice-summary-label">فروشنده / اپراتور</div><div class="invoice-summary-value">{{ $invoice->preinvoiceOrder?->creator?->name ?: '—' }}</div></div>
+				<div class="invoice-summary-item"><div class="invoice-summary-label">فروشنده / اپراتور</div><div class="invoice-summary-value">        {{ $invoice->effectiveSeller()?->name ?: '—' }} </div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ ایجاد</div><div class="invoice-summary-value">{{ $toJalali($invoice->created_at) }}</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ تایید/تغییر مالی</div><div class="invoice-summary-value">{{ $toJalali($invoice->status_changed_at) }}</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ آماده ارسال</div><div class="invoice-summary-value">{{ $invoice->status === Invoice::STATUS_READY_TO_SHIP ? $toJalali($invoice->status_changed_at) : $toJalali($invoice->collected_at) }}</div></div>
