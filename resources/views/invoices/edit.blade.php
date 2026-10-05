@@ -118,6 +118,8 @@
 		<div class="invoice-edit-card mb-3">
 			<form method="POST" action="{{ route('invoices.update', $invoice->uuid) }}" id="items-editor">
 				@csrf @method('PUT')
+				<input type="hidden" name="items_payload" id="invoiceEditItemsPayload">
+				<input type="hidden" name="items_payload_count" id="invoiceEditItemsPayloadCount">
 				<div class="invoice-edit-card__head d-flex justify-content-between align-items-center gap-2 flex-wrap">
 					<span>اقلام فاکتور</span>
 					<button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addInvoiceItemModal" @disabled(!$canEditItemsWithCollectionFlow)>+ افزودن کالا</button>
@@ -245,6 +247,31 @@ const selectedQtyTotal = document.getElementById('selectedQtyTotal');
 const confirmAddItemsBtn = document.getElementById('confirmAddItemsBtn');
 
 		function itemFields() { return document.querySelectorAll('.js-item-field'); }
+		function invoiceEditRowInput(row, suffix) { return row.querySelector(`input[name^="items["][name$="[${suffix}]"]`); }
+		function buildInvoiceEditItemsPayload() {
+			return Array.from(document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])')).map((row) => {
+				const id = invoiceEditRowInput(row, 'id')?.value || null;
+				return {
+					id,
+					invoice_item_id: id,
+					product_id: invoiceEditRowInput(row, 'product_id')?.value || null,
+					variant_id: invoiceEditRowInput(row, 'variant_id')?.value || null,
+					quantity: Number(invoiceEditRowInput(row, 'quantity')?.value || 0),
+					price: Number(invoiceEditRowInput(row, 'price')?.value || 0),
+					line_discount_amount: Number(invoiceEditRowInput(row, 'line_discount_amount')?.value || 0),
+				};
+			});
+		}
+		function prepareInvoiceEditJsonPayload() {
+			const payloadInput = document.getElementById('invoiceEditItemsPayload');
+			const countInput = document.getElementById('invoiceEditItemsPayloadCount');
+			if (!payloadInput || !countInput) throw new Error('فیلدهای ارسال اقلام پیدا نشد.');
+			const items = buildInvoiceEditItemsPayload();
+			if (!items.length) throw new Error('فاکتور باید حداقل یک ردیف کالا داشته باشد.');
+			payloadInput.value = JSON.stringify(items);
+			countInput.value = String(items.length);
+			document.querySelectorAll('#items-editor input[name^="items["]').forEach((input) => { input.disabled = true; });
+		}
 		function syncChangeReasonRequired() {
 			const changed = Array.from(itemFields()).some((field) => String(field.value || '') !== String(field.dataset.original || ''));
 			if (reasonSelect) reasonSelect.required = Array.from(document.querySelectorAll('.js-item-price,.js-item-discount')).some((field) => String(field.value || '') !== String(field.dataset.original || ''));
@@ -316,6 +343,14 @@ const confirmAddItemsBtn = document.getElementById('confirmAddItemsBtn');
 		productsList?.addEventListener('click', (e) => { const card = e.target.closest('.product-card'); if (card && e.target.classList.contains('js-select-product')) loadVariants(card.dataset.id, card.dataset.name); });
 		variantsList?.addEventListener('input', (e) => { if (e.target.classList.contains('variant-qty')) updateSelectedTotal(); });
 		confirmAddItemsBtn?.addEventListener('click', () => { document.querySelectorAll('.variant-row').forEach(row => { const qty = Number(row.querySelector('.variant-qty').value || 0); if (qty > 0) addItemRow(JSON.parse(row.dataset.variant), qty); }); bootstrap.Modal.getInstance(modalEl)?.hide(); document.getElementById('addItemNotice')?.classList.remove('d-none'); syncChangeReasonRequired(); });
+		document.getElementById('items-editor')?.addEventListener('submit', (event) => {
+			try {
+				prepareInvoiceEditJsonPayload();
+			} catch (error) {
+				event.preventDefault();
+				alert(error.message || 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است.');
+			}
+		});
 		bindRowButtons(); syncChangeReasonRequired();
 	</script>
 

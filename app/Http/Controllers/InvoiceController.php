@@ -870,24 +870,65 @@ class InvoiceController extends Controller
     public function update(string $uuid, Request $request)
     {
         $data = $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
-            'items.*.id' => 'nullable|exists:invoice_items,id',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.variant_id' => 'required|exists:product_variants,id',
-            'items.*.quantity' => 'required|integer|min:0',
-            'items.*.price' => 'nullable|integer|min:1',
-            'items.*.line_discount_amount' => 'nullable|integer|min:0',
+            'items_payload' => 'nullable|string',
+            'items_payload_count' => 'nullable|integer|min:1|max:2000',
             'change_reason' => 'nullable|string|max:255',
             'change_note' => 'nullable|string|max:2000',
         ]);
+
+        if ($request->filled('items_payload')) {
+            try {
+                $items = json_decode((string) $data['items_payload'], true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                throw ValidationException::withMessages([
+                    'items_payload' => 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است. صفحه را تازه‌سازی کرده و دوباره تلاش کنید.',
+                ]);
+            }
+
+            if (! is_array($items)) {
+                throw ValidationException::withMessages([
+                    'items_payload' => 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است. صفحه را تازه‌سازی کرده و دوباره تلاش کنید.',
+                ]);
+            }
+
+            $expectedCount = (int) ($data['items_payload_count'] ?? 0);
+            if ($expectedCount < 1 || count($items) < 1 || count($items) > 2000 || count($items) !== $expectedCount) {
+                throw ValidationException::withMessages([
+                    'items_payload' => 'اطلاعات فرم به‌صورت ناقص به سرور رسیده است. هیچ تغییری ثبت نشد.',
+                ]);
+            }
+
+            Validator::make(['items' => $items], [
+                'items' => 'required|array|min:1|max:2000',
+                'items.*.invoice_item_id' => 'nullable|integer|exists:invoice_items,id',
+                'items.*.id' => 'nullable|integer|exists:invoice_items,id',
+                'items.*.product_id' => 'required|integer|exists:products,id',
+                'items.*.variant_id' => 'required|integer|exists:product_variants,id',
+                'items.*.quantity' => 'required|integer|min:0',
+                'items.*.price' => 'nullable|integer|min:1',
+                'items.*.line_discount_amount' => 'nullable|integer|min:0',
+            ])->validate();
+        } else {
+            // Backward-compatible fallback for old clients and requests.
+            $legacy = $request->validate([
+                'items' => 'required|array|min:1',
+                'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
+                'items.*.id' => 'nullable|exists:invoice_items,id',
+                'items.*.product_id' => 'required|exists:products,id',
+                'items.*.variant_id' => 'required|exists:product_variants,id',
+                'items.*.quantity' => 'required|integer|min:0',
+                'items.*.price' => 'nullable|integer|min:1',
+                'items.*.line_discount_amount' => 'nullable|integer|min:0',
+            ]);
+            $items = $legacy['items'];
+        }
 
         $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
         abort_unless($this->canManageInvoice($invoice), 403);
 
         $updatedInvoice = $this->warehouseCollectionService->updateInvoiceItemsInPlace(
             $invoice,
-            $data['items'],
+            $items,
             auth()->user(),
             $this->canHandleFinanceActions(),
             $data['change_reason'] ?? 'invoice_correction',
