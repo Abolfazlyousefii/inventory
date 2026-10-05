@@ -1144,9 +1144,24 @@ class PreinvoiceController extends Controller
         // Structural validation happens first; authoritative stock validation/reservation
         // happens under row locks inside the submission transaction below.
         $validated = $this->validateDraftPayload($request, false);
+        $submissionToken = trim((string) ($validated['reservation_token'] ?? ''));
+        if ($submissionToken === '') {
+            throw ValidationException::withMessages([
+                'preinvoice' => 'شناسه یکتای ثبت نهایی موجود نیست؛ صفحه را تازه‌سازی کنید و دوباره تلاش کنید.',
+            ]);
+        }
 
-        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated) {
+        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated, $submissionToken) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
+
+            $existingOrder = PreinvoiceOrder::query()
+                ->where('created_by', auth()->id())
+                ->where('submission_token', $submissionToken)
+                ->first();
+            if ($existingOrder) {
+                return ['expires_at' => $existingOrder->stock_frozen_until];
+            }
+
             $reservationToken = $validated['reservation_token'] ?? null;
             if ($reservationToken && PreinvoiceDraftReservation::query()
                     ->where('token', $reservationToken)
@@ -1183,6 +1198,7 @@ class PreinvoiceController extends Controller
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
                 'is_auto_draft' => false,
+                'submission_token' => $submissionToken,
             ];
             if ($order) {
                 $order->items()->delete();

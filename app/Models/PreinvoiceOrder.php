@@ -85,6 +85,7 @@ class PreinvoiceOrder extends Model
         'auto_saved_at',
         'is_auto_draft',
         'draft_token',
+        'submission_token',
         'items_updated_at',
         'items_updated_by',
     ];
@@ -111,6 +112,7 @@ class PreinvoiceOrder extends Model
         'auto_saved_at' => 'datetime',
         'is_auto_draft' => 'boolean',
         'draft_token' => 'string',
+        'submission_token' => 'string',
         'items_updated_at' => 'datetime',
         'items_updated_by' => 'integer',
         'document_date' => 'datetime',
@@ -163,7 +165,7 @@ class PreinvoiceOrder extends Model
         // still appear in their own drafts list.
         return $query->where(function (Builder $q) use ($sellerId): void {
             $q->where('seller_id', $sellerId)
-              ->orWhere(fn (Builder $q2) => $q2->whereNull('seller_id')->where('created_by', $sellerId));
+                ->orWhere(fn (Builder $q2) => $q2->whereNull('seller_id')->where('created_by', $sellerId));
         });
     }
 
@@ -173,7 +175,7 @@ class PreinvoiceOrder extends Model
             ? $query
             : $query->where(function (Builder $q) use ($user): void {
                 $q->where('seller_id', $user->id)
-                  ->orWhere(fn (Builder $q2) => $q2->whereNull('seller_id')->where('created_by', $user->id));
+                    ->orWhere(fn (Builder $q2) => $q2->whereNull('seller_id')->where('created_by', $user->id));
             });
     }
 
