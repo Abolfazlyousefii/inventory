@@ -338,13 +338,25 @@ class WarehouseInboundService
             }
 
             $itemsForStock = $items->sortBy(fn($item) => sprintf('%012d:%012d:%012d', (int) $normalized[(int) $item->id]['received_warehouse_id'], (int) $item->product_variant_id, (int) $item->id));
+            $centralVariantIds = [];
+            $centralProductIds = [];
+
             foreach ($itemsForStock as $item) {
                 $row = $normalized[(int) $item->id];
                 $accepted = (int) $row['accepted_quantity'];
                 $movementId = null;
 
                 if ($accepted > 0) {
-                    if ((int) $item->product_id <= 0 || (int) $item->product_variant_id <= 0) {
+                    $productId = (int) $item->product_id;
+                    $variantId = (int) $item->product_variant_id;
+
+                    if (
+                        $productId <= 0 ||
+                        $variantId <= 0 ||
+                        ! $item->product ||
+                        ! $item->variant ||
+                        (int) $item->variant->product_id !== $productId
+                    ) {
                         throw ValidationException::withMessages([
                             'items' => 'ارتباط کالا/تنوع یکی از اقلام برای ثبت موجودی معتبر نیست.',
                         ]);
@@ -353,16 +365,23 @@ class WarehouseInboundService
                     $warehouseId = (int) $row['received_warehouse_id'];
                     $stock = WarehouseStockService::change(
                         $warehouseId,
-                        (int) $item->product_id,
+                        $productId,
                         $accepted,
-                        (int) $item->product_variant_id
+                        $variantId,
+                        deferProjection: true,
+                        validateRelation: false
                     );
                     $after = (int) $stock->quantity;
                     $before = max($after - $accepted, 0);
 
-                    $movement = StockMovement::create([
-                        'product_id' => $item->product_id,
-                        'product_variant_id' => $item->product_variant_id,
+                    if (($warehouses->get($warehouseId)?->type ?? null) === 'central') {
+                        $centralVariantIds[$variantId] = true;
+                        $centralProductIds[$productId] = true;
+                    }
+
+                    $movement = new StockMovement([
+                        'product_id' => $productId,
+                        'product_variant_id' => $variantId,
                         'warehouse_id' => $warehouseId,
                         'user_id' => $actorId,
                         'type' => StockMovement::TYPE_IN,
@@ -376,6 +395,8 @@ class WarehouseInboundService
                         'reference_type' => WarehouseInboundReceiptItem::class,
                         'reference_id' => (int) $item->id,
                     ]);
+                    $movement->setRelation('product', $item->product);
+                    $movement->save();
                     $movementId = (int) $movement->id;
                 }
 
@@ -386,6 +407,27 @@ class WarehouseInboundService
                     'note' => $row['note'] ?: $item->note,
                     'stock_movement_id' => $movementId,
                 ]);
+            }
+
+            if ($centralVariantIds !== []) {
+                $variantIds = array_map('intval', array_keys($centralVariantIds));
+                $productIds = array_map('intval', array_keys($centralProductIds));
+
+                WarehouseStockService::syncCentralProjectionBatch($variantIds, $productIds);
+
+                if (! app()->environment('testing')) {
+                    DB::afterCommit(function () use ($variantIds): void {
+                        try {
+                            AriyajanebiSyncService::syncVariantIds($variantIds, 4);
+                        } catch (\Throwable $exception) {
+                            \Illuminate\Support\Facades\Log::warning('Bulk Ariyajanebi stock sync failed after warehouse inbound receipt.', [
+                                'variant_count' => count($variantIds),
+                                'exception' => $exception::class,
+                                'message' => $exception->getMessage(),
+                            ]);
+                        }
+                    });
+                }
             }
 
             $acceptedTotal = (int) collect($normalized)->sum('accepted_quantity');
