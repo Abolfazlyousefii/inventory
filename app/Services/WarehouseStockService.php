@@ -13,10 +13,18 @@ use App\Services\AriyajanebiSyncService;
 
 class WarehouseStockService
 {
-    public static function change(int $warehouseId, int $productId, int $delta, ?int $variantId = null): WarehouseStock
-    {
-        return DB::transaction(function () use ($warehouseId, $productId, $variantId, $delta) {
-            self::assertVariantBelongsToProduct($productId, $variantId);
+    public static function change(
+        int $warehouseId,
+        int $productId,
+        int $delta,
+        ?int $variantId = null,
+        bool $deferProjection = false,
+        bool $validateRelation = true
+    ): WarehouseStock {
+        $operation = function () use ($warehouseId, $productId, $variantId, $delta, $deferProjection, $validateRelation) {
+            if ($validateRelation) {
+                self::assertVariantBelongsToProduct($productId, $variantId);
+            }
 
             $stock = self::lockOrCreateStock($warehouseId, $productId, $variantId);
 
@@ -30,6 +38,10 @@ class WarehouseStockService
                 'quantity' => $newQty,
             ]);
 
+            if ($deferProjection) {
+                return $stock;
+            }
+
             if ($variantId) {
                 self::syncVariantStockFromCentral((int) $variantId);
             }
@@ -38,7 +50,11 @@ class WarehouseStockService
             self::syncExternalProductIfCentralWarehouse($warehouseId, $productId);
 
             return $stock->fresh(['warehouse', 'product', 'variant']);
-        });
+        };
+
+        return DB::transactionLevel() > 0
+            ? $operation()
+            : DB::transaction($operation);
     }
 
     public static function set(int $warehouseId, int $productId, int $variantId, int $quantity): WarehouseStock
@@ -121,6 +137,84 @@ class WarehouseStockService
             ->update([
                 'stock' => max(0, $centralQty),
             ]);
+    }
+
+    /**
+     * Rebuild central stock projections once after a bulk warehouse mutation.
+     * Projection writes intentionally bypass model observers; the caller emits
+     * one external sync for the affected variants after commit.
+     */
+    public static function syncCentralProjectionBatch(array $variantIds, array $productIds): void
+    {
+        $variantIds = collect($variantIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $productIds = collect($productIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($variantIds === [] && $productIds === []) {
+            return;
+        }
+
+        $centralId = self::centralWarehouseId();
+
+        if ($variantIds !== []) {
+            $variantTotals = WarehouseStock::query()
+                ->where('warehouse_id', $centralId)
+                ->whereIn('product_variant_id', $variantIds)
+                ->selectRaw('product_variant_id, SUM(quantity) as quantity')
+                ->groupBy('product_variant_id')
+                ->pluck('quantity', 'product_variant_id')
+                ->map(fn ($qty) => max(0, (int) $qty));
+
+            self::updateProjectionStocks('product_variants', $variantIds, $variantTotals->all());
+        }
+
+        if ($productIds !== []) {
+            $productTotals = WarehouseStock::query()
+                ->where('warehouse_id', $centralId)
+                ->whereIn('product_id', $productIds)
+                ->whereNotNull('product_variant_id')
+                ->selectRaw('product_id, SUM(quantity) as quantity')
+                ->groupBy('product_id')
+                ->pluck('quantity', 'product_id')
+                ->map(fn ($qty) => max(0, (int) $qty));
+
+            self::updateProjectionStocks('products', $productIds, $productTotals->all());
+        }
+    }
+
+    private static function updateProjectionStocks(string $table, array $ids, array $totals): void
+    {
+        foreach (array_chunk($ids, 200) as $chunk) {
+            $cases = [];
+            $bindings = [];
+
+            foreach ($chunk as $id) {
+                $cases[] = 'WHEN ? THEN ?';
+                $bindings[] = (int) $id;
+                $bindings[] = max(0, (int) ($totals[$id] ?? 0));
+            }
+
+            $where = implode(',', array_fill(0, count($chunk), '?'));
+            $bindings[] = now();
+            array_push($bindings, ...array_map('intval', $chunk));
+
+            DB::update(
+                "UPDATE {$table} SET stock = CASE id " . implode(' ', $cases) . " ELSE stock END, updated_at = ? WHERE id IN ({$where})",
+                $bindings
+            );
+        }
     }
 
     public static function syncProductSummaryFromVariants(int $productId): void

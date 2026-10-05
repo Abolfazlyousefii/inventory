@@ -47,6 +47,47 @@ class AriyajanebiSyncService
         self::syncVariants(collect([$variant]), false);
     }
 
+    /**
+     * Synchronize many changed variants in one bounded API call.
+     * Unlike the legacy single-variant path, this does not drain unrelated retry
+     * backlog inside the user's request.
+     */
+    public static function syncVariantIds(array $variantIds, int $timeoutSeconds = 4): void
+    {
+        $variantIds = collect($variantIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($variantIds === []) {
+            return;
+        }
+
+        $variants = ProductVariant::query()
+            ->whereIn('id', $variantIds)
+            ->whereNotNull('variety_id')
+            ->with('product:id,name,code,sku,barcode')
+            ->get([
+                'id',
+                'product_id',
+                'variety_id',
+                'sell_price',
+                'stock',
+                'variant_code',
+                'variety_code',
+                'variant_name',
+                'variety_name',
+            ]);
+
+        if ($variants->isEmpty()) {
+            return;
+        }
+
+        self::syncVariants($variants, false, max(1, $timeoutSeconds));
+    }
+
     public static function processPending(): void
     {
         if (!Schema::hasTable('inventory_webhook_logs')) return;
@@ -76,7 +117,7 @@ class AriyajanebiSyncService
             });
     }
 
-    private static function syncVariants($variants, bool $withoutVerify): void
+    private static function syncVariants($variants, bool $withoutVerify, int $timeoutSeconds = 15): void
     {
         $payload = ['_method' => 'PUT'];
         foreach ($variants->values() as $i => $variant) {
@@ -87,14 +128,14 @@ class AriyajanebiSyncService
         }
 
         $apiLog = self::createApiLog($payload, $variants);
-        self::sendPayload($payload, $withoutVerify, $apiLog);
+        self::sendPayload($payload, $withoutVerify, $apiLog, $timeoutSeconds);
     }
 
-    private static function sendPayload(array $payload, bool $withoutVerify, ?InventoryWebhookLog $apiLog): void
+    private static function sendPayload(array $payload, bool $withoutVerify, ?InventoryWebhookLog $apiLog, int $timeoutSeconds = 15): void
     {
 
         try {
-            $client = Http::asForm()->timeout(15)->withOptions(['allow_redirects' => false]);
+            $client = Http::asForm()->timeout(max(1, $timeoutSeconds))->withOptions(['allow_redirects' => false]);
             if ($withoutVerify) $client = $client->withoutVerifying();
 
             $login = $client->post(self::LOGIN_URL, [
@@ -131,7 +172,7 @@ class AriyajanebiSyncService
         } catch (\Throwable $e) {
             if (!$withoutVerify && str_contains($e->getMessage(), 'cURL error 77')) {
                 Log::warning('Ariyajanebi SSL cert issue detected, retrying without SSL verification.');
-                self::sendPayload($payload, true, $apiLog);
+                self::sendPayload($payload, true, $apiLog, $timeoutSeconds);
                 return;
             }
 

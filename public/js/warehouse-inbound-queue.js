@@ -4,6 +4,37 @@
     const content=document.getElementById('wiqDrawerContent');
     let controller=null;
     const close=()=>{drawer.classList.remove('open','wiq-drawer-content-ready');drawer.setAttribute('aria-hidden','true');content.innerHTML='';controller?.abort();};
+    const prepareLargeReceiptSubmission=form=>{
+        const rows=[...form.querySelectorAll('[data-wiq-item]')];
+        if(rows.length===0)return;
+
+        const items=rows.map(row=>{
+            const id=row.querySelector('input[name$="[id]"]');
+            const qty=row.querySelector('.wiq-qty');
+            const destination=row.querySelector('select[name*="received_warehouse_id"]');
+            const note=row.querySelector('input[name*="[note]"]');
+
+            return {
+                id:Number(id?.value||0),
+                accepted_quantity:Number(qty?.value||0),
+                received_warehouse_id:Number(destination?.value||0),
+                note:String(note?.value||'').trim()||null,
+            };
+        });
+
+        let payload=form.querySelector('input[name="items_json"]');
+        if(!payload){
+            payload=document.createElement('input');
+            payload.type='hidden';
+            payload.name='items_json';
+            form.appendChild(payload);
+        }
+        payload.value=JSON.stringify(items);
+
+        // Avoid PHP max_input_vars truncating large receipts. The validated
+        // item list is carried in one JSON field instead of 4+ inputs per row.
+        form.querySelectorAll('[name^="items["]').forEach(field=>{field.disabled=true;});
+    };
     const bind=()=>{
         content.querySelectorAll('[data-wiq-close]').forEach(btn=>btn.addEventListener('click',close));
         const all=drawer.querySelector('[data-wiq-fill-all]');
@@ -13,7 +44,12 @@
         drawer.querySelectorAll('input[name*="[note]"]').forEach(input=>input.addEventListener('input',syncReviewNoteRequirement));
         syncReviewNoteRequirement();
         const form=drawer.querySelector('[data-wiq-form]');
-        form?.addEventListener('submit',()=>{form.classList.add('is-submitting');const btn=form.querySelector('[data-wiq-submit]');if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}});
+        form?.addEventListener('submit',()=>{
+            prepareLargeReceiptSubmission(form);
+            form.classList.add('is-submitting');
+            const btn=form.querySelector('[data-wiq-submit]');
+            if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}
+        });
     };
     const syncReviewNoteRequirement=()=>{
         const note=content.querySelector('[data-wiq-review-note]');

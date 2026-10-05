@@ -9,26 +9,21 @@ use Illuminate\Support\Facades\Schema;
 
 class InventoryWebhookService
 {
+    private static bool $settingResolved = false;
+    private static ?InventoryWebhookSetting $activeSetting = null;
+    private static bool $pendingProcessed = false;
+
     public static function send(string $event, array $payload): void
     {
-        self::processPending();
+        $setting = self::activeSetting();
 
-        if (
-            !Schema::hasTable('inventory_webhook_settings') ||
-            !Schema::hasTable('inventory_webhook_logs')
-        ) {
+        if (! $setting) {
             return;
         }
 
-        $setting = InventoryWebhookSetting::query()->latest('id')->first();
-
-        if (
-            !$setting ||
-            !$setting->is_enabled ||
-            empty($setting->endpoint_url) ||
-            empty($setting->secret)
-        ) {
-            return;
+        if (! self::$pendingProcessed) {
+            self::$pendingProcessed = true;
+            self::processPendingWithSetting($setting);
         }
 
         $log = InventoryWebhookLog::create([
@@ -46,24 +41,47 @@ class InventoryWebhookService
 
     public static function processPending(): void
     {
-        if (
-            !Schema::hasTable('inventory_webhook_settings') ||
-            !Schema::hasTable('inventory_webhook_logs')
-        ) {
+        $setting = self::activeSetting();
+
+        if (! $setting) {
             return;
+        }
+
+        self::$pendingProcessed = true;
+        self::processPendingWithSetting($setting);
+    }
+
+    private static function activeSetting(): ?InventoryWebhookSetting
+    {
+        if (self::$settingResolved) {
+            return self::$activeSetting;
+        }
+
+        self::$settingResolved = true;
+
+        if (
+            ! Schema::hasTable('inventory_webhook_settings') ||
+            ! Schema::hasTable('inventory_webhook_logs')
+        ) {
+            return null;
         }
 
         $setting = InventoryWebhookSetting::query()->latest('id')->first();
 
         if (
-            !$setting ||
-            !$setting->is_enabled ||
+            ! $setting ||
+            ! $setting->is_enabled ||
             empty($setting->endpoint_url) ||
             empty($setting->secret)
         ) {
-            return;
+            return null;
         }
 
+        return self::$activeSetting = $setting;
+    }
+
+    private static function processPendingWithSetting(InventoryWebhookSetting $setting): void
+    {
         InventoryWebhookLog::query()
             ->where('status', 'pending')
             ->where(function ($query) {
