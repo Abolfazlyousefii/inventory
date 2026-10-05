@@ -80,7 +80,7 @@ class PurchaseVariantResolver
         }
 
         // No Base to redirect to: keep daily work moving, but leave a trail.
-        Log::warning('Purchase placed on a synthetic electrical variant without an available Base Variant', [
+        Log::warning('Purchase placed on a potentially synthetic electrical variant without an available Base Variant', [
             'product_id' => (int) $product->id,
             'product_code' => (string) $product->code,
             'category_id' => (int) $product->category_id,

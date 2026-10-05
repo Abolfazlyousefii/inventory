@@ -138,40 +138,8 @@ class ProductSalesStatusBulkService
     {
         $active = $variants->where('is_active', true);
         $desired = $action === ProductDeactivationDocument::ACTION_ACTIVATE;
-        $latest = collect();
-        if ($desired && $active->isNotEmpty()) {
-            $latestIds = ProductDeactivationDocumentItem::query()->whereIn('variant_id', $active->pluck('id'))->selectRaw('MAX(id) as id')->groupBy('variant_id')->pluck('id');
-            $latest = ProductDeactivationDocumentItem::query()->whereIn('id', $latestIds)->get(['variant_id', 'action_type', 'scope_type', 'deactivation_type', 'previous_sales_enabled', 'new_sales_enabled'])->keyBy('variant_id');
-        }
-
-        $effective = $active->filter(function (ProductVariant $variant) use ($desired, $latest): bool {
-            if (! $desired) {
-                return (bool) $variant->sales_enabled;
-            }
-            if ($variant->sales_enabled) {
-                return false;
-            }
-            $event = $latest->get($variant->id);
-
-            if (! $event) {
-                return false;
-            }
-
-            $isLegacy = $event->previous_sales_enabled === null
-                && $event->new_sales_enabled === null;
-
-            if ($isLegacy) {
-                return in_array($event->deactivation_type, [
-                    ProductDeactivationDocument::TYPE_PRODUCT,
-                    ProductDeactivationDocument::TYPE_CATEGORY,
-                    ProductDeactivationDocument::TYPE_SUBCATEGORY,
-                ], true);
-            }
-
-            return $event->action_type === ProductDeactivationDocument::ACTION_DEACTIVATE
-                && in_array($event->scope_type, ProductDeactivationDocument::PRODUCT_LEVEL_SCOPES, true)
-                && $event->new_sales_enabled !== true;
-        })->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+        $effective = $active->filter(fn (ProductVariant $variant): bool => (bool) $variant->sales_enabled !== $desired)
+            ->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
         $already = $active->filter(fn (ProductVariant $variant) => (bool) $variant->sales_enabled === $desired)->count();
         $unable = $variants->where('is_active', false)->count() + ($desired ? $active->where('sales_enabled', false)->count() - count($effective) : 0);
         $payload = ['product_ids' => $products->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all(), 'action' => $action, 'scope' => $scope, 'effective_variant_ids' => $effective];

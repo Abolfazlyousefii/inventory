@@ -84,7 +84,7 @@ it('reactivates an eligible variant and rejects a structurally inactive variant'
     changeStatus($product, 'activate', 'variants', [$blocked]);
 })->throws(ValidationException::class, 'این تنوع از نظر ساختاری غیرفعال است');
 
-it('whole product reactivation preserves independently disabled variants', function (): void {
+it('whole product reactivation restores legacy commercial stops', function (): void {
     $product = statusProduct();
     $independent = statusVariant($product, 'مستقل');
     $productScoped = statusVariant($product, 'سطح کالا');
@@ -93,7 +93,7 @@ it('whole product reactivation preserves independently disabled variants', funct
 
     changeStatus($product, 'activate', 'product');
 
-    expect($independent->fresh()->sales_enabled)->toBeFalse()->and($productScoped->fresh()->sales_enabled)->toBeTrue()->and($product->fresh()->is_sellable)->toBeTrue();
+    expect($independent->fresh()->sales_enabled)->toBeTrue()->and($productScoped->fresh()->sales_enabled)->toBeTrue()->and($product->fresh()->is_sellable)->toBeTrue();
 });
 
 it('keeps independent history and refuses duplicate events', function (): void {
@@ -118,4 +118,51 @@ it('audits inconsistencies without mutation by default', function (): void {
 
     $this->artisan('product-sales-status:audit')->assertSuccessful();
     expect($variant->fresh()->sales_enabled)->toBeTrue()->and($product->fresh()->is_sellable)->toBeTrue();
+});
+
+it('activates commercial stops without history and keeps structural inactivity and quantities', function (): void {
+    $product = statusProduct(['is_sellable' => false]);
+    $valid = statusVariant($product, 'valid', true, false);
+    $invalid = statusVariant($product, 'legacy', false, false);
+    $valid->update(['stock' => 8, 'reserved' => 2]);
+    changeStatus($product, 'activate', 'product');
+    expect($valid->fresh()->sales_enabled)->toBeTrue()
+        ->and($invalid->fresh()->is_active)->toBeFalse()
+        ->and($invalid->fresh()->sales_enabled)->toBeFalse()
+        ->and($valid->fresh()->stock)->toBe(8)
+        ->and($valid->fresh()->reserved)->toBe(2);
+});
+
+it('keeps stock reservations prices and structural states through repeated whole product cycles', function (): void {
+    $product = statusProduct(['stock' => 18, 'reserved' => 4]);
+    $first = statusVariant($product, 'first');
+    $second = statusVariant($product, 'second', true, false);
+    $legacy = statusVariant($product, 'legacy', false, false);
+    $first->update(['stock' => 12, 'reserved' => 3]);
+    $second->update(['stock' => 6, 'reserved' => 1]);
+    $before = $product->variants()->orderBy('id')->get(['id', 'is_active', 'stock', 'reserved', 'buy_price', 'sell_price'])->toArray();
+    foreach (range(1, 3) as $cycle) {
+        changeStatus($product, 'deactivate', 'product');
+        expect($product->fresh()->is_sellable)->toBeFalse();
+        changeStatus($product, 'activate', 'product');
+        expect($product->fresh()->is_sellable)->toBeTrue()
+            ->and($first->fresh()->sales_enabled)->toBeTrue()
+            ->and($second->fresh()->sales_enabled)->toBeTrue()
+            ->and($legacy->fresh()->sales_enabled)->toBeFalse()
+            ->and($product->variants()->orderBy('id')->get(['id', 'is_active', 'stock', 'reserved', 'buy_price', 'sell_price'])->toArray())->toBe($before)
+            ->and([$product->fresh()->stock, $product->fresh()->reserved])->toBe([18, 4]);
+    }
+    expect(ProductDeactivationDocument::query()->count())->toBe(6);
+});
+
+it('rolls back single product changes and history on a mid-document failure', function (): void {
+    $product = statusProduct();
+    $first = statusVariant($product, 'first');
+    $second = statusVariant($product, 'second');
+    Illuminate\Support\Facades\DB::unprepared("CREATE TRIGGER force_single_status_failure BEFORE INSERT ON product_deactivation_document_items WHEN NEW.variant_id = {$second->id} BEGIN SELECT RAISE(ABORT, 'forced single failure'); END");
+    expect(fn () => changeStatus($product, 'deactivate', 'product'))->toThrow(Illuminate\Database\QueryException::class);
+    expect($first->fresh()->sales_enabled)->toBeTrue()
+        ->and($second->fresh()->sales_enabled)->toBeTrue()
+        ->and($product->fresh()->is_sellable)->toBeTrue()
+        ->and(ProductDeactivationDocument::query()->count())->toBe(0);
 });

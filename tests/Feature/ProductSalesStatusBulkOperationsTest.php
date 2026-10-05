@@ -165,3 +165,13 @@ it('rejects zero effective changes and keeps audit command read only', function 
 
     $service->execute([$product->id], 'deactivate', 'multiple_products', 'management_decision', null, User::factory()->create(), $preview['preview_token']);
 })->throws(ValidationException::class, 'هیچ موردی برای تغییر وضعیت وجود ندارد');
+
+it('bulk activates commercial stops without history and protects structural rows', function (): void {
+    $product = bulkProduct(bulkCategory('new policy'), 'product');
+    $valid = bulkVariant($product, 'valid', true, false);
+    $invalid = bulkVariant($product, 'invalid', false, false);
+    bulkExecute(app(ProductSalesStatusBulkService::class), [$product->id], 'activate');
+    expect($valid->fresh()->sales_enabled)->toBeTrue()
+        ->and($invalid->fresh()->is_active)->toBeFalse()
+        ->and($invalid->fresh()->sales_enabled)->toBeFalse();
+});

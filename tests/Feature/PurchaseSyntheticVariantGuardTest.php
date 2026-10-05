@@ -184,7 +184,7 @@ it('accepts the same synthetic variant when no Base exists and logs a warning', 
         ->withArgs(fn (string $message, array $context = []): bool => str_contains($message, 'synthetic electrical variant')
             && ($context['variant_id'] ?? null) === (int) $variants['مشکی']->id
             && ($context['product_id'] ?? null) === (int) $product->id
-            && ($context['synthetic_class'] ?? null) === 'proven_synthetic')
+            && ($context['synthetic_class'] ?? null) === 'unclassified_no_active_base')
         ->once();
 });
 
@@ -336,4 +336,22 @@ it('skips the full activity scan for electrical variants that cannot be syntheti
     expect($verdict['blocked'])->toBeFalse()
         ->and($verdict['synthetic_class'])->toBeNull()
         ->and($chunkScans)->toBeEmpty();
+});
+
+it('permits purchasing a commercially disabled product without restoring an inactive base or scanning history', function (): void {
+    ['product' => $product, 'base' => $base, 'variants' => $variants] = guardProduct(guardCategory(true), '910099', true, guardBlackWhite());
+    $base->update(['is_active' => false]);
+    $product->update(['is_sellable' => false]);
+    foreach ($variants as $variant) $variant->update(['sales_enabled' => false]);
+    $classifier = Mockery::mock(App\Services\SyntheticDefaultVariantClassifier::class);
+    $classifier->shouldReceive('mayBeSynthetic')->andReturn(true);
+    $classifier->shouldNotReceive('classify');
+    app()->instance(App\Services\SyntheticDefaultVariantClassifier::class, $classifier);
+    app()->forgetInstance(PurchaseSyntheticVariantGuard::class);
+    app()->forgetInstance(PurchaseVariantResolver::class);
+    guardStore($product, $variants['مشکی'], 3);
+    expect(PurchaseItem::query()->where('product_variant_id', $variants['مشکی']->id)->value('quantity'))->toBe(3)
+        ->and($base->fresh()->is_active)->toBeFalse()
+        ->and($variants['مشکی']->fresh()->sales_enabled)->toBeFalse()
+        ->and($product->fresh()->is_sellable)->toBeFalse();
 });

@@ -49,7 +49,7 @@ class ProductDeactivationDocumentController extends Controller
         $data = $request->validate([
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'action_type' => ['required', 'in:activate,deactivate'],
-            'scope_type' => ['required', 'in:product,variants'],
+            'scope_type' => ['required', 'in:product'],
             'variant_ids' => ['nullable', 'array'],
             'variant_ids.*' => ['integer', 'exists:product_variants,id'],
             'reason_type' => ['required', 'in:'.implode(',', $reasonKeys)],

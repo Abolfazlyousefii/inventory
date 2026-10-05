@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if ($('builderQuery').value.trim()) search.set('q', $('builderQuery').value.trim());
         if ($('builderCategory').value) search.set('category_id', $('builderCategory').value);
         if ($('builderBrand').value) search.set('brand', $('builderBrand').value);
-        if ($('builderInStock').checked) search.set('in_stock', '1');
+        search.set('in_stock', $('builderInStock').checked ? '1' : '0');
         return search;
     }
     async function load(reset = true) {
@@ -66,7 +66,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             for (const product of data.items) {
                 shown.set(product.id, product);
-                if (selected.has(product.id)) selected.get(product.id).product = product;
+                if (selected.has(product.id)) {
+                    const entry = selected.get(product.id);
+                    entry.product = product;
+                    if ($('builderInStock').checked) {
+                        const available = new Set(product.models.map(modelKey));
+                        entry.keys = new Set([...entry.keys].filter(key => available.has(key)));
+                        if (!entry.keys.size) selected.delete(product.id);
+                    }
+                }
             }
             lastPage = data.last_page;
             $('builderResultCount').textContent = '· ' + fa(data.total) + ' نتیجه';
@@ -94,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const copyButton = event.target.closest('[data-copy]');
         if (copyButton) {
             const product = shown.get(Number(copyButton.dataset.copy));
-            copy(`${product.name}\n${product.models.map(model => '• ' + model.name).join('\n')}`);
+            copySelected([{product, keys:new Set(product.models.map(modelKey))}]);
             return;
         }
         const modelButton = event.target.closest('[data-model]');
@@ -127,21 +135,28 @@ document.addEventListener('DOMContentLoaded', () => {
         $('builderFilterToggle').setAttribute('aria-expanded', String(!$('builderFilters').hidden));
     });
     $('builderMobileBasket').addEventListener('click', () => $('builderBasket').scrollIntoView({behavior:'smooth', block:'start'}));
-    function summary() {
-        return selectedProducts().map(entry => {
-            const models = chosenModels(entry);
-            const highest = models.reduce((max, model) => Math.max(max, Number(model.price_max) || 0), 0);
-            return `${entry.product.name}\n${models.map(model => '• ' + model.name).join('\n')}${$('builderShowPrice').checked ? '\nقیمت حدودی: ' + money(highest) : ''}`;
-        }).join('\n\n');
-    }
-    $('builderCopyAll').addEventListener('click', () => selected.size ? copy(summary()) : toast('ابتدا یک مدل انتخاب کنید.'));
-    function selectionFields() {
+    $('builderCopyAll').addEventListener('click', () => selected.size ? copySelected() : toast('ابتدا یک مدل انتخاب کنید.'));
+    function selectionFields(entries = selectedProducts()) {
         const fields = new URLSearchParams();
-        for (const entry of selectedProducts()) for (const model of chosenModels(entry)) fields.append(`selection[${entry.product.id}][]`, model.id);
+        for (const entry of entries) for (const model of chosenModels(entry)) fields.append(`selection[${entry.product.id}][]`, model.id);
         fields.set('show_price', $('builderShowPrice').checked ? 1 : 0);
         fields.set('show_stock', $('builderShowStock').checked ? 1 : 0);
         fields.set('show_code', $('builderShowCode').checked ? 1 : 0);
+        fields.set('in_stock', $('builderInStock').checked ? 1 : 0);
         return fields;
+    }
+    async function copySelected(entries = selectedProducts()) {
+        const fields = selectionFields(entries);
+        fields.set('copy_text', '1');
+        try {
+            const response = await fetch(root.dataset.previewUrl, {
+                method:'POST', headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content},
+                body:fields,
+            });
+            const data = await response.json();
+            if (!response.ok || response.redirected) throw new Error(data.errors?.selection?.[0] || 'دریافت مدل‌های موجود انجام نشد.');
+            await copy(data.text);
+        } catch (error) { toast(error.message); }
     }
     async function showPreview() {
         if (!selectedProducts().length) return toast('ابتدا یک کالا یا مدل انتخاب کنید.');
@@ -152,15 +167,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(root.dataset.previewUrl, {
                 method: 'POST',
-                headers: {'Accept': 'text/html', 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content},
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content},
                 body: selectionFields(),
             });
-            if (!response.ok || response.redirected) throw new Error('preview');
+            if (!response.ok || response.redirected) {
+                const detail = await response.json().catch(() => null);
+                throw new Error(detail?.errors?.selection?.[0] || 'پیش‌نمایش آماده نشد. لطفاً دوباره تلاش کنید.');
+            }
             $('builderSheet').innerHTML = await response.text();
             $('builderPrint').disabled = false;
-        } catch {
-            $('builderSheet').textContent = 'پیش‌نمایش آماده نشد. لطفاً دوباره تلاش کنید.';
-            toast('دریافت پیش‌نمایش انجام نشد.');
+        } catch (error) {
+            $('builderSheet').textContent = error.message;
+            toast(error.message);
         }
     }
     $('builderPreview').addEventListener('click', showPreview);
@@ -168,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('builderClosePreview').addEventListener('click', closePreview);
     $('builderDialog').addEventListener('click', event => { if (event.target === $('builderDialog')) closePreview(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('builderDialog').hidden) closePreview(); });
-    $('builderCopySummary').addEventListener('click', () => copy(summary()));
+    $('builderCopySummary').addEventListener('click', () => copySelected());
     $('builderPrint').addEventListener('click', () => {
         const form = document.createElement('form');
         form.method = 'POST'; form.action = root.dataset.printUrl; form.target = '_blank'; form.hidden = true;

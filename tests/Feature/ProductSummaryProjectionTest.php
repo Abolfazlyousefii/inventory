@@ -101,3 +101,19 @@ it('keeps the legacy warehouse summary compatibility semantics separate from the
         ->and($product->fresh()->reserved)->toBe(0)
         ->and($product->fresh()->price)->toBe(777);
 });
+
+it('does not overwrite inventory projections when commercial structure excludes stocked variants', function (): void {
+    $product = phaseFiveSummaryProduct('760001');
+    phaseFiveSummaryVariant($product, '00', 100);
+    $excluded = phaseFiveSummaryVariant($product, '01', 0, ['stock' => 7, 'reserved' => 3]);
+    WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $product->id, 7, $excluded->id);
+    $product->refresh()->forceFill(['reserved' => 3])->save();
+    $before = \Illuminate\Support\Facades\DB::table('warehouse_stocks')->get()->toArray();
+
+    app(ProductVariantStructureService::class)->recalculateProductSummary($product->fresh());
+
+    expect((int) $product->fresh()->stock)->toBe(7)
+        ->and((int) $product->fresh()->reserved)->toBe(3)
+        ->and((int) $product->fresh()->price)->toBe(100)
+        ->and(\Illuminate\Support\Facades\DB::table('warehouse_stocks')->get()->toArray())->toEqual($before);
+});

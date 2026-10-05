@@ -217,6 +217,7 @@ class CommercialInvoiceReassignmentController extends Controller
                 (bool) $data['sync_preinvoice'],
                 'commercial_ui',
                 (string) Str::uuid(),
+                allowActiveErpRecipient: true,
             ));
         });
 
@@ -248,17 +249,17 @@ class CommercialInvoiceReassignmentController extends Controller
     private function sellers(): Collection
     {
         return User::query()
-            ->activeSellers()
+            ->activeErpUsers()
             ->orderBy('name')
             ->get(['id', 'name']);
     }
 
     private function activeSeller(int $sellerId): User
     {
-        $seller = User::query()->activeSellers()->find($sellerId);
+        $seller = User::query()->activeErpUsers()->find($sellerId);
         if (! $seller) {
             throw ValidationException::withMessages([
-                'seller_id' => 'فروشنده مقصد باید کاربر فعال و مجاز ERP باشد.',
+                'seller_id' => 'کاربر مقصد باید فعال و مجاز به استفاده از نرم‌افزار باشد.',
             ]);
         }
 

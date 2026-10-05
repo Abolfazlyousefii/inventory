@@ -252,5 +252,6 @@
 
 <script src="{{ asset('js/app-shell.js') }}"></script>
 @stack('scripts')
+@include('stock-thresholds.alert')
 </body>
 </html>

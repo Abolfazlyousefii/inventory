@@ -57,17 +57,22 @@ class PurchaseSyntheticVariantGuard
             return $allowed;
         }
 
+        // With no active Base there is no alternative to redirect to. Do not
+        // scan historical activity on the purchase hot path for this case.
+        $base = $this->baseVariants->existingAvailableBase($product);
+        if (! $base) {
+            return ['blocked' => false, 'synthetic_class' => 'unclassified_no_active_base', 'base' => null];
+        }
+        if ((int) $base->id === (int) $variant->id) {
+            return $allowed;
+        }
+
         $class = $this->classifier->classify($variant)['class'];
         if ($class === SyntheticDefaultVariantClassifier::NOT_SYNTHETIC) {
             return $allowed;
         }
 
-        $base = $this->baseVariants->existingAvailableBase($product);
-        if ($base && (int) $base->id === (int) $variant->id) {
-            $base = null;
-        }
-
-        return ['blocked' => $base !== null, 'synthetic_class' => $class, 'base' => $base];
+        return ['blocked' => true, 'synthetic_class' => $class, 'base' => $base];
     }
 
     /**

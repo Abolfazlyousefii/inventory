@@ -20,7 +20,7 @@
                     <label>دسته<select id="builderCategory"><option value="">همه دسته‌ها</option>@foreach($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></label>
                     <label>برند / مدل<select id="builderBrand"><option value="">همه مدل‌ها</option>@foreach($brands as $brand)<option value="{{ $brand }}">{{ $brand }}</option>@endforeach</select></label>
                     <label>مرتب‌سازی<select id="builderSort"><option value="relevant">تازه‌ترین</option><option value="name">نام کالا</option><option value="low">قیمت کمتر</option><option value="high">قیمت بیشتر</option></select></label>
-                    <label class="builder-check"><input id="builderInStock" type="checkbox"> فقط کالاهای موجود</label>
+                    <label class="builder-check"><input id="builderInStock" type="checkbox" checked> فقط مدل‌ها و رنگ‌های موجود</label>
                 </div>
             </section>
             <div class="result-head"><strong>کالاها <span id="builderResultCount"></span></strong><span>روی مدل‌ها بزنید تا فقط همان‌ها انتخاب شوند</span></div>
@@ -34,6 +34,6 @@
     <div class="builder-dialog" id="builderDialog" hidden><div class="dialog-card"><div class="dialog-top"><strong>پیش‌نمایش چیزی که مشتری دریافت می‌کند</strong><button type="button" id="builderClosePreview" aria-label="بستن">×</button></div><div class="customer-sheet" id="builderSheet">در حال آماده‌سازی پیش‌نمایش...</div><div class="dialog-actions"><button class="builder-primary" type="button" id="builderPrint">چاپ / ذخیره PDF</button><button class="builder-secondary" type="button" id="builderCopySummary">کپی متن لیست</button></div></div></div>
 </div>
 @push('scripts')
-<script src="{{ asset('js/product-export-builder.js') }}?v=5" defer></script>
+<script src="{{ asset('js/product-export-builder.js') }}?v=6" defer></script>
 @endpush
 @endsection

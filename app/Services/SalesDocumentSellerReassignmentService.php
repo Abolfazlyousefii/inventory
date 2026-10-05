@@ -25,12 +25,13 @@ class SalesDocumentSellerReassignmentService
         bool $syncLinkedPreinvoice = true,
         string $source = 'ui',
         ?string $operationKey = null,
+        bool $allowActiveErpRecipient = false,
     ): SellerReassignmentResult {
         $reason = trim($reason);
         if ($reason === '') {
             throw ValidationException::withMessages(['reason' => 'دلیل تغییر فروشنده الزامی است.']);
         }
-        if (! $newSeller->is_active || ! $newSeller->can_access_erp || ! $newSeller->is_seller) {
+        if (! $newSeller->is_active || ! $newSeller->can_access_erp || (! $allowActiveErpRecipient && ! $newSeller->is_seller)) {
             throw ValidationException::withMessages(['seller_id' => 'کاربر مقصد فروشنده فعال و مجاز ERP نیست.']);
         }
 
@@ -134,6 +135,7 @@ class SalesDocumentSellerReassignmentService
         bool $sync = true,
         string $source = 'bulk',
         ?string $operationKey = null,
+        bool $allowActiveErpRecipient = false,
     ): array {
         $ids = array_values(array_unique(array_map('intval', $invoiceIds)));
         sort($ids, SORT_NUMERIC);
@@ -142,7 +144,7 @@ class SalesDocumentSellerReassignmentService
             throw ValidationException::withMessages(['invoice_ids' => 'بین ۱ تا ۱۰۰ فاکتور انتخاب کنید.']);
         }
 
-        return DB::transaction(function () use ($ids, $seller, $actor, $reason, $sync, $source, $operationKey): array {
+        return DB::transaction(function () use ($ids, $seller, $actor, $reason, $sync, $source, $operationKey, $allowActiveErpRecipient): array {
             // Lock in deterministic order so overlapping bulk operations are
             // much less likely to deadlock.
             $invoices = Invoice::query()
@@ -165,6 +167,7 @@ class SalesDocumentSellerReassignmentService
                     $sync,
                     $source,
                     $operationKey,
+                    $allowActiveErpRecipient,
                 ),
                 $ids,
             );

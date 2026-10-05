@@ -210,21 +210,28 @@ class ProductVariantStructureService
 
     public function recalculateProductSummary(Product $product): void
     {
-        // Canonical Phase 5 commercial projection. Do not substitute the
-        // legacy WarehouseStockService compatibility summary here.
+        // Physical stock and reserved totals belong to WarehouseStockService
+        // and ReservationProjectionService, including non-commercial variants.
         $valid = $this->validVariants($product);
-        $minimumUsablePrice = $valid
+        $guard = app(PurchaseSyntheticVariantGuard::class);
+        $priceVariants = collect();
+        foreach ($valid as $variant) {
+            $verdict = $guard->evaluate($product, $variant);
+            $candidate = $verdict['blocked'] ? $verdict['base'] : $variant;
+            if ($candidate) {
+                $priceVariants->put((int) $candidate->id, $candidate);
+            }
+        }
+        $minimumUsablePrice = $priceVariants
             ->where('sales_enabled', true)
             ->where('sell_price', '>', 0)
             ->min('sell_price');
 
         $product->forceFill([
-            'stock' => max(0, (int) $valid->sum('stock')),
-            'reserved' => max(0, (int) $valid->sum('reserved')),
             'price' => max(0, (int) ($minimumUsablePrice ?? 0)),
         ]);
 
-        if ($product->isDirty(['stock', 'reserved', 'price'])) {
+        if ($product->isDirty('price')) {
             $product->save();
         }
     }

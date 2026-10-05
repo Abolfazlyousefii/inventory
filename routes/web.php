@@ -688,6 +688,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/warehouse-reservations', [WarehouseReservationController::class, 'index'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.index');
+    Route::prefix('warehouse/stock-thresholds')->name('stock-thresholds.')->middleware('route.permission')->group(function () {
+        Route::get('/', [\App\Http\Controllers\StockThresholdController::class, 'index'])->name('index');
+        Route::get('/search', [\App\Http\Controllers\StockThresholdController::class, 'search'])->name('search');
+        Route::get('/summary', [\App\Http\Controllers\StockThresholdController::class, 'summary'])->name('summary');
+        Route::post('/daily-alert', [\App\Http\Controllers\StockThresholdController::class, 'daily'])->name('daily');
+        Route::post('/rules', [\App\Http\Controllers\StockThresholdController::class, 'store'])->name('store');
+        Route::delete('/rules/{rule}', [\App\Http\Controllers\StockThresholdController::class, 'destroy'])->name('destroy');
+    });
     Route::get('/warehouse-reservations/health/export', [WarehouseReservationController::class, 'exportHealth'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.health.export');

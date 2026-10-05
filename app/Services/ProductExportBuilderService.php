@@ -15,20 +15,30 @@ class ProductExportBuilderService
         private readonly ProductExportService $exports,
     ) {}
 
-    private function products(): Builder
+    private function products(bool $inStock = false): Builder
     {
         return Product::query()
             ->select(['id', 'name', 'code', 'sku', 'image_path', 'price', 'stock', 'category_id'])
             ->with('category:id,name')
-            ->with(['catalogVariants' => fn ($query) => $query->where('is_active', true)
-                ->with(['modelList:id,brand,model_name,code', 'color:id,name,code,hex_code'])])
+            ->withSum(['warehouseStocks as central_available_stock' => fn ($query) => $query
+                ->whereNull('product_variant_id')->whereHas('warehouse', fn ($warehouse) => $warehouse->where('type', 'central'))], 'quantity')
+            ->with(['catalogVariants' => function ($query) use ($inStock) {
+                $query->where('is_active', true)
+                    ->withSum(['warehouseStocks as central_available_stock' => fn ($stock) => $stock
+                        ->whereHas('warehouse', fn ($warehouse) => $warehouse->where('type', 'central'))], 'quantity')
+                    ->with(['modelList:id,brand,model_name,code', 'color:id,name,code,hex_code']);
+                if ($inStock) {
+                    $this->onlyAvailableVariants($query);
+                }
+            }])
             ->where(fn (Builder $query) => $query->whereDoesntHave('variants')
                 ->orWhereHas('catalogVariants', fn (Builder $variants) => $variants->where('is_active', true)));
     }
 
     public function page(array $filters): array
     {
-        $query = $this->products();
+        $inStock = (bool) ($filters['in_stock'] ?? true);
+        $query = $this->products($inStock);
         if (! empty($filters['category_id'])) {
             $ids = Category::selfAndDescendantIds((int) $filters['category_id']);
             $query->whereIn('category_id', $ids);
@@ -38,10 +48,12 @@ class ProductExportBuilderService
                 ->where('is_active', true)
                 ->whereHas('modelList', fn (Builder $models) => $models->where('brand', $filters['brand'])));
         }
-        if (! empty($filters['in_stock'])) {
+        if ($inStock) {
             $query->where(fn (Builder $products) => $products
-                ->where('stock', '>', 0)
-                ->orWhereHas('catalogVariants', fn (Builder $variants) => $variants->where('is_active', true)->where('stock', '>', 0)));
+                ->where(fn (Builder $simple) => $simple->whereDoesntHave('variants')
+                    ->whereHas('warehouseStocks', fn (Builder $stock) => $stock->whereNull('product_variant_id')
+                        ->where('quantity', '>', 0)->whereHas('warehouse', fn ($warehouse) => $warehouse->where('type', 'central'))))
+                ->orWhereHas('catalogVariants', fn (Builder $variants) => $this->onlyAvailableVariants($variants->where('is_active', true))));
         }
         $term = trim((string) ($filters['q'] ?? ''));
         if ($term !== '') {
@@ -79,6 +91,7 @@ class ProductExportBuilderService
 
     private function card(Product $product): array
     {
+        $this->useCentralAvailability($product);
         $models = $product->catalogVariants->isEmpty()
             ? collect([[
                 'name' => 'مدل عمومی', 'id' => 0, 'stock' => max(0, (int) $product->stock),
@@ -107,7 +120,22 @@ class ProductExportBuilderService
         ];
     }
 
-    public function selected(array $selection): Collection
+    private function onlyAvailableVariants($query): void
+    {
+        $query->whereHas('warehouseStocks', fn (Builder $stock) => $stock->where('quantity', '>', 0)
+            ->whereHas('warehouse', fn ($warehouse) => $warehouse->where('type', 'central')));
+    }
+
+    private function useCentralAvailability(Product $product): void
+    {
+        // These are display attributes only; export never writes inventory.
+        $product->stock = max(0, (int) $product->central_available_stock);
+        foreach ($product->catalogVariants as $variant) {
+            $variant->stock = max(0, (int) $variant->central_available_stock);
+        }
+    }
+
+    public function selected(array $selection, bool $inStock = true): Collection
     {
         $ids = array_map('intval', array_keys($selection));
         $products = $this->products()->whereIn('id', $ids)->get()->keyBy('id');
@@ -115,8 +143,9 @@ class ProductExportBuilderService
             throw ValidationException::withMessages(['selection' => 'یکی از کالاها دیگر برای خروجی در دسترس نیست.']);
         }
 
-        return collect($selection)->map(function ($chosen, $id) use ($products) {
+        return collect($selection)->map(function ($chosen, $id) use ($products, $inStock) {
             $product = $products->get((int) $id);
+            $this->useCentralAvailability($product);
             $chosen = array_map('intval', $chosen);
             $all = $product->catalogVariants;
             if ($all->isEmpty()) {
@@ -130,6 +159,12 @@ class ProductExportBuilderService
                 }
                 $modelNames = collect($chosen)->map(fn (int $variantId) => $this->grouping->modelName($byId->get($variantId)))->unique()->all();
                 $product->setRelation('catalogVariants', $all->filter(fn ($variant) => in_array($this->grouping->modelName($variant), $modelNames, true))->values());
+            }
+            if ($inStock) {
+                $product->setRelation('catalogVariants', $product->catalogVariants->filter(fn ($variant) => (int) $variant->stock > 0)->values());
+                if (($all->isNotEmpty() && $product->catalogVariants->isEmpty()) || ($all->isEmpty() && (int) $product->stock <= 0)) {
+                    throw ValidationException::withMessages(['selection' => "مدل‌های انتخاب‌شدهٔ «{$product->name}» دیگر موجود نیستند. انتخاب‌ها را به‌روز کنید یا گزینهٔ فقط موجود را بردارید."]);
+                }
             }
             $mapped = $this->exports->mapProduct($product, []);
             $mapped['code'] = (string) ($product->code ?: $product->sku ?: '');

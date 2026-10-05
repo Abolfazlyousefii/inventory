@@ -41,9 +41,20 @@ class ProductExportBuilderController extends Controller
         return view('product-exports.builder-print', $this->selectionData($request));
     }
 
-    public function preview(Request $request): View
+    public function preview(Request $request): View|JsonResponse
     {
-        return view('product-exports.partials.builder-sheet', $this->selectionData($request));
+        $data = $this->selectionData($request);
+        if ($request->boolean('copy_text')) {
+            $text = $data['products']->map(function ($product) use ($data) {
+                $text = $product['name']."\n".collect($product['selected_models'])->map(fn ($model) => '• '.$model)->implode("\n");
+                if ($data['options']['price']) {
+                    $text .= "\nقیمت حدودی: ".$product['approximate_price_label'];
+                }
+                return $text;
+            })->implode("\n\n");
+            return response()->json(['text' => strtr($text, array_combine(str_split('0123456789'), preg_split('//u', '۰۱۲۳۴۵۶۷۸۹', -1, PREG_SPLIT_NO_EMPTY)))]);
+        }
+        return view('product-exports.partials.builder-sheet', $data);
     }
 
     private function selectionData(Request $request): array
@@ -55,10 +66,12 @@ class ProductExportBuilderController extends Controller
             'show_price' => ['nullable', 'boolean'],
             'show_stock' => ['nullable', 'boolean'],
             'show_code' => ['nullable', 'boolean'],
+            'in_stock' => ['nullable', 'boolean'],
+            'copy_text' => ['nullable', 'boolean'],
         ]);
 
         return [
-            'products' => $this->builder->selected($data['selection']),
+            'products' => $this->builder->selected($data['selection'], (bool) ($data['in_stock'] ?? true)),
             'options' => [
                 'price' => (bool) ($data['show_price'] ?? false),
                 'stock' => (bool) ($data['show_stock'] ?? false),

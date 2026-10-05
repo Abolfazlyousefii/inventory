@@ -83,6 +83,7 @@ it('rejects tampered actions, scopes, cross-product variants, and missing custom
     $service = app(ProductSalesStatusService::class);
 
     foreach ([
+        ['product_id' => $first->id, 'action_type' => 'deactivate', 'scope_type' => 'variants', 'variant_ids' => [$variant->id], 'reason_type' => 'management_decision'],
         ['product_id' => $first->id, 'action_type' => 'pause', 'scope_type' => 'product', 'reason_type' => 'management_decision'],
         ['product_id' => $first->id, 'action_type' => 'deactivate', 'scope_type' => 'all_database', 'reason_type' => 'management_decision'],
         ['product_id' => $first->id, 'action_type' => 'deactivate', 'scope_type' => 'product', 'reason_type' => 'custom'],
@@ -108,7 +109,7 @@ it('accepts every documented reason and requires text only for custom reasons', 
     $payload = [
         'product_id' => $product->id,
         'action_type' => $action,
-        'scope_type' => 'variants',
+        'scope_type' => 'product',
         'variant_ids' => [$variant->id],
         'reason_type' => $reason,
         'reason_text' => $reason === 'custom' ? 'توضیح معتبر سفارشی' : null,
@@ -190,4 +191,15 @@ it('preserves product and variant name snapshots after live records are renamed'
     expect($document->fresh()->product_name_snapshot)->toBe('نام تاریخی کالا')
         ->and($document->items()->sole()->product_name_snapshot)->toBe('نام تاریخی کالا')
         ->and($document->items()->sole()->variant_name_snapshot)->toBe('نام تاریخی تنوع');
+});
+
+it('renders the product-only status form without an individual variant selection', function (): void {
+    $product = httpStatusProduct();
+    httpStatusVariant($product);
+    $this->actingAs(User::factory()->create());
+    $view = app(ProductDeactivationDocumentController::class)->create(Request::create('/product-deactivation-documents/create', 'GET', ['product_id' => $product->id]));
+    $html = $view->with('errors', new Illuminate\Support\ViewErrorBag())->render();
+    expect($html)->toContain('name="scope_type" value="product"')
+        ->and($html)->not->toContain('name="variant_ids[]"', 'await loadVariants()')
+        ->and($html)->toContain('خرید کالا همچنان مجاز است');
 });
