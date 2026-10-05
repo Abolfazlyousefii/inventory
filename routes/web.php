@@ -46,6 +46,7 @@ use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\StockMovementController;
 use App\Http\Controllers\StockMovementReportController;
+use App\Http\Controllers\StockThresholdController;
 use App\Http\Controllers\StocktakeController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
@@ -670,6 +671,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/warehouse-reservations', [WarehouseReservationController::class, 'index'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.index');
+
+    Route::prefix('warehouse/stock-thresholds')->name('stock-thresholds.')->middleware('route.permission')->group(function () {
+        Route::get('/', [StockThresholdController::class, 'index'])->name('index');
+        Route::get('/search', [StockThresholdController::class, 'search'])->name('search');
+        Route::get('/summary', [StockThresholdController::class, 'summary'])->name('summary');
+        Route::post('/daily-alert', [StockThresholdController::class, 'daily'])->name('daily');
+        Route::post('/rules', [StockThresholdController::class, 'store'])->name('store');
+        Route::delete('/rules/{rule}', [StockThresholdController::class, 'destroy'])->name('destroy');
+    });
     Route::get('/warehouse-reservations/health/export', [WarehouseReservationController::class, 'exportHealth'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.health.export');

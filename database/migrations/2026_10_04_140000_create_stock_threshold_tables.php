@@ -34,5 +34,10 @@ return new class extends Migration {
     {
         Schema::dropIfExists('stock_threshold_alert_days');
         Schema::dropIfExists('stock_threshold_rules');
+
+        \Illuminate\Support\Facades\DB::table('permissions')
+            ->where('key', 'page.warehouse.thresholds')
+            ->delete();
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
     }
 };

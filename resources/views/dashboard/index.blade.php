@@ -24,6 +24,7 @@
 @endphp
 
 @section('content')
+@include('stock-thresholds.widget')
 <div class="seller-dashboard">
     @if($sellerDashboardEnabled)
         <header class="seller-hero" aria-labelledby="seller-dashboard-title">

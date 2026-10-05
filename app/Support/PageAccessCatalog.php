@@ -15,6 +15,12 @@ class PageAccessCatalog
 
     /** Explicit runtime ownership. Legacy permissions are migration metadata only. */
     private const ROUTE_OWNERS = [
+        'stock-thresholds.index' => ['warehouse.thresholds'],
+        'stock-thresholds.search' => ['warehouse.thresholds'],
+        'stock-thresholds.store' => ['warehouse.thresholds'],
+        'stock-thresholds.destroy' => ['warehouse.thresholds'],
+        'stock-thresholds.daily' => ['warehouse.thresholds'],
+        'stock-thresholds.summary' => ['warehouse.thresholds'],
         'dashboard' => ['dashboard'],
         'dashboard.monthly-report' => ['dashboard'],
         'global-search' => ['dashboard'],
@@ -536,6 +542,7 @@ class PageAccessCatalog
             return $cached;
         }
         $definitions = [
+            'warehouse.thresholds' => ['انبارداری', 'آستانه موجودی', []],
             'warehouse.reservations' => ['انبارداری', 'رزرو موجودی', ['warehouse.reservations']],
             'dashboard' => ['داشبورد', 'داشبورد', ['dashboard', 'notifications']],
             'products' => ['کالاهای آریا', 'کالاها', ['products']],
@@ -810,6 +817,7 @@ class PageAccessCatalog
     {
         return [
                    'dashboard' => 'dashboard', 'products' => 'products.index', 'products.price_changes' => 'products.price-changes.index',
+            'warehouse.thresholds' => 'stock-thresholds.index',
                    'categories' => 'categories.index', 'brands_models' => 'model-lists.index', 'shipping_methods' => 'shipping-methods.index',
                    'warehouses' => 'warehouses.index', 'warehouse.stocks' => 'products.index', 'warehouse.stocktake' => 'stock-count-documents.index',
                    'warehouse.purchases' => 'purchases.index', 'warehouse.issues' => 'vouchers.index', 'warehouse.collection' => 'vouchers.sales.queue',
