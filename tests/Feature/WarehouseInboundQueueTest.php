@@ -243,6 +243,31 @@ class WarehouseInboundQueueTest extends TestCase
         $this->assertSame(0, CustomerLedger::query()->count());
     }
 
+    public function test_large_receive_payload_is_validated_from_one_json_field(): void
+    {
+        [, , $central] = $this->invoiceFixture(1);
+
+        $items = collect(range(1, 282))
+            ->map(fn (int $id): array => [
+                'id' => $id,
+                'accepted_quantity' => 1,
+                'received_warehouse_id' => $central->id,
+                'note' => null,
+            ])
+            ->all();
+
+        $request = \App\Http\Requests\ReceiveWarehouseInboundReceiptRequest::create(
+            '/warehouse/inbound-queue/large-receipt/receive',
+            'POST',
+            ['items_json' => json_encode($items, JSON_THROW_ON_ERROR)],
+        );
+        $request->setContainer($this->app);
+        $request->validateResolved();
+
+        $this->assertCount(282, $request->validated('items'));
+        $this->assertSame(282, (int) $request->validated('items.281.id'));
+    }
+
     private function queueAdjustment(
         Invoice $invoice,
         InvoiceItem $item,

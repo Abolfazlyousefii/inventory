@@ -12,9 +12,29 @@ class ReceiveWarehouseInboundReceiptRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $itemsJson = $this->input('items_json');
+
+        if (! is_string($itemsJson) || trim($itemsJson) === '') {
+            return;
+        }
+
+        try {
+            $items = json_decode($itemsJson, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            $items = null;
+        }
+
+        $this->merge([
+            'items' => is_array($items) ? $items : null,
+        ]);
+    }
+
     public function rules(): array
     {
         return [
+            'items_json' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.id' => ['required', 'integer', 'distinct'],
             'items.*.accepted_quantity' => ['required', 'integer', 'min:0'],
