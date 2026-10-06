@@ -16,7 +16,13 @@
 
   <div class="alert alert-warning">فاکتورهای این صفحه فقط برای سوابق مالی و انبار نگهداری می‌شوند و امکان ویرایش، پرداخت، عملیات انبار یا بازگردانی لغو ندارند.</div>
 
+  <div class="d-flex gap-2 mb-3">
+    <a href="{{ route('invoices.cancelled') }}" class="btn btn-sm {{ ! $reissued ? 'btn-primary' : 'btn-outline-primary' }}">لغوشده‌های جاری</a>
+    <a href="{{ route('invoices.cancelled', ['reissued' => 1]) }}" class="btn btn-sm {{ $reissued ? 'btn-primary' : 'btn-outline-primary' }}">دارای پیش‌نویس جایگزین (سوابق)</a>
+  </div>
+
   <div class="card mb-3"><div class="card-body"><form class="row g-2 align-items-end" method="GET" action="{{ route('invoices.cancelled') }}">
+    <input type="hidden" name="reissued" value="{{ (int) $reissued }}">
     <div class="col-md-4"><label class="form-label">جست‌وجو شماره فاکتور / مشتری / موبایل</label><input class="form-control" name="q" value="{{ $filters['q'] ?? '' }}"></div>
     <div class="col-md-3"><label class="form-label">از تاریخ لغو</label><input class="form-control" name="date_from" value="{{ $filters['date_from'] ?? '' }}" dir="ltr" data-jdp data-jdp-only-date></div>
     <div class="col-md-3"><label class="form-label">تا تاریخ لغو</label><input class="form-control" name="date_to" value="{{ $filters['date_to'] ?? '' }}" dir="ltr" data-jdp data-jdp-only-date></div>
@@ -37,7 +43,12 @@
         <td>{{ $invoice->cancelled_at ? Jalalian::fromDateTime($invoice->cancelled_at)->format('Y/m/d H:i') : ($invoice->status_changed_at ? Jalalian::fromDateTime($invoice->status_changed_at)->format('Y/m/d H:i') : '—') }}</td>
         <td>{{ $invoice->canceller?->name ?? $invoice->statusChangedByUser?->name ?? '—' }}</td>
         <td class="small">{{ \Illuminate\Support\Str::limit($invoice->cancellation_reason ?: '—', 80) }}</td>
-        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('archive.invoices.show', $invoice->uuid) }}">مشاهده فاکتور</a></td>
+        <td class="text-end">
+          @if($reissued && $invoice->cancelledReissue?->replacementPreinvoice)
+            <div class="small mb-1">پیش‌نویس جایگزین: <span dir="ltr" class="fw-bold">{{ $invoice->cancelledReissue->replacementPreinvoice->uuid }}</span></div>
+          @endif
+          <a class="btn btn-sm btn-outline-primary" href="{{ route('archive.invoices.show', $invoice->uuid) }}">مشاهده فاکتور</a>
+        </td>
       </tr>
     @empty
       <tr><td colspan="11" class="text-center text-muted py-4">فاکتور لغوشده‌ای یافت نشد.</td></tr>
