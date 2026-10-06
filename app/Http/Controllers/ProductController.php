@@ -645,7 +645,6 @@ class ProductController extends Controller {
             'variants.*.variety_code'  => [ 'required', 'digits:4' ],
             'variants.*.sell_price'    => [ 'nullable', 'integer', 'min:0' ],
             'variants.*.buy_price'     => [ 'nullable', 'integer', 'min:0' ],
-            'variants.*.stock'         => [ 'nullable', 'integer', 'min:0' ],
             'variants.*.is_active'     => [ 'nullable', 'boolean' ],
             'variants.*.variety_id'    => [ 'nullable', 'integer', 'min:1' ],
             'variant_site_ids'         => [ 'nullable', 'array' ],
@@ -683,8 +682,6 @@ class ProductController extends Controller {
             $product->update($productUpdate);
 
             $keepIds            = [];
-            $centralWarehouseId = WarehouseStockService::centralWarehouseId();
-
             foreach ( ( $data['variants'] ?? [] ) as $v ) {
                 $ignoreId = !empty($v['id']) ? (int) $v['id'] : null;
 
@@ -741,9 +738,6 @@ class ProductController extends Controller {
                     $keepIds[] = $variant->id;
                 }
 
-                if ( $variant && array_key_exists('stock', $v) && $v['stock'] !== '' ) {
-                    WarehouseStockService::set($centralWarehouseId, (int) $product->id, (int) $variant->id, (int) $v['stock']);
-                }
             }
 
             $defaultDesignService = app(DefaultProductDesignService::class);
@@ -931,7 +925,7 @@ class ProductController extends Controller {
                 return $hasRealId || ( $allowNewVariants && ( $hasAnyValue || $isActive ) );
             })
             ->map(function ( $variant ) {
-                unset($variant['_delete'], $variant['deleted'], $variant['_template'], $variant['is_template'], $variant['_disabled'], $variant['disabled'], $variant['enabled']);
+                unset($variant['_delete'], $variant['deleted'], $variant['_template'], $variant['is_template'], $variant['_disabled'], $variant['disabled'], $variant['enabled'], $variant['stock']);
 
                 foreach ( [ 'variant_name', 'variety_name', 'variety_code' ] as $field ) {
                     if ( array_key_exists($field, $variant) && is_scalar($variant[$field]) ) {

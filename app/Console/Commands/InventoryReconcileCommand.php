@@ -18,7 +18,12 @@ class InventoryReconcileCommand extends Command
         $apply = (bool) $this->option('apply');
         $excludeSuspiciousReservations = (bool) $this->option('exclude-suspicious-reservations');
         $cleanupNoPurchaseNoPrice = (bool) $this->option('cleanup-no-purchase-no-price');
-        if ($apply && ! $this->option('backup')) { $this->error('Refusing apply without --backup.'); return SymfonyCommand::FAILURE; }
+
+        if ($apply) {
+            $this->error('APPLY mode is disabled: the legacy reconciliation formula is not authoritative for current inventory flows.');
+            $this->line('Run without --apply for diagnostic output only. Make inventory corrections through traceable adjustment documents.');
+            return SymfonyCommand::FAILURE;
+        }
 
         $invalid = $service->invalidInvoiceStatuses($productId);
         if ($invalid->isNotEmpty()) { $this->warn('Invoice statuses excluded from stock calculation:'); $this->table(['status','invoices_count','qty'], $invalid->map(fn($r)=>(array)$r)->all()); }
@@ -81,10 +86,10 @@ class InventoryReconcileCommand extends Command
         });
         $after = $service->rows($productId, $excludeSuspiciousReservations); $this->info('Post-apply audit:');
         $this->table(['fake_30000_remaining','mismatch_remaining','reservation_or_sales_conflicts_remaining'], [[
-            $after->filter(fn($r)=>in_array('fake_30000',$r['flags'],true))->count(),
-            $after->filter(fn($r)=>in_array('warehouse_mismatch',$r['flags'],true) || $r['difference'] !== 0)->count(),
-            $after->filter(fn($r)=>array_intersect($r['flags'], ['reservation_without_purchase','sold_more_than_purchased','suspicious_reservation']))->count(),
-        ]]);
+                                                                                                                    $after->filter(fn($r)=>in_array('fake_30000',$r['flags'],true))->count(),
+                                                                                                                    $after->filter(fn($r)=>in_array('warehouse_mismatch',$r['flags'],true) || $r['difference'] !== 0)->count(),
+                                                                                                                    $after->filter(fn($r)=>array_intersect($r['flags'], ['reservation_without_purchase','sold_more_than_purchased','suspicious_reservation']))->count(),
+                                                                                                                ]]);
         return SymfonyCommand::SUCCESS;
     }
 

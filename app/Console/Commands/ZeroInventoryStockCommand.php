@@ -15,55 +15,10 @@ class ZeroInventoryStockCommand extends Command
 
     public function handle(): int
     {
-        $productCode = trim((string) $this->argument('product_code'));
+        $this->error('This command is disabled because it can overwrite quantities in historical inventory and financial documents.');
+        $this->line('Use a traceable inventory adjustment document instead of inventory:zero-stock.');
 
-        if ($productCode === '') {
-            $this->error('Product code is required.');
-
-            return self::FAILURE;
-        }
-
-        $summary = DB::transaction(function () use ($productCode): array {
-            $productIds = $this->matchingProductIds($productCode);
-            $variantIds = $this->matchingVariantIds($productIds);
-            $summary = [];
-
-            foreach ($this->updatePlans($productCode, $productIds, $variantIds) as $plan) {
-                if (! Schema::hasTable($plan['table'])) {
-                    continue;
-                }
-
-                $columns = array_values(array_filter(
-                    $plan['columns'],
-                    fn (string $column): bool => Schema::hasColumn($plan['table'], $column)
-                ));
-
-                if ($columns === []) {
-                    continue;
-                }
-
-                $updated = $this->applyPlan($plan, $columns);
-                $summary[] = [
-                    'table' => $plan['table'],
-                    'columns' => implode(', ', $columns),
-                    'updated' => $updated,
-                ];
-
-                Log::info('Zeroed inventory quantities for product code.', [
-                    'product_code' => $productCode,
-                    'table' => $plan['table'],
-                    'columns' => $columns,
-                    'updated_rows' => $updated,
-                ]);
-            }
-
-            return $summary;
-        });
-
-        $this->info("Zero-stock update completed for product_code {$productCode}.");
-        $this->table(['Table', 'Columns', 'Rows updated'], $summary);
-
-        return self::SUCCESS;
+        return self::FAILURE;
     }
 
     private function matchingProductIds(string $productCode): array

@@ -166,7 +166,7 @@ class WarehouseMapService
                 'warehouse_id' => $warehouseId,
                 'product_id' => (int) $variant->product_id,
                 'product_variant_id' => $variantId,
-                'quantity' => max(0, (int) $variant->stock),
+                'quantity' => 0,
             ]);
         }
     }

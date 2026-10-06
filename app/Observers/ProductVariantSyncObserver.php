@@ -19,6 +19,6 @@ class ProductVariantSyncObserver
 
     public function created(ProductVariant $variant): void
     {
-        AriyajanebiSyncService::syncVariant($variant);
+        ReservationSideEffects::dispatch(fn () => AriyajanebiSyncService::syncVariant($variant->fresh() ?? $variant));
     }
 }
