@@ -1112,10 +1112,16 @@ class InvoiceController extends Controller
         $dateFrom = $this->parseInvoiceFilterDate($filters['date_from']);
         $dateTo = $this->parseInvoiceFilterDate($filters['date_to']);
 
+        $reissued = $request->boolean('reissued');
+
         $invoices = Invoice::query()->cancelled()
+            ->when($reissued,
+                fn ($query) => $query->whereHas('cancelledReissue'),
+                fn ($query) => $query->whereDoesntHave('cancelledReissue')
+            )
             ->select('invoices.*')
             ->selectSub('select coalesce(sum(amount), 0) from invoice_payments where invoice_payments.invoice_id = invoices.id', 'paid_total')
-            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name', 'canceller:id,name'])
+            ->with(['payments.cheque', 'customer:id,crm_customer_id,first_name,last_name,mobile', 'seller:id,name', 'preinvoiceOrder.seller:id,name', 'preinvoiceOrder.creator:id,name', 'canceller:id,name', 'cancelledReissue.replacementPreinvoice:id,uuid'])
             ->when($filters['q'] !== '', function ($query) use ($filters) {
                 $q = $filters['q'];
                 $query->where(function ($qq) use ($q) {
@@ -1128,7 +1134,7 @@ class InvoiceController extends Controller
             ->when($dateTo, fn ($q) => $q->where('cancelled_at', '<=', $dateTo->copy()->endOfDay()))
             ->orderByDesc('cancelled_at')->orderByDesc('id')->paginate(20)->withQueryString();
 
-        return view('invoices.cancelled', ['invoices' => $invoices, 'filters' => $filters]);
+        return view('invoices.cancelled', ['invoices' => $invoices, 'filters' => $filters, 'reissued' => $reissued]);
     }
 
     public function undoCancel(string $uuid, Request $request)
