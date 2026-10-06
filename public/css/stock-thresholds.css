@@ -270,3 +270,6 @@
     .threshold-page .threshold-section-actions { justify-content: space-between; width: 100%; }
     .threshold-page .threshold-section-actions .threshold-button { flex: 1; }
 }
+
+/* Editing locks use hidden inputs so their values are still submitted. */
+.threshold-page .threshold-rule-form input[type="hidden"] { display: none !important; }
