@@ -161,3 +161,112 @@
 @media (prefers-reduced-motion: reduce) {
     .threshold-page .threshold-button { transition: none; }
 }
+
+/* Rule editor is a native, keyboard-accessible modal; supply lists stay on the page. */
+.threshold-page .threshold-section-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.threshold-page .threshold-section-actions .threshold-count { margin: 0; }
+.threshold-page .threshold-editor-dialog {
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    width: min(860px, calc(100vw - 32px));
+    max-width: none;
+    max-height: min(88vh, 900px);
+    max-height: min(88dvh, 900px);
+    margin: auto;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #fff;
+    color: #193d56;
+    border: 1px solid #dbe7ee;
+    border-radius: 18px;
+    box-shadow: 0 24px 90px rgba(11, 35, 52, .25);
+}
+.threshold-page .threshold-editor-dialog:not([open]) { display: none; }
+.threshold-page .threshold-editor-dialog::backdrop { background: rgba(13, 30, 45, .58); }
+.threshold-page .threshold-modal-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 22px;
+    background: #fff;
+    border-bottom: 1px solid #e7edf1;
+}
+.threshold-page .threshold-modal-topbar__caption { font-size: 12px; color: #5e7b8e; font-weight: 700; }
+.threshold-page .threshold-modal-close {
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #dce7ed;
+    border-radius: 9px;
+    background: #f8fbfc;
+    color: #31546b;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+.threshold-page .threshold-modal-close:hover { background: #eef4f7; }
+.threshold-page .threshold-editor-dialog .threshold-editor-card {
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    padding: 21px 24px 25px;
+    margin: 0;
+}
+.threshold-page .threshold-editor-dialog .threshold-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 17px 14px;
+}
+.threshold-page .threshold-modal-error {
+    padding: 11px 24px;
+    border-bottom: 1px solid #f3cec8;
+    background: #fff1ed;
+    color: #a0392e;
+    font-size: 13px;
+}
+.threshold-page .threshold-editor-dialog .threshold-form-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 14px 0;
+    background: #fff;
+}
+.threshold-page .threshold-editor-dialog :is(button, input, select):focus-visible {
+    outline: 3px solid #5cb4ab;
+    outline-offset: 3px;
+}
+.threshold-page .threshold-editor-dialog select:disabled,
+.threshold-page .threshold-editor-dialog input:disabled {
+    background: #f3f6f8;
+    color: #567182;
+    opacity: 1;
+    cursor: not-allowed;
+}
+@media (max-width: 700px) {
+    .threshold-page .threshold-editor-dialog {
+        width: calc(100vw - 18px);
+        max-height: calc(100vh - 28px);
+        max-height: calc(100dvh - 28px);
+        border-radius: 13px;
+    }
+    .threshold-page .threshold-editor-dialog .threshold-form-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .threshold-page .threshold-modal-topbar { padding: 8px 14px; }
+    .threshold-page .threshold-editor-dialog .threshold-editor-card { padding: 17px 15px 18px; }
+    .threshold-page .threshold-editor-dialog .threshold-editor-card__header { margin-bottom: 15px; }
+    .threshold-page .threshold-editor-dialog .threshold-form-footer { align-items: stretch; }
+    .threshold-page .threshold-section-actions { justify-content: space-between; width: 100%; }
+    .threshold-page .threshold-section-actions .threshold-button { flex: 1; }
+}

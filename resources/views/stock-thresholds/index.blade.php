@@ -14,9 +14,9 @@
             <h1>مدیریت آستانه موجودی</h1>
             <p>موجودی آزاد انبار مرکزی را پایش کنید، اقلام نیازمند تأمین را ببینید و حداقل موجودی هر دسته، کالا یا تنوع را تعیین کنید.</p>
         </div>
-        <a class="threshold-button threshold-button--primary threshold-hero__action" href="#threshold-settings">
+        <button type="button" class="threshold-button threshold-button--primary threshold-hero__action" data-threshold-create>
             <span aria-hidden="true">＋</span> تعریف آستانه جدید
-        </a>
+        </button>
     </header>
 
     @if(session('success'))
@@ -70,7 +70,7 @@
                 <div class="threshold-empty__illustration" aria-hidden="true">◎</div>
                 <h3>اولین آستانه موجودی را تعریف کنید</h3>
                 <p>هنوز هیچ قانونی ثبت نشده است. برای شروع یک دسته، کالا یا تنوع انتخاب کنید؛ پس از ذخیره، اقلامی که به حداقل موجودی رسیده‌اند اینجا نمایش داده می‌شوند.</p>
-                <a href="#threshold-settings" class="threshold-button threshold-button--primary">ثبت اولین آستانه <span aria-hidden="true">←</span></a>
+                <button type="button" class="threshold-button threshold-button--primary" data-threshold-create>ثبت اولین آستانه <span aria-hidden="true">←</span></button>
             </div>
         @else
             <form class="threshold-filters" method="GET" action="{{ route('stock-thresholds.index') }}">
@@ -155,17 +155,77 @@
         <div class="threshold-section-head">
             <div>
                 <div class="threshold-section-head__eyebrow">تنظیمات تأمین</div>
-                <h2 id="threshold-settings-title">تعریف و مدیریت آستانه‌ها</h2>
+                <h2 id="threshold-settings-title">مدیریت آستانه‌های ثبت‌شده</h2>
                 <p>تنظیم دسته به زیردسته‌ها نیز منتقل می‌شود. قانون اختصاصی تنوع، سپس کالا و بعد نزدیک‌ترین دسته در اولویت است.</p>
             </div>
-            <span class="threshold-count threshold-count--neutral">{{ number_format($rules->count()) }} قانون</span>
+            <div class="threshold-section-actions">
+                <span class="threshold-count threshold-count--neutral">{{ number_format($rules->count()) }} قانون</span>
+                <button type="button" class="threshold-button threshold-button--primary" data-threshold-create><span aria-hidden="true">＋</span> افزودن آستانه</button>
+            </div>
         </div>
 
+        <div class="threshold-rules">
+            <div class="threshold-rules__head">
+                <h3>آستانه‌های ثبت‌شده</h3>
+                <p>برای تغییر مقدار یک قانون، گزینه ویرایش را انتخاب کنید.</p>
+            </div>
+            @if($rules->isEmpty())
+                <div class="threshold-rules-empty">هنوز قانونی برای آستانه موجودی ثبت نشده است.</div>
+            @else
+                <div class="threshold-table-scroll" role="region" aria-label="جدول آستانه‌های ثبت‌شده" tabindex="0">
+                    <table class="threshold-table threshold-table--rules">
+                        <thead><tr><th scope="col">محدوده انتخاب‌شده</th><th scope="col">مبنای محاسبه</th><th scope="col">حداقل موجودی</th><th scope="col">عملیات</th></tr></thead>
+                        <tbody>
+                            @foreach($rules as $rule)
+                                @php
+                                    $ruleName = match ($rule->target_type) {
+                                        'category' => $categories->firstWhere('id', $rule->target_id)?->name ?? 'دسته حذف‌شده',
+                                        'product' => $products[$rule->target_id] ?? 'کالای حذف‌شده',
+                                        default => trim(($variants->get($rule->target_id)?->product?->name ?? 'کالای حذف‌شده').' / '.($variants->get($rule->target_id)?->variant_name ?: $variants->get($rule->target_id)?->variety_name ?: 'تنوع حذف‌شده')),
+                                    };
+                                @endphp
+                                <tr>
+                                    <td><strong class="threshold-rule-name">{{ $ruleName }}</strong><span class="threshold-rule-kind">{{ ['category' => 'دسته‌بندی', 'product' => 'کالا', 'variant' => 'تنوع'][$rule->target_type] ?? $rule->target_type }}</span></td>
+                                    <td>{{ $rule->measure === 'variant' ? 'هر تنوع' : 'مجموع کالا' }}</td>
+                                    <td><strong>{{ number_format($rule->minimum) }}</strong></td>
+                                    <td>
+                                        <div class="threshold-rule-actions">
+                                            <button type="button" class="threshold-button threshold-button--edit" data-threshold-edit data-type="{{ $rule->target_type }}" data-target-id="{{ $rule->target_id }}" data-rule-name="{{ $ruleName }}" data-measure="{{ $rule->measure }}" data-minimum="{{ $rule->minimum }}" aria-label="ویرایش آستانه {{ $ruleName }}">ویرایش</button>
+                                            <form method="POST" action="{{ route('stock-thresholds.destroy', $rule) }}" onsubmit="return confirm('این تنظیم آستانه حذف شود؟')">
+                                                @csrf @method('DELETE')
+                                                <button type="submit" class="threshold-button threshold-button--remove" aria-label="حذف آستانه {{ $ruleName }}">حذف</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    </section>
+
+    <dialog id="threshold-editor-dialog" class="threshold-editor-dialog" aria-labelledby="threshold-editor-title" aria-describedby="threshold-editor-hint"
+        data-reopen-on-error="{{ $errors->any() ? '1' : '0' }}"
+        data-old-type="{{ old('target_type', 'category') }}"
+        data-old-target-id="{{ old('target_id', '') }}"
+        data-old-target-label="{{ old('_threshold_label', '') }}"
+        data-old-measure="{{ old('measure', 'product') }}"
+        data-old-minimum="{{ old('minimum', '') }}"
+        data-old-editing="{{ old('_threshold_editing', '0') }}">
+        <div class="threshold-modal-topbar">
+            <span class="threshold-modal-topbar__caption">مدیریت موجودی / تنظیم آستانه</span>
+            <button type="button" class="threshold-modal-close" id="threshold-close-modal" aria-label="بستن پنجره تعریف آستانه" title="بستن">×</button>
+        </div>
+        @if($errors->any())
+            <div class="threshold-modal-error" role="alert"><strong>ثبت آستانه انجام نشد.</strong> {{ $errors->first() }}</div>
+        @endif
         <div class="threshold-editor-card">
             <div class="threshold-editor-card__header">
                 <div>
                     <h3 id="threshold-editor-title">تنظیم آستانه جدید</h3>
-                    <p>سه مرحله ساده: انتخاب محدوده، انتخاب کالا یا دسته، تعیین حداقل موجودی.</p>
+                    <p id="threshold-editor-hint">سه مرحله ساده: انتخاب محدوده، انتخاب کالا یا دسته، تعیین حداقل موجودی.</p>
                 </div>
                 <div class="threshold-stepper" aria-hidden="true"><span>۱ محدوده</span><span>۲ انتخاب</span><span>۳ مقدار</span></div>
             </div>
@@ -218,54 +278,14 @@
                 <div class="threshold-form-footer">
                     <p id="threshold-edit-message" role="status" aria-live="polite">هشدار در موجودی برابر یا کمتر از این مقدار فعال می‌شود. ثبت قانون موجود، مقدار قبلی را به‌روزرسانی می‌کند.</p>
                     <div class="threshold-form-actions">
-                        <button type="button" class="threshold-button threshold-button--ghost" id="threshold-cancel-edit" hidden>انصراف از ویرایش</button>
+                        <button type="button" class="threshold-button threshold-button--ghost" id="threshold-cancel-edit">انصراف</button>
                         <button type="submit" class="threshold-button threshold-button--primary" id="threshold-submit">ذخیره آستانه</button>
                     </div>
                 </div>
             </form>
         </div>
 
-        <div class="threshold-rules">
-            <div class="threshold-rules__head">
-                <h3>آستانه‌های ثبت‌شده</h3>
-                <p>برای تغییر مقدار یک قانون، گزینه ویرایش را انتخاب کنید.</p>
-            </div>
-            @if($rules->isEmpty())
-                <div class="threshold-rules-empty">هنوز قانونی برای آستانه موجودی ثبت نشده است.</div>
-            @else
-                <div class="threshold-table-scroll" role="region" aria-label="جدول آستانه‌های ثبت‌شده" tabindex="0">
-                    <table class="threshold-table threshold-table--rules">
-                        <thead><tr><th scope="col">محدوده انتخاب‌شده</th><th scope="col">مبنای محاسبه</th><th scope="col">حداقل موجودی</th><th scope="col">عملیات</th></tr></thead>
-                        <tbody>
-                            @foreach($rules as $rule)
-                                @php
-                                    $ruleName = match ($rule->target_type) {
-                                        'category' => $categories->firstWhere('id', $rule->target_id)?->name ?? 'دسته حذف‌شده',
-                                        'product' => $products[$rule->target_id] ?? 'کالای حذف‌شده',
-                                        default => trim(($variants->get($rule->target_id)?->product?->name ?? 'کالای حذف‌شده').' / '.($variants->get($rule->target_id)?->variant_name ?: $variants->get($rule->target_id)?->variety_name ?: 'تنوع حذف‌شده')),
-                                    };
-                                @endphp
-                                <tr>
-                                    <td><strong class="threshold-rule-name">{{ $ruleName }}</strong><span class="threshold-rule-kind">{{ ['category' => 'دسته‌بندی', 'product' => 'کالا', 'variant' => 'تنوع'][$rule->target_type] ?? $rule->target_type }}</span></td>
-                                    <td>{{ $rule->measure === 'variant' ? 'هر تنوع' : 'مجموع کالا' }}</td>
-                                    <td><strong>{{ number_format($rule->minimum) }}</strong></td>
-                                    <td>
-                                        <div class="threshold-rule-actions">
-                                            <button type="button" class="threshold-button threshold-button--edit" data-threshold-edit data-type="{{ $rule->target_type }}" data-target-id="{{ $rule->target_id }}" data-rule-name="{{ $ruleName }}" data-measure="{{ $rule->measure }}" data-minimum="{{ $rule->minimum }}" aria-label="ویرایش آستانه {{ $ruleName }}">ویرایش</button>
-                                            <form method="POST" action="{{ route('stock-thresholds.destroy', $rule) }}" onsubmit="return confirm('این تنظیم آستانه حذف شود؟')">
-                                                @csrf @method('DELETE')
-                                                <button type="submit" class="threshold-button threshold-button--remove" aria-label="حذف آستانه {{ $ruleName }}">حذف</button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
-        </div>
-    </section>
+    </dialog>
 
     <p class="threshold-disclaimer"><span aria-hidden="true">ⓘ</span> این صفحه صرفاً برای پایش و برنامه‌ریزی تأمین است؛ تعریف یا ویرایش آستانه هیچ تغییری در موجودی انبار، رزروها یا اسناد فروش ایجاد نمی‌کند.</p>
 </div>

@@ -4,6 +4,8 @@
     const root = document.querySelector('[data-stock-threshold-editor]');
     if (!root) return;
 
+    const dialog = document.getElementById('threshold-editor-dialog');
+    const closeModal = document.getElementById('threshold-close-modal');
     const form = document.getElementById('threshold-rule-form');
     const type = document.getElementById('threshold-type');
     const target = document.getElementById('threshold-target');
@@ -17,13 +19,16 @@
     const submit = document.getElementById('threshold-submit');
     const cancelEdit = document.getElementById('threshold-cancel-edit');
 
-    if (![form, type, target, searchField, search, searchStatus, measure, minimum, title, message, submit, cancelEdit].every(Boolean)) return;
+    if (![dialog, closeModal, form, type, target, searchField, search, searchStatus, measure, minimum, title, message, submit, cancelEdit].every(Boolean)) return;
 
     const categoryOptions = target.innerHTML;
     const defaultMessage = message.textContent;
     let sequence = 0;
     let timer = null;
     let pending = null;
+    let previousTrigger = null;
+    let submitting = false;
+    const lockedFieldNames = ['target_type', 'target_id', 'measure'];
 
     function stopSearch() {
         sequence += 1;
@@ -46,22 +51,76 @@
         measure.value = nextType === 'variant' ? 'variant' : 'product';
     }
 
+    function lockScope(locked, label = '') {
+        form.querySelectorAll('[data-threshold-locked-input]').forEach(input => input.remove());
+        [type, target, measure].forEach(element => { element.disabled = locked; });
+        if (locked) {
+            lockedFieldNames.forEach(name => {
+                const field = form.elements.namedItem(name);
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = name;
+                hidden.value = field.value;
+                hidden.dataset.thresholdLockedInput = '1';
+                form.appendChild(hidden);
+            });
+            [['_threshold_editing', '1'], ['_threshold_label', label]].forEach(([name, value]) => {
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = name;
+                hidden.value = value;
+                hidden.dataset.thresholdLockedInput = '1';
+                form.appendChild(hidden);
+            });
+        }
+        search.disabled = locked || type.value === 'category';
+        searchField.hidden = locked || type.value === 'category';
+    }
+
     function resetEditor() {
+        lockScope(false);
         applyType('category');
         target.value = '';
         minimum.value = '';
         title.textContent = 'تنظیم آستانه جدید';
         submit.textContent = 'ذخیره آستانه';
         message.textContent = defaultMessage;
-        cancelEdit.hidden = true;
     }
+
+    function showEditor(trigger, focusInput = type) {
+        previousTrigger = trigger || document.activeElement;
+        dialog.showModal();
+        focusInput.focus({ preventScroll: true });
+    }
+
+    function createEditor(trigger) {
+        resetEditor();
+        showEditor(trigger, type);
+    }
+
+    document.querySelectorAll('[data-threshold-create]').forEach(button => {
+        button.addEventListener('click', () => createEditor(button));
+    });
+
+    closeModal.addEventListener('click', () => dialog.close());
+    cancelEdit.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => {
+        if (!submitting) {
+            resetEditor();
+            previousTrigger?.focus({ preventScroll: true });
+        }
+    });
+    dialog.addEventListener('click', event => {
+        if (event.target !== dialog) return;
+        const bounds = dialog.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+    });
 
     type.addEventListener('change', () => {
         applyType(type.value);
         title.textContent = 'تنظیم آستانه جدید';
         message.textContent = defaultMessage;
         submit.textContent = 'ذخیره آستانه';
-        cancelEdit.hidden = true;
     });
 
     search.addEventListener('input', () => {
@@ -122,19 +181,35 @@
             measure.value = button.dataset.measure;
             minimum.value = button.dataset.minimum;
             title.textContent = 'ویرایش آستانه موجود';
-            message.textContent = 'پس از ذخیره، مقدار قانون انتخاب‌شده به‌روزرسانی می‌شود؛ موجودی انبار تغییر نمی‌کند.';
+            message.textContent = 'در حالت ویرایش، فقط مقدار حداقل موجودی تغییر می‌کند. برای تغییر محدوده، قانون جدید تعریف کنید.';
             submit.textContent = 'ذخیره تغییرات';
-            cancelEdit.hidden = false;
-
-            document.getElementById('threshold-settings').scrollIntoView({
-                behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-                block: 'start',
-            });
-            minimum.focus({ preventScroll: true });
+            lockScope(true, button.dataset.ruleName);
+            showEditor(button, minimum);
         });
     });
 
-    cancelEdit.addEventListener('click', resetEditor);
+    if (dialog.dataset.reopenOnError === '1') {
+        const savedType = ['category', 'product', 'variant'].includes(dialog.dataset.oldType) ? dialog.dataset.oldType : 'category';
+        applyType(savedType);
+        if (savedType === 'category') {
+            target.value = dialog.dataset.oldTargetId;
+        } else if (dialog.dataset.oldTargetId) {
+            const label = dialog.dataset.oldTargetLabel || 'مورد انتخاب‌شده (' + dialog.dataset.oldTargetId + ')';
+            target.replaceChildren(new Option(label, dialog.dataset.oldTargetId, true, true));
+            search.value = label;
+            searchStatus.textContent = 'مورد انتخاب‌شده از فرم قبلی بازیابی شد.';
+        }
+        measure.value = savedType === 'variant' ? 'variant' : (dialog.dataset.oldMeasure === 'variant' ? 'variant' : 'product');
+        minimum.value = dialog.dataset.oldMinimum;
+        if (dialog.dataset.oldEditing === '1' && target.value) {
+            title.textContent = 'ویرایش آستانه موجود';
+            submit.textContent = 'ذخیره تغییرات';
+            lockScope(true, dialog.dataset.oldTargetLabel || '');
+        }
+        showEditor(null, minimum);
+    } else {
+        resetEditor();
+    }
 
     form.addEventListener('submit', event => {
         if (!target.value) {
@@ -143,6 +218,8 @@
             searchStatus.textContent = type.value === 'category'
                 ? 'یک دسته‌بندی انتخاب کنید.'
                 : 'ابتدا کالا یا تنوع موردنظر را جست‌وجو و انتخاب کنید.';
+            return;
         }
+        submitting = true;
     });
 })();

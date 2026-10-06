@@ -144,7 +144,9 @@ class StockThresholdTest extends TestCase
     public function test_authorized_user_can_render_search_update_and_delete_rules(): void
     {
         [, , $product, $variant] = $this->fixture();
-        $this->actingAs($this->actor())->get(route('stock-thresholds.index'))->assertOk()->assertSee('آستانه موجودی');
+        $this->actingAs($this->actor())->get(route('stock-thresholds.index'))->assertOk()->assertSee('آستانه موجودی')
+            ->assertSee('id="threshold-editor-dialog"', false)
+            ->assertSee('data-threshold-create', false);
         $this->getJson(route('stock-thresholds.search', ['type' => 'variant', 'q' => '67w']))->assertOk()->assertJsonPath('items.0.id', $variant->id);
         $payload = ['target_type' => 'product', 'target_id' => $product->id, 'measure' => 'variant', 'minimum' => 8];
         $this->post(route('stock-thresholds.store'), $payload)->assertRedirect();
