@@ -170,7 +170,7 @@ class SiteOrderItemNotesSyncService {
 
                 $paidUnitPrice  = max($siteItem->finalUnitPrice(), 0);
                 $paidAmount     = $paidUnitPrice * $paidQuantity;
-                $approvedAmount = $after !== [] ? max((int) ( $after['line_total'] ?? ( $newQuantity * (int) ( $after['price'] ?? 0 ) ) ), 0) : 0;
+                $approvedAmount = $after !== [] ? $this->toSiteTomans(max((int) ( $after['line_total'] ?? ( $newQuantity * (int) ( $after['price'] ?? 0 ) ) ), 0)) : 0;
                 $unsentAmount   = $unsentQuantity > 0 ? $paidUnitPrice * $unsentQuantity : 0;
                 $addedAmount    = max($approvedAmount - max($paidAmount - $unsentAmount, 0), 0);
 
@@ -195,13 +195,13 @@ class SiteOrderItemNotesSyncService {
                     'returned_amount'       => max((int) ( $previousFulfillment['returned_amount'] ?? 0 ), 0),
                     'old_quantity'          => $oldQuantity,
                     'new_quantity'          => $newQuantity,
-                    'old_price'             => $before['price'] ?? null,
-                    'new_price'             => $after['price'] ?? null,
-                    'old_discount_amount'   => $before['line_discount_amount'] ?? null,
-                    'new_discount_amount'   => $after['line_discount_amount'] ?? null,
-                    'old_line_total'        => $before['line_total'] ?? 0,
-                    'new_line_total'        => $after['line_total'] ?? 0,
-                    'line_total_difference' => (int) ( $after['line_total'] ?? 0 ) - (int) ( $before['line_total'] ?? 0 ),
+                    'old_price'             => isset($before['price']) ? $this->toSiteTomans((int) $before['price']) : null,
+                    'new_price'             => isset($after['price']) ? $this->toSiteTomans((int) $after['price']) : null,
+                    'old_discount_amount'   => isset($before['line_discount_amount']) ? $this->toSiteTomans((int) $before['line_discount_amount']) : null,
+                    'new_discount_amount'   => isset($after['line_discount_amount']) ? $this->toSiteTomans((int) $after['line_discount_amount']) : null,
+                    'old_line_total'        => $this->toSiteTomans((int) ($before['line_total'] ?? 0)),
+                    'new_line_total'        => $this->toSiteTomans((int) ($after['line_total'] ?? 0)),
+                    'line_total_difference' => $this->toSiteTomans((int) ( $after['line_total'] ?? 0 ) - (int) ( $before['line_total'] ?? 0 )),
                 ];
 
                 $sync = $this->syncMetadata($invoice, $siteOrder, $siteItem, $erpInvoiceItemId, $sitePriceId, $siteProductId, $correlationId, $action);
@@ -248,6 +248,11 @@ class SiteOrderItemNotesSyncService {
                 $affected  = $this->affectedItemsForCorrelation($siteItems, (int) $invoice->id, $correlationId);
 
                 $adjustment = data_get($payload, 'notes_candidate.invoice_adjustment', []);
+                if (is_array($adjustment)) {
+                    foreach (['old_total', 'new_total', 'total_difference', 'amount_reduced', 'amount_increased', 'paid_amount', 'excess_payment_after_change'] as $key) {
+                        if (isset($adjustment[$key])) {
+                            $adjustment[$key] = $this->toSiteTomans((int) $adjustment[$key]);
+                        }}}
                 $newStatus  = (string) ( $adjustment['new_status'] ?? $invoice->status ?? '' );
 
                 // Cancellation may have no InvoiceItem event. In that case the
@@ -354,6 +359,11 @@ class SiteOrderItemNotesSyncService {
 
             $eventKey   = $this->eventKey($correlationId, $action, $payload, (int) $siteItem->id);
             $sectionKey = $action === 'customer_invoice_debit_voided' ? 'financial_ledger' : 'financial_ledger_raw';
+            if ($sectionKey === 'financial_ledger' && is_array($ledger)) {
+                foreach (['removed_debit_amount', 'customer_became_more_creditor_by'] as $key) {
+                    if (isset($ledger[$key])) {
+                        $ledger[$key] = $this->toSiteTomans((int) $ledger[$key]);
+                    }}}
 
             $siteItem->mergeErpNotes([
                 $sectionKey => is_array($ledger) ? $ledger : [],
@@ -422,9 +432,9 @@ class SiteOrderItemNotesSyncService {
             return null;
         }
 
-        $grossUnit    = max((int) ( $after['price'] ?? 0 ), 0);
-        $lineTotal    = max((int) ( $after['line_total'] ?? ( $quantity * $grossUnit ) ), 0);
-        $finalUnit    = $quantity > 0 ? (int) floor($lineTotal / $quantity) : $grossUnit;
+        $grossUnit    = $this->toSiteTomans(max((int) ( $after['price'] ?? 0 ), 0));
+        $lineTotal    = $this->toSiteTomans(max((int) ( $after['line_total'] ?? ( $quantity * (int) ($after['price'] ?? 0) ) ), 0));
+        $finalUnit    = $quantity > 0 ? intdiv($lineTotal, $quantity) : $grossUnit;
         $unitDiscount = max($grossUnit - $finalUnit, 0);
 
         return SiteOrderItem::query()
@@ -518,6 +528,11 @@ class SiteOrderItemNotesSyncService {
         }
 
         return 0;
+    }
+
+    // Inventory stores rials; Site order_items and its customer-facing notes store tomans.
+    private function toSiteTomans(int $rials): int {
+            return intdiv($rials, 10);
     }
 
     private function positiveInteger( mixed $value ): int {

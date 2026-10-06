@@ -548,6 +548,13 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::patch('/stock-count-documents/{stockCountDocument}/cancel', [StocktakeController::class, 'cancel'])->name('stock-count-documents.cancel');
     Route::get('/stock-count-documents-system-quantity', [StocktakeController::class, 'systemQuantity'])->name('stock-count-documents.system-quantity');
 
+
+    Route::get('/preinvoice/live/{uuid}', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'show'])->name('preinvoice.collaborative');
+    Route::get('/preinvoice/live/{uuid}/state', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'state'])->name('preinvoice.collaborative.state');
+    Route::get('/preinvoice/live/{uuid}/search', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'search'])->name('preinvoice.collaborative.search');
+    Route::post('/preinvoice/live/{uuid}/change', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'change'])->name('preinvoice.collaborative.change');
+
+
     // Preinvoice pages
     Route::get('/preinvoice/create', [PreinvoiceController::class, 'create'])->name('preinvoice.create');
     Route::post('/preinvoice/draft', [PreinvoiceController::class, 'saveDraft'])->name('preinvoice.draft.save');
