@@ -21,8 +21,16 @@ class StockThresholdController extends Controller
         $all = $service->alerts(false);
         $q = trim((string) $request->query('q', ''));
         $categoryIds = $request->integer('category_id') ? Category::selfAndDescendantIds($request->integer('category_id')) : [];
-        $filtered = $all->filter(fn ($r) => (!$q || mb_stripos($r['name'].' '.$r['variant_name'].' '.$r['code'], $q) !== false)
-            && (!$categoryIds || in_array($r['category_id'], $categoryIds, true)))->values();
+        $status = $request->query('status', 'all');
+        $status = in_array($status, ['all', 'out', 'low', 'edge'], true) ? $status : 'all';
+        $filtered = $all->filter(fn ($r) => (!$q || mb_stripos(($r['name'] ?? '').' '.($r['variant_name'] ?? '').' '.($r['code'] ?? ''), $q) !== false)
+            && (!$categoryIds || in_array($r['category_id'], $categoryIds, true))
+            && match ($status) {
+                'out' => (int) $r['available'] === 0,
+                'low' => (int) $r['available'] > 0 && (int) $r['available'] < (int) $r['minimum'],
+                'edge' => (int) $r['available'] > 0 && (int) $r['available'] === (int) $r['minimum'],
+                default => true,
+            })->values();
         $page = max(1, $request->integer('page', 1));
         $alerts = new LengthAwarePaginator($filtered->forPage($page, 40)->values(), $filtered->count(), 40, $page,
             ['path' => $request->url(), 'query' => $request->query()]);
@@ -30,7 +38,7 @@ class StockThresholdController extends Controller
         $categories = Category::orderBy('name')->get();
         $products = Product::whereIn('id', $rules->where('target_type', 'product')->pluck('target_id'))->pluck('name', 'id');
         $variants = ProductVariant::whereIn('id', $rules->where('target_type', 'variant')->pluck('target_id'))->with('product:id,name')->get()->keyBy('id');
-        return view('stock-thresholds.index', compact('alerts', 'all', 'rules', 'categories', 'products', 'variants', 'q'));
+        return view('stock-thresholds.index', compact('alerts', 'all', 'rules', 'categories', 'products', 'variants', 'q', 'status'));
     }
 
     public function search(Request $request)
@@ -38,11 +46,13 @@ class StockThresholdController extends Controller
         $data = $request->validate(['type' => ['required', Rule::in(['product', 'variant'])], 'q' => ['required', 'string', 'min:2', 'max:100']]);
         $q = $data['q'];
         if ($data['type'] === 'product') {
-            $rows = Product::where(fn ($b) => $b->where('name', 'like', "%$q%")->orWhere('code', 'like', "%$q%"))
+            $rows = Product::where(fn ($b) => $b->where('name', 'like', "%$q%")->orWhere('code', 'like', "%$q%")->orWhere('sku', 'like', "%$q%"))
                 ->orderBy('name')->limit(30)->get(['id', 'name', 'code'])->map(fn ($p) => ['id' => $p->id, 'name' => "$p->name ($p->code)"]);
         } else {
             $rows = ProductVariant::with('product:id,name')->where(fn ($b) => $b->where('variant_name', 'like', "%$q%")
-                ->orWhere('variant_code', 'like', "%$q%")->orWhereHas('product', fn ($p) => $p->where('name', 'like', "%$q%")))
+                ->orWhere('variant_code', 'like', "%$q%")
+                ->orWhere('variety_name', 'like', "%$q%")
+                ->orWhere('variety_code', 'like', "%$q%")->orWhereHas('product', fn ($p) => $p->where('name', 'like', "%$q%")))
                 ->orderBy('id')->limit(30)->get()->map(fn ($v) => ['id' => $v->id, 'name' => ($v->product?->name ?? '').' / '.($v->variant_name ?: $v->variety_name).' ('.($v->variant_code ?: $v->variety_code).')']);
         }
         return response()->json(['items' => $rows]);

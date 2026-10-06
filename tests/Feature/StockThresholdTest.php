@@ -59,6 +59,9 @@ class StockThresholdTest extends TestCase
         $this->assertSame(5, $alerts[0]['available']);
         $this->assertSame(0, $alerts[0]['shortfall']);
         $this->assertSame($variant->id, $alerts[0]['variant_id']);
+        $this->assertFalse($alerts[0]['product_sale_enabled']);
+        $this->assertFalse($alerts[0]['variant_active']);
+        $this->assertFalse($alerts[0]['variant_sales_enabled']);
         $this->assertEquals($before, DB::table('warehouse_stocks')->get()->toArray());
         $this->assertSame(99, (int) $product->fresh()->stock);
         $this->assertSame(7, (int) $variant->fresh()->reserved);
@@ -103,6 +106,29 @@ class StockThresholdTest extends TestCase
         $this->rule('product', $simple->id, 'product', 2);
         $this->assertCount(2, $service->alerts(false));
         $this->assertSame(2, $service->alerts(false)->firstWhere('product_id', $simple->id)['available']);
+    }
+
+    public function test_supply_page_filters_out_low_and_edge_without_hiding_inactive_variants(): void
+    {
+        [$root, , , $variant, $central] = $this->fixture(0);
+        $this->rule('category', $root->id, 'variant', 5);
+        $this->actingAs($this->actor());
+
+        $this->get(route('stock-thresholds.index', ['status' => 'out']))
+            ->assertOk()->assertSee('THRESHOLD-BLACK')->assertSee('تنوع غیرفعال')->assertSee('فروش بسته');
+        $this->get(route('stock-thresholds.index', ['status' => 'low']))
+            ->assertOk()->assertDontSee('THRESHOLD-BLACK');
+
+        $stock = DB::table('warehouse_stocks')->where('warehouse_id', $central->id)->where('product_variant_id', $variant->id);
+        $stock->update(['quantity' => 4]);
+        $this->get(route('stock-thresholds.index', ['status' => 'low']))
+            ->assertOk()->assertSee('THRESHOLD-BLACK')->assertSee('نیازمند تأمین');
+        $this->get(route('stock-thresholds.index', ['status' => 'out']))
+            ->assertOk()->assertDontSee('THRESHOLD-BLACK');
+
+        $stock->update(['quantity' => 5]);
+        $this->get(route('stock-thresholds.index', ['status' => 'edge']))
+            ->assertOk()->assertSee('THRESHOLD-BLACK')->assertSee('مرز آستانه');
     }
 
     public function test_page_permission_is_required_for_all_actions(): void

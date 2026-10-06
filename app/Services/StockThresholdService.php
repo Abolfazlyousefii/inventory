@@ -54,7 +54,7 @@ class StockThresholdService
             ->values()
             ->all();
 
-        $productsQuery = Product::query()->select(['id', 'name', 'code', 'category_id']);
+        $productsQuery = Product::query()->select(['id', 'name', 'code', 'category_id', 'is_sellable']);
         $productsQuery->where(function ($query) use ($candidateProductIds, $categoryScopeIds) {
             $hasScope = false;
 
@@ -93,7 +93,7 @@ class StockThresholdService
 
         $variants = ProductVariant::query()
             ->whereIn('product_id', $productIds)
-            ->get(['id', 'product_id', 'variant_name', 'variety_name', 'variant_code', 'variety_code'])
+            ->get(['id', 'product_id', 'variant_name', 'variety_name', 'variant_code', 'variety_code', 'is_active', 'sales_enabled'])
             ->groupBy('product_id');
 
         $stock = DB::table('warehouse_stocks as s')
@@ -197,6 +197,9 @@ class StockThresholdService
             'code' => $variant ? ($variant->variant_code ?: $variant->variety_code) : $product->code,
             'category_id' => $product->category_id,
             'category' => $categories->get($product->category_id)?->name,
+            'product_sale_enabled' => (bool) ($product->is_sellable ?? true),
+            'variant_active' => $variant ? (bool) $variant->is_active : null,
+            'variant_sales_enabled' => $variant ? (bool) $variant->sales_enabled : null,
             'available' => $available,
             'minimum' => $rule->minimum,
             'shortfall' => max(0, $rule->minimum - $available),
