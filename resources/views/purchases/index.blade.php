@@ -2,6 +2,8 @@
 
 @section('title', 'خرید کالا')
 
+@push('styles')<link rel="stylesheet" href="{{ asset('css/purchases-list.css') }}?v=1">@endpush
+
 @section('content')
 @php
     $toRial = fn($rial) => \App\Support\Currency::formatRial($rial);
@@ -10,12 +12,12 @@
 
 
 
-<div class="purchase-page-wrap">
+<div class="purchase-page-wrap purchase-list">
 
     <div class="purchase-topbar d-flex justify-content-between align-items-center">
-        <h4 class="page-title mb-0">خرید کالا</h4>
+        <div class="purchase-title"><span class="purchase-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg></span><div><span class="purchase-eyebrow">اسناد ورودی انبار</span><h4 class="page-title mb-0">خرید کالا</h4></div></div>
         <div class="d-flex gap-2 flex-wrap justify-content-end">
-            <a class="btn btn-outline-light" href="{{ route('purchase-returns.index') }}">↶ برگشت از خرید</a>
+            <a class="btn btn-outline-light purchase-return-link" href="{{ route('purchase-returns.index') }}">↶ برگشت از خرید</a>
             @canPermission('stock_in.export')<a class="btn btn-outline-light" href="{{ route('purchases.export', request()->query()) }}">خروجی اکسل همه خریدها</a>@endcanPermission
             @canPermission('stock_in.create')<a class="btn btn-light" href="{{ route('purchases.create') }}">+ ثبت خرید جدید</a>@endcanPermission
         </div>
@@ -30,7 +32,7 @@
                         <div class="value">{{ $toRial($totalAllAmount) }}</div>
                     </div>
                     <div>
-                        <div class="label">تعداد لیست خریدها</div>
+                        <div class="label">تعداد اسناد خرید</div>
                         <div class="value">{{ number_format($totalAllCount) }}</div>
                     </div>
                 </div>
@@ -90,16 +92,16 @@
                     <tbody>
                     @forelse($purchases as $purchase)
                         <tr>
-                            <td class="fw-bold">
+                            <td class="fw-bold" data-label="ردیف">
                                 {{ $loop->iteration + (($purchases->currentPage() - 1) * $purchases->perPage()) }}
                             </td>
-                            <td>{{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}</td>
-                            <td>{{ $purchase->supplier?->name }}</td>
-                            <td class="text-muted" style="min-width: 180px; max-width: 320px; white-space: normal;">{{ $purchase->note ?: '-' }}</td>
-                            <td>{{ $toRial($purchase->total_discount ?? 0) }}</td>
-                            <td class="amount-strong">{{ $toRial($purchase->total_amount) }}</td>
-                            <td><span class="badge-items">{{ $purchase->items_count }}</span></td>
-                            <td class="text-end action-btns">
+                            <td data-label="تاریخ">{{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}</td>
+                            <td data-label="تأمین‌کننده">{{ $purchase->supplier?->name }}</td>
+                            <td class="text-muted" data-label="توضیحات">{{ $purchase->note ?: '-' }}</td>
+                            <td data-label="تخفیف سند">{{ $toRial($purchase->total_discount ?? 0) }}</td>
+                            <td class="amount-strong" data-label="مبلغ کل">{{ $toRial($purchase->total_amount) }}</td>
+                            <td data-label="تعداد آیتم"><span class="badge-items">{{ $purchase->items_count }}</span></td>
+                            <td class="text-end action-btns" data-label="عملیات">
                                 <a href="{{ route('purchases.show', $purchase) }}" class="btn btn-sm btn-outline-secondary">مشاهده</a>
                                 @canPermission('stock_in.edit')<a href="{{ route('purchases.edit', $purchase) }}" class="btn btn-sm btn-outline-primary">ویرایش</a>@endcanPermission
                                 @canPermission('stock_in.delete')<form method="POST" action="{{ route('purchases.destroy', $purchase) }}" class="d-inline"
