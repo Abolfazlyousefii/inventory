@@ -290,6 +290,7 @@ class PurchaseController extends Controller
                 $purchase = Purchase::whereKey($purchase->id)
                     ->lockForUpdate()
                     ->firstOrFail();
+                app(\App\Services\PurchaseReturnService::class)->assertPurchaseMutable($purchase);
                 $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
 
                 $purchase->update($this->purchaseTablePayload([
@@ -319,6 +320,8 @@ class PurchaseController extends Controller
     public function destroy(Purchase $purchase)
     {
         DB::transaction(function () use ($purchase) {
+            $purchase = Purchase::whereKey($purchase->id)->lockForUpdate()->firstOrFail();
+            app(\App\Services\PurchaseReturnService::class)->assertPurchaseMutable($purchase);
             app(SupplierLedgerService::class)->voidPurchaseCredit($purchase);
             $this->rollbackPurchase($purchase);
             $purchase->delete();
