@@ -37,6 +37,7 @@ use App\Http\Controllers\ProductSalesStatusBulkController;
 use App\Http\Controllers\ProductExportController;
 use App\Http\Controllers\ProductPurchaseLedgerController;
 use App\Http\Controllers\ProductSalesLedgerController;
+use App\Http\Controllers\ProductSelectionExportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\SalesHavalehController;
@@ -46,7 +47,7 @@ use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\StockMovementController;
 use App\Http\Controllers\StockMovementReportController;
-use App\Http\Controllers\StockThresholdController;
+use App\Http\Controllers\WarehouseDailySalesController;
 use App\Http\Controllers\StocktakeController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
@@ -56,6 +57,7 @@ use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseInboundController;
 use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReservationController;
+use App\Http\Controllers\StockThresholdController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
 use App\Http\Controllers\Portal\CustomerAuthController;
@@ -161,6 +163,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
+    Route::post('/products/selected-export', ProductSelectionExportController::class)
+        ->middleware('route.permission:products.export')->name('products.selected-export');
     Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
@@ -188,6 +192,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->name('products.destroy');
     Route::get('/products/{product}/sales-ledger', [ProductSalesLedgerController::class, 'index'])->whereNumber('product')->name('products.sales-ledger');
     Route::get('/products/{product}/purchase-ledger', [ProductPurchaseLedgerController::class, 'purchaseLedger'])->whereNumber('product')->name('products.purchase-ledger');
+    Route::get('/products/{product}/stock-ledger', [\App\Http\Controllers\ProductStockLedgerController::class, 'index'])->whereNumber('product')->name('products.stock-ledger');
     Route::resource('categories', CategoryController::class)->except(['show', 'destroy']);
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
     Route::post('/categories/fix-codes', [CategoryController::class, 'fixCodes'])->name('categories.fixCodes');
@@ -195,12 +200,16 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/pricelist', [ProductController::class, 'priceList'])->name('products.pricelist');
 
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
-        Route::get('/', [ProductExportController::class, 'index'])->name('index');
+        Route::get('/', [\App\Http\Controllers\ProductExportBuilderController::class, 'index'])->name('index');
+        Route::get('/builder/products', [\App\Http\Controllers\ProductExportBuilderController::class, 'products'])->name('builder.products');
+        Route::post('/builder/print', [\App\Http\Controllers\ProductExportBuilderController::class, 'print'])->name('builder.print');
+        Route::post('/builder/preview', [\App\Http\Controllers\ProductExportBuilderController::class, 'preview'])->name('builder.preview');
         Route::get('/data', [ProductExportController::class, 'filter'])->name('data');
         Route::get('/print', [ProductExportController::class, 'print'])->name('print');
         Route::get('/download', [ProductExportController::class, 'download'])->name('download');
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
         Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->name('products.search');
+        Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
         Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
     });
@@ -296,12 +305,19 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
     Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->name('finance.invoices.reapprove');
     Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->name('finance.invoices.return-to-sales');
-    Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->name('finance.cheques.registered');
+    Route::get('/finance/registered-cheques', fn () => redirect()->route('finance.reports.receipts'))->name('finance.cheques.registered');
 
     Route::prefix('finance/reports')
         ->name('finance.reports.')
         ->group(function () {
+            Route::get('/top-products', [\App\Http\Controllers\TopProductsReportController::class, 'index'])->name('top-products');
+            Route::get('/top-products/detail', [\App\Http\Controllers\TopProductsReportController::class, 'detail'])->name('top-products.detail');
+            Route::get('/top-products/export', [\App\Http\Controllers\TopProductsReportController::class, 'export'])->name('top-products.export');
+            Route::get('/top-products/image/{product}', [\App\Http\Controllers\ProductController::class, 'image'])->name('top-products.image');
             Route::get('/', [FinanceReportController::class, 'index'])->name('index');
+            Route::get('/receipts', [\App\Http\Controllers\PaymentReportController::class, 'index'])->name('receipts');
+            Route::get('/receipts/detail', [\App\Http\Controllers\PaymentReportController::class, 'detail'])->name('receipts.detail');
+            Route::get('/receipts/export', [\App\Http\Controllers\PaymentReportController::class, 'export'])->name('receipts.export');
             Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
             Route::post('/sales-visitors/commission-batches', [FinanceReportController::class, 'storeCommissionBatch'])->name('sales-visitors.commission-batches.store');
             Route::get('/sales-visitors/commission-batches/{batch}', [FinanceReportController::class, 'showCommissionBatch'])->name('sales-visitors.commission-batches.show');
@@ -549,6 +565,13 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::patch('/stock-count-documents/{stockCountDocument}/cancel', [StocktakeController::class, 'cancel'])->name('stock-count-documents.cancel');
     Route::get('/stock-count-documents-system-quantity', [StocktakeController::class, 'systemQuantity'])->name('stock-count-documents.system-quantity');
 
+
+    Route::get('/preinvoice/live/{uuid}', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'show'])->name('preinvoice.collaborative');
+    Route::get('/preinvoice/live/{uuid}/state', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'state'])->name('preinvoice.collaborative.state');
+    Route::get('/preinvoice/live/{uuid}/search', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'search'])->name('preinvoice.collaborative.search');
+    Route::post('/preinvoice/live/{uuid}/change', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'change'])->name('preinvoice.collaborative.change');
+
+
     // Preinvoice pages
     Route::get('/preinvoice/create', [PreinvoiceController::class, 'create'])->name('preinvoice.create');
     Route::post('/preinvoice/draft', [PreinvoiceController::class, 'saveDraft'])->name('preinvoice.draft.save');
@@ -638,7 +661,11 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Account statements (گردش حساب اشخاص)
     Route::get('/account-statements', [AccountStatementController::class, 'index'])->name('account-statements.index');
+    Route::get('/account-statements/{customer}/payments/{payment}/edit', [InvoicePaymentController::class, 'editForCustomer'])->name('account-statements.payments.edit');
+    Route::put('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'updateForCustomer'])->name('account-statements.payments.update');
+    Route::delete('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'destroyForCustomer'])->name('account-statements.payments.destroy');
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
+    Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
     Route::get('/account-statements/documents/invoices/{uuid}', [AccountStatementController::class, 'showInvoice'])->name('account-statements.documents.invoices.show');
     Route::get('/account-statements/documents/returns/{voucher}', [AccountStatementController::class, 'showReturnFromSale'])->name('account-statements.documents.returns.show');
     Route::get('/account-statements/documents/payments/{payment}', [AccountStatementController::class, 'showPayment'])->name('account-statements.documents.payments.show');
@@ -668,10 +695,6 @@ Route::post('model-lists/import-phone-catalog', [ModelListController::class, 'im
     ->name('model-lists.import-phone-catalog');
 
 Route::middleware('auth')->group(function () {
-    Route::get('/warehouse-reservations', [WarehouseReservationController::class, 'index'])
-        ->middleware('route.permission:warehouse_reservations.view')
-        ->name('warehouse-reservations.index');
-
     Route::prefix('warehouse/stock-thresholds')->name('stock-thresholds.')->middleware('route.permission')->group(function () {
         Route::get('/', [StockThresholdController::class, 'index'])->name('index');
         Route::get('/search', [StockThresholdController::class, 'search'])->name('search');
@@ -680,24 +703,25 @@ Route::middleware('auth')->group(function () {
         Route::post('/rules', [StockThresholdController::class, 'store'])->name('store');
         Route::delete('/rules/{rule}', [StockThresholdController::class, 'destroy'])->name('destroy');
     });
+    Route::get('/warehouse-reservations', [\App\Http\Controllers\PreinvoiceReservationReportController::class, 'index'])
+        ->middleware('route.permission:warehouse_reservations.view')
+        ->name('warehouse-reservations.index');
+    Route::prefix('warehouse/daily-sales')->name('warehouse.daily-sales.')->middleware('route.permission')->group(function () {
+        Route::get('/', [WarehouseDailySalesController::class, 'index'])->name('index');
+        Route::get('/data', [WarehouseDailySalesController::class, 'data'])->name('data');
+        Route::get('/detail', [WarehouseDailySalesController::class, 'detail'])->name('detail');
+        Route::get('/export', [WarehouseDailySalesController::class, 'export'])->name('export');
+        Route::post('/counts', [WarehouseDailySalesController::class, 'store'])->name('store');
+    });
     Route::get('/warehouse-reservations/health/export', [WarehouseReservationController::class, 'exportHealth'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.health.export');
-    Route::post('/warehouse-reservations/bulk-release', [WarehouseReservationController::class, 'bulkRelease'])
-        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
-        ->name('warehouse-reservations.bulk-release');
-    Route::post('/warehouse-reservations/bulk-legacy-cleanup', [WarehouseReservationController::class, 'bulkLegacyCleanup'])
-        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:inventory.reservation.legacy_cleanup'])
-        ->name('warehouse-reservations.bulk-legacy-cleanup');
     Route::post('/warehouse-reservations/bulk-export', [WarehouseReservationController::class, 'bulkExport'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.bulk-export');
-    Route::get('/warehouse-reservations/{reservation}', [WarehouseReservationController::class, 'show'])
+    Route::get('/warehouse-reservations/{reservation}', [\App\Http\Controllers\PreinvoiceReservationReportController::class, 'show'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.show');
-    Route::post('/warehouse-reservations/{reservation}/release', [WarehouseReservationController::class, 'release'])
-        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
-        ->name('warehouse-reservations.release');
 });
 
 // اگر این دو route را از قبل نداری، داخل routes/web.php اضافه کن.

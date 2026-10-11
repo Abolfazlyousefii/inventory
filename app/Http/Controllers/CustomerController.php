@@ -52,12 +52,14 @@ class CustomerController extends Controller
             ->when($status === 'inactive', fn ($query) => $query->where('is_active', false));
 
         if (in_array($balanceStatus, ['debt', 'credit', 'settled'], true)) {
+            // Filter projected balance columns in an outer query; HAVING breaks paginated counts.
+            $customersQuery = Customer::query()->fromSub($customersQuery->toBase(), 'customers');
             $balanceExpression = '(COALESCE(opening_balance, 0) + COALESCE(debit_sum, 0) - COALESCE(credit_sum, 0))';
 
             match ($balanceStatus) {
-                'debt' => $customersQuery->havingRaw("{$balanceExpression} > 0"),
-                'credit' => $customersQuery->havingRaw("{$balanceExpression} < 0"),
-                'settled' => $customersQuery->havingRaw("{$balanceExpression} = 0"),
+                'debt' => $customersQuery->whereRaw("{$balanceExpression} > 0"),
+                'credit' => $customersQuery->whereRaw("{$balanceExpression} < 0"),
+                'settled' => $customersQuery->whereRaw("{$balanceExpression} = 0"),
             };
         }
 
@@ -108,13 +110,9 @@ class CustomerController extends Controller
 
     public function destroy(Customer $customer)
     {
-        $title = '';
-        $customer->delete();
-
-        return redirect()
-            ->route('customers.index')
-            ->with('success', "✅ مشتری {$title} حذف شد.");
+        abort(403, 'حذف مشتری در نرم‌افزار مجاز نیست؛ اطلاعات و سوابق مشتری باید حفظ شود.');
     }
+
     private function parseAmount($value): ?int
     {
         if ($value === null) {

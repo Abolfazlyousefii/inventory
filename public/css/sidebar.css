@@ -366,3 +366,32 @@
         transition: none;
     }
 }
+
+/* Group tones match the dashboard cards; navigation behavior is unchanged. */
+.app-sidebar{color:#17394e;background:#fff;border-left-color:#cedde7}
+.app-sidebar .sidebar-accordion-item{--sidebar-tone:#2365ac;--sidebar-soft:#eef5ff;--sidebar-line:#c8dbef;margin-bottom:7px}
+.app-sidebar [data-accordion-section="products"]{--sidebar-tone:#7651b0;--sidebar-soft:#f5f0fc;--sidebar-line:#ddcfef}
+.app-sidebar [data-accordion-section="warehouse"]{--sidebar-tone:#af631c;--sidebar-soft:#fff4ea;--sidebar-line:#f0d4b9}
+.app-sidebar [data-accordion-section="sales"]{--sidebar-tone:#2365ac;--sidebar-soft:#eef5ff;--sidebar-line:#c8dbef}
+.app-sidebar [data-accordion-section="finance"]{--sidebar-tone:#198268;--sidebar-soft:#eef9f3;--sidebar-line:#c7e4d5}
+.app-sidebar [data-accordion-section="config"]{--sidebar-tone:#536ab0;--sidebar-soft:#eff2fc;--sidebar-line:#cfd8ef}
+.app-sidebar .sidebar-section-link{--sidebar-tone:#214d69;--sidebar-soft:#edf4fa;--sidebar-line:#c8d9e6;margin-bottom:7px}
+.app-sidebar .sidebar-section-link,.app-sidebar .sidebar-accordion-trigger{min-height:46px;padding:7px 10px;background:var(--sidebar-soft);border:1px solid var(--sidebar-line);color:#17394e;font-size:13px;font-weight:500;border-radius:9px}
+.app-sidebar .sidebar-section-main{gap:9px}
+.app-sidebar .sidebar-icon{width:29px;height:29px;padding:5px;border-radius:8px;background:var(--sidebar-tone);color:#fff;box-sizing:border-box}
+.app-sidebar .sidebar-section-link:hover,.app-sidebar .sidebar-accordion-trigger:hover{background:var(--sidebar-soft);color:var(--sidebar-tone);border-color:var(--sidebar-tone)}
+.app-sidebar .sidebar-section-link.is-active,.app-sidebar .sidebar-accordion-trigger.is-active{background:var(--sidebar-soft);border-color:var(--sidebar-tone);color:var(--sidebar-tone);font-weight:600}
+.app-sidebar .sidebar-section-link.is-active:before,.app-sidebar .sidebar-accordion-trigger.is-active:before{background:var(--sidebar-tone);width:3px;top:9px;bottom:9px}
+.app-sidebar .is-active .sidebar-icon,.app-sidebar .sidebar-section-link:hover .sidebar-icon,.app-sidebar .sidebar-accordion-trigger:hover .sidebar-icon{color:#fff}
+.app-sidebar .sidebar-accordion-trigger-icon{color:var(--sidebar-tone);opacity:.8}
+.app-sidebar .sidebar-submenu{border-right-color:var(--sidebar-line);margin:4px 19px 8px 0}
+.app-sidebar .sidebar-sublink{color:#40586a;font-size:12px;font-weight:400;min-height:36px;line-height:1.7;border-radius:7px}
+.app-sidebar .sidebar-sublink:before{background:var(--sidebar-line)}
+.app-sidebar .sidebar-sublink:hover{color:var(--sidebar-tone);background:var(--sidebar-soft)}
+.app-sidebar .sidebar-sublink.active{background:var(--sidebar-soft);color:var(--sidebar-tone);font-weight:600}
+.app-sidebar .sidebar-sublink.active:before{background:var(--sidebar-tone);box-shadow:0 0 0 3px var(--sidebar-soft)}
+.app-sidebar .app-sidebar__brand,.app-sidebar .app-sidebar__mobile-head{border-bottom-color:#cedde7;background:#fbfdff}
+.app-sidebar .app-sidebar__title{color:#17394e;font-weight:600}
+.app-sidebar .app-sidebar__subtitle{color:#52697b}
+.app-sidebar a:focus-visible,.app-sidebar button:focus-visible{outline:2px solid var(--sidebar-tone,#214d69);outline-offset:2px}
+@media(max-width:991.98px){.app-sidebar .sidebar-sublink{min-height:44px}.app-sidebar .sidebar-section-link,.app-sidebar .sidebar-accordion-trigger{min-height:48px}}

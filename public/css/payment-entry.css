@@ -1,0 +1,11 @@
+.unified-payment-modal{font-family:Vazirmatn,sans-serif;color:#214f6c;font-weight:400}
+.unified-payment-modal .modal-content{border:1px solid #dce7ed;border-radius:14px;overflow:hidden}
+.unified-payment-modal .modal-header{background:#f4f9fc;border-bottom:1px solid #dce7ed}
+.unified-payment-modal .modal-title{font-size:1rem;font-weight:500}
+.unified-payment-modal .form-label{font-size:.85rem;font-weight:500}
+.unified-payment-modal .form-control,.unified-payment-modal .form-select{border-color:#cbdde7;border-radius:8px;min-height:42px;font-weight:400}
+.unified-payment-modal .payment-entry-balance{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#f4f9fc;border:1px solid #dce7ed;border-radius:9px;padding:14px}
+.unified-payment-modal .btn-success{background:#168268;border-color:#168268;color:white}
+.unified-payment-modal .btn{min-height:42px;border-radius:8px;font-weight:500}
+.unified-payment-modal summary{cursor:pointer;color:#167f68;font-size:.85rem}
+@media(max-width:600px){.unified-payment-modal .modal-dialog{margin:8px}.unified-payment-modal .modal-body{padding:14px}.unified-payment-modal .modal-content{max-height:calc(100dvh - 16px)}.unified-payment-modal .form-control,.unified-payment-modal .form-select{font-size:16px}}

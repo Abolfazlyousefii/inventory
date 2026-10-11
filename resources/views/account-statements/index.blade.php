@@ -1,4 +1,8 @@
 @extends('layouts.app')
+@section('title', 'گردش حساب اشخاص')
+@push('styles')
+<link rel="stylesheet" href="{{ asset('css/account-statements-list.css') }}?v=20261011">
+@endpush
 
 @section('content')
 @php
@@ -12,26 +16,35 @@
     };
     $sortLabel = fn (string $column, string $label) => $label . ($sort === $column ? ($direction === 'desc' ? ' ↓' : ' ↑') : ' ⇅');
 @endphp
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h4 class="mb-0">📒 گردش حساب اشخاص</h4>
-        <div class="text-muted small">لیست کامل اشخاص (مشتریان) و وضعیت حساب هر شخص</div>
-    </div>
-</div>
+<div class="as-list">
+<header class="as-heading">
+    <span class="as-heading-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 8h8M8 12h8M8 16h4"/></svg></span>
+    <div><h1>گردش حساب اشخاص</h1><p>ماندهٔ حساب مشتریان، در یک نگاه</p></div>
+    <span class="as-unit">مبالغ به ریال</span>
+</header>
 
-<div class="card mb-3">
+<div class="card as-search-card mb-3">
     <div class="card-body">
         <form id="accountStatementSearch" class="d-flex gap-2" method="GET" action="{{ route('account-statements.index') }}">
             @if($sort)<input type="hidden" name="sort" value="{{ $sort }}"><input type="hidden" name="direction" value="{{ $direction }}">@endif
-            <input class="form-control" type="search" name="q" value="{{ $q ?? '' }}" autocomplete="off" aria-label="جستجوی اشخاص" placeholder="جستجو با نام، نام خانوادگی، شماره تماس، کد مشتری یا شهر">
-            <button class="btn btn-outline-secondary">جستجو</button>
+            <input class="form-control" type="search" name="q" value="{{ $q ?? '' }}" autocomplete="off" aria-label="جستجوی اشخاص" placeholder="نام مشتری، موبایل، کد یا شهر…">
+            <button class="btn as-search-button" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><span>جستجو</span></button>
         </form>
         <div id="accountStatementSearchStatus" class="small text-muted mt-2" role="status" aria-live="polite"></div>
     </div>
 </div>
 
-<div id="accountStatementResults" class="card">
+<div id="accountStatementResults" class="card as-results">
     <div class="card-body">
+        <div class="as-list-toolbar">
+            <div><strong>اشخاص</strong><span class="as-result-count">{{ number_format($customers->total()) }} نفر{{ $q !== '' ? ' در نتایج جستجو' : '' }}</span></div>
+            <nav class="as-sort" aria-label="مرتب‌سازی اشخاص">
+                <span>مرتب‌سازی:</span>
+                @foreach(['name' => 'نام', 'debt' => 'بدهکاری', 'credit' => 'بستانکاری'] as $column => $label)
+                    <a href="{{ $sortUrl($column) }}" class="{{ $sort === $column ? 'is-active' : '' }}" @if($sort === $column) aria-current="true" @endif>{{ $label }}@if($sort === $column) {{ $direction === 'desc' ? '↓' : '↑' }}@endif</a>
+                @endforeach
+            </nav>
+        </div>
         <div class="table-responsive">
             <table class="table align-middle mb-0">
                 <thead>
@@ -51,14 +64,14 @@
                             $statusLabel = $balance > 0 ? 'بدهکار' : ($balance < 0 ? 'بستانکار' : 'تسویه');
                             $statusClass = $balance > 0 ? 'text-danger' : ($balance < 0 ? 'text-success' : 'text-muted');
                         @endphp
-                        <tr>
-                            <td>{{ $customer->display_name ?: '-' }}</td>
-                            <td>{{ $customer->mobile ?: '-' }}</td>
-                            <td>{{ \App\Support\Currency::formatRial($customer->debt) }}</td>
-                            <td>{{ \App\Support\Currency::formatRial($customer->credit) }}</td>
-                            <td class="fw-semibold {{ $statusClass }}">{{ $statusLabel }} {{ $balance === 0 ? '' : \App\Support\Currency::formatRial(abs($balance)) }}</td>
-                            <td class="text-end">
-                                <a href="{{ route('account-statements.show', $customer->id) }}" class="btn btn-sm btn-primary">مشاهده گردش حساب</a>
+                        <tr class="as-person-row {{ $balance > 0 ? 'as-person-debt' : ($balance < 0 ? 'as-person-credit' : 'as-person-settled') }}">
+                            <td class="as-person"><a href="{{ route('account-statements.show', $customer->id) }}">{{ $customer->display_name ?: '-' }}</a></td>
+                            <td class="as-mobile" data-label="موبایل"><span dir="ltr">{{ $customer->mobile ?: '-' }}</span></td>
+                            <td class="as-amount" data-label="بدهکاری">{{ \App\Support\Currency::formatRial($customer->debt) }}</td>
+                            <td class="as-amount" data-label="بستانکاری">{{ \App\Support\Currency::formatRial($customer->credit) }}</td>
+                            <td class="as-balance {{ $statusClass }}" data-label="ماندهٔ حساب"><span class="as-status {{ $balance > 0 ? 'is-debt' : ($balance < 0 ? 'is-credit' : 'is-settled') }}">{{ $statusLabel }}</span><strong>{{ $balance === 0 ? '—' : \App\Support\Currency::formatRial(abs($balance)) }}</strong></td>
+                            <td class="as-action text-end">
+                                <a href="{{ route('account-statements.show', $customer->id) }}" class="as-open" aria-label="مشاهده گردش حساب {{ $customer->display_name }}">گردش حساب <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 12H5m7-7-7 7 7 7"/></svg></a>
                             </td>
                         </tr>
                     @empty
@@ -70,6 +83,7 @@
 
         <div class="mt-3">{{ $customers->links() }}</div>
     </div>
+</div>
 </div>
 @endsection
 
@@ -130,7 +144,7 @@
     });
     results.addEventListener('click', event => {
         const link = event.target.closest('a[href]');
-        if (!link || !link.closest('thead, .pagination') || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        if (!link || !link.closest('thead, .pagination, .as-sort') || event.ctrlKey || event.metaKey || event.shiftKey) return;
         event.preventDefault();
         clearTimeout(timer);
         const url = new URL(link.href);

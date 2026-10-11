@@ -137,10 +137,10 @@ it('draft expired cleanup refuses a canonical historical ambiguous reservation',
         ->and(DB::table('stock_movements')->count())->toBe($movements);
 });
 
-it('overdue expired cleanup refuses a canonical active draft owned reservation', function () {
+it('expires a stale saved draft reservation without deleting the draft', function () {
     ['user' => $user, 'product' => $product, 'variant' => $variant, 'warehouseStock' => $warehouseStock, 'reservation' => $reservation]
         = warehouseCleanupSafetyFixture();
-    PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create([
+    $draft = PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->create([
         'uuid' => (string) Str::uuid(),
         'draft_token' => $reservation->token,
         'created_by' => $user->id,
@@ -155,13 +155,16 @@ it('overdue expired cleanup refuses a canonical active draft owned reservation',
 
     $result = app(PreinvoiceReservationService::class)->expireTemporaryOnlineReservations();
 
-    expect($result['released_reservations'])->toBe(0)
-        ->and($result['released_quantity'])->toBe(0)
-        ->and($reservation->fresh()->released_at)->toBeNull()
-        ->and($product->fresh()->reserved)->toBe(5)
-        ->and($variant->fresh()->reserved)->toBe(5)
-        ->and($warehouseStock->fresh()->quantity)->toBe(20)
-        ->and(DB::table('stock_movements')->count())->toBe($movements);
+    expect($result['released_reservations'])->toBe(1)
+        ->and($result['released_quantity'])->toBe(5)
+        ->and($reservation->fresh()->released_at)->not->toBeNull()
+        ->and($product->fresh()->reserved)->toBe(0)
+        ->and($variant->fresh()->reserved)->toBe(0)
+        ->and($warehouseStock->fresh()->quantity)->toBe(25)
+        ->and($draft->fresh()->status)->toBe(PreinvoiceOrder::STATUS_DRAFT);
+
+    $second = app(PreinvoiceReservationService::class)->expireTemporaryOnlineReservations();
+    expect($second['released_quantity'])->toBe(0)->and($warehouseStock->fresh()->quantity)->toBe(25);
 });
 
 it('uses canonical reservation rows when the product reserved projection is too low', function () {
@@ -292,4 +295,12 @@ it('records the explicit manual release actor without relying on the auth facade
         ->and($activity->user_id)->toBe($user->id)
         ->and($activity->properties['released_by'])->toBe($user->id)
         ->and($activity->properties['actor_type'])->toBe('user');
+});
+
+it('keeps a saved draft reservation while the seller heartbeat is fresh', function () {
+    ['user'=>$user,'reservation'=>$reservation,'warehouseStock'=>$stock] = warehouseCleanupSafetyFixture();
+    PreinvoiceOrder::withoutEvents(fn()=>PreinvoiceOrder::query()->create(['uuid'=>(string)Str::uuid(),'draft_token'=>$reservation->token,'created_by'=>$user->id,'seller_id'=>$user->id,'document_date'=>now(),'status'=>PreinvoiceOrder::STATUS_DRAFT,'customer_name'=>'Fresh draft','customer_mobile'=>'09120000000','total_price'=>100000]));
+    $reservation->forceFill(['last_seen_at'=>now()])->save();
+    $result=app(PreinvoiceDraftReservationService::class)->cleanupStaleTemporaryReservations();
+    expect($result['released_quantity'])->toBe(0)->and($reservation->fresh()->released_at)->toBeNull()->and($stock->fresh()->quantity)->toBe(20);
 });

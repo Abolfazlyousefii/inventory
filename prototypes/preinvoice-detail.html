@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="">
+
+
+
+        <title>مشاهدهٔ پیش‌فاکتور | نرم افزار داخلی آریا گستر</title>
+
+	<script src="http://127.0.0.1:8000/lib/jquery-3.7.1.js"></script>
+
+	<script src="http://127.0.0.1:8000/lib/datatables.min.js"></script>
+	<script src="http://127.0.0.1:8000/lib/datatables.bootstrap5.min.js"></script>
+
+	<script src="http://127.0.0.1:8000/lib/select2.min.js"></script>
+	<script src="http://127.0.0.1:8000/lib/bootstrap.bundle.min.js"></script>
+	<script src="http://127.0.0.1:8000/lib/jalalidatepicker.min.js"></script>
+
+	<link rel="stylesheet" href="http://127.0.0.1:8000/lib/bootstrap.rtl.min.css">
+	<link rel="stylesheet" href="http://127.0.0.1:8000/lib/datatables.bootstrap5.min.css">
+
+	<link rel="stylesheet" href="http://127.0.0.1:8000/lib/select2.min.css">
+	<link rel="stylesheet" href="http://127.0.0.1:8000/lib/jalalidatepicker.min.css">
+    <link rel="stylesheet" href="http://127.0.0.1:8000/css/Vazirmatn.css">
+    <link rel="stylesheet" href="http://127.0.0.1:8000/css/admin-theme.css">
+    <link rel="stylesheet" href="http://127.0.0.1:8000/css/admin.css">
+    <link rel="stylesheet" href="http://127.0.0.1:8000/css/app-shell.css">
+    <link rel="stylesheet" href="http://127.0.0.1:8000/css/sidebar.css">
+	    </head>
+<body class="app-body"
+      data-notifications-count-url="http://127.0.0.1:8000/notifications/unread-count"
+      data-notifications-latest-url="http://127.0.0.1:8000/notifications/latest"
+      data-notifications-read-all-url="http://127.0.0.1:8000/notifications/read-all">
+<div class="app-layout">
+    <svg class="sidebar-symbols" aria-hidden="true">
+    <symbol id="sidebar-icon-dashboard" viewBox="0 0 24 24">
+        <path d="M4 13a8 8 0 1116 0M12 13l4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="sidebar-icon-products" viewBox="0 0 24 24">
+        <path d="M4 7l8-4 8 4-8 4-8-4zm0 0v10l8 4 8-4V7M12 11v10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="sidebar-icon-warehouse" viewBox="0 0 24 24">
+        <path d="M3 10l9-6 9 6v10H3V10zm4 10v-7h10v7M8 13h8M8 16h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="sidebar-icon-sales" viewBox="0 0 24 24">
+        <path d="M3 4h2l2.2 10.2a2 2 0 002 1.6h7.7a2 2 0 001.9-1.4L20 8H7M10 20h.01M17 20h.01M10 11l1.5 1.5L15 9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="sidebar-icon-finance" viewBox="0 0 24 24">
+        <path d="M4 6.5A2.5 2.5 0 016.5 4H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6.5zm0 1.5h14a2 2 0 012 2v4h-5a2 2 0 110-4h5M15 12h.01" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="sidebar-icon-config" viewBox="0 0 24 24">
+        <path d="M12 8.5a3.5 3.5 0 110 7 3.5 3.5 0 010-7zm0-5v2m0 13v2M3.5 12h2m13 0h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+</svg>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+<aside class="app-sidebar"
+       id="appSidebar"
+       data-initial-open-section=""
+       aria-label="منوی اصلی">
+    <div class="sidebar-scroll">
+        <div class="app-sidebar__mobile-head">
+            <img class="app-sidebar__logo" src="http://127.0.0.1:8000/logo.png" alt="نرم افزار داخلی آریا گستر">
+            <div class="app-sidebar__mobile-copy">
+                <span class="app-sidebar__title">نرم افزار داخلی آریا گستر</span>
+                <span class="app-sidebar__subtitle">مدیریت موجودی و گردش کالا</span>
+            </div>
+            <button type="button" class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="بستن منو">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="app-sidebar__brand">
+            <img class="app-sidebar__logo" src="http://127.0.0.1:8000/logo.png" alt="نرم افزار داخلی آریا گستر">
+            <div class="app-sidebar__brand-copy">
+                <span class="app-sidebar__title">نرم افزار داخلی آریا گستر</span>
+                <span class="app-sidebar__subtitle">مدیریت موجودی و گردش کالا</span>
+            </div>
+        </div>
+
+
+
+
+
+
+            </div>
+</aside>
+
+    <div class="app-main-shell">
+        <header class="app-topbar">
+            <div class="app-topbar__start">
+                <button type="button"
+                        class="app-icon-btn app-menu-btn"
+                        id="sidebarToggleBtn"
+                        aria-label="باز کردن منوی اصلی"
+                        aria-controls="appSidebar"
+                        aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button type="button"
+                        class="app-icon-btn app-desktop-sidebar-toggle"
+                        id="sidebarCollapseBtn"
+                        aria-label="جمع‌کردن سایدبار"
+                        aria-pressed="false"
+                        title="جمع‌کردن سایدبار">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <img class="app-mobile-brand" src="http://127.0.0.1:8000/logo.png" alt="">
+                <div class="app-topbar__titles">
+                    <span class="app-topbar__app-name">نرم افزار داخلی آریا گستر</span>
+                    <h1 class="app-page-title" title="مشاهدهٔ پیش‌فاکتور">مشاهدهٔ پیش‌فاکتور</h1>
+                </div>
+            </div>
+
+            <div class="app-topbar__actions">
+                <button class="app-icon-btn app-notification-btn"
+                        type="button"
+                        id="notifBell"
+                        aria-controls="notifPanel"
+                        aria-expanded="false"
+                        aria-label="اعلان‌ها">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span id="notifBadge" class="app-notification-badge d-none">0</span>
+                </button>
+
+                <button type="button"
+                        class="app-back-btn"
+                        id="appBackBtn"
+                        data-fallback-url="http://127.0.0.1:8000/dashboard"
+                        aria-label="بازگشت"
+                        title="بازگشت">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="app-back-btn__text">بازگشت</span>
+                </button>
+
+                <div class="dropdown">
+                    <button class="app-user-toggle dropdown-toggle"
+                            type="button"
+                            data-bs-toggle="dropdown"
+                            aria-expanded="false">
+                        <span class="app-user-avatar" aria-hidden="true">ن</span>
+                        <span class="app-user-copy">
+                            <span class="app-user-name">نمونه</span>
+                            <span class="app-user-role">کاربر سامانه</span>
+                        </span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end app-user-menu">
+                        <li class="app-user-menu__identity">
+                            <strong>نمونه</strong>
+                                                    </li>
+                        <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                <a class="dropdown-item" href="http://127.0.0.1:8000/profile">
+                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M20 21a8 8 0 00-16 0M12 13a5 5 0 100-10 5 5 0 000 10z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                                    </svg>
+                                    پروفایل
+                                </a>
+                            </li>
+                                                <li>
+                            <form method="POST" action="http://127.0.0.1:8000/logout">
+                                <input type="hidden" name="_token" value="" autocomplete="off">                                <button class="dropdown-item text-danger" type="submit">
+                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 012 2v14a2 2 0 01-2 2h-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    خروج
+                                </button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+
+        <section id="notifPanel"
+                 class="notif-panel"
+                 aria-hidden="true"
+                 aria-labelledby="notifPanelTitle">
+            <div class="notif-panel__head">
+                <div>
+                    <h3 id="notifPanelTitle">
+                        اعلان‌ها
+                        <span id="notifUnreadText" class="badge bg-primary-subtle">۰ خوانده‌نشده</span>
+                    </h3>
+                    <p>آخرین وضعیت پیش‌فاکتورها و فاکتورهای شما</p>
+                </div>
+                <button type="button"
+                        class="app-icon-btn notif-panel__close"
+                        id="notifCloseBtn"
+                        aria-label="بستن اعلان‌ها">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="notif-panel__tools">
+                <button type="button" class="notif-tool-btn" id="notifReadAllBtn">خواندن همه</button>
+            </div>
+            <div id="notifList" class="notif-list">
+                <div class="notif-empty"><span class="notif-empty__dot"></span>در حال دریافت اعلان‌ها...</div>
+            </div>
+            <div class="notif-panel__foot">
+                <a href="http://127.0.0.1:8000/notifications">مشاهده همه اعلان‌ها</a>
+            </div>
+        </section>
+
+        <main class="app-content ">
+
+
+
+                            <link rel="stylesheet" href="http://127.0.0.1:8000/css/preinvoice-detail.css?v=20261007">
+<main class="pd-page" dir="rtl">
+ <header class="pd-header">
+  <div><div class="pd-eyebrow">پیش‌فاکتور فروش</div><h1>مشاهدهٔ پیش‌فاکتور <bdi>01553</bdi></h1><p>— <span class="pd-status ">پیش‌نویس</span></p></div>
+  <nav class="pd-actions" aria-label="عملیات پیش‌فاکتور">
+   <a class="pd-button pd-primary" href="http://127.0.0.1:8000?download=pdf">دانلود PDF مشتری</a>
+   <a class="pd-button" target="_blank" rel="noopener" href="http://127.0.0.1:8000?mode=customer">چاپ مشتری</a>
+   <button class="pd-button" type="button" data-pd-history>سوابق <span>3</span></button>
+   <a class="pd-button" href="http://127.0.0.1:8000/preinvoice/my">بازگشت</a>
+  </nav>
+ </header>
+   <section class="pd-summary" aria-label="خلاصه سند">
+  <div><span>مبلغ نهایی</span><strong>19,500 ریال</strong></div>
+  <div><span>تعداد کالا</span><strong>2</strong></div>
+  <div><span>ردیف کالا</span><strong>1</strong></div>
+ </section>
+ <section class="pd-panel"><h2>مشتری و ارسال</h2><dl class="pd-info">
+  <div><dt>مشتری</dt><dd>مشتری نمونه</dd></div>
+  <div><dt>شماره تماس</dt><dd><bdi>09120000000</bdi></dd></div>
+  <div><dt>ثبت‌کننده</dt><dd>—</dd></div>
+  <div><dt>روش ارسال</dt><dd>—</dd></div>
+ </dl><details class="pd-extra"><summary>آدرس، توضیحات و وضعیت رزرو</summary><dl class="pd-info">
+  <div class="pd-wide"><dt>آدرس</dt><dd>—</dd></div>
+  <div class="pd-wide"><dt>توضیحات</dt><dd>&lt;script&gt;alert(1)&lt;/script&gt;</dd></div>
+  <div><dt>بازبین انبار</dt><dd>—</dd></div>
+  <div><dt>مهلت رزرو</dt><dd>—</dd></div>
+  <div><dt>زمان آزادسازی</dt><dd>—</dd></div>
+ </dl></details></section>
+ <section class="pd-panel pd-items"><div class="pd-section-heading"><h2>اقلام پیش‌فاکتور</h2><span>مبالغ به ریال</span></div>
+ <table><thead><tr><th>کالا / مدل</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف ردیف</th><th>جمع خالص</th></tr></thead><tbody>
+  <tr><td class="pd-product"><strong>کالای نمونه</strong><small>بدون تنوع</small></td>
+ <td data-label="تعداد">2</td><td data-label="قیمت واحد">10,000</td><td data-label="تخفیف ردیف">500</td><td data-label="جمع خالص" class="pd-line-total">19,500</td></tr>
+  </tbody></table></section>
+ <section class="pd-panel pd-totals" aria-label="جمع مبالغ"><div><span>جمع کالاها</span><bdi>20,000 ریال</bdi></div><div><span>کل تخفیف‌ها</span><bdi>1,000 ریال</bdi></div><div><span>هزینه ارسال</span><bdi>500 ریال</bdi></div><div class="pd-final"><span>مبلغ نهایی</span><bdi>19,500 ریال</bdi></div></section>
+ <dialog class="pd-dialog" id="pd-history" aria-labelledby="pd-history-title">
+  <header><div><h2 id="pd-history-title">سوابق پیش‌فاکتور 01553</h2><p>تمام سوابق ثبت‌شدهٔ سند و بازبینی‌ها؛ جدیدترین در ابتدا</p></div><button class="pd-close" type="button" aria-label="بستن سوابق" data-pd-close>×</button></header>
+  <div class="pd-history-body"><article class="pd-event"><div class="pd-event-meta"><span>بررسی اقلام انبار</span><time>1405/07/15 11:00</time></div><h3>اصلاح تعداد</h3><p class="pd-actor">سیستم</p><details><summary>جزئیات عملیات</summary><ul><li>کالای نمونه</li><li>تعداد از 3 به 2</li><li>تعداد تأییدشده: 2</li></ul></details></article><article class="pd-event"><div class="pd-event-meta"><span>بازبینی انبار / مالی</span><time>1405/07/15 10:00</time></div><h3>ویرایش مالی</h3><p class="pd-actor">سیستم</p><details><summary>جزئیات عملیات</summary><ul><li>اصلاح مالی</li><li>اقلام قبل از تغییر / ردیف 1 / تعداد: 1</li><li>اقلام بعد از تغییر / ردیف 1 / تعداد: 2</li></ul></details></article><article class="pd-event"><div class="pd-event-meta"><span>سوابق سند</span><time>1405/07/15 09:00</time></div><h3>ویرایش فروشنده</h3><p class="pd-actor">سیستم</p><details><summary>جزئیات عملیات</summary><ul><li>مقادیر قبلی / وضعیت: پیش‌نویس</li><li>تغییرات / تعداد: 2</li><li>تغییرات / یادداشت: &lt;img src=x onerror=alert(1)&gt;</li></ul></details></article></div>
+ </dialog>
+</main>
+<script src="http://127.0.0.1:8000/js/preinvoice-detail.js?v=20261007" defer></script>
+                    </main>
+    </div>
+</div>
+
+<script src="http://127.0.0.1:8000/js/app-shell.js"></script>
+</body>
+</html>

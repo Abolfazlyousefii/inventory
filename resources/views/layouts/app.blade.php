@@ -54,7 +54,7 @@
     <link rel="stylesheet" href="{{ asset('css/admin-theme.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin.css') }}">
     <link rel="stylesheet" href="{{ asset('css/app-shell.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v=20261011">
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
 </head>
@@ -252,6 +252,5 @@
 
 <script src="{{ asset('js/app-shell.js') }}"></script>
 @stack('scripts')
-@include('stock-thresholds.alert')
 </body>
 </html>
