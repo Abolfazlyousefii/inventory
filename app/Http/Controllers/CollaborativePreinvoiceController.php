@@ -132,8 +132,16 @@ class CollaborativePreinvoiceController extends Controller
             }
             if (!$finance) {
                 $hasOfficial = PreinvoiceDraftReservation::where('preinvoice_order_id', $order->id)->where('reservation_scope', 'official')->whereNull('released_at')->whereNull('release_reason')->exists();
-                if ($hasOfficial) throw ValidationException::withMessages(['items' => 'رزرو رسمی این سند باید پیش از ویرایش بررسی شود.']);
                 if ($order->is_auto_draft && $order->draft_token) {
+                    // Collaborative draft edits persist selections only. If an older client
+                    // left a temporary hold behind, unwind it through the release service.
+                    app(PreinvoiceDraftReservationService::class)->releaseTokenReservations(
+                        (string) $order->draft_token,
+                        (int) $order->created_by,
+                        'draft_no_reservation',
+                        'ویرایش همزمان پیش‌نویس بدون رزرو موجودی انجام شد؛ رزرو موقت قدیمی آزاد شد.'
+                    );
+                }                if ($order->is_auto_draft && $order->draft_token) {
                     // Collaborative draft edits persist selections only. If an older client
                     // left a temporary hold behind, unwind it through the release service.
                     app(PreinvoiceDraftReservationService::class)->releaseTokenReservations(
@@ -152,6 +160,25 @@ class CollaborativePreinvoiceController extends Controller
                 'discount_breakdown' => ['groups' => $discountState['product_groups'] ?? []],
             ]);
             if ($order->is_auto_draft) $order->update(['auto_saved_at' => now()]);
+            if (! $finance && $order->status === PreinvoiceOrder::STATUS_DRAFT) {
+                $draftToken = trim((string) ($order->draft_token ?? ''));
+                if ($draftToken === '') {
+                    $draftToken = (string) Str::uuid();
+                    $order->update(['draft_token' => $draftToken]);
+                }$draftItems = $order->items()->get(['product_id', 'variant_id', 'quantity'])
+                    ->map(fn ($row) => [
+                        'product_id' => (int) $row->product_id,
+                        'variant_id' => (int) $row->variant_id,
+                        'quantity' => (int) $row->quantity,
+                    ])->all();$reservationResult = app(PreinvoiceDraftReservationService::class)->syncReservationRows($draftToken,
+                    (int) $order->created_by,
+                    $draftItems,
+                    (bool) $order->is_in_person,
+                    $order->uuid,
+                );if (! empty($reservationResult['skipped'])) {
+                    throw ValidationException::withMessages(['items' => 'توکن پیش‌نویس به سند دیگری متصل است؛ سند را دوباره باز کنید.']);
+                }}
+
             ActivityLogger::log('preinvoice_collaborative_item_edit', $order, $data['reason'], ['before' => $before, 'after' => $order->items()->get()->map->getAttributes()->all()]);
             return ['document' => $this->document($order->fresh())];
         });

@@ -169,11 +169,15 @@ class PreinvoiceDraftReservation extends Model
         $at ??= now();
 
         return $query->where(function (Builder $query) use ($at): void {
-            $query->activeTemporary(
-                self::DEFAULT_ONLINE_STALE_MINUTES,
-                self::DEFAULT_IN_PERSON_STALE_MINUTES,
-                $at,
-            )->orWhere(function (Builder $query): void {
+            $query->where(function (Builder $temporary) use ($at): void {
+                $temporary->activeTemporary(
+                    self::DEFAULT_ONLINE_STALE_MINUTES,
+                    self::DEFAULT_IN_PERSON_STALE_MINUTES,
+                    $at,
+                )->orWhere(function (Builder $savedDraft): void {
+                    $savedDraft->openTemporary()->whereHas('activeDrafts');
+                });
+            })->orWhere(function (Builder $query): void {
                 $query->whereNotNull($this->qualifyColumn('preinvoice_order_id'))
                     ->whereNull($this->qualifyColumn('converted_at'))
                     ->whereNull($this->qualifyColumn('released_at'))

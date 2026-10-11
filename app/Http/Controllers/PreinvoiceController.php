@@ -817,6 +817,10 @@ class PreinvoiceController extends Controller
             }
 
             $previousDraftToken = (string) ($order?->draft_token ?? '');
+            $draftToken = trim($previousDraftToken);
+            if ($draftToken === '') {
+                $draftToken = trim((string) ($validated['reservation_token'] ?? ''));
+            }
 
             // Omitted optional fields are not instructions to erase existing data.
             $suppliedFields = array_keys($validated);
@@ -850,8 +854,8 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => null,
                 'is_auto_draft' => $order ? (bool) $order->is_auto_draft : true,
                 'auto_saved_at' => now(),
-                'draft_token' => $validated['reservation_token'] ?? null,
-            ];
+                'draft_token' => $draftToken !== '' ? $draftToken : null,
+                ];
 
             foreach (['customer_address', 'province_id', 'city_id'] as $field) {
                 if ($order && ! in_array($field, $suppliedFields, true) && ! in_array('shipping_id', $suppliedFields, true)) {
@@ -874,20 +878,19 @@ class PreinvoiceController extends Controller
             }
 
             $reservationResult = $this->draftReservationService->syncReservationRows(
-                (string) $validated['reservation_token'], (int) auth()->id(),
-                $validated['products'] ?? []
+                $draftToken, (int) auth()->id(),
+                $validated['products'] ?? [], false, $order->uuid
             );
             if (!empty($reservationResult['skipped'])) {
                 throw ValidationException::withMessages(['products' => 'توکن پیش‌نویس به سند دیگری متصل است؛ سند را دوباره باز کنید.']);
             }
-            if ($previousDraftToken !== '' && $previousDraftToken !== (string) $validated['reservation_token']) {
-                $this->releaseTemporaryDraftTokens(
-                    [$previousDraftToken],
-                    'draft_no_reservation',
-                    'توکن قبلی پیش‌نویس هنگام ذخیره خودکار آزاد شد.'
-                );
+            $effectiveDraftToken = trim((string) ($reservationResult['token'] ?? $draftToken));
+            if ($effectiveDraftToken !== '') {
+                // syncReservationRows may rotate a stale/conflicting token on a separately
+                // loaded order instance. Keep this instance in sync for the autosave response.
+                $order->setAttribute('draft_token', $effectiveDraftToken);
             }
-            $existingItems = $order->items()->get()->keyBy(fn ($item) => $item->product_id.':'.$item->variant_id);
+                $existingItems = $order->items()->get()->keyBy(fn ($item) => $item->product_id.':'.$item->variant_id);
             $products = array_map(function ($row) use ($existingItems) {
                 $row['item_id'] = $existingItems->get($row['id'].':'.$row['variety_id'])?->id;
                 return $row;
@@ -899,7 +902,13 @@ class PreinvoiceController extends Controller
             return $order->fresh('items.product', 'items.variant');
         });
 
-        return response()->json(['ok' => true, 'uuid' => $order->uuid, 'version' => $this->autosaveVersion($order), 'saved_at' => optional($order->auto_saved_at)->toIso8601String()]);
+        return response()->json([
+            'ok' => true,
+            'uuid' => $order->uuid,
+            'version' => $this->autosaveVersion($order),
+            'saved_at' => optional($order->auto_saved_at)->toIso8601String(),
+            'draft_token' => $order->draft_token,
+        ]);
     }
 
     private function autosaveVersion(PreinvoiceOrder $order): string
@@ -1117,6 +1126,14 @@ class PreinvoiceController extends Controller
             return response()->json(['ok' => true, 'released' => []]);
         }
 
+        $savedDraftOwnsToken = PreinvoiceOrder::query()
+            ->where('draft_token', $token)
+            ->where('created_by', auth()->id())
+            ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+            ->whereDoesntHave('invoice')
+            ->exists();if ($savedDraftOwnsToken) {
+                return response()->json(['ok' => true, 'released' => [], 'retained_for_draft' => true]);}
+
         return response()->json(['ok' => true] + $this->draftReservationService->releaseTokenReservations($token, (int) auth()->id(), 'temporary_session_lost', 'صفحه پیش‌فاکتور بسته یا رفرش شد؛ رزرو موقت آزاد شد.'));
     }
 
@@ -1210,8 +1227,8 @@ class PreinvoiceController extends Controller
             $this->syncItems($order, $validated['products']);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
-            // Draft selections never carry stock. Release any legacy temporary hold first,
-            // then reserve the complete submitted document officially in this transaction.
+            // Convert any draft-held stock into the existing official finance reservation
+            // inside the same transaction so submission keeps the established finance flow.
             $this->releaseTemporaryDraftTokens(
                 [$validated['reservation_token'] ?? null, $order->draft_token],
                 'submitted_to_finance',
@@ -1250,6 +1267,12 @@ class PreinvoiceController extends Controller
             $shippingId = $this->validatedShippingId($validated);
 
             $order = $this->editableAutosaveOrder($validated['autosave_uuid'] ?? null);
+            $draftToken = trim((string) ($order?->draft_token ?? ''));
+            if ($draftToken === '') {
+                $draftToken = trim((string) ($validated['reservation_token'] ?? ''));
+            }if ($draftToken === '') {
+                $draftToken = (string) Str::uuid();
+            }
             $orderAttrs = [
                 'created_by' => auth()->id(),
                 'seller_id' => auth()->user()?->is_seller ? auth()->id() : null,
@@ -1272,6 +1295,7 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => null,
                 'is_auto_draft' => false,
                 'auto_saved_at' => null,
+                'draft_token' => $draftToken,
             ];
             if ($order) {
                 $order->items()->delete();
@@ -1288,12 +1312,18 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => null,
             ]);
 
-            $this->releaseTemporaryDraftTokens(
-                [$validated['reservation_token'] ?? null, $order->draft_token],
-                'save_as_draft',
-                'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت قدیمی آزاد شد.'
+            $reservationResult = $this->draftReservationService->syncReservationRows(
+                $draftToken,
+                (int) auth()->id(),
+                $validated['products'],
+                $this->isInPersonShippingId($shippingId),
+                $order->uuid,
             );
-
+            if (! empty($reservationResult['skipped'])) {
+                throw ValidationException::withMessages([
+                    'products' => 'توکن پیش‌نویس به سند دیگری متصل است؛ سند را دوباره باز کنید.',
+                ]);
+            }
             ActivityLogger::log('preinvoice_draft_saved', $order->fresh(), 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.', [
                 'user_id' => auth()->id(),
                 'preinvoice_id' => $order->id,
@@ -1306,7 +1336,7 @@ class PreinvoiceController extends Controller
 
         return redirect()->route('preinvoice.draft.edit', $order->uuid)
             ->with('preinvoice_submit_succeeded', true)
-            ->with('success', '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی رزرو نشد.');
+            ->with('success', '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
     }
 
     public function editDraft(string $uuid)
@@ -1404,13 +1434,13 @@ class PreinvoiceController extends Controller
             $this->syncItems($order, $validated['products'], true);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
-            $this->releaseTemporaryDraftTokens(
-                [$validated['reservation_token'] ?? null, $order->draft_token],
-                $isSubmit ? 'submitted_to_finance' : 'save_as_draft',
-                $isSubmit
-                    ? 'رزرو موقت قدیمی پیش از ایجاد/همگام‌سازی رزرو رسمی آزاد شد.'
-                    : 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد؛ رزرو موقت قدیمی آزاد شد.'
-            );
+            if ($isSubmit) {
+                $this->releaseTemporaryDraftTokens(
+                    [$validated['reservation_token'] ?? null, $order->draft_token],
+                    'submitted_to_finance',
+                    'رزرو موقت قدیمی پیش از ایجاد/همگام‌سازی رزرو رسمی آزاد شد.'
+                );
+            }
 
             if (! $isSubmit) {
                 $hasOfficial = PreinvoiceDraftReservation::query()
@@ -1422,7 +1452,7 @@ class PreinvoiceController extends Controller
                     ->exists();
                 if ($hasOfficial) {
                     throw ValidationException::withMessages([
-                        'preinvoice' => 'این سند رزرو رسمی فعال دارد و نمی‌تواند به پیش‌نویس بدون رزرو تبدیل شود.',
+                        'preinvoice' => 'این سند رزرو رسمی فعال دارد و تا تعیین تکلیف رزرو رسمی نمی‌تواند به‌عنوان پیش‌نویس ویرایش شود.',
                     ]);
                 }
             }
@@ -1437,6 +1467,13 @@ class PreinvoiceController extends Controller
 
             $order->refresh()->load(['items.product', 'items.variant', 'invoice.items']);
             $oldStatus = (string) $order->status;
+            $draftToken = trim((string) ($order->draft_token ?? ''));
+            if (! $isSubmit && $draftToken === '') {
+                $draftToken = trim((string) ($validated['reservation_token'] ?? ''));
+            }if (! $isSubmit && $draftToken === '') {
+                $draftToken = (string) Str::uuid();
+            }
+
             $order->update([
                 'status' => $isSubmit ? PreinvoiceOrder::STATUS_PENDING_FINANCE : PreinvoiceOrder::STATUS_DRAFT,
                 'warehouse_review_note' => null,
@@ -1448,7 +1485,22 @@ class PreinvoiceController extends Controller
                 'stock_released_at' => null,
                 'items_updated_at' => now(),
                 'items_updated_by' => auth()->id(),
+                'draft_token' => $isSubmit ? $order->draft_token : $draftToken,
             ]);
+
+            if (! $isSubmit && ! $stockLocked && ! $order->invoice) {
+                $reservationResult = $this->draftReservationService->syncReservationRows(
+                    $draftToken,
+                    (int) auth()->id(),
+                    $validated['products'],
+                    $this->isInPersonShippingId($shippingId),
+                    $order->uuid,
+                );
+                if (! empty($reservationResult['skipped'])) {
+                    throw ValidationException::withMessages([
+                        'products' => 'توکن پیش‌نویس به سند دیگری متصل است؛ سند را دوباره باز کنید.',
+                    ]);
+                }}
 
             if ($isSubmit) {
                 $this->notificationService->notifyRoleAfterCommit(
@@ -1482,7 +1534,7 @@ class PreinvoiceController extends Controller
 
         return back()
             ->with('preinvoice_submit_succeeded', true)
-            ->with('success', $isSubmit ? $this->finalSubmitSuccessMessage($reservationMeta) : '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی رزرو نشد.');
+            ->with('success', $isSubmit ? $this->finalSubmitSuccessMessage($reservationMeta) : '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
     }
 
 

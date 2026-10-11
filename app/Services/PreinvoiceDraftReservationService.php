@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -37,17 +38,7 @@ class PreinvoiceDraftReservationService
         return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid, $scope) {
             // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
-            $tokenRows = PreinvoiceDraftReservation::query()->where('token', $token)->lockForUpdate()->get();
-            $protected = $tokenRows->first(fn ($row) => $row->preinvoice_order_id !== null
-                || $row->converted_at !== null || $row->reservation_scope === 'official'
-                || (int) $row->user_id !== $userId);
-            if ($protected) {
-                Log::warning('RESERVATION_SYNC_SKIPPED', [
-                    'reason' => 'protected_or_foreign_token', 'reservation_id' => $protected->id,
-                    'preinvoice_order_id' => $protected->preinvoice_order_id, 'actor_id' => $userId,
-                ]);
-                return ['reserved' => [], 'skipped' => true, 'reason' => 'protected_or_foreign_token'];
-            }
+            $order = null;
 
             if ($preinvoiceUuid !== null) {
                 $order = PreinvoiceOrder::query()->where('uuid', $preinvoiceUuid)->lockForUpdate()->firstOrFail();
@@ -55,6 +46,72 @@ class PreinvoiceDraftReservationService
                 // Editable documents normally have no active official stock. Never reserve it twice.
                 abort_if(PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $order->id)->whereNull('released_at')->whereNull('release_reason')
                     ->where('reservation_scope', 'official')->exists(), 409, 'رزرو رسمی سند باید پیش از ویرایش بررسی شود.');
+            }
+
+            $tokenRows = PreinvoiceDraftReservation::query()
+                ->where('token', $token)
+                ->lockForUpdate()
+                ->get();
+             $protected = $tokenRows->first(fn( $row ) => $row->preinvoice_order_id !== null
+                                                          || $row->converted_at !== null || $row->reservation_scope === 'official'
+                                                          || (int) $row->user_id !== $userId);
+                        if ( $protected ) {
+                                // A draft token can legitimately collide with historical/other-document
+                                // reservation rows (for example after an older finance lifecycle). Never
+                                // overwrite those rows: rotate only this editable draft to a fresh token.
+                                if ( $order && $order->status === PreinvoiceOrder::STATUS_DRAFT ) {
+                     $oldToken = $token;
+                     $token = (string) Str::uuid();
+                      $anotherDraftUsesOldToken = PreinvoiceOrder::query()
+                                                      ->where('draft_token', $oldToken)
+                                                      ->where('id', '!=', $order->id)
+                                                      ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+                                                      ->select('id')
+                                                        ->lockForUpdate()
+                                    ->first() !== null;
+                     // If this order is the only draft using the old token, move its active
+                    // temporary rows to the new token without touching stock quantities.
+                    // When another draft uses the token, leave those ambiguous rows alone.
+                    if ( !$anotherDraftUsesOldToken ) {
+                         PreinvoiceDraftReservation::query()
+                             ->where('token', $oldToken)
+                             ->where('user_id', $userId)
+                             ->whereNull('converted_at')
+                        ->whereNull('preinvoice_order_id')
+                        ->whereIn('reservation_scope', [
+                            'temporary_online',
+                            'temporary_in_person',
+                        ])                             ->whereNull('released_at')
+                              ->whereNull('release_reason')
+                              ->lockForUpdate()
+                        ->get()
+                        ->each(function ( PreinvoiceDraftReservation $row ) use ( $token ): void {
+                            $row->token = $token;
+                            $row->save();
+                        });
+                    }
+  $order->update([ 'draft_token' => $token ]);
+ Log::notice('RESERVATION_DRAFT_TOKEN_ROTATED', [
+    'reason'                     => 'protected_or_foreign_token',
+    'preinvoice_order_id'        => $order->id,
+    'actor_id'                   => $userId,
+    'conflicting_reservation_id' => $protected->id,
+]);
+                }
+                else {
+                    Log::warning('RESERVATION_SYNC_SKIPPED', [
+                        'reason'              => 'protected_or_foreign_token',
+                        'reservation_id'      => $protected->id,
+                        'preinvoice_order_id' => $protected->preinvoice_order_id,
+                        'actor_id'            => $userId,
+                    ]);
+                    return [
+                        'reserved' => [],
+                        'skipped'  => true,
+                        'reason'   => 'protected_or_foreign_token',
+                        'token'    => $token,
+                    ];
+                                    }
             }
 
             $this->releaseExpiredDraftReservations($token, $userId);
@@ -87,7 +144,14 @@ class PreinvoiceDraftReservationService
                 $allKeys = array_values(array_filter($allKeys, fn (string $key) => in_array((int) explode(':', $key)[0], $scope, true)));
                 $desired = array_intersect_key($desired, array_flip($allKeys));
             }
-            $expiresAt = $isInPerson ? null : now()->addHour();
+            $savedDraft       = PreinvoiceOrder::query()
+                ->where('draft_token', $token)
+                ->where('created_by', $userId)
+                ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+                ->lockForUpdate()
+                ->first();
+            $expiresAt        = $savedDraft ? ( $savedDraft->created_at ?? now() )->copy()
+                ->addHours(PreinvoiceOrder::DRAFT_RETENTION_HOURS) : ( $isInPerson ? null : now()->addHour() );
             $reservationScope = $isInPerson ? 'temporary_in_person' : 'temporary_online';
 
             // Read-only pass: report every short item at once instead of the first one.
@@ -169,6 +233,7 @@ class PreinvoiceDraftReservationService
                 'reserved' => array_values($desired),
                 'expires_at' => $expiresAt?->toIso8601String(),
                 'reservation_scope' => $reservationScope,
+                'token' => $token,
             ];
         });
     }
@@ -337,7 +402,7 @@ class PreinvoiceDraftReservationService
                     );
                 }
 
-                $warningCount++;
+                $warningCount    ;
 
                 continue;
             }
@@ -442,7 +507,7 @@ class PreinvoiceDraftReservationService
                     'quantity' => 0,
                 ];
             }
-            $normalized[$key]['quantity'] += $quantity;
+            $normalized[$key]['quantity']   = $quantity;
         }
 
         return $normalized;
@@ -475,7 +540,7 @@ class PreinvoiceDraftReservationService
                 break;
             }
 
-            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0) + (int) ($committedQty[$key] ?? 0);
+            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0);    (int) ($committedQty[$key] ?? 0);
             $delta = $newQty - $held;
             if ($delta <= 0) {
                 continue;
@@ -521,7 +586,7 @@ class PreinvoiceDraftReservationService
             'available_quantity' => $available,
             'requested_quantity' => $delta,
             // Largest total quantity this line can hold: what it already holds plus free central stock.
-            'max_allowed' => $held + $available,
+            'max_allowed' => $held +   $available,
             'message' => "موجودی «" . ($variant->variant_name ?: $variant->name ?: $variantId) . "» (" . ($product?->name ?? 'نامشخص') . ") کافی نیست. موجودی: {$available} | درخواست: {$delta}",
         ];
     }

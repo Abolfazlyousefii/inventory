@@ -37,6 +37,7 @@ use App\Http\Controllers\ProductSalesStatusBulkController;
 use App\Http\Controllers\ProductExportController;
 use App\Http\Controllers\ProductPurchaseLedgerController;
 use App\Http\Controllers\ProductSalesLedgerController;
+use App\Http\Controllers\ProductSelectionExportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\SalesHavalehController;
@@ -160,6 +161,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
+    Route::post('/products/selected-export', ProductSelectionExportController::class)
+        ->middleware('route.permission:products.export')->name('products.selected-export');
     Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {

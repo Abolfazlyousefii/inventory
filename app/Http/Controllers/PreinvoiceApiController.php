@@ -298,9 +298,27 @@ class PreinvoiceApiController extends Controller
             'reservation_token' => ['required', 'uuid'],
         ]);
 
+        $token = (string) $data['reservation_token'];
+        $userId = (int) auth()->id();
+        $savedDraftOwnsToken = PreinvoiceOrder::query()
+            ->where('draft_token', $token)
+            ->where('created_by', $userId)
+            ->where('status', PreinvoiceOrder::STATUS_DRAFT)
+            ->whereDoesntHave('invoice')
+            ->exists();if ($savedDraftOwnsToken) {
+                return response()->json([
+                    'ok' => true,
+                    'data' => [
+                        'released' => [],
+                        'retained_for_draft' => true,
+                    ],
+                ]);}
+
         $payload = $this->draftReservationService->releaseTokenReservations(
             (string) $data['reservation_token'],
             (int) auth()->id(),
+            $token,
+            $userId,
             'manual_release',
             null
         );

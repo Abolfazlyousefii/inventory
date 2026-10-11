@@ -2,6 +2,7 @@
 
 use App\Services\Commissions\CommissionInvoiceSyncOutboxService;
 use App\Services\Commissions\CommissionReturnSyncOutboxService;
+use App\Services\PreinvoiceDraftExpiryService;
 use App\Services\Report\TelegramDailyReport;
 use App\Services\Sync\InventoryProductsSyncService;
 use App\Services\Sync\SiteCustomersSyncService;
@@ -29,6 +30,17 @@ Schedule::command('preinvoices:expire-reservations')
     ->onFailure(function (): void {
         Log::error('PREINVOICE_OFFICIAL_RESERVATION_EXPIRY_SCHEDULE_FAILED');
     });
+
+    Schedule::call(function (): void {
+               app(PreinvoiceDraftExpiryService::class)->deleteExpiredDrafts();
+           })
+           ->name('preinvoice-draft-expiry')
+                  ->everyMinute()
+                         ->withoutOverlapping(5)
+                                ->onFailure(function (): void {
+               Log::error('PREINVOICE_DRAFT_EXPIRY_SCHEDULE_FAILED');
+           });
+   
 
 Schedule::call(function () {
     app(SyncProductsToSite::class)->syncAll();

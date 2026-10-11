@@ -1400,8 +1400,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			<input type="hidden" name="customer_name" id="customer_name" value="{{ old('customer_name', $order->customer_name ?? '') }}">
 			<input type="hidden" name="customer_mobile" id="customer_mobile" value="{{ old('customer_mobile', $order->customer_mobile ?? '') }}">
 			<input type="hidden" name="payment_status" value="pending">
-			<input type="hidden" name="reservation_token" id="reservation_token" value="{{ old('reservation_token') }}">
-			<input type="hidden" name="autosave_uuid" id="autosave_uuid" value="">
+			<input type="hidden" name="reservation_token" id="reservation_token" value="{{ old('reservation_token', $order->draft_token ?? '') }}">			<input type="hidden" name="autosave_uuid" id="autosave_uuid" value="">
 			<input type="hidden" name="discount_breakdown" id="discount_breakdown" value="">
 			<input type="hidden" name="products_payload" id="products_payload" value="">
 			<input type="hidden" name="products_payload_count" id="products_payload_count" value="0">
@@ -1527,7 +1526,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 							<button class="btn btn-outline-primary px-4 py-2 rounded-3 fw-bold" id="saveDraftBtn" name="intent" value="draft" disabled>ذخیره پیش‌نویس</button>
 							<button class="btn btn-primary px-4 py-2 rounded-3 fw-bold" id="submitOrderBtn" name="intent" value="submit" disabled>ثبت نهایی و ارسال به مالی</button>
 						</div>
-						<div class="hint mt-2">بدون رزرو موجودی و بدون ارسال به مالی</div>
+						<div class="hint mt-2">با رزرو موجودی و بدون ارسال به مالی</div>
 						<div class="hint">بررسی موجودی، رزرو رسمی و ارسال به مالی</div>
 						<div class="submit-disabled-hint" id="submitHint">برای ثبت، مشتری و حداقل یک کالا لازم است.</div>
 					</div>
@@ -2339,12 +2338,21 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			}
 			currentAutosaveUuid = json.uuid || currentAutosaveUuid;
 			currentAutosaveVersion = json.version;
-			collaborativeBase = structuredClone(snapshot);
+			if (json.draft_token && json.draft_token !== snapshot.reservation_token) {
+				const tokenInput = document.getElementById('reservation_token');
+				if (tokenInput) tokenInput.value = json.draft_token;
+				localStorage.setItem(RESERVATION_TOKEN_KEY, json.draft_token);
+			}
+			collaborativeBase = structuredClone({
+				...snapshot,
+				reservation_token: json.draft_token || snapshot.reservation_token
+			});
 			if (confirmedAutosavePayload === signature) confirmedAutosavePayload = null;
 			const autosaveInput = document.getElementById('autosave_uuid');
 			if (autosaveInput) autosaveInput.value = currentAutosaveUuid || '';
 			const local = getLocalDraft();
 			if (local && local.reservation_token === snapshot.reservation_token) {
+				local.reservation_token = json.draft_token || snapshot.reservation_token;
 				local.autosave_uuid = currentAutosaveUuid;
 				local.autosave_version = currentAutosaveVersion;
 				try { localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(local)); } catch (e) {}
@@ -2560,7 +2568,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			renderGroupSummary();
 			updateTotal();
 			updateSubmitState();
-			updateLocalDraftStatus('پیش‌نویس بدون رزرو موجودی بازیابی شد', true);
+			updateLocalDraftStatus('پیش‌نویس با رزرو موجودی بازیابی شد', true);
 			isHydratingLocalDraft = false;
 			collaborativeBase = collectAutosavePayload();
 			if (!synchronized) updateLocalDraftStatus('پیش‌نویس بازیابی شد', true);

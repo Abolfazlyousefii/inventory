@@ -26,6 +26,8 @@ class PreinvoiceOrder extends Model
 
     public const STATUS_DRAFT = 'draft';
 
+    public const DRAFT_RETENTION_HOURS = 24;
+
     public const STATUS_TRUE_DRAFT = 'draft';
 
     public const STATUS_RESERVED_WAITING_WAREHOUSE = 'reserved_waiting_warehouse';
