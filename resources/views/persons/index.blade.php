@@ -86,7 +86,8 @@
                     <div class="col-md-12">
                         <label class="form-label d-block mb-2">نوع شخص *</label>
                         <div class="d-flex gap-4">
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="types[]" value="customer" id="edit_customer_{{ $loop->iteration }}" @checked($person['is_customer'])><label class="form-check-label" for="edit_customer_{{ $loop->iteration }}">مشتری</label></div>
+                            @if($person['is_customer'])<input type="hidden" name="types[]" value="customer">@endif
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="types[]" value="customer" id="edit_customer_{{ $loop->iteration }}" @checked($person['is_customer']) @disabled($person['is_customer'])><label class="form-check-label" for="edit_customer_{{ $loop->iteration }}">مشتری</label></div>
                             <div class="form-check"><input class="form-check-input" type="checkbox" name="types[]" value="supplier" id="edit_supplier_{{ $loop->iteration }}" @checked($person['is_supplier'])><label class="form-check-label" for="edit_supplier_{{ $loop->iteration }}">تامین‌کننده</label></div>
                         </div>
                     </div>

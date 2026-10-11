@@ -98,7 +98,7 @@ class ReservationClassificationService
             return [self::STATE_LEGACY_SAFE, 'inactive_official_preinvoice_with_known_provenance'];
         }
 
-        if ($reservation->hasActiveRelatedDraft()) {
+        if ($reservation->hasActiveRelatedDraft() && $reservation->hasValidHeartbeat($at)) {
             return [self::STATE_ACTIVE_VALID, 'active_draft_owns_token'];
         }
         if ($reservation->hasValidHeartbeat($at)) {

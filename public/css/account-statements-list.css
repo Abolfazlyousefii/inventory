@@ -1,0 +1,107 @@
+.as-list{--as-blue:#214d69;--as-muted:#657b8d;--as-border:#e2ebf0;color:#213e52;font-family:Vazirmatn,sans-serif;font-size:13px;max-width:1400px;margin:0 auto}
+.as-list .as-heading{display:flex;align-items:center;gap:14px;margin:8px 0 24px}
+.as-list .as-heading-icon{display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid #dceaf3;border-radius:15px;background:#eaf3f9;color:#326b8e}
+.as-list svg{width:22px;height:22px;flex-shrink:0}
+.as-list h1{font-size:23px;font-weight:500;margin:0 0 6px;line-height:1.6}
+.as-list .as-heading p{margin:0;color:var(--as-muted);font-size:12px}
+.as-list .as-unit{margin-inline-start:auto;color:var(--as-muted);font-size:11px;white-space:nowrap}
+.as-list .card{border:1px solid var(--as-border);border-radius:16px;box-shadow:0 3px 16px #214d6904;overflow:hidden;background:#fff}
+.as-list .as-search-card .card-body{padding:14px 18px}
+.as-list .form-control{border-color:#dce7ee;border-radius:10px;min-height:44px;background:#fafcfd;font-size:12px}
+.as-list .form-control:focus{background:#fff;border-color:#8aacbf;box-shadow:0 0 0 3px #dcecf580}
+.as-list .as-search-button{display:flex;align-items:center;gap:8px;justify-content:center;background:var(--as-blue);color:#fff;border-radius:10px;min-height:44px;padding:8px 20px;font-size:12px;font-weight:400}
+.as-list .as-search-button:hover{background:#163d57;color:#fff}
+.as-list #accountStatementSearchStatus:empty{display:none}
+.as-list .as-results>.card-body{padding:0}
+.as-list .as-list-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--as-border)}
+.as-list .as-list-toolbar strong{font-weight:500;font-size:14px}
+.as-list .as-result-count{margin-inline-start:10px;color:var(--as-muted);font-size:11px}
+.as-list .as-sort{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:11px;color:var(--as-muted)}
+.as-list .as-sort a{padding:6px 10px;border:1px solid transparent;color:var(--as-muted);border-radius:8px;text-decoration:none}
+.as-list .as-sort a:hover,.as-list .as-sort a.is-active{background:#edf5fa;color:var(--as-blue);border-color:#dceaf2}
+.as-list .table{color:#294659;font-size:12px;width:100%;margin:0}
+.as-list .table>:not(caption)>*>*{padding:16px 18px;border-bottom-color:#edf1f5;box-shadow:none;background:transparent}
+.as-list .table thead th{background:#f7fafc;font-size:11px;font-weight:400;white-space:nowrap;color:var(--as-muted)}
+.as-list .table thead a{color:var(--as-muted)!important}
+.as-list .as-person-row:hover{background:#f9fcfe}
+.as-list .as-person{max-width:240px;overflow-wrap:anywhere}
+.as-list .as-person a{color:#214d69;text-decoration:none;font-size:13px;font-weight:500}
+.as-list .as-mobile{color:var(--as-muted);font-variant-numeric:tabular-nums}
+.as-list .as-amount{white-space:nowrap;font-variant-numeric:tabular-nums}
+.as-list .as-balance{min-width:165px}
+.as-list .as-balance strong{display:block;margin-top:7px;font-size:12px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+.as-list .as-status{display:inline-flex;align-items:center;gap:5px;border-radius:6px;font-size:10px;padding:3px 8px;font-weight:400;line-height:1.8}
+.as-list .as-status:before{content:'';width:4px;height:4px;border-radius:50%;background:currentColor}
+.as-list .is-debt{background:#fff3ef;color:#a04b39}
+.as-list .is-credit{background:#edf8f3;color:#227761}
+.as-list .is-settled{background:#f1f5f8;color:#6b7b87}
+.as-list .as-balance.text-danger{color:#a04b39!important}
+.as-list .as-balance.text-success{color:#227761!important}
+.as-list .as-open{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;white-space:nowrap;color:#326c8d;text-decoration:none;font-size:11px;border:1px solid #dceaf2;border-radius:9px;padding:6px 10px;background:#f7fbfd}
+.as-list .as-open svg{width:16px;height:16px}
+.as-list .as-open:hover{background:#eaf4fa;color:#214d69}
+.as-list a:focus-visible,.as-list button:focus-visible{outline:2px solid #4681a4;outline-offset:3px}
+.as-list .as-results .mt-3{margin:0!important;padding:16px 20px}
+.as-list [aria-busy=true]{opacity:.65}
+@media(min-width:901px) and (max-width:1200px){.as-list .table>:not(caption)>*>*{padding:13px 10px}.as-list .as-amount,.as-list .as-balance strong{font-size:11px}.as-list .as-balance{min-width:135px}}
+@media(max-width:900px){
+ .as-list .as-heading{margin-bottom:18px;gap:10px}.as-list h1{font-size:20px}.as-list .as-unit{display:none}
+ .as-list .as-list-toolbar{align-items:flex-start;flex-direction:column;padding:14px 16px;gap:10px}
+ .as-list .table-responsive{overflow:visible}.as-list .table,.as-list .table tbody{display:block;width:100%}.as-list .table thead{display:none}
+ .as-list .as-person-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin:12px;border:1px solid var(--as-border);border-radius:12px;overflow:hidden;background:#fff}
+ .as-list .table .as-person-row td{padding:10px 14px;display:block;border:0;min-width:0}
+ .as-list .as-person-row .as-person{max-width:none;grid-column:1/-1;padding-top:16px;padding-bottom:4px}
+ .as-list .as-person-row .as-mobile{grid-column:1/-1;padding-top:0;padding-bottom:12px;font-size:11px}
+ .as-list .as-person-row .as-mobile:before{display:none}
+ .as-list .as-person-row .as-amount{font-size:11px;white-space:normal;background:#fafcfd;border-top:1px solid #edf1f5;border-bottom:1px solid #edf1f5}
+ .as-list .as-amount:before{content:attr(data-label);display:block;color:var(--as-muted);font-size:10px;margin-bottom:5px}
+ .as-list .as-person-row .as-balance{min-width:0}.as-list .as-balance strong{font-size:12px;white-space:normal}
+ .as-list .as-person-row .as-action{display:flex;justify-content:flex-end;align-items:center;padding-inline-start:0}
+ .as-list .as-results .mt-3{padding:12px}
+ .as-list .as-search-card .card-body{padding:12px}.as-list .as-search-button{padding:8px 12px}
+ .as-list .as-results .pagination{flex-wrap:wrap;gap:3px}
+}
+@media(max-width:360px){.as-list .as-search-button span{display:none}.as-list .as-person-row{margin:10px}.as-list .table .as-person-row td{padding-inline:10px}.as-list .as-open{padding:6px 8px}.as-list h1{font-size:18px}}
+
+/* Readable account ledger, aligned with the stock ledger. */
+.as-list{--as-muted:#405d70;--as-border:#bfd1df;color:#17394e;font-size:14px}
+.as-list h1{font-size:25px;font-weight:700;color:#17394e}
+.as-list .as-heading-icon{background:#e8f3fa;border-color:#bfd1df;color:#214d69;border-radius:10px}
+.as-list .as-heading p,.as-list .as-unit{color:#405d70;font-size:13px}
+.as-list .card{border-radius:10px;box-shadow:none}
+.as-list .form-control{background:#fff;border-color:#bfd1df;font-size:13px}
+.as-list .as-search-button{font-size:13px;font-weight:600}
+.as-list .as-list-toolbar{padding:15px 18px;background:#f0f6fa}
+.as-list .as-list-toolbar strong{font-size:16px;font-weight:600}
+.as-list .as-result-count,.as-list .as-sort{font-size:12px}
+.as-list .as-sort a.is-active{background:#214d69;color:white;border-color:#214d69}
+.as-list .table{color:#193f56;font-size:14px}
+.as-list .table>:not(caption)>*>*{padding:13px 14px;border-bottom-color:#cedee8}
+.as-list .table thead th{background:#214d69;color:#fff;font-size:13px;font-weight:600}
+.as-list .table thead a{color:#fff!important}
+.as-list .as-person a{font-size:14px;font-weight:600;color:#17394e}
+.as-list .as-mobile{color:#405d70;font-size:13px}
+.as-list .as-amount,.as-list .as-balance strong{font-size:14px;font-weight:600}
+.as-list .as-status{font-size:11px;font-weight:600;padding:3px 9px}
+.as-list .is-debt{color:#bd2338;background:#ffe6ea}
+.as-list .is-credit{color:#087443;background:#def4e7}
+.as-list .is-settled{color:#405d70;background:#e9f0f5}
+.as-list .as-balance.text-danger{color:#bd2338!important}
+.as-list .as-balance.text-success{color:#087443!important}
+.as-list .as-person-debt{background:#fff4f5}.as-list .as-person-credit{background:#f1faf5}
+.as-list .as-person-debt>td:first-child{border-inline-start:4px solid #bd2338}
+.as-list .as-person-credit>td:first-child{border-inline-start:4px solid #087443}
+.as-list .as-person-row:hover{background:#eaf2f8}
+.as-list .as-open{font-size:12px;font-weight:600;min-height:44px;color:#155a86;border-color:#b8cddd;background:#fff}
+@media(min-width:901px) and (max-width:1200px){.as-list .table>:not(caption)>*>*{padding:12px 9px}.as-list .as-amount,.as-list .as-balance strong{font-size:12px}}
+@media(max-width:900px){
+ .as-list h1{font-size:23px}.as-list .as-heading p{font-size:12px}
+ .as-list .as-person-row{border-radius:10px}.as-list .as-person-debt{border-inline-start:4px solid #bd2338}.as-list .as-person-credit{border-inline-start:4px solid #087443}
+ .as-list .as-person-debt>td:first-child,.as-list .as-person-credit>td:first-child{border-inline-start:0}
+ .as-list .as-person-row .as-mobile{font-size:13px;color:#405d70}
+ .as-list .as-person-row .as-amount{font-size:13px;overflow-wrap:anywhere;background:#ffffff80;border-color:#cedee8}
+ .as-list .as-amount:before{font-size:12px;color:#405d70}
+ .as-list .as-balance strong{font-size:13px;overflow-wrap:anywhere}
+ .as-list .as-person-row .as-action{padding-inline-start:4px}
+}
+@media(max-width:360px){.as-list h1{font-size:20px}.as-list .as-person-row .as-amount,.as-list .as-balance strong{font-size:12px}.as-list .as-open{gap:5px;padding:6px 8px}}

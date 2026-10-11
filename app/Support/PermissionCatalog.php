@@ -670,6 +670,11 @@ class PermissionCatalog
             return true;
         }
 
+        // Respect permissions assigned directly or through roles first.
+        if ($permission !== '*' && $user instanceof User && $user->hasPermission($permission)) {
+            return true;
+        }
+
         if (str_starts_with($permission, 'page.')) {
             return $user instanceof User
                    && PageAccessCatalog::userCan($user, $permission);

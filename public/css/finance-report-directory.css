@@ -1,0 +1,21 @@
+.finance-directory{max-width:1120px;padding:20px 12px 32px;font-family:Vazirmatn,sans-serif;color:#17394e}
+.finance-directory .finance-report-directory-heading{margin-bottom:24px;padding-inline-start:14px;border-inline-start:4px solid #214d69}
+.finance-directory .finance-report-directory-heading h1{font-weight:700;color:#17394e;font-size:25px;line-height:1.6}
+.finance-directory .finance-report-directory-heading p{font-size:13px;color:#405d70;margin-top:6px}
+.finance-directory .finance-reports-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.finance-directory .finance-report-directory-card{--tile-color:#2365ac;--tile-bg:#eef5ff;--tile-border:#bbd3ef;min-height:250px;border:1px solid var(--tile-border);border-top:4px solid var(--tile-color);border-radius:12px;padding:22px;gap:20px;background:var(--tile-bg);box-shadow:0 3px 10px #214d6906;color:#17394e}
+.finance-directory .finance-report-directory-card.is-receipts{--tile-color:#08795f;--tile-bg:#edf9f3;--tile-border:#b9dece}
+.finance-directory .finance-report-directory-card.is-commission{--tile-color:#7042a8;--tile-bg:#f6f0fc;--tile-border:#d8c6eb}
+.finance-directory .finance-report-directory-card:hover{border-color:var(--tile-color);transform:translateY(-3px);box-shadow:0 8px 22px #214d6912}
+.finance-directory .finance-report-directory-card:focus-visible{outline:3px solid var(--tile-color);outline-offset:4px}
+.finance-directory .finance-directory-card-top{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.finance-directory .finance-directory-icon{display:grid;place-items:center;width:58px;height:58px;border-radius:12px;background:var(--tile-color);color:#fff;flex:none;box-shadow:0 3px 8px #17394e12}
+.finance-directory .finance-directory-icon svg{width:32px;height:32px}
+.finance-directory .finance-directory-tag{font-size:12px;font-weight:500;color:var(--tile-color);white-space:nowrap}
+.finance-directory .finance-report-directory-card h2{font-size:17px;font-weight:600;color:#17394e;line-height:1.8}
+.finance-directory .finance-report-directory-card p{font-size:13px;font-weight:400;line-height:1.9;color:#40546a;margin-top:8px}
+.finance-directory .finance-directory-card-link{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border-top:1px solid var(--tile-border);padding-top:14px;margin-top:auto;color:var(--tile-color);font-size:13px;font-weight:600;min-height:44px}
+.finance-directory .finance-directory-card-link svg{width:20px;height:20px}
+@media(max-width:1100px){.finance-directory .finance-reports-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){.finance-directory{padding:12px 0 24px}.finance-directory .finance-reports-grid{grid-template-columns:1fr;gap:14px}.finance-directory .finance-report-directory-card{padding:18px;min-height:220px;gap:16px}.finance-directory .finance-directory-icon{width:50px;height:50px}.finance-directory .finance-directory-icon svg{width:28px;height:28px}.finance-directory .finance-report-directory-card h2{font-size:16px}.finance-directory .finance-report-directory-heading h1{font-size:23px}}
+@media(prefers-reduced-motion:reduce){.finance-directory .finance-report-directory-card{transition:none;transform:none}}

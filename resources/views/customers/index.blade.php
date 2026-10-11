@@ -1,393 +1,7 @@
 @extends('layouts.app')
 
+@push('styles')<link rel="stylesheet" href="{{ asset('css/customers-list.css') }}?v=20261011">@endpush
 @section('content')
-	<style>
-		:root {
-			--brand: #0d6efd;
-			--bg: #f6f8fb;
-			--card: #ffffff;
-			--border: #e5e7eb;
-			--text: #111827;
-			--muted: #6b7280;
-			--soft: #f9fafb;
-			--danger: #dc3545;
-			--success: #198754;
-			--warning: #f59e0b;
-		}
-
-		body {
-			background: var(--bg);
-		}
-
-		.customers-page {
-			max-width: 1280px;
-		}
-
-		.page-head {
-			background: var(--card);
-			border: 1px solid var(--border);
-			border-radius: 18px;
-			padding: 16px;
-			margin-bottom: 14px;
-		}
-
-		.page-title {
-			font-size: 1.15rem;
-			font-weight: 900;
-			color: var(--text);
-			margin: 0;
-		}
-
-		.page-subtitle {
-			color: var(--muted);
-			font-size: .82rem;
-			margin-top: 5px;
-		}
-
-		.toolbar {
-			display: flex;
-			align-items: stretch;
-			gap: 8px;
-			flex-wrap: wrap;
-			width: 100%;
-		}
-
-		.search-form {
-			display: grid;
-			grid-template-columns: minmax(280px, 1.7fr) minmax(150px, .7fr) auto auto;
-			gap: 8px;
-			flex: 1 1 760px;
-		}
-
-		.search-form .form-control,
-		.search-form .form-select {
-			min-width: 0;
-		}
-
-		.filter-chip {
-			display: inline-flex;
-			align-items: center;
-			gap: 5px;
-			background: #eef2ff;
-			color: #3730a3;
-			border: 1px solid #c7d2fe;
-			border-radius: 999px;
-			padding: 5px 10px;
-			font-size: .78rem;
-			font-weight: 800;
-		}
-
-		.operations-cell {
-			width: 132px;
-		}
-
-		.customer-balance-badge {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			min-width: 72px;
-			border-radius: 999px;
-			padding: 4px 10px;
-			font-size: .76rem;
-			font-weight: 900;
-			border: 1px solid transparent;
-			white-space: nowrap;
-		}
-
-		.customer-balance-badge.is-debit {
-			background: #fee2e2;
-			color: #991b1b;
-			border-color: #fecaca;
-		}
-
-		.customer-balance-badge.is-credit {
-			background: #dcfce7;
-			color: #166534;
-			border-color: #bbf7d0;
-		}
-
-		.customer-balance-badge.is-settled {
-			background: #f3f4f6;
-			color: #4b5563;
-			border-color: #e5e7eb;
-		}
-
-		.customer-balance-amount {
-			font-weight: 900;
-			direction: ltr;
-			white-space: nowrap;
-		}
-
-		.customer-balance-amount.is-debit {
-			color: #b91c1c;
-		}
-
-		.customer-balance-amount.is-credit {
-			color: #15803d;
-		}
-
-		.customer-balance-amount.is-settled {
-			color: #6b7280;
-		}
-
-
-		.soft-card {
-			background: var(--card);
-			border: 1px solid var(--border);
-			border-radius: 18px;
-			overflow: hidden;
-		}
-
-		.desktop-table th {
-			font-size: .78rem;
-			color: #374151;
-			white-space: nowrap;
-		}
-
-		.desktop-table td {
-			font-size: .86rem;
-			vertical-align: middle;
-		}
-
-		.customer-mobile-list {
-			display: none;
-		}
-
-		.customer-card {
-			background: var(--card);
-			border: 1px solid var(--border);
-			border-radius: 16px;
-			padding: 13px;
-			margin-bottom: 10px;
-		}
-
-		.customer-card-head {
-			display: flex;
-			justify-content: space-between;
-			align-items: flex-start;
-			gap: 10px;
-			margin-bottom: 10px;
-		}
-
-		.customer-name {
-			font-weight: 900;
-			color: var(--text);
-			font-size: .98rem;
-			line-height: 1.8;
-		}
-
-		.customer-id-badge {
-			background: var(--soft);
-			border: 1px solid var(--border);
-			border-radius: 999px;
-			padding: 3px 8px;
-			font-size: .75rem;
-			color: var(--muted);
-			white-space: nowrap;
-		}
-
-		.customer-info-line {
-			display: flex;
-			gap: 7px;
-			align-items: flex-start;
-			color: #374151;
-			font-size: .84rem;
-			margin-top: 6px;
-			line-height: 1.8;
-		}
-
-		.customer-info-line .label {
-			color: var(--muted);
-			min-width: 58px;
-			font-weight: 700;
-		}
-
-		.balance-grid {
-			display: grid;
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			gap: 7px;
-			margin-top: 12px;
-		}
-
-		.balance-box {
-			background: var(--soft);
-			border: 1px solid var(--border);
-			border-radius: 12px;
-			padding: 8px;
-			text-align: center;
-		}
-
-		.balance-box .small-label {
-			color: var(--muted);
-			font-size: .72rem;
-			font-weight: 700;
-			margin-bottom: 4px;
-		}
-
-		.balance-box .value {
-			font-size: .82rem;
-			font-weight: 900;
-			color: var(--text);
-			direction: ltr;
-		}
-
-		.card-actions {
-			display: grid;
-			grid-template-columns: 1fr 1fr;
-			gap: 8px;
-			margin-top: 12px;
-		}
-
-		.pagination-wrap {
-			overflow-x: auto;
-			padding-bottom: 4px;
-		}
-
-		.modal-content {
-			border: 0;
-			border-radius: 18px;
-			overflow: hidden;
-		}
-
-		.modal-header {
-			background: #f8fafc;
-			border-bottom: 1px solid var(--border);
-		}
-
-		.modal-footer {
-			background: #f8fafc;
-			border-top: 1px solid var(--border);
-		}
-
-		.form-label {
-			font-size: .82rem;
-			font-weight: 800;
-			color: #374151;
-		}
-
-		.select2-container {
-			width: 100% !important;
-		}
-
-		.select2-container .select2-selection--single {
-			min-height: 38px !important;
-			border-color: #dee2e6 !important;
-			border-radius: .5rem !important;
-			padding-top: 4px;
-		}
-
-		.select2-container .select2-selection--single .select2-selection__rendered {
-			line-height: 28px !important;
-			padding-right: 12px !important;
-		}
-
-		.select2-container .select2-selection--single .select2-selection__arrow {
-			height: 36px !important;
-		}
-
-		@media (max-width: 991.98px) {
-			.page-head {
-				padding: 13px;
-				border-radius: 15px;
-			}
-
-			.page-head-main {
-				width: 100%;
-			}
-
-			.toolbar {
-				width: 100%;
-				display: grid;
-				grid-template-columns: 1fr;
-				gap: 8px;
-				margin-top: 12px;
-			}
-
-			.search-form {
-				grid-column: 1 / -1;
-				min-width: 0;
-				width: 100%;
-				display: grid;
-				grid-template-columns: 1fr;
-				gap: 8px;
-			}
-
-			.search-form .form-control {
-				min-width: 0;
-				width: 100%;
-			}
-
-			.toolbar > .btn {
-				width: 100%;
-			}
-		}
-
-		@media (max-width: 767.98px) {
-			.container {
-				padding-left: 10px;
-				padding-right: 10px;
-			}
-
-			.desktop-customers {
-				display: none;
-			}
-
-			.customer-mobile-list {
-				display: block;
-			}
-
-			.page-title {
-				font-size: 1rem;
-			}
-
-			.page-subtitle {
-				font-size: .76rem;
-			}
-
-			.toolbar {
-				grid-template-columns: 1fr;
-			}
-
-			.search-form {
-				grid-template-columns: 1fr;
-			}
-
-			.search-form button {
-				width: 100%;
-			}
-
-			.balance-grid {
-				grid-template-columns: 1fr;
-			}
-
-			.card-actions {
-				grid-template-columns: 1fr;
-			}
-
-			.modal-dialog {
-				margin: 0;
-			}
-
-			.modal-content {
-				min-height: 100vh;
-				border-radius: 0;
-			}
-
-			.modal-body {
-				padding: 12px;
-			}
-
-			.modal-footer {
-				position: sticky;
-				bottom: 0;
-				z-index: 10;
-			}
-
-			.modal-footer .btn {
-				width: 100%;
-			}
-		}
-	</style>
 
 	@php
 		$balanceFilterLabels = [
@@ -403,8 +17,8 @@
 		<div class="page-head">
 			<div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
 				<div class="page-head-main">
-					<h1 class="page-title">👥 مشتریان</h1>
-					<div class="page-subtitle">مدت رزرو موجودی پیش‌فاکتور برای همه مشتریان ۲۴ ساعت است. مانده حساب از بخش گردش حساب اشخاص مدیریت می‌شود.</div>
+					<h1 class="page-title">مشتریان</h1>
+					<div class="page-subtitle">اطلاعات تماس و مانده حساب مشتریان</div>
 				</div>
 
 				<div class="toolbar">
@@ -425,7 +39,7 @@
 					</form>
 
 					<button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createCustomerModal">
-						➕ ساخت مشتری
+						+ مشتری جدید
 					</button>
 				</div>
 			</div>
@@ -467,12 +81,12 @@
 				<table class="table table-hover align-middle mb-0 desktop-table">
 					<thead class="table-light">
 					<tr>
-						<th>#</th>
+						<th>کد</th>
 						<th>نام مشتری</th>
 						<th>موبایل</th>
 						<th>اطلاعات تکمیلی</th>
 						<th class="text-nowrap">ماهیت</th>
-						<th class="text-nowrap">مانده حساب</th>
+						<th class="text-nowrap">مانده حساب (ریال)</th>
 						<th class="text-nowrap">عملیات</th>
 					</tr>
 					</thead>
@@ -513,6 +127,7 @@
 							<td class="text-nowrap">{{ $c->mobile ?: '—' }}</td>
 
 							<td style="max-width: 360px">
+@if($c->address || $c->postal_code || $c->extra_description)<details class="customer-more"><summary>آدرس و توضیحات</summary>
 								<div>{{ $c->address ?: '—' }}</div>
 
 								@if($c->postal_code)
@@ -526,7 +141,8 @@
 										{{ $c->extra_description }}
 									</div>
 								@endif
-							</td>
+							</details>@else — @endif
+</td>
 
 							<td class="text-nowrap">
 								<span class="customer-balance-badge is-{{ $balanceState }}">{{ $balanceLabel }}</span>
@@ -536,20 +152,13 @@
 							<td class="text-nowrap operations-cell">
 								<button
 										type="button"
-										class="btn btn-sm btn-outline-warning"
+										class="btn btn-sm btn-outline-primary"
 										data-bs-toggle="modal"
 										data-bs-target="#editCustomerModal"
 										data-customer='@json($customerPayload, JSON_HEX_APOS | JSON_HEX_QUOT)'
 								>
 									ویرایش
 								</button>
-
-								<form method="POST" action="{{ route('customers.destroy', $c) }}" class="d-inline"
-								      onsubmit="return confirm('مشتری حذف شود؟')">
-									@csrf
-									@method('DELETE')
-									<button class="btn btn-sm btn-outline-danger">حذف</button>
-								</form>
 							</td>
 						</tr>
 					@empty
@@ -597,7 +206,7 @@
 						<div>{{ $c->mobile ?: '—' }}</div>
 					</div>
 
-					<div class="customer-info-line">
+					@if($c->address || $c->postal_code || $c->extra_description)<details class="customer-more mobile-more"><summary>آدرس و توضیحات</summary><div class="customer-info-line">
 						<div class="label">آدرس</div>
 						<div>{{ $c->address ?: '—' }}</div>
 					</div>
@@ -616,14 +225,15 @@
 						</div>
 					@endif
 
-					<div class="balance-grid">
+					</details>@endif
+<div class="balance-grid">
 						<div class="balance-box">
 							<div class="small-label">ماهیت حساب</div>
 							<div><span class="customer-balance-badge is-{{ $balanceState }}">{{ $balanceLabel }}</span></div>
 						</div>
 
 						<div class="balance-box">
-							<div class="small-label">مانده حساب</div>
+							<div class="small-label">مانده حساب (ریال)</div>
 							<div class="value customer-balance-amount is-{{ $balanceState }}">{{ number_format($balanceAmount) }}</div>
 						</div>
 					</div>
@@ -631,20 +241,13 @@
 					<div class="card-actions">
 						<button
 								type="button"
-								class="btn btn-outline-warning"
+								class="btn btn-outline-primary"
 								data-bs-toggle="modal"
 								data-bs-target="#editCustomerModal"
 								data-customer='@json($customerPayload, JSON_HEX_APOS | JSON_HEX_QUOT)'
 						>
 							ویرایش
 						</button>
-
-						<form method="POST" action="{{ route('customers.destroy', $c) }}"
-						      onsubmit="return confirm('مشتری حذف شود؟')">
-							@csrf
-							@method('DELETE')
-							<button class="btn btn-outline-danger w-100">حذف</button>
-						</form>
 					</div>
 				</div>
 			@empty
@@ -727,7 +330,7 @@
 				@csrf
 
 				<div class="modal-header">
-					<div class="fw-bold">➕ ساخت مشتری</div>
+					<div class="fw-bold">+ مشتری جدید</div>
 					<button type="button" class="btn-close ms-0" data-bs-dismiss="modal"></button>
 				</div>
 
@@ -976,3 +579,4 @@
 		});
 	</script>
 @endpush
+@push('scripts')<script src="{{ asset('js/customers-display.js') }}?v=20261011" defer></script>@endpush

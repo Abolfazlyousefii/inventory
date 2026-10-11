@@ -112,15 +112,18 @@
                                 data-module="{{ $module }}"
                                 data-search="{{ $item['label'].' '.$item['key'].' '.$item['action'].' '.$item['module_label'] }}"
                             >
-                                <input
-                                    class="permission-check"
-                                    type="checkbox"
-                                    name="direct_permissions[]"
-                                    value="{{ $item['key'] }}"
-                                    data-dependencies='@json($item['depends_on'])'
-                                    @checked(in_array($item['source'], ['direct', 'both'], true))
-                                    @disabled(! $canEditPermissions)
-                                >
+	                            <input
+			                            class="permission-check"
+			                            type="checkbox"
+			                            name="direct_permissions[]"
+			                            value="{{ $item['key'] }}"
+			                            data-dependencies='@json($item['depends_on'])'
+			                            @checked($item['granted'])
+			                            @disabled(
+											! $canEditPermissions ||
+											($item['source'] === 'role')
+										)
+	                            >
 
                                 <label>
                                     <span class="d-block">{{ $item['label'] }}</span>

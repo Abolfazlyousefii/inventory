@@ -210,6 +210,8 @@ class AccountStatementController extends Controller
             ->sum('amount');
 
         $netBalance = (int) $customer->opening_balance + $totalDebit - $totalCredit;
+        $ledgerBalances = app(\App\Services\AccountStatementPresentationService::class)
+            ->pageBalances($customer, $ledgers->getCollection(), $effectiveLedgerIds, $netBalance);
         $adjustments = ActivityLog::query()
             ->with('user:id,name')
             ->where('subject_type', Customer::class)
@@ -343,6 +345,16 @@ class AccountStatementController extends Controller
                 ];
             });
 
+        $paymentInvoiceOptions = $customerInvoices
+            ->reject(fn (Invoice $invoice) => in_array($invoice->status, Invoice::cancelledStatuses(), true))
+            ->map(fn (Invoice $invoice) => [
+                'id' => $invoice->id,
+                'uuid' => $invoice->uuid,
+                'remaining' => max((int) $invoice->total - (int) $allInvoicePayments->get($invoice->id, collect())->sum('amount'), 0),
+            ]);
+
+        $canAdjustBalance = \App\Support\PermissionCatalog::userHasPermission(auth()->user(), 'account_statements.adjust');
+
         $statementTotals = [
             'opening_balance' => (int) $customer->opening_balance,
             'total_debit' => $totalDebit,
@@ -356,6 +368,7 @@ class AccountStatementController extends Controller
             'customer',
             'ledgers',
             'effectiveLedgerIds',
+            'ledgerBalances',
             'invoices',
             'payments',
             'transfers',
@@ -367,7 +380,9 @@ class AccountStatementController extends Controller
             'totalDebit',
             'totalCredit',
             'adjustments',
+            'canAdjustBalance',
             'customerInvoices',
+            'paymentInvoiceOptions',
             'invoiceSummaries',
             'statementTotals'
         ));
@@ -375,6 +390,7 @@ class AccountStatementController extends Controller
 
     public function storeAdjustment(Customer $customer, Request $request)
     {
+        abort_unless(\App\Support\PermissionCatalog::userHasPermission(auth()->user(), 'account_statements.adjust'), 403);
         $data = $request->validate([
             'balance_type' => ['required', 'in:debit,credit,settled'],
             'target_amount' => ['required', 'string', 'max:32'],

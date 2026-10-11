@@ -750,14 +750,20 @@ class PageAccessCatalog
         if (! $page) {
             return false;
         }
-        $rolePermissions = $user->getPermissionsViaRoles()->pluck('key')->filter()->all();
-
-        return in_array($pagePermission, $rolePermissions, true);
+        return $user->hasPermission($pagePermission);
     }
 
     public static function userCanRoute(User $user, ?string $routeName): bool
     {
         if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        $actionPermission = $routeName
+            ? (PermissionCatalog::routePermissions()[$routeName] ?? null)
+            : null;
+
+        if ($actionPermission && $user->hasPermission($actionPermission)) {
             return true;
         }
 

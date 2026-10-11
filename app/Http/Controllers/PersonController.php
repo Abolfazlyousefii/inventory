@@ -292,17 +292,7 @@ class PersonController extends Controller
 
     private function deleteCustomerRole(Customer $customer): void
     {
-        $hasFinancialRecords = DB::table('customer_ledgers')->where('customer_id', $customer->id)->exists()
-            || DB::table('invoices')->where('customer_id', $customer->id)->exists()
-            || DB::table('preinvoice_orders')->where('customer_id', $customer->id)->exists()
-            || DB::table('invoice_payments')->where('customer_id', $customer->id)->exists()
-            || DB::table('warehouse_transfers')->where('customer_id', $customer->id)->exists();
-
-        if ($hasFinancialRecords) {
-            throw ValidationException::withMessages(['types' => 'به دلیل وجود سوابق مالی/فروش، امکان حذف نقش مشتری وجود ندارد.']);
-        }
-
-        $customer->delete();
+        throw ValidationException::withMessages(['types' => 'نقش مشتری قابل حذف نیست؛ اطلاعات و سوابق مشتری باید حفظ شود.']);
     }
 
     private function deleteSupplierRole(Supplier $supplier): void
