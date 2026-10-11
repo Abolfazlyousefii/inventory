@@ -6,7 +6,7 @@
     $money = fn ($value) => \App\Support\Currency::formatRial((int) $value);
     $dash = fn ($value) => filled($value) ? $value : '—';
     $isWarehouseMode = $printData['mode'] !== 'customer';
-    $itemColspan = $isWarehouseMode ? 6 : 8;
+    $itemColspan = $isWarehouseMode ? 5 : 8;
     $totalQuantity = $printData['items']->sum('quantity');
     $totalLineAmount = $printData['items']->sum('lineTotal');
 @endphp
@@ -45,14 +45,14 @@
     </section>
     <table class="items-table">
         @if($isWarehouseMode)
-            <thead><tr><th class="col-index">ردیف</th><th class="col-desc">شرح کالا</th><th class="col-code">کد انبار</th><th class="col-map">نقشه انبار</th><th class="col-qty">تعداد</th><th class="col-check">کنترل انبار</th></tr></thead>
+            <thead><tr><th class="col-index">ردیف</th><th class="col-desc">شرح کالا</th><th class="col-code">کد انبار</th><th class="col-qty">تعداد</th><th class="col-check">کنترل انبار</th></tr></thead>
         @else
             <thead><tr><th class="col-index">ردیف</th><th class="col-desc">شرح کالا</th><th class="col-code">کد انبار</th><th class="col-qty">تعداد</th><th class="col-price">قیمت واحد</th><th class="col-price">تخفیف ردیف</th><th class="col-price">قیمت خالص</th><th class="col-total">مبلغ کل</th></tr></thead>
         @endif
         <tbody>
         @forelse($printData['items'] as $item)
             @if($isWarehouseMode)
-                <tr><td class="col-index">{{ $loop->iteration }}</td><td class="col-desc">{{ $item['description'] }}</td><td class="col-code">{{ $item['inventoryCode'] }}</td><td class="col-map">{{ $item['warehouseMap'] }}</td><td class="col-qty">{{ number_format($item['quantity']) }}</td><td class="col-check"></td></tr>
+                <tr><td class="col-index">{{ $loop->iteration }}</td><td class="col-desc">{{ $item['description'] }}</td><td class="col-code">{{ $item['inventoryCode'] }}</td><td class="col-qty">{{ number_format($item['quantity']) }}</td><td class="col-check"></td></tr>
             @else
                 <tr><td class="col-index">{{ $loop->iteration }}</td><td class="col-desc">{{ $item['description'] }}</td><td class="col-code">{{ $item['inventoryCode'] }}</td><td class="col-qty">{{ number_format($item['quantity']) }}</td><td class="col-price">{{ number_format($item['unitPrice']) }}</td><td class="col-price">{{ number_format($item['lineDiscount'] ?? 0) }}</td><td class="col-price">{{ number_format($item['netUnitPrice'] ?? $item['unitPrice']) }}</td><td class="col-total">{{ number_format($item['lineTotal']) }}</td></tr>
             @endif
@@ -66,7 +66,6 @@
                 <td class="col-desc">جمع کل</td>
                 <td class="col-code"></td>
                 @if($isWarehouseMode)
-                    <td class="col-map"></td>
                     <td class="col-qty">{{ number_format($totalQuantity) }}</td>
                     <td class="col-check"></td>
                 @else

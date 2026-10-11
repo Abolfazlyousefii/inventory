@@ -55,7 +55,6 @@ use App\Http\Controllers\VoucherController;
 use App\Http\Controllers\VoucherSalesReturnController;
 use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseInboundController;
-use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReservationController;
 use App\Http\Controllers\StockThresholdController;
 use App\Http\Controllers\WarehouseReviewController;
@@ -501,23 +500,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::patch('/sales-havaleh/{invoice}/status', [SalesHavalehController::class, 'patchStatus'])->name('sales-havaleh.status');
     Route::get('/sales-havaleh/{invoice}/history', [SalesHavalehController::class, 'history'])->name('sales-havaleh.history');
     Route::get('/payments/{payment}/view', [AccountStatementController::class, 'showPayment'])->name('payments.view');
-
-    // Warehouse Map
-    Route::prefix('warehouse-map')->name('warehouse-map.')->group(function () {
-        Route::get('/', [WarehouseMapController::class, 'index'])->name('index');
-        Route::get('/locations/{location}', [WarehouseMapController::class, 'showLocation'])->name('locations.show');
-        Route::get('/categories/{category}/children', [WarehouseMapController::class, 'categoryChildren'])->name('categories.children');
-        Route::get('/categories/{category}/products', [WarehouseMapController::class, 'categoryProducts'])->name('categories.products');
-        Route::get('/products/{product}/variants', [WarehouseMapController::class, 'productVariants'])->name('products.variants');
-        Route::get('/history', [WarehouseMapController::class, 'history'])->name('history');
-
-        Route::group([], function () {
-            Route::post('/locations', [WarehouseMapController::class, 'storeLocation'])->name('locations.store');
-            Route::put('/locations/{location}', [WarehouseMapController::class, 'updateLocation'])->name('locations.update');
-            Route::post('/assign', [WarehouseMapController::class, 'assign'])->name('assign');
-            Route::post('/transfer', [WarehouseMapController::class, 'transfer'])->name('transfer');
-        });
-    });
 
     // Warehouses
     Route::get('/warehouses', [WarehouseController::class, 'index'])->name('warehouses.index');

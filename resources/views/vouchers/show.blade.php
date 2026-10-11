@@ -2,25 +2,6 @@
 
 @php
   $isPersonnelVoucher = $voucher->voucher_type === \App\Models\WarehouseTransfer::TYPE_PERSONNEL_ASSET;
-  $formatWarehouseLocation = function ($item): string {
-      $variant = $item->variant;
-      if (! $variant) {
-          return '—';
-      }
-
-      $warehouseId = (int) ($item->transfer?->from_warehouse_id ?? 0);
-      $stocks = $variant->locationStocks()
-          ->with('location')
-          ->when($warehouseId > 0, fn ($q) => $q->where('warehouse_id', $warehouseId))
-          ->where('quantity', '>', 0)
-          ->get();
-
-      if ($stocks->isEmpty()) {
-          return 'بدون نقشه';
-      }
-
-      return $stocks->map(fn ($stock) => ($stock->location?->code ?? '—') . ' (' . number_format((int) $stock->quantity) . ')')->implode(' / ');
-  };
 @endphp
 
 @section('content')
@@ -69,7 +50,6 @@
             <th>#</th>
             <th>نام کالا</th>
             <th>کد محصول</th>
-            <th>موقعیت Z/R/B</th>
             <th>تنوع/مدل/سریال</th>
             @if($isPersonnelVoucher)<th>کد اموال</th>@endif
             <th>تعداد</th>
@@ -84,13 +64,11 @@
                   ?: ($item->variant_code
                       ?: ($item->variant?->variant_code
                           ?: ($item->product?->sku ?: '—')));
-              $warehouseLocation = $formatWarehouseLocation($item);
             @endphp
             <tr>
               <td>{{ $loop->iteration }}</td>
               <td>{{ $item->product?->name ?? '—' }}</td>
               <td dir="ltr" class="text-nowrap">{{ $productCode }}</td>
-              <td dir="ltr" class="text-nowrap">{{ $warehouseLocation }}</td>
               <td>{{ $item->variant_name ?: ($item->variant?->variant_name ?? '—') }}</td>
               @if($isPersonnelVoucher)<td dir="ltr" class="text-nowrap">{{ $item->personnel_asset_code ?: '—' }}</td>@endif
               <td>{{ number_format((int) $item->quantity) }} {{ $item->product?->unit ?: 'عدد' }}</td>
@@ -98,7 +76,7 @@
               <td>{{ $item->line_total ? 'مبلغ ردیف: '.number_format((int)$item->line_total) : '—' }}</td>
             </tr>
           @empty
-            <tr><td colspan="{{ $isPersonnelVoucher ? 9 : 8 }}" class="text-center text-muted py-4">آیتمی ثبت نشده است.</td></tr>
+            <tr><td colspan="{{ $isPersonnelVoucher ? 8 : 7 }}" class="text-center text-muted py-4">آیتمی ثبت نشده است.</td></tr>
           @endforelse
         </tbody>
       </table>

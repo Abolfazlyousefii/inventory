@@ -32,7 +32,6 @@ class DashboardWorkspaceService
             ['products.price-changes.index', 'تغییر قیمت کالا', 'کالاها', 'orange', 'products', false],
             ['vouchers.index', 'حواله‌های انبار', 'انبارداری', 'blue', 'warehouse', false],
             ['asset.hub', 'امین اموال', 'انبارداری', 'indigo', 'products', false],
-            ['warehouse-map.index', 'نقشه انبار', 'انبارداری', 'mint', 'warehouse', false],
             ['vouchers.return-from-sale.index', 'برگشت از فروش', 'فروش', 'rose', 'sales', false],
             ['commercial.invoice-reassignments.index', 'انتقال فروشنده فاکتور', 'فروش', 'violet', 'people', false],
             ['categories.index', 'دسته‌بندی کالاها', 'پیکربندی', 'blue', 'products', false],

@@ -12,8 +12,8 @@
     $isSalesReturnRoute = $isRoute('vouchers.return-from-sale.*') || $isPath('vouchers/section/return-from-sale', 'vouchers/section/return-from-sale/*');
 
     $warehouseActive = ! $isSalesReturnRoute && (
-        $isRoute('warehouse.daily-sales.*', 'stock-thresholds.*', 'vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'warehouse.inbound.*', 'warehouse-reservations.*', 'stocktake.*', 'stocktake.index', 'asset.*', 'warehouse-map.*')
-        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/inbound-queue', 'warehouse/inbound-queue/*', 'warehouse-reservations', 'warehouse-reservations/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'warehouse-map', 'warehouse-map/*', 'stocktake', 'stocktake/*')
+        $isRoute('warehouse.daily-sales.*', 'stock-thresholds.*', 'vouchers.*', 'sales-returns.*', 'warehouse.shipping.*', 'warehouse.inbound.*', 'warehouse-reservations.*', 'stocktake.*', 'stocktake.index', 'asset.*')
+        || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/inbound-queue', 'warehouse/inbound-queue/*', 'warehouse-reservations', 'warehouse-reservations/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'stocktake', 'stocktake/*')
     );
 
     $salesActive = $isSalesReturnRoute || $isRoute('sales-returns.*', 'preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.invoice-reassignments.*');
@@ -170,9 +170,6 @@
                         @endcanPermission
                         @canPermission('assets.view')
                             <a class="sidebar-sublink {{ $is('asset.*') ?: $pathActive('warehouse/asset-trustee', 'warehouse/asset-trustee/*') }}" href="{{ route('asset.hub') }}">امین اموال</a>
-                        @endcanPermission
-                        @canPermission('warehouse_map.view')
-                            <a class="sidebar-sublink {{ $is('warehouse-map.*') ?: $pathActive('warehouse-map', 'warehouse-map/*') }}" href="{{ route('warehouse-map.index') }}">نقشه انبار</a>
                         @endcanPermission
                         @canPermission('inventory.count.view')
                             <a class="sidebar-sublink {{ $is('stocktake.*', 'stocktake.index') ?: $pathActive('stocktake', 'stocktake/*') }}" href="{{ route('stocktake.index') }}">انبارگردانی</a>
