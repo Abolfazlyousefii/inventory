@@ -38,6 +38,11 @@ class ProductStockLedgerController extends Controller
                 $sources[$row->id]=['label'=>$receipt->receipt_number,'url'=>route('warehouse.inbound.show',$receipt->id)];
             }
         }
+        $returnRows=$movements->getCollection()->filter(fn($row)=>$row->reference_type===\App\Models\PurchaseReturn::class&&$row->reference_id);
+        if($returnRows->isNotEmpty()){
+            $returns=\App\Models\PurchaseReturn::withTrashed()->whereIn('id',$returnRows->pluck('reference_id'))->pluck('document_number','id');
+            foreach($returnRows as $row)if($returns->has($row->reference_id))$sources[$row->id]=['label'=>'برگشت از خرید '.$returns[$row->reference_id],'url'=>route('purchase-returns.show',$row->reference_id)];
+        }
         foreach($movements as $row) if(!($row instanceof StockMovement)) $sources[$row->id]=['label'=>$row->reference,'url'=>$row->source_url];
         return view('products.stock-ledger',compact('product','selectedVariant','movements','summary','sources'));
     }

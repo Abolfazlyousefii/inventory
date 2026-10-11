@@ -3,7 +3,7 @@
 @push('styles')<link rel="stylesheet" href="{{ asset('css/product-stock-ledger.css') }}?v=20261010c">@endpush
 @section('content')
 @php
-$reasons=['purchase'=>'خرید','sale'=>'فروش','return'=>'مرجوعی','sales_return'=>'برگشت از فروش','transfer'=>'انتقال انبار','adjustment'=>'اصلاح موجودی','purchase_item_added'=>'افزودن ردیف خرید','purchase_item_quantity_changed'=>'تغییر تعداد خرید','purchase_item_removed'=>'حذف ردیف خرید','invoice_adjustment_return'=>'برگشت اصلاح فاکتور','invoice_cancel_return'=>'برگشت لغو فاکتور','stocktake'=>'انبارگردانی','stock_count'=>'انبارگردانی','reservation'=>'رزرو','reserve'=>'رزرو','reservation_release'=>'آزادسازی رزرو'];
+$reasons=['purchase_return'=>'برگشت از خرید','purchase_return_restore'=>'بازگشت موجودی؛ اصلاح یا حذف برگشت از خرید','purchase'=>'خرید','sale'=>'فروش','return'=>'مرجوعی','sales_return'=>'برگشت از فروش','transfer'=>'انتقال انبار','adjustment'=>'اصلاح موجودی','purchase_item_added'=>'افزودن ردیف خرید','purchase_item_quantity_changed'=>'تغییر تعداد خرید','purchase_item_removed'=>'حذف ردیف خرید','invoice_adjustment_return'=>'برگشت اصلاح فاکتور','invoice_cancel_return'=>'برگشت لغو فاکتور','stocktake'=>'انبارگردانی','stock_count'=>'انبارگردانی','reservation'=>'رزرو','reserve'=>'رزرو','reservation_release'=>'آزادسازی رزرو'];
 @endphp
 <div class="psl">
     <header class="psl-heading"><div><span>گردش موجودی کالا</span><h1>{{ $product->name }}</h1><p>{{ $selectedVariant?->variant_name ?: 'همهٔ تنوع‌ها' }}</p></div><a class="btn btn-outline-secondary" href="{{ route('products.index') }}">بازگشت به کالاها</a></header>
