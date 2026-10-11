@@ -4,15 +4,12 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
-use App\Models\Warehouse;
 use App\Support\SalesDocumentTotals;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
 class SalesPrintDocumentService
 {
-    public function __construct(private readonly WarehouseMapService $warehouseMapService) {}
-
     public function invoiceData(Invoice $invoice, string $mode = 'warehouse'): array
     {
         $invoice->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'payments', 'seller', 'preinvoiceOrder.seller', 'preinvoiceOrder.creator', 'shippingMethod', 'customer']);
@@ -109,16 +106,13 @@ class SalesPrintDocumentService
 
     private function items(EloquentCollection|Collection $items): Collection
     {
-        $warehouseId = (int) (Warehouse::query()->where('type', 'central')->value('id') ?: Warehouse::query()->value('id'));
-
-        return $items->values()->map(function ($item) use ($warehouseId) {
+        return $items->values()->map(function ($item) {
             $variant = $item->variant;
             $product = $item->product;
 
             return [
                 'description' => $this->formatInvoiceItemDescription($item),
                 'inventoryCode' => $this->inventoryCode($variant, $product),
-                'warehouseMap' => $variant ? $this->warehouseMap((int) $variant->id, $warehouseId) : 'بدون نقشه',
                 'quantity' => (int) $item->quantity,
                 'unitPrice' => (int) $item->price,
                 'lineDiscount' => (int) ($item->line_discount_amount ?? 0),
@@ -221,20 +215,4 @@ class SalesPrintDocumentService
         return mb_strtolower(preg_replace('/[\s\-_|()]+/u', '', $value));
     }
 
-    private function warehouseMap(int $variantId, int $warehouseId): string
-    {
-        if ($warehouseId <= 0) {
-            return 'بدون نقشه';
-        }
-
-        $locations = $this->warehouseMapService->locationsForVariant($variantId, $warehouseId)
-            ->filter(fn ($stock) => (int) $stock->quantity > 0 && $stock->location);
-
-        if ($locations->isEmpty()) {
-            return 'بدون نقشه';
-        }
-
-        return $locations->map(fn ($stock) => $stock->location->code . ((int) $stock->quantity > 0 ? ' (' . number_format((int) $stock->quantity) . ')' : ''))
-            ->implode(' / ');
-    }
 }
