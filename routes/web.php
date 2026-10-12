@@ -354,6 +354,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('finance/reports/org-commission')->name('finance.org-commission.')->middleware(['auth', 'page.access:finance.seller_sales_documents'])->group(function () {
         Route::get('/', [OrgCommissionController::class, 'index'])->name('index');
 
+        Route::get('/settings', [OrgCommissionController::class, 'settings'])->name('settings');
+        Route::put('/settings', [OrgCommissionController::class, 'updateSettings'])->name('settings.update');
+
         Route::post('/departments', [OrgCommissionController::class, 'storeDepartment'])->name('departments.store');
         Route::put('/departments/{department}', [OrgCommissionController::class, 'updateDepartment'])->name('departments.update');
         Route::post('/departments/{department}/toggle', [OrgCommissionController::class, 'toggleDepartment'])->name('departments.toggle');

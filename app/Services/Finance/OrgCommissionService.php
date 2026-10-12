@@ -36,6 +36,7 @@ class OrgCommissionService
     public function updateDepartment(OrgCommissionDepartment $dept, array $data): OrgCommissionDepartment
     {
         return DB::transaction(function () use ($dept, $data) {
+            $dept = OrgCommissionDepartment::lockForUpdate()->findOrFail($dept->id);
             $dept->update([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -50,6 +51,7 @@ class OrgCommissionService
     public function toggleDepartment(OrgCommissionDepartment $dept): void
     {
         DB::transaction(function () use ($dept) {
+            $dept = OrgCommissionDepartment::lockForUpdate()->findOrFail($dept->id);
             $dept->update(['is_active' => ! $dept->is_active]);
 
             ActivityLogger::log(
@@ -65,6 +67,7 @@ class OrgCommissionService
     public function syncMembers(OrgCommissionDepartment $dept, array $members): void
     {
         DB::transaction(function () use ($dept, $members) {
+            $dept = OrgCommissionDepartment::lockForUpdate()->findOrFail($dept->id);
             $dept->members()->update(['is_active' => false]);
 
             foreach ($members as $index => $memberData) {
@@ -113,8 +116,13 @@ class OrgCommissionService
     public function createDocument(array $data, User $actor): OrgCommissionDocument
     {
         return DB::transaction(function () use ($data, $actor) {
+            $settings = app(OrgCommissionSettingsService::class);
+            $snapshot = $settings->snapshot(true);
+            if (! hash_equals($snapshot['version'], (string) ($data['settings_version'] ?? ''))) {
+                throw ValidationException::withMessages(['settings_version' => 'درصدها تغییر کرده است؛ صفحه را تازه کنید و سند را دوباره ثبت کنید.']);
+            }
             $totalSeller = $this->totalSellerCommission($data['period_from'], $data['period_to']);
-
+            $allocations = $settings->allocations($snapshot, $totalSeller);
             $document = OrgCommissionDocument::create([
                 'uuid' => (string) Str::uuid(),
                 'document_number' => 'PENDING-'.Str::uuid(),
@@ -122,21 +130,15 @@ class OrgCommissionService
                 'period_to' => $data['period_to'],
                 'total_seller_commission' => $totalSeller,
                 'total_allocated' => 0,
+                'commission_settings_snapshot' => $snapshot,
                 'notes' => $data['notes'] ?? null,
                 'status' => OrgCommissionDocument::STATUS_DRAFT,
                 'created_by' => $actor->id,
                 'updated_by' => $actor->id,
             ]);
-
-            $document->update([
-                'document_number' => 'OC-'.str_pad((string) $document->id, 6, '0', STR_PAD_LEFT),
-            ]);
-
-            if (! empty($data['allocations'])) {
-                $this->saveAllocations($document, $data['allocations'], $totalSeller);
-            }
-
-            ActivityLogger::log('org_commission_document.created', $document, 'سند پورسانت اداری ایجاد شد.');
+            $document->update(['document_number' => 'OC-'.str_pad((string) $document->id, 6, '0', STR_PAD_LEFT)]);
+            $this->saveCalculatedAllocations($document, $allocations);
+            ActivityLogger::logForActor($actor->id, 'org_commission_document.created', $document, 'سند پورسانت اداری با درصدهای ثابت تنظیمات ایجاد شد.', ['settings_version' => $snapshot['version']]);
 
             return $document->fresh(['allocations.department', 'allocations.memberShares.member']);
         });
@@ -144,85 +146,44 @@ class OrgCommissionService
 
     public function updateDocument(OrgCommissionDocument $document, array $data, User $actor): OrgCommissionDocument
     {
-        if (! $document->isDraft()) {
-            throw ValidationException::withMessages(['document' => 'فقط اسناد پیش‌نویس قابل ویرایش هستند.']);
-        }
-
         return DB::transaction(function () use ($document, $data, $actor) {
             $document = OrgCommissionDocument::query()->lockForUpdate()->findOrFail($document->id);
-
             if (! $document->isDraft()) {
                 throw ValidationException::withMessages(['document' => 'فقط اسناد پیش‌نویس قابل ویرایش هستند.']);
             }
-
+            $settings = app(OrgCommissionSettingsService::class);
+            // Recalculating a draft retains its own rates, even after settings change.
+            $snapshot = $settings->fromDocument($document);
             $totalSeller = $this->totalSellerCommission($data['period_from'], $data['period_to']);
-
-            $document->update([
-                'period_from' => $data['period_from'],
-                'period_to' => $data['period_to'],
-                'total_seller_commission' => $totalSeller,
-                'notes' => $data['notes'] ?? null,
-                'updated_by' => $actor->id,
-            ]);
-
-            $document->allocations()->each(function (OrgCommissionAllocation $allocation) {
-                $allocation->memberShares()->delete();
-            });
+            $allocations = $settings->allocations($snapshot, $totalSeller);
+            $document->allocations()->each(fn (OrgCommissionAllocation $a) => $a->memberShares()->delete());
             $document->allocations()->delete();
-
-            $document->update(['total_allocated' => 0]);
-
-            if (! empty($data['allocations'])) {
-                $this->saveAllocations($document, $data['allocations'], $totalSeller);
-            }
-
-            ActivityLogger::log('org_commission_document.updated', $document, 'سند پورسانت اداری ویرایش شد.');
+            $document->update([
+                'period_from' => $data['period_from'], 'period_to' => $data['period_to'],
+                'total_seller_commission' => $totalSeller, 'commission_settings_snapshot' => $snapshot,
+                'notes' => $data['notes'] ?? null, 'updated_by' => $actor->id,
+            ]);
+            $this->saveCalculatedAllocations($document, $allocations);
+            ActivityLogger::logForActor($actor->id, 'org_commission_document.updated', $document, 'سند پورسانت اداری با حفظ درصدهای زمان صدور محاسبه شد.');
 
             return $document->fresh(['allocations.department', 'allocations.memberShares.member']);
         });
     }
 
-    private function saveAllocations(OrgCommissionDocument $document, array $allocations, int $totalSeller): void
+    private function saveCalculatedAllocations(OrgCommissionDocument $document, array $allocations): void
     {
-        $totalAllocated = 0;
-
-        foreach ($allocations as $allocationData) {
-            $percentage = (float) $allocationData['percentage'];
-            if ($percentage <= 0) {
-                continue;
-            }
-
-            $amount = (int) round($totalSeller * $percentage / 100);
-            $totalAllocated += $amount;
-
+        $total = 0;
+        foreach ($allocations as $data) {
             $allocation = $document->allocations()->create([
-                'department_id' => (int) $allocationData['department_id'],
-                'percentage' => number_format($percentage, 4, '.', ''),
-                'allocated_amount' => $amount,
+                'department_id' => $data['department_id'], 'percentage' => $data['percentage'],
+                'allocated_amount' => $data['allocated_amount'],
             ]);
-
-            if (! empty($allocationData['members'])) {
-                $this->saveMemberShares($allocation, $allocationData['members']);
+            foreach ($data['members'] as $member) {
+                $allocation->memberShares()->create(['member_id' => $member['id'], 'share_amount' => $member['share_amount']]);
             }
+            $total += $data['allocated_amount'];
         }
-
-        $document->update(['total_allocated' => $totalAllocated]);
-    }
-
-    private function saveMemberShares(OrgCommissionAllocation $allocation, array $members): void
-    {
-        foreach ($members as $memberData) {
-            $shareAmount = (int) $memberData['share_amount'];
-            if ($shareAmount <= 0) {
-                continue;
-            }
-
-            $allocation->memberShares()->create([
-                'member_id' => (int) $memberData['member_id'],
-                'share_amount' => $shareAmount,
-                'notes' => $memberData['notes'] ?? null,
-            ]);
-        }
+        $document->update(['total_allocated' => $total]);
     }
 
     public function confirmDocument(OrgCommissionDocument $document, int $actorId): void
