@@ -234,4 +234,12 @@ class OrgCommissionFixedRatesTest extends TestCase
             file_put_contents($directory.'/settings-local.html', $settings);
         }
     }
+
+    public function test_settings_routes_use_the_existing_financial_page_permission(): void
+    {
+        $expected=\App\Support\PageAccessCatalog::permissionsForRoute('finance.org-commission.index');
+        $this->assertNotEmpty($expected);
+        $this->assertSame($expected,\App\Support\PageAccessCatalog::permissionsForRoute('finance.org-commission.settings'));
+        $this->assertSame($expected,\App\Support\PageAccessCatalog::permissionsForRoute('finance.org-commission.settings.update'));
+    }
 }

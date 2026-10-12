@@ -243,6 +243,8 @@ class PageAccessCatalog
         'finance.commission-rates.import.preview' => ['finance.seller_sales_documents'],
         'finance.commission-rates.import.apply' => ['finance.seller_sales_documents'],
         'finance.org-commission.index' => ['finance.seller_sales_documents'],
+        'finance.org-commission.settings' => ['finance.seller_sales_documents'],
+        'finance.org-commission.settings.update' => ['finance.seller_sales_documents'],
         'finance.org-commission.departments.store' => ['finance.seller_sales_documents'],
         'finance.org-commission.departments.update' => ['finance.seller_sales_documents'],
         'finance.org-commission.departments.toggle' => ['finance.seller_sales_documents'],
