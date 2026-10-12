@@ -70,8 +70,15 @@ class SalesReturnLookupController extends Controller
         }
         $invoice->load('items.product', 'items.variant');
         $ids = $invoice->items->pluck('id')->all();
-        $prev = $this->calculator->previouslyReturnedQuantities($ids);
-        $prevAmounts = $this->calculator->previouslyReturnedAmounts($ids);
+        $excludeId = null;
+        if ($request->filled('document_id')) {
+            $editing = \App\Models\SalesReturnDocument::whereKey((int) $request->document_id)->where('invoice_id', $invoice->id)->firstOrFail();
+            $editRoute = $editing->isApplied() ? 'vouchers.return-from-sale.applied.edit' : 'vouchers.return-from-sale.edit';
+            abort_unless(($editing->isDraft() || $editing->isPendingWarehouse() || $editing->isApplied()) && $request->user() && \App\Support\PageAccessCatalog::userCanRoute($request->user(), $editRoute), 403);
+            $excludeId = (int) $editing->id;
+        }
+        $prev = $this->calculator->previouslyReturnedQuantities($ids, $excludeId);
+        $prevAmounts = $this->calculator->previouslyReturnedAmounts($ids, $excludeId);
         $breakdowns = $this->calculator->invoiceItemBreakdowns($invoice);
 
         return ['items' => $invoice->items->map(function ($item) use ($prev, $prevAmounts, $breakdowns) {

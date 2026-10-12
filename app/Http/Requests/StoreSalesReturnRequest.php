@@ -160,7 +160,7 @@ class StoreSalesReturnRequest extends FormRequest
                     }
                 }
                 $routeDocument = $this->route('document');
-                $excludeDocumentId = $routeDocument?->isApplied() ? (int) $routeDocument->id : null;
+                $excludeDocumentId = ($routeDocument?->isApplied() || $routeDocument?->isPendingWarehouse()) ? (int) $routeDocument->id : null;
                 $preview = app(SalesReturnCalculationService::class)->calculateInternalPreview(
                     $invoice,
                     $items->all(),

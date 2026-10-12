@@ -67,7 +67,7 @@ class WarehouseInboundService
             })->values()->all();
 
         if ($existing) {
-            return $this->syncSalesReturnReceipt($existing, $lines, $actorId);
+            return $this->syncSalesReturnReceipt($existing, $lines, $actorId, $document);
         }
 
         if ($lines === []) {
@@ -94,15 +94,15 @@ class WarehouseInboundService
     private function syncSalesReturnReceipt(
         WarehouseInboundReceipt $receipt,
         array $lines,
-        ?int $actorId
+        ?int $actorId,
+        SalesReturnDocument $document
     ): ?WarehouseInboundReceipt {
         if (! $receipt->isPending()) {
             return $receipt;
         }
 
         if ($lines === []) {
-            $receipt->items()->delete();
-            $receipt->delete();
+            $receipt->update(['status' => WarehouseInboundReceipt::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'review_note' => 'لغو ورودی پس از اصلاح گارانتی؛ سند دیگر قلم ورودی مرکزی ندارد.']);
 
             return null;
         }
@@ -132,6 +132,8 @@ class WarehouseInboundService
 
         $receipt->update([
             'expected_quantity' => (int) collect($lines)->sum('expected_quantity'),
+            'request_note' => $document->description,
+            'source_meta' => array_merge($receipt->source_meta ?? [], ['return_version' => \App\Support\InboundReviewVersion::token($document), 'return_reason' => $document->return_reason]),
             'updated_at' => now(),
         ]);
 
@@ -256,10 +258,21 @@ class WarehouseInboundService
         ];
     }
 
-    public function receive(WarehouseInboundReceipt $receipt, array $submittedItems, int $actorId, ?string $reviewNote = null): WarehouseInboundReceipt
+    public function receive(WarehouseInboundReceipt $receipt, array $submittedItems, int $actorId, ?string $reviewNote = null, ?string $expectedVersion = null): WarehouseInboundReceipt
     {
-        return DB::transaction(function () use ($receipt, $submittedItems, $actorId, $reviewNote) {
+        return DB::transaction(function () use ($receipt, $submittedItems, $actorId, $reviewNote, $expectedVersion) {
+            // Use the same document -> customer -> invoice -> receipt lock order as return edits.
+            if ($receipt->source_type === WarehouseInboundReceipt::SOURCE_SALES_RETURN) {
+                $source = SalesReturnDocument::whereKey($receipt->source_id)->lockForUpdate()->firstOrFail();
+                \App\Models\Customer::whereKey($source->customer_id)->lockForUpdate()->firstOrFail();
+                if ($source->isInternal()) Invoice::whereKey($source->invoice_id)->lockForUpdate()->firstOrFail();
+            }
             $locked = WarehouseInboundReceipt::query()->whereKey($receipt->id)->lockForUpdate()->firstOrFail();
+            $locked->load('items');
+            if ($expectedVersion !== null && ! hash_equals(\App\Support\InboundReviewVersion::token($locked), $expectedVersion)) {
+                throw ValidationException::withMessages(['receipt' => 'این سند توسط گارانتی یا کاربر دیگری اصلاح شده است؛ صفحه را تازه کنید و آخرین نسخه را بررسی کنید.']);
+            }
+
             if (! $locked->isPending()) {
                 throw ValidationException::withMessages([
                     'receipt' => 'این رسید قبلاً بررسی شده و امکان ثبت مجدد آن وجود ندارد.',
