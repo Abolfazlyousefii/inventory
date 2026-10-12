@@ -16,12 +16,13 @@ class OrgCommissionDocument extends Model
 
     protected $fillable = [
         'uuid', 'document_number', 'period_from', 'period_to',
-        'total_seller_commission', 'total_allocated', 'notes', 'status',
+        'total_seller_commission', 'total_allocated', 'notes', 'status', 'commission_settings_snapshot',
         'created_by', 'updated_by', 'confirmed_by', 'confirmed_at',
         'finalized_by', 'finalized_at',
     ];
 
     protected $casts = [
+        'commission_settings_snapshot' => 'array',
         'period_from' => 'date',
         'period_to' => 'date',
         'total_seller_commission' => 'integer',
