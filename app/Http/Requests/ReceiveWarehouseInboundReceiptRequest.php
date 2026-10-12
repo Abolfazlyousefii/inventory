@@ -15,6 +15,7 @@ class ReceiveWarehouseInboundReceiptRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'receipt_version' => ['required', 'string', 'size:64'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.id' => ['required', 'integer', 'distinct'],
             'items.*.accepted_quantity' => ['required', 'integer', 'min:0'],
@@ -31,6 +32,7 @@ class ReceiveWarehouseInboundReceiptRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'receipt_version.required' => 'صفحهٔ دریافت قدیمی است؛ صفحه را تازه کنید و دوباره بررسی کنید.',
             'items.required' => 'حداقل یک قلم برای دریافت لازم است.',
             'items.*.accepted_quantity.min' => 'تعداد دریافت‌شده نمی‌تواند منفی باشد.',
             'items.*.accepted_quantity.integer' => 'تعداد دریافت‌شده باید عدد صحیح معتبر باشد.',

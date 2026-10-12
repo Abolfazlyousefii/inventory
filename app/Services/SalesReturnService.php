@@ -2,6 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\SalesReturnDocumentRevision;
+use App\Models\WarehouseInboundReceipt;
+use App\Support\InboundReviewVersion;
+use Illuminate\Support\Str;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -47,11 +51,87 @@ class SalesReturnService
 
     public function updateDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument
     {
-        if (! $doc->isDraft()) {
-            throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل ویرایش است.']);
-        }
+        return DB::transaction(function () use ($doc, $data, $actorId) {
+            $locked = SalesReturnDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
+            if (! $locked->isDraft()) throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            return $this->persistDraft($locked, $data, $actorId);
+        });
+    }
 
-        return DB::transaction(fn () => $this->persistDraft($doc, $data, $actorId));
+    public function updatePending(SalesReturnDocument $document, array $data, int $actorId): SalesReturnDocument
+    {
+        return DB::transaction(function () use ($document, $data, $actorId) {
+            $doc = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
+            $doc->load('items');
+            if (! $doc->isPendingWarehouse()) {
+                throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است. سند تأییدشده فقط از مسیر اصلاح سند تأییدشده قابل تغییر است.']);
+            }
+            if (! hash_equals(InboundReviewVersion::token($doc), (string) ($data['document_version'] ?? ''))) {
+                throw ValidationException::withMessages(['document' => 'این سند هم‌زمان تغییر کرده است؛ صفحه را تازه کنید و دوباره بررسی کنید.']);
+            }
+            if (empty($data['items']) || collect($data['items'])->contains(fn ($row) => filter_var($row['return_quantity'] ?? null, FILTER_VALIDATE_INT) === false || (int) ($row['return_quantity'] ?? 0) < 1)) {
+                throw ValidationException::withMessages(['items' => 'حداقل یک قلم با تعداد صحیح مثبت لازم است.']);
+            }
+            $reason = trim((string) ($data['adjustment_reason'] ?? ''));
+            if (mb_strlen($reason) < 3 || mb_strlen($reason) > 1000) {
+                throw ValidationException::withMessages(['adjustment_reason' => 'دلیل اصلاح را وارد کنید (۳ تا ۱۰۰۰ کاراکتر).']);
+            }
+            foreach (['source_type', 'customer_id', 'invoice_id', 'external_invoice_number', 'external_invoice_date'] as $field) {
+                $original = $field === 'external_invoice_date' ? $doc->external_invoice_date?->format('Y-m-d') : $doc->$field;
+                if ((string) ($data[$field] ?? '') !== (string) ($original ?? '')) {
+                    throw ValidationException::withMessages(['document' => 'مشتری و منبع سند ارسال‌شده قابل تغییر نیستند.']);
+                }
+            }
+            Customer::whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
+            if ($doc->isInternal()) {
+                $invoice = Invoice::whereKey($doc->invoice_id)->lockForUpdate()->firstOrFail();
+                if ($invoice->status !== Invoice::STATUS_SHIPPED) {
+                    throw ValidationException::withMessages(['invoice_id' => 'فاکتور مرجع دیگر در وضعیت ارسال‌شده نیست.']);
+                }
+                $preview = collect($this->calculator->calculateInternalPreview($invoice, $data['items'], (int) $doc->id))->keyBy(fn ($row) => (int) $row['invoice_item']->id);
+                $seen = [];
+                foreach ($data['items'] as $index => $input) {
+                    $id = (int) ($input['invoice_item_id'] ?? 0);
+                    $row = $preview->get($id);
+                    if (! $row || isset($seen[$id]) || (int) $input['return_quantity'] > (int) $row['returnable_quantity']) {
+                        throw ValidationException::withMessages(['items.'.$index.'.return_quantity' => 'تعداد یا قلم برگشت نامعتبر است؛ سقف قابل برگشت تغییر کرده است.']);
+                    }
+                    $seen[$id] = true;
+                }
+            }
+            $receipts = WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $doc->id)->where('status', 'pending')->lockForUpdate()->get();
+            if ($receipts->count() !== 1) {
+                throw ValidationException::withMessages(['document' => 'صف ورودی این سند نیاز به بررسی دارد؛ اصلاح انجام نشد.']);
+            }
+            $receipt = $receipts->first();
+            $before = ['document' => $doc->getAttributes(), 'items' => $doc->items->map->getAttributes()->all(), 'receipt' => $receipt->getAttributes()];
+            $materializedByVariant = $doc->items->filter(fn ($item) => $item->created_product_id && $item->created_variant_id)->keyBy('product_variant_id');
+            $materialized = $doc->items->filter(fn ($item) => $item->created_product_id && $item->created_variant_id)->keyBy(fn ($item) => $item->new_product_payload['selected_variants'][0]['temporary_variant_uuid'] ?? ('variant-'.$item->product_variant_id));
+            $doc = $this->persistDraft($doc, $data, $actorId);
+            foreach ($doc->items as $item) {
+                $original = $materialized->get($item->new_product_payload['selected_variants'][0]['temporary_variant_uuid'] ?? ('variant-'.($data['items'][(int) $item->sort_order - 1]['product_variant_id'] ?? 0)))
+                    ?? $materializedByVariant->get((int) ($data['items'][(int) $item->sort_order - 1]['product_variant_id'] ?? 0));
+                if ($original && $item->item_source === SalesReturnDocumentItem::SOURCE_NEW_PRODUCT) {
+                    $item->update(['product_id' => $original->product_id, 'product_variant_id' => $original->product_variant_id, 'created_product_id' => $original->created_product_id, 'created_variant_id' => $original->created_variant_id, 'new_product_payload' => $original->new_product_payload, 'product_name_snapshot' => $original->product_name_snapshot, 'variant_name_snapshot' => $original->variant_name_snapshot]);
+                }
+            }
+
+            if ($doc->isInternal()) {
+                $this->assertInternalReturnablesStillValid($doc);
+            }
+            if ($doc->isSazehHesab()) {
+                $this->materializeNewProductGroups($doc);
+                $doc = $doc->fresh('items');
+            }
+            $queued = $this->warehouseInbound->queueSalesReturn($doc->fresh(['items.product', 'items.variant']), $actorId, $receipt->operation_key);
+            if (! $queued) {
+                $this->warehouseInbound->finalizeSalesReturnWithoutInbound($doc, $actorId);
+            }
+            $doc = $doc->fresh('items');
+            SalesReturnDocumentRevision::create(['document_id' => $doc->id, 'action' => 'pending_update', 'token' => (string) Str::uuid(), 'reason' => $reason, 'before_snapshot' => $before, 'after_snapshot' => ['document' => $doc->getAttributes(), 'items' => $doc->items->map->getAttributes()->all(), 'receipt' => $receipt->fresh()->getAttributes()], 'previous_total' => $before['document']['total_refund_amount'], 'new_total' => $doc->total_refund_amount, 'created_by' => $actorId, 'created_at' => now()]);
+
+            return $doc;
+        });
     }
 
     private function persistDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument
@@ -95,11 +175,12 @@ class SalesReturnService
 
     public function cancelDraft(SalesReturnDocument $doc, ?int $actorId, ?string $reason = null): SalesReturnDocument
     {
-        if (! $doc->isDraft()) {
-            throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل لغو است.']);
-        } $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => $reason]);
-
-        return $doc;
+        return DB::transaction(function () use ($doc, $actorId, $reason) {
+            $locked = SalesReturnDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
+            if (! $locked->isDraft()) throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل لغو است؛ وضعیت سند تغییر کرده است.']);
+            $locked->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => $reason]);
+            return $locked;
+        });
     }
 
     public function apply(SalesReturnDocument $document, ?int $actorId): SalesReturnDocument
@@ -164,7 +245,7 @@ class SalesReturnService
         } if ($invoice->status !== Invoice::STATUS_SHIPPED && empty($data['override_invoice_status'])) {
             throw ValidationException::withMessages(['invoice_id' => 'فقط فاکتور ارسال‌شده مجاز است.']);
         } $inputRows = collect($data['items'] ?? [])->keyBy(fn ($r) => (int) ($r['invoice_item_id'] ?? 0));
-        $rows = $this->calculator->calculateInternalPreview($invoice, $data['items'] ?? []);
+        $rows = $this->calculator->calculateInternalPreview($invoice, $data['items'] ?? [], (int) $doc->id);
         $out = [];
         foreach ($rows as $r) {
             $it = $r['invoice_item'];
@@ -328,7 +409,7 @@ class SalesReturnService
             throw ValidationException::withMessages(['invoice_id' => 'فاکتور متعلق به مشتری سند نیست.']);
         }
 
-        $rows = $this->calculator->calculateInternalPreview($invoice, $previewRows);
+        $rows = $this->calculator->calculateInternalPreview($invoice, $previewRows, (int) $doc->id);
         $byId = collect($rows)->keyBy(fn ($row) => (int) $row['invoice_item']->id);
 
         foreach ($doc->items as $idx => $item) {
