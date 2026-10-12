@@ -31,21 +31,30 @@ class CustomerApiController extends Controller
             ? "TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))"
             : "TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')))";
 
+        // Match both stored alphabets without rewriting customer names.
+        $normalizedName = strtr($q, ['ي' => 'ی', 'ك' => 'ک']);
+        $normalizedNameLike = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $normalizedName).'%';
+        $nameExpressions = ['first_name', 'last_name', 'name', $fullNameExpression];
+
         $items = Customer::query()
             ->withBalance()
-            ->where(function($qq) use ($terms, $fullNameExpression){
+            ->where(function($qq) use ($terms, $fullNameExpression, $normalizedNameLike, $nameExpressions){
                 foreach ($terms as $term) {
                     $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
                     $compactLike = '%' . str_replace(['%', '_'], ['\%', '\_'], preg_replace('/[\s\-()]+/u', '', $term)) . '%';
 
                     $qq->orWhere('first_name', 'like', $like)
                         ->orWhere('last_name', 'like', $like)
+                        ->orWhere('name', 'like', $like)
                         ->orWhereRaw("{$fullNameExpression} LIKE ?", [$like])
                         ->orWhere('mobile', 'like', $like);
 
                     if ($compactLike !== '%%') {
                         $qq->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(mobile, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?", [$compactLike]);
                     }
+                }
+                foreach ($nameExpressions as $expression) {
+                    $qq->orWhereRaw("REPLACE(REPLACE({$expression}, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$normalizedNameLike]);
                 }
             })
             ->orderByDesc('id')
