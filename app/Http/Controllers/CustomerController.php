@@ -9,6 +9,7 @@ use App\Http\Requests\Customer\StoreCustomerRequest;
 use App\Http\Requests\Customer\UpdateCustomerRequest;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -92,7 +93,7 @@ class CustomerController extends Controller
 
     public function store(StoreCustomerRequest $request, CreateCustomerAction $action)
     {
-        $customer = $action->execute($request->validated());
+        $customer = $this->persistCustomer(fn () => $action->execute($request->validated()), (int) $request->input('primary_phone', 0));
 
         return redirect()
             ->route('customers.show', $customer)
@@ -101,7 +102,7 @@ class CustomerController extends Controller
 
     public function update(UpdateCustomerRequest $request, Customer $customer, UpdateCustomerAction $action)
     {
-        $action->execute($customer, $request->validated());
+        $this->persistCustomer(fn () => $action->execute($customer, $request->validated()), (int) $request->input('primary_phone', 0));
 
         return redirect()
             ->route('customers.show', $customer)
@@ -111,6 +112,23 @@ class CustomerController extends Controller
     public function destroy(Customer $customer)
     {
         abort(403, 'حذف مشتری در نرم‌افزار مجاز نیست؛ اطلاعات و سوابق مشتری باید حفظ شود.');
+    }
+
+    /** A concurrent registration may win after form validation; the action has rolled back here. */
+    private function persistCustomer(callable $write, int $primary): Customer
+    {
+        try {
+            return $write();
+        } catch (UniqueConstraintViolationException $exception) {
+            foreach (['customers_mobile_unique', 'customer_phones_phone_unique', 'customers.mobile', 'customer_phones.phone'] as $constraint) {
+                if (str_contains($exception->getMessage(), $constraint)) {
+                    throw ValidationException::withMessages([
+                        "phones.{$primary}.phone" => 'این شماره موبایل قبلاً برای مشتری دیگری ثبت شده است.',
+                    ]);
+                }
+            }
+            throw $exception;
+        }
     }
 
     private function parseAmount($value): ?int

@@ -47,6 +47,7 @@ class UpdateCustomerRequest extends FormRequest
                 new IranianMobile,
                 'distinct',
                 Rule::unique('customer_phones', 'phone')->where(fn ($query) => $query->where('customer_id', '<>', $customer->id)),
+                Rule::unique('customers', 'mobile')->ignore($customer->id),
             ],
             'primary_phone' => ['required', 'integer', Rule::in(array_keys($this->input('phones', [])))],
         ];
