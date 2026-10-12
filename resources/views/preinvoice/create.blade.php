@@ -47,6 +47,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 	@endphp
 
 	<style>
+        @import url("{{ asset('css/pages/preinvoice-create-theme.css') }}?v={{ filemtime(public_path('css/pages/preinvoice-create-theme.css')) }}");
 		:root {
 			--brand: #33c7c0;
 			--brand-dark: #0c5367;
