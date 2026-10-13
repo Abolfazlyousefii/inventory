@@ -13,7 +13,33 @@
         drawer.querySelectorAll('input[name*="[note]"]').forEach(input=>input.addEventListener('input',syncReviewNoteRequirement));
         syncReviewNoteRequirement();
         const form=drawer.querySelector('[data-wiq-form]');
-        form?.addEventListener('submit',()=>{form.classList.add('is-submitting');const btn=form.querySelector('[data-wiq-submit]');if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}});
+        form?.addEventListener('submit',event=>{
+            if(form.classList.contains('is-submitting')){event.preventDefault();return;}
+            try{
+                const rows=[...form.querySelectorAll('[data-wiq-item]')];
+                const items=rows.map(row=>{
+                    const id=row.querySelector('input[name$="[id]"]');
+                    const qty=row.querySelector('.wiq-qty');
+                    const warehouse=row.querySelector('select[name*="received_warehouse_id"]');
+                    const note=row.querySelector('input[name$="[note]"]');
+                    if(!id||!qty||!warehouse)throw new Error('incomplete');
+                    return {id:id.value,accepted_quantity:qty.value,received_warehouse_id:warehouse.value,note:note?.value||''};
+                });
+                if(!items.length||items.length>5000)throw new Error('count');
+                const setHidden=(name,value)=>{
+                    let input=form.querySelector(`input[name="${name}"]`);
+                    if(!input){input=document.createElement('input');input.type='hidden';input.name=name;form.append(input);}
+                    input.value=value;
+                };
+                setHidden('items_payload',JSON.stringify(items));
+                setHidden('items_payload_count',String(items.length));
+                // Do not send thousands of nested fields alongside the JSON package.
+                form.querySelectorAll('[name^="items["]').forEach(input=>{input.disabled=true;});
+                form.classList.add('is-submitting');
+                const btn=form.querySelector('[data-wiq-submit]');
+                if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}
+            }catch(error){event.preventDefault();window.alert('اطلاعات اقلام رسید کامل نیست؛ صفحه را تازه کنید و دوباره بررسی کنید.');}
+        });
     };
     const syncReviewNoteRequirement=()=>{
         const note=content.querySelector('[data-wiq-review-note]');

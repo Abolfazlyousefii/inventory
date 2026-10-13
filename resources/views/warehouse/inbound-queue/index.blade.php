@@ -153,5 +153,5 @@
 @endsection
 
 @push('scripts')
-    <script src="{{ asset('js/warehouse-inbound-queue.js') }}" defer></script>
+    <script src="{{ asset('js/warehouse-inbound-queue.js') }}?v={{ filemtime(public_path('js/warehouse-inbound-queue.js')) }}" defer></script>
 @endpush
