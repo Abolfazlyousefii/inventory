@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\SalesReturnCorrectionController;
 use App\Http\Controllers\VoucherSalesReturnController;
+use App\Http\Requests\UpdateSalesReturnRequest;
 use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
@@ -245,6 +246,7 @@ class SalesReturnCorrectionWorkflowTest extends PendingSalesReturnEditTest
         $receipt = WarehouseInboundReceipt::create(['receipt_number' => 'WI-1', 'source_type' => 'sales_return', 'source_id' => $doc->id, 'source_document_number' => $doc->document_number, 'operation_key' => 'initial', 'status' => 'received', 'expected_quantity' => 2, 'accepted_quantity' => 2, 'reviewed_by' => 2, 'reviewed_at' => now()]);
         $received = $receipt->items()->create(['source_item_type' => SalesReturnDocumentItem::class, 'source_item_id' => $item->id, 'product_id' => 1, 'product_variant_id' => 1, 'suggested_warehouse_id' => 1, 'received_warehouse_id' => 1, 'expected_quantity' => 2, 'accepted_quantity' => 2]);
         StockMovement::create(['product_id' => 1, 'product_variant_id' => 1, 'warehouse_id' => 1, 'type' => 'in', 'quantity' => 2, 'reason' => 'sales_return', 'reference_type' => WarehouseInboundReceiptItem::class, 'reference_id' => $received->id]);
+        $this->assertTrue(app(SalesReturnQueryService::class)->appliedHealthCheck($doc->fresh('items'))['ok']);
         $beforeReceipt = $receipt->fresh()->getAttributes();
         $beforeItem = $received->fresh()->getAttributes();
         $service = app(SalesReturnCorrectionService::class);
@@ -341,7 +343,14 @@ class SalesReturnCorrectionWorkflowTest extends PendingSalesReturnEditTest
         $service->approve($request->fresh(), 'finance', 3, 'توضیحات بررسی شد');
         $this->assertSame('یادداشت اصلاح‌شده', $doc->fresh()->description);
         $this->assertSame('REF-1', $doc->fresh()->reference_number);
-        $this->assertSame(0,StockMovement::count());
-        $this->assertSame(1,CustomerLedger::count());
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(1, CustomerLedger::count());
+    }
+
+    public function test_pending_edit_reason_validation_is_in_persian(): void
+    {
+        $request = new UpdateSalesReturnRequest;
+        $validator = app('validator')->make(['adjustment_reason' => ''], ['adjustment_reason' => ['required']], $request->messages());
+        $this->assertStringContainsString('دلیل اصلاح', $validator->errors()->first('adjustment_reason'));
     }
 }

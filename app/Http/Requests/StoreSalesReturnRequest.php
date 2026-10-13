@@ -236,6 +236,18 @@ class StoreSalesReturnRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'customer_id.required' => 'مشتری را انتخاب کنید.',
+            'customer_id.exists' => 'مشتری انتخاب‌شده دیگر موجود نیست.',
+            'invoice_id.required_if' => 'فاکتور مرجع را انتخاب کنید.',
+            'external_invoice_number.required_if' => 'شماره فاکتور سازه‌حساب را وارد کنید.',
+            'external_invoice_date.required_if' => 'تاریخ فاکتور سازه‌حساب را وارد کنید.',
+            'external_invoice_date.date_format' => 'تاریخ فاکتور نامعتبر است؛ تاریخ شمسی را دوباره بررسی کنید.',
+            'default_destination_warehouse_id.required' => 'انبار مقصد را انتخاب کنید.',
+            'default_destination_warehouse_id.exists' => 'انبار مقصد نامعتبر است.',
+            'items.required' => 'حداقل یک کالا به سند اضافه کنید.',
+            'items.min' => 'حداقل یک کالا به سند اضافه کنید.',
+            'items.*.return_quantity.integer' => 'تعداد برگشت باید عدد صحیح باشد.',
+            'items.*.return_quantity.min' => 'تعداد برگشت باید حداقل یک عدد باشد.',
             'items.*.new_product_payload.is_sellable.boolean' => 'وضعیت قابل فروش کالا نامعتبر است.',
             'items.*.new_product_payload.use_models.boolean' => 'وضعیت مدل‌لیست کالا نامعتبر است.',
             'items.*.new_product_payload.use_designs.boolean' => 'وضعیت طرح‌بندی کالا نامعتبر است.',

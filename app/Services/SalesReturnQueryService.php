@@ -115,6 +115,9 @@ class SalesReturnQueryService
         $correctionIds = \Illuminate\Support\Facades\Schema::hasTable('sales_return_corrections')
             ? \App\Models\SalesReturnCorrection::where('document_id', $document->id)->where('status', 'applied')->pluck('id')
             : collect();
+        $receiptIds = \Illuminate\Support\Facades\Schema::hasTable('warehouse_inbound_receipts')
+            ? \App\Models\WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$document->id)->whereIn('status',['received','discrepancy'])->pluck('id')
+            : collect();
         $correctionLedger = CustomerLedger::where('reference_type', \App\Models\SalesReturnCorrection::class)->whereIn('reference_id', $correctionIds)->get(['type', 'amount']);
         $ledgerAmount += (int)$correctionLedger->sum(fn($row) => $row->type === 'credit' ? (int)$row->amount : -(int)$row->amount);
         $positiveItems = $document->items->filter(fn ($item) => (int) $item->return_quantity > 0);
@@ -122,8 +125,7 @@ class SalesReturnQueryService
             ? 0
             : StockMovement::where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $positiveItems->pluck('id'))->count();
         $stockComplete = $movementCount >= $positiveItems->count();
-        if ($correctionIds->isNotEmpty()) {
-            $receiptIds = \App\Models\WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$document->id)->whereIn('status',['received','discrepancy'])->pluck('id');
+        if ($correctionIds->isNotEmpty() || $receiptIds->isNotEmpty()) {
             $receiptItemIds = \App\Models\WarehouseInboundReceiptItem::whereIn('receipt_id',$receiptIds)->pluck('id');
             $revisionIds = $document->revisions()->whereIn('action',['applied_updated','applied_voided'])->pluck('id');
             $legacyAdjustments = CustomerLedger::where(function($query) use ($receiptIds,$revisionIds) {
