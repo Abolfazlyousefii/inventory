@@ -1069,7 +1069,10 @@ class InvoiceController extends Controller
         $backUrl = $this->invoiceShowBackUrl($user);
         $statusLabels = $this->statusService->labels();
 
+        $timeline = app(\App\Services\InvoiceTimelineService::class)->entries($invoice);
+
         return view('invoices.show', compact(
+            'timeline',
             'invoice',
             'paidTotal',
             'remainingAmount',

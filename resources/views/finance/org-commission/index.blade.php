@@ -18,6 +18,7 @@
             <h1 class="h3 mb-1">پورسانت اداری</h1>
             <p class="text-muted mb-0">تعریف واحدهای سازمانی، اعضا و تخصیص سهمی از کل پورسانت فروشندگان</p>
         </div>
+        <a href="{{ route('finance.org-commission.settings') }}" class="btn btn-primary">تنظیمات درصد افراد</a>
         <a href="{{ route('finance.seller-sales.index') }}" class="btn btn-outline-secondary">بازگشت به اسناد پورسانت</a>
     </div>
 
@@ -77,7 +78,7 @@
                                 @if($members->isNotEmpty())
                                     <ul class="list-unstyled small text-muted mb-3">
                                         @foreach($members as $member)
-                                            <li>• {{ $member->name }}@if($member->role) <span class="text-black-50">({{ $member->role }})</span>@endif</li>
+                                            <li>• {{ $member->name }} <strong>{{ $member->percentage !== null ? rtrim(rtrim($member->percentage, '0'), '.').'٪' : 'درصد تعیین نشده' }}</strong>@if($member->role) <span class="text-black-50">({{ $member->role }})</span>@endif</li>
                                         @endforeach
                                     </ul>
                                 @endif

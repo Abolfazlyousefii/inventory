@@ -16,6 +16,7 @@
 
 <form method="POST" action="{{ route('warehouse.inbound.receive', $receipt) }}" class="wiq-receive-form" data-wiq-form>
     @csrf
+    <input type="hidden" name="receipt_version" value="{{ \App\Support\InboundReviewVersion::token($receipt) }}">
     <div class="wiq-drawer-body">
         <div class="wiq-doc-card">
             <div><span>منبع</span><b>{{ $sourceLabel }}</b></div>

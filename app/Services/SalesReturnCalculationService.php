@@ -102,7 +102,8 @@ class SalesReturnCalculationService
             ->when($excludeDocumentId, fn ($query) => $query->where('d.id', '<>', $excludeDocumentId))
             ->whereIn('i.invoice_item_id', $invoiceItemIds)
             ->groupBy('i.invoice_item_id')
-            ->pluck(DB::raw('sum(i.return_quantity)'), 'i.invoice_item_id')
+            ->select('i.invoice_item_id')->selectRaw('SUM(i.return_quantity) AS returned_quantity')
+            ->pluck('returned_quantity', 'invoice_item_id')
             ->all();
         $legacy = DB::table('warehouse_transfer_items as wi')
             ->join('warehouse_transfers as wt', 'wt.id', '=', 'wi.warehouse_transfer_id')
@@ -110,7 +111,8 @@ class SalesReturnCalculationService
             ->whereNotNull('wi.invoice_item_id')
             ->whereIn('wi.invoice_item_id', $invoiceItemIds)
             ->groupBy('wi.invoice_item_id')
-            ->pluck(DB::raw('sum(wi.quantity)'), 'wi.invoice_item_id')
+            ->select('wi.invoice_item_id')->selectRaw('SUM(wi.quantity) AS returned_quantity')
+            ->pluck('returned_quantity', 'invoice_item_id')
             ->all();
 
         $out = [];
@@ -133,7 +135,8 @@ class SalesReturnCalculationService
             ->when($excludeDocumentId, fn ($query) => $query->where('d.id', '<>', $excludeDocumentId))
             ->whereIn('i.invoice_item_id', $invoiceItemIds)
             ->groupBy('i.invoice_item_id')
-            ->pluck(DB::raw('sum(i.refund_amount)'), 'i.invoice_item_id')
+            ->select('i.invoice_item_id')->selectRaw('SUM(i.refund_amount) AS returned_amount')
+            ->pluck('returned_amount', 'invoice_item_id')
             ->map(fn ($value) => (int) $value)
             ->all();
     }

@@ -272,7 +272,7 @@ class PreinvoiceDraftReservation extends Model
     ): Builder {
         return $query
             ->abandonedTemporary($onlineMinutes, $inPersonMinutes, $at)
-            ->whereDoesntHave('activeDrafts')
+            // Saved drafts are selections, not permission to hold stock after heartbeat expiry.
             ->whereDoesntHave('order.invoice');
     }
 
@@ -1001,7 +1001,7 @@ class PreinvoiceDraftReservation extends Model
             && $this->preinvoice_order_id === null
             && $this->converted_at === null
             && $this->quantity > 0
-            && ! $this->hasActiveRelatedDraft()
+            && ! $this->hasValidHeartbeat($at, $onlineMinutes, $inPersonMinutes)
             && $this->isAbandoned($at, $onlineMinutes, $inPersonMinutes);
     }
 

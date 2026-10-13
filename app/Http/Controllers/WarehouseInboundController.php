@@ -156,7 +156,8 @@ class WarehouseInboundController extends Controller
             $receipt,
             $request->validated('items'),
             (int) $request->user()->id,
-            $request->validated('review_note')
+            $request->validated('review_note'),
+            $request->validated('receipt_version')
         );
 
         $message = $updated->status === WarehouseInboundReceipt::STATUS_DISCREPANCY

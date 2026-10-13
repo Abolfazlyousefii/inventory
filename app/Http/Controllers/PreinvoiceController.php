@@ -711,6 +711,8 @@ class PreinvoiceController extends Controller
                 'creator:id,name',
                 'warehouseReviewer:id,name',
                 'reviews.user:id,name',
+                'activityLogs.user:id,name',
+                'warehouseReviewItemLogs.user:id,name',
                 'invoice:id,uuid,preinvoice_order_id,status,created_at',
             ])
             ->where('uuid', $uuid)
@@ -725,8 +727,15 @@ class PreinvoiceController extends Controller
             'creator:id,name',
             'warehouseReviewer:id,name',
             'reviews.user:id,name',
+            'activityLogs.user:id,name',
+            'warehouseReviewItemLogs.user:id,name',
             'invoice:id,uuid,preinvoice_order_id,status,created_at',
         ]);
+
+        if ($request->query('download') === 'pdf') {
+            $printData = $printService->preinvoiceData($order, 'customer');
+            return view('prints.preinvoice-customer-browser-pdf', compact('printData'));
+        }
 
         if ($request->has('print') || $request->has('mode')) {
             $printData = $printService->preinvoiceData($order, (string) $request->query('mode', $request->query('print', 'warehouse')));
@@ -736,7 +745,8 @@ class PreinvoiceController extends Controller
 
         $documentAction = $this->buildMyPreinvoiceSummary($order);
 
-        return view('archive.preinvoice-show', compact('order', 'documentAction'));
+        $timeline = app(\App\Services\PreinvoiceTimelineService::class)->entries($order);
+        return view('archive.preinvoice-show', compact('order', 'documentAction', 'timeline'));
     }
     public function saveDraft(Request $request)
     {
@@ -1397,6 +1407,10 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
+            if ($isSubmit) {
+                $this->assertDraftItemsSellableForSubmission($validated['products']);
+            }
+
             $customer = $this->resolveCustomer($validated);
             $shippingId = array_key_exists('shipping_id', $validated)
                 ? $this->validatedShippingId($validated)
@@ -1732,6 +1746,39 @@ class PreinvoiceController extends Controller
         }
 
         return $validated;
+    }
+
+    /** Validate inside the submit transaction, before any document or reservation writes. */
+    private function assertDraftItemsSellableForSubmission(array $rows): void
+    {
+        // Match the product-status writer's product -> variant lock order, so a
+        // concurrent deactivation cannot slip between validation and reservation.
+        $products = Product::query()
+            ->whereIn('id', collect($rows)->pluck('id')->unique())
+            ->orderBy('id')->lockForUpdate()->get(['id', 'name', 'is_sellable'])->keyBy('id');
+        $variants = ProductVariant::query()
+            ->whereIn('id', collect($rows)->pluck('variety_id')->unique())
+            ->orderBy('id')->lockForUpdate()
+            ->get(['id', 'product_id', 'variant_name', 'is_active', 'sales_enabled'])->keyBy('id');
+
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            $product = $products->get((int) $row['id']);
+            $variant = $variants->get((int) $row['variety_id']);
+            if ($product && $variant && (int) $variant->product_id === (int) $product->id
+                && $product->is_sellable && $variant->is_active && $variant->sales_enabled) {
+                continue;
+            }
+
+            $productName = (string) ($product?->name ?? 'کالای حذف‌شده');
+            $variantName = (string) ($variant?->variant_name ?: ('شناسه ' . $row['variety_id']));
+            $errors["products.{$index}.variety_id"] =
+                "امکان ثبت نهایی وجود ندارد؛ کالا یا تنوع «{$productName} / {$variantName}» غیرفعال یا غیرقابل فروش است. این ردیف را حذف کنید یا وضعیت فروش آن را از مسئول مربوط پیگیری کنید. پیش‌نویس حفظ شده است.";
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     private function validateDraftItemsBusinessRules(array $products, ?string $reservationToken = null): void

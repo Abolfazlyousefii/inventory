@@ -65,7 +65,7 @@
     <tbody>
         @forelse($document->allocations as $allocation)
             <tr class="dept-row">
-                <td>{{ $allocation->department?->name ?? '—' }}</td>
+                <td>{{ collect($document->commission_settings_snapshot['departments'] ?? [])->firstWhere('id', $allocation->department_id)['name'] ?? $allocation->department?->name ?? '—' }}</td>
                 <td>{{ rtrim(rtrim($allocation->percentage, '0'), '.') }}٪</td>
                 <td>{{ Currency::formatRial($allocation->allocated_amount) }}</td>
                 <td>{{ $allocation->memberShares->count() }}</td>
@@ -78,9 +78,9 @@
                             <tbody>
                                 @foreach($allocation->memberShares as $share)
                                     <tr>
-                                        <td>{{ $share->member?->name ?? '—' }}</td>
-                                        <td>{{ $share->member?->role ?: '—' }}</td>
-                                        <td>{{ Currency::formatRial($share->share_amount) }}</td>
+                                        <td>{{ collect($document->commission_settings_snapshot['departments'] ?? [])->flatMap(fn($d) => $d['members'])->firstWhere('id', $share->member_id)['name'] ?? $share->member?->name ?? '—' }}</td>
+                                        <td>{{ collect($document->commission_settings_snapshot['departments'] ?? [])->flatMap(fn($d) => $d['members'])->firstWhere('id', $share->member_id)['role'] ?? $share->member?->role ?? '—' }}</td>
+                                        <td>{{ Currency::formatRial($share->share_amount) }}@if($document->commission_settings_snapshot)<small style="display:block;color:#47657a">{{ rtrim(rtrim(collect($document->commission_settings_snapshot['departments'])->flatMap(fn($d) => $d['members'])->firstWhere('id', $share->member_id)['percentage'] ?? '0', '0'), '.') }}٪ از کل پورسانت</small>@endif</td>
                                         <td>{{ $share->notes ?: '—' }}</td>
                                     </tr>
                                 @endforeach

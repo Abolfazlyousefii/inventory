@@ -47,6 +47,7 @@ use App\Http\Controllers\SellerCommissionDocumentController;
 use App\Http\Controllers\ShippingMethodController;
 use App\Http\Controllers\StockMovementController;
 use App\Http\Controllers\StockMovementReportController;
+use App\Http\Controllers\WarehouseDailySalesController;
 use App\Http\Controllers\StocktakeController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
@@ -54,7 +55,6 @@ use App\Http\Controllers\VoucherController;
 use App\Http\Controllers\VoucherSalesReturnController;
 use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseInboundController;
-use App\Http\Controllers\WarehouseMapController;
 use App\Http\Controllers\WarehouseReservationController;
 use App\Http\Controllers\WarehouseReviewController;
 use App\Http\Controllers\WarehouseShippingController;
@@ -190,6 +190,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->name('products.destroy');
     Route::get('/products/{product}/sales-ledger', [ProductSalesLedgerController::class, 'index'])->whereNumber('product')->name('products.sales-ledger');
     Route::get('/products/{product}/purchase-ledger', [ProductPurchaseLedgerController::class, 'purchaseLedger'])->whereNumber('product')->name('products.purchase-ledger');
+    Route::get('/products/{product}/stock-ledger', [\App\Http\Controllers\ProductStockLedgerController::class, 'index'])->whereNumber('product')->name('products.stock-ledger');
     Route::resource('categories', CategoryController::class)->except(['show', 'destroy']);
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
     Route::post('/categories/fix-codes', [CategoryController::class, 'fixCodes'])->name('categories.fixCodes');
@@ -197,12 +198,16 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/pricelist', [ProductController::class, 'priceList'])->name('products.pricelist');
 
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
-        Route::get('/', [ProductExportController::class, 'index'])->name('index');
+        Route::get('/', [\App\Http\Controllers\ProductExportBuilderController::class, 'index'])->name('index');
+        Route::get('/builder/products', [\App\Http\Controllers\ProductExportBuilderController::class, 'products'])->name('builder.products');
+        Route::post('/builder/print', [\App\Http\Controllers\ProductExportBuilderController::class, 'print'])->name('builder.print');
+        Route::post('/builder/preview', [\App\Http\Controllers\ProductExportBuilderController::class, 'preview'])->name('builder.preview');
         Route::get('/data', [ProductExportController::class, 'filter'])->name('data');
         Route::get('/print', [ProductExportController::class, 'print'])->name('print');
         Route::get('/download', [ProductExportController::class, 'download'])->name('download');
         Route::get('/model-lists', [ProductExportController::class, 'modelLists'])->name('model-lists');
         Route::get('/products/search', [ProductExportController::class, 'searchProducts'])->name('products.search');
+        Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
         Route::get('/categories/{category}/children', [ProductExportController::class, 'children'])->whereNumber('category')->name('categories.children');
         Route::get('/export', [ProductExportController::class, 'export'])->name('export');
     });
@@ -298,12 +303,19 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
     Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->name('finance.invoices.reapprove');
     Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->name('finance.invoices.return-to-sales');
-    Route::get('/finance/registered-cheques', [ChequeController::class, 'index'])->name('finance.cheques.registered');
+    Route::get('/finance/registered-cheques', fn () => redirect()->route('finance.reports.receipts'))->name('finance.cheques.registered');
 
     Route::prefix('finance/reports')
         ->name('finance.reports.')
         ->group(function () {
+            Route::get('/top-products', [\App\Http\Controllers\TopProductsReportController::class, 'index'])->name('top-products');
+            Route::get('/top-products/detail', [\App\Http\Controllers\TopProductsReportController::class, 'detail'])->name('top-products.detail');
+            Route::get('/top-products/export', [\App\Http\Controllers\TopProductsReportController::class, 'export'])->name('top-products.export');
+            Route::get('/top-products/image/{product}', [\App\Http\Controllers\ProductController::class, 'image'])->name('top-products.image');
             Route::get('/', [FinanceReportController::class, 'index'])->name('index');
+            Route::get('/receipts', [\App\Http\Controllers\PaymentReportController::class, 'index'])->name('receipts');
+            Route::get('/receipts/detail', [\App\Http\Controllers\PaymentReportController::class, 'detail'])->name('receipts.detail');
+            Route::get('/receipts/export', [\App\Http\Controllers\PaymentReportController::class, 'export'])->name('receipts.export');
             Route::get('/sales-visitors', [FinanceReportController::class, 'salesVisitors'])->name('sales-visitors');
             Route::post('/sales-visitors/commission-batches', [FinanceReportController::class, 'storeCommissionBatch'])->name('sales-visitors.commission-batches.store');
             Route::get('/sales-visitors/commission-batches/{batch}', [FinanceReportController::class, 'showCommissionBatch'])->name('sales-visitors.commission-batches.show');
@@ -340,6 +352,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::prefix('finance/reports/org-commission')->name('finance.org-commission.')->middleware(['auth', 'page.access:finance.seller_sales_documents'])->group(function () {
         Route::get('/', [OrgCommissionController::class, 'index'])->name('index');
+
+        Route::get('/settings', [OrgCommissionController::class, 'settings'])->name('settings');
+        Route::put('/settings', [OrgCommissionController::class, 'updateSettings'])->name('settings.update');
 
         Route::post('/departments', [OrgCommissionController::class, 'storeDepartment'])->name('departments.store');
         Route::put('/departments/{department}', [OrgCommissionController::class, 'updateDepartment'])->name('departments.update');
@@ -488,23 +503,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/sales-havaleh/{invoice}/history', [SalesHavalehController::class, 'history'])->name('sales-havaleh.history');
     Route::get('/payments/{payment}/view', [AccountStatementController::class, 'showPayment'])->name('payments.view');
 
-    // Warehouse Map
-    Route::prefix('warehouse-map')->name('warehouse-map.')->group(function () {
-        Route::get('/', [WarehouseMapController::class, 'index'])->name('index');
-        Route::get('/locations/{location}', [WarehouseMapController::class, 'showLocation'])->name('locations.show');
-        Route::get('/categories/{category}/children', [WarehouseMapController::class, 'categoryChildren'])->name('categories.children');
-        Route::get('/categories/{category}/products', [WarehouseMapController::class, 'categoryProducts'])->name('categories.products');
-        Route::get('/products/{product}/variants', [WarehouseMapController::class, 'productVariants'])->name('products.variants');
-        Route::get('/history', [WarehouseMapController::class, 'history'])->name('history');
-
-        Route::group([], function () {
-            Route::post('/locations', [WarehouseMapController::class, 'storeLocation'])->name('locations.store');
-            Route::put('/locations/{location}', [WarehouseMapController::class, 'updateLocation'])->name('locations.update');
-            Route::post('/assign', [WarehouseMapController::class, 'assign'])->name('assign');
-            Route::post('/transfer', [WarehouseMapController::class, 'transfer'])->name('transfer');
-        });
-    });
-
     // Warehouses
     Route::get('/warehouses', [WarehouseController::class, 'index'])->name('warehouses.index');
     Route::get('/warehouses/{warehouse}/edit', [WarehouseController::class, 'edit'])->name('warehouses.edit');
@@ -514,6 +512,17 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/warehouses/{warehouse}/personnel', [WarehouseController::class, 'personnelIndex'])->name('warehouses.personnel.index');
     Route::post('/warehouses/{warehouse}/personnel', [WarehouseController::class, 'personnelStore'])->name('warehouses.personnel.store');
     Route::get('/warehouses/{warehouse}/personnel/{personnel}', [WarehouseController::class, 'personnelShow'])->name('warehouses.personnel.show');
+
+    Route::prefix('purchase-returns')->name('purchase-returns.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\PurchaseReturnController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\PurchaseReturnController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\PurchaseReturnController::class, 'store'])->name('store');
+        Route::get('/{purchaseReturn}', [\App\Http\Controllers\PurchaseReturnController::class, 'show'])->withTrashed()->name('show');
+        Route::get('/{purchaseReturn}/print', [\App\Http\Controllers\PurchaseReturnController::class, 'print'])->withTrashed()->name('print');
+        Route::get('/{purchaseReturn}/edit', [\App\Http\Controllers\PurchaseReturnController::class, 'edit'])->name('edit');
+        Route::put('/{purchaseReturn}', [\App\Http\Controllers\PurchaseReturnController::class, 'update'])->name('update');
+        Route::delete('/{purchaseReturn}', [\App\Http\Controllers\PurchaseReturnController::class, 'destroy'])->name('destroy');
+    });
 
     // Purchases
     Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
@@ -647,7 +656,11 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Account statements (گردش حساب اشخاص)
     Route::get('/account-statements', [AccountStatementController::class, 'index'])->name('account-statements.index');
+    Route::get('/account-statements/{customer}/payments/{payment}/edit', [InvoicePaymentController::class, 'editForCustomer'])->name('account-statements.payments.edit');
+    Route::put('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'updateForCustomer'])->name('account-statements.payments.update');
+    Route::delete('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'destroyForCustomer'])->name('account-statements.payments.destroy');
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
+    Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
     Route::get('/account-statements/documents/invoices/{uuid}', [AccountStatementController::class, 'showInvoice'])->name('account-statements.documents.invoices.show');
     Route::get('/account-statements/documents/returns/{voucher}', [AccountStatementController::class, 'showReturnFromSale'])->name('account-statements.documents.returns.show');
     Route::get('/account-statements/documents/payments/{payment}', [AccountStatementController::class, 'showPayment'])->name('account-statements.documents.payments.show');
@@ -677,27 +690,25 @@ Route::post('model-lists/import-phone-catalog', [ModelListController::class, 'im
     ->name('model-lists.import-phone-catalog');
 
 Route::middleware('auth')->group(function () {
-    Route::get('/warehouse-reservations', [WarehouseReservationController::class, 'index'])
+    Route::get('/warehouse-reservations', [\App\Http\Controllers\PreinvoiceReservationReportController::class, 'index'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.index');
+    Route::prefix('warehouse/daily-sales')->name('warehouse.daily-sales.')->middleware('route.permission')->group(function () {
+        Route::get('/', [WarehouseDailySalesController::class, 'index'])->name('index');
+        Route::get('/data', [WarehouseDailySalesController::class, 'data'])->name('data');
+        Route::get('/detail', [WarehouseDailySalesController::class, 'detail'])->name('detail');
+        Route::get('/export', [WarehouseDailySalesController::class, 'export'])->name('export');
+        Route::post('/counts', [WarehouseDailySalesController::class, 'store'])->name('store');
+    });
     Route::get('/warehouse-reservations/health/export', [WarehouseReservationController::class, 'exportHealth'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.health.export');
-    Route::post('/warehouse-reservations/bulk-release', [WarehouseReservationController::class, 'bulkRelease'])
-        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
-        ->name('warehouse-reservations.bulk-release');
-    Route::post('/warehouse-reservations/bulk-legacy-cleanup', [WarehouseReservationController::class, 'bulkLegacyCleanup'])
-        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:inventory.reservation.legacy_cleanup'])
-        ->name('warehouse-reservations.bulk-legacy-cleanup');
     Route::post('/warehouse-reservations/bulk-export', [WarehouseReservationController::class, 'bulkExport'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.bulk-export');
-    Route::get('/warehouse-reservations/{reservation}', [WarehouseReservationController::class, 'show'])
+    Route::get('/warehouse-reservations/{reservation}', [\App\Http\Controllers\PreinvoiceReservationReportController::class, 'show'])
         ->middleware('route.permission:warehouse_reservations.view')
         ->name('warehouse-reservations.show');
-    Route::post('/warehouse-reservations/{reservation}/release', [WarehouseReservationController::class, 'release'])
-        ->middleware(['route.permission:warehouse_reservations.view', 'route.permission:warehouse_reservations.release'])
-        ->name('warehouse-reservations.release');
 });
 
 // اگر این دو route را از قبل نداری، داخل routes/web.php اضافه کن.

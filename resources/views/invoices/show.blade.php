@@ -7,8 +7,8 @@
 	  'shipped' => 'text-bg-success', 'ready_to_ship' => 'text-bg-info', 'pending_finance_reapproval' => 'text-bg-warning',
 	  'not_shipped' => 'text-bg-secondary', default => 'text-bg-primary'
 	};
-	$paymentText = $paidTotal > $invoice->total ? 'پرداخت اضافه' : ($remainingAmount === 0 ? 'تسویه‌شده' : ($paidTotal > 0 ? 'پرداخت ناقص' : 'پرداخت‌نشده'));
-	$paymentBadge = $paidTotal > $invoice->total ? 'text-bg-danger' : ($remainingAmount === 0 ? 'text-bg-success' : ($paidTotal > 0 ? 'text-bg-warning' : 'text-bg-secondary'));
+	$paymentText = $paidTotal > $invoice->total ? 'مازاد پرداخت' : ($remainingAmount === 0 ? 'تسویه‌شده' : ($paidTotal > 0 ? 'پرداخت ناقص' : 'پرداخت‌نشده'));
+	$paymentBadge = $paidTotal > $invoice->total ? 'text-bg-success' : ($remainingAmount === 0 ? 'text-bg-success' : ($paidTotal > 0 ? 'text-bg-warning' : 'text-bg-secondary'));
 	$itemsTotal = (int) $invoice->items->sum(fn($item) => max(((int)$item->quantity * (int)$item->price) - (int)($item->line_discount_amount ?? 0), 0));
 	$hasZeroPrice = $invoice->items->contains(fn($item) => (int)$item->quantity > 0 && (int)$item->price <= 0);
 	$canonicalTotals = \App\Support\SalesDocumentTotals::fromDocument($invoice);
@@ -86,25 +86,29 @@
           ->groupBy('invoice_item_id');
   }
 @endphp
+@section('title', 'مشاهدهٔ فاکتور فروش')
 @section('content')
 	<style>
 		.invoice-page{background:#f8fbff}.invoice-card{border:1px solid #dbeafe;border-radius:16px;box-shadow:0 8px 24px rgba(30,64,175,.06)}.invoice-card .card-header{background:#eff6ff;border-bottom:1px solid #dbeafe;font-weight:700;color:#1e3a8a}.info-label{font-size:.78rem;color:#64748b}.info-value{font-weight:700;color:#0f172a}.money-row{display:flex;justify-content:space-between;border-bottom:1px dashed #dbeafe;padding:.45rem 0}.table thead th{background:#eff6ff;color:#1e3a8a}.readonly-note{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.75rem}.removed-history-row td{background:#f8fafc!important;color:#94a3b8!important}.removed-history-row .removed-history-text{text-decoration:line-through}.removed-history-badge,.revision-added-badge,.revision-changed-badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:.7rem;font-weight:900;white-space:nowrap}.removed-history-badge{border:1px solid #fecaca;background:#fef2f2;color:#991b1b}.revision-added-row td{background:#f0fdf4!important}.revision-changed-row td{background:#fffbeb!important}.revision-added-badge{border:1px solid #bbf7d0;background:#dcfce7;color:#166534}.revision-changed-badge{border:1px solid #fde68a;background:#fef3c7;color:#92400e}.removed-history-meta,.revision-meta{display:block;color:#64748b;font-size:.68rem;margin-top:4px;line-height:1.7}.revision-old{color:#94a3b8;text-decoration:line-through}.revision-arrow{color:#64748b;font-size:.75rem;margin:0 3px}
 	</style>
-	<div class="container py-4 invoice-page">
-		<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+	<link rel="stylesheet" href="{{ asset('css/preinvoice-detail.css') }}?v=20261007">
+    <link rel="stylesheet" href="{{ asset('css/invoice-detail.css') }}?v=20261007">
+    <div class="container py-4 invoice-page pd-page invoice-detail">
+		<div class="pd-header">
 			<div><h3 class="mb-1">فاکتور شماره {{ $invoice->uuid }}</h3><div class="d-flex gap-2 flex-wrap"><span class="badge {{ $badgeStatus($invoice->status) }}">{{ $statusFa($invoice->status) }}</span><span class="badge {{ $paymentBadge }}">{{ $paymentText }}</span></div></div>
-			<div class="d-flex gap-2 flex-wrap">
+			<div class="pd-actions">
+                @if($canRegisterPayments)<button type="button" class="pd-button" data-bs-toggle="modal" data-bs-target="#showPaymentModal">افزودن پرداخت</button>@endif
+                <button type="button" class="pd-button" data-pd-history>مشاهدهٔ سوابق <span>{{ $timeline->count() }}</span></button>
 				<a class="btn btn-outline-secondary" href="{{ $backUrl }}">بازگشت</a>
 				@if($canPrintInvoice)<a class="btn btn-outline-dark" href="{{ route('invoices.print', $invoice->uuid) }}" target="_blank">چاپ فاکتور</a>@endif
 				@if($canEditInvoice)<a class="btn btn-primary" href="{{ route('invoices.edit', $invoice->uuid) }}">ویرایش فاکتور</a>@endif
 			</div>
 		</div>
 
-		@if($hasZeroPrice || $hasMismatch || $paidTotal > $invoice->total || in_array((string)$invoice->status, ['pending_warehouse_approval','checking_discrepancy','packing'], true))
+		@if($hasZeroPrice || $hasMismatch || in_array((string)$invoice->status, ['pending_warehouse_approval','checking_discrepancy','packing'], true))
 			<div class="alert alert-warning invoice-card"><strong>هشدارها:</strong>
 				@if($hasZeroPrice)<span class="badge text-bg-danger">اقلام با قیمت صفر</span>@endif
 				@if($hasMismatch)<span class="badge text-bg-warning">مغایرت مبلغ اقلام و فاکتور</span>@endif
-				@if($paidTotal > $invoice->total)<span class="badge text-bg-danger">پرداخت اضافه</span>@endif
 				@if(in_array((string)$invoice->status, ['pending_warehouse_approval','checking_discrepancy','packing'], true))<span class="badge text-bg-secondary">وضعیت legacy</span>@endif
 			</div>
 		@endif
@@ -122,10 +126,11 @@
 						<div class="money-row"><span>مبلغ کل</span><strong>{{ $rial($invoice->total) }}</strong></div>
 						<div class="money-row"><span>پرداخت‌شده</span><strong class="text-success">{{ $rial($paidTotal) }}</strong></div>
 						<div class="money-row border-0"><span>مانده</span><strong class="{{ $remainingAmount > 0 ? 'text-danger' : 'text-success' }}">{{ $rial($remainingAmount) }}</strong></div>
+                        @if($paidTotal > $invoice->total)<div class="money-row border-0"><span>مازاد پرداخت فاکتور</span><strong class="text-success">{{ $rial($paidTotal - $invoice->total) }}</strong></div>@endif
 					</div></div></div>
 		</div>
 
-		<div class="card invoice-card mt-3"><div class="card-header">اقلام فاکتور</div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>محصول</th><th>تنوع/مدل</th><th>کد کالا</th><th>تعداد</th><th>قیمت snapshot</th><th>تخفیف ردیف</th><th>جمع</th></tr></thead><tbody>
+		<div class="card invoice-card mt-3"><div class="card-header">اقلام فاکتور</div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>محصول</th><th>تنوع/مدل</th><th>کد کالا</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف ردیف</th><th>جمع</th></tr></thead><tbody>
 					@foreach($invoice->items as $item)
 						@php
 							$itemRevisions = $currentItemRevisionHistory->get($item->id, collect());
@@ -180,7 +185,7 @@
 					</tbody></table></div></div>
 
 
-		<div class="card invoice-card mt-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><span>پرداخت‌ها</span>@if($canRegisterPayments)<button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#showPaymentModal">افزودن پرداخت</button>@endif</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>روش</th><th>مبلغ</th><th>تاریخ</th><th>ثبت‌کننده</th><th>توضیحات</th></tr></thead><tbody>@forelse($invoice->payments as $payment)<tr><td>{{ match($payment->method){ 'cash' => 'نقدی', 'cheque' => 'چکی', 'card' => 'کارت', 'bank_transfer' => 'حواله بانکی', 'online' => 'آنلاین', 'wallet' => 'کیف پول', default => ($payment->method ?: 'نامشخص') } }}</td><td>{{ $rial($payment->amount) }}</td><td>{{ $payment->paid_at ? Jalalian::fromDateTime($payment->paid_at)->format('Y/m/d') : '—' }}</td><td>{{ $payment->creator?->name ?? '—' }}</td><td>{{ $payment->note ?: '—' }}</td></tr>@empty<tr><td colspan="5" class="text-center text-muted py-3">پرداختی ثبت نشده است.</td></tr>@endforelse</tbody></table></div></div>
+		<div class="card invoice-card mt-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><span>پرداخت‌ها</span></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>روش</th><th>مبلغ</th><th>تاریخ</th><th>ثبت‌کننده</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>@forelse($invoice->payments as $payment)<tr><td>{{ match($payment->method){ 'cash' => 'نقدی', 'cheque' => 'چکی', 'card' => 'کارت', 'bank_transfer' => 'حواله بانکی', 'online' => 'آنلاین', 'wallet' => 'کیف پول', default => ($payment->method ?: 'نامشخص') } }}</td><td>{{ $rial($payment->amount) }}</td><td>{{ $payment->paid_at ? Jalalian::fromDateTime($payment->paid_at)->format('Y/m/d') : '—' }}</td><td>{{ $payment->creator?->name ?? '—' }}</td><td>{{ $payment->note ?: '—' }}</td><td>@include('payments.manage-link', ['payment' => $payment])</td></tr>@empty<tr><td colspan="6" class="text-center text-muted py-3">پرداختی ثبت نشده است.</td></tr>@endforelse</tbody></table></div></div>
 
 		@if($invoice->status === \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL && ($canHandleFinanceActions || $canCancelInvoice))
 			<div class="card invoice-card mt-3"><div class="card-header">عملیات مالی</div><div class="card-body d-flex gap-2 flex-wrap justify-content-end">@if($canHandleFinanceActions)<form method="POST" action="{{ route('finance.invoices.reapprove', $invoice->uuid) }}" data-guard-submit>@csrf<button class="btn btn-success">تأیید مالی و ارسال به صف ارسال</button></form>@endif @if($canCancelInvoice)<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelReapprovalInvoiceModal">لغو فاکتور</button>@endif</div></div>
@@ -198,31 +203,28 @@
 		</div>
 	</div>
 
+    <div class="pd-page invoice-history-scope">
+        <dialog class="pd-dialog" id="pd-history" aria-labelledby="invoice-history-title">
+            <header><div><h2 id="invoice-history-title">سوابق فاکتور {{ $invoice->uuid }}</h2><p>همهٔ سوابق ثبت‌شده، از جدیدترین عملیات</p></div><button type="button" class="pd-close" data-pd-close aria-label="بستن سوابق">×</button></header>
+            <div class="pd-history-body">
+                @forelse($timeline as $event)
+                    <article class="pd-event"><div class="pd-event-meta"><span>{{ $event['source'] }}</span><time>{{ $event['time'] ? Jalalian::fromDateTime($event['time'])->format('Y/m/d H:i') : '—' }}</time></div><h3>{{ $event['title'] }}</h3><p class="pd-actor">{{ $event['actor'] }}</p>@if($event['details'])<details><summary>جزئیات عملیات</summary><ul>@foreach($event['details'] as $line)<li>{{ $line }}</li>@endforeach</ul></details>@endif</article>
+                @empty<p class="pd-empty">برای این فاکتور سابقه‌ای ثبت نشده است.</p>@endforelse
+            </div>
+        </dialog>
+    </div>
+    <script src="{{ asset('js/preinvoice-detail.js') }}?v=20261007" defer></script>
+    <script src="{{ asset('js/invoice-detail.js') }}?v=20261007" defer></script>
+
 	@if($canRegisterPayments)
-		<div class="modal fade" id="showPaymentModal" tabindex="-1" aria-hidden="true" dir="rtl"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">افزودن پرداخت</h5><button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="alert alert-light border d-flex justify-content-between flex-wrap"><span>مانده قابل پرداخت:</span><strong>{{ $rial($remainingAmount) }}</strong></div><form method="POST" action="{{ route('invoices.payments.store', $invoice->uuid) }}" class="row g-3 payment-fields" data-guard-submit>@csrf<div class="col-md-6"><label class="form-label">روش پرداخت</label><select name="method" class="form-select" data-payment-method><option value="cash">نقدی</option><option value="cheque">چکی</option></select></div><div class="col-md-6"><label class="form-label">مبلغ پرداخت</label><input name="amount" type="text" inputmode="numeric" autocomplete="off" class="form-control" required></div><div class="col-md-6 cash-only"><label class="form-label">تاریخ پرداخت شمسی</label><input name="payment_date" type="text" class="form-control" required data-jdp data-jdp-only-date value="{{ \Morilog\Jalali\Jalalian::fromCarbon(now())->format('Y/m/d') }}"></div><div class="col-md-6"><label class="form-label">اسم بانک / نام بانک</label><input name="bank_name" class="form-control"></div><div class="col-md-6"><label class="form-label">شماره پیگیری / رسید</label><input name="tracking_number" class="form-control"></div><div class="col-md-6 cheque-only d-none"><label class="form-label">شماره چک</label><input name="cheque_number" class="form-control"></div><div class="col-md-6 cheque-only d-none"><label class="form-label">تاریخ سررسید</label><input name="due_date" type="text" class="form-control" data-jdp data-jdp-only-date></div><div class="col-md-6 cheque-only d-none"><label class="form-label">تاریخ دریافت</label><input name="received_date" type="text" class="form-control" data-jdp data-jdp-only-date></div><div class="col-md-6 cheque-only d-none"><label class="form-label">وضعیت چک</label><select name="cheque_status" class="form-select"><option value="unregistered">ثبت‌نشده</option><option value="registered">ثبت‌شده</option></select></div><div class="col-12"><label class="form-label">توضیحات</label><textarea name="description" class="form-control" rows="2"></textarea></div><div class="col-12 d-flex gap-2 justify-content-end"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button class="btn btn-success">ثبت پرداخت</button></div></form></div></div></div></div>
+		@include('payments.entry-modal', ['paymentModalId' => 'showPaymentModal', 'paymentAction' => route('invoices.payments.store', $invoice->uuid), 'paymentRemaining' => $remainingAmount])
 	@endif
 	@if($invoice->status === \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL && $canCancelInvoice)
 		<div class="modal fade" id="cancelReapprovalInvoiceModal" tabindex="-1" aria-hidden="true" dir="rtl"><div class="modal-dialog"><form method="POST" action="{{ route('invoices.cancel', $invoice->uuid) }}" class="modal-content" data-guard-submit>@csrf<div class="modal-header"><h5 class="modal-title text-danger">لغو فاکتور</h5><button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="form-label">علت لغو</label><select name="note" class="form-select" required><option value="درخواست مشتری">درخواست مشتری</option><option value="مغایرت اقلام">مغایرت اقلام</option><option value="مغایرت قیمت">مغایرت قیمت</option><option value="ثبت اشتباه">ثبت اشتباه</option><option value="عدم تأیید مالی">عدم تأیید مالی</option><option value="سایر">سایر</option></select><div class="form-text">لغو از مسیر رسمی فاکتور انجام می‌شود و رکورد حذف نمی‌شود.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button class="btn btn-danger">لغو فاکتور</button></div></form></div></div>
 	@endif
 	<script>
 	document.querySelectorAll('[data-guard-submit]').forEach(f=>f.addEventListener('submit',()=>{const b=f.querySelector('button[type="submit"],button:not([type])');if(b){b.disabled=true;b.innerHTML='<span class="spinner-border spinner-border-sm"></span> در حال ارسال';}}));
-	document.querySelectorAll('[data-payment-method]').forEach(select => {
-	    const form = select.closest('form');
-	    const toggle = () => {
-	        const cheque = select.value === 'cheque';
-	        form.querySelectorAll('.cheque-only').forEach(el => el.classList.toggle('d-none', !cheque));
-	        form.querySelectorAll('.cash-only').forEach(el => el.classList.toggle('d-none', cheque));
-	        form.querySelector('[name="payment_date"]').required = !cheque;
-	        for (const name of ['due_date', 'received_date', 'cheque_number']) form.querySelector(`[name="${name}"]`).required = cheque;
-	    };
-	    select.addEventListener('change', toggle);
-	    toggle();
-	});
-	document.querySelectorAll('.payment-fields [name="amount"]').forEach(input => input.addEventListener('input', () => {
-	    const digits = input.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
-	        .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
-	    input.value = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-	}));
+
 	</script>
 
 @endsection

@@ -110,7 +110,7 @@ class VoucherSalesReturnController extends Controller
 
     public function edit(SalesReturnDocument $document)
     {
-        if (! $document->isDraft()) {
+        if (! $document->isDraft() && ! $document->isPendingWarehouse()) {
             abort(403);
         } $document->load('items', 'customer', 'invoice');
 
@@ -147,7 +147,9 @@ class VoucherSalesReturnController extends Controller
 
     public function update(UpdateSalesReturnRequest $request, SalesReturnDocument $document)
     {
-        $doc = $this->service->updateDraft($document, $this->enrich($request), auth()->id());
+        $doc = $document->isPendingWarehouse()
+            ? $this->service->updatePending($document, $this->enrich($request) + $request->validated(), (int) auth()->id())
+            : $this->service->updateDraft($document, $this->enrich($request), auth()->id());
         if ($request->input('action') === 'apply') {
             $doc = $this->service->apply($doc, auth()->id());
         }
