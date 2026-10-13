@@ -66,6 +66,21 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
 
+// Public read-only tracking. Both endpoints require an unexpired customer-bound signature.
+Route::prefix('track')->name('tracking.')->middleware(['signed:relative', 'throttle:60,1'])->group(function () {
+    Route::get('/{access}', [\App\Http\Controllers\Tracking\CustomerTrackingController::class, 'show'])->name('show');
+    Route::get('/{access}/data', [\App\Http\Controllers\Tracking\CustomerTrackingController::class, 'data'])->name('data');
+});
+
+// Authorized display device only. Never reuse customer signed-link access for the hall.
+Route::get('/hall/unlock', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'unlockForm'])->name('hall.unlock');
+Route::post('/hall/unlock', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'unlock'])
+    ->middleware('throttle:5,1')->name('hall.unlock.submit');
+Route::prefix('hall')->name('hall.')->middleware([\App\Http\Middleware\EnsureHallDisplayAccess::class, 'throttle:120,1'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'show'])->name('show');
+    Route::get('/data', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'data'])->name('data');
+});
+
 Route::prefix('portal')->name('portal.')->group(function () {
     Route::middleware('guest:customer')->group(function () {
         Route::get('/login', [CustomerAuthController::class, 'create'])->name('login');
@@ -711,8 +726,6 @@ Route::middleware('auth')->group(function () {
         ->name('warehouse-reservations.show');
 });
 
-// اگر این دو route را از قبل نداری، داخل routes/web.php اضافه کن.
-// اگر route مشابه داری، فقط مطمئن شو URL ها با همین دو آدرس یکی باشند.
 
 Route::get('/vouchers/return/customers/{customer}/invoices', [VoucherController::class, 'customerInvoices'])
     ->middleware(['auth', 'route.permission'])
