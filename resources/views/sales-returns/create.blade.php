@@ -4,7 +4,8 @@
 <div class="container-fluid" dir="rtl">
   <div class="d-flex justify-content-between align-items-center mb-3"><div><h5 class="mb-1">ثبت برگشت از فروش</h5><div class="text-muted small">ثبت برگشت براساس فاکتور داخلی یا فاکتور سازه‌حساب</div></div><a class="btn btn-sm btn-outline-secondary" href="{{ url()->previous() }}">بازگشت</a></div>
   @if($errors->any())<div class="alert alert-danger small">لطفاً خطاهای فرم را بررسی کنید.</div>@endif
-  <form method="POST" action="{{ $document ? route('sales-returns.update',$document) : route('sales-returns.store') }}" id="salesReturnForm">@csrf @if($document) @method('PATCH') @endif
+  <form method="POST" action="{{ $document ? route('sales-returns.update',$document) : route('sales-returns.store') }}" id="salesReturnForm">@csrf
+@if($document?->isPendingWarehouse())<input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}"><label>دلیل اصلاح سند</label><textarea name="adjustment_reason" required minlength="3" maxlength="1000">{{ old('adjustment_reason') }}</textarea>@endif @if($document) @method('PATCH') @endif
     <div class="row g-3">
       <div class="col-lg-3"><label class="form-label small">نوع برگشت</label><select class="form-select form-select-sm" name="source_type" id="sourceType"><option value="internal_invoice">برگشت براساس فاکتور داخلی</option><option value="sazeh_hesab">برگشت براساس فاکتور سازه‌حساب</option></select></div>
       <div class="col-lg-3"><label class="form-label small">شناسه مشتری</label><input class="form-control form-control-sm" name="customer_id" id="customerId" value="{{ old('customer_id',$document?->customer_id) }}" required><div class="form-text">جستجوی Ajax از مسیر customers/search در JS فعال است؛ ورود ID نیز مجاز است.</div></div>

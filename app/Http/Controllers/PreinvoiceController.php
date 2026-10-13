@@ -711,6 +711,8 @@ class PreinvoiceController extends Controller
                 'creator:id,name',
                 'warehouseReviewer:id,name',
                 'reviews.user:id,name',
+                'activityLogs.user:id,name',
+                'warehouseReviewItemLogs.user:id,name',
                 'invoice:id,uuid,preinvoice_order_id,status,created_at',
             ])
             ->where('uuid', $uuid)
@@ -725,8 +727,15 @@ class PreinvoiceController extends Controller
             'creator:id,name',
             'warehouseReviewer:id,name',
             'reviews.user:id,name',
+            'activityLogs.user:id,name',
+            'warehouseReviewItemLogs.user:id,name',
             'invoice:id,uuid,preinvoice_order_id,status,created_at',
         ]);
+
+        if ($request->query('download') === 'pdf') {
+            $printData = $printService->preinvoiceData($order, 'customer');
+            return view('prints.preinvoice-customer-browser-pdf', compact('printData'));
+        }
 
         if ($request->has('print') || $request->has('mode')) {
             $printData = $printService->preinvoiceData($order, (string) $request->query('mode', $request->query('print', 'warehouse')));
@@ -736,7 +745,8 @@ class PreinvoiceController extends Controller
 
         $documentAction = $this->buildMyPreinvoiceSummary($order);
 
-        return view('archive.preinvoice-show', compact('order', 'documentAction'));
+        $timeline = app(\App\Services\PreinvoiceTimelineService::class)->entries($order);
+        return view('archive.preinvoice-show', compact('order', 'documentAction', 'timeline'));
     }
     public function saveDraft(Request $request)
     {
@@ -822,7 +832,7 @@ class PreinvoiceController extends Controller
             $suppliedFields = array_keys($validated);
             $validated += $order ? $order->only([
                 'customer_id', 'customer_address', 'description', 'payment_terms_note',
-                'is_in_person', 'province_id', 'city_id', 'shipping_id', 'shipping_price',
+                'province_id', 'city_id', 'shipping_id', 'shipping_price',
                 'discount_amount', 'discount_breakdown', 'invoice_discount_type', 'invoice_discount_value',
             ]) : [];
 
@@ -833,7 +843,6 @@ class PreinvoiceController extends Controller
                 'seller_id' => auth()->user()?->is_seller ? auth()->id() : null,
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
                 'customer_id' => $customer?->id,
-                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -876,7 +885,7 @@ class PreinvoiceController extends Controller
 
             $reservationResult = $this->draftReservationService->syncReservationRows(
                 (string) $validated['reservation_token'], (int) auth()->id(),
-                $validated['products'] ?? [], (bool) ($validated['is_in_person'] ?? false)
+                $validated['products'] ?? []
             );
             if (!empty($reservationResult['skipped'])) {
                 throw ValidationException::withMessages(['products' => 'توکن پیش‌نویس به سند دیگری متصل است؛ سند را دوباره باز کنید.']);
@@ -1006,7 +1015,6 @@ class PreinvoiceController extends Controller
             'version' => $this->autosaveVersion($order),
             'draft_token' => $order->draft_token,
             'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
-            'is_in_person' => (bool) $order->is_in_person,
             'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],
             'payment_terms_note' => $order->payment_terms_note,
             'discount' => ['type' => $order->invoice_discount_type ?: data_get($order->discount_breakdown, 'order_discount_type', 'amount'), 'value' => (int) ($order->invoice_discount_value ?? data_get($order->discount_breakdown, 'order_discount_value', 0))],
@@ -1146,9 +1154,24 @@ class PreinvoiceController extends Controller
         // Structural validation happens first; authoritative stock validation/reservation
         // happens under row locks inside the submission transaction below.
         $validated = $this->validateDraftPayload($request, false);
+        $submissionToken = trim((string) ($validated['reservation_token'] ?? ''));
+        if ($submissionToken === '') {
+            throw ValidationException::withMessages([
+                'preinvoice' => 'شناسه یکتای ثبت نهایی موجود نیست؛ صفحه را تازه‌سازی کنید و دوباره تلاش کنید.',
+            ]);
+        }
 
-        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated) {
+        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated, $submissionToken) {
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
+
+            $existingOrder = PreinvoiceOrder::query()
+                ->where('created_by', auth()->id())
+                ->where('submission_token', $submissionToken)
+                ->first();
+            if ($existingOrder) {
+                return ['expires_at' => $existingOrder->stock_frozen_until];
+            }
+
             $reservationToken = $validated['reservation_token'] ?? null;
             if ($reservationToken && PreinvoiceDraftReservation::query()
                     ->where('token', $reservationToken)
@@ -1170,7 +1193,6 @@ class PreinvoiceController extends Controller
                 'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
 
                 'customer_id' => $customer?->id,
-                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -1186,6 +1208,7 @@ class PreinvoiceController extends Controller
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
                 'is_auto_draft' => false,
+                'submission_token' => $submissionToken,
             ];
             if ($order) {
                 $order->items()->delete();
@@ -1243,7 +1266,6 @@ class PreinvoiceController extends Controller
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
 
                 'customer_id' => $customer?->id,
-                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -1355,6 +1377,10 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
+            if ($isSubmit) {
+                $this->assertDraftItemsSellableForSubmission($validated['products']);
+            }
+
             $customer = $this->resolveCustomer($validated);
             $shippingId = array_key_exists('shipping_id', $validated)
                 ? $this->validatedShippingId($validated)
@@ -1375,7 +1401,6 @@ class PreinvoiceController extends Controller
 
             $order->update([
                 'customer_id' => $customer?->id,
-                'is_in_person' => (bool) ($validated['is_in_person'] ?? false),
                 'customer_name' => $this->orderCustomerName($validated, $customer),
                 'customer_mobile' => $this->orderCustomerMobile($validated, $customer),
                 'customer_address' => $this->orderCustomerAddress($validated, $customer, $shippingId),
@@ -1581,7 +1606,6 @@ class PreinvoiceController extends Controller
             'reservation_token' => 'nullable|uuid',
             'autosave_uuid' => 'nullable|string',
             'customer_id' => 'nullable|integer|exists:customers,id',
-            'is_in_person' => 'nullable|boolean',
             'customer_name' => 'required|string|max:255',
             'customer_mobile' => 'required|string|max:20',
             'customer_address' => 'nullable|string|max:1000',
@@ -1670,6 +1694,39 @@ class PreinvoiceController extends Controller
         }
 
         return $validated;
+    }
+
+    /** Validate inside the submit transaction, before any document or reservation writes. */
+    private function assertDraftItemsSellableForSubmission(array $rows): void
+    {
+        // Match the product-status writer's product -> variant lock order, so a
+        // concurrent deactivation cannot slip between validation and reservation.
+        $products = Product::query()
+            ->whereIn('id', collect($rows)->pluck('id')->unique())
+            ->orderBy('id')->lockForUpdate()->get(['id', 'name', 'is_sellable'])->keyBy('id');
+        $variants = ProductVariant::query()
+            ->whereIn('id', collect($rows)->pluck('variety_id')->unique())
+            ->orderBy('id')->lockForUpdate()
+            ->get(['id', 'product_id', 'variant_name', 'is_active', 'sales_enabled'])->keyBy('id');
+
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            $product = $products->get((int) $row['id']);
+            $variant = $variants->get((int) $row['variety_id']);
+            if ($product && $variant && (int) $variant->product_id === (int) $product->id
+                && $product->is_sellable && $variant->is_active && $variant->sales_enabled) {
+                continue;
+            }
+
+            $productName = (string) ($product?->name ?? 'کالای حذف‌شده');
+            $variantName = (string) ($variant?->variant_name ?: ('شناسه ' . $row['variety_id']));
+            $errors["products.{$index}.variety_id"] =
+                "امکان ثبت نهایی وجود ندارد؛ کالا یا تنوع «{$productName} / {$variantName}» غیرفعال یا غیرقابل فروش است. این ردیف را حذف کنید یا وضعیت فروش آن را از مسئول مربوط پیگیری کنید. پیش‌نویس حفظ شده است.";
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     private function validateDraftItemsBusinessRules(array $products, ?string $reservationToken = null): void
@@ -2368,7 +2425,6 @@ class PreinvoiceController extends Controller
             $row->preinvoice_order_id = $order->id;
             $row->converted_at = null;
             $row->expires_at = $reservationMeta['expires_at'];
-            $row->reservation_tier = $reservationMeta['tier'];
             $row->reservation_scope = 'official';
             $row->save();
         }
@@ -2421,7 +2477,6 @@ class PreinvoiceController extends Controller
                 $reservation->quantity = $requiredQty;
                 $reservation->expires_at = $reservationMeta['expires_at'];
                 $reservation->converted_at = null;
-                $reservation->reservation_tier = $reservationMeta['tier'];
                 $reservation->reservation_scope = 'official';
                 $reservation->save();
 
@@ -2436,7 +2491,6 @@ class PreinvoiceController extends Controller
                     'quantity' => $requiredQty,
                     'expires_at' => $reservationMeta['expires_at'],
                     'converted_at' => null,
-                    'reservation_tier' => $reservationMeta['tier'],
                     'reservation_scope' => 'official',
                 ]);
             }
@@ -2533,36 +2587,14 @@ class PreinvoiceController extends Controller
 
     private function reservationExpirationForCustomer(?Customer $customer): array
     {
-        $tier = $this->normalizeReservationTier($customer?->reservation_tier);
-
         return [
-            'tier' => $tier,
-            'expires_at' => match ($tier) {
-                'vip' => null,
-                'new_or_low_purchase' => now()->addHour(),
-                default => now()->addHours(3),
-            },
+            'expires_at' => now()->addHours(24),
         ];
-    }
-
-    private function normalizeReservationTier(?string $tier): string
-    {
-        $tier = trim((string) $tier);
-
-        return in_array($tier, ['vip', 'normal', 'new_or_low_purchase'], true)
-            ? $tier
-            : 'normal';
     }
 
     private function finalSubmitSuccessMessage(array $reservationMeta): string
     {
-        $reservationMessage = match ($reservationMeta['tier'] ?? 'normal') {
-            'vip' => 'رزرو این مشتری بدون محدودیت زمانی ثبت شد.',
-            'new_or_low_purchase' => 'رزرو تا ۱ ساعت معتبر است.',
-            default => 'رزرو تا ۳ ساعت معتبر است.',
-        };
-
-        return '✅ پیش‌فاکتور ثبت نهایی شد، موجودی رزرو شد و به صف تایید مالی ارسال شد. ' . $reservationMessage;
+        return '✅ پیش‌فاکتور ثبت نهایی شد، موجودی به مدت ۲۴ ساعت رزرو شد و به صف تایید مالی ارسال شد.';
     }
 
     private function reserveOrderStock(PreinvoiceOrder $order): void

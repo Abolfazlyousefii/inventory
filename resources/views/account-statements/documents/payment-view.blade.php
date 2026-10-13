@@ -8,8 +8,9 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h4 class="mb-0">💳 نمایش جزئیات پرداخت</h4>
-        <div class="text-muted small">برای ویرایش یا حذف پرداخت، از فهرست گردش حساب شخص استفاده کنید.</div>
+        <div class="text-muted small">جزئیات دریافت ثبت‌شده و اطلاعات سند مالی</div>
     </div>
+    @include('payments.manage-link', ['payment' => $payment])
     <a href="{{ $payment->customer_id ? route('account-statements.show', $payment->customer_id) : url()->previous() }}" class="btn btn-outline-secondary">بازگشت به گردش حساب</a>
 </div>
 

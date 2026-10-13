@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\OrgCommissionDepartment;
 use App\Models\OrgCommissionDocument;
 use App\Services\Finance\OrgCommissionService;
+use App\Services\Finance\OrgCommissionSettingsService;
 use App\Support\JalaliDate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -79,13 +80,32 @@ class OrgCommissionController extends Controller
         return back()->with('success', 'اعضای واحد به‌روزرسانی شد.');
     }
 
+    public function settings(): View
+    {
+        return view('finance.org-commission.settings', [
+            'snapshot' => app(OrgCommissionSettingsService::class)->snapshot(false, false),
+        ]);
+    }
+
+    public function updateSettings(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'settings_version' => ['required', 'string', 'size:64'],
+            'rates' => ['required', 'array'],
+            'rates.*' => ['required', 'string', 'max:10'],
+        ]);
+        app(OrgCommissionSettingsService::class)->saveRates($data['rates'], $data['settings_version'], $request->user()->id);
+
+        return redirect()->route('finance.org-commission.settings')->with('success', 'درصدها ذخیره شدند؛ فقط سندهای جدید از این تنظیمات استفاده می‌کنند.');
+    }
+
     // ── CRUD سند ────────────────────────────────
 
     public function create(): View
     {
         return view('finance.org-commission.form', [
             'document' => null,
-            'departments' => $this->activeDepartments(),
+            'snapshot' => app(OrgCommissionSettingsService::class)->snapshot(false, false),
         ]);
     }
 
@@ -118,7 +138,7 @@ class OrgCommissionController extends Controller
 
         return view('finance.org-commission.form', [
             'document' => $document,
-            'departments' => $this->activeDepartments(),
+            'snapshot' => app(OrgCommissionSettingsService::class)->fromDocument($document),
         ]);
     }
 
@@ -222,13 +242,7 @@ class OrgCommissionController extends Controller
             'period_from' => ['required', 'date'],
             'period_to' => ['required', 'date', 'after_or_equal:period_from'],
             'notes' => ['nullable', 'string', 'max:2000'],
-            'allocations' => ['nullable', 'array'],
-            'allocations.*.department_id' => ['required', 'integer', 'distinct', 'exists:org_commission_departments,id'],
-            'allocations.*.percentage' => ['required', 'numeric', 'min:0', 'max:100'],
-            'allocations.*.members' => ['nullable', 'array'],
-            'allocations.*.members.*.member_id' => ['required', 'integer', 'distinct', 'exists:org_commission_department_members,id'],
-            'allocations.*.members.*.share_amount' => ['required', 'integer', 'min:0'],
-            'allocations.*.members.*.notes' => ['nullable', 'string', 'max:500'],
+            'settings_version' => ['nullable', 'string', 'size:64'],
         ]);
     }
 

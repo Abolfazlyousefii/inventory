@@ -1,0 +1,30 @@
+<x-app-layout>
+    <x-slot name="title">کالاهای پرفروش</x-slot>
+    @push('styles')
+    <link rel="stylesheet" href="{{ asset('css/top-products-report.css') }}?v={{ filemtime(public_path('css/top-products-report.css')) }}">
+    @endpush
+    <section class="tp-report" data-detail-url="{{ route('finance.reports.top-products.detail',request()->except('page')) }}">
+        <header class="tp-heading"><div><span class="tp-eyebrow">گزارش مالی · فروش ارسال‌شده</span><h1>کالاهای پرفروش</h1><p>از {{ $filters['date_from'] }} تا {{ $filters['date_to'] }} · بر اساس تاریخ ارسال</p></div>
+            <div class="tp-actions"><button type="button" id="tp-filter-open">فیلتر گزارش</button><a href="{{ route('finance.reports.top-products.export',request()->except('page')+['format'=>'xlsx']) }}">دریافت اکسل</a><a target="_blank" rel="noopener" href="{{ route('finance.reports.top-products.export',request()->except('page')+['format'=>'print']) }}">چاپ / PDF</a></div>
+        </header>
+        @if($errors->any())<div class="tp-notice" role="alert">{{ $errors->first() }}</div>@endif
+        <dialog id="tp-filter-dialog" aria-labelledby="tp-filter-title"><header class="tp-heading"><div><span class="tp-eyebrow">تنظیم نمایش گزارش</span><h2 id="tp-filter-title">فیلتر گزارش</h2></div><button type="button" class="tp-dialog-close" data-close-filters aria-label="بستن">×</button></header><form method="get" class="tp-filters">
+            <label>از تاریخ ارسال<input name="date_from" value="{{ $filters['date_from'] }}" placeholder="1405/07/01" dir="ltr" inputmode="numeric" required></label>
+            <label>تا تاریخ ارسال<input name="date_to" value="{{ $filters['date_to'] }}" placeholder="1405/07/30" dir="ltr" inputmode="numeric" required></label>
+            <label>رتبه‌بندی بر اساس<select name="metric"><option value="quantity" @selected($filters['metric']==='quantity')>تعداد فروش</option><option value="revenue" @selected($filters['metric']==='revenue')>مبلغ فروش</option></select></label>
+            <label>نمایش<select name="group"><option value="product" @selected($filters['group']==='product')>کالا</option><option value="variant" @selected($filters['group']==='variant')>تنوع / مدل و رنگ</option></select></label>
+            <label>دسته / زیر‌دسته<select name="category_id"><option value="">همهٔ دسته‌ها</option>@foreach($categories as $c)<option value="{{ $c->id }}" @selected((int)$filters['category_id']===$c->id)>{{ $c->parent_id ? '↳ ' : '' }}{{ $c->name }}</option>@endforeach</select></label>
+            <label>فروشنده<select name="seller_id"><option value="">همهٔ فروشندگان</option>@foreach($sellers as $s)<option value="{{ $s->id }}" @selected((int)$filters['seller_id']===$s->id)>{{ $s->name }}</option>@endforeach</select></label>
+            <div class="tp-actions"><button type="submit">نمایش گزارش</button><a href="{{ route('finance.reports.top-products') }}">ماه جاری</a></div>
+        </form></dialog><div class="tp-filter-summary"><span>{{ $filters['metric']==='quantity'?'بر اساس تعداد فروش':'بر اساس مبلغ فروش' }}</span><span>{{ $filters['group']==='product'?'نمایش کالاها':'نمایش تنوع‌ها' }}</span>@if($filters['category_id'])<span>{{ $categories->firstWhere('id',(int)$filters['category_id'])?->name }}</span>@endif @if($filters['seller_id'])<span>{{ $sellers->firstWhere('id',(int)$filters['seller_id'])?->name }}</span>@endif</div>
+        <div class="tp-summary"><article><span>مبلغ فروش کالاها</span><strong>{{ number_format($report['summary']['revenue']) }} <small>ریال</small></strong></article><article><span>تعداد فروش</span><strong>{{ number_format($report['summary']['quantity']) }} <small>عدد</small></strong></article><article><span>فاکتور ارسال‌شده</span><strong>{{ number_format($report['summary']['invoices']) }}</strong></article><article><span>{{ $filters['group']==='product'?'کالای فروخته‌شده':'تنوع فروخته‌شده' }}</span><strong>{{ number_format($report['summary']['items']) }}</strong></article></div>
+        <p class="tp-caption">مبالغ پس از تخفیف کالا و سهم تخفیف کلی فاکتور هستند؛ هزینهٔ ارسال و مرجوعی در این گزارش محاسبه نمی‌شوند. فاکتورهای فاقد تاریخ ارسال وارد بازه نمی‌شوند.</p>
+        @if(!$report['stock_available'])<p class="tp-notice">انبار مرکزی یکتا نیست؛ موجودی فعلی نمایش داده نمی‌شود.</p>@endif
+        @if($report['undated_invoices'])<p class="tp-notice">{{ number_format($report['undated_invoices']) }} فاکتور ارسال‌شده در کل سوابقِ منطبق با این فیلترها، تاریخ ارسال ندارند؛ امکان نسبت‌دادن آن‌ها به این بازه نیست و محاسبه نشده‌اند.</p>@endif
+        @if($rows->total())
+        <div class="tp-charts"><article class="tp-panel"><h2>۱۰ مورد پرفروش</h2><p class="tp-caption">{{ $filters['metric']==='quantity'?'تعداد فروش (عدد)':'مبلغ فروش (ریال)' }}</p><div id="tp-bars" aria-label="نمودار میله‌ای رتبه‌بندی"></div></article><article class="tp-panel"><h2>سهم از {{ $filters['metric']==='quantity'?'تعداد':'مبلغ' }} فروش</h2><p class="tp-caption">۵ مورد اول و سایر کالاها · برای جزئیات لمس کنید</p><div class="tp-ring-layout"><div id="tp-ring" aria-label="نمودار حلقه‌ای سهم فروش"></div><div id="tp-legend"></div></div></article></div>
+        @else <div class="tp-panel tp-empty">در این بازه و فیلترها، فروش ارسال‌شده‌ای وجود ندارد.</div> @endif
+        <dialog id="tp-detail-dialog" aria-labelledby="tp-detail-title"><header class="tp-heading"><div><span class="tp-eyebrow">جزئیات فروش در بازهٔ انتخابی</span><h2 id="tp-detail-title"></h2></div><button type="button" id="tp-close" aria-label="بستن">×</button></header><div id="tp-detail-body" aria-live="polite"></div></dialog>
+    <div id="tp-tooltip" class="tp-tooltip" role="tooltip" hidden></div></section>
+    @push('scripts')<script id="tp-chart-data" type="application/json">{!! json_encode($chart+['summary'=>$report['summary']],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) !!}</script><script src="{{ asset('js/top-products-report.js') }}?v={{ filemtime(public_path('js/top-products-report.js')) }}" defer></script>@endpush
+</x-app-layout>

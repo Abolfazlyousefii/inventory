@@ -334,7 +334,6 @@ class PreinvoiceReservationService
                     'expires_at' => $order->stock_frozen_until,
                     'last_seen_at' => now(),
                     'reservation_scope' => 'official',
-                    'reservation_tier' => $order->customer?->reservation_tier,
                 ]);
                 ReservationSideEffects::touchProduct($productId);
                 return;
@@ -431,9 +430,12 @@ class PreinvoiceReservationService
         }
 
         $isVip = $activeReservations->contains(fn (PreinvoiceDraftReservation $reservation) => $reservation->reservation_tier === 'vip');
-        $expired = ! $isVip && $activeReservations
-                ->filter(fn (PreinvoiceDraftReservation $reservation) => $reservation->expires_at !== null && $reservation->expires_at->lte(now()))
-                ->isNotEmpty();
+        $expired = $activeReservations
+            ->filter(fn (PreinvoiceDraftReservation $reservation) =>
+                $reservation->expires_at !== null
+                && $reservation->expires_at->lte(now())
+            )
+            ->isNotEmpty();
 
         if ($expired) {
             $this->expirePreinvoiceReservations($order, $actor);

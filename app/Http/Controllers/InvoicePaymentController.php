@@ -59,31 +59,6 @@ class InvoicePaymentController extends Controller
                 'integer',
                 Rule::exists('invoices', 'id')->where(fn ($q) => $q->where('customer_id', $customer->id)),
             ],
-            'method' => 'required|in:cash,cheque',
-            'amount' => 'required|integer|min:1',
-            'payment_date' => 'nullable|string|max:20',
-            'paid_at' => 'nullable|date',
-            'bank_name' => 'nullable|string|max:255',
-            'tracking_number' => 'nullable|string|max:190',
-            'payment_identifier' => 'nullable|string|max:190',
-            'description' => 'nullable|string|max:2000',
-            'note' => 'nullable|string|max:2000',
-            'cheque_bank_name' => 'nullable|string|max:255',
-            'branch_name' => 'nullable|string|max:255',
-            'cheque_branch_name' => 'nullable|string|max:255',
-            'cheque_number' => 'required_if:method,cheque|nullable|string|max:255',
-            'cheque_amount' => 'nullable|integer|min:1',
-            'due_date' => 'nullable|string|max:20',
-            'cheque_due_date' => 'nullable|date',
-            'received_date' => 'nullable|string|max:20',
-            'cheque_received_at' => 'nullable|date',
-            'cheque_owner_name' => 'nullable|string|max:255',
-            'cheque_customer_name' => 'nullable|string|max:255',
-            'customer_code' => 'nullable|string|max:255',
-            'cheque_customer_code' => 'nullable|string|max:255',
-            'cheque_account_number' => 'nullable|string|max:255',
-            'cheque_account_holder' => 'nullable|string|max:255',
-            'cheque_status' => 'nullable|in:registered,unregistered',
         ]);
 
         $invoice = Invoice::query()->findOrFail((int) $data['invoice_id']);
@@ -92,9 +67,8 @@ class InvoicePaymentController extends Controller
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertNotCancelled();
             $remainingBefore = $this->remainingAmount($invoice);
-            $data = $this->normalizeEditPaymentPayload($data, $invoice);
-            $this->assertPaymentDoesNotExceedRemaining((int) $data['amount'], $remainingBefore);
-            $payment = $this->persistPayment($invoice, $data, $customer->id);
+            abort_unless((int) $invoice->customer_id === (int) $customer->id, 404);
+            $payment = $this->createPaymentRecord($request, $invoice, $customer->id, $remainingBefore);
 
             return [$payment, $remainingBefore, max($remainingBefore - (int) $payment->amount, 0)];
         });
@@ -113,116 +87,140 @@ class InvoicePaymentController extends Controller
         return back()->with('success', "✅ پرداخت {$this->methodLabel($payment->method)} برای مشتری ثبت شد.");
     }
 
+    public function editForCustomer(Customer $customer, InvoicePayment $payment)
+    {
+        abort_unless($this->canHandleFinanceActions(), 403);
+        abort_unless((int) $payment->customer_id === (int) $customer->id, 404);
+        $payment->load('cheque', 'invoice');
+        abort_unless($payment->invoice && (int) $payment->invoice->customer_id === (int) $customer->id, 404);
+
+        $ledgers = CustomerLedger::query()->where('reference_type', InvoicePayment::class)->where('reference_id', $payment->id)->get();
+        $ledger = $ledgers->first();
+        $managementIssue = $ledgers->count() !== 1 || (int) $ledger->customer_id !== (int) $customer->id
+            || $ledger->type !== 'credit' || (int) $ledger->amount !== (int) $payment->amount
+            || $payment->cheque()->count() > 1;
+        return view('payments.edit', [
+            'customer' => $customer, 'payment' => $payment,
+            'version' => $this->paymentVersion($payment), 'managementIssue' => $managementIssue,
+        ]);
+    }
+
     public function updateForCustomer(Customer $customer, InvoicePayment $payment, Request $request)
     {
         abort_unless($this->canHandleFinanceActions(), 403);
         abort_unless((int) $payment->customer_id === (int) $customer->id, 404);
-
         $data = $request->validate([
-            'invoice_id' => ['required', 'integer', Rule::exists('invoices', 'id')->where(fn ($q) => $q->where('customer_id', $customer->id))],
-            'method' => 'required|in:cash,cheque',
+            'method' => ['required', Rule::in(array_unique(['cash', 'cheque', $payment->method]))],
             'amount' => 'required|integer|min:1',
-            'paid_at' => 'nullable|date',
+            'payment_date' => 'required_unless:method,cheque|nullable|string|max:20',
             'bank_name' => 'nullable|string|max:255',
+            'tracking_number' => 'nullable|string|max:190',
             'note' => 'nullable|string|max:2000',
             'cheque_number' => 'required_if:method,cheque|nullable|string|max:255',
-            'cheque_bank_name' => 'nullable|string|max:255',
             'cheque_branch_name' => 'nullable|string|max:255',
-            'cheque_due_date' => 'nullable|date',
-            'cheque_received_at' => 'nullable|date',
+            'due_date' => 'required_if:method,cheque|nullable|string|max:20',
+            'received_date' => 'required_if:method,cheque|nullable|string|max:20',
             'cheque_customer_name' => 'nullable|string|max:255',
             'cheque_account_number' => 'nullable|string|max:255',
             'cheque_account_holder' => 'nullable|string|max:255',
-            'cheque_status' => 'nullable|in:registered,unregistered',
+            'cheque_status' => ['nullable', Rule::in(array_unique(['registered', 'unregistered', $payment->cheque?->status ?? 'unregistered']))],
             'reason' => 'required|string|min:5|max:1000',
+            'version' => 'required|string|size:64',
         ]);
 
         DB::transaction(function () use ($customer, $payment, $data) {
-            $payment = InvoicePayment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
-            abort_unless((int) $payment->customer_id === (int) $customer->id, 404);
-            $oldCheque = $payment->cheque;
-            $before = $this->paymentSnapshot($payment, $oldCheque);
-            $invoiceIds = collect([$payment->invoice_id, (int) $data['invoice_id']])->unique()->sort()->values();
-            $invoices = Invoice::query()->whereIn('id', $invoiceIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-            $invoice = $invoices->get((int) $data['invoice_id']);
-            abort_unless($invoice && (int) $invoice->customer_id === (int) $customer->id, 404);
+            [$invoice, $payment, $ledger] = $this->lockPayment($customer, $payment, $data['version']);
             $invoice->assertNotCancelled();
-            $paidByOthers = (int) $invoice->payments()->where('id', '!=', $payment->id)->sum('amount');
-            $this->assertPaymentDoesNotExceedRemaining((int) $data['amount'], max((int) $invoice->total - $paidByOthers, 0));
-
+            $before = $this->paymentSnapshot($payment, $payment->cheque);
             $data = $this->normalizeEditPaymentPayload($data, $invoice);
             $payment->update([
-                'invoice_id' => $invoice->id,
-                'method' => $data['method'],
-                'amount' => (int) $data['amount'],
-                'paid_at' => $data['paid_at'],
-                'bank_name' => $data['method'] === 'cheque' ? ($data['cheque_bank_name'] ?? null) : ($data['bank_name'] ?? null),
-                'payment_identifier' => $data['method'] === 'cheque' ? $data['cheque_number'] : null,
-                'note' => $data['method'] === 'cheque' ? null : ($data['note'] ?? null),
+                'method' => $data['method'], 'amount' => (int) $data['amount'],
+                'paid_at' => $data['paid_at'], 'bank_name' => $data['bank_name'] ?? null,
+                'payment_identifier' => $data['method'] === 'cheque' ? $data['cheque_number'] : ($data['payment_identifier'] ?? null),
+                'note' => $data['note'] ?? null,
             ]);
-
             if ($data['method'] === 'cheque') {
                 $payment->cheque()->updateOrCreate([], [
-                    'bank_name' => $data['cheque_bank_name'] ?? null,
+                    'bank_name' => $data['bank_name'] ?? null,
                     'branch_name' => $data['cheque_branch_name'] ?? null,
-                    'cheque_number' => $data['cheque_number'],
-                    'amount' => (int) $data['amount'],
-                    'due_date' => $data['cheque_due_date'],
-                    'received_at' => $data['cheque_received_at'],
+                    'cheque_number' => $data['cheque_number'], 'amount' => (int) $data['amount'],
+                    'due_date' => $data['cheque_due_date'], 'received_at' => $data['cheque_received_at'],
                     'customer_name' => $data['cheque_customer_name'] ?? null,
                     'account_number' => $data['cheque_account_number'] ?? null,
                     'account_holder' => $data['cheque_account_holder'] ?? null,
-                    'status' => $data['cheque_status'] ?? 'unregistered',
+                    'status' => $data['cheque_status'] ?? $payment->cheque?->status ?? 'unregistered',
                 ]);
             } else {
                 $payment->cheque()->delete();
             }
-
-            CustomerLedger::query()->where('reference_type', InvoicePayment::class)->where('reference_id', $payment->id)
-                ->where('customer_id', $customer->id)->update([
-                    'amount' => (int) $payment->amount,
-                    'note' => 'ثبت پرداخت برای فاکتور '.$invoice->uuid.' ('.$this->methodLabel($payment->method).')',
-                ]);
-
+            $ledger->update(['amount' => (int) $payment->amount,
+                'note' => 'ثبت پرداخت برای فاکتور '.$invoice->uuid.' ('.$this->methodLabel($payment->method).')']);
             $payment->unsetRelation('cheque')->load('cheque');
             ActivityLogger::log('invoice_payment_updated', $invoice, 'پرداخت مشتری ویرایش شد.', [
-                'payment_id' => $payment->id,
-                'customer_id' => $customer->id,
-                'before' => $before,
-                'after' => $this->paymentSnapshot($payment, $payment->cheque),
+                'payment_id' => $payment->id, 'customer_id' => $customer->id,
+                'before' => $before, 'after' => $this->paymentSnapshot($payment, $payment->cheque),
                 'reason' => trim($data['reason']),
             ]);
         });
-
-        return redirect()->route('account-statements.show', $customer)->with('success', 'پرداخت و گردش حساب به‌روزرسانی شد.');
+        return $this->paymentReturn($customer, $payment->invoice->uuid)->with('success', 'پرداخت و مانده حساب به‌روزرسانی شد.');
     }
 
     public function destroyForCustomer(Customer $customer, InvoicePayment $payment, Request $request)
     {
         abort_unless($this->canHandleFinanceActions(), 403);
         abort_unless((int) $payment->customer_id === (int) $customer->id, 404);
-        $data = $request->validate(['reason' => 'required|string|min:5|max:1000']);
-
-        DB::transaction(function () use ($customer, $payment, $data) {
-            $payment = InvoicePayment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
-            abort_unless((int) $payment->customer_id === (int) $customer->id, 404);
-            $invoice = Invoice::query()->whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
+        $data = $request->validate(['reason' => 'required|string|min:5|max:1000', 'version' => 'required|string|size:64']);
+        $uuid = DB::transaction(function () use ($customer, $payment, $data) {
+            [$invoice, $payment, $ledger] = $this->lockPayment($customer, $payment, $data['version']);
             $before = $this->paymentSnapshot($payment, $payment->cheque);
-
-            CustomerLedger::query()->where('reference_type', InvoicePayment::class)->where('reference_id', $payment->id)
-                ->where('customer_id', $customer->id)->delete();
+            $ledger->delete();
             $payment->cheque()->delete();
             $payment->delete();
-
             ActivityLogger::log('invoice_payment_deleted', $invoice, 'پرداخت مشتری حذف شد.', [
-                'payment_id' => $before['id'],
-                'customer_id' => $customer->id,
-                'before' => $before,
-                'reason' => trim($data['reason']),
+                'payment_id' => $before['id'], 'customer_id' => $customer->id,
+                'before' => $before, 'reason' => trim($data['reason']),
             ]);
+            return $invoice->uuid;
         });
+        return $this->paymentReturn($customer, $uuid)->with('success', 'پرداخت حذف شد و مانده حساب به‌روزرسانی شد.');
+    }
 
-        return redirect()->route('account-statements.show', $customer)->with('success', 'پرداخت حذف شد و مانده حساب به‌روزرسانی شد.');
+    private function paymentVersion(InvoicePayment $payment): string
+    {
+        return hash('sha256', json_encode($this->paymentSnapshot($payment, $payment->cheque), JSON_THROW_ON_ERROR));
+    }
+
+    private function lockPayment(Customer $customer, InvoicePayment $original, string $version): array
+    {
+        // Registration also locks the invoice first: use one lock order for all payment writes.
+        $invoice = Invoice::query()->whereKey($original->invoice_id)->lockForUpdate()->firstOrFail();
+        $payment = InvoicePayment::query()->whereKey($original->id)->lockForUpdate()->firstOrFail();
+        abort_unless((int) $payment->customer_id === (int) $customer->id
+            && (int) $invoice->customer_id === (int) $customer->id
+            && (int) $payment->invoice_id === (int) $invoice->id, 404);
+        $cheques = $payment->cheque()->lockForUpdate()->get();
+        if ($cheques->count() > 1) {
+            throw ValidationException::withMessages(['payment' => 'برای این پرداخت چند چک ثبت شده است؛ ابتدا سوابق مالی بررسی شود.']);
+        }
+        $payment->setRelation('cheque', $cheques->first());
+        if (!hash_equals($this->paymentVersion($payment), $version)) {
+            throw ValidationException::withMessages(['version' => 'این پرداخت تغییر کرده است؛ صفحه را دوباره باز کنید.']);
+        }
+        $ledgers = CustomerLedger::query()->where('reference_type', InvoicePayment::class)
+            ->where('reference_id', $payment->id)->lockForUpdate()->get();
+        $ledger = $ledgers->first();
+        if ($ledgers->count() !== 1 || (int) $ledger->customer_id !== (int) $customer->id
+            || $ledger->type !== 'credit' || (int) $ledger->amount !== (int) $payment->amount) {
+            throw ValidationException::withMessages(['payment' => 'سند مالی این پرداخت نیاز به بررسی دارد؛ تغییری ثبت نشد.']);
+        }
+        return [$invoice, $payment, $ledger];
+    }
+
+    private function paymentReturn(Customer $customer, string $uuid)
+    {
+        return \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'invoices.show')
+            ? redirect()->route('invoices.show', $uuid)
+            : redirect()->route('account-statements.show', $customer->id);
     }
 
     private function paymentSnapshot(InvoicePayment $payment, ?\App\Models\Cheque $cheque): array
@@ -239,7 +237,7 @@ class InvoicePaymentController extends Controller
             'payment_identifier' => $payment->payment_identifier,
             'receipt_image' => $payment->receipt_image,
             'note' => $payment->note,
-            'cheque' => $cheque?->only(['cheque_number', 'bank_name', 'branch_name', 'amount', 'due_date', 'received_at', 'customer_name', 'account_number', 'account_holder', 'image', 'status']),
+            'cheque' => $cheque?->only(['cheque_number', 'bank_name', 'branch_name', 'amount', 'due_date', 'received_at', 'customer_name', 'customer_code', 'account_number', 'account_holder', 'image', 'status']),
         ];
     }
 
@@ -275,26 +273,26 @@ class InvoicePaymentController extends Controller
 
         $data = $this->normalizeEditPaymentPayload($data, $invoice);
 
-        $this->assertPaymentDoesNotExceedRemaining((int) $data['amount'], $remainingBefore ?? $this->remainingAmount($invoice));
 
         return $this->persistPayment($invoice, $data, $fallbackCustomerId);
     }
 
     private function normalizeEditPaymentPayload(array $data, Invoice $invoice): array
     {
-        $receivedAt = $data['cheque_received_at'] ?? $this->normalizeDate($data['received_date'] ?? null);
-        $dueDate = $data['cheque_due_date'] ?? $this->normalizeDate($data['due_date'] ?? null);
+        $receivedAt = $data['cheque_received_at'] ?? $this->normalizeDate($data['received_date'] ?? null, 'received_date');
+        $dueDate = $data['cheque_due_date'] ?? $this->normalizeDate($data['due_date'] ?? null, 'due_date');
         if (($data['method'] ?? 'cash') === 'cheque' && (! $receivedAt || ! $dueDate)) {
             throw ValidationException::withMessages(['received_date' => 'تاریخ دریافت و تاریخ سررسید چک الزامی است.']);
         }
         $data['paid_at'] = ($data['method'] ?? 'cash') === 'cheque'
             ? $receivedAt
-            : ($data['paid_at'] ?? $this->normalizeDate($data['payment_date'] ?? null) ?? now()->toDateString());
+            : ($data['paid_at'] ?? $this->normalizeDate($data['payment_date'] ?? null, 'payment_date') ?? now()->toDateString());
         $data['payment_identifier'] = $data['payment_identifier'] ?? $data['tracking_number'] ?? null;
         $data['note'] = $data['note'] ?? $data['description'] ?? null;
         $data['cheque_bank_name'] = $data['cheque_bank_name'] ?? $data['bank_name'] ?? null;
         $data['cheque_branch_name'] = $data['cheque_branch_name'] ?? $data['branch_name'] ?? null;
         $data['cheque_due_date'] = $dueDate;
+        $data['due_date'] = $dueDate;
         $data['cheque_received_at'] = $receivedAt;
         $data['cheque_customer_name'] = $data['cheque_customer_name'] ?? $data['cheque_owner_name'] ?? $invoice->customer_name ?? $invoice->customer?->display_name ?? null;
         $data['cheque_customer_code'] = $data['cheque_customer_code'] ?? $data['customer_code'] ?? $invoice->customer?->crm_customer_id ?? $invoice->customer_id ?? null;
@@ -303,18 +301,19 @@ class InvoicePaymentController extends Controller
         return $data;
     }
 
-    private function normalizeDate(?string $value): ?string
+    private function normalizeDate(?string $value, string $field): ?string
     {
-        if (blank($value)) {
-            return null;
-        }
-
-        $normalized = str_replace(['-', '.'], '/', $value);
+        if (blank($value)) return null;
+        $normalized = strtr(trim($value), ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9','-'=>'/','.'=>'/']);
+        $date = null;
         if (preg_match('/^1[34]\d{2}\/\d{1,2}\/\d{1,2}$/', $normalized)) {
-            return Jalalian::fromFormat('Y/m/d', $normalized)->toCarbon()->toDateString();
+            $date = \App\Support\JalaliDate::toGregorianDate($normalized);
+        } elseif (preg_match('/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/', $normalized, $parts)
+            && (int) $parts[1] >= 1900 && checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            $date = sprintf('%04d-%02d-%02d', $parts[1], $parts[2], $parts[3]);
         }
-
-        return $value;
+        if (!$date) throw ValidationException::withMessages([$field => 'تاریخ واردشده معتبر نیست.']);
+        return $date;
     }
 
     private function remainingAmount(Invoice $invoice): int
@@ -322,13 +321,6 @@ class InvoicePaymentController extends Controller
         $paid = (int) $invoice->payments()->sum('amount');
 
         return max((int) $invoice->total - $paid, 0);
-    }
-
-    private function assertPaymentDoesNotExceedRemaining(int $amount, int $remaining): void
-    {
-        if ($amount > $remaining) {
-            abort(422, 'مبلغ پرداخت نمی‌تواند بیشتر از مانده فاکتور باشد.');
-        }
     }
 
     private function persistPayment(Invoice $invoice, array $data, ?int $fallbackCustomerId = null): InvoicePayment

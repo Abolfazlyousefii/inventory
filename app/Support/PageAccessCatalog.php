@@ -222,6 +222,8 @@ class PageAccessCatalog
         'finance.commission-rates.import.preview' => ['finance.seller_sales_documents'],
         'finance.commission-rates.import.apply' => ['finance.seller_sales_documents'],
         'finance.org-commission.index' => ['finance.seller_sales_documents'],
+        'finance.org-commission.settings' => ['finance.seller_sales_documents'],
+        'finance.org-commission.settings.update' => ['finance.seller_sales_documents'],
         'finance.org-commission.departments.store' => ['finance.seller_sales_documents'],
         'finance.org-commission.departments.update' => ['finance.seller_sales_documents'],
         'finance.org-commission.departments.toggle' => ['finance.seller_sales_documents'],
@@ -317,16 +319,6 @@ class PageAccessCatalog
         'sales-havaleh.status' => ['warehouse.issues'],
         'sales-havaleh.history' => ['warehouse.issues'],
         'payments.view' => ['finance.payments'],
-        'warehouse-map.index' => ['warehouse.map'],
-        'warehouse-map.locations.show' => ['warehouse.map'],
-        'warehouse-map.categories.children' => ['warehouse.map'],
-        'warehouse-map.categories.products' => ['warehouse.map'],
-        'warehouse-map.products.variants' => ['warehouse.map'],
-        'warehouse-map.history' => ['warehouse.map'],
-        'warehouse-map.locations.store' => ['warehouse.map'],
-        'warehouse-map.locations.update' => ['warehouse.map'],
-        'warehouse-map.assign' => ['warehouse.map'],
-        'warehouse-map.transfer' => ['warehouse.map'],
         'warehouses.index' => ['warehouses'],
         'warehouses.edit' => ['warehouses'],
         'warehouses.update' => ['warehouses'],
@@ -334,6 +326,14 @@ class PageAccessCatalog
         'warehouses.personnel.index' => ['warehouses'],
         'warehouses.personnel.store' => ['warehouses'],
         'warehouses.personnel.show' => ['warehouses'],
+        'purchase-returns.index' => ['warehouse.purchases'],
+        'purchase-returns.create' => ['warehouse.purchases'],
+        'purchase-returns.store' => ['warehouse.purchases'],
+        'purchase-returns.show' => ['warehouse.purchases'],
+        'purchase-returns.print' => ['warehouse.purchases'],
+        'purchase-returns.edit' => ['warehouse.purchases'],
+        'purchase-returns.update' => ['warehouse.purchases'],
+        'purchase-returns.destroy' => ['warehouse.purchases'],
         'purchases.index' => ['warehouse.purchases'],
         'purchases.export' => ['warehouse.purchases'],
         'purchases.create' => ['warehouse.purchases'],
@@ -554,7 +554,6 @@ class PageAccessCatalog
             'warehouse.inbound_queue' => ['انبارداری', 'صف ورودی موجودی', []],
             'warehouse.transfers' => ['انبارداری', 'انتقال بین انبار', ['transfers']],
             'warehouse.receipts' => ['انبارداری', 'رسید انبار', ['receipts']],
-            'warehouse.map' => ['انبارداری', 'نقشه انبار', ['warehouse_map']],
             'assets' => ['انبارداری', 'امین اموال', ['assets']],
             'sales.preinvoices' => ['بازرگانی و فروش', 'ثبت و مدیریت پیش‌فاکتورها', ['preinvoices']],
             'commercial.commissions' => ['بازرگانی و فروش', 'پورسانت فروشندگان', []],
@@ -750,14 +749,20 @@ class PageAccessCatalog
         if (! $page) {
             return false;
         }
-        $rolePermissions = $user->getPermissionsViaRoles()->pluck('key')->filter()->all();
-
-        return in_array($pagePermission, $rolePermissions, true);
+        return $user->hasPermission($pagePermission);
     }
 
     public static function userCanRoute(User $user, ?string $routeName): bool
     {
         if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        $actionPermission = $routeName
+            ? (PermissionCatalog::routePermissions()[$routeName] ?? null)
+            : null;
+
+        if ($actionPermission && $user->hasPermission($actionPermission)) {
             return true;
         }
 
@@ -813,7 +818,7 @@ class PageAccessCatalog
                    'categories' => 'categories.index', 'brands_models' => 'model-lists.index', 'shipping_methods' => 'shipping-methods.index',
                    'warehouses' => 'warehouses.index', 'warehouse.stocks' => 'products.index', 'warehouse.stocktake' => 'stock-count-documents.index',
                    'warehouse.purchases' => 'purchases.index', 'warehouse.issues' => 'vouchers.index', 'warehouse.collection' => 'vouchers.sales.queue',
-                   'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.reservations' => 'warehouse-reservations.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'warehouse.map' => 'warehouse-map.index', 'assets' => 'asset.hub',
+                   'warehouse.shipping' => 'warehouse.shipping.index', 'warehouse.reservations' => 'warehouse-reservations.index', 'warehouse.inbound_queue' => 'warehouse.inbound.index', 'assets' => 'asset.hub',
                    'sales.preinvoices' => 'preinvoice.create', 'commercial.commissions' => 'commercial.commissions.index', 'commercial.invoice_reassignments' => 'commercial.invoice-reassignments.index', 'sales.preinvoice_warehouse_review' => 'warehouse.reviews.index',
                    'sales.preinvoice_finance_review' => 'preinvoice.draft.finance', 'sales.invoices' => 'invoices.index',
                    'sales.returns' => 'vouchers.return-from-sale.index', 'customers' => 'customers.index', 'suppliers' => 'suppliers.index',

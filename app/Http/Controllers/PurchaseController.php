@@ -92,46 +92,35 @@ class PurchaseController extends Controller
 
         $categories = Category::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'parent_id']);
+            ->get([
+                'id',
+                'name',
+                'code',
+                'parent_id',
+            ]);
 
+        // Keep products, but DO NOT load every variant into RAM here.
         $products = Product::query()
-            ->with($this->productVariantRelations())
             ->orderBy('name')
-            ->get(['id', 'name', 'category_id', 'code', 'short_barcode', 'sku', 'models', 'has_colors']);
+            ->get([
+                'id',
+                'name',
+                'category_id',
+                'code',
+                'short_barcode',
+                'sku',
+                'models',
+                'has_colors',
+            ]);
 
-        $variantStructure = app(ProductVariantStructureService::class);
-        $products->each(fn (Product $product) => $product->setRelation('variants', $variantStructure->validVariants($product)));
-
-        $variants = $products->flatMap(function (Product $product) {
-            return $product->variants->map(function ($v) {
-                $design2 = substr((string) $v->variant_code, -2);
-                if (!preg_match('/^\d{2}$/', $design2)) $design2 = '00';
-
-                return [
-                    'id' => (int) $v->id,
-                    'product_id' => (int) $v->product_id,
-                    'model_list_id' => $v->model_list_id ? (int) $v->model_list_id : 0,
-                    'variant_code' => (string) $v->variant_code,
-                    'variant_name' => (string) ($v->variant_name ?? ''),
-                    'variety_name' => (string) ($v->variety_name ?? ''),
-                    'variety_code' => (string) ($v->variety_code ?? ''),
-                    'design2' => $design2,
-                    'design_title' => (string) ($v->variety_name ?? ''),
-                    'sell_price' => (int) ($v->sell_price ?? 0),
-                    'buy_price' => is_null($v->buy_price) ? null : (int) $v->buy_price,
-                    'stock' => (int) ($v->stock ?? 0),
-                    'reserved' => (int) ($v->reserved ?? 0),
-                    'model_name' => (string) ($v->modelList?->model_name ?? ''),
-                    'model_code' => (string) ($v->modelList?->code ?? ''),
-                    'display_code' => (string) ($v->variant_code ?? '-'),
-                    'barcode' => (string) ($v->variant_code ?? ''),
-                    'sku' => (string) ($v->variant_code ?? ''),
-                    'is_active' => (bool) ($v->is_active ?? true),
-                    'color_name' => '',
-                    'color_code' => '',
-                ];
-            });
-        });
+        /*
+         * Keep the variable because the view/controller contract already
+         * contains it.
+         *
+         * Actual variants are loaded per product from productVariants()
+         * when a product is selected.
+         */
+        $variants = collect();
 
         return view('purchases.create', [
             'suppliers' => $suppliers,
@@ -183,52 +172,38 @@ class PurchaseController extends Controller
 
     public function edit(Purchase $purchase)
     {
-        $purchase->load(['items', 'items.product', 'items.variant']);
+        $purchase->load([
+            'items',
+            'items.product',
+            'items.variant',
+        ]);
 
         $suppliers = $this->purchaseSupplierOptions();
 
         $categories = Category::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'parent_id']);
+            ->get([
+                'id',
+                'name',
+                'code',
+                'parent_id',
+            ]);
 
         $products = Product::query()
-            ->with($this->productVariantRelations())
             ->orderBy('name')
-            ->get(['id', 'name', 'category_id', 'code', 'short_barcode', 'sku', 'models', 'has_colors']);
+            ->get([
+                'id',
+                'name',
+                'category_id',
+                'code',
+                'short_barcode',
+                'sku',
+                'models',
+                'has_colors',
+            ]);
 
-        $variantStructure = app(ProductVariantStructureService::class);
-        $products->each(fn (Product $product) => $product->setRelation('variants', $variantStructure->validVariants($product)));
-
-        $variants = $products->flatMap(function (Product $product) {
-            return $product->variants->map(function ($v) {
-                $design2 = substr((string) $v->variant_code, -2);
-                if (!preg_match('/^\d{2}$/', $design2)) $design2 = '00';
-
-                return [
-                    'id' => (int) $v->id,
-                    'product_id' => (int) $v->product_id,
-                    'model_list_id' => $v->model_list_id ? (int) $v->model_list_id : 0,
-                    'variant_code' => (string) $v->variant_code,
-                    'variant_name' => (string) ($v->variant_name ?? ''),
-                    'variety_name' => (string) ($v->variety_name ?? ''),
-                    'variety_code' => (string) ($v->variety_code ?? ''),
-                    'design2' => $design2,
-                    'design_title' => (string) ($v->variety_name ?? ''),
-                    'sell_price' => (int) ($v->sell_price ?? 0),
-                    'buy_price' => is_null($v->buy_price) ? null : (int) $v->buy_price,
-                    'stock' => (int) ($v->stock ?? 0),
-                    'reserved' => (int) ($v->reserved ?? 0),
-                    'model_name' => (string) ($v->modelList?->model_name ?? ''),
-                    'model_code' => (string) ($v->modelList?->code ?? ''),
-                    'display_code' => (string) ($v->variant_code ?? '-'),
-                    'barcode' => (string) ($v->variant_code ?? ''),
-                    'sku' => (string) ($v->variant_code ?? ''),
-                    'is_active' => (bool) ($v->is_active ?? true),
-                    'color_name' => '',
-                    'color_code' => '',
-                ];
-            });
-        });
+        // Keep it.
+        $variants = collect();
 
         return view('purchases.create', [
             'suppliers' => $suppliers,
@@ -290,6 +265,7 @@ class PurchaseController extends Controller
                 $purchase = Purchase::whereKey($purchase->id)
                     ->lockForUpdate()
                     ->firstOrFail();
+                app(\App\Services\PurchaseReturnService::class)->assertPurchaseMutable($purchase);
                 $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
 
                 $purchase->update($this->purchaseTablePayload([
@@ -319,6 +295,8 @@ class PurchaseController extends Controller
     public function destroy(Purchase $purchase)
     {
         DB::transaction(function () use ($purchase) {
+            $purchase = Purchase::whereKey($purchase->id)->lockForUpdate()->firstOrFail();
+            app(\App\Services\PurchaseReturnService::class)->assertPurchaseMutable($purchase);
             app(SupplierLedgerService::class)->voidPurchaseCredit($purchase);
             $this->rollbackPurchase($purchase);
             $purchase->delete();

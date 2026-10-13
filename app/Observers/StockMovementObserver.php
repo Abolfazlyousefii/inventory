@@ -4,12 +4,13 @@ namespace App\Observers;
 
 use App\Models\StockMovement;
 use App\Services\InventoryWebhookService;
+use App\Support\ReservationSideEffects;
 
 class StockMovementObserver
 {
     public function created(StockMovement $movement): void
     {
-        InventoryWebhookService::send('stock_movement.created', [
+        $payload = [
             'movement_id' => $movement->id,
             'product_id' => $movement->product_id,
             'warehouse_id' => $movement->warehouse_id,
@@ -21,6 +22,8 @@ class StockMovementObserver
             'stock_after' => $movement->stock_after,
             'reference_type' => $movement->reference_type,
             'reference_id' => $movement->reference_id,
-        ]);
+        ];
+
+        ReservationSideEffects::dispatch(fn () => InventoryWebhookService::send('stock_movement.created', $payload));
     }
 }

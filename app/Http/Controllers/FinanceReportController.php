@@ -21,6 +21,14 @@ class FinanceReportController extends Controller
     {
         return view('finance.reports.index', [
             'reports' => [[
+                'title' => 'دریافت‌های نقدی و چکی',
+                'description' => 'روند دریافت‌ها، سهم نقدی و چکی و بررسی سررسید چک‌ها',
+                'url' => route('finance.reports.receipts'),
+            ], [
+                'title' => 'کالاهای پرفروش',
+                'description' => 'رتبه‌بندی کالا و تنوع بر اساس تاریخ ارسال، تعداد و مبلغ فروش',
+                'url' => route('finance.reports.top-products'),
+            ], [
                 'title' => 'اسناد فروش و پورسانت فروشندگان',
                 'description' => 'ثبت و مدیریت فاکتورهای منتخب هر فروشنده برای محاسبات واحد مالی',
                 'url' => route('finance.seller-sales.index'),

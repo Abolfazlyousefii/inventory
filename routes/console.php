@@ -9,9 +9,15 @@ use App\Services\Sync\SiteImageSyncService;
 use App\Services\Sync\SitePaidOrdersSyncService;
 use App\Services\Sync\SyncProductsToSite;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
-Schedule::command('reservations:cleanup')
+Schedule::call(function (): void {
+    // Run in this PHP process: shared hosting disables proc_open.
+    if (Artisan::call('reservations:cleanup') !== 0) {
+        throw new \RuntimeException('Scheduled reservation command failed: reservations:cleanup');
+    }
+})
     ->name('warehouse-reservation-cleanup')
     ->everyTenMinutes()
     ->withoutOverlapping(15)
@@ -22,7 +28,12 @@ Schedule::command('reservations:cleanup')
 // Official (submitted) preinvoice reservations expire at stock_frozen_until. Without this
 // schedule they only expired when the seller opened "my preinvoices", so an overdue
 // preinvoice disappeared from the finance queue while its stock stayed reserved.
-Schedule::command('preinvoices:expire-reservations')
+Schedule::call(function (): void {
+    // Run in this PHP process: shared hosting disables proc_open.
+    if (Artisan::call('preinvoices:expire-reservations') !== 0) {
+        throw new \RuntimeException('Scheduled reservation command failed: preinvoices:expire-reservations');
+    }
+})
     ->name('preinvoice-official-reservation-expiry')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)

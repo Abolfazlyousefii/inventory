@@ -176,13 +176,6 @@ class PermissionCatalog
                 'receipts.cancel' => 'لغو رسید',
                 'receipts.print' => 'چاپ رسید',
             ],
-            'نقشه انبار' => [
-                'warehouse_map.view' => 'مشاهده نقشه انبار',
-                'warehouse_map.locations.manage' => 'مدیریت مکان‌ها',
-                'warehouse_map.assign' => 'جانمایی کالا',
-                'warehouse_map.transfer' => 'جابه‌جایی مکانی',
-                'warehouse_map.history' => 'مشاهده تاریخچه نقشه انبار',
-            ],
             'امین اموال' => [
                 'assets.view' => 'مشاهده امین اموال',
                 'assets.personnel.view' => 'مشاهده پرسنل اموال',
@@ -354,7 +347,6 @@ class PermissionCatalog
                 ['permission' => 'warehouse.shipping.queue.view', 'label' => 'صف ارسال فاکتور'],
                 ['permission' => 'warehouse_reservations.view', 'label' => 'مدیریت رزرو موجودی'],
                 ['permission' => 'assets.view', 'label' => 'امین اموال'],
-                ['permission' => 'warehouse_map.view', 'label' => 'نقشه انبار'],
                 ['permission' => 'inventory.count.view', 'label' => 'انبارگردانی'],
             ],
             'بازرگانی و فروش' => [
@@ -670,6 +662,11 @@ class PermissionCatalog
             return true;
         }
 
+        // Respect permissions assigned directly or through roles first.
+        if ($permission !== '*' && $user instanceof User && $user->hasPermission($permission)) {
+            return true;
+        }
+
         if (str_starts_with($permission, 'page.')) {
             return $user instanceof User
                    && PageAccessCatalog::userCan($user, $permission);
@@ -935,16 +932,6 @@ class PermissionCatalog
             'sales-havaleh.update' => 'issues.edit',
             'sales-havaleh.status' => 'issues.confirm',
             'sales-havaleh.history' => 'issues.view',
-            'warehouse-map.index' => 'warehouse_map.view',
-            'warehouse-map.locations.show' => 'warehouse_map.view',
-            'warehouse-map.categories.children' => 'warehouse_map.view',
-            'warehouse-map.categories.products' => 'warehouse_map.view',
-            'warehouse-map.products.variants' => 'warehouse_map.view',
-            'warehouse-map.history' => 'warehouse_map.history',
-            'warehouse-map.locations.store' => 'warehouse_map.locations.manage',
-            'warehouse-map.locations.update' => 'warehouse_map.locations.manage',
-            'warehouse-map.assign' => 'warehouse_map.assign',
-            'warehouse-map.transfer' => 'warehouse_map.transfer',
             'warehouses.index' => 'warehouses.view',
             'warehouses.edit' => 'warehouses.edit',
             'warehouses.update' => 'warehouses.edit',

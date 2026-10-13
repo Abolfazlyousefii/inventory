@@ -72,7 +72,7 @@ final class ReservationSideEffects
 
     public static function dispatch(callable $callback): void
     {
-        if (self::$depth > 0 && DB::transactionLevel() > 0) {
+        if (DB::transactionLevel() > 0) {
             DB::afterCommit($callback);
             return;
         }
