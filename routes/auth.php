@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\PhoneTokenLoginController;
+use App\Http\Controllers\Auth\UserOtpLoginController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
@@ -16,6 +17,10 @@ Route::get('auth/phone/verify', PhoneTokenLoginController::class)
     ->name('auth.phone.verify');
 
 Route::middleware('guest')->group(function () {
+    Route::get('login/otp', [UserOtpLoginController::class, 'create'])->name('login.otp');
+    Route::post('login/otp/request', [UserOtpLoginController::class, 'request'])->middleware('throttle:10,1')->name('login.otp.request');
+    Route::post('login/otp/verify', [UserOtpLoginController::class, 'verify'])->middleware('throttle:15,1')->name('login.otp.verify');
+
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');
 

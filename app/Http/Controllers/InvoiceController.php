@@ -869,21 +869,74 @@ class InvoiceController extends Controller
 
     public function update(string $uuid, Request $request)
     {
-        $data = $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.invoice_item_id' => 'nullable|exists:invoice_items,id',
-            'items.*.id' => 'nullable|exists:invoice_items,id',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.variant_id' => 'required|exists:product_variants,id',
-            'items.*.quantity' => 'required|integer|min:0',
-            'items.*.price' => 'nullable|integer|min:1',
-            'items.*.line_discount_amount' => 'nullable|integer|min:0',
-            'change_reason' => 'nullable|string|max:255',
-            'change_note' => 'nullable|string|max:2000',
+        // Verify access before parsing and validating invoice item data.
+        $invoice = Invoice::query()
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+        abort_unless($this->canManageInvoice($invoice), 403);
+
+        $transport = $request->validate([
+            'items_payload'       => 'required|string',
+            'items_payload_count' => 'required|integer|min:1|max:2000',
+            'change_reason'       => 'nullable|string|max:255',
+            'change_note'         => 'nullable|string|max:2000',
         ]);
 
-        $invoice = Invoice::query()->where('uuid', $uuid)->firstOrFail();
-        abort_unless($this->canManageInvoice($invoice), 403);
+        try {
+            $items = json_decode($transport['items_payload'], true, 512, JSON_THROW_ON_ERROR);
+        } catch ( JsonException ) {
+            throw ValidationException::withMessages([
+                'items_payload' => 'اطلاعات اقلام فاکتور نامعتبر است. دوباره تلاش کنید.',
+            ]);
+        }
+
+        if ( !is_array($items) || !array_is_list($items) || count($items) !== (int) $transport['items_payload_count'] ) {
+            throw ValidationException::withMessages([
+                'items_payload' => 'اطلاعات اقلام فاکتور ناقص است. هیچ تغییری ثبت نشد.',
+            ]);
+        }
+
+        // Validate the decoded rows using the original finance-edit rules.
+        $data = Validator::make([
+            'items'         => $items,
+            'change_reason' => $transport['change_reason'] ?? null,
+            'change_note'   => $transport['change_note'] ?? null,
+        ], [
+            'items'                        => 'required|array|min:1|max:2000',
+            'items.*'                      => 'required|array',
+            'items.*.invoice_item_id'      => 'nullable|integer|exists:invoice_items,id',
+            'items.*.id'                   => 'nullable|integer|distinct|exists:invoice_items,id',
+            'items.*.product_id'           => 'required|integer|exists:products,id',
+            'items.*.variant_id'           => 'required|integer|exists:product_variants,id',
+            'items.*.quantity'             => 'required|integer|min:0',
+            'items.*.price'                => 'nullable|integer|min:1',
+            'items.*.line_discount_amount' => 'nullable|integer|min:0',
+            'change_reason'                => 'nullable|string|max:255',
+            'change_note'                  => 'nullable|string|max:2000',
+        ])
+            ->validate();
+
+        // Existing items are zeroed for removal, never silently omitted.
+        // Refuse truncated or stale requests before the update service can delete omitted rows.
+        $submittedIds = collect($data['items'])
+            ->pluck('id')
+            ->filter(fn( $id ) => $id !== null && $id !== '')
+            ->map(fn( $id ) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+        $currentIds   = $invoice->items()
+            ->pluck('id')
+            ->map(fn( $id ) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ( $submittedIds !== $currentIds ) {
+            throw ValidationException::withMessages([
+                'items_payload' => 'اقلام فاکتور در زمان ویرایش تغییر کرده یا فرم ناقص ارسال شده است. صفحه را تازه‌سازی کنید؛ هیچ تغییری ثبت نشد.',
+            ]);
+        }
 
         $updatedInvoice = $this->warehouseCollectionService->updateInvoiceItemsInPlace(
             $invoice,

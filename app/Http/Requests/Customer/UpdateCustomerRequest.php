@@ -42,12 +42,19 @@ class UpdateCustomerRequest extends FormRequest
             'is_active' => ['boolean'],
             'password' => ['nullable', 'string', 'min:8', 'max:255', 'confirmed'],
             'phones' => ['required', 'array', 'min:1'],
+
             'phones.*.phone' => [
                 'required',
                 new IranianMobile,
                 'distinct',
-                Rule::unique('customer_phones', 'phone')->where(fn ($query) => $query->where('customer_id', '<>', $customer->id)),
+                Rule::unique('customer_phones', 'phone')
+                    ->where(fn ($query) =>
+                    $query->where('customer_id', '<>', $customer->id)
+                    ),
+                Rule::unique('customers', 'mobile')
+                    ->ignore($customer->id),
             ],
+
             'primary_phone' => ['required', 'integer', Rule::in(array_keys($this->input('phones', [])))],
         ];
     }

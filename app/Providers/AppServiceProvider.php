@@ -29,7 +29,7 @@ use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Support\PermissionCatalog;
 use App\Support\SlowRequestDiagnostics;
-use App\Services\LogOtpSender;
+use App\Services\Sms\OtpSmsSender;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\Paginator;
@@ -43,7 +43,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->bind(OtpSender::class, LogOtpSender::class);
+        $this->app->bind(OtpSender::class, OtpSmsSender::class);
         $this->app->scoped(SlowRequestDiagnostics::class, fn () => new SlowRequestDiagnostics());
     }
 
@@ -97,7 +97,7 @@ class AppServiceProvider extends ServiceProvider
 
         Blade::if('canPermission', function (string $permission): bool {
             return auth()->check()
-                && PermissionCatalog::userHasPermission(auth()->user(), $permission);
+                   && PermissionCatalog::userHasPermission(auth()->user(), $permission);
         });
 
         Blade::if('canAnyPermission', function (array|string $permissions): bool {

@@ -60,4 +60,11 @@ return [
         'chat_id' => env('TELEGRAM_DAILY_REPORT_CHAT_ID'),
         'cheque_due_days' => (int) env('TELEGRAM_DAILY_REPORT_CHEQUE_DUE_DAYS', 7),
     ],
+    'melipayamak' => [
+        'username' => env('MELIPAYAMAK_USERNAME'),
+        'password' => env('MELIPAYAMAK_PASSWORD'),
+        'from' => env('MELIPAYAMAK_FROM'),
+        'body_id' => env('MELIPAYAMAK_BODY_ID'),
+        'token' => env('MELIPAYAMAK_API_TOKEN'),
+    ],
 ];

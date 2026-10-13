@@ -43,7 +43,15 @@ class StoreCustomerRequest extends FormRequest
             'is_active' => ['boolean'],
             'password' => ['nullable', 'string', 'min:8', 'max:255', 'confirmed'],
             'phones' => ['required', 'array', 'min:1'],
-            'phones.*.phone' => ['required', new IranianMobile, 'distinct', Rule::unique('customer_phones', 'phone')],
+
+            'phones.*.phone' => [
+                'required',
+                new IranianMobile,
+                'distinct',
+                Rule::unique('customer_phones', 'phone'),
+                Rule::unique('customers', 'mobile'),
+            ],
+
             'primary_phone' => ['required', 'integer', Rule::in(array_keys($this->input('phones', [])))],
         ];
     }

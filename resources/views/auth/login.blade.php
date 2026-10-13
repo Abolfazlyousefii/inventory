@@ -37,6 +37,7 @@
 		</div>
 	</form>
 
+	<div class="mt-5 text-center"><a class="text-indigo-600 font-semibold" href="{{ route('login.otp') }}">ورود با کد پیامکی</a></div>
 	@if(config('crm.sso.enabled'))
 		<div class="my-5 flex items-center gap-3" aria-hidden="true">
 			<span class="h-px flex-1 bg-slate-200"></span>

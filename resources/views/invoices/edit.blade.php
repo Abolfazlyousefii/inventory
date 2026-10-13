@@ -118,6 +118,8 @@
 		<div class="invoice-edit-card mb-3">
 			<form method="POST" action="{{ route('invoices.update', $invoice->uuid) }}" id="items-editor">
 				@csrf @method('PUT')
+				<input type="hidden" name="items_payload" id="financeItemsPayload">
+				<input type="hidden" name="items_payload_count" id="financeItemsPayloadCount">
 				<div class="invoice-edit-card__head d-flex justify-content-between align-items-center gap-2 flex-wrap">
 					<span>اقلام فاکتور</span>
 					<button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addInvoiceItemModal" @disabled(!$canEditItemsWithCollectionFlow)>+ افزودن کالا</button>
@@ -316,7 +318,60 @@ const confirmAddItemsBtn = document.getElementById('confirmAddItemsBtn');
 		productsList?.addEventListener('click', (e) => { const card = e.target.closest('.product-card'); if (card && e.target.classList.contains('js-select-product')) loadVariants(card.dataset.id, card.dataset.name); });
 		variantsList?.addEventListener('input', (e) => { if (e.target.classList.contains('variant-qty')) updateSelectedTotal(); });
 		confirmAddItemsBtn?.addEventListener('click', () => { document.querySelectorAll('.variant-row').forEach(row => { const qty = Number(row.querySelector('.variant-qty').value || 0); if (qty > 0) addItemRow(JSON.parse(row.dataset.variant), qty); }); bootstrap.Modal.getInstance(modalEl)?.hide(); document.getElementById('addItemNotice')?.classList.remove('d-none'); syncChangeReasonRequired(); });
-		bindRowButtons(); syncChangeReasonRequired();
+
+document.getElementById('items-editor')?.addEventListener('submit', function (event) {
+	const rows = Array.from(
+		this.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])')
+	);
+
+	const rowInput = (row, field) =>
+		row.querySelector(`input[name^="items["][name$="[${field}]"]`);
+
+	try {
+		if (rows.length < 1 || rows.length > 2000) {
+			throw new Error('تعداد اقلام فاکتور نامعتبر است.');
+		}
+
+		const items = rows.map((row) => {
+			const id = rowInput(row, 'id');
+			const product = rowInput(row, 'product_id');
+			const variant = rowInput(row, 'variant_id');
+			const quantity = rowInput(row, 'quantity');
+			const price = rowInput(row, 'price');
+			const discount = rowInput(row, 'line_discount_amount');
+
+			if (
+				(!id && row.dataset.newRow !== '1') ||
+				!product || !variant || !quantity || !price || !discount
+			) {
+				throw new Error('اطلاعات یکی از ردیف‌های فاکتور ناقص است.');
+			}
+
+			return {
+				id: id?.value || null,
+				product_id: product.value,
+				variant_id: variant.value,
+				quantity: quantity.value,
+				price: price.value,
+				line_discount_amount: discount.value
+			};
+		});
+
+		this.querySelector('#financeItemsPayload').value = JSON.stringify(items);
+		this.querySelector('#financeItemsPayloadCount').value = String(items.length);
+
+		this.querySelectorAll('input[name^="items["]').forEach((input) => {
+			input.disabled = true;
+		});
+
+	} catch (error) {
+		event.preventDefault();
+		alert(error.message || 'خطا در آماده‌سازی اقلام فاکتور.');
+	}
+});
+
+bindRowButtons(); syncChangeReasonRequired();
+
 	</script>
 
 <script>(function(){const methods=document.querySelectorAll('input[name="method"]');function selectedMethod(){return document.querySelector('input[name="method"]:checked')?.value || 'cash';}function toggle(){const cheque=selectedMethod()==='cheque';document.querySelectorAll('.cheque-field').forEach(el=>el.classList.toggle('d-none',!cheque));document.querySelectorAll('.cash-field').forEach(el=>el.classList.toggle('d-none',cheque));document.querySelectorAll('[name="cheque_number"],[name="due_date"],[name="received_date"]').forEach(el=>el.required=cheque);const paymentDate=document.querySelector('#invoiceEditPaymentForm [name="payment_date"]');if(paymentDate)paymentDate.required=!cheque;}methods.forEach(el=>el.addEventListener('change',toggle));toggle();document.querySelectorAll('#invoiceEditPaymentForm [name="amount"]').forEach(input=>input.addEventListener('input',()=>{const digits=input.value.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g,'');input.value=digits.replace(/\B(?=(\d{3})+(?!\d))/g,',')}));})();</script>
