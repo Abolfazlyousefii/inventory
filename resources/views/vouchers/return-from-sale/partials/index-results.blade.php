@@ -31,7 +31,7 @@
                     <td>
                         <div class="sr-row-actions">
                             <a class="btn btn-sm btn-outline-primary" href="{{ $row['show_url'] }}">مشاهده</a>
-                            @if($row['can_edit'] ?? false)<a class="btn btn-sm btn-outline-dark" href="{{ $row['edit_url'] }}">ویرایش</a>@endif
+                            @if($row['can_edit'] ?? false)<a class="btn btn-sm btn-outline-dark" href="{{ $row['edit_url'] }}">{{ ($row['is_applied'] ?? false) ? 'درخواست اصلاح' : 'ویرایش' }}</a>@endif
                             @if($row['print_url'])<a class="btn btn-sm btn-outline-secondary" href="{{ $row['print_url'] }}">چاپ</a>@endif
                             @if($row['can_cancel'] ?? false)
                                 @if(($row['status'] ?? null) === \App\Models\SalesReturnDocument::STATUS_APPLIED)

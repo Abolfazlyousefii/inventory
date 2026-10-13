@@ -8,6 +8,7 @@
 @endpush
 
 @section('content')
+<div dir="rtl" class="mb-3"><a class="btn btn-sm btn-outline-primary" href="{{ route('sales-return-corrections.index',['status'=>'pending_warehouse']) }}">درخواست‌های اصلاح برگشت از فروش</a></div>
 @php
     use App\Models\WarehouseInboundReceipt;
     use Morilog\Jalali\Jalalian;

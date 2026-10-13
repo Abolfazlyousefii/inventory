@@ -373,6 +373,11 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/documents/{document}/print', [OrgCommissionController::class, 'print'])->name('print');
     });
 
+    Route::get('/sales-return-corrections', [\App\Http\Controllers\SalesReturnCorrectionController::class, 'index'])->name('sales-return-corrections.index');
+    Route::post('/sales-return-corrections/{correction}/warehouse', [\App\Http\Controllers\SalesReturnCorrectionController::class, 'warehouse'])->whereNumber('correction')->name('sales-return-corrections.warehouse');
+    Route::post('/sales-return-corrections/{correction}/finance', [\App\Http\Controllers\SalesReturnCorrectionController::class, 'finance'])->whereNumber('correction')->name('sales-return-corrections.finance');
+    Route::post('/sales-return-corrections/{correction}/reject', [\App\Http\Controllers\SalesReturnCorrectionController::class, 'reject'])->whereNumber('correction')->name('sales-return-corrections.reject');
+
     Route::prefix('vouchers/section/return-from-sale')
         ->name('vouchers.return-from-sale.')
         ->group(function () {
