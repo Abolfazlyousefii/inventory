@@ -183,7 +183,10 @@ class PreinvoiceOrder extends Model
     {
         return $query->where(function (Builder $query): void {
             $query->where('is_auto_draft', false)
-                ->orWhereNull('is_auto_draft');
+                ->orWhereNull('is_auto_draft')
+                // Legacy submissions may retain the autosave flag. Only actual
+                // drafts are temporary; subsequent workflow states remain visible.
+                ->orWhere('status', '<>', self::STATUS_DRAFT);
         });
     }
 
