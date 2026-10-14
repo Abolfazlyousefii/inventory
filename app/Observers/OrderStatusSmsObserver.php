@@ -2,7 +2,9 @@
 
 namespace App\Observers;
 
-use App\Jobs\SendCustomerStatusSms;
+use App\Events\CustomerOrderStatusChanged;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
 use Illuminate\Database\Eloquent\Model;
@@ -26,19 +28,27 @@ final class OrderStatusSmsObserver
             return;
         }
 
-        // Never send a customer-scoped link from a record whose owner was just reassigned.
+        // One SMS on entry to the warehouse phase, not five identical messages
+        // as employees advance through receipt, collection, checking and packing.
+        if ($type === 'invoice') {
+            $warehouseStatuses = config('tracking_sms.warehouse_processing_statuses', []);
+            if (in_array($status, $warehouseStatuses, true)
+                && in_array((string) $document->getRawOriginal('status'), $warehouseStatuses, true)) {
+                return;
+            }
+        }
+
+        // Avoid notifying the wrong recipient if this update also reassigned the customer.
         if ($document->wasChanged('customer_id') || (int) $document->customer_id < 1) {
             return;
         }
 
-        // The queue entry is committed only after the status transaction commits.
-        SendCustomerStatusSms::dispatch(
-            $type,
-            (int) $document->getKey(),
-            (int) $document->customer_id,
-            $status
-        )->onConnection((string) config('tracking_sms.queue_connection', 'database'))
-            ->onQueue((string) config('tracking_sms.queue', 'tracking-sms'))
-            ->afterCommit();
+        // Run synchronously after commit; no database queue, worker or cron.
+        // Laravel executes this immediately when there is no open transaction.
+        $id = (int) $document->getKey();
+        $customerId = (int) $document->customer_id;
+        DB::afterCommit(static function () use ($type, $id, $customerId, $status): void {
+            Event::dispatch(new CustomerOrderStatusChanged($type, $id, $customerId, $status));
+        });
     }
 }
