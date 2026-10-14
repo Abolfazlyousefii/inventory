@@ -12,7 +12,7 @@ it('does not send a document id when loading invoice items for a new return', fu
         ->toContain('const editingDocumentId=@json($document?->id)')
         ->toContain("if(editingDocumentId!==null")
         ->toContain("params.set('document_id',String(editingDocumentId))")
-        ->not->toContain("'?document_id='+encodeURIComponent(@json($document?->id))");
+        ->not->toContain('encodeURIComponent(@json($document?->id))');
 });
 
 it('rejects malformed return document ids with a validation error instead of a missing document', function () {
