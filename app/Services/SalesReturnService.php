@@ -64,7 +64,7 @@ class SalesReturnService
             $doc = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
             $doc->load('items');
             if (! $doc->isPendingWarehouse()) {
-                throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است. سند تأییدشده فقط از مسیر اصلاح سند تأییدشده قابل تغییر است.']);
+                throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است. برای سند دریافت‌شده باید درخواست اصلاح با تأیید انبار و مالی ثبت شود.']);
             }
             if (! hash_equals(InboundReviewVersion::token($doc), (string) ($data['document_version'] ?? ''))) {
                 throw ValidationException::withMessages(['document' => 'این سند هم‌زمان تغییر کرده است؛ صفحه را تازه کنید و دوباره بررسی کنید.']);

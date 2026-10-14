@@ -24,6 +24,10 @@ class UpdateAppliedSalesReturnRequest extends StoreSalesReturnRequest
     {
         $rules = parent::rules();
         $rules['adjustment_reason'] = ['required', 'string', 'min:3', 'max:1000'];
+        $rules['document_version'] = ['required', 'string', 'size:64'];
+        $rules['items'][] = 'max:500';
+        $rules['items.*.return_quantity'][] = 'max:1000000';
+        $rules['items.*.refund_unit_price'][] = 'max:1000000000000';
         return $rules;
     }
 

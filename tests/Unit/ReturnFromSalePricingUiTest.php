@@ -31,14 +31,4 @@ class ReturnFromSalePricingUiTest extends TestCase
         $this->assertStringNotContainsString('class="form-control form-control-sm price internal', $view);
     }
 
-    public function test_applied_edit_requires_warehouse_reapproval_without_positive_inventory_delta(): void
-    {
-        $service = file_get_contents(
-            dirname(__DIR__, 2).'/app/Services/SalesReturnAppliedAdjustmentService.php'
-        );
-
-        $this->assertStringContainsString('queueSalesReturn($doc', $service);
-        $this->assertStringContainsString('STATUS_PENDING_WAREHOUSE', $service);
-        $this->assertStringNotContainsString('applyInventoryDelta(', $service);
-    }
 }

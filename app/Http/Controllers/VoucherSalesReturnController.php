@@ -104,8 +104,11 @@ class VoucherSalesReturnController extends Controller
         $healthCheck = $this->reports->appliedHealthCheck($document);
         $user = auth()->user();
         $canViewSourceInvoice = $document->invoice && $user && PageAccessCatalog::userCanRoute($user, 'vouchers.sales.show') && $accessService->canViewInvoiceReadonly($document->invoice, $user);
+        $pendingCorrection = \Illuminate\Support\Facades\Schema::hasTable('sales_return_corrections')
+            ? \App\Models\SalesReturnCorrection::where('document_id',$document->id)->whereIn('status',['pending_warehouse','pending_finance'])->first()
+            : null;
 
-        return view('vouchers.return-from-sale.show', compact('document', 'healthCheck', 'canViewSourceInvoice'));
+        return view('vouchers.return-from-sale.show', compact('document', 'healthCheck', 'canViewSourceInvoice','pendingCorrection'));
     }
 
     public function edit(SalesReturnDocument $document)
@@ -125,6 +128,9 @@ class VoucherSalesReturnController extends Controller
     public function editApplied(SalesReturnDocument $document)
     {
         abort_unless($document->isApplied(), 403);
+        if (\App\Models\SalesReturnCorrection::where('document_id',$document->id)->whereIn('status',['pending_warehouse','pending_finance'])->exists()) {
+            return redirect()->route('sales-return-corrections.index',['document_id'=>$document->id,'status'=>'all'])->with('error','این سند یک درخواست اصلاح در انتظار بررسی دارد؛ ابتدا همان درخواست تعیین تکلیف شود.');
+        }
         $document->load('items', 'customer', 'invoice');
 
         return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document, 'isAppliedEdit' => true]);
@@ -133,9 +139,9 @@ class VoucherSalesReturnController extends Controller
     public function updateApplied(UpdateAppliedSalesReturnRequest $request, SalesReturnDocument $document)
     {
         $data = $request->validated();
-        $doc = $this->adjustments->updateApplied($document, $this->enrich($request) + $data, auth()->id(), $data['adjustment_reason']);
+        app(\App\Services\SalesReturnCorrectionService::class)->request($document, $this->enrich($request) + $data, (int)auth()->id(), $data['adjustment_reason']);
 
-        return $this->savedResponse($request, $doc, 'تغییرات ذخیره شد و سند برای تأیید مجدد دریافت به صف انبار ارسال شد.');
+        return $this->savedResponse($request, $document, 'درخواست اصلاح ثبت شد؛ تا تأیید انبار و مالی، موجودی و حساب مشتری تغییر نمی‌کند.');
     }
 
     public function voidApplied(VoidAppliedSalesReturnRequest $request, SalesReturnDocument $document)

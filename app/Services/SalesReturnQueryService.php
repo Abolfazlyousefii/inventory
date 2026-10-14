@@ -112,11 +112,40 @@ class SalesReturnQueryService
     public function appliedHealthCheck(SalesReturnDocument $document): array
     {
         $ledgerAmount = (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->where('reference_id', $document->id)->where('type', 'credit')->sum('amount');
+        $correctionIds = \Illuminate\Support\Facades\Schema::hasTable('sales_return_corrections')
+            ? \App\Models\SalesReturnCorrection::where('document_id', $document->id)->where('status', 'applied')->pluck('id')
+            : collect();
+        $receiptIds = \Illuminate\Support\Facades\Schema::hasTable('warehouse_inbound_receipts')
+            ? \App\Models\WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$document->id)->whereIn('status',['received','discrepancy'])->pluck('id')
+            : collect();
+        $correctionLedger = CustomerLedger::where('reference_type', \App\Models\SalesReturnCorrection::class)->whereIn('reference_id', $correctionIds)->get(['type', 'amount']);
+        $ledgerAmount += (int)$correctionLedger->sum(fn($row) => $row->type === 'credit' ? (int)$row->amount : -(int)$row->amount);
         $positiveItems = $document->items->filter(fn ($item) => (int) $item->return_quantity > 0);
         $movementCount = $positiveItems->isEmpty()
             ? 0
             : StockMovement::where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $positiveItems->pluck('id'))->count();
-        $checks = ['status_applied'=>$document->isApplied(), 'ledger_exists'=>$ledgerAmount > 0, 'ledger_amount_matches'=>$ledgerAmount === (int)$document->total_refund_amount, 'stock_movements_complete'=>$movementCount >= $positiveItems->count(), 'new_products_materialized'=>$document->items->every(fn($i)=>$i->item_source !== SalesReturnDocumentItem::SOURCE_NEW_PRODUCT || ($i->created_product_id && $i->created_variant_id))];
+        $stockComplete = $movementCount >= $positiveItems->count();
+        if ($correctionIds->isNotEmpty() || $receiptIds->isNotEmpty()) {
+            $receiptItemIds = \App\Models\WarehouseInboundReceiptItem::whereIn('receipt_id',$receiptIds)->pluck('id');
+            $revisionIds = $document->revisions()->whereIn('action',['applied_updated','applied_voided'])->pluck('id');
+            $legacyAdjustments = CustomerLedger::where(function($query) use ($receiptIds,$revisionIds) {
+                $query->where(fn($q) => $q->where('reference_type',WarehouseInboundService::TRANSACTION_TYPE)->whereIn('reference_id',$receiptIds))
+                    ->orWhere(fn($q) => $q->where('reference_type','sales_return_reversal')->whereIn('reference_id',$revisionIds));
+            })->get(['type','amount']);
+            $ledgerAmount += (int)$legacyAdjustments->sum(fn($row) => $row->type === 'credit' ? (int)$row->amount : -(int)$row->amount);
+            $movements = StockMovement::where(function($query) use ($document, $correctionIds, $receiptItemIds) {
+                $query->where(fn($q) => $q->where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $document->items->pluck('id')))
+                    ->orWhere(fn($q) => $q->where('reference_type', \App\Models\WarehouseInboundReceiptItem::class)->whereIn('reference_id',$receiptItemIds))
+                    ->orWhere(fn($q) => $q->where('reference_type', SalesReturnDocument::class)->where('reference_id',$document->id))
+                    ->orWhere(fn($q) => $q->where('reference_type', \App\Models\SalesReturnCorrection::class)->whereIn('reference_id', $correctionIds));
+            })->get(['warehouse_id','product_variant_id','type','quantity']);
+            $key = fn($row) => $row->warehouse_id.':'.$row->product_variant_id;
+            $net = $movements->groupBy($key)->map(fn($rows) => (int)$rows->sum(fn($row) => $row->type === 'in' ? (int)$row->quantity : -(int)$row->quantity));
+            $expected = $positiveItems->groupBy(fn($item) => $item->destination_warehouse_id.':'.$item->product_variant_id)->map(fn($rows) => (int)$rows->sum('return_quantity'));
+            $stockComplete = $expected->every(fn($qty,$group) => (int)$net->get($group,0) === $qty) && $net->every(fn($qty,$group) => $qty === (int)$expected->get($group,0));
+            $movementCount = $movements->count();
+        }
+        $checks = ['status_applied'=>$document->isApplied(), 'ledger_exists'=>$ledgerAmount > 0 || (int)$document->total_refund_amount === 0, 'ledger_amount_matches'=>$ledgerAmount === (int)$document->total_refund_amount, 'stock_movements_complete'=>$stockComplete, 'new_products_materialized'=>$document->items->every(fn($i)=>$i->item_source !== SalesReturnDocumentItem::SOURCE_NEW_PRODUCT || ($i->created_product_id && $i->created_variant_id))];
         return ['checks'=>$checks, 'ok'=>!in_array(false, $checks, true), 'ledger_amount'=>$ledgerAmount, 'stock_movement_count'=>$movementCount];
     }
 

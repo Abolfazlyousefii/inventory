@@ -1,38 +1,22 @@
 <?php
 
+use App\Models\SalesReturnDocument;
+use App\Services\SalesReturnAppliedAdjustmentService;
 use App\Services\WarehouseStockService;
 use Illuminate\Validation\ValidationException;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 it('rejects zero product and variant ids before warehouse stock insertion', function () {
     expect(fn () => WarehouseStockService::change(1, 0, 1, 0))
         ->toThrow(ValidationException::class, 'ارتباط کالا نامعتبر است');
 });
 
-it('materializes new products before applied adjustment warehouse reapproval', function () {
-    $adjustment = file_get_contents(app_path('Services/SalesReturnAppliedAdjustmentService.php'));
-    $restore = strpos($adjustment, 'restoreMaterializedNewProducts($doc');
-    $materialize = strpos($adjustment, 'materializeNewProductGroups($doc');
-    $queue = strpos($adjustment, 'queueSalesReturn($doc');
-
-    expect($restore)->toBeInt()->toBeLessThan($materialize)
-        ->and($materialize)->toBeInt()->toBeLessThan($queue)
-        ->and($adjustment)->toContain(
-            'materializedNewProductMap($doc)',
-            'temporaryVariantUuid',
-            "where('product_id', \$ids['product_id'])",
-            'created_product_id',
-            'created_variant_id'
-        );
-});
-
-it('fails at the domain boundary if any inventory group still has unresolved ids', function () {
-    $adjustment = file_get_contents(app_path('Services/SalesReturnAppliedAdjustmentService.php'));
-
-    expect($adjustment)->toContain(
-        '(int) $item->product_id <= 0',
-        '(int) $item->product_variant_id <= 0',
-        'کالای جدید هنوز برای ثبت موجودی نهایی نشده است.'
-    );
+it('blocks the legacy applied edit before any product or stock operation', function () {
+    $document = new SalesReturnDocument(['status' => 'applied', 'document_number' => '00001']);
+    expect(fn () => app(SalesReturnAppliedAdjustmentService::class)->updateApplied($document, ['items' => [['product_id' => 0, 'product_variant_id' => 0]]], 1, 'اصلاح'))
+        ->toThrow(ValidationException::class);
 });
 
 it('keeps draft persistence free of inventory and product materialization', function () {

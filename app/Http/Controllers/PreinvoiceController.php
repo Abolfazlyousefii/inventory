@@ -1490,6 +1490,8 @@ class PreinvoiceController extends Controller
 
             $order->update([
                 'status' => $isSubmit ? PreinvoiceOrder::STATUS_PENDING_FINANCE : PreinvoiceOrder::STATUS_DRAFT,
+                'is_auto_draft' => false,
+                'auto_saved_at' => null,
                 'warehouse_review_note' => null,
                 'warehouse_reject_reason' => null,
                 'warehouse_reviewed_by' => null,

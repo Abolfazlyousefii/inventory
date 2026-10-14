@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
+<div dir="rtl" class="mb-3"><a class="btn btn-sm btn-outline-primary" href="{{ route('sales-return-corrections.index',['status'=>'pending_finance']) }}">درخواست‌های اصلاح برگشت از فروش</a></div>
 <div class="container py-4" dir="rtl">
 
     <div class="d-flex justify-content-between align-items-center mb-3">

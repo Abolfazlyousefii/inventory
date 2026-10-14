@@ -65,14 +65,20 @@ class SalesReturnLookupController extends Controller
 
     public function invoiceItems(Invoice $invoice, Request $request)
     {
+        $documentId = $request->query('document_id');
+        if ($documentId !== null && $documentId !== ''
+            && (! is_scalar($documentId) || filter_var($documentId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false)) {
+            return response()->json(['message' => 'شناسه سند برگشت نامعتبر است.'], 422);
+        }
+
         if ($request->filled('customer_id') && (int) $request->customer_id !== (int) $invoice->customer_id) {
             return response()->json(['message' => 'فاکتور متعلق به مشتری انتخاب‌شده نیست.'], 422);
         }
         $invoice->load('items.product', 'items.variant');
         $ids = $invoice->items->pluck('id')->all();
         $excludeId = null;
-        if ($request->filled('document_id')) {
-            $editing = \App\Models\SalesReturnDocument::whereKey((int) $request->document_id)->where('invoice_id', $invoice->id)->firstOrFail();
+        if ($documentId !== null && $documentId !== '') {
+            $editing = \App\Models\SalesReturnDocument::whereKey((int) $documentId)->where('invoice_id', $invoice->id)->firstOrFail();
             $editRoute = $editing->isApplied() ? 'vouchers.return-from-sale.applied.edit' : 'vouchers.return-from-sale.edit';
             abort_unless(($editing->isDraft() || $editing->isPendingWarehouse() || $editing->isApplied()) && $request->user() && \App\Support\PageAccessCatalog::userCanRoute($request->user(), $editRoute), 403);
             $excludeId = (int) $editing->id;
