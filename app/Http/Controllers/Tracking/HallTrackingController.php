@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tracking;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
 use App\Services\Tracking\OrderTrackingStatus;
@@ -54,15 +55,10 @@ final class HallTrackingController extends Controller
         $invoices = Invoice::query()
             ->where(fn ($query) => $query->whereNotIn('status', ['shipped', 'not_shipped'])
                 ->orWhere('updated_at', '>=', $cutoff))
-            ->with([
-                'seller:id,name',
-                'preinvoiceOrder:id,seller_id,created_by',
-                'preinvoiceOrder.seller:id,name',
-                'preinvoiceOrder.creator:id,name',
-            ])
+            ->with('customer:id,name,company_name,first_name,last_name')
             ->orderByDesc('updated_at')
             ->limit(120)
-            ->get(['id', 'uuid', 'seller_id', 'preinvoice_order_id', 'status', 'updated_at']);
+            ->get(['id', 'uuid', 'customer_id', 'status', 'updated_at']);
 
         $preinvoices = PreinvoiceOrder::query()
             ->where('status', '!=', PreinvoiceOrder::STATUS_DRAFT)
@@ -73,19 +69,16 @@ final class HallTrackingController extends Controller
                 PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
                 PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
             ])->orWhere('updated_at', '>=', $cutoff))
-            ->with(['seller:id,name', 'creator:id,name'])
+            ->with('customer:id,name,company_name,first_name,last_name')
             ->orderByDesc('updated_at')
             ->limit(120)
-            ->get(['id', 'uuid', 'seller_id', 'created_by', 'status', 'updated_at']);
+            ->get(['id', 'uuid', 'customer_id', 'status', 'updated_at']);
         $documents = $invoices->map(function (Invoice $invoice): array {
             [$status, $step, $tone] = OrderTrackingStatus::invoice((string) $invoice->status);
             return [
                 'type' => 'invoice', 'type_label' => 'فاکتور',
                 'number' => (string) $invoice->uuid,
-                'seller' => $invoice->seller?->name
-                            ?? $invoice->preinvoiceOrder?->seller?->name
-                               ?? $invoice->preinvoiceOrder?->creator?->name
-                                  ?? 'ثبت نشده',
+                'customer' => $this->customerName($invoice->customer),
 
                 'status' => $status, 'step' => $step, 'tone' => $tone,
                 'sort_time' => $invoice->updated_at?->timestamp ?? 0,
@@ -95,7 +88,7 @@ final class HallTrackingController extends Controller
             return [
                 'type' => 'preinvoice', 'type_label' => 'پیش‌فاکتور',
                 'number' => (string) $order->uuid,
-                'seller' => $order->seller?->name ?? $order->creator?->name ?? 'ثبت نشده',
+                'customer' => $this->customerName($order->customer),
                 'status' => $status, 'step' => $step, 'tone' => $tone,
                 'sort_time' => $order->updated_at?->timestamp ?? 0,
             ];
@@ -115,5 +108,15 @@ final class HallTrackingController extends Controller
         ])->header('Cache-Control', 'private, no-store, max-age=0')
             ->header('X-Robots-Tag', 'noindex, nofollow, noarchive')
             ->header('Referrer-Policy', 'no-referrer');
+    }
+    private function customerName(?Customer $customer): string
+    {
+        if (! $customer) {
+            return 'ثبت نشده';
+        }
+
+        $name = trim((string) ($customer->name ?: $customer->company_name ?: $customer->display_name));
+
+        return $name !== '' ? $name : 'ثبت نشده';
     }
 }

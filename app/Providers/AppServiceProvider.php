@@ -22,6 +22,7 @@ use App\Observers\ActivityObserver;
 use App\Observers\CustomerLedgerChangeAuditObserver;
 use App\Observers\InvoiceFinancialChangeAuditObserver;
 use App\Observers\InvoiceItemChangeAuditObserver;
+use App\Observers\OrderStatusSmsObserver;
 use App\Observers\CommissionSourceObserver;
 use App\Observers\ProductInventoryObserver;
 use App\Observers\ProductVariantSyncObserver;
@@ -74,6 +75,8 @@ class AppServiceProvider extends ServiceProvider
         Invoice::observe(ActivityObserver::class);
         InvoiceItem::observe(ActivityObserver::class);
 
+        Invoice::observe(OrderStatusSmsObserver::class);
+        PreinvoiceOrder::observe(OrderStatusSmsObserver::class);
         Invoice::observe(InvoiceFinancialChangeAuditObserver::class);
         InvoiceItem::observe(InvoiceItemChangeAuditObserver::class);
         CustomerLedger::observe(CustomerLedgerChangeAuditObserver::class);

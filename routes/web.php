@@ -66,13 +66,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
 
-// Public read-only tracking. Both endpoints require an unexpired customer-bound signature.
-Route::prefix('track')->name('tracking.')->middleware(['signed:relative', 'throttle:60,1'])->group(function () {
-    Route::get('/{access}', [\App\Http\Controllers\Tracking\CustomerTrackingController::class, 'show'])->name('show');
-    Route::get('/{access}/data', [\App\Http\Controllers\Tracking\CustomerTrackingController::class, 'data'])->name('data');
-});
-
-// Authorized display device only. Never reuse customer signed-link access for the hall.
 Route::get('/hall/unlock', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'unlockForm'])->name('hall.unlock');
 Route::post('/hall/unlock', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'unlock'])
     ->middleware('throttle:5,1')->name('hall.unlock.submit');

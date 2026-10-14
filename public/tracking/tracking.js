@@ -4,11 +4,7 @@
 	const endpoint = document.querySelector('meta[name="tracking-data-url"]')?.content;
 	const hall = document.querySelector('meta[name="tracking-mode"]')?.content === 'hall';
 	const state = { documents: [], currentType: 'all', query: '', active: null, page: 0 };
-	const hallPageSize = () => {
-		const cols = window.innerWidth >= 1280 ? 4 : window.innerWidth >= 900 ? 3 : 2;
-		const rows = window.innerHeight >= 1000 ? 3 : window.innerHeight >= 700 ? 2 : 1;
-		return cols * rows;
-	};
+	const hallPageSize = () => 12;
 	const $ = (id) => document.getElementById(id);
 	const digits = (n) => new Intl.NumberFormat('fa-IR').format(Number(n) || 0);
 	const text = (id, value) => { const el = $(id); if (el) el.textContent = value; };
@@ -40,7 +36,7 @@
 		const number = el('h3', 'doc-number', document.number);
 		const info = el('div', 'doc-info');
 		if (hall) {
-			info.append(row('فروشنده', document.seller || 'ثبت نشده'));
+			info.append(row('مشتری:', document.customer || 'ثبت نشده'));
 		} else {
 			info.append(row('تاریخ سند', document.date), row('فروشنده', document.seller), row('تعداد اقلام', digits(document.item_count)));
 			if (document.public_reference) info.append(row('کد نمایشگر', document.public_reference));
@@ -59,7 +55,7 @@
 	function render() {
 		const filtered = state.documents.filter(doc => {
 			if (state.currentType !== 'all' && doc.type !== state.currentType) return false;
-			const haystack = [doc.number, doc.seller || '', doc.status, doc.type_label, doc.related_number || ''].join(' ').toLocaleLowerCase('fa-IR');
+			const haystack = [doc.number, hall ? doc.customer || '' : doc.seller || '', doc.status, doc.type_label, doc.related_number || ''].join(' ').toLocaleLowerCase('fa-IR');
 			return haystack.includes(state.query);
 		});
 		const list = $('document-list');
@@ -149,6 +145,7 @@
 			text('invoice-count', digits(payload.summary?.invoices));
 			text('preinvoice-count', digits(payload.summary?.preinvoices));
 			text('last-updated', 'آخرین بروزرسانی: ' + new Date().toLocaleTimeString('fa-IR', {hour:'2-digit',minute:'2-digit'}));
+			hide('loading', true); // Measure the grid after the skeleton is removed.
 			render();
 		} catch (err) {
 			if (hall && state.documents.length) text('last-updated', 'اتصال به سامانه قطع شده؛ تلاش مجدد خودکار…');
