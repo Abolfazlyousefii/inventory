@@ -121,7 +121,7 @@
             <div class="info-box-title">مشخصات مشتری</div>
             <div class="info-row"><div class="info-label">نام:</div><div><strong>{{ $invoice->customer_name ?: '—' }}</strong></div></div>
             <div class="info-row"><div class="info-label">موبایل:</div><div>{{ $invoice->customer_mobile ?: '—' }}</div></div>
-            <div class="info-row"><div class="info-label">آدرس:</div><div>{{ $invoice->customer_address ?: '—' }}</div></div>
+            <div class="info-row"><div class="info-label">آدرس:</div><div>{{ $invoice->display_customer_address ?: '—' }}</div></div>
         </div>
         <div class="info-box">
             <div class="info-box-title">ارسال</div>
