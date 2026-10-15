@@ -267,11 +267,20 @@ it('5 — editing a legacy purchase already on the synthetic black keeps working
     ]);
     WarehouseStockService::set($this->centralWarehouseId, $product->id, $black->id, 2);
 
+    $firstRegistration = $purchase->created_at->copy();
+    $originalPurchaseDate = $purchase->purchased_at->copy();
+
     $this->from(route('purchases.edit', $purchase))->put(route('purchases.update', $purchase), [
         'submission_token' => (string) Str::uuid(),
         'supplier_id' => (string) $this->supplier->id,
+        // A manipulated/old edit form must never change the original purchase date.
+        'purchased_at' => now()->addMonth()->toDateTimeString(),
         'items_json' => json_encode([headsetRow($product, $black, 6, ['id' => $item->id])], JSON_THROW_ON_ERROR),
     ])->assertSessionHasNoErrors()->assertRedirect(route('purchases.index'));
+
+    $purchase->refresh();
+    expect($purchase->created_at->equalTo($firstRegistration))->toBeTrue()
+        ->and($purchase->purchased_at->equalTo($originalPurchaseDate))->toBeTrue();
 
     $item->refresh();
     expect($item->product_variant_id)->toBe($black->id)

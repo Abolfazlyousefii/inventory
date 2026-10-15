@@ -39,13 +39,13 @@ class PurchaseController extends Controller
         $query = Purchase::with('supplier')
             ->withCount('items')
             ->when($supplierId, fn ($q) => $q->where('supplier_id', $supplierId))
-            ->when($dateFrom, fn ($q) => $q->where('purchased_at', '>=', Carbon::parse($dateFrom)->startOfDay()))
-            ->when($dateTo, fn ($q) => $q->where('purchased_at', '<=', Carbon::parse($dateTo)->endOfDay()));
+            ->when($dateFrom, fn ($q) => $q->where('created_at', '>=', Carbon::parse($dateFrom)->startOfDay()))
+            ->when($dateTo, fn ($q) => $q->where('created_at', '<=', Carbon::parse($dateTo)->endOfDay()));
 
         $totalAllAmount = (int) Purchase::sum('total_amount');
         $totalAllCount = (int) Purchase::count();
 
-        $purchases = $query->latest('purchased_at')
+        $purchases = $query->latest('created_at')->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
 
@@ -271,7 +271,6 @@ class PurchaseController extends Controller
                 $purchase->update($this->purchaseTablePayload([
                     'supplier_id' => $supplierId,
                     'warehouse_id' => (int) $data['warehouse_id'],
-                    'purchased_at' => $data['purchased_at'] ?? $purchase->purchased_at,
                     'note' => $data['note'] ?? null,
                     'user_id' => auth()->id(),
                     'discount_type' => $data['invoice_discount_type'] ?? null,
@@ -535,7 +534,6 @@ class PurchaseController extends Controller
                 },
             ],
             'warehouse_id' => ['required', 'exists:warehouses,id'],
-            'purchased_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string', 'max:1000'],
 
             'invoice_discount_type' => ['nullable', 'in:amount,percent,none'],

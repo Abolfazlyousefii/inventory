@@ -27,22 +27,22 @@ class PurchasesExport implements FromQuery, ShouldAutoSize, WithEvents, WithHead
         return Purchase::query()
             ->with('supplier:id,name')
             ->when(($this->filters['supplier_id'] ?? 0) > 0, fn ($q) => $q->where('supplier_id', (int) $this->filters['supplier_id']))
-            ->when(($this->filters['date_from'] ?? '') !== '', fn ($q) => $q->where('purchased_at', '>=', Carbon::parse($this->filters['date_from'])->startOfDay()))
-            ->when(($this->filters['date_to'] ?? '') !== '', fn ($q) => $q->where('purchased_at', '<=', Carbon::parse($this->filters['date_to'])->endOfDay()))
-            ->orderBy('purchased_at')
+            ->when(($this->filters['date_from'] ?? '') !== '', fn ($q) => $q->where('created_at', '>=', Carbon::parse($this->filters['date_from'])->startOfDay()))
+            ->when(($this->filters['date_to'] ?? '') !== '', fn ($q) => $q->where('created_at', '<=', Carbon::parse($this->filters['date_to'])->endOfDay()))
+            ->orderBy('created_at')
             ->orderBy('id');
     }
 
     public function headings(): array
     {
-        return ['ردیف', 'تاریخ فاکتور خرید', 'نام تأمین‌کننده', 'شماره فاکتور خرید', 'مبلغ کل فاکتور'];
+        return ['ردیف', 'تاریخ ثبت اولیه خرید', 'نام تأمین‌کننده', 'شماره فاکتور خرید', 'مبلغ کل فاکتور'];
     }
 
     public function map($purchase): array
     {
         return [
             ++$this->row,
-            JalaliDate::dateTime($purchase->purchased_at),
+            JalaliDate::dateTime($purchase->created_at),
             $purchase->supplier?->name ?: '—',
             (string) $purchase->id,
             (int) ($purchase->total_amount ?? 0),

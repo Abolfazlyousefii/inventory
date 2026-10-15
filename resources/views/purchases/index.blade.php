@@ -44,12 +44,12 @@
         <div class="card-body">
             <div class="row g-2 align-items-end">
                 <div class="col-md-3">
-                    <label class="form-label">از تاریخ</label>
+                    <label class="form-label">از تاریخ ثبت اولیه</label>
                     <input type="text" id="purchaseDateFromFa" name="date_from_fa" class="form-control purchase-jalali-date" value="{{ $dateFromFa }}" data-jdp data-jdp-only-date inputmode="numeric" autocomplete="off" placeholder="1405/04/28" dir="ltr">
                     <input type="hidden" id="purchaseDateFrom" name="date_from" value="{{ $dateFrom }}">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">تا تاریخ</label>
+                    <label class="form-label">تا تاریخ ثبت اولیه</label>
                     <input type="text" id="purchaseDateToFa" name="date_to_fa" class="form-control purchase-jalali-date" value="{{ $dateToFa }}" data-jdp data-jdp-only-date inputmode="numeric" autocomplete="off" placeholder="1405/04/28" dir="ltr">
                     <input type="hidden" id="purchaseDateTo" name="date_to" value="{{ $dateTo }}">
                 </div>
@@ -80,7 +80,7 @@
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>تاریخ</th>
+                            <th>تاریخ ثبت اولیه</th>
                             <th>تامین‌کننده</th>
                             <th>توضیحات</th>
                             <th>تخفیف سند</th>
@@ -95,7 +95,7 @@
                             <td class="fw-bold" data-label="ردیف">
                                 {{ $loop->iteration + (($purchases->currentPage() - 1) * $purchases->perPage()) }}
                             </td>
-                            <td data-label="تاریخ">{{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}</td>
+                            <td data-label="تاریخ ثبت اولیه">{{ \App\Support\JalaliDate::dateTime($purchase->created_at) }}</td>
                             <td data-label="تأمین‌کننده">{{ $purchase->supplier?->name }}</td>
                             <td class="text-muted" data-label="توضیحات">{{ $purchase->note ?: '-' }}</td>
                             <td data-label="تخفیف سند">{{ $toRial($purchase->total_discount ?? 0) }}</td>

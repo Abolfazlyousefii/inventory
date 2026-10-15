@@ -211,8 +211,8 @@ $productsPayload = $products->map(function ($p) {
 						</div>
 						@if($isEdit)
 							<div class="col-md-3">
-								<label class="form-label">تاریخ خرید</label>
-								<input type="datetime-local" class="form-control form-control-sm" name="purchased_at" value="{{ old('purchased_at', optional($purchase->purchased_at)->format('Y-m-d\TH:i')) }}">
+								<label class="form-label">تاریخ ثبت اولیه (غیرقابل تغییر)</label>
+								<input type="text" class="form-control form-control-sm" value="{{ \App\Support\JalaliDate::dateTime($purchase->created_at) }}" readonly aria-label="تاریخ ثبت اولیه سند خرید">
 							</div>
 						@endif
 					</div>
