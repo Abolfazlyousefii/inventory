@@ -2,10 +2,11 @@
 @section('title', 'خروجی محصولات')
 @section('content')
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/product-export-builder.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('css/product-export-builder.css') }}?v=bulk-20261015">
 @endpush
 <div class="product-builder" id="productBuilder"
      data-products-url="{{ route('admin.product-exports.builder.products') }}"
+     data-selection-batch-url="{{ route('admin.product-exports.builder.selection-batch') }}"
      data-print-url="{{ route('admin.product-exports.builder.print') }}"
      data-preview-url="{{ route('admin.product-exports.builder.preview') }}">
     <div class="builder-heading">
@@ -24,6 +25,15 @@
                 </div>
             </section>
             <div class="result-head"><strong>کالاها <span id="builderResultCount"></span></strong><span>روی مدل‌ها بزنید تا فقط همان‌ها انتخاب شوند</span></div>
+            <section class="builder-bulk-panel" aria-label="انتخاب گروهی کالاهای فیلترشده">
+                <div class="builder-bulk-copy"><strong>انتخاب همه کالاهای فیلترشده</strong><small>تمام صفحات نتایج، همراه همه مدل‌های هر کالا</small></div>
+                <div class="builder-bulk-actions">
+                    <button class="builder-bulk-select" id="builderBulkSelect" type="button">انتخاب همه</button>
+                    <button class="builder-bulk-clear" id="builderBulkClear" type="button">لغو انتخاب همه</button>
+                    <button class="builder-bulk-cancel" id="builderBulkCancel" type="button" hidden>توقف عملیات</button>
+                </div>
+                <div class="builder-bulk-status" id="builderBulkStatus" role="status" aria-live="polite">برای انتخاب همه نتایج دسته یا جست‌وجو، «انتخاب همه» را بزنید.</div>
+            </section>
             <div class="builder-cards" id="builderCards" aria-live="polite"></div>
             <button class="load-more" id="builderLoadMore" type="button" hidden>نمایش کالاهای بیشتر</button>
         </main>
@@ -34,6 +44,6 @@
     <div class="builder-dialog" id="builderDialog" hidden><div class="dialog-card"><div class="dialog-top"><strong>پیش‌نمایش چیزی که مشتری دریافت می‌کند</strong><button type="button" id="builderClosePreview" aria-label="بستن">×</button></div><div class="customer-sheet" id="builderSheet">در حال آماده‌سازی پیش‌نمایش...</div><div class="dialog-actions"><button class="builder-primary" type="button" id="builderPrint">چاپ / ذخیره PDF</button><button class="builder-secondary" type="button" id="builderCopySummary">کپی متن لیست</button></div></div></div>
 </div>
 @push('scripts')
-<script src="{{ asset('js/product-export-builder.js') }}?v=5" defer></script>
+<script src="{{ asset('js/product-export-builder.js') }}?v=bulk-20261015" defer></script>
 @endpush
 @endsection
