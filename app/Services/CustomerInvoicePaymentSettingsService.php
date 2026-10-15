@@ -44,6 +44,9 @@ class CustomerInvoicePaymentSettingsService
 
     public function save(array $details): void
     {
-        CustomerInvoicePaymentSetting::query()->updateOrCreate(['id' => 1], $details);
+        $record = CustomerInvoicePaymentSetting::query()->find(1) ?? new CustomerInvoicePaymentSetting();
+        $record->id = 1;
+        $record->fill($details);
+        $record->save();
     }
 }
