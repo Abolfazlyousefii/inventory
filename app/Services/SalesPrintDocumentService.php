@@ -62,7 +62,7 @@ class SalesPrintDocumentService
                 'status' => $signedAccountBalance > 0 ? 'بدهکار' : ($signedAccountBalance < 0 ? 'بستانکار' : 'تسویه'),
                 'asOf' => now(),
             ],
-            'customerPayment' => $isCustomerCopy ? config('customer_invoice_payment', []) : null,
+            'customerPayment' => $isCustomerCopy ? app(CustomerInvoicePaymentSettingsService::class)->details() : null,
             'company' => config('company'),
             'logo' => asset('logo.png'),
             'mode' => $isCustomerCopy ? 'customer' : 'warehouse',
