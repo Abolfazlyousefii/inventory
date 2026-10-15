@@ -288,6 +288,9 @@
                         @canPermission('inventory_webhooks.view')
                             <a class="sidebar-sublink {{ $is('inventory-webhooks.*') }}" href="{{ route('inventory-webhooks.index') }}">مدیریت API موجودی/قیمت</a>
                         @endcanPermission
+                        @canPermission('settings.edit')
+                            <a class="sidebar-sublink {{ $is('admin.invoice-payment-settings.*') }}" href="{{ route('admin.invoice-payment-settings.edit') }}">اطلاعات واریز فاکتور مشتری</a>
+                        @endcanPermission
                     </div>
                 </div>
             </div>
