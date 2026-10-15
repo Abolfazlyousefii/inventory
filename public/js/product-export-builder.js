@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     const selected = new Map();
     let shown = new Map(), page = 1, lastPage = 1, timer, controller;
+    let bulkAbort, bulkActive = false, bulkSequence = 0, basketVisible = 40;
     const fa = n => new Intl.NumberFormat('fa-IR').format(n);
     const money = n => Number.isFinite(n) && n > 0 ? fa(n) + ' ریال' : 'قیمت ثبت نشده';
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -42,7 +43,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const entries = selectedProducts();
         $('builderBasketCount').textContent = fa(entries.length) + ' کالا';
         $('builderMobileBasket').textContent = 'مشاهده لیست خروجی · ' + fa(entries.length) + ' کالا';
-        $('builderBasketItems').innerHTML = entries.length ? entries.map(entry => `<div class="basket-item"><span><strong>${escape(entry.product.name)}</strong><small>${fa(entry.keys.size)} مدل انتخابی</small></span><button type="button" data-remove="${entry.product.id}" aria-label="حذف ${escape(entry.product.name)}">×</button></div>`).join('') : '<div class="basket-empty"><b>هنوز کالایی انتخاب نشده</b>مدل‌های موردنیاز مشتری را از کارت‌ها انتخاب کنید.</div>';
+        const visible = entries.slice(0, basketVisible);
+        const remaining = entries.length - visible.length;
+        $('builderBasketItems').innerHTML = entries.length
+            ? visible.map(entry => `<div class="basket-item"><span><strong>${escape(entry.product.name)}</strong><small>${fa(entry.keys.size)} مدل انتخابی</small></span><button type="button" data-remove="${entry.product.id}" aria-label="حذف ${escape(entry.product.name)}">×</button></div>`).join('')
+                + (remaining ? `<button type="button" class="basket-more" data-basket-more>نمایش ${fa(Math.min(40, remaining))} کالا از ${fa(remaining)} کالای دیگر</button>` : '')
+            : '<div class="basket-empty"><b>هنوز کالایی انتخاب نشده</b>مدل‌های موردنیاز مشتری را از کارت‌ها انتخاب کنید.</div>';
     }
     function refreshCards() {
         $('builderCards').innerHTML = [...shown.values()].map(card).join('') || '<div class="builder-panel basket-empty"><b>کالایی پیدا نشد</b>فیلترها یا عبارت جست‌وجو را تغییر دهید.</div>';
@@ -79,12 +85,88 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    function bulkState(working) {
+        $('builderBulkSelect').disabled = working;
+        $('builderBulkClear').disabled = working;
+        $('builderBulkCancel').hidden = !working;
+    }
+    function cancelBulk(message = 'عملیات متوقف شد؛ انتخاب‌های قبلی محفوظ‌اند.') {
+        if (!bulkActive) return;
+        bulkSequence++;
+        bulkAbort?.abort();
+        bulkActive = false;
+        bulkState(false);
+        $('builderBulkStatus').textContent = message;
+    }
+    async function changeFilteredSelection(action) {
+        if (bulkActive) return;
+        const ticket = ++bulkSequence;
+        bulkActive = true;
+        bulkAbort = new AbortController();
+        bulkState(true);
+        const filters = params(1);
+        filters.delete('page');
+        filters.delete('sort');
+        const matching = new Map();
+        let cursor = 0, total = null;
+        try {
+            while (true) {
+                const query = new URLSearchParams(filters);
+                query.set('after_id', String(cursor));
+                const response = await fetch(root.dataset.selectionBatchUrl + '?' + query, {
+                    headers: {Accept:'application/json'},
+                    signal: bulkAbort.signal,
+                });
+                if (!response.ok) throw new Error('دریافت دسته‌ای کالاها ناموفق بود.');
+                const data = await response.json();
+                if (ticket !== bulkSequence) return;
+                if (!Array.isArray(data.items)) throw new Error('پاسخ سرور برای انتخاب کالاها معتبر نیست.');
+                if (total === null && Number.isInteger(data.total)) total = data.total;
+                for (const product of data.items) matching.set(product.id, product);
+                $('builderBulkStatus').textContent = (action === 'select' ? 'در حال انتخاب ' : 'در حال لغو انتخاب ')
+                    + fa(matching.size) + (total !== null ? ' از ' + fa(total) : '') + ' کالا...';
+                if (!data.has_more) break;
+                const next = Number(data.next_cursor);
+                if (!Number.isSafeInteger(next) || next <= cursor) throw new Error('صفحه‌بندی انتخاب گروهی معتبر نیست.');
+                cursor = next;
+            }
+
+            // Commit atomically: canceled or failed requests never change selection.
+            if (ticket !== bulkSequence) return;
+            for (const product of matching.values()) {
+                if (action === 'select') {
+                    const keys = new Set(product.models.map(modelKey));
+                    if (keys.size) selected.set(product.id, {product, keys});
+                } else {
+                    selected.delete(product.id);
+                }
+            }
+            basketVisible = 40;
+            refreshCards();
+            $('builderBulkStatus').textContent = fa(matching.size)
+                + (action === 'select' ? ' کالا با تمام مدل‌ها انتخاب شدند.' : ' کالا از انتخاب خارج شدند.')
+                + ' · مجموع لیست خروجی: ' + fa(selectedProducts().length) + ' کالا';
+        } catch (error) {
+            if (error.name === 'AbortError' || ticket !== bulkSequence) return;
+            $('builderBulkStatus').textContent = error.message || 'انتخاب گروهی کامل نشد.';
+            toast('انتخاب‌ها تغییر نکردند. لطفاً دوباره تلاش کنید.');
+        } finally {
+            if (ticket === bulkSequence) {
+                bulkActive = false;
+                bulkState(false);
+            }
+        }
+    }
+    $('builderBulkSelect').addEventListener('click', () => changeFilteredSelection('select'));
+    $('builderBulkClear').addEventListener('click', () => changeFilteredSelection('clear'));
+    $('builderBulkCancel').addEventListener('click', () => cancelBulk());
+
     function select(product, index) {
         const entry = selected.get(product.id) || {product, keys:new Set()};
         const key = modelKey(product.models[index]);
         if (entry.keys.has(key)) entry.keys.delete(key);
         else {
-            if (!selected.has(product.id) && selected.size >= 200) return toast('حداکثر ۲۰۰ کالا را می‌توان انتخاب کرد.');
             entry.keys.add(key);
         }
         entry.keys.size ? selected.set(product.id, entry) : selected.delete(product.id);
@@ -109,7 +191,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const entry = selected.get(product.id);
             if (entry?.keys.size === product.models.length) selected.delete(product.id);
             else {
-                if (!entry && selected.size >= 200) return toast('حداکثر ۲۰۰ کالا را می‌توان انتخاب کرد.');
                 selected.set(product.id, {product, keys:new Set(product.models.map(modelKey))});
             }
             refreshCards();
@@ -117,10 +198,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('builderBasketItems').addEventListener('click', event => {
         const button = event.target.closest('[data-remove]');
-        if (button) { selected.delete(Number(button.dataset.remove)); refreshCards(); }
+        if (button) { selected.delete(Number(button.dataset.remove)); refreshCards(); return; }
+        if (event.target.closest('[data-basket-more]')) { basketVisible += 40; renderBasket(); }
     });
-    $('builderQuery').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(), 280); });
-    for (const id of ['builderCategory','builderBrand','builderSort','builderInStock']) $(id).addEventListener('change', () => load());
+    $('builderQuery').addEventListener('input', () => { cancelBulk(); clearTimeout(timer); timer = setTimeout(() => load(), 280); });
+    for (const id of ['builderCategory','builderBrand','builderSort','builderInStock']) $(id).addEventListener('change', () => { cancelBulk(); load(); });
     $('builderLoadMore').addEventListener('click', () => { if (page < lastPage) { page++; load(false); } });
     $('builderFilterToggle').addEventListener('click', () => {
         $('builderFilters').hidden = !$('builderFilters').hidden;
@@ -137,7 +219,9 @@ document.addEventListener('DOMContentLoaded', () => {
     $('builderCopyAll').addEventListener('click', () => selected.size ? copy(summary()) : toast('ابتدا یک مدل انتخاب کنید.'));
     function selectionFields() {
         const fields = new URLSearchParams();
-        for (const entry of selectedProducts()) for (const model of chosenModels(entry)) fields.append(`selection[${entry.product.id}][]`, model.id);
+        const payload = {};
+        for (const entry of selectedProducts()) payload[entry.product.id] = chosenModels(entry).map(model => model.id);
+        fields.set('selection_payload', JSON.stringify(payload));
         fields.set('show_price', $('builderShowPrice').checked ? 1 : 0);
         fields.set('show_stock', $('builderShowStock').checked ? 1 : 0);
         fields.set('show_code', $('builderShowCode').checked ? 1 : 0);
