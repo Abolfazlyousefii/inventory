@@ -1,6 +1,6 @@
 @extends('layouts.app')
 @section('title', 'آرشیو تغییرات قیمت')
-@push('styles')<link rel="stylesheet" href="{{ asset('css/price-change-archive.css') }}?v=1">@endpush
+@push('styles')<link rel="stylesheet" href="{{ asset('css/price-change-archive.css') }}?v=2">@endpush
 @section('content')
 @php($fa = fn($v) => strtr((string)$v, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']))
 <div class="price-archive" dir="rtl">
