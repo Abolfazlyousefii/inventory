@@ -80,7 +80,7 @@
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>تاریخ</th>
+                            <th>تاریخ ثبت اولیه</th>
                             <th>تامین‌کننده</th>
                             <th>توضیحات</th>
                             <th>تخفیف سند</th>
@@ -95,7 +95,7 @@
                             <td class="fw-bold" data-label="ردیف">
                                 {{ $loop->iteration + (($purchases->currentPage() - 1) * $purchases->perPage()) }}
                             </td>
-                            <td data-label="تاریخ">{{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}</td>
+                            <td data-label="تاریخ ثبت اولیه">{{ \App\Support\JalaliDate::dateTime($purchase->created_at) }}</td>
                             <td data-label="تأمین‌کننده">{{ $purchase->supplier?->name }}</td>
                             <td class="text-muted" data-label="توضیحات">{{ $purchase->note ?: '-' }}</td>
                             <td data-label="تخفیف سند">{{ $toRial($purchase->total_discount ?? 0) }}</td>
