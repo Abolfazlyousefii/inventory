@@ -2,7 +2,7 @@
 
 @section('title', 'صف ارسال بار')
 
-@push('styles')<link rel="stylesheet" href="{{ asset('css/shipping-queue.css') }}?v=1">@endpush
+@push('styles')<link rel="stylesheet" href="{{ asset('css/shipping-queue.css') }}?v=2">@endpush
 
 @section('content')
 	@php
