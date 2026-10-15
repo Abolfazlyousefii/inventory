@@ -751,6 +751,8 @@ class PermissionCatalog
             'admin.bug-investigator.show' => 'logs.view',
             'admin.permissions.index' => 'permissions.view',
             'admin.permissions.update' => 'permissions.edit',
+            'admin.invoice-payment-settings.edit' => 'settings.edit',
+            'admin.invoice-payment-settings.update' => 'settings.edit',
             'vouchers.sales.queue' => 'warehouse.collection.queue.view',
             'vouchers.sales.queue.data' => 'warehouse.collection.queue.view',
             'vouchers.sales.queue.receive' => 'warehouse.collection.receive',
