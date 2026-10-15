@@ -22,17 +22,57 @@ class PriceChangeDocumentController extends Controller
     {
     }
 
-    public function index(): View
+    public function index(Request $request): View
     {
-        $documents = PriceChangeDocument::query()->with('createdBy:id,name')->latest()->paginate(15);
-        $stats = [
-            'total' => PriceChangeDocument::query()->count(),
-            'draft' => PriceChangeDocument::query()->where('status', PriceChangeDocument::STATUS_DRAFT)->count(),
-            'applied' => PriceChangeDocument::query()->where('status', PriceChangeDocument::STATUS_APPLIED)->count(),
-            'today' => PriceChangeDocument::query()->whereDate('created_at', today())->count(),
-        ];
-
-        return view('products.price-changes.index', compact('documents', 'stats'));
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:150'],
+            'status' => ['nullable', Rule::in(array_keys(PriceChangeDocument::statusLabels()))],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'date_from' => ['nullable', 'string', 'max:10'], 'date_to' => ['nullable', 'string', 'max:10'],
+        ]);
+        $query = PriceChangeDocument::query()->with('createdBy:id,name');
+        $categories = Category::query()->orderBy('name')->get(['id', 'name', 'parent_id'])->keyBy('id');
+        $path = function ($id) use ($categories): string {
+            $names = []; $seen = [];
+            while ($id && isset($categories[$id]) && ! isset($seen[$id])) {
+                $seen[$id] = true; array_unshift($names, $categories[$id]->name); $id = $categories[$id]->parent_id;
+            }
+            return implode(' / ', $names);
+        };
+        $categoryOptions = $categories->map(fn ($c) => ['id' => $c->id, 'name' => $path($c->id)])->values();
+        if (! empty($filters['category_id'])) {
+            $ids = Category::selfAndDescendantIds((int) $filters['category_id']);
+            $query->whereIn('scope_payload->category_id', $ids);
+        }
+        if (! empty($filters['status'])) $query->where('status', $filters['status']);
+        foreach (['date_from' => '>=', 'date_to' => '<='] as $key => $operator) {
+            if (! empty($filters[$key])) {
+                $date = \App\Support\JalaliDate::toGregorianDate($filters[$key]);
+                if (! $date) throw ValidationException::withMessages([$key => 'تاریخ شمسی معتبر وارد کنید.']);
+                $query->where('created_at', $operator, $date . ($key === 'date_from' ? ' 00:00:00' : ' 23:59:59'));
+            }
+        }
+        if ($q = trim($filters['q'] ?? '')) {
+            $normalize = fn ($text) => strtr($text, ['ي' => 'ی', 'ك' => 'ک', '۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
+            $term = '%' . $normalize($q) . '%';
+            $query->where(function ($search) use ($term, $q, $categories, $normalize) {
+                foreach (['code', 'title', 'note'] as $field) $search->orWhereRaw("REPLACE(REPLACE($field, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$term]);
+                $search->orWhereHas('items', fn ($items) => $items->whereRaw("REPLACE(REPLACE(product_name_snapshot, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$term]));
+                $search->orWhereHas('createdBy', fn ($users) => $users->whereRaw("REPLACE(REPLACE(name, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$term]));
+                $matched = $categories->filter(fn ($c) => str_contains($normalize($c->name), $normalize($q)))->keys()->all();
+                if ($matched) $search->orWhereIn('scope_payload->category_id', $matched)->orWhereIn('scope_payload->root_category_id', $matched);
+            });
+        }
+        $stats = ['total' => (clone $query)->count(), 'draft' => (clone $query)->where('status', 'draft')->count(),
+            'applied' => (clone $query)->where('status', 'applied')->count(), 'today' => (clone $query)->whereDate('created_at', today())->count()];
+        $documents = $query->latest('id')->paginate(15)->withQueryString();
+        $productIds = $documents->map(fn ($d) => $d->scope_payload['product_id'] ?? null)->filter()->unique();
+        $products = Product::query()->whereIn('id', $productIds)->pluck('name', 'id');
+        foreach ($documents as $document) {
+            $document->archive_category = $path($document->scope_payload['category_id'] ?? null) ?: 'دسته‌بندی نامشخص';
+            $document->archive_product = $products[$document->scope_payload['product_id'] ?? 0] ?? null;
+        }
+        return view('products.price-changes.index', compact('documents', 'stats', 'filters', 'categoryOptions'));
     }
 
     public function create(): View

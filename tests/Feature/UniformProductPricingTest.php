@@ -110,6 +110,27 @@ class UniformProductPricingTest extends TestCase
         return $user;
     }
 
+    public function test_archive_filters_category_search_status_and_jalali_dates(): void
+    {
+        Schema::create('users', function (Blueprint $t) { $t->id(); $t->string('name'); });
+        DB::table('users')->insert(['id' => 1, 'name' => 'Seller']);
+        DB::table('categories')->insert(['id' => 2, 'parent_id' => 1, 'name' => 'Silicone']);
+        DB::table('products')->where('id', 1)->update(['category_id' => 2]);
+        $payload = array_replace($this->payload(), ['subcategory_id' => 2, 'category_id' => 1]);
+        $service = app(PriceChangeService::class);
+        $doc = $service->storeDraft($payload, $service->buildPreview($payload));
+        $doc->forceFill(['created_by' => 1, 'created_at' => '2026-10-15 23:59:59'])->saveQuietly();
+        foreach ([['q' => 'Case'], ['q' => 'Seller'], ['category_id' => 1], ['category_id' => 2], ['date_from' => '۱۴۰۵/۰۷/۲۳', 'date_to' => '۱۴۰۵/۰۷/۲۳']] as $filters) {
+            $view = app(\App\Http\Controllers\PriceChangeDocumentController::class)->index(\Illuminate\Http\Request::create('/products/price-changes', 'GET', $filters))->getData();
+            $this->assertSame(1, $view['documents']->total());
+            $this->assertStringContainsString('Silicone', $view['documents']->first()->archive_category);
+        }
+        foreach ([['q' => 'no-match'], ['status' => 'applied'], ['date_from' => '1405/07/24']] as $filters) {
+            $view = app(\App\Http\Controllers\PriceChangeDocumentController::class)->index(\Illuminate\Http\Request::create('/products/price-changes', 'GET', $filters))->getData();
+            $this->assertSame(0, $view['documents']->total());
+        }
+    }
+
     public function test_large_document_applies_all_prices_and_history_with_bounded_database_writes(): void
     {
         DB::table('product_variants')->delete();
