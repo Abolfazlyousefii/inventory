@@ -138,55 +138,59 @@ class ProductExportBuilderService
 
     public function selected(array $selection): Collection
     {
-        $ids = array_map('intval', array_keys($selection));
-        $products = collect();
-        // Chunk queries to keep very large selections safe for driver bindings.
-        foreach (array_chunk($ids, 100) as $chunk) {
-            foreach ($this->products()->whereIn('id', $chunk)->get() as $product) {
-                $products->put($product->id, $product);
+        $results = collect();
+
+        // Keep only one bounded Eloquent batch in memory while building large exports.
+        foreach (array_chunk(array_keys($selection), 80) as $keys) {
+            $batch = $this->products()->whereIn('id', array_map('intval', $keys))
+                ->get()->keyBy('id');
+            if ($batch->count() !== count($keys)) {
+                throw ValidationException::withMessages(['selection' => 'یکی از کالاها دیگر برای خروجی در دسترس نیست.']);
+            }
+            foreach ($keys as $id) {
+                $results->push($this->mapSelectedProduct($batch->get((int) $id), $selection[$id]));
             }
         }
-        if ($products->count() !== count($ids)) {
-            throw ValidationException::withMessages(['selection' => 'یکی از کالاها دیگر برای خروجی در دسترس نیست.']);
-        }
 
-        return collect($selection)->map(function ($chosen, $id) use ($products) {
-            $product = $products->get((int) $id);
-            $chosen = array_map('intval', $chosen);
-            $all = $product->catalogVariants;
-            if ($all->isEmpty()) {
-                if ($chosen !== [0] || $product->variants()->exists()) {
-                    throw ValidationException::withMessages(['selection' => 'مدل انتخاب‌شده برای کالا معتبر نیست.']);
-                }
-            } else {
-                $byId = $all->keyBy('id');
-                if (array_diff($chosen, $byId->keys()->map(fn ($id) => (int) $id)->all()) !== [] || count($chosen) !== count(array_unique($chosen))) {
-                    throw ValidationException::withMessages(['selection' => 'یکی از مدل‌های انتخاب‌شده دیگر فعال نیست.']);
-                }
-                $modelNames = collect($chosen)->map(fn (int $variantId) => $this->grouping->modelName($byId->get($variantId)))->unique()->all();
-                $product->setRelation('catalogVariants', $all->filter(fn ($variant) => in_array($this->grouping->modelName($variant), $modelNames, true))->values());
+        return $results;
+    }
+
+    private function mapSelectedProduct(Product $product, array $chosen): array
+    {
+        $chosen = array_map('intval', $chosen);
+        $all = $product->catalogVariants;
+        if ($all->isEmpty()) {
+            if ($chosen !== [0] || $product->variants()->exists()) {
+                throw ValidationException::withMessages(['selection' => 'مدل انتخاب‌شده برای کالا معتبر نیست.']);
             }
-            $mapped = $this->exports->mapProduct($product, []);
-            $mapped['code'] = (string) ($product->code ?: $product->sku ?: '');
-            $mapped['total_stock'] = $all->isEmpty() ? max(0, (int) $product->stock) : (int) $product->catalogVariants->sum('stock');
-            $selectedVariants = $product->catalogVariants;
-            $prices = $selectedVariants->isEmpty()
-                ? collect([(int) $product->price > 0 ? (int) $product->price : null])
-                : $selectedVariants->map(fn ($variant) => $this->grouping->effectivePrice($variant, $product));
-            $prices = $prices->filter(fn ($price) => $price !== null && $price > 0);
-            $mapped['approximate_price'] = $prices->isEmpty() ? null : (int) $prices->max();
-            $mapped['approximate_price_label'] = $mapped['approximate_price'] === null
-                ? 'قیمت ثبت نشده' : number_format($mapped['approximate_price']).' ریال';
-            $mapped['selected_models'] = $selectedVariants->isEmpty()
-                ? ['مدل عمومی']
-                : $selectedVariants->map(fn ($variant) => $this->grouping->modelName($variant))
-                    ->unique()->sort(fn ($a, $b) => strnatcasecmp($a, $b))->values()->all();
-            $mapped['selected_colors'] = $selectedVariants
-                ->map(fn ($variant) => $this->grouping->colorData($variant))
-                ->filter()->unique(fn (array $color) => mb_strtolower($color['name']))
-                ->sort(fn ($a, $b) => strnatcasecmp($a['name'], $b['name']))->values()->all();
+        } else {
+            $byId = $all->keyBy('id');
+            if (array_diff($chosen, $byId->keys()->map(fn ($id) => (int) $id)->all()) !== [] || count($chosen) !== count(array_unique($chosen))) {
+                throw ValidationException::withMessages(['selection' => 'یکی از مدل‌های انتخاب‌شده دیگر فعال نیست.']);
+            }
+            $modelNames = collect($chosen)->map(fn (int $variantId) => $this->grouping->modelName($byId->get($variantId)))->unique()->all();
+            $product->setRelation('catalogVariants', $all->filter(fn ($variant) => in_array($this->grouping->modelName($variant), $modelNames, true))->values());
+        }
+        $mapped = $this->exports->mapProduct($product, []);
+        $mapped['code'] = (string) ($product->code ?: $product->sku ?: '');
+        $mapped['total_stock'] = $all->isEmpty() ? max(0, (int) $product->stock) : (int) $product->catalogVariants->sum('stock');
+        $selectedVariants = $product->catalogVariants;
+        $prices = $selectedVariants->isEmpty()
+            ? collect([(int) $product->price > 0 ? (int) $product->price : null])
+            : $selectedVariants->map(fn ($variant) => $this->grouping->effectivePrice($variant, $product));
+        $prices = $prices->filter(fn ($price) => $price !== null && $price > 0);
+        $mapped['approximate_price'] = $prices->isEmpty() ? null : (int) $prices->max();
+        $mapped['approximate_price_label'] = $mapped['approximate_price'] === null
+            ? 'قیمت ثبت نشده' : number_format($mapped['approximate_price']).' ریال';
+        $mapped['selected_models'] = $selectedVariants->isEmpty()
+            ? ['مدل عمومی']
+            : $selectedVariants->map(fn ($variant) => $this->grouping->modelName($variant))
+                ->unique()->sort(fn ($a, $b) => strnatcasecmp($a, $b))->values()->all();
+        $mapped['selected_colors'] = $selectedVariants
+            ->map(fn ($variant) => $this->grouping->colorData($variant))
+            ->filter()->unique(fn (array $color) => mb_strtolower($color['name']))
+            ->sort(fn ($a, $b) => strnatcasecmp($a['name'], $b['name']))->values()->all();
 
-            return $mapped;
-        })->values();
+        return $mapped;
     }
 }
