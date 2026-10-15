@@ -461,6 +461,8 @@ class PageAccessCatalog
         'admin.bug-investigator.show' => ['activity_logs'],
         'admin.permissions.index' => ['roles'],
         'admin.permissions.update' => ['roles'],
+        'admin.invoice-payment-settings.edit' => ['settings'],
+        'admin.invoice-payment-settings.update' => ['settings'],
         'admin.roles.index' => ['roles'],
         'admin.roles.create' => ['roles'],
         'admin.roles.store' => ['roles'],
