@@ -110,6 +110,28 @@ class UniformProductPricingTest extends TestCase
         return $user;
     }
 
+    public function test_large_document_applies_all_prices_and_history_with_bounded_database_writes(): void
+    {
+        DB::table('product_variants')->delete();
+        $rows = [];
+        for ($i = 1; $i <= 3030; $i++) {
+            $rows[] = ['id' => $i, 'product_id' => 1, 'sell_price' => 200, 'stock' => $i % 3, 'reserved' => 1, 'buy_price' => 80, 'is_active' => $i % 2];
+        }
+        foreach (array_chunk($rows, 400) as $chunk) DB::table('product_variants')->insert($chunk);
+        $doc = $this->draft();
+        $before = DB::table('product_variants')->get(['id', 'stock', 'reserved', 'buy_price', 'is_active'])->toArray();
+        DB::enableQueryLog();
+        app(PriceChangeService::class)->applyDocument($doc, $this->actor());
+        $queries = collect(DB::getQueryLog());
+        DB::disableQueryLog();
+        $writes = $queries->filter(fn ($query) => str_starts_with(strtolower($query['query']), 'update '))->count();
+        $this->assertLessThanOrEqual(12, $writes, 'Price application must batch history updates rather than save each item.');
+        $this->assertSame('applied', $doc->fresh()->status);
+        $this->assertSame(3030, $doc->items()->where('status', 'applied')->whereNotNull('applied_at')->count());
+        $this->assertSame(3030, DB::table('product_variants')->where('sell_price', 400)->count());
+        $this->assertEquals($before, DB::table('product_variants')->get(['id', 'stock', 'reserved', 'buy_price', 'is_active'])->toArray());
+    }
+
     public function test_fixed_price_covers_every_variant_and_relative_change_never_guesses_mixed_prices(): void
     {
         $s = app(PriceChangeService::class);

@@ -48,7 +48,7 @@ class UniformProductPriceService
     {
         foreach ($items->groupBy('product_id')->sortKeys() as $productId => $group) {
             $product = Product::query()->lockForUpdate()->findOrFail($productId);
-            $variants = $product->variants()->orderBy('id')->lockForUpdate()->get();
+            $variants = $product->variants()->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $ids = $variants->pluck('id')->sort()->values()->all();
             $expectedIds = $group->pluck('product_variant_id')->sort()->values()->all();
             $master = $product->uniform_sale_price === null ? null : (int) $product->uniform_sale_price;
@@ -56,7 +56,7 @@ class UniformProductPriceService
                 throw new RuntimeException('تنوع‌ها یا وضعیت کالا تغییر کرده است؛ پیش‌نمایش و سند جدید ایجاد کنید.');
             }
             foreach ($group as $item) {
-                $variant = $variants->firstWhere('id', $item->product_variant_id);
+                $variant = $variants->get($item->product_variant_id);
                 if (($item->validation_details['master_before'] ?? null) !== $master || (int) $variant->sell_price !== (int) $item->old_price) {
                     throw new RuntimeException('قیمت مرجع یا تنوع‌ها تغییر کرده است؛ پیش‌نمایش و سند جدید ایجاد کنید.');
                 }
@@ -68,8 +68,11 @@ class UniformProductPriceService
             // Price history remains on the document items. No stock or historical sales rows are updated.
             $product->forceFill(['uniform_sale_price' => $price, 'price' => $price])->save();
             $product->variants()->update(['sell_price' => $price, 'updated_at' => now()]);
-            foreach ($group as $item) {
-                $item->forceFill(['status' => PriceChangeDocumentItem::STATUS_APPLIED, 'applied_at' => now()])->save();
+            // Preserve every history row, but avoid one UPDATE per variant on large documents.
+            foreach ($group->pluck('id')->chunk(500) as $itemIds) {
+                $document->items()->whereIn('id', $itemIds->all())
+                    ->where('status', PriceChangeDocumentItem::STATUS_VALID)
+                    ->update(['status' => PriceChangeDocumentItem::STATUS_APPLIED, 'applied_at' => now(), 'updated_at' => now()]);
             }
         }
     }
