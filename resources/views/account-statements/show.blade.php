@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'گردش حساب '.($customer->display_name ?: 'شخص'))
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/account-statement-document.css') }}?v=20261015-invoice-customer-eye">
+<link rel="stylesheet" href="{{ asset('css/account-statement-document.css') }}?v=20261015-payment-actions">
 @endpush
 @section('content')
 @php

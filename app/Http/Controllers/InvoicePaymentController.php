@@ -218,6 +218,10 @@ class InvoicePaymentController extends Controller
 
     private function paymentReturn(Customer $customer, string $uuid)
     {
+        if (request('return_to') === 'account-statement') {
+            return redirect()->route('account-statements.show', $customer->id);
+        }
+
         return \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'invoices.show')
             ? redirect()->route('invoices.show', $uuid)
             : redirect()->route('account-statements.show', $customer->id);

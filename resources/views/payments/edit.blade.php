@@ -6,7 +6,8 @@
     $value = fn($name, $default = '') => old($name, $default);
     $methods = ['cash'=>'نقدی', 'cheque'=>'چک'];
     if (!isset($methods[$payment->method])) $methods[$payment->method] = match($payment->method) {'card'=>'کارت','bank_transfer'=>'حواله بانکی','online'=>'آنلاین','wallet'=>'کیف پول', default=>$payment->method};
-    $backRoute = \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'invoices.show') ? route('invoices.show', $payment->invoice->uuid) : route('account-statements.show', $customer->id);
+    $returnToAccount = request('return_to') === 'account-statement';
+    $backRoute = !$returnToAccount && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'invoices.show') ? route('invoices.show', $payment->invoice->uuid) : route('account-statements.show', $customer->id);
 @endphp
 @push('styles')
 <link rel="stylesheet" href="{{ asset('css/payment-management.css') }}?v=20261011">
@@ -19,6 +20,7 @@
     <div class="pm-summary"><span>مبلغ ثبت‌شده</span><strong>{{ \App\Support\Currency::formatRial($payment->amount) }}</strong></div>
     <form action="{{ route('account-statements.payments.update', [$customer->id, $payment->id]) }}" method="POST" class="pm-card" data-payment-edit>
         @csrf @method('PUT')
+        @if($returnToAccount)<input type="hidden" name="return_to" value="account-statement">@endif
         <input type="hidden" name="version" value="{{ old('version', $version) }}">
         <div class="pm-grid">
             <label>روش پرداخت<select name="method" class="form-select" data-payment-method>@foreach($methods as $key=>$label)<option value="{{ $key }}" @selected($value('method',$payment->method)===$key)>{{ $label }}</option>@endforeach</select></label>
@@ -47,6 +49,7 @@
         <p>با حذف این پرداخت، مبلغ آن از دریافتی مشتری کم و مانده حساب دوباره محاسبه می‌شود. سابقه حذف باقی می‌ماند.</p>
         <form action="{{ route('account-statements.payments.destroy', [$customer->id, $payment->id]) }}" method="POST" data-payment-delete>
             @csrf @method('DELETE')<input type="hidden" name="version" value="{{ old('version', $version) }}"><input type="hidden" name="_delete_payment" value="1">
+            @if($returnToAccount)<input type="hidden" name="return_to" value="account-statement">@endif
             <label>دلیل حذف<input class="form-control" name="reason" required minlength="5" maxlength="1000" value="{{ old('_delete_payment') ? old('reason') : '' }}"></label>
             <button class="btn btn-outline-danger" type="submit" @disabled($managementIssue)>حذف این پرداخت</button>
         </form>

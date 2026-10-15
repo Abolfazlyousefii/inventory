@@ -445,6 +445,7 @@ class PageAccessCatalog
         'account-statements.index' => ['finance.accounts'],
         'account-statements.adjustments.store' => ['finance.accounts'],
         'account-statements.payments.store' => ['finance.accounts'],
+        'account-statements.payments.edit' => ['finance.accounts'],
         'account-statements.payments.update' => ['finance.accounts'],
         'account-statements.payments.destroy' => ['finance.accounts'],
         'account-statements.documents.invoices.show' => ['finance.accounts'],
