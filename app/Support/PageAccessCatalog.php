@@ -98,6 +98,7 @@ class PageAccessCatalog
         'products.pricelist' => ['products'],
         'admin.product-exports.index' => ['products'],
         'admin.product-exports.builder.products' => ['products'],
+        'admin.product-exports.builder.selection-batch' => ['products'],
         'admin.product-exports.builder.print' => ['products'],
         'admin.product-exports.builder.preview' => ['products'],
         'admin.product-exports.data' => ['products'],
