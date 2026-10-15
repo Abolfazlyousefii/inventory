@@ -18,7 +18,7 @@
 
     $salesActive = $isSalesReturnRoute || $isRoute('sales-returns.*', 'preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.invoice-reassignments.*');
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
-    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
+    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*', 'admin.invoice-payment-settings.*');
 
     $initialOpenSection = match (true) {
         $productsActive => 'products',
