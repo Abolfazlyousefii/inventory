@@ -44,27 +44,34 @@ class ProductExportBulkSelectionTest extends TestCase
         $child = Category::query()->create(['name' => 'Bulk child', 'parent_id' => $root->id]);
         $outside = Category::query()->create(['name' => 'Other category']);
 
-        for ($n = 1; $n <= 83; $n++) {
+        for ($n = 1; $n <= 1001; $n++) {
             $this->product('Export selected '.$n, $n % 2 ? $root : $child);
         }
         $this->product('Do not include', $outside);
 
-        $first = $this->getJson(route('admin.product-exports.builder.selection-batch', [
-            'category_id' => $root->id,
-        ]))->assertOk()
-            ->assertJsonCount(80, 'items')
-            ->assertJsonPath('has_more', true)
-            ->assertJsonPath('total', 83);
+        $cursor = 0;
+        $pages = 0;
+        $rows = [];
+        do {
+            $response = $this->getJson(route('admin.product-exports.builder.selection-batch', [
+                'category_id' => $root->id,
+                'after_id' => $cursor,
+            ]))->assertOk();
 
-        $second = $this->getJson(route('admin.product-exports.builder.selection-batch', [
-            'category_id' => $root->id,
-            'after_id' => $first->json('next_cursor'),
-        ]))->assertOk()
-            ->assertJsonCount(3, 'items')
-            ->assertJsonPath('has_more', false);
+            if ($pages === 0) {
+                $response->assertJsonCount(80, 'items')
+                    ->assertJsonPath('has_more', true)
+                    ->assertJsonPath('total', 1001);
+            }
+            $rows = array_merge($rows, $response->json('items'));
+            $nextCursor = $response->json('next_cursor');
+            $this->assertGreaterThan($cursor, $nextCursor);
+            $cursor = $nextCursor;
+            $pages++;
+        } while ($response->json('has_more'));
 
-        $rows = array_merge($first->json('items'), $second->json('items'));
-        $this->assertCount(83, array_unique(array_column($rows, 'id')));
+        $this->assertGreaterThan(12, $pages);
+        $this->assertCount(1001, array_unique(array_column($rows, 'id')));
         $this->assertNotContains('Do not include', array_column($rows, 'name'));
         $this->assertSame(['مدل عمومی'], array_column($rows[0]['models'], 'name'));
     }
