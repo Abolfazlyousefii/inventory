@@ -28,11 +28,11 @@
             <div class="card stat-card h-100">
                 <div class="card-body d-flex flex-wrap gap-4 justify-content-between align-items-center">
                     <div>
-                        <div class="label">جمع کل خریدها تا الان (قیمت خرید)</div>
+                        <div class="label">جمع مبلغ خریدهای مطابق جستجو (قیمت خرید)</div>
                         <div class="value">{{ $toRial($totalAllAmount) }}</div>
                     </div>
                     <div>
-                        <div class="label">تعداد اسناد خرید</div>
+                        <div class="label">تعداد اسناد مطابق جستجو</div>
                         <div class="value">{{ number_format($totalAllCount) }}</div>
                     </div>
                 </div>

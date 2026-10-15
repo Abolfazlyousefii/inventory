@@ -42,8 +42,8 @@ class PurchaseController extends Controller
             ->when($dateFrom, fn ($q) => $q->where('created_at', '>=', Carbon::parse($dateFrom)->startOfDay()))
             ->when($dateTo, fn ($q) => $q->where('created_at', '<=', Carbon::parse($dateTo)->endOfDay()));
 
-        $totalAllAmount = (int) Purchase::sum('total_amount');
-        $totalAllCount = (int) Purchase::count();
+        $totalAllAmount = (int) (clone $query)->sum('total_amount');
+        $totalAllCount = (int) (clone $query)->count();
 
         $purchases = $query->latest('created_at')->orderByDesc('id')
             ->paginate(20)
