@@ -31,10 +31,10 @@ class CustomerInvoicePaymentSettingsController extends Controller
 
         // Normalize presentation separators without converting identifiers into integers.
         $data = $request->all();
-        $data['national_id'] = preg_replace('/\\s+/', '', (string) ($data['national_id'] ?? ''));
-        $data['iban'] = strtoupper(preg_replace('/[\\s-]+/', '', (string) ($data['iban'] ?? '')));
-        $data['account'] = preg_replace('/[\\s-]+/', '', (string) ($data['account'] ?? ''));
-        $cardDigits = preg_replace('/[\\s-]+/', '', (string) ($data['card'] ?? ''));
+        $data['national_id'] = preg_replace('/\\s+/', '', $this->englishDigits((string) ($data['national_id'] ?? '')));
+        $data['iban'] = strtoupper(preg_replace('/[\\s-]+/', '', $this->englishDigits((string) ($data['iban'] ?? ''))));
+        $data['account'] = preg_replace('/[\\s-]+/', '', $this->englishDigits((string) ($data['account'] ?? '')));
+        $cardDigits = preg_replace('/[\\s-]+/', '', $this->englishDigits((string) ($data['card'] ?? '')));
         $data['card'] = preg_match('/^[0-9]{16}$/D', $cardDigits)
             ? implode('-', str_split($cardDigits, 4))
             : $cardDigits;
@@ -64,5 +64,15 @@ class CustomerInvoicePaymentSettingsController extends Controller
     private function authorizeManager(Request $request): void
     {
         abort_unless($request->user()?->hasPermission('settings.edit'), 403);
+    }
+
+    private function englishDigits(string $value): string
+    {
+        return strtr($value, [
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        ]);
     }
 }
