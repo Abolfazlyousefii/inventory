@@ -108,3 +108,4 @@
 .stocktake-archive .sa-table td:nth-child(6){grid-column:auto}
 .stocktake-archive .sa-product{font-size:13px}
 }
+.stocktake-archive .sa-status{white-space:nowrap}.stocktake-archive .sa-table th:nth-child(7){min-width:80px}
