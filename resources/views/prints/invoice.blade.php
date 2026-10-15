@@ -44,6 +44,21 @@
         .summary-table td:last-child { text-align:left; direction:ltr; }
         .final-row td { background:#f3f4f6; font-weight:900; }
         .company-box { margin-top:7px; }
+        .customer-balance-box, .customer-payment-box {
+            margin-top:7px; padding:7px 9px; border:1px solid #374151; border-radius:6px;
+            page-break-inside:avoid; break-inside:avoid;
+        }
+        .customer-balance-box { background:#f8fafc; }
+        .customer-balance-details { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; }
+        .customer-balance-details > strong { font-size:14px; }
+        .customer-balance-status { padding:2px 7px; border:1px solid #b9c7d6; border-radius:15px; font-weight:800; }
+        .customer-balance-time { margin-right:auto; font-size:9px; color:#4b5563; }
+        .customer-balance-hint { margin-top:4px; color:#4b5563; font-size:9px; }
+        .customer-payment-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 14px; }
+        .customer-payment-grid > div { display:flex; align-items:baseline; gap:5px; min-width:0; flex-wrap:wrap; }
+        .payment-label { color:#374151; font-weight:700; }
+        .payment-number { display:inline-block; font-family:Tahoma,Arial,sans-serif; direction:ltr; unicode-bidi:isolate; overflow-wrap:anywhere; text-align:left; }
+
         .signature-section { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; page-break-inside:avoid; break-inside:avoid; }
         .signature-box { height:48px; border:1px solid #374151; border-radius:6px; padding:6px; font-weight:900; }
         @media print {
@@ -55,7 +70,7 @@
             tr { page-break-inside:avoid; page-break-after:auto; }
             thead { display:table-header-group; }
             tfoot { display:table-footer-group; }
-            .summary-section, .company-box, .signature-section { page-break-inside:avoid; break-inside:avoid; }
+            .summary-section, .company-box, .customer-balance-box, .customer-payment-box, .signature-section { page-break-inside:avoid; break-inside:avoid; }
         }
     </style>
 </head>
