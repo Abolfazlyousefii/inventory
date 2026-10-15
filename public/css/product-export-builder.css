@@ -30,3 +30,19 @@
 .customer-sheet footer{margin-top:14px;padding-top:8px;border-top:1px solid #e2eaee;color:#78919c;font-size:9px}
 @media(max-width:550px){.customer-sheet .sheet-item{padding:10px}.customer-sheet .sheet-item-main{gap:9px;flex-wrap:wrap}.customer-sheet .sheet-photo{width:70px;height:78px}.customer-sheet .sheet-price{min-width:0;width:100%;padding:0;text-align:right}.customer-sheet .sheet-price small{display:inline;margin-left:5px}.customer-sheet .sheet-price strong{display:inline;font-size:12px}}
 @media print{@page{size:A4 portrait;margin:10mm}.builder-print-page .customer-sheet{width:100%;max-width:none;margin:0;padding:0;font-family:Vazirmatn,Tahoma,sans-serif}.builder-print-page .sheet-grid{grid-template-columns:minmax(0,1fr)}.builder-print-page .sheet-item{padding:9px 11px;margin:0 0 8px;box-shadow:none}.builder-print-page .sheet-photo{width:78px;height:86px}.builder-print-page .sheet-item h2{font-size:12px}.builder-print-page .sheet-price strong{font-size:12px}.builder-print-page .sheet-chip{padding:2px 5px;font-size:9px}.builder-print-page .sheet-item--many-models{break-inside:auto}}
+/* Bulk selection uses the same visual language as product cards. */
+.builder-bulk-panel{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:0 0 12px;padding:13px 15px;border:1px solid #d6e7e3;border-radius:13px;background:#f5fbf8}
+.builder-bulk-copy{display:grid;gap:3px;flex:1 1 200px}
+.builder-bulk-copy strong{font-size:13px;color:#174b42}
+.builder-bulk-copy small{font-size:11px;color:#66877c}
+.builder-bulk-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.builder-bulk-actions button{min-height:37px;padding:7px 12px;border-radius:8px;font:inherit;font-size:11px;font-weight:800}
+.builder-bulk-select{border:1px solid #11826a;background:#128368;color:#fff}
+.builder-bulk-select:hover{background:#096950}
+.builder-bulk-clear{border:1px solid #cbdde4;background:#fff;color:#28566b}
+.builder-bulk-cancel{border:1px solid #edc5bd;background:#fff3f0;color:#9d3e32}
+.builder-bulk-actions button:disabled{opacity:.5;cursor:wait}
+.builder-bulk-cancel[hidden]{display:none}
+.builder-bulk-status{width:100%;min-height:19px;font-size:11px;color:#476b61}
+.basket-more{display:block;width:100%;padding:10px 7px;margin-top:8px;border:1px solid #cee0e8;border-radius:8px;background:#f8fbfc;color:#245b73;font-size:11px;font-weight:800}
+@media(max-width:550px){.builder-bulk-panel{padding:11px}.builder-bulk-actions{width:100%}.builder-bulk-actions button{flex:1}}
