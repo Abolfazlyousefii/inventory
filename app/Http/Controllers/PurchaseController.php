@@ -922,6 +922,7 @@ class PurchaseController extends Controller
             $lineTotal = max(0, $lineSubtotal - $itemDiscountAmount);
 
             $product = Product::whereKey($item['product_id'])->lockForUpdate()->firstOrFail();
+            $sellPrice = (int) ($product->uniform_sale_price ?? $sellPrice);
 
             $variant = ProductVariant::where('product_id', $product->id)
                 ->whereKey($item['variant_id'])

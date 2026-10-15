@@ -1361,6 +1361,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			</div>
 		</div>
 
+        @if($order && $order->items->contains(fn($item) => $item->product?->uniform_sale_price !== null && (int) $item->price !== (int) $item->product->uniform_sale_price))
+            <div class="alert alert-warning" role="alert">قیمت روز بعضی اقلام با قیمت ذخیره‌شدهٔ این پیش‌نویس متفاوت است. قیمت‌های ذخیره‌شده خودکار تغییر نکرده‌اند؛ پیش از ثبت نهایی، قیمت اقلام را بررسی و در صورت نیاز اصلاح کنید.</div>
+        @endif
 		<div class="local-draft-banner" id="localDraftBanner">
 			<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
 				<div>

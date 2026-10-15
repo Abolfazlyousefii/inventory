@@ -223,9 +223,13 @@ class PriceChangeDocumentController extends Controller
             ];
         }
         $payload = $request->validate($rules);
+        $payload['uniform_pricing'] = true;
+        if (! empty($payload['variant_ids'])) {
+            throw ValidationException::withMessages(['variant_ids' => 'قیمت در سطح محصول تنظیم می‌شود؛ انتخاب تنوع خاص مجاز نیست.']);
+        }
         $payload['include_active_products_only'] = $request->boolean('include_active_products_only', true);
-        $payload['include_active_variants_only'] = $request->boolean('include_active_variants_only', true);
-        $payload['in_stock_only'] = $request->boolean('in_stock_only', false);
+        $payload['include_active_variants_only'] = false;
+        $payload['in_stock_only'] = false;
         $payload['variant_ids'] = array_values(array_unique(array_map('intval', $payload['variant_ids'] ?? [])));
         if (($payload['change_type'] ?? null) === PriceChangeDocument::CHANGE_DECREASE_PERCENT && (float) $payload['change_value'] >= 100) {
             throw ValidationException::withMessages(['change_value' => 'در کاهش درصدی مقدار باید کمتر از ۱۰۰ باشد.']);

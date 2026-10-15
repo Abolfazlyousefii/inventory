@@ -3,11 +3,13 @@
 @section('content')
 @php
     $isDraft = $document->status === \App\Models\PriceChangeDocument::STATUS_DRAFT;
+    $isLegacyDraft = $isDraft && empty($document->scope_payload['uniform_pricing']);
     $validItemsCount = $document->items->whereIn('status', [\App\Models\PriceChangeDocumentItem::STATUS_VALID, \App\Models\PriceChangeDocumentItem::STATUS_APPLIED])->count();
     $invalidItemsCount = $document->items->where('status', \App\Models\PriceChangeDocumentItem::STATUS_INVALID)->count();
 @endphp
 <div class="container py-4" dir="rtl">
-    <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-4"><div><h1 class="h4 fw-bold text-primary">سند تغییر قیمت {{ $document->code }}</h1><p class="text-muted mb-0">جزئیات قیمت قبل و بعد هر تنوع</p></div><div class="d-flex gap-2 align-self-start"><a class="btn btn-outline-secondary" href="{{ route('products.price-changes.index') }}">بازگشت</a>@if($isDraft)<form method="post" action="{{ route('products.price-changes.apply', $document) }}">@csrf<button class="btn btn-success">اعمال سند</button></form><form method="post" action="{{ route('products.price-changes.cancel', $document) }}">@csrf<button class="btn btn-outline-danger">لغو سند</button></form>@endif</div></div>
+    @if($isLegacyDraft)<div class="alert alert-warning">این پیش‌نویس با روش قدیمی قیمت‌گذاری تنوع‌ها ثبت شده است و قابل اعمال نیست. برای تنظیم قیمت یکسان، سند جدیدی با پیش‌نمایش به‌روز ایجاد کنید.</div>@endif
+    <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-4"><div><h1 class="h4 fw-bold text-primary">سند تغییر قیمت {{ $document->code }}</h1><p class="text-muted mb-0">جزئیات قیمت قبل و بعد هر تنوع</p></div><div class="d-flex gap-2 align-self-start"><a class="btn btn-outline-secondary" href="{{ route('products.price-changes.index') }}">بازگشت</a>@if($isDraft)<form method="post" action="{{ route('products.price-changes.apply', $document) }}">@csrf<button class="btn btn-success" @disabled($isLegacyDraft)>اعمال سند</button></form><form method="post" action="{{ route('products.price-changes.cancel', $document) }}">@csrf<button class="btn btn-outline-danger">لغو سند</button></form>@endif</div></div>
     @if (session('success')) <div class="alert alert-success">{{ session('success') }}</div> @endif
     @if ($errors->any()) <div class="alert alert-danger">{{ $errors->first() }}</div> @endif
     @if($document->status === 'applied')<div class="alert alert-success">این سند اعمال شده است و قیمت فروش آینده کالاها بر اساس آن تغییر کرده است.</div>@elseif($isDraft)<div class="alert alert-warning">این سند هنوز اعمال نشده و قیمت کالاها تغییر نکرده است.</div>@endif

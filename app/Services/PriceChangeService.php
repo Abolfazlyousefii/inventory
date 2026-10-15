@@ -19,7 +19,7 @@ class PriceChangeService
     public function buildPreview(array $payload, ?int $perPage = null): Collection
     {
         $variants = $this->variantsForScope($payload)
-            ->with(['product:id,name,sku,code,category_id,is_sellable', 'modelList:id,name'])
+            ->with(! empty($payload['uniform_pricing']) ? ['product', 'modelList:id,name'] : ['product:id,name,sku,code,category_id,is_sellable', 'modelList:id,name'])
             ->orderBy('product_id')
             ->orderBy('id')
             ->when($perPage, fn ($q) => $q->limit($perPage))
@@ -27,7 +27,9 @@ class PriceChangeService
             ->unique('id')
             ->values();
 
-        return $variants->map(fn (ProductVariant $variant) => $this->previewRow($variant, $payload));
+        return ! empty($payload['uniform_pricing'])
+            ? app(UniformProductPriceService::class)->preview($variants, $payload, $this)
+            : $variants->map(fn (ProductVariant $variant) => $this->previewRow($variant, $payload));
     }
 
     public function previewSummary(array $payload): array
@@ -125,17 +127,13 @@ class PriceChangeService
                 ->lockForUpdate()
                 ->get();
             if ($items->isEmpty()) throw new RuntimeException('هیچ آیتم معتبری برای اعمال وجود ندارد.');
-            $now = now();
-            foreach ($items as $item) {
-                $variant = ProductVariant::query()->whereKey($item->product_variant_id)->lockForUpdate()->first();
-                if (! $variant || (int) $variant->sell_price !== (int) $item->old_price) throw new RuntimeException('قیمت برخی تنوع‌ها پس از ثبت پیش‌نویس تغییر کرده است. لطفاً سند جدیدی با پیش‌نمایش به‌روز ثبت کنید.');
-                if ((int) $item->new_price <= 0) throw new RuntimeException('قیمت جدید باید بزرگ‌تر از صفر باشد.');
-                $variant->forceFill(['sell_price' => (int) $item->new_price])->save();
-                $item->forceFill(['status' => PriceChangeDocumentItem::STATUS_APPLIED, 'applied_at' => $now])->save();
+            if (empty($lockedDocument->scope_payload['uniform_pricing'])) {
+                throw new RuntimeException('این پیش‌نویس با روش قدیمی قیمت تنوع‌ها ثبت شده است؛ برای اعمال قیمت یکسان، پیش‌نمایش و سند جدید ایجاد کنید.');
             }
-            $lockedDocument->forceFill(['status' => PriceChangeDocument::STATUS_APPLIED, 'applied_by' => $user->id, 'applied_at' => $now])->save();
+            app(UniformProductPriceService::class)->apply($lockedDocument, $items);
+            $lockedDocument->forceFill(['status' => PriceChangeDocument::STATUS_APPLIED, 'applied_by' => $user->id, 'applied_at' => now()])->save();
             return $lockedDocument->refresh();
-        });
+        }, 3);
     }
 
     public function cancelDocument(PriceChangeDocument $document, User $user): PriceChangeDocument
@@ -151,12 +149,13 @@ class PriceChangeService
     public function variantsForScope(array $payload, bool $ignoreVariantFilters = false): Builder
     {
         $this->assertScopeIsConsistent($payload);
+        if (! empty($payload['uniform_pricing'])) $ignoreVariantFilters = true;
         $query = ProductVariant::query()->select('product_variants.*');
         $variantIds = array_values(array_unique(array_map('intval', $payload['variant_ids'] ?? [])));
         if ($variantIds) $query->whereIn('product_variants.id', $variantIds);
         elseif (! empty($payload['product_id'])) $query->where('product_variants.product_id', (int) $payload['product_id']);
         else {
-            $categoryId = (int) ($payload['subcategory_id'] ?: $payload['category_id']);
+            $categoryId = (int) (($payload['subcategory_id'] ?? null) ?: $payload['category_id']);
             $categoryIds = Category::selfAndDescendantIds($categoryId);
             $query->whereHas('product', fn ($q) => $q->whereIn('category_id', $categoryIds));
         }
@@ -201,7 +200,7 @@ class PriceChangeService
         if (empty($payload['category_id'])) throw new RuntimeException('انتخاب دسته‌بندی اصلی الزامی است.');
         $categoryIds = Category::selfAndDescendantIds((int) $payload['category_id']);
         if (! empty($payload['subcategory_id']) && ! in_array((int) $payload['subcategory_id'], $categoryIds, true)) throw new RuntimeException('زیر‌دسته انتخاب‌شده زیرمجموعه دسته‌بندی اصلی نیست.');
-        $effectiveIds = Category::selfAndDescendantIds((int) ($payload['subcategory_id'] ?: $payload['category_id']));
+        $effectiveIds = Category::selfAndDescendantIds((int) (($payload['subcategory_id'] ?? null) ?: $payload['category_id']));
         if (! empty($payload['product_id'])) {
             $product = Product::query()->find((int) $payload['product_id']);
             if (! $product || ! in_array((int) $product->category_id, $effectiveIds, true)) throw new RuntimeException('محصول انتخاب‌شده در محدوده دسته‌بندی نیست.');
@@ -224,8 +223,8 @@ class PriceChangeService
 
     private function scopePayload(array $payload): array
     {
-        return ['root_category_id' => (int) $payload['category_id'], 'category_id' => (int) ($payload['subcategory_id'] ?: $payload['category_id']),
-            'subcategory_id' => $payload['subcategory_id'] ? (int) $payload['subcategory_id'] : null, 'product_id' => $payload['product_id'] ? (int) $payload['product_id'] : null,
+        return ['uniform_pricing' => (bool) ($payload['uniform_pricing'] ?? false), 'root_category_id' => (int) $payload['category_id'], 'category_id' => (int) (($payload['subcategory_id'] ?? null) ?: $payload['category_id']),
+            'subcategory_id' => ! empty($payload['subcategory_id']) ? (int) $payload['subcategory_id'] : null, 'product_id' => ! empty($payload['product_id']) ? (int) $payload['product_id'] : null,
             'variant_ids' => array_values(array_unique(array_map('intval', $payload['variant_ids'] ?? []))),
             'include_active_products_only' => (bool) ($payload['include_active_products_only'] ?? true), 'include_active_variants_only' => (bool) ($payload['include_active_variants_only'] ?? true), 'in_stock_only' => (bool) ($payload['in_stock_only'] ?? false)];
     }

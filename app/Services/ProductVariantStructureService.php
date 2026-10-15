@@ -360,7 +360,7 @@ class ProductVariantStructureService
         $product->forceFill([
             'stock' => max(0, (int) $valid->sum('stock')),
             'reserved' => max(0, (int) $valid->sum('reserved')),
-            'price' => max(0, (int) ($minimumUsablePrice ?? 0)),
+            'price' => $product->uniform_sale_price ?? max(0, (int) ($minimumUsablePrice ?? 0)),
         ]);
 
         if ($product->isDirty(['stock', 'reserved', 'price'])) {

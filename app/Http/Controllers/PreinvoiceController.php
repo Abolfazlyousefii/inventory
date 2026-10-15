@@ -1353,9 +1353,9 @@ class PreinvoiceController extends Controller
     {
         abort_unless(auth()->check(), 403);
 
-        $order = PreinvoiceOrder::with(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice'])->where('uuid', $uuid)->firstOrFail();
+        $order = PreinvoiceOrder::with(['items.product:id,name,code,sku,uniform_sale_price', 'items.variant:id,variant_name', 'invoice'])->where('uuid', $uuid)->firstOrFail();
         $this->expireSellerFacingPreinvoiceIfOverdue($order);
-        $order->refresh()->load(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice']);
+        $order->refresh()->load(['items.product:id,name,code,sku,uniform_sale_price', 'items.variant:id,variant_name', 'invoice']);
 
         abort_unless($this->accessService->canSellerEditPreinvoiceItems($order, auth()->user()), 403);
 
