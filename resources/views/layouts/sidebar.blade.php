@@ -247,7 +247,7 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view'])
+        @canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view','settings.edit'])
             <div class="sidebar-accordion-item {{ $configActive ? 'is-open' : '' }}" data-accordion-section="config">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $configActive ? 'is-active' : '' }}"
