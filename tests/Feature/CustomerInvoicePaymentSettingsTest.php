@@ -102,7 +102,23 @@ class CustomerInvoicePaymentSettingsTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertSame('Sample Recipient', app(CustomerInvoicePaymentSettingsService::class)->details()['name']);
-        $printService = file_get_contents(app_path('Services/SalesPrintDocumentService.php'));
-        $this->assertStringContainsString('CustomerInvoicePaymentSettingsService', $printService);
+
+        $invoice = new \App\Models\Invoice([
+            'uuid' => 'TEST-PAYMENT-SETTINGS',
+            'customer_name' => 'Test customer',
+            'total' => 0,
+            'status' => \App\Models\Invoice::STATUS_SHIPPED,
+        ]);
+        $invoice->setRelation('items', new \Illuminate\Support\Collection());
+        $invoice->setRelation('payments', new \Illuminate\Support\Collection());
+        $invoice->setRelation('customer', null);
+        $invoice->setRelation('seller', null);
+        $invoice->setRelation('preinvoiceOrder', null);
+        $invoice->setRelation('shippingMethod', null);
+
+        $printer = app(\App\Services\SalesPrintDocumentService::class);
+        $printData = $printer->invoiceData($invoice, 'customer');
+        $this->assertSame($this->details(), $printData['customerPayment']);
+        $this->assertNull($printer->invoiceData($invoice, 'warehouse')['customerPayment']);
     }
 }
