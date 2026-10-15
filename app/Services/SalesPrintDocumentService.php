@@ -30,7 +30,7 @@ class SalesPrintDocumentService
             'customer' => [
                 'name' => $invoice->customer_name ?: $invoice->customer?->display_name,
                 'mobile' => $invoice->customer_mobile ?: $invoice->customer?->mobile,
-                'address' => $invoice->customer_address,
+                'address' => $invoice->display_customer_address,
                 'code' => $invoice->customer?->crm_customer_id ?: $invoice->customer_id,
             ],
             'shipping' => [
