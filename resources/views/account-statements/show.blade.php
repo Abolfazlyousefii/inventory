@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'گردش حساب '.($customer->display_name ?: 'شخص'))
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/account-statement-document.css') }}?v=20261011b">
+<link rel="stylesheet" href="{{ asset('css/account-statement-document.css') }}?v=20261015-invoice-customer-eye">
 @endpush
 @section('content')
 @php
@@ -48,6 +48,10 @@
                             $reference = $invoice->uuid;
                             $description = 'فاکتور فروش';
                             $url = route('vouchers.sales.show', $invoice->uuid);
+                            $invoiceCustomerName = trim((string) ($invoice->customer_name ?? ''));
+                            if ($invoiceCustomerName === '') {
+                                $invoiceCustomerName = trim((string) ($invoice->customer?->display_name ?? ''));
+                            }
                         } elseif ($payment) {
                             $reference = 'PAY-'.$payment->id;
                             $description = match($payment->method) {'cash'=>'دریافت نقدی', 'cheque'=>'دریافت چک', 'online'=>'دریافت آنلاین', 'card'=>'دریافت کارت', 'bank_transfer'=>'دریافت حواله', default=>'دریافت وجه'};
@@ -67,8 +71,30 @@
                     @endphp
                     <tr class="asd-entry {{ !$effective ? 'asd-ineffective' : ($ledger->type === 'debit' ? 'asd-entry-debit' : 'asd-entry-credit') }}" data-ledger-id="{{ $ledger->id }}">
                         <td class="asd-date" data-label="تاریخ ثبت"><span>{{ \App\Support\JalaliDate::date($ledger->created_at) }}</span><small>{{ $ledger->created_at?->format('H:i') }}</small></td>
-                        <td class="asd-reference" data-label="شماره سند">@if($url)<a href="{{ $url }}" aria-label="مشاهده سند {{ $reference }}">{{ $reference }} ↗</a>@else<span>{{ $reference }}</span>@endif</td>
-                        <td class="asd-description" data-label="شرح"><span>{{ $description }}</span>@if(!$effective)<small class="asd-excluded">بدون اثر در مانده</small>@endif</td>
+                        <td class="asd-reference" data-label="شماره سند">
+                            @if($invoice)
+                                <a href="{{ $url }}" class="asd-invoice-link" title="مشاهده فاکتور {{ $reference }}" aria-label="مشاهده فاکتور {{ $reference }}">
+                                    <span>{{ $reference }}</span>
+                                    <span class="asd-invoice-eye" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/>
+                                            <circle cx="12" cy="12" r="3"/>
+                                        </svg>
+                                    </span>
+                                </a>
+                            @elseif($url)
+                                <a href="{{ $url }}" aria-label="مشاهده سند {{ $reference }}">{{ $reference }} ↗</a>
+                            @else
+                                <span>{{ $reference }}</span>
+                            @endif
+                        </td>
+                        <td class="asd-description" data-label="شرح">
+                            <span>{{ $description }}</span>
+                            @if($invoice)
+                                <small class="asd-invoice-customer">مشتری فاکتور: {{ $invoiceCustomerName !== '' ? $invoiceCustomerName : 'نام مشتری ثبت نشده' }}</small>
+                            @endif
+                            @if(!$effective)<small class="asd-excluded">بدون اثر در مانده</small>@endif
+                        </td>
                         <td class="asd-money" data-label="بدهکار">{{ $ledger->type === 'debit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-money" data-label="بستانکار">{{ $ledger->type === 'credit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از ثبت"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
