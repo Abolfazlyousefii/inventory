@@ -26,7 +26,7 @@ class ProductExportBuilderService
                 ->orWhereHas('catalogVariants', fn (Builder $variants) => $variants->where('is_active', true)));
     }
 
-    public function page(array $filters): array
+    private function filteredProducts(array $filters): Builder
     {
         $query = $this->products();
         if (! empty($filters['category_id'])) {
@@ -61,6 +61,12 @@ class ProductExportBuilderService
                 });
             }
         }
+        return $query;
+    }
+
+    public function page(array $filters): array
+    {
+        $query = $this->filteredProducts($filters);
         match ($filters['sort'] ?? 'relevant') {
             'name' => $query->orderBy('name'),
             'low' => $query->orderBy('price')->orderBy('name'),
@@ -74,6 +80,29 @@ class ProductExportBuilderService
             'total' => $page->total(),
             'page' => $page->currentPage(),
             'last_page' => $page->lastPage(),
+        ];
+    }
+
+    /**
+     * Bulk selection uses a stable ID cursor rather than the 18-item display pagination.
+     * Each response remains bounded; the total number of selected products does not.
+     */
+    public function selectionBatch(array $filters): array
+    {
+        $cursor = max(0, (int) ($filters['after_id'] ?? 0));
+        $batchSize = 80;
+        $query = $this->filteredProducts($filters);
+        $total = $cursor === 0 ? (clone $query)->count() : null;
+        $rows = $query->where('id', '>', $cursor)->orderBy('id')
+            ->limit($batchSize + 1)->get();
+        $hasMore = $rows->count() > $batchSize;
+        $items = $rows->take($batchSize);
+
+        return [
+            'items' => $items->map(fn (Product $product) => $this->card($product))->values(),
+            'has_more' => $hasMore,
+            'next_cursor' => (int) ($items->last()?->id ?? $cursor),
+            'total' => $total,
         ];
     }
 
@@ -110,7 +139,13 @@ class ProductExportBuilderService
     public function selected(array $selection): Collection
     {
         $ids = array_map('intval', array_keys($selection));
-        $products = $this->products()->whereIn('id', $ids)->get()->keyBy('id');
+        $products = collect();
+        // Chunk queries to keep very large selections safe for driver bindings.
+        foreach (array_chunk($ids, 100) as $chunk) {
+            foreach ($this->products()->whereIn('id', $chunk)->get() as $product) {
+                $products->put($product->id, $product);
+            }
+        }
         if ($products->count() !== count($ids)) {
             throw ValidationException::withMessages(['selection' => 'یکی از کالاها دیگر برای خروجی در دسترس نیست.']);
         }
