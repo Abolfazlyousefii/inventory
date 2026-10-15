@@ -45,7 +45,7 @@ class PurchaseController extends Controller
         $totalAllAmount = (int) Purchase::sum('total_amount');
         $totalAllCount = (int) Purchase::count();
 
-        $purchases = $query->latest('created_at')
+        $purchases = $query->latest('created_at')->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
 
