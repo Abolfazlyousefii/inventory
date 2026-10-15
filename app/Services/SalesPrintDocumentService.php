@@ -16,6 +16,12 @@ class SalesPrintDocumentService
 
         $paid = $invoice->relationLoaded('payments') ? (int) $invoice->payments->sum('amount') : (int) $invoice->paid_amount;
         $totals = SalesDocumentTotals::fromDocument($invoice);
+        $isCustomerCopy = $mode === 'customer';
+        // This is the CURRENT whole-customer ledger balance, not the balance of this invoice.
+        // Customer::balance includes opening balance and only effective debit/credit rows.
+        $signedAccountBalance = $isCustomerCopy && $invoice->customer
+            ? (int) $invoice->customer->balance
+            : null;
 
         return [
             'documentType' => 'invoice',
@@ -51,9 +57,15 @@ class SalesPrintDocumentService
                 'paid' => $paid,
                 'remaining' => max($totals['grand_total'] - $paid, 0),
             ],
+            'accountBalance' => $signedAccountBalance === null ? null : [
+                'amount' => abs($signedAccountBalance),
+                'status' => $signedAccountBalance > 0 ? 'بدهکار' : ($signedAccountBalance < 0 ? 'بستانکار' : 'تسویه'),
+                'asOf' => now(),
+            ],
+            'customerPayment' => $isCustomerCopy ? config('customer_invoice_payment', []) : null,
             'company' => config('company'),
             'logo' => asset('logo.png'),
-            'mode' => $mode === 'customer' ? 'customer' : 'warehouse',
+            'mode' => $isCustomerCopy ? 'customer' : 'warehouse',
             'backUrl' => route('invoices.show', $invoice->uuid),
         ];
     }
