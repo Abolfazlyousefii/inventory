@@ -208,6 +208,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
         Route::get('/', [\App\Http\Controllers\ProductExportBuilderController::class, 'index'])->name('index');
         Route::get('/builder/products', [\App\Http\Controllers\ProductExportBuilderController::class, 'products'])->name('builder.products');
+        Route::get('/builder/selection-batch', [\App\Http\Controllers\ProductExportBuilderController::class, 'selectionBatch'])->name('builder.selection-batch');
         Route::post('/builder/print', [\App\Http\Controllers\ProductExportBuilderController::class, 'print'])->name('builder.print');
         Route::post('/builder/preview', [\App\Http\Controllers\ProductExportBuilderController::class, 'preview'])->name('builder.preview');
         Route::get('/data', [ProductExportController::class, 'filter'])->name('data');
