@@ -188,6 +188,7 @@ class Invoice extends Model
     public function notes() { return $this->hasMany(InvoiceNote::class)->latest(); }
     public function attachments() { return $this->hasMany(InvoiceAttachment::class)->latest(); }
     public function preinvoiceOrder() { return $this->belongsTo(PreinvoiceOrder::class); }
+    public function cancelledReissue() { return $this->hasOne(CancelledInvoiceReissue::class, 'original_invoice_id'); }
     public function seller() { return $this->belongsTo(User::class, 'seller_id'); }
     /**
      * Keep the invoice's original delivery address when one was recorded.
