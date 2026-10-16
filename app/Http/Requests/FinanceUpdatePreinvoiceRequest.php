@@ -44,24 +44,25 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'intent' => $intent,
             'action' => $intent,
             'items' => $items,
-            'product_discounts' => $productDiscounts,
-            'invoice_discount_value' => \App\Support\DiscountMath::input($this->input('invoice_discount_value', 0)),
+            ...($this->exists('product_discounts') ? ['product_discounts' => $productDiscounts] : []),
+            ...($this->exists('invoice_discount_value') ? ['invoice_discount_value' => \App\Support\DiscountMath::input($this->input('invoice_discount_value'))] : []),
         ]);
     }
 
     public function rules(): array
     {
         return [
+            'finance_version' => ['required', 'string', 'size:64'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.id' => ['required', 'integer'],
+            'items.*.id' => ['required', 'integer', 'distinct'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.price' => ['required', 'integer', 'min:0'],
             'product_discounts' => ['nullable', 'array'],
-            'product_discounts.*.product_id' => ['required_with:product_discounts', 'integer'],
+            'product_discounts.*.product_id' => ['required_with:product_discounts', 'integer', 'min:1', 'distinct'],
             'product_discounts.*.type' => ['required_with:product_discounts', 'in:amount,percent'],
             'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0', 'decimal:0,2'],
             'invoice_discount_type' => ['required', 'in:none,amount,percent'],
-            'invoice_discount_value' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+            'invoice_discount_value' => ['required_unless:invoice_discount_type,none', 'nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
             'intent' => ['nullable', 'in:save,save_and_finalize'],
             'action' => ['nullable', 'in:save,save_and_finalize'],
@@ -71,6 +72,9 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'finance_version.required' => 'نسخه صفحه ارسال نشده است؛ صفحه را دوباره بارگذاری و تخفیف‌ها را بررسی کنید.',
+            'items.*.id.distinct' => 'یک ردیف کالا بیش از یک بار ارسال شده است.',
+            'product_discounts.*.product_id.distinct' => 'تخفیف یک کالا بیش از یک بار ارسال شده است.',
             'edit_reason.required' => 'لطفاً دلیل ویرایش مالی را وارد کنید.',
             'edit_reason.string' => 'دلیل ویرایش مالی نامعتبر است.',
             'edit_reason.min' => 'دلیل ویرایش مالی باید حداقل ۳ کاراکتر باشد.',

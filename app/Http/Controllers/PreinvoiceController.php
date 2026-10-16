@@ -48,6 +48,8 @@ use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
 use App\Http\Requests\PreinvoiceAutosaveRequest;
 use App\Support\SalesDocumentTotals;
 use App\Support\PageAccessCatalog;
+use App\Support\FinanceDocumentVersion;
+use App\Support\SalesDiscountPayload;
 
 class PreinvoiceController extends Controller
 {
@@ -315,7 +317,7 @@ class PreinvoiceController extends Controller
         }
 
         $basePreinvoiceQuery = PreinvoiceOrder::query()
-            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items:id,preinvoice_order_id,quantity'])
+            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items'])
             ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
             ->where(function ($query) {
                 $query->whereNull('stock_frozen_until')
@@ -1641,15 +1643,7 @@ class PreinvoiceController extends Controller
 
     private function decodeDiscountBreakdown(mixed $value): ?array
     {
-        if (is_array($value)) {
-            return $value;
-        }
-        if (! is_string($value) || trim($value) === '') {
-            return null;
-        }
-        $decoded = json_decode($value, true);
-
-        return is_array($decoded) ? $decoded : null;
+        return $value === null || $value === '' ? null : SalesDiscountPayload::decode($value);
     }
 
     private function validateDraftPayload(Request $request, bool $checkCurrentStock = true, ?PreinvoiceOrder $editingOrder = null): array
@@ -1687,7 +1681,7 @@ class PreinvoiceController extends Controller
             'products.*.price' => 'nullable|integer|min:0',
             'products.*.item_id' => 'nullable|integer',
             'products.*.line_discount_amount' => 'nullable|integer|min:0',
-            'discount_breakdown' => 'nullable|string',
+            'discount_breakdown' => 'nullable|string|json',
         ], [
             'customer_name.required' => 'نام مشتری الزامی است.',
             'customer_mobile.required' => 'شماره موبایل مشتری الزامی است.',
@@ -2897,7 +2891,8 @@ class PreinvoiceController extends Controller
         try {
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
             $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
-            $updated->refresh()->load('items');
+            // Approve the version this request just saved, not a later concurrent edit.
+            $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
         } catch (QueryException $exception) {
             Log::error('Finance preinvoice save-and-finalize update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, 'save_and_finalize'));
 
@@ -2985,6 +2980,7 @@ class PreinvoiceController extends Controller
         ], true), 403);
 
         $validated = $request->validate([
+            'finance_version' => ['required', 'string', 'size:64'],
             'payments' => 'nullable|array',
             'payments.*.method' => 'required_with:payments|in:cash,cheque',
             'payments.*.amount' => 'required_with:payments|integer|min:1',
@@ -3039,6 +3035,7 @@ class PreinvoiceController extends Controller
                 }
 
                 $this->reservationService->assertFinanceApprovable($order, auth()->user());
+                FinanceDocumentVersion::assertCurrent($order, $validated['finance_version'] ?? null);
 
                 if (! in_array($order->status, [
                     PreinvoiceOrder::STATUS_PENDING_FINANCE,

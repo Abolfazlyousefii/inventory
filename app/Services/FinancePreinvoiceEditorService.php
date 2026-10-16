@@ -32,14 +32,29 @@ class FinancePreinvoiceEditorService
             }
 
             $items = $lockedOrder->items()->with(['product', 'variant'])->lockForUpdate()->get()->keyBy('id');
+            $lockedOrder->setRelation('items', $items->values());
+            \App\Support\FinanceDocumentVersion::assertCurrent($lockedOrder, $data['finance_version'] ?? null);
             $payload = collect($data['items'] ?? [])->keyBy(fn ($row) => (int) $row['id']);
+            if ($payload->count() !== count($data['items'] ?? [])) {
+                throw ValidationException::withMessages(['items' => 'شناسه تکراری در اقلام ارسالی وجود دارد.']);
+            }
             if ($items->keys()->sort()->values()->all() !== $payload->keys()->sort()->values()->all()) {
                 throw ValidationException::withMessages(['items' => 'اقلام ارسالی باید دقیقاً با اقلام پیش‌فاکتور برابر باشند؛ افزودن یا حذف ردیف مجاز نیست.']);
             }
 
             $beforeItems = $this->snapshot($lockedOrder->fresh(['items.product', 'items.variant']));
+            $productIds = $items->pluck('product_id')->map(fn ($id) => (int) $id)->all();
+            foreach ($data['product_discounts'] ?? [] as $discount) {
+                if (! in_array((int) ($discount['product_id'] ?? 0), $productIds, true)) {
+                    throw ValidationException::withMessages(['product_discounts' => 'کالای تخفیف باید در اقلام همین پیش‌فاکتور باشد.']);
+                }
+            }
             $beforeTotal = (int) $lockedOrder->total_price;
             $beforeInvoiceDiscount = (int) ($lockedOrder->invoice_discount_amount ?? 0);
+            // Missing optional groups must preserve legacy discounts, not clear them.
+            $productDiscountPayload = array_key_exists('product_discounts', $data)
+                ? (array) $data['product_discounts']
+                : $this->productDiscountInputsFromBreakdown($lockedOrder);
 
             foreach ($items as $itemId => $item) {
                 $row = $payload[$itemId];
@@ -59,9 +74,6 @@ class FinancePreinvoiceEditorService
             }
 
             $lockedOrder->load('items.product', 'items.variant');
-            $productDiscountPayload = array_key_exists('product_discounts', $data)
-                ? (array) $data['product_discounts']
-                : $this->productDiscountInputsFromBreakdown($lockedOrder);
             $productDiscounts = $this->productDiscountAllocator->allocate($lockedOrder->items, $productDiscountPayload);
             foreach ($lockedOrder->items as $item) {
                 $lineDiscount = (int) ($productDiscounts['lines'][$item->id] ?? $item->line_discount_amount ?? 0);
@@ -139,7 +151,7 @@ class FinancePreinvoiceEditorService
 
     private function productDiscountInputsFromBreakdown(PreinvoiceOrder $order): array
     {
-        return collect($order->discount_breakdown['groups'] ?? [])->map(function ($group) {
+        return collect(app(PreinvoiceDiscountHydrator::class)->hydrateForEditing($order)['product_groups'])->map(function ($group) {
             return [
                 'product_id' => (int) ($group['product_id'] ?? 0),
                 'type' => (string) ($group['discount_type'] ?? 'amount'),

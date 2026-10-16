@@ -57,6 +57,9 @@ class ProductDiscountAllocator
             if (! is_array($input)) continue;
             $productId = (int) ($input['product_id'] ?? 0);
             if ($productId <= 0) continue;
+            if (isset($byProduct[$productId])) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['product_discounts' => 'تخفیف یک کالا بیش از یک بار ارسال شده است. صفحه را دوباره باز کنید.']);
+            }
             $type = (string) ($input['type'] ?? $input['discount_type'] ?? 'amount');
             $type = in_array($type, ['amount', 'percent'], true) ? $type : 'amount';
             $value = DiscountMath::value($type, $input['value'] ?? $input['discount_value'] ?? 0);

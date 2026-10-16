@@ -93,6 +93,7 @@ it('saves finance edits behaviorally without finalizing or creating invoices', f
     $response = $this->actingAs($user)->put(route('preinvoice.draft.finance.update', $order->uuid), [
         'intent' => 'save',
         'action' => 'save',
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
         'items' => [[
             'id' => $item->id,
             'quantity' => 2,

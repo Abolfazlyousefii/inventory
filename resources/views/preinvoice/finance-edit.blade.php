@@ -40,6 +40,7 @@
 
 		<a class="btn btn-primary mb-3" href="{{ route('preinvoice.collaborative', $order->uuid) }}">ویرایش هم‌زمان اقلام، افزودن و حذف کالا</a>
 		<form method="POST" action="{{ route('preinvoice.draft.finance.update',$order->uuid) }}" id="financeEditForm">@csrf @method('PUT')
+            <input type="hidden" name="finance_version" value="{{ old('finance_version', \App\Support\FinanceDocumentVersion::token($order)) }}">
 			<div class="card"><div class="table-responsive"><table class="table table-sm align-middle finance-edit-table mb-0"><thead class="table-light"><tr><th>کالا</th><th>تنوع/SKU</th><th>موجودی مرجع</th><th>تعداد</th><th>قیمت واحد</th><th>قیمت مرجع</th><th>تخفیف تخصیص‌یافته ردیف</th><th>ناخالص</th><th>خالص</th></tr></thead><tbody>
 						@foreach($order->items as $idx=>$it) @php($isZero=(int)$it->price<=0) @php($gross=(int)$it->quantity*(int)$it->price) @php($net=SalesDocumentTotals::lineTotal($it))
 						<tr id="item-row-{{ $it->id }}" class="{{ $isZero ? 'table-warning finance-edit-row-zero' : '' }}" data-finance-item-row data-product-id="{{ (int)$it->product_id }}" data-item-id="{{ (int)$it->id }}">

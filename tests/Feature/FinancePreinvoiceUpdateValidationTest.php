@@ -120,6 +120,7 @@ it('redirects a successful finance edit back to the finance edit page without fi
     $response = $this->actingAs(financeValidationUser())->put(route('preinvoice.draft.finance.update', $order->uuid), [
         'intent' => 'save',
         'action' => 'save',
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
         'items' => [[
             'id' => $item->id,
             'quantity' => 1,

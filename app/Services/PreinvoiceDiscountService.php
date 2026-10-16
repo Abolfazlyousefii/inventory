@@ -14,7 +14,19 @@ class PreinvoiceDiscountService
     public function applyToOrder(PreinvoiceOrder $order, array $payload): array
     {
         $order->loadMissing('items.product', 'items.variant');
+        if (empty($payload['discount_breakdown']) && (
+            (int) $order->discount_amount > 0 || (int) $order->product_discount_amount > 0 || (int) $order->invoice_discount_amount > 0 || (int) ($payload['discount_amount'] ?? 0) > 0 ||
+            $order->items->contains(fn ($item) => (int) $item->line_discount_amount > 0)
+        )) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['discount_breakdown' => 'جزئیات تخفیف ارسال نشده است. برای جلوگیری از حذف تخفیف، سند را دوباره باز کنید.']);
+        }
         $breakdown = $this->decodeBreakdown($payload['discount_breakdown'] ?? null);
+        if (((int) $order->product_discount_amount > 0 || $order->items->contains(fn ($item) => (int) $item->line_discount_amount > 0)) && ! array_key_exists('groups', $breakdown)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['discount_breakdown' => 'جزئیات تخفیف کالاها ناقص است؛ تخفیف‌های قبلی تغییر نکردند.']);
+        }
+        if ((int) $order->invoice_discount_amount > 0 && ! array_key_exists('order_discount_value', $breakdown) && ! array_key_exists('invoice_discount_value', $payload)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['discount_breakdown' => 'جزئیات تخفیف کلی ناقص است؛ تخفیف قبلی تغییر نکرد.']);
+        }
         $invoiceType = (string) Arr::get($breakdown, 'order_discount_type', $payload['invoice_discount_type'] ?? 'amount');
         $invoiceType = in_array($invoiceType, ['amount', 'percent'], true) ? $invoiceType : 'amount';
         $invoiceValue = DiscountMath::value($invoiceType, Arr::get($breakdown, 'order_discount_value', $payload['invoice_discount_value'] ?? 0));
@@ -94,10 +106,7 @@ class PreinvoiceDiscountService
 
     private function decodeBreakdown(mixed $value): array
     {
-        if (is_array($value)) return $value;
-        if (! is_string($value) || trim($value) === '') return [];
-        $decoded = json_decode($value, true);
-        return is_array($decoded) ? $decoded : [];
+        return \App\Support\SalesDiscountPayload::decode($value);
     }
 
 }

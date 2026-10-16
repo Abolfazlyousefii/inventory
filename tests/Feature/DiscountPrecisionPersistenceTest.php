@@ -83,4 +83,34 @@ class DiscountPrecisionPersistenceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         (require base_path('database/migrations/2026_10_16_090000_preserve_fractional_sales_discount_values.php'))->down();
     }
+
+    public function test_invalid_or_missing_payload_preserves_saved_discount_and_totals(): void
+    {
+        $service = app(PreinvoiceDiscountService::class);
+        Model::withoutEvents(fn () => $service->applyToOrder(PreinvoiceOrder::findOrFail(1), ['discount_breakdown' => ['groups' => [['product_id' => 1, 'discount_type' => 'amount', 'discount_value' => 50000]], 'order_discount_type' => 'percent', 'order_discount_value' => '2.55']]));
+        $before = DB::table('preinvoice_orders')->first();
+        $lineBefore = DB::table('preinvoice_order_items')->first();
+        foreach ([[], ['discount_breakdown' => '{broken'], ['discount_breakdown' => ['order_discount_type' => 'amount', 'order_discount_value' => 0]], ['discount_breakdown' => ['groups' => [['product_id' => 1, 'discount_type' => 'percent']]]]] as $payload) {
+            try {
+                Model::withoutEvents(fn () => $service->applyToOrder(PreinvoiceOrder::findOrFail(1), $payload));
+                $this->fail('Invalid payload silently changed the saved discount.');
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                $this->assertNotEmpty($exception->errors());
+            }
+            $this->assertEquals($before, DB::table('preinvoice_orders')->first());
+            $this->assertEquals($lineBefore, DB::table('preinvoice_order_items')->first());
+        }
+        // Explicitly clearing discounts remains a supported existing action.
+        Model::withoutEvents(fn () => $service->applyToOrder(PreinvoiceOrder::findOrFail(1), ['discount_breakdown' => ['groups' => [], 'order_discount_type' => 'amount', 'order_discount_value' => 0]]));
+        $this->assertSame(0, (int) PreinvoiceOrder::findOrFail(1)->discount_amount);
+        $this->assertSame(2000100, (int) PreinvoiceOrder::findOrFail(1)->total_price);
+    }
+
+    public function test_missing_payload_is_rejected_after_caller_rebuilds_items_and_resets_total(): void
+    {
+        // The manual-save controller rebuilds item rows before applying discounts.
+        DB::table('preinvoice_orders')->where('id', 1)->update(['discount_amount' => 0, 'product_discount_amount' => 50000]);
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        Model::withoutEvents(fn () => app(PreinvoiceDiscountService::class)->applyToOrder(PreinvoiceOrder::findOrFail(1), []));
+    }
 }
