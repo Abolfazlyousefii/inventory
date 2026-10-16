@@ -24,7 +24,7 @@ class PreinvoiceDiscountHydrator
             $existing = (array) ($structuredGroups->get($productId) ?? []);
             $amount = (int) ($existing['discount_amount'] ?? $lineDiscount);
             $type = (string) ($existing['discount_type'] ?? ($amount > 0 ? 'amount' : 'amount'));
-            $value = (int) ($existing['discount_value'] ?? $amount);
+            $value = $existing['discount_value'] ?? $amount;
 
             $productGroups[$productId] = [
                 'product_id' => $productId,
@@ -38,7 +38,7 @@ class PreinvoiceDiscountHydrator
         }
 
         $invoiceType = $order->invoice_discount_type ?: null;
-        $invoiceValue = (int) ($order->invoice_discount_value ?? 0);
+        $invoiceValue = $order->invoice_discount_value ?? 0;
         $invoiceAmount = (int) ($order->invoice_discount_amount ?? 0);
         if (! $invoiceType && $legacyInvoiceDiscount > 0) {
             $invoiceType = 'amount';

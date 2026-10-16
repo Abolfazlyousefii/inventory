@@ -6,6 +6,7 @@ use App\Models\PreinvoiceOrder;
 use App\Models\User;
 use App\Support\ActivityLogger;
 use App\Support\SalesDocumentTotals;
+use App\Support\DiscountMath;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -76,17 +77,13 @@ class FinancePreinvoiceEditorService
             if (! in_array($invoiceDiscountType, ['none', 'amount', 'percent'], true)) {
                 $invoiceDiscountType = 'none';
             }
-            $invoiceDiscountValue = (int) ($data['invoice_discount_value'] ?? $lockedOrder->invoice_discount_value ?? 0);
+            $invoiceDiscountValue = DiscountMath::value($invoiceDiscountType, $data['invoice_discount_value'] ?? $lockedOrder->invoice_discount_value ?? 0);
             if ($invoiceDiscountType === 'none') {
                 $invoiceDiscountValue = 0;
             }
 
             $discountableBase = max((int) $lockedOrder->items->sum(fn ($item) => SalesDocumentTotals::lineSubtotal($item)) - $itemsDiscount, 0);
-            $invoiceDiscountAmount = match ($invoiceDiscountType) {
-                'amount' => min($invoiceDiscountValue, $discountableBase),
-                'percent' => (int) floor($discountableBase * min(max($invoiceDiscountValue, 0), 100) / 100),
-                default => 0,
-            };
+            $invoiceDiscountAmount = DiscountMath::amount($discountableBase, $invoiceDiscountType, $invoiceDiscountValue);
 
             $totals = SalesDocumentTotals::calculate($lockedOrder->items, $invoiceDiscountAmount, (int) $lockedOrder->shipping_price, ['discount_allocation_mode' => 'product_lines']);
             $breakdown = [
@@ -146,7 +143,7 @@ class FinancePreinvoiceEditorService
             return [
                 'product_id' => (int) ($group['product_id'] ?? 0),
                 'type' => (string) ($group['discount_type'] ?? 'amount'),
-                'value' => (int) ($group['discount_value'] ?? 0),
+                'value' => $group['discount_value'] ?? 0,
             ];
         })->filter(fn ($group) => (int) $group['product_id'] > 0)->values()->all();
     }

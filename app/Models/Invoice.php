@@ -41,7 +41,7 @@ class Invoice extends Model
         'shipping_status' => 'string',
         'shipping_cost' => 'integer',
         'discount_breakdown' => 'array',
-        'invoice_discount_value' => 'integer',
+        'invoice_discount_value' => 'decimal:2',
         'invoice_discount_amount' => 'integer',
         'product_discount_amount' => 'integer',
         'shipped_at' => 'datetime',

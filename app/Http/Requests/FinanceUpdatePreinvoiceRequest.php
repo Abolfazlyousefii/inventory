@@ -34,7 +34,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
                 return $row;
             }
             if (array_key_exists('value', $row)) {
-                $row['value'] = $this->normalizeMoney($row['value']);
+                $row['value'] = \App\Support\DiscountMath::input($row['value']);
             }
             return $row;
         })->all();
@@ -45,7 +45,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'action' => $intent,
             'items' => $items,
             'product_discounts' => $productDiscounts,
-            'invoice_discount_value' => $this->normalizeMoney($this->input('invoice_discount_value', 0)),
+            'invoice_discount_value' => \App\Support\DiscountMath::input($this->input('invoice_discount_value', 0)),
         ]);
     }
 
@@ -59,9 +59,9 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'product_discounts' => ['nullable', 'array'],
             'product_discounts.*.product_id' => ['required_with:product_discounts', 'integer'],
             'product_discounts.*.type' => ['required_with:product_discounts', 'in:amount,percent'],
-            'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0'],
+            'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0', 'decimal:0,2'],
             'invoice_discount_type' => ['required', 'in:none,amount,percent'],
-            'invoice_discount_value' => ['nullable', 'integer', 'min:0'],
+            'invoice_discount_value' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
             'intent' => ['nullable', 'in:save,save_and_finalize'],
             'action' => ['nullable', 'in:save,save_and_finalize'],
@@ -90,17 +90,24 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty()) return;
+            $discounts = ['invoice_discount_value' => [$this->input('invoice_discount_type', 'none'), $this->input('invoice_discount_value', 0)]];
+            foreach ((array)$this->input('product_discounts', []) as $index => $row) $discounts["product_discounts.{$index}.value"] = [$row['type'] ?? 'amount', $row['value'] ?? 0];
+            foreach ($discounts as $field => [$type, $value]) {
+                try { \App\Support\DiscountMath::value($type, $value); }
+                catch (\Illuminate\Validation\ValidationException $exception) { $validator->errors()->add($field, 'مقدار تخفیف نامعتبر است؛ مبلغ باید ریال صحیح و درصد حداکثر دو رقم اعشار باشد.'); }
+            }
             foreach ((array) $this->input('items', []) as $index => $row) {
                 if (($this->input('intent') === 'save_and_finalize') && (int) ($row['price'] ?? 0) <= 0) {
                     $validator->errors()->add("items.{$index}.price", 'برای تأیید مالی، قیمت تمام اقلام باید بیشتر از صفر باشد.');
                 }
             }
-            if ($this->input('invoice_discount_type') === 'percent' && (int) $this->input('invoice_discount_value', 0) > 100) {
+            if ($this->input('invoice_discount_type') === 'percent' && (float) $this->input('invoice_discount_value', 0) > 100) {
                 $validator->errors()->add('invoice_discount_value', 'درصد تخفیف کلی نمی‌تواند بیشتر از ۱۰۰ باشد.');
             }
 
             foreach ((array) $this->input('product_discounts', []) as $index => $row) {
-                if (($row['type'] ?? null) === 'percent' && (int) ($row['value'] ?? 0) > 100) {
+                if (($row['type'] ?? null) === 'percent' && (float) ($row['value'] ?? 0) > 100) {
                     $validator->errors()->add("product_discounts.{$index}.value", 'درصد تخفیف محصول نمی‌تواند بیشتر از ۱۰۰ باشد.');
                 }
             }

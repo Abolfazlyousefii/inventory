@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
+
 @section('content')
 	@php
 		$order = $order ?? null;
@@ -2044,13 +2046,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			return type === 'percent' ? n : Math.floor(n);
 		}
 
-		function calcDiscount(baseAmount, type, value) {
-			const base = Math.max(0, Number(baseAmount || 0));
-			const safeType = type === 'percent' ? 'percent' : 'amount';
-			const safeValue = safeDiscountValue(safeType, value);
-			if (safeType === 'percent') return Math.min(base, Math.floor(base * safeValue / 100));
-			return Math.min(base, Math.floor(safeValue));
-		}
+        function calcDiscount(baseAmount, type, value) {
+            return SalesDiscountMath.amount(baseAmount, type, value);
+        }
 
 		function customerFullName(c) {
 			if (!c) return '';

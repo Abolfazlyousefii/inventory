@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PreinvoiceOrder;
 use App\Support\SalesDocumentTotals;
 use Illuminate\Support\Arr;
+use App\Support\DiscountMath;
 
 class PreinvoiceDiscountService
 {
@@ -16,7 +17,7 @@ class PreinvoiceDiscountService
         $breakdown = $this->decodeBreakdown($payload['discount_breakdown'] ?? null);
         $invoiceType = (string) Arr::get($breakdown, 'order_discount_type', $payload['invoice_discount_type'] ?? 'amount');
         $invoiceType = in_array($invoiceType, ['amount', 'percent'], true) ? $invoiceType : 'amount';
-        $invoiceValue = max((int) Arr::get($breakdown, 'order_discount_value', $payload['invoice_discount_value'] ?? 0), 0);
+        $invoiceValue = DiscountMath::value($invoiceType, Arr::get($breakdown, 'order_discount_value', $payload['invoice_discount_value'] ?? 0));
         $productDiscounts = $this->allocator->allocate($order->items, $breakdown['groups'] ?? []);
         foreach ($order->items as $item) {
             $lineDiscount = (int) ($productDiscounts['lines'][(int) $item->id] ?? 0);
@@ -33,7 +34,7 @@ class PreinvoiceDiscountService
         $itemsDiscount = (int) $order->items->sum(fn ($item) => SalesDocumentTotals::lineDiscount($item));
         $gross = (int) $order->items->sum(fn ($item) => SalesDocumentTotals::lineSubtotal($item));
         $base = max($gross - $itemsDiscount, 0);
-        $invoiceAmount = $invoiceType === 'percent' ? (int) floor($base * min($invoiceValue, 100) / 100) : min($invoiceValue, $base);
+        $invoiceAmount = DiscountMath::amount($base, $invoiceType, $invoiceValue);
         $totals = SalesDocumentTotals::calculate($order->items, $invoiceAmount, (int) $order->shipping_price, ['discount_allocation_mode' => 'product_lines']);
         $contract = [
             'subtotal' => (int) $totals['subtotal_before_discount'],
@@ -72,7 +73,7 @@ class PreinvoiceDiscountService
             $this->applyToOrder($order, [
                 'discount_breakdown' => $order->discount_breakdown,
                 'invoice_discount_type' => $order->invoice_discount_type,
-                'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                'invoice_discount_value' => $order->invoice_discount_value ?? 0,
             ]);
             $order->refresh()->load('items.product', 'items.variant');
         }

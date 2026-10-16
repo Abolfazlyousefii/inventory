@@ -9,15 +9,15 @@ it('previews percent product discounts with backend allocation contract', functi
         ->and($view)->toContain('data-product-discount-group')
         ->and($view)->toContain('data-product-discount-type')
         ->and($view)->toContain('data-product-discount-value')
-        ->and($view)->toContain('Math.floor(groupGross*value/100)')
+        ->and($view)->toContain('SalesDiscountMath.amount(groupGross,type,value)')
         ->and($view)->toContain('allocatedDiscounts(groupRows,amount,groupGross)')
-        ->and($view)->toContain('discountAmount*row.gross/Math.max(groupGross,1)')
-        ->and($view)->toContain('discountAmount-allocated')
+        ->and($view)->toContain('SalesDiscountMath.allocate')
+        ->and($view)->toContain('shares[index]')
         ->and($view)->toContain('data-summary-product-discount')
         ->and($view)->toContain('data-summary-invoice-discount')
         ->and($view)->toContain('data-summary-total-discount')
         ->and($view)->toContain('data-summary-grand-total')
-        ->and($view)->toContain('Math.floor(subtotalAfterProductDiscount*invoiceValue/100)');
+        ->and($view)->toContain("SalesDiscountMath.amount(subtotalAfterProductDiscount,'percent',invoiceValue)");
 });
 
 it('persists percent product discounts and reloads discount breakdown fields', function () {
@@ -27,7 +27,7 @@ it('persists percent product discounts and reloads discount breakdown fields', f
 
     expect($service)->toContain('productDiscountAllocator->allocate')
         ->and($service)->toContain("'type' => (string) ($".'group' . "['discount_type'] ?? 'amount')")
-        ->and($service)->toContain("'value' => (int) ($".'group' . "['discount_value'] ?? 0)")
+        ->and($service)->toContain("'value' => $".'group' . "['discount_value'] ?? 0")
         ->and($service)->toContain("'discount_amount'")
         ->and($allocator)->toContain("'raw_subtotal' => $".'gross')
         ->and($allocator)->toContain("'final_amount' => max($".'gross' . " - $".'actual' . ", 0)")

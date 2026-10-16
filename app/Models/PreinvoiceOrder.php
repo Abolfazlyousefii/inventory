@@ -103,7 +103,7 @@ class PreinvoiceOrder extends Model
         'shipping_price' => 'integer',
         'discount_amount' => 'integer',
         'discount_breakdown' => 'array',
-        'invoice_discount_value' => 'integer',
+        'invoice_discount_value' => 'decimal:2',
         'invoice_discount_amount' => 'integer',
         'product_discount_amount' => 'integer',
         'total_price' => 'integer',

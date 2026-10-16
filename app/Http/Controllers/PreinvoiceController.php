@@ -859,7 +859,7 @@ class PreinvoiceController extends Controller
                 'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
                 'discount_breakdown' => $this->decodeDiscountBreakdown($validated['discount_breakdown'] ?? null),
                 'invoice_discount_type' => $validated['invoice_discount_type'] ?? null,
-                'invoice_discount_value' => (int) ($validated['invoice_discount_value'] ?? 0),
+                'invoice_discount_value' => $validated['invoice_discount_value'] ?? 0,
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
                 'is_auto_draft' => $order ? (bool) $order->is_auto_draft : true,
@@ -950,8 +950,8 @@ class PreinvoiceController extends Controller
             }
             $base = SalesDocumentTotals::calculate($items)['subtotal_after_product_discount'];
             $type = $breakdown['order_discount_type'] ?? $payload['invoice_discount_type'] ?? 'amount';
-            $value = max(0, (int) ($breakdown['order_discount_value'] ?? $payload['invoice_discount_value'] ?? 0));
-            $discount = $type === 'percent' ? (int) floor($base * min($value, 100) / 100) : min($value, $base);
+            $value = \App\Support\DiscountMath::value($type, $breakdown['order_discount_value'] ?? $payload['invoice_discount_value'] ?? 0);
+            $discount = \App\Support\DiscountMath::amount($base, $type, $value);
 
             return (int) SalesDocumentTotals::calculate($items, $discount, $shipping)['grand_total'];
         } catch (\DomainException $exception) {
@@ -1026,7 +1026,7 @@ class PreinvoiceController extends Controller
             'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
             'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],
             'payment_terms_note' => $order->payment_terms_note,
-            'discount' => ['type' => $order->invoice_discount_type ?: data_get($order->discount_breakdown, 'order_discount_type', 'amount'), 'value' => (int) ($order->invoice_discount_value ?? data_get($order->discount_breakdown, 'order_discount_value', 0))],
+            'discount' => ['type' => $order->invoice_discount_type ?: data_get($order->discount_breakdown, 'order_discount_type', 'amount'), 'value' => ($order->invoice_discount_value ?? data_get($order->discount_breakdown, 'order_discount_value', 0))],
             'discount_breakdown' => $order->discount_breakdown,
             'items' => $order->items->map(fn ($item) => [
                 'product_id' => (int) $item->product_id,
@@ -2135,7 +2135,7 @@ class PreinvoiceController extends Controller
             'discount_amount' => (int) $totals['total_discount'],
             'discount_breakdown' => $order->discount_breakdown,
             'invoice_discount_type' => $order->invoice_discount_type,
-            'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+            'invoice_discount_value' => $order->invoice_discount_value ?? 0,
             'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
             'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
             'discount_allocation_mode' => $order->discount_allocation_mode,
@@ -3112,7 +3112,7 @@ class PreinvoiceController extends Controller
                         'discount_amount' => (int) $discount,
                         'discount_breakdown' => $order->discount_breakdown,
                         'invoice_discount_type' => $order->invoice_discount_type,
-                        'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                        'invoice_discount_value' => $order->invoice_discount_value ?? 0,
                         'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
                         'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
                         'discount_allocation_mode' => $order->discount_allocation_mode,
@@ -3141,7 +3141,7 @@ class PreinvoiceController extends Controller
                         'discount_amount' => (int) $discount,
                         'discount_breakdown' => $order->discount_breakdown,
                         'invoice_discount_type' => $order->invoice_discount_type,
-                        'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                        'invoice_discount_value' => $order->invoice_discount_value ?? 0,
                         'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
                         'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
                         'discount_allocation_mode' => $order->discount_allocation_mode,
