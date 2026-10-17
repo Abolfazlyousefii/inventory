@@ -25,6 +25,8 @@ jobs:
         run: |
           php -l app/Http/Controllers/PurchaseController.php
           php -l tests/Feature/PurchaseSalePriceSafetyTest.php
+          php -l app/Services/PurchaseCatalogPriceDecision.php
+          php -l tests/Unit/PurchaseCatalogPriceDecisionTest.php
       - name: Work around pre-existing composer lock mismatch in isolated runner only
         run: |
           php -r '$j = json_decode(file_get_contents("composer.json"), true); unset($j["require"]["fruitcake/laravel-debugbar"]); file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
@@ -40,4 +42,4 @@ jobs:
           CACHE_STORE: array
           SESSION_DRIVER: array
           QUEUE_CONNECTION: sync
-        run: php artisan test tests/Feature/PurchaseSalePriceSafetyTest.php --stop-on-failure
+        run: php artisan test tests/Unit/PurchaseCatalogPriceDecisionTest.php --stop-on-failure
