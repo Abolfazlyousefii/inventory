@@ -141,6 +141,10 @@ it('requires sale price permission in addition to permission to edit purchases',
     $user = User::factory()->create(['is_active' => true]);
     $user->givePermissionTo(Permission::findOrCreate('stock_in.edit', 'web'));
     $this->actingAs($user);
+    // The user must be able to edit an ordinary purchase; only the sale price
+    // mutation is forbidden.
+    $this->put(route('purchases.update', $f['purchase']), purchasePricePayload($f))
+        ->assertRedirect(route('purchases.index'))->assertSessionHasNoErrors();
     $data = purchasePricePayload($f, ['sell_price' => 5_300_000], [
         'sale_price_change_confirmed' => '1',
         'sale_price_change_reason' => 'attempt without permissions',
@@ -148,7 +152,7 @@ it('requires sale price permission in addition to permission to edit purchases',
 
     $this->put(route('purchases.update', $f['purchase']), $data)->assertForbidden();
     expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000)
-        ->and((int) $f['item']->fresh()->quantity)->toBe(3);
+        ->and((int) $f['item']->fresh()->quantity)->toBe(4);
 });
 
 it('does not silently change the live price when a new purchase submits a different selling price', function (): void {
