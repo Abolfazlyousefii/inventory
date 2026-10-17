@@ -14,6 +14,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Services\ProductVariantStructureService;
+use App\Services\PurchaseCatalogPriceDecision;
 use App\Services\PurchaseSyntheticVariantGuard;
 use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
@@ -1218,13 +1219,18 @@ class PurchaseController extends Controller
         array $row,
         array $requestData
     ): void {
+        $decision = app(PurchaseCatalogPriceDecision::class);
         $currentSellPrice = (int) $variant->sell_price;
-        $salePriceEdited = $oldItem
-            ? $sellPrice !== (int) $oldItem->sell_price
-            : ($sellPrice > 0 && $sellPrice !== $currentSellPrice);
-        $buyPriceEdited = $oldItem
-            ? $buyPrice !== (int) $oldItem->buy_price
-            : ($buyPrice > 0 && $buyPrice !== (int) $variant->buy_price);
+        $salePriceEdited = $decision->isExplicitChange(
+            $oldItem?->sell_price === null ? null : (int) $oldItem->sell_price,
+            $sellPrice,
+            $currentSellPrice
+        );
+        $buyPriceEdited = $decision->isExplicitChange(
+            $oldItem?->buy_price === null ? null : (int) $oldItem->buy_price,
+            $buyPrice,
+            (int) $variant->buy_price
+        );
 
         if (! $salePriceEdited && ! $buyPriceEdited) {
             return;
@@ -1238,8 +1244,11 @@ class PurchaseController extends Controller
                     'items' => 'قیمت فروش جدید باید بیشتر از صفر باشد.',
                 ]);
             }
-            $initialUnpricedPurchase = $oldItem === null && $currentSellPrice <= 0;
-            $requiresApproval = ! $initialUnpricedPurchase;
+            $requiresApproval = $decision->requiresSalePriceApproval(
+                $oldItem?->sell_price === null ? null : (int) $oldItem->sell_price,
+                $currentSellPrice
+            );
+            $initialUnpricedPurchase = ! $requiresApproval;
             if ($requiresApproval) {
                 if (! PermissionCatalog::userHasPermission(auth()->user(), 'products.price_changes.apply')) {
                     abort(403, 'مجوز اعمال تغییر قیمت فروش کالا را ندارید.');
@@ -1266,7 +1275,10 @@ class PurchaseController extends Controller
                 }
 
                 $expected = $row['expected_current_sell_price'] ?? null;
-                if ($requiresApproval && ($expected === null || (int) $expected !== $currentSellPrice)) {
+                if ($requiresApproval && $decision->isCurrentPriceStale(
+                    $expected === null ? null : (int) $expected,
+                    $currentSellPrice
+                )) {
                     throw ValidationException::withMessages([
                         'items' => 'قیمت جاری تنوع پس از بازشدن فرم تغییر کرده است. صفحه را تازه کنید و مجدداً تأیید کنید.',
                     ]);
