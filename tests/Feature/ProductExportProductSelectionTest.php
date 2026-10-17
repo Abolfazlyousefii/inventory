@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Services\ProductExportService;
+use App\Services\ProductExportBuilderService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -362,6 +363,62 @@ class ProductExportProductSelectionTest extends TestCase
         $this->assertSame('همه محصولات', $all['selected_products']);
         $this->assertSame('محصول متا اول، محصول متا دوم', $two['selected_products']);
         $this->assertSame('4 محصول انتخاب‌شده', $four['selected_products']);
+    }
+
+
+    public function test_builder_never_uses_stale_product_summary_price_for_unpriced_h2_variants(): void
+    {
+        // Regression: Products list shows 2,310,000 from actual variant
+        // sell_price, while product export formerly showed products.price
+        // (2,000,000) because one variant had no selling price.
+        $product = $this->product('هندزفری H2', null, 1, [
+            'price' => 2_000_000,
+            'code' => '01157',
+        ]);
+        $baseModel = ModelList::create(['brand' => 'H2', 'model_name' => 'H2']);
+        $blackModel = ModelList::create(['brand' => 'H2', 'model_name' => 'H2 مشکی']);
+        $whiteModel = ModelList::create(['brand' => 'H2', 'model_name' => 'H2 سفید']);
+        $base = $this->variant($product, $baseModel, 'H2', 1, ['sell_price' => 2_310_000]);
+        $unpriced = $this->variant($product, $blackModel, 'H2 مشکی', 0, ['sell_price' => 0]);
+        $white = $this->variant($product, $whiteModel, 'H2 سفید', 0, ['sell_price' => 2_310_000]);
+
+        $builder = app(ProductExportBuilderService::class);
+        $result = $builder->page(['q' => 'هندزفری H2']);
+        $this->assertCount(1, $result['items']);
+        $card = $result['items'][0];
+
+        $this->assertSame(2_310_000, $card['price']);
+        $this->assertSame(2_310_000, collect($card['models'])->firstWhere('name', 'H2')['price']);
+        $this->assertNull(collect($card['models'])->firstWhere('name', 'H2 مشکی')['price']);
+
+        $selected = $builder->selected([
+            $product->id => [$base->id, $unpriced->id, $white->id],
+        ])->sole();
+        $this->assertSame(2_310_000, $selected['approximate_price']);
+        $this->assertSame('2,310,000 ریال', $selected['approximate_price_label']);
+        $this->assertSame(2_310_000, $selected['price_min']);
+        $this->assertSame(2_310_000, $selected['price_max']);
+        $this->assertStringNotContainsString('2,000,000', $selected['price_summary']);
+    }
+
+    public function test_builder_marks_all_zero_price_variants_unpriced_but_keeps_simple_product_price(): void
+    {
+        $unpricedProduct = $this->product('هندزفری بدون قیمت', null, 1, ['price' => 2_000_000]);
+        $model = ModelList::create(['brand' => 'H2', 'model_name' => 'H2 بدون قیمت']);
+        $unpriced = $this->variant($unpricedProduct, $model, 'H2 بدون قیمت', 1, ['sell_price' => 0]);
+        $simple = $this->product('کالای بدون تنوع', null, 1, ['price' => 1_500_000]);
+
+        $builder = app(ProductExportBuilderService::class);
+        $cards = collect($builder->page([])['items'])->keyBy('id');
+        $this->assertNull($cards[$unpricedProduct->id]['price']);
+        $this->assertSame(1_500_000, $cards[$simple->id]['price']);
+
+        $unpricedResult = $builder->selected([$unpricedProduct->id => [$unpriced->id]])->sole();
+        $this->assertNull($unpricedResult['approximate_price']);
+        $this->assertSame('قیمت ثبت نشده', $unpricedResult['approximate_price_label']);
+
+        $simpleResult = $builder->selected([$simple->id => [0]])->sole();
+        $this->assertSame(1_500_000, $simpleResult['approximate_price']);
     }
 
     private function signIn(bool $withPermission = true): void
