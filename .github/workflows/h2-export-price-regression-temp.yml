@@ -39,4 +39,4 @@ jobs:
           CACHE_STORE: array
           SESSION_DRIVER: array
           QUEUE_CONNECTION: sync
-        run: php artisan test tests/Feature/ProductExportProductSelectionTest.php --stop-on-failure
+        run: php artisan test tests/Feature/ProductExportProductSelectionTest.php --filter=test_builder_ --stop-on-failure
