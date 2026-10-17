@@ -150,3 +150,54 @@ it('requires sale price permission in addition to permission to edit purchases',
     expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000)
         ->and((int) $f['item']->fresh()->quantity)->toBe(3);
 });
+
+it('does not silently change the live price when a new purchase submits a different selling price', function (): void {
+    $f = purchasePriceFixture();
+    $row = [
+        'product_id' => $f['product']->id,
+        'variant_id' => $f['variant']->id,
+        'quantity' => 1,
+        'buy_price' => 2_200_000,
+        'sell_price' => 5_000_000,
+        'expected_current_sell_price' => 4_800_000,
+    ];
+    $payload = [
+        'submission_token' => (string) Str::uuid(),
+        'supplier_id' => (string) $this->supplier->id,
+        'items_json' => json_encode([$row], JSON_THROW_ON_ERROR),
+    ];
+    $this->post(route('purchases.store'), $payload)
+        ->assertSessionHasErrors('sale_price_change_confirmed');
+    expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000);
+});
+
+it('logs a confirmed correction to historical purchase price without writing the live catalog', function (): void {
+    $f = purchasePriceFixture();
+    $payload = purchasePricePayload($f, ['sell_price' => 4_800_000], [
+        'sale_price_change_confirmed' => '1',
+        'sale_price_change_reason' => 'اصلاح سابقه خرید به قیمت روز',
+    ]);
+    $this->put(route('purchases.update', $f['purchase']), $payload)
+        ->assertSessionHasNoErrors()->assertRedirect(route('purchases.index'));
+
+    expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000)
+        ->and((int) $f['item']->fresh()->sell_price)->toBe(4_800_000);
+    $audit = ActivityLog::query()->where('action', 'purchase_sale_price_snapshot_corrected')->firstOrFail();
+    expect((int) $audit->properties['old_snapshot_price'])->toBe(5_000_000)
+        ->and((int) $audit->properties['new_snapshot_price'])->toBe(4_800_000);
+});
+
+it('rejects an approved price that conflicts with product-wide uniform pricing', function (): void {
+    $f = purchasePriceFixture();
+    // forceFill bypasses any product auto-summary; this simulates an active uniform master.
+    $f['product']->forceFill(['uniform_sale_price' => 4_800_000])->save();
+    $payload = purchasePricePayload($f, ['sell_price' => 5_300_000], [
+        'sale_price_change_confirmed' => '1',
+        'sale_price_change_reason' => 'price override attempt',
+    ]);
+    $this->put(route('purchases.update', $f['purchase']), $payload)
+        ->assertSessionHasErrors('items');
+
+    expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000)
+        ->and((int) $f['item']->fresh()->quantity)->toBe(3);
+});
