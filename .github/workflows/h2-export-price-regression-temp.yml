@@ -1,0 +1,42 @@
+name: H2 export price regression (temporary validation)
+
+on:
+  pull_request:
+    paths:
+      - 'app/Services/ProductCatalogGroupingService.php'
+      - 'tests/Feature/ProductExportProductSelectionTest.php'
+      - '.github/workflows/h2-export-price-regression-temp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - name: Syntax checks
+        run: |
+          php -l app/Services/ProductCatalogGroupingService.php
+          php -l tests/Feature/ProductExportProductSelectionTest.php
+      - name: Install dependencies with isolated workaround for pre-existing composer lock drift
+        run: |
+          php -r '$j = json_decode(file_get_contents("composer.json"), true); unset($j["require"]["fruitcake/laravel-debugbar"]); file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
+          composer install --prefer-dist --no-interaction --no-progress
+      - name: Laravel environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: H2 regression and export selection
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: php artisan test tests/Feature/ProductExportProductSelectionTest.php --stop-on-failure
