@@ -18,6 +18,8 @@ use App\Services\PurchaseSyntheticVariantGuard;
 use App\Services\SupplierLedgerService;
 use App\Services\WarehouseStockService;
 use App\Support\JalaliDate;
+use App\Support\ActivityLogger;
+use App\Support\PermissionCatalog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -523,6 +525,8 @@ class PurchaseController extends Controller
 
         $data = $request->validate([
             'submission_token' => ['required', 'uuid'],
+            'sale_price_change_confirmed' => ['nullable', 'boolean'],
+            'sale_price_change_reason' => ['nullable', 'string', 'max:500'],
             'supplier_id' => [
                 'required',
                 'string',
@@ -554,6 +558,7 @@ class PurchaseController extends Controller
             'items.*.product_buy_price' => ['nullable'],
             'items.*.product_sell_price' => ['nullable'],
             'items.*.product_sale_price' => ['nullable'],
+            'items.*.expected_current_sell_price' => ['nullable', 'integer', 'min:0'],
 
             'items.*.discount_type' => ['nullable', 'in:amount,percent'],
             'items.*.discount_value' => ['nullable', 'integer', 'min:0'],
@@ -607,6 +612,10 @@ class PurchaseController extends Controller
             $item['sell_price'] = $isDeletionRow ? 0 : max(0, (int) $sellPrice);
             $item['product_buy_price'] = $productBuyPrice === null ? null : max(0, (int) $productBuyPrice);
             $item['product_sell_price'] = $productSellPrice === null ? null : max(0, (int) $productSellPrice);
+            $item['expected_current_sell_price'] = array_key_exists('expected_current_sell_price', $item)
+                && $item['expected_current_sell_price'] !== null
+                ? (int) $item['expected_current_sell_price']
+                : null;
             $item['discount_value'] = $this->filledNumber($item['discount_value'] ?? null)
                 ? max(0, $this->normalizeNumber($item['discount_value']))
                 : 0;
@@ -932,16 +941,9 @@ class PurchaseController extends Controller
             $before = WarehouseStockService::available($warehouseId, $product->id, (int) $variant->id);
             $after = $before + $quantity;
 
-            $variantUpdates = [];
-            if ($buyPrice > 0) {
-                $variantUpdates['buy_price'] = $buyPrice;
-            }
-            if ($sellPrice > 0) {
-                $variantUpdates['sell_price'] = $sellPrice;
-            }
-            if ($variantUpdates !== []) {
-                $variant->update($variantUpdates);
-            }
+            $this->applyPurchaseCatalogPriceChanges(
+                $purchase, $product, $variant, null, $buyPrice, $sellPrice, $item, $data
+            );
 
             $this->recalcProductSummary($product);
 
@@ -1102,12 +1104,9 @@ class PurchaseController extends Controller
 
             if ($newQty <= 0) { if ($oldItem) $oldItem->delete(); $affectedProductIds[] = $product->id; continue; }
 
-            if ($this->purchaseCanRefreshVariantPrice($purchase, (int) $newVariant->id)) {
-                $priceUpdates = [];
-                if ($buyPrice > 0) $priceUpdates['buy_price'] = $buyPrice;
-                if ($sellPrice > 0) $priceUpdates['sell_price'] = $sellPrice;
-                if ($priceUpdates !== []) $newVariant->update($priceUpdates);
-            }
+            $this->applyPurchaseCatalogPriceChanges(
+                $purchase, $product, $newVariant, $oldItem, $buyPrice, $sellPrice, $newItem, $data
+            );
 
             $payload = [
                 'product_id' => $product->id, 'product_variant_id' => $newVariant->id, 'product_name' => $product->name,
@@ -1201,6 +1200,95 @@ class PurchaseController extends Controller
             'total_discount' => $itemsDiscountTotal + $invoiceDiscountAmount,
             'total_amount' => max(0, $subtotalAmount - $itemsDiscountTotal - $invoiceDiscountAmount),
         ];
+    }
+
+    /**
+     * Purchase edits must not replay historical sale/buy prices into the live catalog.
+     * Explicit sale-price changes require permission, confirmation and a fresh
+     * comparison against the locked variant's price (optimistic concurrency).
+     * Called only inside the caller's purchase transaction.
+     */
+    private function applyPurchaseCatalogPriceChanges(
+        Purchase $purchase,
+        Product $product,
+        ProductVariant $variant,
+        ?PurchaseItem $oldItem,
+        int $buyPrice,
+        int $sellPrice,
+        array $row,
+        array $requestData
+    ): void {
+        $currentSellPrice = (int) $variant->sell_price;
+        $salePriceEdited = $oldItem
+            ? $sellPrice !== (int) $oldItem->sell_price
+            : ($sellPrice > 0 && $sellPrice !== $currentSellPrice);
+        $buyPriceEdited = $oldItem
+            ? $buyPrice !== (int) $oldItem->buy_price
+            : ($buyPrice > 0 && $buyPrice !== (int) $variant->buy_price);
+
+        if (! $salePriceEdited && ! $buyPriceEdited) {
+            return;
+        }
+
+        // Older purchases never get to silently override a newer purchase.
+        $eligible = $this->purchaseCanRefreshVariantPrice($purchase, (int) $variant->id);
+        if ($salePriceEdited) {
+            $initialUnpricedPurchase = $oldItem === null && $currentSellPrice <= 0;
+            $requiresApproval = ! $initialUnpricedPurchase;
+            if ($requiresApproval) {
+                if (! PermissionCatalog::userHasPermission(auth()->user(), 'products.price_changes.apply')) {
+                    abort(403, 'مجوز اعمال تغییر قیمت فروش کالا را ندارید.');
+                }
+                if (! (bool) ($requestData['sale_price_change_confirmed'] ?? false)
+                    || trim((string) ($requestData['sale_price_change_reason'] ?? '')) === '') {
+                    throw ValidationException::withMessages([
+                        'sale_price_change_confirmed' => 'تغییر قیمت فروش نیازمند تأیید صریح و ثبت دلیل است.',
+                    ]);
+                }
+            }
+
+            if ($sellPrice > 0 && $sellPrice !== $currentSellPrice) {
+                if (! $eligible) {
+                    throw ValidationException::withMessages([
+                        'items' => 'این سند خرید قدیمی است و خرید جدیدتری برای این تنوع وجود دارد. تغییر قیمت فروش را از بخش تغییر قیمت کالا انجام دهید.',
+                    ]);
+                }
+                if ($product->uniform_sale_price !== null
+                    && (int) $product->uniform_sale_price !== $sellPrice) {
+                    throw ValidationException::withMessages([
+                        'items' => 'برای این محصول قیمت فروش یکسان فعال است؛ تغییر قیمت باید از بخش تغییر قیمت کالا انجام شود.',
+                    ]);
+                }
+
+                $expected = $row['expected_current_sell_price'] ?? null;
+                if ($requiresApproval && ($expected === null || (int) $expected !== $currentSellPrice)) {
+                    throw ValidationException::withMessages([
+                        'items' => 'قیمت جاری تنوع پس از بازشدن فرم تغییر کرده است. صفحه را تازه کنید و مجدداً تأیید کنید.',
+                    ]);
+                }
+
+                // Variant is row-locked by the caller before this method.
+                $variant->update(['sell_price' => $sellPrice]);
+                ActivityLogger::log('purchase_sale_price_explicitly_changed', $variant,
+                    'تغییر قیمت فروش تنوع از مسیر ثبت یا ویرایش سند خرید.', [
+                        'purchase_id' => (int) $purchase->id,
+                        'product_id' => (int) $product->id,
+                        'variant_id' => (int) $variant->id,
+                        'purchase_item_id' => $oldItem?->id,
+                        'old_price' => $currentSellPrice,
+                        'new_price' => $sellPrice,
+                        'reason' => (string) ($requestData['sale_price_change_reason'] ?? 'قیمت‌گذاری اولیه کالای فاقد قیمت'),
+                        'initial_pricing' => $initialUnpricedPurchase,
+                    ]
+                );
+            }
+        }
+
+        // Buying-price metadata is independent of catalog sale price. Never
+        // overwrite it when the old document's buy_price has not changed.
+        if ($buyPriceEdited && $buyPrice > 0 && $eligible) {
+            $variant->update(['buy_price' => $buyPrice]);
+        }
     }
 
     private function purchaseCanRefreshVariantPrice(Purchase $purchase, int $variantId): bool
