@@ -1042,8 +1042,8 @@ $productsPayload = $products->map(function ($p) {
                 document.getElementById('salePriceChangeConfirmed').value = '0';
                 document.getElementById('salePriceChangeReason').value = '';
                 if (saleChanges.length) {
-                    event.preventDefault();
                     if (!CAN_CHANGE_SALE_PRICE) {
+                        event.preventDefault();
                         alert('برای تغییر قیمت فروش، مجوز اعمال تغییر قیمت کالا لازم است. سایر اطلاعات سند را بدون تغییر قیمت فروش ذخیره کنید.');
                         return;
                     }
@@ -1054,9 +1054,13 @@ $productsPayload = $products->map(function ($p) {
                     });
                     const more = saleChanges.length > 15 ? '\nو ' + (saleChanges.length - 15) + ' تنوع دیگر' : '';
                     if (!confirm('تغییر قیمت فروش جاری ' + saleChanges.length + ' تنوع:\n'
-                        + lines.join('\n') + more + '\n\nتغییر قیمت را تأیید می‌کنید؟')) return;
+                        + lines.join('\n') + more + '\n\nتغییر قیمت را تأیید می‌کنید؟')) {
+                        event.preventDefault();
+                        return;
+                    }
                     const reason = prompt('دلیل تغییر قیمت فروش برای ثبت در تاریخچه:');
                     if (!reason || !reason.trim()) {
+                        event.preventDefault();
                         alert('بدون ثبت دلیل، قیمت فروش تغییر نمی‌کند.');
                         return;
                     }
