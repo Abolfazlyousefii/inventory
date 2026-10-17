@@ -1233,6 +1233,11 @@ class PurchaseController extends Controller
         // Older purchases never get to silently override a newer purchase.
         $eligible = $this->purchaseCanRefreshVariantPrice($purchase, (int) $variant->id);
         if ($salePriceEdited) {
+            if ($sellPrice <= 0) {
+                throw ValidationException::withMessages([
+                    'items' => 'قیمت فروش جدید باید بیشتر از صفر باشد.',
+                ]);
+            }
             $initialUnpricedPurchase = $oldItem === null && $currentSellPrice <= 0;
             $requiresApproval = ! $initialUnpricedPurchase;
             if ($requiresApproval) {
@@ -1279,6 +1284,21 @@ class PurchaseController extends Controller
                         'new_price' => $sellPrice,
                         'reason' => (string) ($requestData['sale_price_change_reason'] ?? 'قیمت‌گذاری اولیه کالای فاقد قیمت'),
                         'initial_pricing' => $initialUnpricedPurchase,
+                    ]
+                );
+            } elseif ($oldItem && $sellPrice !== (int) $oldItem->sell_price) {
+                // Historical purchase price corrected to match live catalog.
+                // The purchase row changes, but the catalog price is untouched.
+                ActivityLogger::log('purchase_sale_price_snapshot_corrected', $variant,
+                    'اصلاح قیمت ثبت‌شده در ردیف سند خرید بدون تغییر قیمت جاری.', [
+                        'purchase_id' => (int) $purchase->id,
+                        'purchase_item_id' => (int) $oldItem->id,
+                        'product_id' => (int) $product->id,
+                        'variant_id' => (int) $variant->id,
+                        'old_snapshot_price' => (int) $oldItem->sell_price,
+                        'new_snapshot_price' => $sellPrice,
+                        'current_catalog_price' => $currentSellPrice,
+                        'reason' => (string) ($requestData['sale_price_change_reason'] ?? ''),
                     ]
                 );
             }
