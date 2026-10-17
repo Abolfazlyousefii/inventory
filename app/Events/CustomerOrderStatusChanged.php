@@ -2,7 +2,7 @@
 
 namespace App\Events;
 
-final class CustomerOrderStatusChanged
+class CustomerOrderStatusChanged
 {
     public function __construct(
         public readonly string $type,

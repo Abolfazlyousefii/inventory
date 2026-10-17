@@ -9,7 +9,7 @@ use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
 use Illuminate\Database\Eloquent\Model;
 
-final class OrderStatusSmsObserver
+class OrderStatusSmsObserver
 {
     public function updated(Model $document): void
     {

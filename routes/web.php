@@ -1,5 +1,6 @@
 <?php
 
+use App\Facades\Sms;
 use App\Http\Controllers\OrgCommissionController;
 use App\Http\Controllers\CommissionRateSettingsController;
 use App\Http\Controllers\AccountStatementController;
@@ -738,3 +739,6 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 require __DIR__ . '/auth.php';
+
+Route::get('test',function (){
+});

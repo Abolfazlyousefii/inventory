@@ -220,7 +220,30 @@
 		@include('payments.entry-modal', ['paymentModalId' => 'showPaymentModal', 'paymentAction' => route('invoices.payments.store', $invoice->uuid), 'paymentRemaining' => $remainingAmount])
 	@endif
 	@if($invoice->status === \App\Models\Invoice::STATUS_PENDING_FINANCE_REAPPROVAL && $canCancelInvoice)
-		<div class="modal fade" id="cancelReapprovalInvoiceModal" tabindex="-1" aria-hidden="true" dir="rtl"><div class="modal-dialog"><form method="POST" action="{{ route('invoices.cancel', $invoice->uuid) }}" class="modal-content" data-guard-submit>@csrf<div class="modal-header"><h5 class="modal-title text-danger">لغو فاکتور</h5><button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="form-label">علت لغو</label><select name="note" class="form-select" required><option value="درخواست مشتری">درخواست مشتری</option><option value="مغایرت اقلام">مغایرت اقلام</option><option value="مغایرت قیمت">مغایرت قیمت</option><option value="ثبت اشتباه">ثبت اشتباه</option><option value="عدم تأیید مالی">عدم تأیید مالی</option><option value="سایر">سایر</option></select><div class="form-text">لغو از مسیر رسمی فاکتور انجام می‌شود و رکورد حذف نمی‌شود.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button class="btn btn-danger">لغو فاکتور</button></div></form></div></div>
+		<div class="modal fade" id="cancelReapprovalInvoiceModal" tabindex="-1" aria-hidden="true" dir="rtl">
+			<div class="modal-dialog">
+				<form method="POST" action="{{ route('invoices.cancel', $invoice->uuid) }}" class="modal-content" data-guard-submit>@csrf
+					<div class="modal-header"><h5 class="modal-title text-danger">لغو فاکتور</h5>
+						<button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal"></button>
+					</div>
+					<div class="modal-body"><label class="form-label">علت
+					                                                  لغو</label><select name="note" class="form-select" required>
+							<option value="درخواست مشتری">درخواست مشتری</option>
+							<option value="مغایرت اقلام">مغایرت اقلام</option>
+							<option value="مغایرت قیمت">مغایرت قیمت</option>
+							<option value="ثبت اشتباه">ثبت اشتباه</option>
+							<option value="عدم تأیید مالی">عدم تأیید مالی</option>
+							<option value="سایر">سایر</option>
+						</select>
+						<div class="form-text">لغو از مسیر رسمی فاکتور انجام می‌شود و رکورد حذف نمی‌شود.</div>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+						<button class="btn btn-danger">لغو فاکتور</button>
+					</div>
+				</form>
+			</div>
+		</div>
 	@endif
 	<script>
 	document.querySelectorAll('[data-guard-submit]').forEach(f=>f.addEventListener('submit',()=>{const b=f.querySelector('button[type="submit"],button:not([type])');if(b){b.disabled=true;b.innerHTML='<span class="spinner-border spinner-border-sm"></span> در حال ارسال';}}));
