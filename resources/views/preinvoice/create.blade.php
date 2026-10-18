@@ -1629,6 +1629,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 	@endphp
 
 	<script src="{{ asset('js/preinvoice-merge.js') }}"></script>
+	<script src="{{ asset('js/variant-search.js') }}?v=20261018"></script>
 	<script>
 		window.PREINVOICE_BOOT = {
 			api: {
@@ -3061,13 +3062,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function filteredModalItems() {
-			const q = normalize(document.getElementById('pickerSearchInput').value).toLowerCase();
+			const q = document.getElementById('pickerSearchInput').value;
 			return activeModalItems.filter(v => {
 				const availability = variantAvailability(v);
 				if (modalOnlyInStock && availability.maxSelectable <= 0 && Number(modalQuantities.get(variantId(v)) || 0) <= 0) return false;
 				if (!q) return true;
-				const haystack = [variantModel(v), variantDesign(v), variantName(v), v?.sku, v?.code, v?.variant_code, v?.barcode].join(' ').toLowerCase();
-				return haystack.includes(q);
+				return window.InventoryVariantSearch.matches(q, [variantModel(v), variantDesign(v), variantName(v), v?.sku, v?.code, v?.variant_code, v?.variety_code, v?.barcode]);
 			});
 		}
 

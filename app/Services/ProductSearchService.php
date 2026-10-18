@@ -63,7 +63,7 @@ class ProductSearchService
             ->select(['product_variants.id','product_variants.product_id','product_variants.variant_name','product_variants.variety_name','product_variants.variant_code','product_variants.variety_code','product_variants.stock','product_variants.reserved','product_variants.sell_price','product_variants.is_active','product_variants.sales_enabled','model_lists.model_name'])
             ->orderBy('product_variants.id');
         $q = self::normalize((string) $request->query('q', ''));
-        if ($q !== '') $this->applyVariantSearch($query, $q);
+        if ($q !== '') $this->applyVariantSearch($query->getQuery(), $q);
         if ($request->query('stock_status') === 'in_stock') $query->where('product_variants.stock', '>', 0);
         if ($request->query('stock_status') === 'out_of_stock') $query->where('product_variants.stock', '<=', 0);
         if ($request->query('sellable_status') === 'sellable') $query->where('product_variants.sales_enabled', true)->where('product_variants.is_active', true);
@@ -115,10 +115,7 @@ class ProductSearchService
 
     private function applyVariantSearch(Builder $query, string $q): void
     {
-        foreach (preg_split('/\s+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $token) {
-            $like = '%' . addcslashes($token, '%_\\') . '%';
-            $query->where(fn ($w) => $w->where('product_variants.variant_name','like',$like)->orWhere('product_variants.variety_name','like',$like)->orWhere('product_variants.variant_code','like',$like)->orWhere('product_variants.variety_code','like',$like)->orWhere('model_lists.model_name','like',$like)->orWhere('model_lists.code','like',$like));
-        }
+        \App\Support\VariantSearch::apply($query, $q, ['product_variants.variant_name','product_variants.variety_name','product_variants.variant_code','product_variants.variety_code','model_lists.model_name','model_lists.code']);
     }
 
     private function applySort(Builder $query, Request $request): void
