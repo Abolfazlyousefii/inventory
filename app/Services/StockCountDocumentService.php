@@ -70,6 +70,7 @@ class StockCountDocumentService
         if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
         return DB::transaction(function () use ($document, $payload, $userId) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
+            if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
             $actuals = $payload['actual_quantities'] ?? [];
             $notes = $payload['notes'] ?? [];
             $document->update(['document_date' => $payload['document_date'], 'description' => $payload['description'] ?? null, 'updated_by' => $userId]);
@@ -151,11 +152,14 @@ class StockCountDocumentService
 
     public function cancel(StockCountDocument $document, int $userId, ?string $reason = null): StockCountDocument
     {
-        if ($document->status === 'finalized') abort(422, 'لغو سند اعمال‌شده مجاز نیست.');
-        if ($document->status === 'cancelled') return $document;
-        $document->update(['status'=>'cancelled','cancelled_by'=>$userId,'cancelled_at'=>now(),'cancel_reason'=>$reason,'updated_by'=>$userId]);
-        $this->addHistory($document->id, 'cancelled', null, ['status'=>'cancelled'], 'لغو پیش‌نویس انبارگردانی', $userId);
-        return $document->fresh(['warehouse','product','items.variant']);
+        return DB::transaction(function () use ($document, $userId, $reason) {
+            $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
+            if ($document->status === 'cancelled') return $document;
+            if ($document->status !== 'draft') abort(422, 'لغو سند اعمال‌شده مجاز نیست.');
+            $document->update(['status'=>'cancelled','cancelled_by'=>$userId,'cancelled_at'=>now(),'cancel_reason'=>$reason,'updated_by'=>$userId]);
+            $this->addHistory($document->id, 'cancelled', null, ['status'=>'cancelled'], 'لغو پیش‌نویس انبارگردانی', $userId);
+            return $document->fresh(['warehouse','product','items.variant']);
+        });
     }
 
     public function variantsPage(int $productId, ?StockCountDocument $document = null, int $page = 1, int $limit = 100, ?string $q = null): array
