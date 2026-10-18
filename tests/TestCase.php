@@ -4,6 +4,7 @@ namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
@@ -17,6 +18,11 @@ abstract class TestCase extends BaseTestCase
         $app = parent::createApplication();
 
         $this->guardTestingDatabase();
+        // Tests must explicitly fake integrations; never contact the live shop.
+        Http::preventStrayRequests();
+        // Historical schema was removed from production migrations in e2cbf9f6.
+        // Load the recovered baseline only behind the in-memory database guard.
+        $app->make('migrator')->path(base_path('tests/Support/LegacyMigrations'));
 
         return $app;
     }
