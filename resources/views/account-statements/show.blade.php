@@ -28,10 +28,10 @@
         <div class="asd-current {{ $netBalance > 0 ? 'asd-debt' : ($netBalance < 0 ? 'asd-credit' : '') }}"><span>ماندهٔ فعلی حساب</span><strong>{{ $rial($netBalance) }}</strong><small>{{ $balanceText($netBalance) }}</small></div>
     </section>
     <section class="asd-book">
-        <div class="asd-book-heading"><h2>گردش حساب</h2><span>جدیدترین اسناد · مبالغ به ریال</span></div>
+        <div class="asd-book-heading"><h2>گردش حساب</h2><span>به ترتیب ثبت در سامانه · مبالغ به ریال</span></div>
         <div class="asd-table-wrap">
             <table class="asd-table">
-                <thead><tr><th>تاریخ ثبت</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از ثبت</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
+                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از ثبت</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
                 <tbody>
                 @forelse($ledgers as $ledger)
                     @php
@@ -70,7 +70,7 @@
                         }
                     @endphp
                     <tr class="asd-entry {{ !$effective ? 'asd-ineffective' : ($ledger->type === 'debit' ? 'asd-entry-debit' : 'asd-entry-credit') }}" data-ledger-id="{{ $ledger->id }}">
-                        <td class="asd-date" data-label="تاریخ ثبت"><span>{{ \App\Support\JalaliDate::date($ledger->created_at) }}</span><small>{{ $ledger->created_at?->format('H:i') }}</small></td>
+                        @include('account-statements.partials.entry-date', ['ledger' => $ledger, 'payment' => $payment])
                         <td class="asd-reference" data-label="شماره سند">
                             @if($invoice)
                                 <a href="{{ $url }}" class="asd-invoice-link" title="مشاهده فاکتور {{ $reference }}" aria-label="مشاهده فاکتور {{ $reference }}">
