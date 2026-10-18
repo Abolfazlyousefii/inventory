@@ -830,6 +830,7 @@ class PermissionCatalog
             'products.image' => 'products.view',
             'products.sales-ledger' => 'products.ledger',
             'products.purchase-ledger' => 'products.ledger',
+            'products.stock-ledger' => 'products.ledger',
             'products.pricelist' => 'products.print',
             'products.sync.crm' => 'products.import',
             'products.price-changes.index' => 'products.price_changes.view',

@@ -88,6 +88,7 @@ class PageAccessCatalog
         'products.destroy' => ['products'],
         'products.sales-ledger' => ['products'],
         'products.purchase-ledger' => ['products'],
+        'products.stock-ledger' => ['products'],
         'categories.index' => ['categories'],
         'categories.create' => ['categories'],
         'categories.store' => ['categories'],
