@@ -10,7 +10,7 @@
         "ext-zip": "*",
         "bavix/laravel-wallet": "^11.5",
         "dompdf/dompdf": "^3.1",
-        "fruitcake/laravel-debugbar": "*",
+        "fruitcake/laravel-debugbar": "^4.4",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "league/flysystem-aws-s3-v3": "3.0",
