@@ -183,6 +183,8 @@ class ProductStockHistoryExplanationTest extends TestCase
     {
         $this->zeroReceipt();
         DB::table('stock_movements')->insert(['id'=>1,'product_id'=>1,'product_variant_id'=>1,'warehouse_id'=>1,'type'=>'in','reason'=>'purchase','quantity'=>1,'stock_before'=>0,'stock_after'=>1,'created_at'=>'2026-09-01 09:00:00']);
+        DB::table('stock_movements')->insert(['id'=>2,'product_id'=>1,'product_variant_id'=>1,'warehouse_id'=>1,'type'=>'out','reason'=>'sale','quantity'=>2,'stock_before'=>3,'stock_after'=>1,'created_at'=>'2026-09-01 08:00:00']);
+        DB::table('stock_movements')->insert(['id'=>3,'product_id'=>1,'product_variant_id'=>1,'warehouse_id'=>1,'type'=>'out','reason'=>'sale','quantity'=>3,'stock_before'=>10,'stock_after'=>10,'created_at'=>'2026-09-01 07:00:00']);
         DB::table('preinvoice_draft_reservations')->insert(['id'=>1,'product_id'=>1,'variant_id'=>1,'quantity'=>1,'created_at'=>'2026-09-01 10:00:00']);
         $preview=storage_path('app/stock-ledger-qa');
         \Illuminate\Support\Facades\File::ensureDirectoryExists($preview.'/views/layouts');
@@ -196,7 +198,25 @@ class ProductStockHistoryExplanationTest extends TestCase
         $this->assertStringContainsString('سند توضیحی',$rendered);
         $this->assertStringContainsString('name="q"',$rendered);
         $this->assertStringContainsString('WI-',$rendered);
+        $dom=new \DOMDocument();
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$rendered);
+        $xpath=new \DOMXPath($dom);
+        $rowText=fn($id)=>preg_replace('/\s+/u',' ',trim($xpath->query('//tr[@data-history-id="'.$id.'"]')->item(0)?->textContent ?? ''));
+        $this->assertStringContainsString('+۱',$rowText('1'));
+        $this->assertStringContainsString('۱ عدد اضافه شد',$rowText('1'));
+        $this->assertStringContainsString('−۲',$rowText('2'));
+        $this->assertStringContainsString('۲ عدد کم شد',$rowText('2'));
+        $this->assertStringContainsString('مقدار تغییر مشخص نیست',$rowText('3'));
+        $this->assertStringNotContainsString('−۳',$rowText('3'));
+        $this->assertStringContainsString('دوباره به موجودی اضافه نمی‌شود',$rowText('inbound-item-1'));
+        $this->assertStringContainsString('از ۱ عدد، هیچ کالایی تحویل نشد',$rowText('inbound-item-1'));
+        $this->assertStringContainsString('نتیجهٔ بررسی',$rendered);
         \Illuminate\Support\Facades\File::put($preview.'/preview.html',$rendered);
+        $data['summary']->cached_current=4;
+        $data['summary']->projection_matches=false;
+        $mismatch=view('products.stock-ledger',$data)->render();
+        $this->assertStringContainsString('اختلاف: ۴ عدد',$mismatch);
+        $this->assertStringContainsString('این اختلاف به‌تنهایی دلیل باگ نیست',$mismatch);
     }
 
     public function test_receipt_with_wrong_linked_movement_is_flagged_incomplete(): void
