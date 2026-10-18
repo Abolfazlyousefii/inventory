@@ -10,6 +10,8 @@ use Tests\TestCase;
 
 class SalesReturnIndexStabilizationTest extends TestCase
 {
+    use \Tests\Support\NormalizesSalesReturnRows;
+
     public function test_status_filter_is_not_rendered(): void
     {
         $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/index.blade.php'));
@@ -56,7 +58,10 @@ class SalesReturnIndexStabilizationTest extends TestCase
     {
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $partial = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
-        $this->assertStringContainsString("'can_edit' => \$document->isDraft() ?", $service);
+        $row = $this->returnRow('draft');
+        $this->assertTrue($row['can_edit']);
+        $this->assertTrue($row['can_cancel']);
+        $this->assertSame(route('vouchers.return-from-sale.edit', 42), $row['edit_url']);
         $this->assertStringContainsString('ویرایش', $partial);
         $this->assertStringContainsString('حذف پیش‌نویس', $partial);
     }
@@ -65,7 +70,10 @@ class SalesReturnIndexStabilizationTest extends TestCase
     {
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $partial = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
-        $this->assertStringContainsString("'edit_url' => \$document->isDraft() ?", $service);
+        $row = $this->returnRow('applied');
+        $this->assertFalse($row['can_cancel']);
+        $this->assertSame(route('vouchers.return-from-sale.applied.edit', 42), $row['edit_url']);
+        $this->assertNotSame(route('vouchers.return-from-sale.edit', 42), $row['edit_url']);
         $this->assertStringContainsString('applied.edit', $service);
     }
 

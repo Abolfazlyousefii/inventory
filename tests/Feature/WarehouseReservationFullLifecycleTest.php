@@ -165,10 +165,12 @@ function fullLifecycleSubmitPreinvoice($test, User $seller, array $inventory, in
 
     $test->actingAs($seller)
         ->post(route('preinvoice.draft.save'), fullLifecyclePreinvoicePayload($inventory, $token, $quantity))
+        ->assertRedirect()
         ->assertSessionHasNoErrors();
 
     $order = PreinvoiceOrder::query()->where('created_by', $seller->id)->latest('id')->firstOrFail();
 
+    $reservation = PreinvoiceDraftReservation::where('preinvoice_order_id', $order->id)->where('reservation_scope', 'official')->whereNull('released_at')->sole();
     return compact('token', 'reservation', 'order');
 }
 
@@ -275,7 +277,7 @@ it('connects a temporary reservation to a preinvoice through the submission flow
         ->and($inventory['variant']->fresh()->reserved)->toBe(4);
 });
 
-it('rejects a repeated final submit with the same reservation token without changing stock twice', function () {
+it('accepts a repeated final submit idempotently without changing stock twice', function () {
     $seller = fullLifecycleSeller();
     $inventory = fullLifecycleInventory();
     $token = (string) Str::uuid();
@@ -290,7 +292,7 @@ it('rejects a repeated final submit with the same reservation token without chan
 
     $this->actingAs($seller)
         ->post(route('preinvoice.draft.save'), $payload)
-        ->assertSessionHasErrors('preinvoice');
+        ->assertRedirect()->assertSessionHasNoErrors();
 
     expect(PreinvoiceOrder::query()->where('created_by', $seller->id)->where('is_auto_draft', false)->count())->toBe(1)
         ->and($inventory['warehouseStock']->fresh()->quantity)->toBe($stockAfterFirstSubmit)
@@ -307,7 +309,7 @@ it('closes the reservation lifecycle when a preinvoice becomes an invoice', func
     $warehouseBefore = $inventory['warehouseStock']->fresh()->quantity;
 
     $this->actingAs($finance)
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->post(route('preinvoice.draft.finalize', $order->uuid), ['finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items'))])
         ->assertSessionHasNoErrors();
 
     $invoice = Invoice::query()->where('preinvoice_order_id', $order->id)->sole();
@@ -345,7 +347,7 @@ it('does not let another order reservation cover a finance approval shortfall', 
     $before = fullLifecycleSnapshot();
 
     $this->actingAs($finance)
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->post(route('preinvoice.draft.finalize', $order->uuid), ['finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items'))])
         ->assertSessionHasErrors('preinvoice');
 
     expect(Invoice::query()->where('preinvoice_order_id', $order->id)->exists())->toBeFalse()
@@ -359,7 +361,7 @@ it('repairs only verified converted reservations and rebuilds product and varian
     ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory, 4);
 
     $this->actingAs($finance)
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->post(route('preinvoice.draft.finalize', $order->uuid), ['finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items'))])
         ->assertSessionHasNoErrors();
 
     $invoice = Invoice::query()->where('preinvoice_order_id', $order->id)->sole();
@@ -474,7 +476,7 @@ it('releases the reservation and deletes an autosaved preinvoice through real en
 
     expect(PreinvoiceOrder::query()->whereKey($draft->id)->exists())->toBeFalse()
         ->and($reservation->fresh()->released_at)->not->toBeNull()
-        ->and($reservation->fresh()->release_reason)->toBe('temporary_session_lost')
+        ->and($reservation->fresh()->release_reason)->toBe('draft_discarded')
         ->and($inventory['warehouseStock']->fresh()->quantity)->toBe(20)
         ->and($inventory['variant']->fresh()->reserved)->toBe(0)
         ->and($inventory['product']->fresh()->reserved)->toBe(0);
@@ -505,14 +507,14 @@ it('cleans up an orphan reservation and records one activity', function () {
             ->count())->toBe(1);
 });
 
-it('does not clean up a stale reservation while an active draft owns its token', function () {
+it('does not clean up a live reservation while an active draft owns its token', function () {
     $seller = fullLifecycleSeller();
     $inventory = fullLifecycleInventory();
     ['token' => $token, 'reservation' => $reservation] = fullLifecycleSyncReservation($this, $seller, $inventory, 3);
     $draft = fullLifecycleAutosave($this, $seller, $inventory, $token, 3);
     $reservation->forceFill([
-        'last_seen_at' => now()->subHour(),
-        'expires_at' => now()->subHour(),
+        'last_seen_at' => now(),
+        'expires_at' => now()->addHour(),
     ])->save();
 
     expect($draft->status)->toBe(PreinvoiceOrder::STATUS_DRAFT)
@@ -543,53 +545,23 @@ it('does not classify a reservation with a preinvoice as orphaned', function () 
         ->and(PreinvoiceDraftReservation::query()->orphaned()->whereKey($reservation)->exists())->toBeFalse();
 });
 
-it('prevents releasing the same reservation twice', function () {
+it('keeps manual release endpoints disabled and cleanup remains idempotent', function () {
     $seller = fullLifecycleSeller();
     $manager = fullLifecycleManager();
     $inventory = fullLifecycleInventory();
     ['reservation' => $reservation] = fullLifecycleSyncReservation($this, $seller, $inventory, 4);
-    $reservation->forceFill(['last_seen_at' => now()->subHour()])->save();
-    $payload = ['release_reason' => 'Full lifecycle idempotency'];
-
-    $this->actingAs($manager)
-        ->postJson(route('warehouse-reservations.release', $reservation), $payload)
-        ->assertOk();
-    $this->actingAs($manager)
-        ->postJson(route('warehouse-reservations.release', $reservation), $payload)
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors('reservation');
-
+    $reservation->forceFill(['last_seen_at' => now()->subHour(), 'expires_at' => now()->subHour()])->save();
+    $before = fullLifecycleSnapshot();
+    expect(\Illuminate\Support\Facades\Route::has('warehouse-reservations.release'))->toBeFalse();
+    foreach ([$manager, fullLifecycleManager(false)] as $actor) {
+        $this->actingAs($actor)->postJson('/warehouse-reservations/'.$reservation->id.'/release', ['release_reason' => 'Disabled'])->assertNotFound();
+        expect(fullLifecycleSnapshot())->toBe($before);
+    }
+    foreach (range(1, 2) as $_) $this->artisan('reservations:cleanup')->assertSuccessful();
     expect($inventory['warehouseStock']->fresh()->quantity)->toBe(20)
         ->and($inventory['variant']->fresh()->reserved)->toBe(0)
         ->and($inventory['product']->fresh()->reserved)->toBe(0)
-        ->and(ActivityLog::query()
-            ->where('subject_type', PreinvoiceDraftReservation::class)
-            ->where('subject_id', $reservation->id)
-            ->where('action', 'reservation_manual_release')
-            ->count())->toBe(1);
-});
-
-it('requires the release permission without mutating stock on a forbidden request', function () {
-    $seller = fullLifecycleSeller();
-    $viewer = fullLifecycleManager(false);
-    $manager = fullLifecycleManager();
-    $inventory = fullLifecycleInventory();
-    ['reservation' => $reservation] = fullLifecycleSyncReservation($this, $seller, $inventory, 4);
-    $reservation->forceFill(['last_seen_at' => now()->subHour()])->save();
-    $before = fullLifecycleSnapshot();
-
-    $this->actingAs($viewer)
-        ->postJson(route('warehouse-reservations.release', $reservation), ['release_reason' => 'Forbidden'])
-        ->assertForbidden();
-
-    expect(fullLifecycleSnapshot())->toBe($before);
-
-    $this->actingAs($manager)
-        ->postJson(route('warehouse-reservations.release', $reservation), ['release_reason' => 'Authorized'])
-        ->assertOk();
-
-    expect($reservation->fresh()->released_by)->toBe($manager->id)
-        ->and($inventory['warehouseStock']->fresh()->quantity)->toBe(20);
+        ->and(ActivityLog::where('subject_type', PreinvoiceDraftReservation::class)->where('subject_id', $reservation->id)->where('action', 'reservation_auto_release')->count())->toBe(1);
 });
 
 it('reports healthy orphaned and cache mismatch states without mutation', function () {
@@ -613,7 +585,7 @@ it('reports healthy orphaned and cache mismatch states without mutation', functi
         ->get(route('warehouse-reservations.index', ['tab' => 'health']))
         ->assertOk()
         ->assertDontSee($healthyInventory['product']->name)
-        ->assertSee($orphanInventory['product']->name);
+        ->assertDontSee($orphanInventory['product']->name); // This document report intentionally excludes unsubmitted sessions.
 
     expect(fullLifecycleSnapshot())->toBe($before);
 });

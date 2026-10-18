@@ -118,7 +118,7 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
         $this->assertNull($stale->firstWhere('reservation_ids', '202'));
         $this->assertNull($stale->firstWhere('reservation_ids', '205'));
 
-        $this->assertEqualsCanonicalizing(['205', '206', '207'], $historical->pluck('reservation_ids')->all());
+        $this->assertEqualsCanonicalizing(['202', '205', '206', '207'], $historical->pluck('reservation_ids')->all());
         $row = $historical->firstWhere('reservation_ids', '205');
         $this->assertSame('R06', $row['anomaly_code']);
         $this->assertSame('historical-token', $row['reservation_token']);
@@ -137,8 +137,12 @@ class StockReservationIntegrityAuditCommandTest extends TestCase
 
         $summary = $this->summary();
         $this->assertSame(4, $summary['stale_temporary_reservations']);
-        $this->assertSame(3, $summary['historical_ambiguous_reservations']);
-        $this->assertSame(18, $summary['historical_ambiguous_quantity']);
+        $this->assertSame(4, $summary['historical_ambiguous_reservations']);
+        $this->assertSame(20, $summary['historical_ambiguous_quantity']);
+        // An expired heartbeat is not proof of a live reservation, even with a saved draft.
+        $expiredDraft = $historical->firstWhere('reservation_ids', '202');
+        $this->assertSame('old_temporary_provenance_uncertain', $expiredDraft['classification_reason']);
+        $this->assertStringContainsString('NO automatic', $expiredDraft['recommended_action']);
     }
 
     public function test_r05_uses_only_canonical_invalid_official_classification(): void

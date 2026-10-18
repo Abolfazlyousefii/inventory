@@ -2246,12 +2246,15 @@ class PreinvoiceController extends Controller
             return null;
         }
 
-        return PreinvoiceOrder::query()
+        $order = PreinvoiceOrder::query()
             ->where('uuid', $uuid)
             ->where('created_by', auth()->id())
             ->where('status', PreinvoiceOrder::STATUS_DRAFT)
             ->lockForUpdate()
             ->first();
+        abort_unless($order, 409, 'پیش‌نویس دیگر قابل ذخیره نیست؛ صفحه را تازه کنید و نسخه معتبر را بازیابی کنید.');
+
+        return $order;
     }
 
     private function orderCustomerName(array $validated, ?Customer $customer): string
@@ -2508,6 +2511,32 @@ class PreinvoiceController extends Controller
             ->get()
             ->groupBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
 
+        if (! $stockAlreadyAdjusted) {
+            $shortfalls = [];
+            $messages = [];
+            $suggested = [];
+            foreach ($required as $key => $row) {
+                $held = (int) $rows->get($key, collect())->sum('quantity');
+                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $row['product_id'], $row['variant_id']);
+                $maximum = $held + $available;
+                $suggested[] = $row + ['requested_quantity' => $row['quantity'], 'remove' => $maximum <= 0];
+                $suggested[array_key_last($suggested)]['quantity'] = min($row['quantity'], $maximum);
+                if ($row['quantity'] > $maximum) {
+                    $variant = ProductVariant::with('product:id,name')->findOrFail($row['variant_id']);
+                    $productName = (string) ($variant->product?->name ?? 'نامشخص');
+                    $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
+                    $delta = $row['quantity'] - $held;
+                    $message = "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$productName} | تنوع: {$variantName} | تعداد درخواستی: {$delta} | موجودی قابل فروش: {$available}";
+                    $messages[] = $message;
+                    $shortfalls[] = $row + ['product_name' => $productName, 'variant_name' => $variantName,
+                        'requested_quantity' => $delta, 'available_quantity' => $available, 'max_allowed' => $maximum, 'message' => $message];
+                }
+            }
+            if ($shortfalls !== []) {
+                throw new PreinvoiceItemStockException($shortfalls, $suggested, $messages);
+            }
+        }
+
         foreach ($required as $key => $row) {
             $reservations = $rows->get($key, collect());
             $reservation = $reservations->first();
@@ -2749,41 +2778,6 @@ class PreinvoiceController extends Controller
             ->where('reservation_scope', 'official')
             ->whereNull('released_at')
             ->exists();
-    }
-
-    private function coverReservationShortfalls($requiredByVariant, bool $centralStockMovedToReserve): void
-    {
-        if ($requiredByVariant->isEmpty()) {
-            return;
-        }
-
-        $variants = ProductVariant::query()
-            ->whereIn('id', $requiredByVariant->keys())
-            ->lockForUpdate()
-            ->get()
-            ->keyBy('id');
-
-        foreach ($requiredByVariant as $variantId => $requiredQty) {
-            $variant = $variants->get((int) $variantId);
-            if (! $variant) {
-                continue;
-            }
-
-            $shortfall = (int) $requiredQty - (int) $variant->reserved;
-            if ($shortfall <= 0) {
-                continue;
-            }
-
-            if ($centralStockMovedToReserve) {
-                $this->reserveStockForItem((int) $variant->product_id, (int) $variant->id, $shortfall);
-                continue;
-            }
-
-            $available = max(0, (int) $variant->stock);
-            if ($available >= $shortfall) {
-                $this->changeReservedOnly((int) $variant->product_id, (int) $variant->id, $shortfall);
-            }
-        }
     }
 
     private function changeReservedOnly(int $productId, int $variantId, int $delta): void
@@ -3044,8 +3038,6 @@ class PreinvoiceController extends Controller
                     abort(403);
                 }
 
-                $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
-
                 foreach ($order->items as $it) {
                     $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
                     $snapshotPrice = (int) ($it->price ?? 0);
@@ -3066,30 +3058,9 @@ class PreinvoiceController extends Controller
                 $discount = (int) $totals['total_discount'];
                 $total = (int) $totals['grand_total'];
 
-                $requiredByVariant = $order->items
-                    ->groupBy('variant_id')
-                    ->map(fn($rows) => (int) $rows->sum('quantity'));
-
-                $this->coverReservationShortfalls($requiredByVariant, $centralStockMovedToReserve);
-
-                $reservedByVariant = ProductVariant::query()
-                    ->whereIn('id', $requiredByVariant->keys())
-                    ->lockForUpdate()
-                    ->pluck('reserved', 'id');
-
-                foreach ($requiredByVariant as $variantId => $requiredQty) {
-                    $reservedQty = (int) ($reservedByVariant[(int) $variantId] ?? 0);
-
-                    if ($reservedQty < $requiredQty) {
-                        $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $variantId)->first();
-                        $productName = (string) ($variant?->product?->name ?? 'نامشخص');
-
-                        throw ValidationException::withMessages([
-                            'products' => "موجودی رزروشده برای محصول «{$productName}» کافی نیست. رزروشده: {$reservedQty} | درخواست: {$requiredQty}",
-                            //there product is reserved some other place in some other draft and is not in stocka anymore
-                        ]);
-                    }
-                }
+                // assertFinanceApprovable already locked and verified this order's
+                // canonical official reservations. A display cache is never a reason
+                // to reserve physical stock a second time during finance approval.
 
                 $invoice = $existingInvoice;
 

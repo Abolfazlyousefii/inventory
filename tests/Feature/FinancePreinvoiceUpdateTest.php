@@ -121,7 +121,7 @@ it('saves finance edits behaviorally without finalizing or creating invoices', f
         ->and($order->status)->toBe($oldStatus)
         ->and($order->product_discount_amount)->toBe(2_200_000)
         ->and($order->invoice_discount_type)->toBe('percent')
-        ->and($order->invoice_discount_value)->toBe(5)
+        ->and((float) $order->invoice_discount_value)->toBe(5.0)
         ->and($order->invoice_discount_amount)->toBe(990_000)
         ->and($order->discount_amount)->toBe(3_190_000)
         ->and($order->total_price)->toBe(18_810_000)

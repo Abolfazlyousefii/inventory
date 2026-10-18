@@ -38,6 +38,20 @@ class PreinvoiceDraftReservationService
         return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid, $scope) {
             // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
+            // Submission releases the old temporary rows and creates separate
+            // official rows. A late browser sync must not reuse that old token
+            // to freeze stock a second time. Submission takes the same user lock.
+            if ($preinvoiceUuid === null && ($submitted = PreinvoiceOrder::query()
+                    ->where('created_by', $userId)
+                    ->where('submission_token', $token)
+                    ->lockForUpdate()->first(['id']))) {
+                Log::warning('RESERVATION_SYNC_SKIPPED', [
+                    'reason' => 'submitted_token', 'preinvoice_order_id' => $submitted->id,
+                    'actor_id' => $userId,
+                ]);
+
+                return ['reserved' => [], 'skipped' => true, 'reason' => 'submitted_token', 'token' => $token];
+            }
             $order = null;
 
             if ($preinvoiceUuid !== null) {
@@ -540,7 +554,8 @@ class PreinvoiceDraftReservationService
                 break;
             }
 
-            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0);    (int) ($committedQty[$key] ?? 0);
+            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0)
+                + (int) ($committedQty[$key] ?? 0);
             $delta = $newQty - $held;
             if ($delta <= 0) {
                 continue;

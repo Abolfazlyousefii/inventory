@@ -357,13 +357,23 @@ class ProductVariantStructureService
             ->where('sell_price', '>', 0)
             ->min('sell_price');
 
+        // Legacy electrical products can still carry old design metadata while
+        // purchases correctly use their canonical Base. Keep its usable price.
+        if ($minimumUsablePrice === null && app(PurchaseSyntheticVariantGuard::class)->isElectric($product)) {
+            $base = app(CanonicalBaseVariantService::class)->existingAvailableBase($product);
+            if ($base?->sales_enabled && (int) $base->sell_price > 0) {
+                $minimumUsablePrice = (int) $base->sell_price;
+            }
+        }
+
+        // Commercial eligibility is not an inventory balance. In particular,
+        // excluding a legacy/inactive design must not erase its stock/reserves.
+        // WarehouseStockService and ReservationProjectionService own those fields.
         $product->forceFill([
-            'stock' => max(0, (int) $valid->sum('stock')),
-            'reserved' => max(0, (int) $valid->sum('reserved')),
             'price' => $product->uniform_sale_price ?? max(0, (int) ($minimumUsablePrice ?? 0)),
         ]);
 
-        if ($product->isDirty(['stock', 'reserved', 'price'])) {
+        if ($product->isDirty('price')) {
             $product->save();
         }
     }

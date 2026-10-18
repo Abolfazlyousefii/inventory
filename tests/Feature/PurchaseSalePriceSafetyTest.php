@@ -28,23 +28,24 @@ beforeEach(function (): void {
 function purchasePriceFixture(): array
 {
     $product = Product::query()->create([
+        'category_id' => \App\Models\Category::create(['name' => 'Purchase price safety'])->id,
         'name' => 'لنز سری ۱۸ آزمایشی', 'sku' => 'PRICE-SAFETY-18',
-        'price' => 4_800_000, 'stock' => 5, 'is_sellable' => true,
+        'price' => 4_800_000, 'stock' => 5, 'is_sellable' => true, 'code' => '940001', 'short_barcode' => '0001',
     ]);
     $variant = ProductVariant::query()->create([
-        'product_id' => $product->id, 'variant_name' => '18PM',
+        'product_id' => $product->id, 'variant_name' => '18PM', 'variety_code' => '0000',
         'variant_code' => 'SAFETY-18PM', 'sell_price' => 4_800_000,
         'buy_price' => 2_100_000, 'stock' => 5, 'reserved' => 0,
         'is_active' => true, 'sales_enabled' => true,
     ]);
     $purchase = Purchase::query()->create([
-        'supplier_id' => test()->supplier->id, 'warehouse_id' => test()->warehouseId,
+        'supplier_id' => test()->supplier->id,
         'user_id' => test()->operator->id, 'purchased_at' => now()->subMonth(),
         'subtotal_amount' => 6_000_000, 'total_amount' => 6_000_000,
     ]);
     $item = PurchaseItem::query()->create([
         'purchase_id' => $purchase->id, 'product_id' => $product->id,
-        'product_variant_id' => $variant->id, 'product_name' => $product->name,
+        'product_variant_id' => $variant->id, 'product_name' => $product->name, 'product_code' => $product->sku,
         'variant_name' => '18PM', 'quantity' => 3, 'buy_price' => 2_000_000,
         'sell_price' => 5_000_000, 'line_subtotal' => 6_000_000,
         'line_total' => 6_000_000,

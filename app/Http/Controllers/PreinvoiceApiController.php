@@ -256,6 +256,8 @@ class PreinvoiceApiController extends Controller
             'submission_token' => ['required', 'uuid', 'same:reservation_token'],
             'items' => ['present', 'array', 'max:500'],
             'preinvoice_uuid' => ['nullable', 'string', 'max:255'],
+            'scope_product_ids' => ['nullable', 'array', 'max:50'],
+            'scope_product_ids.*' => ['required', 'integer', 'min:1', 'distinct', 'exists:products,id'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id,is_sellable,1'],
             'items.*.variant_id' => [
                 'required',
@@ -271,16 +273,19 @@ class PreinvoiceApiController extends Controller
             $payload = $this->draftReservationService->syncReservationRows(
                 (string) $data['reservation_token'], (int) auth()->id(), $data['items'] ?? [],
                 (bool) ($data['is_in_person'] ?? false), $data['preinvoice_uuid'] ?? null,
+                $data['scope_product_ids'] ?? null,
             );
         } catch (ValidationException $exception) {
             $errors = $exception->errors();
             $itemErrors = $errors['item_errors'] ?? [];
-            unset($errors['item_errors']);
+            $suggestedItems = $errors['suggested_items'] ?? [];
+            unset($errors['item_errors'], $errors['suggested_items']);
             return response()->json([
                 'ok' => false,
                 'message' => collect($errors)->flatten()->first() ?: 'امکان همگام‌سازی وضعیت پیش‌نویس وجود ندارد.',
                 'errors' => $errors,
                 'item_errors' => $itemErrors,
+                'suggested_items' => $suggestedItems,
             ], 422);
         }
 

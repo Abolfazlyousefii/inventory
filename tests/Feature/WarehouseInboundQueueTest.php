@@ -170,7 +170,9 @@ class WarehouseInboundQueueTest extends TestCase
 
         $item->update(['destination_warehouse_id' => $returnWarehouse->id]);
         $this->assertNull($service->queueSalesReturn($document->fresh('items'), $this->user->id));
-        $this->assertDatabaseMissing('warehouse_inbound_receipts', ['id' => $receipt->id]);
+        $this->assertDatabaseHas('warehouse_inbound_receipts', [
+            'id' => $receipt->id, 'status' => WarehouseInboundReceipt::STATUS_CANCELLED,
+        ]);
 
         $item->update(['destination_warehouse_id' => $central->id]);
         $newReceipt = $service->queueSalesReturn($document->fresh('items'), $this->user->id);

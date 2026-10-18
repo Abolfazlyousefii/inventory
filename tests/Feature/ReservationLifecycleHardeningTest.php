@@ -79,14 +79,17 @@ it('converts temporary reservations and skips every old-token mutation including
     $reservation = PreinvoiceDraftReservation::sole();
     $this->post(route('preinvoice.draft.save'), largePayloadPost($rows, ['reservation_token' => $this->token]))->assertSessionHasNoErrors();
     $reservation->refresh();
-    expect($reservation->reservation_scope)->toBe('official')->and($reservation->preinvoice_order_id)->not->toBeNull();
-    $before = $reservation->getRawOriginal();
+    expect($reservation->released_at)->not->toBeNull();
+    $official = PreinvoiceDraftReservation::where('reservation_scope', 'official')->whereNull('released_at')->sole();
+    expect($official->preinvoice_order_id)->not->toBeNull();
+    $before = DB::table('preinvoice_draft_reservations')->orderBy('id')->get()->toJson();
     Log::spy();
-    foreach ([[], $this->rows, [array_replace($rows[0], ['quantity' => 50])]] as $desired) {
-        $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload($desired, $this->token))
-            ->assertOk()->assertJsonPath('data.skipped', true);
+    foreach ([[array_replace($rows[0], ['quantity' => 50])], $this->rows, []] as $desired) {
+        $response = $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload($desired, $this->token))->assertOk();
+        hardeningStock($rows[0], 998, 2);
+        $response->assertJsonPath('data.skipped', true);
     }
-    expect($reservation->fresh()->getRawOriginal())->toBe($before);
+    expect(DB::table('preinvoice_draft_reservations')->orderBy('id')->get()->toJson())->toBe($before);
     hardeningStock($rows[0], 998, 2);
     hardeningStock($this->rows[1], 1000, 0);
     Log::shouldHaveReceived('warning')->with('RESERVATION_SYNC_SKIPPED', Mockery::type('array'))->times(3);
@@ -164,7 +167,19 @@ it('submits an edited draft using its existing freeze even when free stock is ex
     $this->put(route('preinvoice.draft.update', $order->uuid), largePayloadPost([$row], ['reservation_token' => $this->token]))->assertSessionHasNoErrors();
     hardeningStock($row, 0, 1000);
     expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
-        ->and(PreinvoiceDraftReservation::sole()->preinvoice_order_id)->toBe($order->id);
+        ->and(PreinvoiceDraftReservation::where('reservation_scope', 'official')->whereNull('released_at')->sole()->preinvoice_order_id)->toBe($order->id);
+});
+
+it('counts committed stock in the preflight when the remaining free stock is exhausted', function () {
+    $row = $this->rows[0];
+    $order = largePayloadOrder($this->seller, [$row]);
+    $order->update(['status' => PreinvoiceOrder::STATUS_RETURNED_TO_SALES, 'stock_frozen_until' => now()->addHour()]);
+    WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $row['product_id'], -2, $row['variant_id']);
+    $row['quantity'] = 1000;
+    foreach (range(1, 2) as $_) {
+        $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload([$row], $this->token, $order->uuid))->assertOk();
+        hardeningStock($row, 0, 998);
+    }
 });
 
 it('rejects edit sync for another seller and for a finance-queued document', function () {
@@ -189,7 +204,7 @@ it('never lets product lookup expire or expose an official reservation as tempor
     $rows = [$this->rows[0]];
     $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload($rows, $this->token))->assertOk();
     $this->post(route('preinvoice.draft.save'), largePayloadPost($rows, ['reservation_token' => $this->token]))->assertSessionHasNoErrors();
-    $reservation = PreinvoiceDraftReservation::sole();
+    $reservation = PreinvoiceDraftReservation::where('reservation_scope', 'official')->whereNull('released_at')->sole();
     $reservation->update(['expires_at' => now()->subHour()]);
     $this->getJson(route('preinvoice.api.product', $rows[0]['product_id']).'?reservation_token='.$this->token)->assertOk();
     expect($reservation->fresh()->released_at)->toBeNull();
@@ -199,7 +214,7 @@ it('never lets product lookup expire or expose an official reservation as tempor
 it('cleanup protects official rows while releasing stale temporary stock exactly once', function () {
     $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload([$this->rows[0]], $this->token))->assertOk();
     $this->post(route('preinvoice.draft.save'), largePayloadPost([$this->rows[0]], ['reservation_token' => $this->token]))->assertSessionHasNoErrors();
-    $official = PreinvoiceDraftReservation::sole();
+    $official = PreinvoiceDraftReservation::where('reservation_scope', 'official')->whereNull('released_at')->sole();
     $otherToken = (string) Str::uuid();
     $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload([$this->rows[1]], $otherToken))->assertOk();
     PreinvoiceDraftReservation::query()->update(['last_seen_at' => now()->subMinutes(20)]);
@@ -210,7 +225,7 @@ it('cleanup protects official rows while releasing stale temporary stock exactly
 });
 
 it('defers reservation webhooks until commit and discards them on rollback', function () {
-    InventoryWebhookSetting::create(['is_enabled' => true, 'endpoint_url' => 'https://example.test/webhook', 'timeout_seconds' => 1]);
+    InventoryWebhookSetting::create(['is_enabled' => true, 'secret' => 'test-only-webhook-secret', 'endpoint_url' => 'https://example.test/webhook', 'timeout_seconds' => 1]);
     DB::beginTransaction();
     app(PreinvoiceDraftReservationService::class)->syncReservationRows($this->token, $this->seller->id, hardeningPayload($this->rows, $this->token)['items']);
     Http::assertNothingSent();

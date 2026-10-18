@@ -166,7 +166,7 @@ class SalesReturnWarehouseInboundRegressionTest extends TestCase
 
         $items[0]->update(['destination_warehouse_id' => $return->id]);
         $this->assertNull($service->queueSalesReturn($document->fresh('items'), $this->user->id));
-        $this->assertDatabaseMissing('warehouse_inbound_receipts', ['id' => $receipt->id]);
+        $this->assertDatabaseHas('warehouse_inbound_receipts', ['id' => $receipt->id, 'status' => WarehouseInboundReceipt::STATUS_CANCELLED]);
     }
 
     public function test_mixed_receive_updates_only_central_variants_and_creates_no_return_item_movement(): void
@@ -297,7 +297,7 @@ class SalesReturnWarehouseInboundRegressionTest extends TestCase
         app(SalesReturnService::class)->apply($document, $this->user->id);
         $receipt = WarehouseInboundReceipt::query()->with('items')->sole();
         $item = $receipt->items()->sole();
-        $payload = ['items' => [[
+        $payload = ['receipt_version' => \App\Support\InboundReviewVersion::token($receipt), 'items' => [[
             'id' => $item->id,
             'accepted_quantity' => 1,
             'received_warehouse_id' => $central->id,

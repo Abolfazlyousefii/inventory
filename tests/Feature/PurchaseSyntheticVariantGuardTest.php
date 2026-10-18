@@ -134,7 +134,7 @@ function guardStore(Product $product, ProductVariant|int|null $variant, int $qua
             'variant_id' => $variant instanceof ProductVariant ? $variant->id : $variant,
             'quantity' => $quantity,
             'buy_price' => 1000,
-            'sell_price' => 1500,
+            'sell_price' => $variant instanceof ProductVariant && $variant->sell_price > 0 ? $variant->sell_price : ($variant === null ? $product->price : 1500),
         ]],
     ]);
 

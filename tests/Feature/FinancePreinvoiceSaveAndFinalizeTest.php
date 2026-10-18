@@ -9,6 +9,6 @@ it('save and finalize updates first then refreshes before finalizing', function 
     $method = substr($controller, $start, $end - $start);
 
     expect($method)->toContain('financePreinvoiceEditorService->update')
-        ->and($method)->toContain("refresh()->load('items')")
+        ->and($method)->toContain("FinanceDocumentVersion::token(\$updated)")
         ->and($method)->toContain('return $this->finalize');
 });

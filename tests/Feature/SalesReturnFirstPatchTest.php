@@ -8,6 +8,8 @@ use Tests\TestCase;
 
 class SalesReturnFirstPatchTest extends TestCase
 {
+    use \Tests\Support\NormalizesSalesReturnRows;
+
     public function test_index_customer_filter_uses_remote_picker(): void
     {
         $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
@@ -24,7 +26,10 @@ class SalesReturnFirstPatchTest extends TestCase
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
         $blade = file_get_contents(resource_path('views/vouchers/return-from-sale/partials/index-results.blade.php'));
 
-        $this->assertStringContainsString("'can_edit' => \$document->isDraft() ?", $service);
+        $row = $this->returnRow('draft');
+        $this->assertTrue($row['can_edit']);
+        $this->assertTrue($row['can_cancel']);
+        $this->assertSame(route('vouchers.return-from-sale.edit', 42), $row['edit_url']);
         $this->assertStringContainsString("'can_cancel' => \$document->isDraft() ?", $service);
         $this->assertStringContainsString('حذف پیش‌نویس', $blade);
     }
@@ -32,7 +37,10 @@ class SalesReturnFirstPatchTest extends TestCase
     public function test_applied_document_does_not_show_draft_edit_action(): void
     {
         $service = file_get_contents(app_path('Services/SalesReturnReportService.php'));
-        $this->assertStringContainsString("'edit_url' => \$document->isDraft() ?", $service);
+        $row = $this->returnRow('applied');
+        $this->assertFalse($row['can_cancel']);
+        $this->assertSame(route('vouchers.return-from-sale.applied.edit', 42), $row['edit_url']);
+        $this->assertNotSame(route('vouchers.return-from-sale.edit', 42), $row['edit_url']);
         $this->assertStringContainsString("'print_url' => route('vouchers.return-from-sale.print', \$document)", $service);
     }
 

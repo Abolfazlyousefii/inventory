@@ -175,7 +175,8 @@ it('preserves physical stock while a temporary reservation becomes official and 
         ->assertSessionHasNoErrors();
 
     $order = PreinvoiceOrder::query()->where('created_by', $seller->id)->latest('id')->firstOrFail();
-    $reservation->refresh();
+    expect($reservation->fresh()->released_at)->not->toBeNull();
+    $reservation = PreinvoiceDraftReservation::where('preinvoice_order_id', $order->id)->where('reservation_scope', 'official')->whereNull('released_at')->sole();
 
     expect($order->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
         ->and($reservation->preinvoice_order_id)->toBe($order->id)
@@ -185,7 +186,7 @@ it('preserves physical stock while a temporary reservation becomes official and 
         ->and(DB::table('stock_movements')->count())->toBe($movementsAfterTemporaryReserve);
 
     $this->actingAs($finance)
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
+        ->post(route('preinvoice.draft.finalize', $order->uuid), ['finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items'))])
         ->assertSessionHasNoErrors();
 
     $reservation->refresh();
@@ -276,7 +277,7 @@ it('does not double reserve when final submission is retried', function () {
         ->assertSessionHasNoErrors();
     $this->actingAs($seller)
         ->post(route('preinvoice.draft.save'), $payload)
-        ->assertSessionHasErrors('preinvoice');
+        ->assertRedirect()->assertSessionHasNoErrors();
 
     expect(phaseFourPhysicalQuantity($inventory['product']->id, $inventory['variant']->id))->toBe(90)
         ->and(phaseFourCanonicalReserved($inventory['product']->id, $inventory['variant']->id))->toBe(10)

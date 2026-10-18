@@ -9,7 +9,7 @@ class WarehouseInboundQueueArchitectureTest extends TestCase
 {
     public function test_queue_has_schema_models_routes_page_permission_and_ui(): void
     {
-        $this->assertFileExists(database_path('migrations/2026_08_19_000001_create_warehouse_inbound_queue_tables.php'));
+        $this->assertFileExists(base_path('tests/Support/LegacyMigrations/2026_08_19_000001_create_warehouse_inbound_queue_tables.php'));
         $this->assertFileExists(app_path('Models/WarehouseInboundReceipt.php'));
         $this->assertFileExists(app_path('Models/WarehouseInboundReceiptItem.php'));
         $this->assertFileExists(app_path('Services/WarehouseInboundService.php'));
@@ -118,7 +118,7 @@ class WarehouseInboundQueueArchitectureTest extends TestCase
 
     public function test_database_and_service_have_operation_level_idempotency(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_08_20_000001_harden_warehouse_inbound_queue.php'));
+        $migration = file_get_contents(base_path('tests/Support/LegacyMigrations/2026_08_20_000001_harden_warehouse_inbound_queue.php'));
         $service = file_get_contents(app_path('Services/WarehouseInboundService.php'));
 
         $this->assertStringContainsString('wir_source_operation_unique', $migration);

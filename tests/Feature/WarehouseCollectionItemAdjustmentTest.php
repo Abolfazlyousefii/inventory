@@ -48,12 +48,13 @@ class WarehouseCollectionItemAdjustmentTest extends TestCase
         $this->assertStringContainsString('SalesDocumentTotals::canonicalBreakdown($invoice, $totals)', $service);
         $this->assertStringContainsString("'invoice_item_id' => ", $service);
         $this->assertStringContainsString('فاکتور باید حداقل یک قلم کالا داشته باشد.', $service);
-        $this->assertStringContainsString('مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است.', $service);
+        $this->assertStringContainsString('queueInvoiceAdjustment(', $service);
+        $this->assertStringNotContainsString('مبلغ جدید فاکتور کمتر از مبلغ پرداخت‌شده است.', $service);
     }
 
     public function test_revision_schema_already_supports_removed_item_null_on_delete(): void
     {
-        $migration = file_get_contents(base_path('database/migrations/2026_07_11_000001_create_invoice_collection_revision_tables.php'));
+        $migration = file_get_contents(base_path('tests/Support/LegacyMigrations/2026_07_11_000001_create_invoice_collection_revision_tables.php'));
 
         $this->assertStringContainsString("foreignId('invoice_item_id')->nullable()->constrained('invoice_items')->nullOnDelete()", $migration);
     }
