@@ -14,6 +14,7 @@ class PurchaseReturnTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/purchase-returns-20261011'));
         Schema::create('suppliers', function(Blueprint $t){$t->id();$t->string('name');$t->timestamps();});
         Schema::create('products', function(Blueprint $t){$t->id();$t->string('name');$t->integer('stock')->default(0);$t->timestamps();});
         Schema::create('product_variants', function(Blueprint $t){$t->id();$t->integer('product_id');$t->string('variant_name');$t->integer('stock')->default(0);$t->integer('reserved')->default(0);$t->timestamps();});
