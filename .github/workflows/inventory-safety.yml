@@ -3,9 +3,9 @@ name: Inventory safety
 on:
   push:
     branches: [main]
-    paths: ['app/**', 'tests/**', 'database/**', 'composer.*', 'phpunit.xml', '.github/workflows/inventory-safety.yml']
+    paths: ['app/**', 'tests/**', 'database/**', 'resources/**', 'composer.*', 'package*.json', 'vite.config.js', 'phpunit.xml', '.github/workflows/inventory-safety.yml']
   pull_request:
-    paths: ['app/**', 'tests/**', 'database/**', 'composer.*', 'phpunit.xml', '.github/workflows/inventory-safety.yml']
+    paths: ['app/**', 'tests/**', 'database/**', 'resources/**', 'composer.*', 'package*.json', 'vite.config.js', 'phpunit.xml', '.github/workflows/inventory-safety.yml']
 
 permissions:
   contents: read
@@ -25,6 +25,12 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
           coverage: none
       - run: composer install --prefer-dist --no-interaction --no-progress
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
       - run: php tests/run-inventory.php --log-junit inventory-results.xml
       - uses: actions/upload-artifact@v4
         if: always()
