@@ -155,40 +155,77 @@ class SalesReturnLookupController extends Controller
 
     public function products(Request $request)
     {
-        $q = trim((string) $request->get('q', ''));
-        if (mb_strlen($q) < 2) return ['results' => []];
+        $request->validate([
+            'q' => ['nullable', 'string', 'max:80'],
+            'page' => ['nullable', 'integer', 'min:1', 'max:1000'],
+        ]);
 
+        $q = \App\Support\ProductFinderSearchNormalizer::normalize($request->query('q'));
+        $compact = (string) preg_replace('/[\s\-_]+/u', '', $q);
+        if (mb_strlen($compact) < 2) {
+            return ['results' => [], 'meta' => ['page' => 1, 'has_more' => false]];
+        }
+
+        $page = max(1, (int) $request->integer('page', 1));
+        $like = '%'.$q.'%';
+        $compactLike = '%'.$compact.'%';
+
+        // An external sales return must find even zero-stock or inactive variants.
+        // Model-list matching is essential when the variant name only contains a color.
         $variants = ProductVariant::query()
+            ->select('product_variants.*')
+            ->leftJoin('model_lists as return_models', 'return_models.id', '=', 'product_variants.model_list_id')
             ->with(['product.category:id,name', 'modelList:id,brand,model_name,code'])
-            ->where(function ($query) use ($q) {
-                $query->where('variant_name', 'like', "%{$q}%")
-                    ->orWhere('variant_code', 'like', "%{$q}%")
-                    ->orWhere('variety_name', 'like', "%{$q}%")
-                    ->orWhereHas('product', fn ($product) => $product->where('name', 'like', "%{$q}%")->orWhere('code', 'like', "%{$q}%")->orWhere('sku', 'like', "%{$q}%")->orWhere('barcode', 'like', "%{$q}%"));
+            ->where(function ($query) use ($like, $compactLike) {
+                $query->where('product_variants.variant_name', 'like', $like)
+                    ->orWhere('product_variants.variety_name', 'like', $like)
+                    ->orWhere('product_variants.variant_code', 'like', $like)
+                    ->orWhere('product_variants.variety_code', 'like', $like)
+                    ->orWhere('return_models.model_name', 'like', $like)
+                    ->orWhere('return_models.brand', 'like', $like)
+                    ->orWhere('return_models.code', 'like', $like)
+                    ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(COALESCE(return_models.model_name,''), ' ', ''), '-', ''), '_', '')) LIKE ?", [$compactLike])
+                    ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(COALESCE(product_variants.variant_name,''), ' ', ''), '-', ''), '_', '')) LIKE ?", [$compactLike])
+                    ->orWhereHas('product', function ($product) use ($like, $compactLike) {
+                        $product->where('name', 'like', $like)
+                            ->orWhere('code', 'like', $like)
+                            ->orWhere('sku', 'like', $like)
+                            ->orWhere('barcode', 'like', $like)
+                            ->orWhere('short_barcode', 'like', $like)
+                            ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(COALESCE(products.name,''), ' ', ''), '-', ''), '_', '')) LIKE ?", [$compactLike]);
+                    });
             })
-            ->orderByDesc('id')
-            ->limit(20)
-            ->get();
+            ->orderByRaw("CASE
+                WHEN LOWER(REPLACE(REPLACE(REPLACE(COALESCE(return_models.model_name,''), ' ', ''), '-', ''), '_', '')) = ? THEN 0
+                WHEN LOWER(REPLACE(REPLACE(REPLACE(COALESCE(return_models.model_name,''), ' ', ''), '-', ''), '_', '')) LIKE ? THEN 1
+                WHEN LOWER(REPLACE(REPLACE(REPLACE(COALESCE(product_variants.variant_name,''), ' ', ''), '-', ''), '_', '')) LIKE ? THEN 2
+                ELSE 3 END", [$compact, $compactLike, $compactLike])
+            ->orderBy('product_variants.id')
+            ->simplePaginate(40, ['product_variants.*'], 'page', $page);
 
-        return ['results' => $variants->map(function ($v) {
-            $stock = (int) WarehouseStock::where('product_variant_id', $v->id)->sum('quantity');
-            return [
-                'id' => $v->product_id,
-                'variant_id' => $v->id,
+        return [
+            'results' => collect($variants->items())->map(fn (ProductVariant $v) => [
+                'id' => (int) $v->product_id,
+                'variant_id' => (int) $v->id,
                 'text' => trim(($v->product?->name ?: '—').' / '.($v->variant_name ?: 'تنوع اصلی')),
                 'product_name' => $v->product?->name,
-                'variant_name' => $v->variant_name,
+                'variant_name' => $v->variant_name ?: $v->variety_name,
                 'category' => $v->product?->category?->name,
                 'model_list' => trim(($v->modelList?->brand ? $v->modelList->brand.' ' : '').($v->modelList?->model_name ?? '')),
-                'sku' => $v->variant_code,
+                'sku' => $v->variant_code ?: $v->variety_code,
                 'barcode' => $v->barcode,
-                'stock' => $stock,
+                // This is display-only central available stock, not a return eligibility check.
+                'stock' => (int) $v->stock,
                 'is_active' => (bool) $v->is_active,
                 'sales_enabled' => (bool) $v->sales_enabled,
                 'buy_price' => (int) $v->buy_price,
                 'sell_price' => (int) $v->sell_price,
-            ];
-        })->values()];
+            ])->values()->all(),
+            'meta' => [
+                'page' => $variants->currentPage(),
+                'has_more' => $variants->hasMorePages(),
+            ],
+        ];
     }
 
     public function variants(\App\Models\Product $product)
