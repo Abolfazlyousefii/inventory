@@ -20,6 +20,10 @@ class ProductSalesLedgerController extends Controller
 {
     public function index(Request $request, Product $product, SalesDocumentAccessService $accessService)
     {
+        if ($request->input('lookup') === 'customers') {
+            return $this->customerLookup($request);
+        }
+
         $request->validate(['customer_search' => ['nullable', 'string', 'max:150']]);
 
         $variantId = $request->filled('variant_id') ? (int) $request->input('variant_id') : null;
@@ -67,6 +71,7 @@ class ProductSalesLedgerController extends Controller
             VariantSearch::apply($query, (string) $request->input('customer_search'), [
                 'invoices.customer_name', 'invoices.customer_mobile',
                 'customers.name', 'customers.first_name', 'customers.last_name', 'customers.mobile',
+                'customers.id', 'customers.crm_customer_id',
             ]);
         }
 
@@ -106,10 +111,11 @@ class ProductSalesLedgerController extends Controller
             $item->setAttribute('can_view_invoice', $canViewInvoice);
         });
 
-        $customers = Customer::query()
-            ->orderBy('first_name')
-            ->orderBy('last_name')
-            ->get(['id', 'first_name', 'last_name']);
+        // Load only the selected option; the searchable picker fetches bounded results.
+        $customers = $request->filled('customer_id')
+            ? Customer::query()->whereKey((int) $request->input('customer_id'))
+                ->get(['id', 'name', 'first_name', 'last_name', 'mobile', 'crm_customer_id'])
+            : collect();
 
         $creators = User::query()->orderBy('name')->get(['id', 'name']);
         $variants = $product->variants()->orderBy('variant_code')->get(['id', 'variant_name', 'variant_code']);
@@ -123,6 +129,30 @@ class ProductSalesLedgerController extends Controller
             'creators',
             'summary'
         ));
+    }
+
+    private function customerLookup(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate(['q' => ['nullable', 'string', 'max:150']]);
+        $term = ProductFinderSearchNormalizer::normalize($request->input('q'));
+        if (mb_strlen($term) < 2) {
+            return response()->json(['results' => []]);
+        }
+
+        $query = Customer::query();
+        VariantSearch::apply($query, $term, ['name', 'first_name', 'last_name', 'mobile', 'id', 'crm_customer_id']);
+        $results = $query->orderBy('id')->limit(20)
+            ->get(['id', 'name', 'first_name', 'last_name', 'mobile', 'crm_customer_id'])
+            ->map(static function (Customer $customer): array {
+                $name = trim(($customer->first_name ?? '').' '.($customer->last_name ?? ''))
+                    ?: ($customer->name ?: 'مشتری');
+                return [
+                    'id' => $customer->id,
+                    'text' => $name.' · '.($customer->mobile ?: 'بدون شماره').' · کد '.($customer->crm_customer_id ?: $customer->id),
+                ];
+            });
+
+        return response()->json(['results' => $results]);
     }
 
     private function exportCsv($items, Product $product, ?ProductVariant $variant): StreamedResponse

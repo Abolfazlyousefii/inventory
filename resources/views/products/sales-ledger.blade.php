@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'کارتکس فروش کالا')
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/product-sales-ledger.css') }}?v=1">
+<link rel="stylesheet" href="{{ asset('css/product-sales-ledger.css') }}?v=2">
 @endpush
 @section('content')
 @php
@@ -22,11 +22,11 @@
     <form method="get" action="{{ route('products.sales-ledger', $product) }}" class="sl-filters sl-no-print">
         <div class="sl-section-heading"><strong>جست‌وجو در فروش‌ها</strong><span>نام مشتری، شماره فاکتور یا بازهٔ فروش را مشخص کنید</span></div>
         <div class="sl-filter-grid">
-            <div class="sl-customer-search"><label for="sl-customer-search">جست‌وجوی مشتری</label><input id="sl-customer-search" type="search" name="customer_search" value="{{ request('customer_search') }}" class="form-control" placeholder="نام، نام خانوادگی یا شماره موبایل" maxlength="150"></div>
+            <div class="sl-customer-search"><label for="sl-customer-search">جست‌وجوی مشتری</label><input id="sl-customer-search" type="search" name="customer_search" value="{{ request('customer_search') }}" class="form-control" placeholder="نام، شماره موبایل یا کد مشتری" maxlength="150" minlength="2"></div>
             <div><label for="sl-invoice">شماره فاکتور</label><input id="sl-invoice" name="invoice_uuid" value="{{ request('invoice_uuid') }}" class="form-control" placeholder="مثلاً ۰۲۰۱۹"></div>
             <div><label for="sl-from">از تاریخ ثبت فروش</label><input id="sl-from" type="date" name="date_from" value="{{ request('date_from') }}" class="form-control"></div>
             <div><label for="sl-to">تا تاریخ ثبت فروش</label><input id="sl-to" type="date" name="date_to" value="{{ request('date_to') }}" class="form-control"></div>
-            <div><label for="sl-customer">مشتری مشخص</label><select id="sl-customer" name="customer_id" class="form-select"><option value="">همه مشتریان</option>@foreach($customers as $customer)<option value="{{ $customer->id }}" @selected((int) request('customer_id') === $customer->id)>{{ trim(($customer->first_name ?? '').' '.($customer->last_name ?? '')) ?: 'مشتری #'.$customer->id }}</option>@endforeach</select></div>
+            <div class="sl-customer-picker"><label for="sl-customer">انتخاب مشتری</label><select id="sl-customer" name="customer_id" class="form-select" data-search-url="{{ route('products.sales-ledger', $product) }}"><option value="">همه مشتریان</option>@foreach($customers as $customer)<option value="{{ $customer->id }}" selected>{{ $fa((trim(($customer->first_name ?? '').' '.($customer->last_name ?? '')) ?: ($customer->name ?: 'مشتری')).' · '.($customer->mobile ?: 'بدون شماره').' · کد '.($customer->crm_customer_id ?: $customer->id)) }}</option>@endforeach</select><small class="sl-search-hint">نام، موبایل یا کد مشتری؛ حداقل ۲ کاراکتر</small></div>
             @if($variants->isNotEmpty())<div><label for="sl-variant">تنوع / مدل</label><select id="sl-variant" name="variant_id" class="form-select"><option value="">همه تنوع‌های کالا</option>@foreach($variants as $variant)<option value="{{ $variant->id }}" @selected((int) request('variant_id') === $variant->id)>{{ $variant->variant_name }} ({{ $fa($variant->variant_code) }})</option>@endforeach</select></div>@endif
             <div><label for="sl-creator">ثبت‌کننده</label><select id="sl-creator" name="creator_id" class="form-select"><option value="">همه ثبت‌کنندگان</option>@foreach($creators as $creator)<option value="{{ $creator->id }}" @selected((int) request('creator_id') === $creator->id)>{{ $creator->name }}</option>@endforeach</select></div>
         </div>
@@ -56,3 +56,7 @@
     <p class="sl-print-note">مبالغ به ریال · چاپ ردیف‌های صفحهٔ جاری؛ برای دریافت همهٔ نتایج از خروجی اکسل استفاده کنید.</p>
 </div>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/product-sales-ledger.js') }}?v=1"></script>
+@endpush

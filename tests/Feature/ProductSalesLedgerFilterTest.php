@@ -78,3 +78,45 @@ it('renders the ledger and keeps filtered totals across pagination', function ()
     }
 });
 
+
+it('offers customer choices only after two characters using name mobile and customer codes', function () {
+    $product = salesLedgerFixture();
+    $customer = Customer::first();
+    $customer->update(['crm_customer_id' => 'CRM-8297']);
+    foreach (['', 'ع', '۰', 'علی', 'كريمي', '۰۹۱۲۱۱۱۲۲۳۳', 'CRM-۸۲۹۷', (string) $customer->id] as $term) {
+        $request = Request::create('/ledger', 'GET', ['lookup' => 'customers', 'q' => $term]);
+        $response = app(ProductSalesLedgerController::class)->index($request, $product, app(SalesDocumentAccessService::class));
+        expect($response)->toBeInstanceOf(\Illuminate\Http\JsonResponse::class);
+        $rows = $response->getData(true)['results'];
+        if (mb_strlen($term) < 2) {
+            expect($rows)->toBe([]);
+        } else {
+            expect(array_column($rows, 'id'))->toContain($customer->id);
+            expect($rows[0]['text'])->toContain('09121112233', 'CRM-8297');
+        }
+    }
+});
+
+it('filters sales by customer code and loads only the selected customer option', function () {
+    $product = salesLedgerFixture();
+    $customer = Customer::first();
+    $customer->update(['crm_customer_id' => 'CRM-8297']);
+    $request = Request::create('/ledger', 'GET', ['customer_search' => 'CRM-۸۲۹۷']);
+    $data = app(ProductSalesLedgerController::class)->index($request, $product, app(SalesDocumentAccessService::class))->getData();
+    expect($data['ledgerItems']->total())->toBe(1)->and($data['customers'])->toHaveCount(0);
+    $request = Request::create('/ledger', 'GET', ['customer_id' => $customer->id]);
+    $data = app(ProductSalesLedgerController::class)->index($request, $product, app(SalesDocumentAccessService::class))->getData();
+    expect($data['customers'])->toHaveCount(1)->and($data['ledgerItems']->total())->toBe(1);
+});
+
+it('looks up internal customer codes and bounds the results list', function () {
+    $product = salesLedgerFixture();
+    $customer = Customer::unguarded(fn () => Customer::create(['id' => 12345, 'name' => 'مشتری کددار', 'mobile' => '09350001234']));
+    $request = Request::create('/ledger', 'GET', ['lookup' => 'customers', 'q' => '۱۲۳۴۵']);
+    $response = app(ProductSalesLedgerController::class)->index($request, $product, app(SalesDocumentAccessService::class));
+    expect(array_column($response->getData(true)['results'], 'id'))->toContain($customer->id);
+    for ($i = 0; $i < 23; $i++) Customer::create(['name' => 'تست نتیجه '.$i, 'mobile' => '0991'.str_pad((string) $i, 7, '0', STR_PAD_LEFT)]);
+    $request = Request::create('/ledger', 'GET', ['lookup' => 'customers', 'q' => 'تست نتیجه']);
+    $response = app(ProductSalesLedgerController::class)->index($request, $product, app(SalesDocumentAccessService::class));
+    expect($response->getData(true)['results'])->toHaveCount(20);
+});
