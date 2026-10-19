@@ -10,6 +10,8 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Services\SalesDocumentAccessService;
 use App\Support\PageAccessCatalog;
+use App\Support\ProductFinderSearchNormalizer;
+use App\Support\VariantSearch;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -18,6 +20,8 @@ class ProductSalesLedgerController extends Controller
 {
     public function index(Request $request, Product $product, SalesDocumentAccessService $accessService)
     {
+        $request->validate(['customer_search' => ['nullable', 'string', 'max:150']]);
+
         $variantId = $request->filled('variant_id') ? (int) $request->input('variant_id') : null;
         $selectedVariant = null;
 
@@ -28,12 +32,13 @@ class ProductSalesLedgerController extends Controller
         $query = InvoiceItem::query()
             ->select('invoice_items.*')
             ->join('invoices', 'invoices.id', '=', 'invoice_items.invoice_id')
+            ->leftJoin('customers', 'customers.id', '=', 'invoices.customer_id')
             ->where('invoice_items.product_id', $product->id)
             ->where('invoices.status', '!=', Invoice::STATUS_NOT_SHIPPED)
             ->with([
                 'product:id,name',
                 'variant:id,variant_name',
-                'invoice:id,uuid,customer_id,customer_name,created_at,document_date,preinvoice_order_id',
+                'invoice:id,uuid,customer_id,customer_name,customer_mobile,created_at,document_date,preinvoice_order_id',
                 'invoice.preinvoiceOrder:id,created_by',
                 'invoice.preinvoiceOrder.creator:id,name',
             ]);
@@ -58,8 +63,15 @@ class ProductSalesLedgerController extends Controller
             $query->where('invoices.customer_id', (int) $request->input('customer_id'));
         }
 
+        if ($request->filled('customer_search')) {
+            VariantSearch::apply($query, (string) $request->input('customer_search'), [
+                'invoices.customer_name', 'invoices.customer_mobile',
+                'customers.name', 'customers.first_name', 'customers.last_name', 'customers.mobile',
+            ]);
+        }
+
         if ($request->filled('invoice_uuid')) {
-            $invoiceUuid = trim((string) $request->input('invoice_uuid'));
+            $invoiceUuid = ProductFinderSearchNormalizer::normalize((string) $request->input('invoice_uuid'));
             $query->where('invoices.uuid', 'like', "%{$invoiceUuid}%");
         }
 
