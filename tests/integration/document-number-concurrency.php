@@ -10,6 +10,11 @@ putenv('APP_ENV=testing');
 require getenv('INVENTORY_TEST_AUTOLOAD') ?: dirname(__DIR__, 2).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+// Laravel's console renderer must not turn a failed standalone check into exit 0.
+set_exception_handler(static function (Throwable $error): never {
+    fwrite(STDERR, get_class($error).': '.$error->getMessage().PHP_EOL);
+    exit(1);
+});
 use Illuminate\Support\Facades\{DB, Http};
 use App\Support\DocumentCodeGenerator;
 Http::preventStrayRequests();
