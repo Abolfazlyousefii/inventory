@@ -37,3 +37,29 @@ jobs:
         with:
           name: inventory-results-php-${{ matrix.php }}
           path: inventory-results.xml
+  document-number-concurrency:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: inventory_isolated_audit_numbering_20261020
+        ports:
+          - 33319:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_mysql
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: php tests/integration/document-number-concurrency.php
+        env:
+          APP_ENV: testing
+          INVENTORY_TEST_MYSQL_DATABASE: inventory_isolated_audit_numbering_20261020
+          INVENTORY_TEST_MYSQL_PORT: '33319'

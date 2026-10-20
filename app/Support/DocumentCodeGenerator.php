@@ -20,9 +20,8 @@ class DocumentCodeGenerator
      *
      * Invoice and preinvoice official codes share one locked sequence so a code
      * reserved for a preinvoice is reused by its invoice instead of a new code
-     * being generated during conversion. If the sequence table is unavailable
-     * (for example before the new migration has run), this falls back to the
-     * legacy per-model max-code strategy.
+     * being generated during conversion. Official invoice numbering requires
+     * the shared counter table; an unlocked fallback cannot prevent collisions.
      */
     public static function generateSequentialCode(string $modelClass, string $column = 'uuid', int $width = self::DEFAULT_WIDTH): string
     {
@@ -45,14 +44,16 @@ class DocumentCodeGenerator
     {
         return DB::transaction(function () use ($width) {
             if (! Schema::hasTable('document_sequences')) {
-                return self::legacyNextSharedInvoiceCode($width);
+                throw new RuntimeException('جدول شمارنده اسناد موجود نیست؛ برای جلوگیری از شماره تکراری، صدور سند متوقف شد.');
             }
 
             $now = now();
-            DB::table('document_sequences')->updateOrInsert(
-                ['type' => self::INVOICE_SEQUENCE_TYPE],
-                ['last_number' => 0, 'created_at' => $now, 'updated_at' => $now]
-            );
+            // Never reset an existing reservation. A caller may have an older
+            // REPEATABLE READ snapshot than the transaction that reserved it.
+            DB::table('document_sequences')->insertOrIgnore([
+                'type' => self::INVOICE_SEQUENCE_TYPE,
+                'last_number' => 0, 'created_at' => $now, 'updated_at' => $now,
+            ]);
 
             $sequence = DB::table('document_sequences')
                 ->where('type', self::INVOICE_SEQUENCE_TYPE)
@@ -62,6 +63,21 @@ class DocumentCodeGenerator
             $lastNumber = max((int) ($sequence->last_number ?? 0), self::currentMaxOfficialInvoiceNumber($width));
             $next = $lastNumber + 1;
             $limit = (10 ** $width) - 1;
+
+            // Locking reads see committed documents even when this request's
+            // ordinary reads still see a snapshot from before their creation.
+            while ($next <= $limit) {
+                $code = str_pad((string) $next, $width, '0', STR_PAD_LEFT);
+                $occupied = false;
+                foreach ([Invoice::class, PreinvoiceOrder::class] as $modelClass) {
+                    if ($modelClass::query()->where('uuid', $code)->lockForUpdate()->first(['id'])) {
+                        $occupied = true;
+                        break;
+                    }
+                }
+                if (! $occupied) break;
+                $next++;
+            }
 
             if ($next > $limit) {
                 throw new RuntimeException("Unable to generate a unique {$width}-digit invoice code.");
@@ -113,22 +129,6 @@ class DocumentCodeGenerator
         }
 
         return $max;
-    }
-
-    private static function legacyNextSharedInvoiceCode(int $width): string
-    {
-        $maxValue = self::currentMaxOfficialInvoiceNumber($width);
-        $limit = (10 ** $width) - 1;
-
-        for ($next = $maxValue + 1; $next <= $limit; $next++) {
-            $code = str_pad((string) $next, $width, '0', STR_PAD_LEFT);
-
-            if (! Invoice::query()->where('uuid', $code)->exists() && ! PreinvoiceOrder::query()->where('uuid', $code)->exists()) {
-                return $code;
-            }
-        }
-
-        throw new RuntimeException("Unable to generate a unique {$width}-digit invoice code.");
     }
 
     private static function legacyNextCode(string $modelClass, string $column, int $width): string
