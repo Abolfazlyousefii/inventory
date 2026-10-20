@@ -71,6 +71,10 @@
 		financeEditForm?.addEventListener('change',recalculateFinanceEditor);
 		recalculateFinanceEditor();
 		@if($errors->has('edit_reason'))document.getElementById('edit_reason')?.focus();@endif
-		financeEditForm?.addEventListener('submit',e=>{const b=e.submitter;if(b&&b.value==='save_and_finalize'){const m=e.currentTarget.querySelector('input[name="_method"]'); if(m) m.value='POST';} if(b){b.disabled=true;b.innerHTML='<span class="spinner-border spinner-border-sm"></span> در حال ذخیره';}});
+
 	</script>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/finance-preinvoice-payload.js') }}?v=1"></script>
+@endpush

@@ -1201,6 +1201,7 @@ class PreinvoiceController extends Controller
                     'preinvoice' => 'این درخواست قبلاً ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، صفحه پیش‌فاکتورها را بررسی کنید.',
                 ]);
             }
+            $this->assertDraftPricesForSubmission($validated['products']);
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
@@ -1745,8 +1746,21 @@ class PreinvoiceController extends Controller
     }
 
     /** Validate inside the submit transaction, before any document or reservation writes. */
+    private function assertDraftPricesForSubmission(array $rows): void
+    {
+        $prices = ProductVariant::query()->whereIn('id', collect($rows)->pluck('variety_id'))->pluck('sell_price', 'id');
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            if ((int) ($row['price'] ?? $prices->get((int) $row['variety_id'], 0)) <= 0) {
+                $errors["products.{$index}.price"] = 'قیمت این ردیف صفر است؛ قبل از ارسال به مالی، قیمت فروش را مشخص کنید. پیش‌نویس قابل نگهداری است.';
+            }
+        }
+        if ($errors !== []) throw ValidationException::withMessages($errors);
+    }
+
     private function assertDraftItemsSellableForSubmission(array $rows): void
     {
+        $this->assertDraftPricesForSubmission($rows);
         // Match the product-status writer's product -> variant lock order, so a
         // concurrent deactivation cannot slip between validation and reservation.
         $products = Product::query()

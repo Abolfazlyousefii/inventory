@@ -70,3 +70,20 @@ it('renders the json payload contract instead of relying on legacy product input
     expect($view)->toContain('name="products_payload"')->and($view)->toContain('name="products_payload_count"')->and($view)->toContain('name="products_payload_complete"')
         ->and($view)->toContain('collectProductsForSubmit')->and($view)->toContain('prepareProductsPayloadForSubmit')->and($view)->toContain('JSON.stringify')->and($view)->toContain('disable legacy product inputs');
 });
+
+it('refuses to send a zero price snapshot to the finance queue without reserving stock', function () {
+    $user=largePayloadUser();$rows=largePayloadProducts(1);$rows[0]['price']=0;
+    $this->actingAs($user)->post(route('preinvoice.draft.save'),largePayloadPost($rows))->assertSessionHasErrors('products.0.price');
+    expect(PreinvoiceOrder::where('created_by',$user->id)->count())->toBe(0)
+        ->and(PreinvoiceDraftReservation::where('user_id',$user->id)->count())->toBe(0);
+});
+
+it('keeps zero priced rows editable as drafts but blocks their submission to finance', function () {
+    $user=largePayloadUser();$rows=largePayloadProducts(1);$rows[0]['price']=0;
+    $order=largePayloadOrder($user,$rows);
+    $rows[0]['item_id']=$order->items->first()->id;
+    $this->actingAs($user)->put(route('preinvoice.draft.update',$order->uuid),largePayloadPost($rows,['intent'=>'draft']))->assertSessionHasNoErrors();
+    expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_DRAFT)->and((int)$order->items()->first()->price)->toBe(0);
+    $this->actingAs($user)->put(route('preinvoice.draft.update',$order->uuid),largePayloadPost($rows,['intent'=>'submit']))->assertSessionHasErrors('products.0.price');
+    expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_DRAFT);
+});

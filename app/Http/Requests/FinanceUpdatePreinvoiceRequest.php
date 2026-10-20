@@ -14,6 +14,9 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if ($this->exists('finance_payload')) {
+            $this->unpackFinancePayload();
+        }
         $items = collect((array) $this->input('items', []))->map(function ($row) {
             if (! is_array($row)) {
                 return $row;
@@ -49,11 +52,30 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
         ]);
     }
 
+    private function unpackFinancePayload(): void
+    {
+        $message = 'اطلاعات فرم ویرایش مالی ناقص یا نامعتبر ارسال شده است؛ صفحه را تازه کنید و دوباره ذخیره کنید. هیچ تغییری ثبت نشد.';
+        $raw = $this->input('finance_payload');
+        $data = null;
+        if (is_string($raw) && strlen($raw) <= 2_000_000) {
+            try { $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR); }
+            catch (\JsonException) { /* Reject incomplete JSON before any business mutation. */ }
+        }
+        $fields = ['finance_version', 'items', 'product_discounts', 'invoice_discount_type', 'invoice_discount_value', 'edit_reason', 'intent'];
+        $count = filter_var($this->input('finance_payload_item_count'), FILTER_VALIDATE_INT);
+        if (! is_array($data) || array_is_list($data) || array_diff($fields, array_keys($data)) !== []
+            || ! is_array($data['items'] ?? null) || ! array_is_list($data['items'])
+            || $count === false || $count < 1 || $count > 3000 || count($data['items']) !== $count) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['finance_payload' => $message]);
+        }
+        $this->merge(array_intersect_key($data, array_flip($fields)));
+    }
+
     public function rules(): array
     {
         return [
             'finance_version' => ['required', 'string', 'size:64'],
-            'items' => ['required', 'array', 'min:1'],
+            'items' => ['required', 'array', 'min:1', 'max:3000'],
             'items.*.id' => ['required', 'integer', 'distinct'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.price' => ['required', 'integer', 'min:0'],
@@ -75,6 +97,8 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'finance_version.required' => 'نسخه صفحه ارسال نشده است؛ صفحه را دوباره بارگذاری و تخفیف‌ها را بررسی کنید.',
             'items.*.id.distinct' => 'یک ردیف کالا بیش از یک بار ارسال شده است.',
             'product_discounts.*.product_id.distinct' => 'تخفیف یک کالا بیش از یک بار ارسال شده است.',
+            'invoice_discount_type.required' => 'نوع تخفیف کلی ارسال نشده است؛ صفحه را تازه کنید و دوباره ذخیره کنید.',
+            'invoice_discount_value.required_unless' => 'مقدار تخفیف کلی را وارد کنید.',
             'edit_reason.required' => 'لطفاً دلیل ویرایش مالی را وارد کنید.',
             'edit_reason.string' => 'دلیل ویرایش مالی نامعتبر است.',
             'edit_reason.min' => 'دلیل ویرایش مالی باید حداقل ۳ کاراکتر باشد.',
