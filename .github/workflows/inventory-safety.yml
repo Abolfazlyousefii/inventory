@@ -55,7 +55,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, pdo_mysql
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, pdo_mysql
           coverage: none
       - run: composer install --prefer-dist --no-interaction --no-progress
       - run: php tests/integration/document-number-concurrency.php
