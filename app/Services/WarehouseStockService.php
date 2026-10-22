@@ -13,8 +13,27 @@ use App\Services\AriyajanebiSyncService;
 
 class WarehouseStockService
 {
+    /** Prevent recursion: expired-hold release itself uses this stock service. */
+    private static bool $siteExpiryRunning = false;
+
+    private static function reclaimExpiredSiteHolds(): void
+    {
+        if (!config('services.request_driven_site_stock', false) || self::$siteExpiryRunning) return;
+        self::$siteExpiryRunning = true;
+        try {
+            app(SiteOrderStockHoldService::class)->expireUnpaid(10);
+        } catch (\Throwable $e) {
+            Log::warning('Deferred Site hold expiry during warehouse stock operation.', [
+                'exception' => $e::class, 'message' => $e->getMessage(),
+            ]);
+        } finally {
+            self::$siteExpiryRunning = false;
+        }
+    }
+
     public static function change(int $warehouseId, int $productId, int $delta, ?int $variantId = null): WarehouseStock
     {
+        self::reclaimExpiredSiteHolds();
         return DB::transaction(function () use ($warehouseId, $productId, $variantId, $delta) {
             self::assertVariantBelongsToProduct($productId, $variantId);
 
@@ -23,7 +42,10 @@ class WarehouseStockService
             $newQty = (int) $stock->quantity + $delta;
 
             if ($newQty < 0) {
-                abort(422, 'موجودی این مدل/تنوع در انبار مبدا کافی نیست.');
+                throw ValidationException::withMessages([
+                    'items' => "متأسفیم! موجودی این مدل/تنوع در انبار مبدا کافی نیست. "
+                               . "موجودی فعلی: {$stock->quantity} عدد. لطفاً تعداد را کاهش دهید.",
+                ]);
             }
 
             $stock->update([
@@ -43,6 +65,7 @@ class WarehouseStockService
 
     public static function set(int $warehouseId, int $productId, int $variantId, int $quantity): WarehouseStock
     {
+        self::reclaimExpiredSiteHolds();
         return DB::transaction(function () use ($warehouseId, $productId, $variantId, $quantity) {
             if ($quantity < 0) {
                 abort(422, 'موجودی نمی‌تواند منفی باشد.');
@@ -69,6 +92,7 @@ class WarehouseStockService
 
     public static function available(int $warehouseId, int $productId, ?int $variantId = null): int
     {
+        self::reclaimExpiredSiteHolds();
         // Treat 0 or negative as "no variant" (null)
         if ($variantId !== null && $variantId <= 0) {
             $variantId = null;

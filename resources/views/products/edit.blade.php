@@ -495,6 +495,9 @@
                                     maxlength="255"
                                     placeholder="مثلاً کیف دوشی چرمی"
                                 >
+                                @if($product->is_bundle)
+                                    @include('partials.bundle-contents', ['productIsBundle' => true, 'productId' => $product->id])
+                                @endif
                             </div>
 
                             <div class="col-lg-4">
@@ -789,6 +792,7 @@
                 </div>
             </div>
         </form>
+        @include('products.partials.bundle-management', ['product' => $product])
     </div>
 </div>
 

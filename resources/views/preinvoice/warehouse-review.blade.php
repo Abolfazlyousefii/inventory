@@ -11,6 +11,7 @@
         return [
             'id' => (int) $product->id,
             'name' => $product->name,
+            'bundle_contents' => (bool) ($product->is_bundle ?? false) ? \App\Support\BundleContentsDisplay::fromProduct((int) $product->id) : [],
             'stock' => (int) \App\Models\WarehouseStock::query()
                 ->where('warehouse_id', $centralWarehouseId)
                 ->where('product_id', $product->id)
@@ -232,6 +233,7 @@
                 <select class="form-select product" required disabled>
                     <option value="">انتخاب...</option>
                 </select>
+                <div class="bundle-contents-display small text-muted mt-1" dir="rtl"></div>
             </td>
             <td>
                 <select class="form-select variant" required disabled>
@@ -299,9 +301,38 @@
         });
 
         fillVariants(tr, data.variant_id);
+        showBundleContents(tr);
+    }
+
+    function showBundleContents(tr) {
+        const display = tr.querySelector('.bundle-contents-display');
+        if (!display) return;
+        display.replaceChildren();
+        const productId = Number(tr.querySelector('.product')?.value || tr.dataset.productId || 0);
+        const product = products.find(p => Number(p.id) === productId);
+        const parts = Array.isArray(product?.bundle_contents) ? product.bundle_contents : [];
+        if (!parts.length) return;
+        display.classList.add('bundle-components');
+        display.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:5px';
+        display.setAttribute('aria-label', 'محتویات بسته');
+        const heading = document.createElement('strong');
+        heading.textContent = 'شامل:';
+        display.appendChild(heading);
+        parts.forEach(part => {
+            const qty = Number(part.quantity_per_bundle ?? part.quantity ?? 0);
+            if (qty <= 0) return;
+            const chip = document.createElement('span');
+            chip.className = 'bundle-component-chip';
+            chip.style.cssText = 'display:inline-flex;gap:5px;max-width:100%;overflow-wrap:anywhere;border:1px solid #bfdbfe;background:#eff6ff;color:#1e40af;padding:4px 9px;border-radius:999px';
+            const name = String(part.product_name || part.name || 'کالا');
+            const variant = String(part.variant_name || part.variant || '');
+            chip.textContent = name + (variant && variant !== name ? ' (' + variant + ')' : '') + ' × ' + qty;
+            display.appendChild(chip);
+        });
     }
 
     function fillVariants(tr, selectedVariant = null) {
+        showBundleContents(tr);
         const productSelect = tr.querySelector('.product');
         const variantSelect = tr.querySelector('.variant');
         const productStockCell = tr.querySelector('.product-stock');

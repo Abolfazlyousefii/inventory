@@ -314,7 +314,7 @@ class PreinvoiceReservationService
 
             if ($delta > 0) {
                 $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $productId, $variantId);
+                $available = app(PreinvoiceBundleStockService::class)->free($productId, $variantId);
                 if ($delta > $available) {
                     $name = trim(($variant->product?->name ?? $item->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?? '—'));
                     throw ValidationException::withMessages([
@@ -322,7 +322,7 @@ class PreinvoiceReservationService
                     ]);
                 }
 
-                WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
+                app(PreinvoiceBundleStockService::class)->reserve($productId, $variantId, $delta);
 
                 PreinvoiceDraftReservation::query()->create([
                     'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
@@ -485,6 +485,6 @@ class PreinvoiceReservationService
             throw ValidationException::withMessages(['products' => 'تنوع رزرو شده با کالای پیش‌فاکتور همخوانی ندارد.']);
         }
 
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
+        app(PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity);
     }
 }

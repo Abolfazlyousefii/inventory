@@ -14,6 +14,13 @@ class Product extends Model
 
     protected $fillable = [
         'name',
+        'is_bundle',
+        'bundle_stock_mode',
+        'bundle_site_auto_publish',
+        'bundle_quantity_mode',
+        'bundle_discount_type',
+        'bundle_discount_value',
+        'bundle_shared_remaining',
         'sku',
         'category_id',
         'image_path',
@@ -53,6 +60,10 @@ class Product extends Model
     ];
 
     protected $casts = [
+        'is_bundle' => 'boolean',
+        'bundle_site_auto_publish' => 'boolean',
+        'bundle_shared_remaining' => 'integer',
+        'bundle_discount_value' => 'integer',
         'stock'      => 'integer',
         'reserved'   => 'integer',
         'price'      => 'integer',

@@ -194,6 +194,23 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::match(['put', 'patch'], '/products/{product}', [ProductController::class, 'update'])
         ->whereNumber('product')
         ->name('products.update');
+    // Physical package stock conversions reuse standard Inventory products and stock services.
+    Route::get('/products/bundle/components/search', [\App\Http\Controllers\ProductBundleController::class, 'search'])
+        ->name('products.bundle.search')->middleware('throttle:60,1');
+    Route::post('/products/{product}/bundle/recipe', [\App\Http\Controllers\ProductBundleController::class, 'recipe'])
+        ->whereNumber('product')->name('products.bundle.recipe');
+    Route::post('/products/{product}/bundle/mode', [\App\Http\Controllers\ProductBundleController::class, 'mode'])
+        ->whereNumber('product')->name('products.bundle.mode');
+    Route::post('/products/{product}/bundle/site-publication', [\App\Http\Controllers\ProductBundleController::class, 'sitePublication'])
+        ->whereNumber('product')->name('products.bundle.site-publication');
+    Route::post('/products/{product}/bundle/pricing', [\App\Http\Controllers\ProductBundleController::class, 'pricing'])
+        ->whereNumber('product')->name('products.bundle.pricing');
+    Route::post('/products/{product}/bundle/policy', [\App\Http\Controllers\ProductBundleController::class, 'policy'])
+        ->whereNumber('product')->name('products.bundle.policy');
+    Route::post('/products/{product}/bundle/assemble', [\App\Http\Controllers\ProductBundleController::class, 'assemble'])
+        ->whereNumber('product')->name('products.bundle.assemble');
+    Route::post('/products/{product}/bundle/disassemble', [\App\Http\Controllers\ProductBundleController::class, 'disassemble'])
+        ->whereNumber('product')->name('products.bundle.disassemble');
     Route::get('/products/{product}/warehouse-stock', [ProductController::class, 'warehouseStock'])->whereNumber('product')->name('products.warehouse-stock');
     Route::get('/products/{product}/image', [ProductController::class, 'image'])->whereNumber('product')->name('products.image');
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->whereNumber('product')->name('products.destroy');

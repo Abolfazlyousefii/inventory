@@ -191,12 +191,7 @@ class InventoryReservationReleaseService
                 'product_reserved' => (int) $product->reserved,
             ];
     
-            WarehouseStockService::change(
-                WarehouseStockService::centralWarehouseId(),
-                $productId,
-                $quantity,
-                $variantId,
-            );
+            app(PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity);
             ReservationSideEffects::touchProduct($productId);
     
             $variant->refresh();

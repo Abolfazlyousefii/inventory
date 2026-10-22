@@ -39,6 +39,7 @@ use App\Services\ProductDiscountAllocator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -2606,14 +2607,8 @@ class PreinvoiceController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $centralStock = WarehouseStock::query()
-                ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-                ->where('product_id', $productId)
-                ->where('product_variant_id', $variantId)
-                ->lockForUpdate()
-                ->first();
-
-            $available = max(0, (int) ($centralStock?->quantity ?? $variant->stock));
+            $bundleStock = app(\App\Services\PreinvoiceBundleStockService::class);
+            $available = $bundleStock->free($productId, $variantId);
             if ($available < $quantity) {
                 $productName = (string) ($variant->product?->name ?? 'نامشخص');
                 $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
@@ -2622,7 +2617,7 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$quantity, $variantId);
+            $bundleStock->reserve($productId, $variantId, $quantity);
             ReservationSideEffects::touchProduct($productId);
         });
     }
@@ -2634,7 +2629,7 @@ class PreinvoiceController extends Controller
                 return;
             }
 
-            WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);
+            app(\App\Services\PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity);
             ReservationSideEffects::touchProduct($productId);
         });
     }
@@ -2785,7 +2780,7 @@ class PreinvoiceController extends Controller
                 continue;
             }
 
-            $available = max(0, (int) $variant->stock);
+            $available = app(\App\Services\PreinvoiceBundleStockService::class)->free((int) $variant->product_id, (int) $variant->id);
             if ($available >= $shortfall) {
                 $this->changeReservedOnly((int) $variant->product_id, (int) $variant->id, $shortfall);
             }
@@ -3151,8 +3146,9 @@ class PreinvoiceController extends Controller
                     ]);
                 }
 
+                $supportsBundleSnapshots = Schema::hasColumn('invoice_items', 'bundle_components_snapshot');
                 foreach ($order->items as $it) {
-                    InvoiceItem::create([
+                    $invoiceItemData = [
                         'invoice_id' => $invoice->id,
                         'product_id' => (int) $it->product_id,
                         'variant_id' => (int) $it->variant_id,
@@ -3161,8 +3157,12 @@ class PreinvoiceController extends Controller
                         'line_total' => max(((int) $it->price * (int) $it->quantity) - (int) ($it->line_discount_amount ?? 0), 0),
                         'sort_order' => (int) ($it->sort_order ?: 0),
                         'line_discount_amount' => (int) ($it->line_discount_amount ?? 0),
-                    ]);
-
+                    ];
+                    if ($supportsBundleSnapshots && $it->product?->is_bundle) {
+                        // Keep the recipe used when this pre-invoice became an official invoice.
+                        $invoiceItemData['bundle_components_snapshot'] = \App\Support\BundleContentsDisplay::fromVariant((int) $it->variant_id);
+                    }
+                    InvoiceItem::create($invoiceItemData);
                 }
 
                 if (!empty($invoice->customer_id)) {

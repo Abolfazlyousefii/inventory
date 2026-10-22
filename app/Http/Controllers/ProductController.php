@@ -33,9 +33,13 @@ class ProductController extends Controller {
     public function data( Request $request, ProductSearchService $searchService ) {
         $products = $searchService->products($request);
 
+        $bundleParts = \App\Support\BundleContentsDisplay::forProducts(
+            $products->getCollection()->filter(fn ($product) => (bool) $product->is_bundle)->pluck('id')->all()
+        );
+
         return response()->json([
             'data' => $products->getCollection()
-                ->map(fn( $product ) => $searchService->productPayload($product))
+                ->map(fn( $product ) => $searchService->productPayload($product, $bundleParts[(int) $product->id] ?? []))
                 ->values(),
             'meta' => [
                 'returned'    => $products->count(),
@@ -355,7 +359,20 @@ class ProductController extends Controller {
     }
 
     public function store( Request $request ) {
+        $isBundle = $request->input('product_type', 'regular') === 'bundle';
         $data = $request->validate([
+            'product_type' => ['nullable', Rule::in(['regular', 'bundle'])],
+            'bundle_stock_mode' => ['nullable', Rule::in(['automatic', 'physical'])],
+            'bundle_quantity_mode' => ['nullable', Rule::in(['shared'])],
+            'bundle_discount_type' => [$isBundle ? 'required' : 'nullable', Rule::in(['percent', 'final'])],
+            'bundle_discount_value' => [$isBundle ? 'required' : 'nullable', 'integer', 'min:0', 'max:999999999999'],
+            'bundle_shared_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'components' => [$isBundle ? 'required' : 'nullable', 'array', 'max:100', ...($isBundle ? ['min:1'] : [])],
+            'components.*.variant_id' => ['required', 'integer', 'distinct', 'exists:product_variants,id'],
+            'components.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+            'components.*.discount_type' => ['nullable', Rule::in(['percent', 'fixed'])],
+            'components.*.discount_value' => ['nullable', 'integer', 'min:0', 'max:999999999999'],
+            'components.*.allocated_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'category_id' => [ 'required', 'exists:categories,id' ],
             'name'        => [ 'required', 'string', 'max:255' ],
             'image'       => [ 'nullable', 'image', 'max:4096' ],
@@ -376,8 +393,44 @@ class ProductController extends Controller {
             'is_sellable' => [ 'nullable', 'boolean' ],
         ]);
 
+        // The single bundle stock quantity allocates (packs × units per pack) for each variant.
+        // Component counts are explicitly chosen by the administrator.
+        $isShared = $isBundle && ($data['bundle_stock_mode'] ?? 'automatic') === 'automatic';
+        if ($isShared) {
+            if (!array_key_exists('bundle_shared_quantity', $data) || $data['bundle_shared_quantity'] === null) {
+                throw ValidationException::withMessages(['bundle_shared_quantity' => 'تعداد قابل عرضه بسته را وارد کنید (صفر نیز مجاز است).']);
+            }
+        }
+
+        // Never trust the browser's computed original/final prices. All discount math is server-side.
+        if ($isBundle) {
+            $pricing = app(\App\Services\BundleDiscountService::class)->quoteForComponents(
+                $data['components'], $data['bundle_discount_type'], (int) $data['bundle_discount_value']
+            );
+            $data['sell_price'] = $pricing['final'];
+        }
+
+        // Allocating warehouse stock is a stock-adjustment operation, even during product creation.
+        if ($isBundle && ($data['bundle_stock_mode'] ?? 'automatic') === 'automatic') {
+            if ($isShared && collect($data['components'])->contains(fn ($row) =>
+                (int) $row['quantity'] * (int) $data['bundle_shared_quantity'] > 1000000)) {
+                throw ValidationException::withMessages(['bundle_shared_quantity' => 'موجودی اختصاصی یک قطعه بیشتر از حد مجاز است؛ تعداد بسته یا تعداد آن قطعه را کاهش دهید.']);
+            }
+            $assigningStock = $isShared ? (int) ($data['bundle_shared_quantity'] ?? 0) > 0
+                : collect($data['components'])->contains(fn ($row) => (int) ($row['allocated_quantity'] ?? 0) > 0);
+            if ($assigningStock && !\App\Support\PermissionCatalog::userHasPermission($request->user(), 'inventory.adjust')) {
+                throw ValidationException::withMessages(['components' => 'برای اختصاص موجودی به بسته، دسترسی اصلاح موجودی انبار لازم است.']);
+            }
+        }
+
         $useModels  = $request->boolean('use_models');
         $useDesigns = $request->boolean('use_designs');
+
+        if ($isBundle && ($useModels || $useDesigns || !$request->boolean('is_sellable', true))) {
+            throw ValidationException::withMessages([
+                'product_type' => 'بسته باید قابل فروش و دارای یک تنوع اصلی، بدون مدل‌لیست و طرح‌بندی باشد.',
+            ]);
+        }
 
         if ( $useModels && empty($data['model_brand_group']) ) {
             abort(422, 'برای مدل‌لیست: ابتدا گروه برند را انتخاب کنید.');
@@ -397,7 +450,8 @@ class ProductController extends Controller {
 
         $imagePath = $this->storeProductImage($request);
 
-        DB::transaction(function () use ( $data, $useModels, $useDesigns, $designNotes, $isSellable, $imagePath ) {
+        $createdBundleId = null;
+        DB::transaction(function () use ( $data, $useModels, $useDesigns, $designNotes, $isSellable, $imagePath, $isBundle, &$createdBundleId, $request, $isShared ) {
             $category = Category::query()
                 ->lockForUpdate()
                 ->findOrFail($data['category_id']);
@@ -420,6 +474,13 @@ class ProductController extends Controller {
                 'stock'         => 0,
                 'price'         => 0,
                 'is_sellable'   => $isSellable,
+                'is_bundle'     => $isBundle,
+                'bundle_stock_mode' => $isBundle ? ($data['bundle_stock_mode'] ?? 'automatic') : 'physical',
+                'bundle_site_auto_publish' => $isBundle && ($data['bundle_stock_mode'] ?? 'automatic') === 'automatic' ? true : null,
+                'bundle_quantity_mode' => $isBundle ? 'shared' : 'custom',
+                'bundle_discount_type' => $isBundle ? $data['bundle_discount_type'] : null,
+                'bundle_discount_value' => $isBundle ? (int) $data['bundle_discount_value'] : null,
+                'bundle_shared_remaining' => null, // Legacy allowance no longer drives stock; ledger owns protected allocations.
                 'models'        => app(ProductVariantStructureService::class)->metadata($useModels, $data['model_list_ids'] ?? [], $useDesigns, $data['design_count'] ?? null, $designNotes->all()),
             ]);
 
@@ -443,7 +504,7 @@ class ProductController extends Controller {
             if ( !$useModels && !$useDesigns ) {
                 $variantCode = $this->buildVariantCode11($productCode6, '000', '00');
 
-                ProductVariant::create([
+                $newVariant = ProductVariant::create([
                     'product_id'    => $product->id,
                     'model_list_id' => null,
                     'variant_name'  => $product->name,
@@ -455,6 +516,26 @@ class ProductController extends Controller {
                     'stock'         => 0,
                     'reserved'      => 0,
                 ]);
+                if ($isBundle) {
+                    // A newly-created bundle must have one active, sale-enabled finished SKU.
+                    $newVariant->forceFill(['is_active' => true, 'sales_enabled' => true])->save();
+                    // One atomic transaction for product, selling variant and its approved recipe.
+                    app(\App\Services\ProductBundleService::class)->defineRecipe(
+                        (int) $newVariant->id, $data['components']
+                    );
+                    if (($data['bundle_stock_mode'] ?? 'automatic') === 'automatic') {
+                        $allocations = [];
+                        foreach ($data['components'] as $component) {
+                            $allocations[(int) $component['variant_id']] = $isShared
+                                ? (int) $data['bundle_shared_quantity'] * (int) $component['quantity']
+                                : (int) ($component['allocated_quantity'] ?? 0);
+                        }
+                        app(\App\Services\BundleComponentAllocationService::class)->setAllocations(
+                            (int) $newVariant->id, $allocations
+                        );
+                    }
+                    $createdBundleId = (int) $product->id;
+                }
             }
 
             if ( $useDesigns && !$useModels ) {
@@ -531,6 +612,17 @@ class ProductController extends Controller {
 
             $this->recalcProductSummary($product);
         });
+
+        if ($createdBundleId !== null) {
+            try {
+                app(\App\Services\Sync\SyncProductsToSite::class)->syncProduct($createdBundleId);
+                $message = 'بسته ایجاد شد و اطلاعات قیمت، موجودی و انتشار به سایت منتقل شد.';
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Bundle Site sync after create failed', ['product_id' => $createdBundleId, 'error' => $e->getMessage()]);
+                $message = 'بسته در انبار ایجاد شد؛ همگام‌سازی سایت انجام نشد. زمان‌بندی همگام‌سازی را بررسی کنید.';
+            }
+            return redirect()->route('products.edit', $createdBundleId)->with('success', $message);
+        }
 
         return redirect()
             ->route('products.index')
@@ -708,6 +800,12 @@ class ProductController extends Controller {
 
                 $sellPrice = array_key_exists('sell_price', $v) && $v['sell_price'] !== '' ? (int) $v['sell_price'] : (int) ( $variant?->sell_price ?? 0 );
 
+                // Bundle selling price is managed only by the dedicated discount form.
+                // The ordinary product-edit form must not overwrite the synced promotion.
+                if ($product->is_bundle && $product->bundle_discount_type !== null && $variant) {
+                    $sellPrice = (int) $variant->sell_price;
+                }
+
                 $buyPrice = array_key_exists('buy_price', $v) && $v['buy_price'] !== '' ? (int) $v['buy_price'] : $variant?->buy_price;
 
                 $variantCode = $variant?->variant_code ? : $this->buildVariantCode11((string) $product->code, $modelCode3, $design2, $ignoreId);
@@ -762,6 +860,17 @@ class ProductController extends Controller {
         if ( $oldImagePath && ( $newImagePath || $removeImage ) ) {
             Storage::disk('public')
                 ->delete($oldImagePath);
+        }
+
+        if ($product->is_bundle && $product->bundle_stock_mode === 'automatic') {
+            try {
+                app(\App\Services\Sync\SyncProductsToSite::class)->syncProduct((int) $product->id);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Bundle sync after product edit failed', [
+                    'product_id' => $product->id, 'error' => $e->getMessage(),
+                ]);
+                session()->flash('warning', 'ویرایش کالا ذخیره شد اما همگام‌سازی فوری سایت موفق نبود؛ زمان‌بندی را بررسی کنید.');
+            }
         }
 
         return redirect()

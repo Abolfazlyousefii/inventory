@@ -5,12 +5,22 @@ namespace App\Observers;
 use App\Models\Product;
 use App\Services\InventoryWebhookService;
 use App\Services\AriyajanebiSyncService;
+use App\Services\Sync\SiteStockChangeMarker;
 use App\Support\ReservationSideEffects;
 
 class ProductInventoryObserver
 {
+    public function created(Product $product): void
+    {
+        SiteStockChangeMarker::mark((int) $product->id);
+    }
     public function updated(Product $product): void
     {
+        if ($product->wasChanged(['name','sku','price','stock','reserved','is_bundle',
+            'is_sellable','bundle_stock_mode','bundle_discount_type',
+            'bundle_discount_value','bundle_site_auto_publish'])) {
+            SiteStockChangeMarker::mark((int) $product->id);
+        }
         if (!$product->wasChanged(['price', 'stock', 'reserved'])) {
             return;
         }

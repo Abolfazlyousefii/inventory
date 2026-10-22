@@ -540,7 +540,7 @@ class PreinvoiceDraftReservationService
                 break;
             }
 
-            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0);    (int) ($committedQty[$key] ?? 0);
+            $held = (int) (($existing[$key] ?? null)?->quantity ?? 0) + (int) ($committedQty[$key] ?? 0);
             $delta = $newQty - $held;
             if ($delta <= 0) {
                 continue;
@@ -563,13 +563,7 @@ class PreinvoiceDraftReservationService
 
     private function centralAvailableQuantity(int $productId, int $variantId): int
     {
-        $quantity = WarehouseStock::query()
-            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-            ->where('product_id', $productId)
-            ->where('product_variant_id', $variantId)
-            ->value('quantity');
-
-        return max(0, (int) ($quantity ?? 0));
+        return app(PreinvoiceBundleStockService::class)->free($productId, $variantId);
     }
 
     private function shortfallItemError(ProductVariant $variant, int $productId, int $variantId, int $available, int $delta, int $held): array
@@ -621,15 +615,8 @@ class PreinvoiceDraftReservationService
         }
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
-        // The central warehouse row is the canonical, lockable sellable-stock source.
-        $centralStock = WarehouseStock::query()
-            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-            ->where('product_id', $productId)
-            ->where('product_variant_id', $variantId)
-            ->lockForUpdate()
-            ->first();
-        $available = max(0, (int) ($centralStock?->quantity ?? 0));
-
+        $bundleStock = app(PreinvoiceBundleStockService::class);
+        $available = $bundleStock->free($productId, $variantId);
         if ($delta > $available) {
             $itemError = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
             throw ValidationException::withMessages([
@@ -638,7 +625,7 @@ class PreinvoiceDraftReservationService
             ]);
         }
 
-        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$delta, $variantId);
+        $bundleStock->reserve($productId, $variantId, $delta);
 
     }
 

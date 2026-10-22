@@ -2,143 +2,243 @@
 
 namespace App\Services\Sync;
 
+use App\Models\Invoice;
+use App\Models\Site\Order as SiteOrder;
 use App\Services\ExternalPaidOrderService;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
-class SitePaidOrdersSyncService {
-    public function __construct( private readonly ExternalPaidOrderService $orderService ) {
-        $baseUrl = rtrim((string) Config::get('services.site.base_url'), '/');
+/**
+ * Bounded, direct MySQL import of paid Site orders; no HTTP/SSL/API token.
+ * The existing ExternalPaidOrderService retains all invoice/hold idempotency logic.
+ */
+class SitePaidOrdersSyncService
+{
+    private const BATCH = 5;
+    // Always include the newest paid orders when reconciling on Inventory page views.
+    // Older rejected imports are still retried in a bounded cursor-driven batch.
+    private const RECENT_BATCH = 2;
 
-        if ( $baseUrl === '' ) {
-            throw new RuntimeException('آدرس services.site.base_url تنظیم نشده است.');
+    public function __construct(private readonly ExternalPaidOrderService $orderService) {}
+
+    public function syncAll(): array
+    {
+        // Rollback safety: installing the files does not silently switch the
+        // existing paid-order importer until the direct mode is explicitly on.
+        if (!config('services.request_driven_site_stock', false)) {
+            return app(LegacyApiSitePaidOrdersSyncService::class)->syncAll();
         }
-
-        $this->apiUrl = $baseUrl . $this->url;
-    }
-
-    protected string $url = '/api/v2/sync/orders';
-    protected string $apiUrl;
-
-    /** @return array{received: int, created: int, existing: int, skipped: int, invalid: int, errors: array<int, array<string, mixed>>} */
-    public function syncAll(): array {
         $summary = [
-            'received' => 0,
-            'created'  => 0,
-            'existing' => 0,
-            'skipped'  => 0,
-            'invalid'  => 0,
-            'errors'   => [],
+            'received' => 0, 'created' => 0, 'existing' => 0,
+            'skipped' => 0, 'invalid' => 0, 'errors' => [],
         ];
 
         try {
-            foreach ( $this->fetchOrders() as $order ) {
-                $summary['received'] ++;
+            $this->assertSharedMysql();
+            $inventoryDb = DB::connection()->getDatabaseName();
+            // Quoted schema identifier is drawn from Laravel config, never request input.
+            if (!preg_match('/^[A-Za-z0-9_]+$/D', $inventoryDb)) {
+                throw new RuntimeException('Unsafe Inventory schema name.');
+            }
 
-                if ( !is_array($order) || ( $order['status'] ?? null ) !== 'paid' ) {
-                    $summary['skipped'] ++;
-                    continue;
+            // Select ONLY paid orders without an Inventory invoice. No full-site HTTP export,
+            // and no growing in-memory list of previously processed order IDs.
+            $cursor = (int) (DB::table('site_paid_order_import_cursor')->where('id', 1)->value('last_order_id') ?? 0);
+            // New paid orders take priority, even if old paid orders have bad
+            // seller/customer mappings. All queries are bounded and omit invoices
+            // already created in Inventory (the importer is independently idempotent).
+            $findBatch = static function (int $afterId, int $limit, bool $newestFirst = false, array $exclude = []) use ($inventoryDb) {
+                $query = DB::connection('site')->table('orders as site_orders')
+                    ->leftJoin($inventoryDb.'.invoices as inventory_invoices',
+                        'inventory_invoices.external_order_id', '=', 'site_orders.id')
+                    ->where('site_orders.status', 'paid')
+                    ->where('site_orders.id', '>', $afterId)
+                    ->whereNull('inventory_invoices.id');
+                if ($exclude !== []) {
+                    $query->whereNotIn('site_orders.id', $exclude);
                 }
+                return $query->orderBy('site_orders.id', $newestFirst ? 'desc' : 'asc')
+                    ->limit($limit)
+                    ->pluck('site_orders.id');
+            };
 
+            $recentIds = $findBatch(0, self::RECENT_BATCH, true);
+            $olderLimit = self::BATCH - $recentIds->count();
+            $olderIds = $findBatch($cursor, $olderLimit, false, $recentIds->all());
+            if ($olderIds->isEmpty() && $cursor > 0) {
+                // Wrap around for older failed orders; do not skip them permanently.
+                DB::table('site_paid_order_import_cursor')->where('id', 1)
+                    ->update(['last_order_id' => 0]);
+                $olderIds = $findBatch(0, $olderLimit, false, $recentIds->all());
+            }
+            $ids = $recentIds->concat($olderIds)->unique()->take(self::BATCH);
+            if ($ids->isEmpty()) return $summary;
+
+
+            $orders = SiteOrder::query()
+                ->whereIn('id', $ids->all())->where('status', 'paid')
+                ->with(['user:id,first_name,last_name,username',
+                    'items.product:id,type,title,product_code',
+                    'items.get_price:id,variant_code'])
+                ->orderBy('id')->get();
+
+            // Site schema contains province/city titles. Load only the ones needed by this batch.
+            $provinces = DB::connection('site')->table('provinces')
+                ->whereIn('id', $orders->pluck('province_id')->filter()->unique()->all())
+                ->pluck('name', 'id');
+            $cities = DB::connection('site')->table('cities')
+                ->whereIn('id', $orders->pluck('city_id')->filter()->unique()->all())
+                ->pluck('name', 'id');
+
+            foreach ($orders as $order) {
+                $summary['received']++;
                 try {
-                    $result = $this->orderService->import($this->toImportPayload($order), false);
-
-                    $summary[$result['created'] ? 'created' : 'existing'] ++;
-                } catch ( Throwable $exception ) {
-                    $summary['invalid'] ++;
-                    $summary['errors'][] = [
-                        'order_id' => $order['id'] ?? null,
-                        'message'  => $exception->getMessage(),
-                    ];
+                    $payload = $this->toImportPayload($order, $provinces, $cities);
+                    $result = $this->orderService->import($payload, false);
+                    $summary[$result['created'] ? 'created' : 'existing']++;
+                } catch (Throwable $exception) {
+                    // Never advance past or mark a failed order: later invocations retry it.
+                    $summary['invalid']++;
+                    $summary['errors'][] = ['order_id' => $order->id, 'message' => $exception->getMessage()];
+                    Log::warning('Direct Site paid-order import failed.', [
+                        'order_id' => $order->id, 'exception' => $exception::class,
+                    ]);
                 }
             }
-        } catch ( Throwable $exception ) {
+            // Only the chronological/retry batch advances the historical cursor;
+            // processing a new order must not skip pending older orders.
+            if ($olderIds->isNotEmpty()) {
+                DB::table('site_paid_order_import_cursor')->where('id', 1)
+                    ->update(['last_order_id' => (int) $olderIds->max()]);
+            }
+        } catch (Throwable $exception) {
             report($exception);
-            $summary['errors'][] = [ 'message' => $exception->getMessage() ];
+            $summary['errors'][] = ['message' => $exception->getMessage()];
         }
 
         return $summary;
     }
 
-    /** @return array<int, mixed> */
-    private function fetchOrders(): array {
-        try {
-            $response = $this->httpClient()
-                ->get($this->apiUrl);
-        } catch ( ConnectionException $exception ) {
-            throw new RuntimeException('ارتباط با API سفارش‌های سایت برقرار نشد: ' . $exception->getMessage(), previous : $exception);
+    /**
+     * Import exactly one paid Site order. Administrative recovery method:
+     * does not move the cursor or import other historical orders.
+     * The canonical Invoice service provides transactional/idempotent creation.
+     *
+     * @return array{site_order_id:int,invoice_id:int,created:bool}
+     */
+    public function importOne(int $siteOrderId): array
+    {
+        if (! config('services.request_driven_site_stock', false)) {
+            throw new RuntimeException('Enable REQUEST_DRIVEN_SITE_STOCK before direct invoice import.');
+        }
+        if ($siteOrderId < 1) {
+            throw new RuntimeException('Invalid Site order ID.');
+        }
+        $this->assertSharedMysql();
+
+        $order = SiteOrder::query()
+            ->whereKey($siteOrderId)->where('status', 'paid')
+            ->with(['user:id,first_name,last_name,username',
+                'items.product:id,type,title,product_code',
+                'items.get_price:id,variant_code'])
+            ->first();
+        if (! $order) {
+            throw new RuntimeException('Site order does not exist or is not paid.');
         }
 
-        if ( !$response->successful() ) {
-            throw new RuntimeException($response->body());
-        }
+        $provinces = DB::connection('site')->table('provinces')
+            ->where('id', $order->province_id)->pluck('name', 'id');
+        $cities = DB::connection('site')->table('cities')
+            ->where('id', $order->city_id)->pluck('name', 'id');
 
-        $json   = $response->json();
-        $orders = data_get($json, 'result.data');
-
-        if ( !is_array($json) || ( $json['success'] ?? false ) !== true || !is_array($orders) ) {
-            throw new RuntimeException('ساختار پاسخ API سفارش‌های سایت معتبر نیست.');
-        }
-
-        return array_values($orders);
-    }
-
-    private function toImportPayload( array $order ): array {
-        $items = $order['items'] ?? null;
-
-        if ( (int) ( $order['id'] ?? 0 ) <= 0 || !is_array($items) || $items === [] ) {
-            throw new RuntimeException('شناسه سفارش یا اقلام آن معتبر نیست.');
-        }
+        $result = $this->orderService->import(
+            $this->toImportPayload($order, $provinces, $cities), false
+        );
 
         return [
-            'crm_order_id'     => (int) $order['id'],
-            'occurred_at'      => $order['created_at'] ?? null,
-            'user'             => [
-                'id'          => data_get($order, 'customer.id'),
-                'crm_user_id' => data_get($order, 'customer.id'),
-                'name'        => data_get($order, 'customer.name'),
-                'mobile'      => data_get($order, 'customer.mobile'),
-                'username'    => data_get($order, 'customer.username'),
-            ],
-            'shipping_address' => [
-                'name'        => data_get($order, 'customer.name'),
-                'mobile'      => data_get($order, 'customer.mobile'),
-                'province'    => [ 'name' => data_get($order, 'delivery.province') ],
-                'city'        => [ 'name' => data_get($order, 'delivery.city') ],
-                'postal_code' => data_get($order, 'delivery.postal_code'),
-                'address'     => data_get($order, 'delivery.address'),
-            ],
-            'order'            => [
-                'id'              => (int) $order['id'],
-                'shipping_price'  => max((int) ( $order['shipping_cost'] ?? 0 ), 0),
-                'discount_amount' => max((int) ( $order['discount_amount'] ?? 0 ), 0),
-                'total'           => max((int) ( $order['price'] ?? 0 ), 0),
-            ],
-            'items'            => array_map(fn( array $item ): array => [
-                'product_id'      => $item['product_id'] ?? null,
-                'price_id'        => $item['price_id'] ?? null,
-                'title'           => $item['title'] ?? null,
-                'variant_code'    => $item['variant_code'] ?? null,
-                'stock_code'      => $item['stock_code'] ?? null,
-                'quantity'        => max((int) ( $item['quantity'] ?? 0 ), 0),
-                'price'           => max((int) ( $item['real_unit_price'] ?? $item['unit_price'] ?? 0 ), 0),
-                'discount_amount' => max((int) ( $item['discount'] ?? 0 ), 0),
-            ], array_values($items)),
+            'site_order_id' => (int) $order->id,
+            'invoice_id' => (int) $result['invoice']->id,
+            'created' => (bool) $result['created'],
         ];
     }
 
-    private function httpClient(): PendingRequest {
-        $request = Http::withoutVerifying()
-            ->acceptJson()
-            ->connectTimeout(5)
-            ->timeout(20)
-            ->retry(3, 250, throw : false);
-        $token   = trim((string) Config::get('services.site.token', ''));
+    private function toImportPayload(SiteOrder $order, $provinces, $cities): array
+    {
+        $items = [];
+        foreach ($order->items as $item) {
+            $isPhysical = !$item->product || $item->product->isPhysical();
+            $realPrice = max(0, (int) $item->real_price);
+            $unitPrice = max(0, (int) $item->price);
+            $lineDiscount = max(0, $item->originalUnitPrice() - $item->finalUnitPrice())
+                * max(0, (int) $item->quantity);
+            $items[] = [
+                'product_id' => $item->product_id,
+                'price_id' => $item->price_id,
+                'inventory_variant_id' => $item->price_id,
+                'is_physical' => $isPhysical,
+                'title' => $item->product?->title ?: $item->title,
+                'variant_code' => $item->get_price?->variant_code,
+                'stock_code' => null,
+                'quantity' => max(0, (int) $item->quantity),
+                // Site order snapshots are in toman; Inventory records rials.
+                'price' => ($item->real_price !== null ? $realPrice : $unitPrice) * 10,
+                // Product/bundle discount is a monetary line amount, not a percent.
+                // The remaining order discount (e.g. coupon) is an invoice discount.
+                'discount_amount' => $lineDiscount * 10,
+            ];
+        }
+        if (!$items) throw new RuntimeException('Paid Site order has no items.');
+        $name = trim((string) ($order->name ?? ''));
+        if ($name === '') $name = trim((string) ($order->user?->first_name.' '.$order->user?->last_name));
 
-        return $token !== '' ? $request->withToken($token) : $request;
+        return [
+            'crm_order_id' => (int) $order->id,
+            'occurred_at' => $order->created_at,
+            'user' => [
+                'id' => $order->user_id,
+                // This is the Ariya Site customer ID, NOT a CRM customer ID.
+                'site_user_id' => $order->user_id,
+                'name' => $name,
+                'mobile' => $order->mobile,
+                'username' => $order->user?->username,
+            ],
+            'shipping_address' => [
+                'name' => $name,
+                'mobile' => $order->mobile,
+                'province' => ['name' => $provinces->get($order->province_id)],
+                'city' => ['name' => $cities->get($order->city_id)],
+                'postal_code' => $order->postal_code,
+                'address' => $order->address,
+            ],
+            'order' => [
+                'id' => (int) $order->id,
+                'stock_hold_id' => max(0, (int) $order->inventory_stock_hold_id),
+                'shipping_price' => max(0, (int) $order->shipping_cost) * 10,
+                'discount_amount' => max(0, (int) $order->discount_amount) * 10,
+                'total' => max(0, (int) $order->price) * 10,
+            ],
+            'items' => $items,
+        ];
+    }
+
+    private function assertSharedMysql(): void
+    {
+        $inv = DB::connection();
+        $site = DB::connection('site');
+        if ($inv->getDriverName() !== 'mysql' || $site->getDriverName() !== 'mysql') {
+            throw new RuntimeException('Direct paid-order import requires MySQL on both connections.');
+        }
+        if ($site->getDatabaseName() === $inv->getDatabaseName()) {
+            throw new RuntimeException('Site and Inventory must use distinct MySQL schemas.');
+        }
+        // MySQL cross-database joins are only safe when the two connections resolve
+        // to the SAME instance. Fail closed when host, port or Unix socket differs.
+        foreach (['host', 'port', 'unix_socket'] as $key) {
+            if ((string) config('database.connections.mysql.'.$key) !== (string) config('database.connections.site.'.$key)) {
+                throw new RuntimeException('Site and Inventory databases must be on the same MySQL server.');
+            }
+        }
     }
 }

@@ -7,6 +7,8 @@ use App\Models\ProductVariant;
 use App\Models\Site\Price as SitePrice;
 use App\Models\Site\Product as SiteProduct;
 use App\Models\WarehouseStock;
+use App\Services\AutomaticBundleAvailabilityService;
+use App\Services\BundleDiscountService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -17,6 +19,8 @@ use Throwable;
 
 class SyncProductsToSite {
     private const CHUNK_SIZE = 200;
+
+    private ?bool $siteHasBundleColumns = null;
 
     private const EMPTY_VARIANT_NAMES = [
         '—',
@@ -76,11 +80,28 @@ class SyncProductsToSite {
         }
     }
 
+    /** Reconcile one Inventory product and all its variants immediately after an admin action. */
+    public function syncProduct(int $productId): array
+    {
+        $stats = [
+            'products_checked' => 0, 'products_created' => 0, 'products_updated' => 0, 'products_skipped' => 0,
+            'variants_checked' => 0, 'variants_created' => 0, 'variants_updated' => 0,
+            'variants_deleted' => 0, 'variants_skipped' => 0, 'variants_ignored' => 0, 'attributes_synced' => 0,
+        ];
+        if (!Product::query()->whereKey($productId)->exists()) {
+            throw new \InvalidArgumentException('Inventory product not found.');
+        }
+        $this->syncProducts($stats, $productId);
+        $this->syncVariants($stats, $productId);
+        return $stats;
+    }
+
     /**
      * Reconciles all products against the Site connection in chunks.
      */
-    private function syncProducts( array &$stats ): void {
+    private function syncProducts( array &$stats, ?int $onlyProductId = null ): void {
         Product::query()
+            ->when($onlyProductId !== null, fn ($q) => $q->whereKey($onlyProductId))
             ->orderBy('id')
             ->chunkById(self::CHUNK_SIZE, function ( EloquentCollection $products ) use ( &$stats ): void {
                 if ( $products->isEmpty() ) {
@@ -122,8 +143,9 @@ class SyncProductsToSite {
      * so a stock mismatch is also fixed even when product_variants.updated_at did
      * not change.
      */
-    private function syncVariants( array &$stats ): void {
+    private function syncVariants( array &$stats, ?int $onlyProductId = null ): void {
         ProductVariant::query()
+            ->when($onlyProductId !== null, fn ($q) => $q->where('product_id', $onlyProductId))
             ->orderBy('id')
             ->chunkById(self::CHUNK_SIZE, function ( EloquentCollection $variants ) use ( &$stats ): void {
                 if ( $variants->isEmpty() ) {
@@ -184,7 +206,35 @@ class SyncProductsToSite {
 
                     $sourceTimestamp = $this->maxTimestamp($variant->updated_at, $stockRow?->stock_updated_at);
 
-                    $priceData = $this->makePriceData($variant, (int) ( $stockRow?->total_stock ?? 0 ), $sourceTimestamp);
+                    $sourceProduct = $sourceProducts->get((int) $variant->product_id);
+                    $siteStock = $sourceProduct?->is_bundle && $sourceProduct->bundle_stock_mode === 'automatic'
+                        ? app(AutomaticBundleAvailabilityService::class)->available($variantId)
+                        : (int) ($stockRow?->total_stock ?? 0);
+                    // Automatic kit discounts are sourced exclusively from Inventory and
+                    // recomputed if an underlying component's normal price changes.
+                    $bundleQuote = null;
+                    if ($sourceProduct?->is_bundle && $sourceProduct->bundle_stock_mode === 'automatic'
+                        && $sourceProduct->bundle_discount_value !== null && $sourceProduct->bundle_discount_type !== null) {
+                        $bundleQuote = app(BundleDiscountService::class)->quoteForBundle(
+                            $variantId, (string) $sourceProduct->bundle_discount_type, (int) $sourceProduct->bundle_discount_value
+                        );
+                        if ((int) $variant->sell_price !== $bundleQuote['final']) {
+                            $variant->forceFill(['sell_price' => $bundleQuote['final']])->save();
+                        }
+                        if ((int) $sourceProduct->price !== $bundleQuote['final']) {
+                            $sourceProduct->forceFill(['price' => $bundleQuote['final']])->save();
+                        }
+                    }
+                    $priceData = $this->makePriceData($variant, $siteStock, $sourceTimestamp);
+                    if ($priceData !== null && $bundleQuote !== null) {
+                        $priceData['price'] = $bundleQuote['final'];
+                        $priceData['regular_price'] = $bundleQuote['regular'];
+                        $priceData['discount_price'] = $bundleQuote['final'];
+                        $priceData['discount'] = $bundleQuote['savings'] > 0 ? max(1, $bundleQuote['discount_percent']) : 0;
+                        // Bundle pricing is inventory-defined and does not inherit an expired
+                        // ordinary product-sale timer from the variant.
+                        $priceData['discount_expire_at'] = null;
+                    }
 
                     if ( $priceData === null ) {
                         $variantNames[$variantId] = null;
@@ -244,7 +294,7 @@ class SyncProductsToSite {
      * @return array<string, mixed>
      */
     private function makeProductData( Product $source ): array {
-        return [
+        $data = [
             'id'              => $source->id,
             'title'           => trim((string) $source->name),
             'product_code'    => $source->code,
@@ -259,6 +309,54 @@ class SyncProductsToSite {
             'lang'            => 'fa',
             'updated_at'      => $this->dateTimeString($source->updated_at) ?? now()->toDateTimeString(),
         ];
+        if ($source->is_bundle && ($source->bundle_stock_mode ?? 'physical') === 'automatic'
+            && (!$this->siteSupportsBundleFields() || !DB::connection('site')->getSchemaBuilder()->hasColumn('products', 'bundle_stock_mode'))) {
+            throw new \RuntimeException('Site products.bundle_stock_mode column is required before synchronizing automatic bundles.');
+        }
+        // Only opted-in automatic bundles are published from Inventory.
+        // Legacy products and physical bundles retain their Site-admin publication status.
+        if ($source->is_bundle && $source->bundle_stock_mode === 'automatic'
+            && $source->bundle_site_auto_publish !== null) {
+            $data['published'] = (bool) $source->bundle_site_auto_publish;
+            if ($source->bundle_site_auto_publish) $data['publish_date'] = null;
+        }
+        if ($this->siteSupportsBundleFields()) {
+            $data['is_bundle'] = (bool) $source->is_bundle;
+            if (DB::connection('site')->getSchemaBuilder()->hasColumn('products', 'bundle_stock_mode')) {
+                $data['bundle_stock_mode'] = $source->is_bundle ? ($source->bundle_stock_mode ?? 'physical') : 'physical';
+            }
+            $data['bundle_contents'] = $source->is_bundle
+                ? json_encode($this->bundleContentsFor($source), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : null;
+        }
+        return $data;
+    }
+
+    private function siteSupportsBundleFields(): bool {
+        if ($this->siteHasBundleColumns === null) {
+            $schema = DB::connection('site')->getSchemaBuilder();
+            $this->siteHasBundleColumns = $schema->hasColumn('products', 'is_bundle')
+                && $schema->hasColumn('products', 'bundle_contents');
+        }
+        return $this->siteHasBundleColumns;
+    }
+
+    /** Snapshot customer-visible component names/variants; no stock deduction on Site. */
+    private function bundleContentsFor(Product $source): array {
+        $bundleVariantId = ProductVariant::query()->where('product_id', $source->id)->value('id');
+        if (!$bundleVariantId) return [];
+        return DB::table('product_bundle_components as recipe')
+            ->join('product_variants as variant', 'variant.id', '=', 'recipe.component_variant_id')
+            ->join('products as component', 'component.id', '=', 'variant.product_id')
+            ->where('recipe.bundle_variant_id', $bundleVariantId)
+            ->orderBy('recipe.id')
+            ->get(['component.name', 'variant.variant_name', 'variant.variant_code', 'recipe.quantity'])
+            ->map(fn ($row) => [
+                'name' => (string) $row->name,
+                'variant' => (string) ($row->variant_name ?? ''),
+                'code' => (string) ($row->variant_code ?? ''),
+                'quantity' => (int) $row->quantity,
+            ])->values()->all();
     }
 
     private function saveProduct( Product $source, ?SiteProduct $siteProduct, ?array $data = null ): SiteProduct {
@@ -352,7 +450,6 @@ class SyncProductsToSite {
             'title',
             'product_code',
             'image',
-            'published',
             'type',
             'price_type',
             'unit',
@@ -362,6 +459,15 @@ class SyncProductsToSite {
             'slug',
             'lang',
         ];
+        if (array_key_exists('published', $desired)) {
+            $fields[] = 'published';
+            if (array_key_exists('publish_date', $desired)) $fields[] = 'publish_date';
+        }
+        if (array_key_exists('is_bundle', $desired)) {
+            $fields[] = 'is_bundle';
+            if (array_key_exists('bundle_stock_mode', $desired)) $fields[] = 'bundle_stock_mode';
+            $fields[] = 'bundle_contents';
+        }
 
         foreach ( $fields as $field ) {
             if ( !$this->valuesMatch($field, $siteProduct->getAttribute($field), $desired[$field] ?? null) ) {
@@ -412,11 +518,11 @@ class SyncProductsToSite {
             return (int) $actual === (int) $expected;
         }
 
-        if ( $field === 'published' ) {
+        if ( in_array($field, ['published', 'is_bundle'], true) ) {
             return (bool) $actual === (bool) $expected;
         }
 
-        if ( $field === 'discount_expire_at' ) {
+        if ( in_array($field, ['discount_expire_at', 'publish_date'], true) ) {
             return $this->dateTimeString($actual) === $this->dateTimeString($expected);
         }
 

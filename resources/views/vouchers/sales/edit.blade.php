@@ -150,6 +150,7 @@
 								<td>{{ $loop->iteration }}</td>
 								<td>
 									{{ $it->product?->name ?? '#'.$it->product_id }}
+									@include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot, 'variantId' => $it->variant_id, 'productId' => $it->product_id, 'bundleQuantity' => $it->quantity])
 									@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif
 									@if($isChangedRevision)<span class="revision-meta"><span class="revision-changed-badge">ویرایش‌شده</span> · اصلاح #{{ $latestRevision->revision_number }} · {{ $revisionReason }} · {{ $latestRevision->changed_by_name ?: ('کاربر #'.$latestRevision->changed_by) }} · {{ $revisionAt }}</span>@endif
 								</td>

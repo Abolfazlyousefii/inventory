@@ -4,60 +4,55 @@ namespace App\Services;
 
 use App\Models\ActivityLog;
 use App\Models\ProductVariant;
-use Closure;
 use Illuminate\Database\Eloquent\Builder;
-use RuntimeException;
 
 /**
- * Fresh, single-variant ActivityLog evidence.
+ * Fresh activity evidence for a single variant, without scanning the log table.
  *
- * MySQL cannot index `JSON_CONTAINS(properties->variant_id, ?)`, so a fresh
- * per-variant check used to force a full JSON scan inside one statement and
- * tripped `MySQL server has gone away` on production-sized activity tables.
- * This service reads the same evidence in bounded primary-key chunks instead
- * and parses `properties.variant_id` in PHP. It never writes.
+ * Requires migration 2026_10_21_180000_add_indexed_variant_reference_to_activity_logs.
+ * properties_variant_id is a VIRTUAL generated column maintained by the DB:
+ * it contains properties.variant_id only when the JSON value is an integer.
+ * This preserves the previous strict PHP is_int() behavior, without stale caches.
  */
 class FreshVariantActivityEvidenceService
 {
-    /**
-     * Provenance-neutral actions. The global observer emits a generic `created`
-     * row for automatic variants too, so neither action proves manual use.
-     */
+    /** A generic creation log is not evidence that a person used a variant. */
     public const NEUTRAL_ACTIONS = ['created', 'electric_default_color_created'];
 
-    public const CHUNK_SIZE = 500;
-
     /**
-     * Total non-neutral activity rows referencing the variant, counting a row
-     * matched through both the direct subject and `properties.variant_id` once.
+     * Count non-neutral activity records referring to a variant, counting a
+     * record once if it refers through both subject and JSON properties.
      */
     public function count(int $variantId): int
     {
-        $count = (int) $this->directSubjectQuery($variantId)->count();
-        $this->scanProperties($variantId, false, function () use (&$count): void {
-            $count++;
-        });
+        $direct = (int) $this->directSubjectQuery($variantId)->count();
 
-        return $count;
+        $indirect = (int) $this->propertyReferenceQuery($variantId)
+            ->where(function (Builder $query) use ($variantId): void {
+                // Exclude records already counted in the direct-subject query.
+                // Include NULL subject_type / subject_id, like the old PHP scan.
+                $query->where('subject_type', '<>', ProductVariant::class)
+                    ->orWhereNull('subject_type')
+                    ->orWhere('subject_id', '<>', $variantId)
+                    ->orWhereNull('subject_id');
+            })
+            ->count();
+
+        return $direct + $indirect;
     }
 
-    /** Whether any non-neutral activity row references the variant. */
+    /** Whether any non-neutral activity record refers to a variant. */
     public function exists(int $variantId): bool
     {
         if ($this->directSubjectQuery($variantId)->exists()) {
             return true;
         }
 
-        $found = false;
-        $this->scanProperties($variantId, true, function () use (&$found): void {
-            $found = true;
-        });
-
-        return $found;
+        return $this->propertyReferenceQuery($variantId)->exists();
     }
 
     /** @return Builder<ActivityLog> */
-    private function directSubjectQuery(int $variantId)
+    private function directSubjectQuery(int $variantId): Builder
     {
         return ActivityLog::query()
             ->whereNotIn('action', self::NEUTRAL_ACTIONS)
@@ -65,44 +60,11 @@ class FreshVariantActivityEvidenceService
             ->where('subject_id', $variantId);
     }
 
-    /**
-     * Bounded read-only scan for `properties.variant_id` evidence. Rows already
-     * counted by the direct-subject query are skipped so counts stay deduplicated.
-     */
-    private function scanProperties(int $variantId, bool $stopOnFirstMatch, Closure $onMatch): void
+    /** @return Builder<ActivityLog> */
+    private function propertyReferenceQuery(int $variantId): Builder
     {
-        $stoppedEarly = false;
-        $complete = ActivityLog::query()
-            ->select(['id', 'subject_type', 'subject_id', 'properties'])
+        return ActivityLog::query()
             ->whereNotIn('action', self::NEUTRAL_ACTIONS)
-            ->orderBy('id')
-            ->chunkById(self::CHUNK_SIZE, function ($logs) use ($variantId, $stopOnFirstMatch, $onMatch, &$stoppedEarly): ?bool {
-                foreach ($logs as $log) {
-                    if ($log->subject_type === ProductVariant::class && (int) $log->subject_id === $variantId) {
-                        continue;
-                    }
-
-                    $properties = $log->properties;
-                    if (! is_array($properties)
-                        || ! isset($properties['variant_id'])
-                        || ! is_int($properties['variant_id'])
-                        || $properties['variant_id'] !== $variantId) {
-                        continue;
-                    }
-
-                    $onMatch();
-                    if ($stopOnFirstMatch) {
-                        $stoppedEarly = true;
-
-                        return false;
-                    }
-                }
-
-                return null;
-            });
-
-        if (! $complete && ! $stoppedEarly) {
-            throw new RuntimeException('ActivityLog fresh evidence scan did not complete.');
-        }
+            ->where('properties_variant_id', $variantId);
     }
 }

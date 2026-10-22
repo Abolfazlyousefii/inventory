@@ -42,16 +42,16 @@ Schedule::call(function (): void {
         Log::error('PREINVOICE_OFFICIAL_RESERVATION_EXPIRY_SCHEDULE_FAILED');
     });
 
-    Schedule::call(function (): void {
-               app(PreinvoiceDraftExpiryService::class)->deleteExpiredDrafts();
-           })
-           ->name('preinvoice-draft-expiry')
-                  ->everyMinute()
-                         ->withoutOverlapping(5)
-                                ->onFailure(function (): void {
-               Log::error('PREINVOICE_DRAFT_EXPIRY_SCHEDULE_FAILED');
-           });
-   
+Schedule::call(function (): void {
+    app(PreinvoiceDraftExpiryService::class)->deleteExpiredDrafts();
+})
+    ->name('preinvoice-draft-expiry')
+    ->everyMinute()
+    ->withoutOverlapping(5)
+    ->onFailure(function (): void {
+        Log::error('PREINVOICE_DRAFT_EXPIRY_SCHEDULE_FAILED');
+    });
+
 
 Schedule::call(function () {
     app(SyncProductsToSite::class)->syncAll();
@@ -67,12 +67,11 @@ Schedule::call(function () {
     ->everyTenSeconds()
     ->withoutOverlapping();
 
-Schedule::call(function () {
-    app(SitePaidOrdersSyncService::class)->syncAll();
-})
-    ->name('site-paid-orders-sync')
-    ->everyTenSeconds()
-    ->withoutOverlapping();
+if (!config('services.request_driven_site_stock', false)) {
+    Schedule::call(function () {
+        app(SitePaidOrdersSyncService::class)->syncAll();
+    })->name('site-paid-orders-sync')->everyTenSeconds()->withoutOverlapping();
+}
 
 Schedule::command('crm:sync-users --incremental')
     ->everyThirtyMinutes()
@@ -104,3 +103,10 @@ Schedule::call(function () {
     ->name('telegram_daily_report')
     ->dailyAt('21:00')
     ->withoutOverlapping(10);
+
+// Reconcile the Site order state before expiring central warehouse holds.
+if (!config('services.request_driven_site_stock', false)) {
+    Schedule::call(function (): void {
+        app(\App\Services\SiteOrderStockHoldService::class)->expireUnpaid();
+    })->name('site-stock-hold-expiry')->everyFiveMinutes()->withoutOverlapping(10);
+}

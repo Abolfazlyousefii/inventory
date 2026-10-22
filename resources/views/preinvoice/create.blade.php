@@ -1545,6 +1545,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					<div>
 						<h5 class="modal-title fw-bold" id="pickerModalTitle">انتخاب تنوع</h5>
 						<div class="hint mt-1" id="pickerModalSubTitle">—</div>
+                        <div id="pickerBundleContents"></div>
 					</div>
 					<button type="button" class="btn-close m-0" data-bs-dismiss="modal"></button>
 				</div>
@@ -2533,7 +2534,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				if (!groupedSelections[productId]) {
 					const discount = (draft.discount_breakdown?.groups || []).find(group => Number(group.product_id) === productId);
 					groupedSelections[productId] = {
-						product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '' },
+						product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '', bundle_contents: Array.isArray(product?.bundle_contents) ? product.bundle_contents : [] },
 						discount_type: discount?.discount_type || 'amount',
 						discount_value: Number(discount?.discount_value || 0),
 						items: []
@@ -3023,6 +3024,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			activeProductId = Number(targetId);
 			activeProduct = groupedSelections[activeProductId]?.product || selectedMotherProduct || null;
 			document.getElementById('pickerLoading').classList.remove('d-none');
+            document.getElementById('pickerBundleContents').innerHTML = '';
 			document.getElementById('pickerTableWrap').classList.add('d-none');
 			document.getElementById('groupPickerRows').innerHTML = '';
 			document.getElementById('pickerSearchInput').value = '';
@@ -3047,6 +3049,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				document.getElementById('modalGroupDiscountValue').value = discountValueForInput(modalGroupDiscountType, modalGroupDiscountValue);
 				document.getElementById('pickerModalTitle').textContent = productTitle(product);
 				document.getElementById('pickerModalSubTitle').textContent = 'کد: ' + (productCode(product) || '—') + ' | ' + formatNum(activeModalItems.length) + ' تنوع';
+                document.getElementById('pickerBundleContents').innerHTML = bundlePillsHtml(product.bundle_contents);
 				saveRecentProduct(product);
 				renderPickerRows();
 				updateModalSummary();
@@ -3076,6 +3079,18 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			return Math.max(variantStock(v), currentQty);
 		}
 
+        // Same compact recipe chips in picker, collapsed pre-invoice groups and product list.
+        function bundlePillsHtml(parts, bundleCount = 1) {
+            if (!Array.isArray(parts) || !parts.length) return '';
+            const chips = parts.filter(p => Number(p.quantity_per_bundle ?? p.quantity ?? 0) > 0).map(p => {
+                const name = p.product_name || p.name || 'کالا';
+                const variant = p.variant_name || p.variant || '';
+                const n = Number(p.quantity_per_bundle ?? p.quantity);
+                return `<span class="bundle-component-chip" style="display:inline-flex;align-items:center;gap:5px;max-width:100%;overflow-wrap:anywhere;border:1px solid #bfdbfe;background:#eff6ff;color:#1e40af;padding:4px 9px;border-radius:999px;font-size:11px">${esc(name)}${variant && variant !== name ? ' (' + esc(variant) + ')' : ''}<b>× ${formatNum(n)}</b>${bundleCount > 1 ? `<small style="color:#64748b">(جمع ${formatNum(n * bundleCount)})</small>` : ''}</span>`;
+            }).join('');
+            return chips ? `<div class="bundle-components" dir="rtl" aria-label="محتویات بسته" style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px"><span class="hint">شامل:</span>${chips}</div>` : '';
+        }
+
 		function renderPickerRows() {
 			const wrap = document.getElementById('groupPickerRows');
 			const rows = filteredModalItems();
@@ -3104,6 +3119,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         <div class="variant-row ${selectedClass} ${noStockClass}" data-row-variant="${id}">
             <div class="variant-row__info">
                 <div class="variant-row__title" title="${esc(title)}">${esc(title)}</div>
+                ${bundlePillsHtml(activeProduct?.bundle_contents)}
                 <div class="variant-row__meta">
                     <span class="variant-pill variant-pill--stock">آزاد: ${freeStock > 0 ? formatNum(freeStock) : 'ناموجود'}</span>
                     ${reservedByOthers > 0 ? `<span class="variant-pill">رزرو: ${formatNum(reservedByOthers)}</span>` : ''}
@@ -3227,7 +3243,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				product: {
 					id: activeProductId,
 					title: productTitle(activeProduct),
-					code: productCode(activeProduct)
+					code: productCode(activeProduct),
+					bundle_contents: Array.isArray(activeProduct?.bundle_contents) ? activeProduct.bundle_contents : []
 				},
 				items,
 				discount_type: discountType,
@@ -3320,6 +3337,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				const subtotal = groupRawSubtotal(group);
 				const discount = groupDiscountTotal(group);
 				const finalAmount = groupFinalAmount(group);
+                const bundleMarkup = bundlePillsHtml(group.product.bundle_contents, qty);
+
 				const details = group.items.map(it => `
             <div class="detail-pill" data-variant-pill="${Number(it.variant_id)}">
                 <div class="fw-bold">${esc(it.label || 'تنوع پیش‌فرض')}</div>
@@ -3333,6 +3352,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 <div class="group-amount">${formatMoney(finalAmount)}</div>
                 <div class="group-arrow">▼</div>
             </button>
+            <div style="padding:0 12px 8px">${bundleMarkup}</div>
             <div class="group-details">
                 <div class="d-flex flex-wrap gap-2 mb-2">
                     <span class="badge-soft">کد: ${esc(group.product.code || '—')}</span>
@@ -3428,7 +3448,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					product: {
 						id: Number(productId),
 						title: productTitle(product) || rows[0]?.product_name || ('محصول #' + productId),
-						code: productCode(product) || rows[0]?.product_code || ''
+						code: productCode(product) || rows[0]?.product_code || '',
+						bundle_contents: Array.isArray(product?.bundle_contents) ? product.bundle_contents : []
 					},
 					discount_type: (OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_type || 'amount',
 					discount_value: Number((OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_value || 0),

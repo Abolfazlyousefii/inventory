@@ -143,6 +143,8 @@
 						<tr class="{{ $addedRevision ? 'revision-added-row' : ($isChangedRevision ? 'revision-changed-row' : '') }}">
 							<td>
 								{{ $item->product?->name ?? ('#'.$item->product_id) }}
+                                @include('partials.bundle-contents', ['productIsBundle' => $item->product?->is_bundle, 'snapshot' => $item->bundle_components_snapshot, 'variantId' => $item->variant_id, 'productId' => $item->product_id, 'bundleQuantity' => $item->quantity])
+
 								@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif
 								@if($isChangedRevision)<span class="revision-meta"><span class="revision-changed-badge">ویرایش‌شده</span> · اصلاح #{{ $latestRevision->revision_number }} · {{ $revisionReason }} · {{ $latestRevision->changed_by_name ?: ('کاربر #'.$latestRevision->changed_by) }} · {{ $revisionAt }}</span>@endif
 							</td>

@@ -44,6 +44,14 @@ class ProductVariant extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function bundleComponents()
+    {
+        return $this->belongsToMany(
+            ProductVariant::class, 'product_bundle_components',
+            'bundle_variant_id', 'component_variant_id'
+        )->withPivot('quantity', 'discount_type', 'discount_value')->withTimestamps();
+    }
+
     public function modelList()
     {
         return $this->belongsTo(ModelList::class);

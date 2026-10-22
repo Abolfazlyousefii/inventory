@@ -14,7 +14,7 @@
 			<div>
 				<h4 class="mb-1">کارتکس فروش کالا</h4>
 				<div class="text-muted">
-					کالا: <strong>{{ $product->name }}</strong>
+					کالا: <strong>{{ $product->name }}</strong>@include('partials.bundle-contents', ['productIsBundle' => $product->is_bundle, 'productId' => $product->id])
 					@if($selectedVariant)
 						<span class="mx-1">|</span> تنوع: <strong>{{ $selectedVariant->variant_name }}</strong>
 					@endif
@@ -131,7 +131,7 @@
 							<td>{{ $item->invoice ? \App\Support\JalaliDate::dateTime($item->invoice->display_document_date) : '—' }}</td>
 							<td>{{ $item->invoice?->uuid ?? '—' }}</td>
 							<td>{{ $item->invoice?->customer_name ?? '—' }}</td>
-							<td>{{ $item->product?->name ?? $product->name }}</td>
+							<td>{{ $item->product?->name ?? $product->name }} @include('partials.bundle-contents', ['productIsBundle' => $item->product?->is_bundle, 'snapshot' => $item->bundle_components_snapshot ?? null, 'variantId' => $item->variant_id, 'bundleQuantity' => $item->quantity])</td>
 							<td>{{ $item->variant?->variant_name ?? '—' }}</td>
 							<td class="text-end">{{ number_format((int) $item->quantity) }}</td>
 							<td class="text-end">{{ number_format((int) $item->price) }}</td>

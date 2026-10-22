@@ -45,7 +45,7 @@
  <section class="pd-panel pd-items"><div class="pd-section-heading"><h2>اقلام پیش‌فاکتور</h2><span>مبالغ به ریال</span></div>
  <table><thead><tr><th>کالا / مدل</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف ردیف</th><th>جمع خالص</th></tr></thead><tbody>
  @forelse($order->items as $item)
- <tr><td class="pd-product"><strong>{{ $item->product?->name ?: 'محصول نامشخص' }}</strong><small>{{ $item->variant?->variant_name ?: 'بدون تنوع' }}</small>@if($item->variant?->color?->name)<small>{{ $item->variant->color->name }}</small>@endif</td>
+ <tr><td class="pd-product"><strong>{{ $item->product?->name ?: 'محصول نامشخص' }}</strong><small>{{ $item->variant?->variant_name ?: 'بدون تنوع' }}</small>@if($item->variant?->color?->name)<small>{{ $item->variant->color->name }}</small>@endif@include('partials.bundle-contents', ['productIsBundle' => $item->product?->is_bundle, 'variantId' => $item->variant_id, 'bundleQuantity' => $item->quantity])</td>
  <td data-label="تعداد">{{ number_format($item->quantity) }}</td><td data-label="قیمت واحد">{{ number_format($item->price) }}</td><td data-label="تخفیف ردیف">{{ number_format(\App\Support\SalesDocumentTotals::lineDiscount($item)) }}</td><td data-label="جمع خالص" class="pd-line-total">{{ number_format(\App\Support\SalesDocumentTotals::lineTotal($item)) }}</td></tr>
  @empty<tr><td colspan="5" class="pd-empty">کالایی ثبت نشده است.</td></tr>@endforelse
  </tbody></table></section>

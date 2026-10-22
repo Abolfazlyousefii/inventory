@@ -575,6 +575,7 @@
                     <span class="product-name">
                       {{ $it->product?->name ?? 'محصول نامشخص' }}
                     </span>
+                    @include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot ?? null, 'variantId' => $it->variant_id, 'bundleQuantity' => $it->quantity])
                   </td>
 
                   <td>

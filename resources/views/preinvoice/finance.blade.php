@@ -156,7 +156,15 @@
                 <tbody>
                   @foreach($order->items as $it)
                     <tr>
-                      <td>{{ $it->product?->name ?? ('#'.$it->product_id) }}</td>
+                      <td>
+                        {{ $it->product?->name ?? ('#'.$it->product_id) }}
+                        @include('partials.bundle-contents', [
+                          'productIsBundle' => $it->product?->is_bundle,
+                          'variantId' => $it->variant_id,
+                          'productId' => $it->product_id,
+                          'bundleQuantity' => $it->quantity,
+                        ])
+                      </td>
                       <td>{{ $it->variant?->variant_name ?? '—' }}</td>
                       <td>
                         {{ number_format((int) $it->quantity) }}

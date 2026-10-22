@@ -112,6 +112,7 @@ class SalesPrintDocumentService
 
             return [
                 'description' => $this->formatInvoiceItemDescription($item),
+                'bundle_contents' => ($product?->is_bundle || !empty($item->bundle_components_snapshot)) ? \App\Support\BundleContentsDisplay::rows($item->bundle_components_snapshot ?? null, $item->variant_id, $item->product_id) : [],
                 'inventoryCode' => $this->inventoryCode($variant, $product),
                 'quantity' => (int) $item->quantity,
                 'unitPrice' => (int) $item->price,

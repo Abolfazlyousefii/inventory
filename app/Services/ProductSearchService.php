@@ -40,7 +40,7 @@ class ProductSearchService
             ->leftJoinSub($variantAgg, 'variant_summary', fn ($join) => $join->on('variant_summary.product_id', '=', 'products.id'))
             ->select([
                 'products.id','products.name','products.short_barcode','products.code','products.sku','products.barcode',
-                'products.image_path','products.category_id','products.stock','products.reserved','products.price','products.is_sellable','products.updated_at',
+                'products.image_path','products.category_id','products.stock','products.reserved','products.price','products.is_sellable','products.is_bundle','products.bundle_stock_mode','products.updated_at',
                 'categories.name as category_name',
             ])
             ->selectRaw('COALESCE(variant_summary.variants_count,0) as variants_count')
@@ -87,6 +87,8 @@ class ProductSearchService
         if ($request->query('stock_status') === 'in_stock') $query->whereRaw('COALESCE(variant_summary.total_stock, products.stock, 0) > 0');
         if ($request->query('stock_status') === 'out_of_stock') $query->whereRaw('COALESCE(variant_summary.total_stock, products.stock, 0) <= 0');
         if ($request->query('stock_status') === 'reserved') $query->whereRaw('COALESCE(variant_summary.reserved_total, products.reserved, 0) > 0');
+        if ($request->query('product_type') === 'bundle') $query->where('products.is_bundle', true);
+        if ($request->query('product_type') === 'regular') $query->where('products.is_bundle', false);
         if ($request->query('sellable_status') === 'sellable') $query->where('products.is_sellable', true);
         if ($request->query('sellable_status') === 'unsellable') $query->where('products.is_sellable', false);
         if ($request->query('has_variants') === '1') $query->whereRaw('COALESCE(variant_summary.variants_count,0) > 0');
@@ -129,13 +131,15 @@ class ProductSearchService
         $query->orderBy($sort, $direction)->orderBy('products.id', $direction);
     }
 
-    public function productPayload($product): array
+    public function productPayload($product, array $bundleContents = []): array
     {
+        $isAutomatic = (bool) $product->is_bundle && $product->bundle_stock_mode === 'automatic';
+        $quantity = $isAutomatic ? app(\App\Services\AutomaticBundleAvailabilityService::class)->available((int) DB::table('product_variants')->where('product_id', $product->id)->value('id')) : (int) $product->total_stock;
         return [
             'id'=>(int)$product->id,'name'=>(string)$product->name,'short_code'=>$product->short_barcode ?: $product->code,
             'category'=>$product->category_name ?: 'بدون دسته‌بندی','category_path'=>$product->category_name ?: 'بدون دسته‌بندی',
-            'variants_count'=>(int)$product->variants_count,'total_stock'=>(int)$product->total_stock,'reserved'=>(int)$product->reserved_total,
-            'min_price'=>(int)$product->min_price,'max_price'=>(int)$product->max_price,'sales_enabled'=>(bool)$product->is_sellable,
+            'variants_count'=>(int)$product->variants_count,'total_stock'=>$quantity,'reserved'=>(int)$product->reserved_total,
+            'min_price'=>(int)$product->min_price,'max_price'=>(int)$product->max_price,'sales_enabled'=>(bool)$product->is_sellable,'is_bundle'=>(bool)$product->is_bundle,'is_automatic_bundle'=>$isAutomatic, 'bundle_contents'=>$product->is_bundle ? $bundleContents : [],
             'image_url'=>$product->image_path ? route('products.image', $product->id) : null,
             'updated_at'=>optional($product->updated_at)->toISOString(),
             'routes'=>['edit'=>route('products.edit', ['product'=>$product->id]),'stock'=>route('products.warehouse-stock',$product->id),'sales_ledger'=>route('products.sales-ledger',$product->id),'purchase_ledger'=>route('products.purchase-ledger',$product->id),'deactivate'=>route('product-deactivation-documents.create',['product_id'=>$product->id])],

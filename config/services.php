@@ -1,6 +1,9 @@
 <?php
 
 return [
+    // Request-driven Site/Inventory stock, invoice and sync processing; no cron dependency.
+    'request_driven_site_stock' => env('REQUEST_DRIVEN_SITE_STOCK', false),
+
 
     /*
     |--------------------------------------------------------------------------

@@ -133,19 +133,88 @@ class PurchaseController extends Controller
 
     public function productVariants(Product $product)
     {
+        // TEMPORARY DIAGNOSTICS: Remove PV_TRACE logging after identifying the timeout.
+        $traceId = (string) \Illuminate\Support\Str::uuid();
+        $requestStartedAt = microtime(true);
+        \Log::info('PV_TRACE: request_start', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+        ]);
+
+        $loadStartedAt = microtime(true);
         $validVariants = app(ProductVariantStructureService::class)->validVariants($product)
             ->unique('id')
             ->values();
+        \Log::info('PV_TRACE: variants_loaded', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+            'count' => $validVariants->count(),
+            'duration_ms' => round((microtime(true) - $loadStartedAt) * 1000, 2),
+        ]);
+
+        \Log::info('PV_TRACE: payloads_start', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+        ]);
+        $payloadStartedAt = microtime(true);
         $variants = $validVariants->map(fn (ProductVariant $variant) => $this->variantPayload($variant));
+        \Log::info('PV_TRACE: payloads_done', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+            'duration_ms' => round((microtime(true) - $payloadStartedAt) * 1000, 2),
+        ]);
 
         // Mark legacy synthetic electrical variants as not purchasable and offer
         // the Base instead, so the user never reaches the guard's error.
+        \Log::info('PV_TRACE: guard_resolve_start', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+        ]);
         $guard = app(PurchaseSyntheticVariantGuard::class);
-        if ($guard->isElectric($product)) {
+        \Log::info('PV_TRACE: electric_check_start', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+        ]);
+        $electricCheckStartedAt = microtime(true);
+        $isElectric = $guard->isElectric($product);
+        \Log::info('PV_TRACE: electric_check_done', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+            'is_electric' => $isElectric,
+            'duration_ms' => round((microtime(true) - $electricCheckStartedAt) * 1000, 2),
+        ]);
+
+        if ($isElectric) {
             $redirectBase = null;
-            $variants = $validVariants->map(function (ProductVariant $variant) use ($guard, $product, &$redirectBase): array {
+            \Log::info('PV_TRACE: guard_loop_start', [
+                'trace_id' => $traceId,
+                'product_id' => (int) $product->id,
+                'variant_count' => $validVariants->count(),
+            ]);
+            $guardLoopStartedAt = microtime(true);
+            $variants = $validVariants->map(function (ProductVariant $variant) use ($guard, $product, &$redirectBase, $traceId): array {
+                \Log::info('PV_TRACE: variant_payload_start', [
+                    'trace_id' => $traceId,
+                    'product_id' => (int) $product->id,
+                    'variant_id' => (int) $variant->id,
+                ]);
                 $payload = $this->variantPayload($variant);
+
+                \Log::info('PV_TRACE: guard_start', [
+                    'trace_id' => $traceId,
+                    'product_id' => (int) $product->id,
+                    'variant_id' => (int) $variant->id,
+                ]);
+                $guardStartedAt = microtime(true);
                 $verdict = $guard->evaluate($product, $variant);
+                \Log::info('PV_TRACE: guard_done', [
+                    'trace_id' => $traceId,
+                    'product_id' => (int) $product->id,
+                    'variant_id' => (int) $variant->id,
+                    'blocked' => (bool) $verdict['blocked'],
+                    'duration_ms' => round((microtime(true) - $guardStartedAt) * 1000, 2),
+                ]);
+
                 if ($verdict['blocked'] && $verdict['base']) {
                     $redirectBase = $verdict['base'];
                     $payload['purchase_blocked'] = true;
@@ -155,14 +224,35 @@ class PurchaseController extends Controller
 
                 return $payload;
             });
+            \Log::info('PV_TRACE: guard_loop_done', [
+                'trace_id' => $traceId,
+                'product_id' => (int) $product->id,
+                'duration_ms' => round((microtime(true) - $guardLoopStartedAt) * 1000, 2),
+            ]);
 
             if ($redirectBase && ! $validVariants->contains('id', $redirectBase->id)) {
+                \Log::info('PV_TRACE: base_redirect_start', [
+                    'trace_id' => $traceId,
+                    'product_id' => (int) $product->id,
+                    'variant_id' => (int) $redirectBase->id,
+                ]);
                 $variants->prepend(array_merge(
                     $this->variantPayload($redirectBase->loadMissing($this->variantRelations())),
                     ['is_base_redirect' => true],
                 ));
+                \Log::info('PV_TRACE: base_redirect_done', [
+                    'trace_id' => $traceId,
+                    'product_id' => (int) $product->id,
+                ]);
             }
         }
+
+        \Log::info('PV_TRACE: response_ready', [
+            'trace_id' => $traceId,
+            'product_id' => (int) $product->id,
+            'variant_count' => $variants->count(),
+            'duration_ms' => round((microtime(true) - $requestStartedAt) * 1000, 2),
+        ]);
 
         return response()->json([
             'product_id' => (int) $product->id,

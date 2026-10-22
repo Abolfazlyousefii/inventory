@@ -22,6 +22,7 @@ class RegisterPaidStoreOrderController extends Controller
             'address' => ['nullable', 'array'],
             'shipping_address' => ['nullable', 'array'],
             'order' => ['required', 'array'],
+            'order.stock_hold_id' => ['nullable', 'integer', 'min:0'],
             'items' => ['required', 'array', 'min:1', 'max:500'],
             'items.*' => ['required', 'array'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],

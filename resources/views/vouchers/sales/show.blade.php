@@ -112,6 +112,12 @@
 				<div class="invoice-summary-item"><div class="invoice-summary-label">موبایل مشتری</div><div class="invoice-summary-value" dir="ltr">{{ $invoice->customer_mobile ?: '—' }}</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">وضعیت فعلی</div><div class="invoice-summary-value"><span class="invoice-status-badge {{ $statusClass }}">{{ $statusLabels[$invoice->status] ?? 'نامشخص' }}</span></div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">مبلغ کل</div><div class="invoice-summary-value">{{ $money($invoice->total) }}</div></div>
+                @if($invoice->external_order_id && (int) $invoice->product_discount_amount > 0)
+                    <div class="invoice-summary-item"><div class="invoice-summary-label">تخفیف کالا / بسته</div><div class="invoice-summary-value">{{ $money($invoice->product_discount_amount) }}</div></div>
+                @endif
+                @if($invoice->external_order_id && (int) $invoice->invoice_discount_amount > 0)
+                    <div class="invoice-summary-item"><div class="invoice-summary-label">تخفیف اضافی سفارش سایت</div><div class="invoice-summary-value">{{ $money($invoice->invoice_discount_amount) }}</div></div>
+                @endif
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تعداد اقلام</div><div class="invoice-summary-value">{{ number_format($itemsCount) }} قلم</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">فروشنده / اپراتور</div><div class="invoice-summary-value">        {{ $invoice->effectiveSeller()?->name ?: '—' }} </div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ ایجاد</div><div class="invoice-summary-value">{{ $toJalali($invoice->created_at) }}</div></div>
@@ -157,6 +163,7 @@
 						<tr class="{{ $addedRevision ? 'revision-added-row' : ($isChangedRevision ? 'revision-changed-row' : '') }}">
 							<td>
 								{{ $it->product?->name ?? '#'.$it->product_id }}
+								@include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot, 'variantId' => $it->variant_id, 'productId' => $it->product_id, 'bundleQuantity' => $it->quantity])
 								@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif
 								@if($isChangedRevision)<span class="revision-meta"><span class="revision-changed-badge">ویرایش‌شده</span> · اصلاح #{{ $latestRevision->revision_number }} · {{ $revisionReason }} · {{ $latestRevision->changed_by_name ?: ('کاربر #'.$latestRevision->changed_by) }} · {{ $revisionAt }}</span>@endif
 							</td>
@@ -207,6 +214,7 @@
 					<div class="invoice-item-card {{ $addedRevision ? 'is-added' : ($isChangedRevision ? 'is-changed' : '') }}">
 						<div class="d-flex justify-content-between gap-2 align-items-start mb-2">
 							<div class="value">{{ $it->product?->name ?? '#'.$it->product_id }}</div>
+								@include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot, 'variantId' => $it->variant_id, 'productId' => $it->product_id, 'bundleQuantity' => $it->quantity])
 							@if($addedRevision)<span class="revision-added-badge">اضافه‌شده</span>@elseif($isChangedRevision)<span class="revision-changed-badge">ویرایش‌شده</span>@endif
 						</div>
 						<div class="row g-2">

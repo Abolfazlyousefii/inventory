@@ -23,6 +23,7 @@ class ExternalPaidOrderService
         private readonly CustomerLedgerService $customerLedgerService,
         private readonly PaymentRegistrationService $paymentRegistrationService,
         private readonly SalesHavalehHistoryService $historyService,
+        private readonly SiteOrderStockHoldService $siteStockHolds,
     ) {}
 
     /**
@@ -48,7 +49,9 @@ class ExternalPaidOrderService
                     return ['invoice' => $existing, 'created' => false];
                 }
 
-                $resolvedItems = $this->resolveItems($payload['items']);
+                $resolvedItems = $this->resolveItems(
+                    $payload['items'], (int) data_get($payload, 'order.stock_hold_id', 0) > 0
+                );
                 $invoiceNumber = DocumentCodeGenerator::generateUnique5DigitCode(Invoice::class);
 
                 // Generating the official number serializes concurrent invoice
@@ -90,7 +93,9 @@ class ExternalPaidOrderService
                     'document_date' => $occurredAt,
                     'customer_id' => $customer->id,
                     'customer_name' => $this->customerName($payload, $shippingAddress, $customer),
-                    'customer_mobile' => $customer->mobile,
+                    // Invoice contact is the shipping recipient; never rewrite the
+                    // linked customer's own mobile number from order delivery data.
+                    'customer_mobile' => $this->normalizeMobile((string) Arr::get($shippingAddress, 'mobile')) ?: $customer->mobile,
                     'customer_address' => $this->addressText($shippingAddress, $customer),
                     'province_id' => $provinceId,
                     'city_id' => $cityId,
@@ -118,10 +123,20 @@ class ExternalPaidOrderService
                         'line_total' => $row['line_total'],
                         'sort_order' => $index + 1,
                         'line_discount_amount' => $row['discount'],
+                        'bundle_components_snapshot' => $this->bundleSnapshot($row['variant']),
                     ]);
                 }
 
-                $this->consumeStock($resolvedItems);
+                $holdId = (int) data_get($payload, 'order.stock_hold_id', 0);
+                if ($holdId > 0) {
+                    $physicalItems = array_values(array_filter($resolvedItems,
+                        static fn ($row) => $row['is_physical']));
+                    $this->siteStockHolds->consumeForPaidInvoice(
+                        $externalOrderId, $holdId, $physicalItems, $invoice
+                    );
+                } else {
+                    $this->consumeStock($resolvedItems);
+                }
                 $this->customerLedgerService->syncInvoiceDebit($invoice);
                 if ($invoice->total > 0) {
                     $this->paymentRegistrationService->registerForInvoice(
@@ -169,12 +184,12 @@ class ExternalPaidOrderService
     /**
      * @return array<int, array{variant: ProductVariant, quantity: int, price: int, discount: int, line_total: int}>
      */
-    private function resolveItems(array $items): array
+    private function resolveItems(array $items, bool $hasStockHold = false): array
     {
         $resolved = [];
 
         foreach (array_values($items) as $index => $item) {
-            $variant = $this->resolveVariant($item, $index);
+            $variant = $this->resolveVariant($item, $index, $hasStockHold);
             $quantity = (int) $item['quantity'];
             $price = (int) $item['price'];
             $gross = $quantity * $price;
@@ -186,13 +201,14 @@ class ExternalPaidOrderService
                 'price' => $price,
                 'discount' => $discount,
                 'line_total' => max($gross - $discount, 0),
+                'is_physical' => (bool) ($item['is_physical'] ?? true),
             ];
         }
 
         return $resolved;
     }
 
-    private function resolveVariant(array $item, int $index): ProductVariant
+    private function resolveVariant(array $item, int $index, bool $hasStockHold = false): ProductVariant
     {
         $siteVariantId = $this->firstPositiveInteger($item, [
             'price_variant.variety_id',
@@ -203,6 +219,22 @@ class ExternalPaidOrderService
         ]);
 
         $query = ProductVariant::query()->with('product')->lockForUpdate();
+        // New held orders arrive through the direct Inventory→Site sync, which preserves
+        // Inventory variant IDs in Site prices.id. Resolve those IDs first to avoid
+        // colliding with an unrelated variant's legacy variety_id.
+        $explicitInventoryId = $this->firstPositiveInteger($item, [
+            'inventory_variant_id', 'price_variant.inventory_variant_id',
+        ]);
+        if ($hasStockHold) {
+            if (!$explicitInventoryId) {
+                throw ValidationException::withMessages(["items.{$index}.inventory_variant_id" => 'Missing stock-held variant identity.']);
+            }
+            $variant = (clone $query)->whereKey($explicitInventoryId)->first();
+            if (!$variant) {
+                throw ValidationException::withMessages(["items.{$index}.inventory_variant_id" => 'Unknown held variant.']);
+            }
+            return $variant;
+        }
         $variant = $siteVariantId ? (clone $query)->where('variety_id', $siteVariantId)->first() : null;
 
         $inventoryVariantId = $this->firstPositiveInteger($item, [
@@ -271,12 +303,29 @@ class ExternalPaidOrderService
         return $variant;
     }
 
+    /** An immutable picking description; invoice still contains one commercial bundle line. */
+    private function bundleSnapshot(ProductVariant $variant): ?array
+    {
+        if (!$variant->product?->is_bundle) return null;
+        return $variant->bundleComponents()->with('product')->get()
+            ->map(static fn ($component): array => [
+                'variant_id' => (int) $component->id,
+                'product_id' => (int) $component->product_id,
+                'product_name' => (string) ($component->product?->name ?? ''),
+                'variant_name' => (string) $component->variant_name,
+                'quantity_per_bundle' => (int) $component->pivot->quantity,
+            ])->values()->all();
+    }
+
     private function consumeStock(array $resolvedItems): void
     {
         $quantities = [];
         $variants = [];
 
         foreach ($resolvedItems as $row) {
+            if ($row['variant']->product?->is_bundle && $row['variant']->product->bundle_stock_mode === 'automatic') {
+                throw ValidationException::withMessages(['stock' => 'Automatic bundles require an Inventory stock hold at checkout.']);
+            }
             $variantId = (int) $row['variant']->id;
             $quantities[$variantId] = ($quantities[$variantId] ?? 0) + (int) $row['quantity'];
             $variants[$variantId] = $row['variant'];
@@ -298,6 +347,28 @@ class ExternalPaidOrderService
     private function resolveCustomer(array $payload, array $shippingAddress): Customer
     {
         $user = $this->userPayload($payload);
+
+        // Direct Site imports identify the *purchaser* by the dedicated Site
+        // customer mapping. Site user IDs and CRM customer IDs are unrelated.
+        // The recipient phone/address can belong to somebody else, so never
+        // merge customers or rewrite CRM/customer contact data from shipping.
+        $siteUserId = $this->firstPositiveInteger($user, ['site_user_id']);
+        if ($siteUserId !== null) {
+            $siteCustomer = Customer::query()
+                ->where('site_customer_id', $siteUserId)
+                ->lockForUpdate()
+                ->first();
+            if (! $siteCustomer) {
+                throw ValidationException::withMessages([
+                    'user.site_user_id' => 'حساب مشتری سایت در انبار یافت نشد؛ همگام‌سازی مشتری باید بررسی شود.',
+                ]);
+            }
+
+            return $siteCustomer;
+        }
+
+        // Leave the legacy CRM-identity import behavior unchanged for callers
+        // that do not explicitly send a Site customer ID.
         $mobile = $this->normalizeMobile((string) (
             Arr::get($shippingAddress, 'mobile')
             ?: Arr::get($user, 'mobile')

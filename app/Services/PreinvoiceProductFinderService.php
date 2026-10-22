@@ -23,18 +23,19 @@ class PreinvoiceProductFinderService
             return ['data' => [], 'meta' => $this->emptyMeta($perPage), 'has_filters' => false];
         }
 
+        $bundleStock = app(PreinvoiceBundleStockService::class);
         $query = Product::query()
-            ->select(['products.id', 'products.name', 'products.code', 'products.short_barcode', 'products.sku', 'products.barcode', 'products.image_path', 'products.category_id'])
+            ->select(['products.id', 'products.is_bundle', 'products.bundle_stock_mode', 'products.name', 'products.code', 'products.short_barcode', 'products.sku', 'products.barcode', 'products.image_path', 'products.category_id'])
             ->with('category:id,name,parent_id')
             ->where('products.is_sellable', true)
-            ->withCount(['variants as sellable_variants_count' => fn (Builder $q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0)])
+            ->withCount(['variants as sellable_variants_count' => fn (Builder $q) => $bundleStock->constrainAvailableVariants($q)])
             ->withSum(['variants as total_available_stock' => fn (Builder $q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0)], 'stock');
 
         if ($categoryId > 0) {
             $query->whereIn('products.category_id', Category::selfAndDescendantIds($categoryId));
         }
         if ($inStockOnly) {
-            $query->whereHas('variants', fn (Builder $q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0));
+            $query->whereHas('variants', fn (Builder $q) => $bundleStock->constrainAvailableVariants($q));
         }
         if ($term !== '') {
             $query->where(fn (Builder $q) => $this->applyMatch($q, $term));
@@ -48,9 +49,20 @@ class PreinvoiceProductFinderService
         $products = collect($paginator->items());
         $matched = $this->matchedVariants($products->pluck('id'), $term);
         $categoryPaths = $this->categoryPaths($products->pluck('category_id'));
+        $bundleParts = \App\Support\BundleContentsDisplay::forProducts(
+            $products->filter(fn ($p) => (bool) $p->is_bundle)->pluck('id')->all()
+        );
 
+        $bundleCapacity = [];
+        foreach ($products->filter(fn (Product $p) => (bool) $p->is_bundle && $p->bundle_stock_mode === 'automatic') as $bundle) {
+            $available = [];
+            foreach ($bundle->variants()->active()->where('sales_enabled', true)->get(['id', 'product_id']) as $variant) {
+                $available[(int) $variant->id] = $bundleStock->free((int) $bundle->id, (int) $variant->id);
+            }
+            $bundleCapacity[(int) $bundle->id] = $available;
+        }
         return [
-            'data' => $products->map(fn (Product $product) => $this->productPayload($product, $matched[(int) $product->id] ?? collect(), $categoryPaths))->values()->all(),
+            'data' => $products->map(fn (Product $product) => $this->productPayload($product, $matched[(int) $product->id] ?? collect(), $categoryPaths, $bundleParts[(int) $product->id] ?? [], $bundleCapacity[(int) $product->id] ?? null))->values()->all(),
             'meta' => $this->paginationMeta($paginator),
             'has_filters' => true,
         ];
@@ -150,10 +162,11 @@ class PreinvoiceProductFinderService
         });
     }
 
-    private function productPayload(Product $product, Collection $matched, Collection $paths): array
+    private function productPayload(Product $product, Collection $matched, Collection $paths, array $bundleParts = [], ?array $bundleAvailability = null): array
     {
         return [
             'id' => (int) $product->id, 'name' => $product->name, 'title' => $product->name,
+            'is_bundle' => (bool) $product->is_bundle, 'bundle_contents' => $bundleParts,
             'code' => $product->code, 'short_code' => $product->short_barcode, 'short_barcode' => $product->short_barcode,
             'sku' => $product->sku, 'image' => $product->image_path ? route('products.image', ['product' => $product->id]) : null,
             'category' => $product->category ? ['id' => (int) $product->category->id, 'name' => $product->category->name, 'path' => $paths[(int) $product->category_id] ?? $product->category->name] : null,
@@ -163,10 +176,10 @@ class PreinvoiceProductFinderService
                 'name' => $variant->model_name
                     ? trim(($variant->model_brand ? $variant->model_brand.' ' : '').$variant->model_name)
                     : ($variant->variant_name ?: $variant->variety_name),
-                'available_stock' => $variant->is_active && $variant->sales_enabled ? max((int) $variant->stock, 0) : 0,
+                'available_stock' => $variant->is_active && $variant->sales_enabled ? ($bundleAvailability[(int) $variant->id] ?? max((int) $variant->stock, 0)) : 0,
             ])->values()->all(),
             'sellable_variants_count' => (int) $product->sellable_variants_count,
-            'total_available_stock' => (int) ($product->total_available_stock ?? 0),
+            'total_available_stock' => $bundleAvailability !== null ? array_sum($bundleAvailability) : (int) ($product->total_available_stock ?? 0),
             'match_reason' => $matched->isNotEmpty() ? 'variant' : 'product',
         ];
     }

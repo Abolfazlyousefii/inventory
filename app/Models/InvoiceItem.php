@@ -7,6 +7,8 @@ use Illuminate\Validation\ValidationException;
 
 class InvoiceItem extends Model
 {
+    protected $casts = ['bundle_components_snapshot' => 'array'];
+
     protected $fillable = [
         'invoice_id',
         'product_id',
@@ -16,6 +18,7 @@ class InvoiceItem extends Model
         'line_total',
         'sort_order',
         'line_discount_amount',
+        'bundle_components_snapshot',
     ];
 
 

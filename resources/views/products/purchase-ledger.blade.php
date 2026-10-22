@@ -6,7 +6,7 @@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
         <div>
             <h4 class="mb-1">کارتکس خرید کالا</h4>
-            <div class="text-muted">کالا: <strong>{{ $product->name }}</strong>@if($selectedVariant) <span class="mx-1">|</span> تنوع: <strong>{{ $selectedVariant->variant_name }}</strong> @endif</div>
+            <div class="text-muted">کالا: <strong>{{ $product->name }}</strong>@include('partials.bundle-contents', ['productIsBundle' => $product->is_bundle, 'productId' => $product->id])@if($selectedVariant) <span class="mx-1">|</span> تنوع: <strong>{{ $selectedVariant->variant_name }}</strong> @endif</div>
         </div>
         <a class="btn btn-outline-dark" href="{{ route('products.index') }}">بازگشت به کالاها</a>
     </div>

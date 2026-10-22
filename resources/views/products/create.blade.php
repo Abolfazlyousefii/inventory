@@ -353,7 +353,7 @@
         @endif
 
         <div class="alert alert-info">
-            در این بخش فقط <b>تعریف کالا و تنوع‌ها</b> انجام می‌شود.
+            در این بخش <b>تعریف کالا و تنوع‌ها</b> و همچنین <b>ایجاد بسته ترکیبی</b> انجام می‌شود.
             <br>
             <b>موجودی، قیمت خرید و قیمت فروش</b> بعداً در بخش <b>خرید کالا</b> ثبت می‌شوند.
         </div>
@@ -363,6 +363,8 @@
 
             {{-- hidden inputs برای model_list_ids - اینجا توسط JS مدیریت می‌شن --}}
             <div id="modelHiddenInputsContainer"></div>
+
+            @include('products.partials.bundle-create')
 
             {{-- اطلاعات پایه --}}
             <div class="col-12">
@@ -478,7 +480,7 @@
             </div>
 
             {{-- ساختار تنوع‌ها --}}
-            <div class="col-12">
+            <div class="col-12" id="variantStructureCard">
                 <div class="card-soft">
                     <div class="section-head">
                         <div>
@@ -617,7 +619,7 @@
             <div class="col-12">
                 <div class="sticky-actions d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div class="muted">
-                        بعد از ثبت کالا، موجودی و قیمت را در بخش <b>خرید کالا</b> وارد کن.
+                        برای بسته ترکیبی، قیمت فروش و ترکیب قطعات همین‌جا ثبت می‌شود؛ موجودی آماده بعداً مونتاژ می‌شود.
                     </div>
 
                     <div class="d-flex gap-2">

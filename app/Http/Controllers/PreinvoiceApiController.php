@@ -10,6 +10,7 @@ use App\Models\ProductVariant;
 use App\Models\ShippingMethod;
 use App\Models\WarehouseStock;
 use App\Services\PreinvoiceDraftReservationService;
+use App\Services\PreinvoiceBundleStockService;
 use App\Services\PreinvoiceProductFinderService;
 use App\Services\WarehouseStockService;
 use App\Support\IranLocations;
@@ -44,11 +45,12 @@ class PreinvoiceApiController extends Controller
         $isPureNumeric = $q !== '' && ctype_digit($q);
 
         $centralWarehouseId = WarehouseStockService::centralWarehouseId();
+        $bundleStock = app(PreinvoiceBundleStockService::class);
 
         $products = Product::query()
-            ->select(['id', 'name', 'sku', 'short_barcode', 'code', 'price'])
+            ->select(['id', 'name', 'is_bundle', 'sku', 'short_barcode', 'code', 'price'])
             ->where('is_sellable', true)
-            ->whereHas('variants', fn ($q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0))
+            ->whereHas('variants', fn ($q) => $bundleStock->constrainAvailableVariants($q))
             ->when($q !== '', function ($query) use ($q, $isPureNumeric) {
 
                 // ✅ اگر عدد وارد شد و طولش <= 4 یعنی PPPP
@@ -92,10 +94,22 @@ class PreinvoiceApiController extends Controller
             ->groupBy('product_id')
             ->pluck('quantity', 'product_id');
 
+        $bundleParts = \App\Support\BundleContentsDisplay::forProducts(
+            $products->filter(fn ($p) => (bool) $p->is_bundle)->pluck('id')->all()
+        );
+        $automaticBundleStocks = [];
+        foreach ($products->filter(fn ($p) => (bool) $p->is_bundle) as $bundle) {
+            $automaticBundleStocks[(int) $bundle->id] = $bundle->variants()
+                ->active()->where('sales_enabled', true)->get()
+                ->sum(fn ($variant) => $bundleStock->isAutomatic((int) $bundle->id, (int) $variant->id)
+                    ? $bundleStock->free((int) $bundle->id, (int) $variant->id) : max(0, (int) $variant->stock));
+        }
         $items = $products
             ->map(fn ($p) => [
                 'id' => $p->id,
                 'title' => $p->name,
+                'is_bundle' => (bool) $p->is_bundle,
+                'bundle_contents' => $bundleParts[(int) $p->id] ?? [],
 
                 // ✅ در پیش‌فاکتور به‌جای sku بهتره همون PPPP نمایش داده بشه
                 'sku' => $p->short_barcode ?: ($p->sku ?: ''),
@@ -105,7 +119,7 @@ class PreinvoiceApiController extends Controller
                 'short_barcode' => $p->short_barcode,
 
                 'price' => (int) ($p->price ?? 0),
-                'quantity' => (int) ($stockByProductId[(int) $p->id] ?? 0),
+                'quantity' => (int) ($automaticBundleStocks[(int) $p->id] ?? $stockByProductId[(int) $p->id] ?? 0),
             ])
             ->values();
 
@@ -147,14 +161,15 @@ class PreinvoiceApiController extends Controller
         $reservedByVariant = $this->activeReservationQuantities($reservationToken);
         $reservedVariantIds = array_keys($reservedByVariant);
 
-        $applyVariantVisibility = function ($outerQuery) use ($reservedVariantIds, $currentPreinvoiceItemVariantIds, $includeUnavailable) {
+        $bundleStock = app(PreinvoiceBundleStockService::class);
+        $applyVariantVisibility = function ($outerQuery) use ($bundleStock, $reservedVariantIds, $currentPreinvoiceItemVariantIds, $includeUnavailable) {
             if ($includeUnavailable) {
                 return;
             }
 
-            $outerQuery->where(function ($query) use ($reservedVariantIds) {
-                $query->active()->where('sales_enabled', true)->where(function ($stockQuery) use ($reservedVariantIds) {
-                    $stockQuery->where('stock', '>', 0);
+            $outerQuery->where(function ($query) use ($bundleStock, $reservedVariantIds) {
+                $query->where(function ($stockQuery) use ($bundleStock, $reservedVariantIds) {
+                    $stockQuery->where(fn ($available) => $bundleStock->constrainAvailableVariants($available));
                     if (! empty($reservedVariantIds)) {
                         $stockQuery->orWhereIn('id', $reservedVariantIds);
                     }
@@ -186,9 +201,11 @@ class PreinvoiceApiController extends Controller
         $reservationToken = (string) $request->query('reservation_token', '');
         $reservedByVariant = $this->activeReservationQuantities($reservationToken);
 
+        $bundleStock = app(PreinvoiceBundleStockService::class);
         $payload = [
             'id' => $product->id,
             'title' => $product->name,
+            'bundle_contents' => (bool) $product->is_bundle ? \App\Support\BundleContentsDisplay::fromProduct((int) $product->id) : [],
 
             // ✅ کد سریع 4 رقمی برای UI
             'sku' => $product->short_barcode ?: ($product->sku ?: ''),
@@ -196,11 +213,12 @@ class PreinvoiceApiController extends Controller
             'code' => $product->code,
 
             'price' => (int) ($product->price ?? 0),
-            'quantity' => $centralStock,
+            'quantity' => (bool) $product->is_bundle && $product->bundle_stock_mode === 'automatic'
+                ? $product->variants->sum(fn ($variant) => $bundleStock->free((int) $product->id, (int) $variant->id)) : $centralStock,
 
-            'varieties' => $product->variants->map(function ($v) use ($reservedByVariant, $currentPreinvoiceItemVariantIds) {
+            'varieties' => $product->variants->map(function ($v) use ($product, $bundleStock, $reservedByVariant, $currentPreinvoiceItemVariantIds) {
                 $isSellableVariant = (bool) ($v->is_active ?? false) && (bool) ($v->sales_enabled ?? false);
-                $freeStock = $isSellableVariant ? max(0, (int) ($v->stock ?? 0)) : 0;
+                $freeStock = $isSellableVariant ? $bundleStock->free((int) $product->id, (int) $v->id) : 0;
                 $totalReservedIncludingCurrent = max(0, (int) ($v->reserved ?? 0));
                 $currentTokenReserved = max(0, (int) ($reservedByVariant[(int) $v->id] ?? 0));
                 $reservedByOthers = max(0, $totalReservedIncludingCurrent - $currentTokenReserved);
