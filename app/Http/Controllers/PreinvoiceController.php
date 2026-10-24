@@ -2532,7 +2532,8 @@ class PreinvoiceController extends Controller
             $suggested = [];
             foreach ($required as $key => $row) {
                 $held = (int) $rows->get($key, collect())->sum('quantity');
-                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $row['product_id'], $row['variant_id']);
+                // Automatic bundles have allocated component stock, not physical SKU stock.
+                $available = app(\App\Services\PreinvoiceBundleStockService::class)->free((int) $row['product_id'], (int) $row['variant_id']);
                 $maximum = $held + $available;
                 $suggested[] = $row + ['requested_quantity' => $row['quantity'], 'remove' => $maximum <= 0];
                 $suggested[array_key_last($suggested)]['quantity'] = min($row['quantity'], $maximum);

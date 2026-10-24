@@ -41,6 +41,21 @@ class SendCustomerStatusSmsListener {
             return;
         }
 
+        // Cancelling an invoice also cancels its linked preinvoice. The invoice
+        // owns that cancellation notification; do not send another for its mirror.
+        if ( $document instanceof PreinvoiceOrder
+             && in_array($event->status, [
+                PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
+                PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
+            ], true)
+             && Invoice::where('preinvoice_order_id', $document->getKey())
+                 ->where('customer_id', $event->customerId)
+                 ->where('status', Invoice::STATUS_NOT_SHIPPED)
+                 ->exists() ) {
+            $this->skip($event, 'linked_invoice_cancellation');
+            return;
+        }
+
         $customer = Customer::whereKey($event->customerId)
             ->where('is_active', true)
             ->first();
@@ -64,19 +79,23 @@ class SendCustomerStatusSmsListener {
             return;
         }
 
-        $labels = $document instanceof Invoice ? Invoice::statusLabels() : PreinvoiceOrder::statusLabels();
-        $label  = $labels[$event->status] ?? null;
+        $label = match ( true ) {
+            $document instanceof Invoice && $event->status === Invoice::STATUS_COLLECTING => 'در حال جمع آوری',
+            $document instanceof Invoice && $event->status === Invoice::STATUS_SHIPPED    => 'ارسال شده',
+            ( $document instanceof Invoice && $event->status === Invoice::STATUS_NOT_SHIPPED )
+            || ( $document instanceof PreinvoiceOrder
+                 && in_array($event->status, [
+                    PreinvoiceOrder::STATUS_CANCELLED_BY_WAREHOUSE,
+                    PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
+                ], true) )                                                                => 'لغو شده',
+            default                                                                       => null,
+        };
         if ( $label === null ) {
             $this->skip($event, 'unknown_status');
             return;
         }
 
-        // Preserve the exact database status everywhere else. In the SMS,
-        // present the internal warehouse steps as one understandable phase.
-        if ( $event->type === 'invoice'
-             && in_array($event->status, config('tracking_sms.warehouse_processing_statuses', []), true) ) {
-            $label = 'در حال جمع‌آوری توسط انبار';
-        }
+
 
         $kind          = $event->type === 'invoice' ? 'فاکتور' : 'پیش‌فاکتور';
         $documentLabel = $kind . ' ' . (string) ( $document->uuid ? : $document->getKey() );

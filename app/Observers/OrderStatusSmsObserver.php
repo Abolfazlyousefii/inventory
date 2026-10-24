@@ -24,18 +24,8 @@ class OrderStatusSmsObserver
         };
 
         $status = (string) $document->status;
-        if ($type === null || ! in_array($status, config("tracking_sms.important_statuses.{$type}", []), true)) {
+        if ($type === null || ! in_array($status, config("tracking_sms.allowed_statuses.{$type}", []), true)) {
             return;
-        }
-
-        // One SMS on entry to the warehouse phase, not five identical messages
-        // as employees advance through receipt, collection, checking and packing.
-        if ($type === 'invoice') {
-            $warehouseStatuses = config('tracking_sms.warehouse_processing_statuses', []);
-            if (in_array($status, $warehouseStatuses, true)
-                && in_array((string) $document->getRawOriginal('status'), $warehouseStatuses, true)) {
-                return;
-            }
         }
 
         // Avoid notifying the wrong recipient if this update also reassigned the customer.

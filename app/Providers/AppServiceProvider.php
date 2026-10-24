@@ -3,9 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\OtpSender;
-use App\Events\CustomerOrderStatusChanged;
 use App\Http\Middleware\RoutePermissionMiddleware;
-use App\Listeners\SendCustomerStatusSmsListener;
 use App\Models\Category;
 use App\Models\Cheque;
 use App\Models\Customer;
@@ -39,7 +37,6 @@ use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -78,7 +75,6 @@ class AppServiceProvider extends ServiceProvider
         Invoice::observe(ActivityObserver::class);
         InvoiceItem::observe(ActivityObserver::class);
 
-        Event::listen(CustomerOrderStatusChanged::class, SendCustomerStatusSmsListener::class);
 
         Invoice::observe(OrderStatusSmsObserver::class);
         PreinvoiceOrder::observe(OrderStatusSmsObserver::class);
