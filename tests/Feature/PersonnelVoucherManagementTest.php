@@ -241,11 +241,51 @@ class PersonnelVoucherManagementTest extends TestCase
 
         $html = $this->get(route('vouchers.section.create', 'personnel'))->getContent();
 
+        // Optional, database-isolated fixtures for tests/browser/personnel-voucher.cjs.
+        if ($directory = getenv('VOUCHER_BROWSER_FIXTURES')) {
+            if (! is_dir($directory)) mkdir($directory, 0777, true);
+            file_put_contents($directory.'/voucher-candidate-create.html', $html);
+            file_put_contents($directory.'/voucher-candidate-hub.html', $this->get(route('vouchers.index'))->assertOk()->getContent());
+        }
+
+
         $this->assertTrue(
             str_contains($html, route('vouchers.personnel.products.search'))
                 || str_contains($html, str_replace('/', '\/', route('vouchers.personnel.products.search'))),
             'Personnel products search endpoint was not rendered in the create page.'
         );
+    }
+
+    public function test_variant_lookup_reads_all_central_quantities_in_one_query_without_changing_stock(): void
+    {
+        [$admin,, $central, $personnel,, $product, $first] = $this->fixture();
+        for ($n = 1; $n <= 35; $n++) {
+            $variant = ProductVariant::withoutEvents(fn () => ProductVariant::create([
+                'product_id' => $product->id, 'variant_name' => 'Lookup '.$n,
+                'variant_code' => 'LOOKUP-'.$n, 'variety_code' => str_pad((string) $n, 4, '0', STR_PAD_LEFT),
+                'sell_price' => 1000, 'stock' => 999, 'is_active' => true,
+            ]));
+            WarehouseStock::withoutEvents(fn () => WarehouseStock::create([
+                'warehouse_id' => $central->id, 'product_id' => $product->id,
+                'product_variant_id' => $variant->id, 'quantity' => $n,
+            ]));
+            WarehouseStock::withoutEvents(fn () => WarehouseStock::create([
+                'warehouse_id' => $personnel->id, 'product_id' => $product->id,
+                'product_variant_id' => $variant->id, 'quantity' => 200,
+            ]));
+        }
+        $before = \Illuminate\Support\Facades\DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+        $stockQueries = 0;
+        \Illuminate\Support\Facades\DB::listen(function ($query) use (&$stockQueries) {
+            if (str_contains(strtolower($query->sql), 'select') && str_contains($query->sql, 'warehouse_stocks')) $stockQueries++;
+        });
+        $response = $this->actingAs($admin)->getJson(route('vouchers.personnel.products.variants', $product))->assertOk();
+        $this->assertCount(36, $response->json('results'));
+        $this->assertSame(1, $stockQueries, 'Variant lookup must use one batched warehouse query, not one per variant.');
+        $rows = collect($response->json('results'))->keyBy('id');
+        $this->assertSame(10, $rows[$first->id]['central_stock']);
+        $this->assertSame(35, $rows[$variant->id]['central_stock']);
+        $this->assertSame($before, \Illuminate\Support\Facades\DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
     }
 
     private function fixture(): array

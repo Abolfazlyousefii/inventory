@@ -1,0 +1,51 @@
+/* Scoped to warehouse voucher screens; shared site navigation keeps its theme. */
+.voucher-page,.personnel-voucher{--v-ink:#193e55;--v-muted:#657c90;--v-border:#dce6ef;color:var(--v-ink)}
+.voucher-page{padding-block:20px 30px}
+.voucher-page .hero-box,.personnel-voucher>div:first-child{background:linear-gradient(115deg,#f5faff,#eaf4fb);border:1px solid #c9dfef;border-inline-start:4px solid #2c7dad;border-radius:18px;padding:22px;margin-bottom:20px}
+.voucher-page .hero-title{font-size:24px;font-weight:800;margin-bottom:8px}
+.voucher-page .hero-sub{color:var(--v-muted);line-height:1.9;margin:0}
+.voucher-page .hero-actions{margin-top:16px}
+.voucher-page .section-box,.voucher-page .bottom-box{border:1px solid var(--v-border);border-radius:18px;background:white;margin-bottom:20px;overflow:hidden}
+.voucher-page .section-head{padding:18px 20px;border-bottom:1px solid var(--v-border)}
+.voucher-page .section-title{font-size:16px;font-weight:800;margin:0}
+.voucher-page .section-sub{font-size:12px;color:var(--v-muted);margin-top:6px}
+.voucher-page .voucher-scroll{padding:16px}
+.voucher-page .voucher-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}
+.voucher-page .voucher-card{--accent:#2d7caf;--tint:#eff7ff;grid-column:span 2;min-width:0;border:1px solid var(--v-border);border-top:3px solid var(--accent);border-radius:14px;background:linear-gradient(160deg,#fff,var(--tint));padding:20px;color:var(--v-ink);text-decoration:none;transition:box-shadow .2s,transform .2s}
+.voucher-page .voucher-card:nth-child(2){--accent:#148b79;--tint:#effaf6}
+.voucher-page .voucher-card:nth-child(3){--accent:#bd7b26;--tint:#fff8ed}
+.voucher-page .voucher-card:nth-child(4){--accent:#8d64c6;--tint:#f8f3ff;grid-column:span 3}
+.voucher-page .voucher-card:nth-child(5){--accent:#358f9c;--tint:#f0fafb;grid-column:span 3}
+.voucher-page .voucher-card:hover,.voucher-page .voucher-card:focus-visible{box-shadow:0 7px 20px #244d6514;transform:translateY(-2px);outline:2px solid var(--accent);outline-offset:2px}
+.voucher-page .voucher-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:var(--tint);font-size:24px;margin-bottom:12px}
+.voucher-page .voucher-title{font-size:16px;font-weight:800;margin-bottom:8px}
+.voucher-page .voucher-desc{color:var(--v-muted);font-size:12px;line-height:1.9;min-height:46px;margin-bottom:14px}
+.voucher-page .tags{display:flex;gap:6px;flex-wrap:wrap}
+.voucher-page .tag{font-size:11px;border:1px solid var(--v-border);border-radius:20px;padding:4px 10px;background:#ffffffb3}
+.voucher-page .bottom-box{padding:20px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.voucher-page .bottom-title{font-size:16px;font-weight:800;margin-bottom:6px}
+.voucher-page .bottom-sub{font-size:12px;line-height:1.8;color:var(--v-muted);margin:0}
+.personnel-voucher .card{border:1px solid var(--v-border)!important;border-radius:18px}
+.personnel-voucher .card-body{padding:22px}
+.personnel-voucher .voucher-step{display:flex;gap:8px;flex-direction:column;margin:10px 0 18px;padding-inline-start:12px;border-inline-start:3px solid #9371c3}
+.personnel-voucher .voucher-step strong{font-size:16px}
+.personnel-voucher .voucher-step span{font-size:12px;color:var(--v-muted);line-height:1.8}
+.personnel-voucher .form-label,.personnel-voucher .item-field-label{font-size:12px;font-weight:700;color:#35536a;display:block;margin-bottom:8px}
+.personnel-voucher input,.personnel-voucher select{min-height:42px;border-radius:9px;min-width:0;width:100%;max-width:100%}
+.personnel-voucher .table-responsive{overflow:visible}
+.personnel-voucher #itemsTable,.personnel-voucher #itemsTable tbody{display:block;width:100%;margin:0;border:0}
+.personnel-voucher #itemsTable thead{display:none}
+.personnel-voucher #itemsTable tr{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;background:#fbfdff;border:1px solid var(--v-border);border-inline-start:3px solid #6da6c2;border-radius:14px;padding:18px;margin-bottom:16px}
+.personnel-voucher #itemsTable td{display:block;border:0;padding:0;min-width:0;background:transparent;box-shadow:none;grid-column:span 3}
+.personnel-voucher #itemsTable td:nth-child(3){grid-column:span 6}
+.personnel-voucher #itemsTable td:nth-child(4){grid-column:span 6}
+.personnel-voucher #itemsTable td:nth-child(5),.personnel-voucher #itemsTable td:nth-child(6),.personnel-voucher #itemsTable td:nth-child(7){grid-column:span 2}
+.personnel-voucher #itemsTable td:last-child{grid-column:1/-1;border-top:1px dashed var(--v-border);padding-top:10px;text-align:end}
+.personnel-voucher #itemsTable td:last-child .item-field-label{display:none}
+.personnel-voucher .stock-badge{background:#e6f6ef!important;color:#18745e!important;padding:12px 16px;font-size:17px;border-radius:9px}
+.personnel-voucher .lookup-error{background:#fff6e7;color:#82591c;padding:9px;border-radius:8px;margin-top:8px;font-size:12px;line-height:1.9}
+.personnel-voucher .lookup-error button{margin-top:6px;display:block}
+.personnel-voucher .btn,.voucher-page .btn{min-height:40px;border-radius:9px}
+.personnel-voucher .row-error{line-height:1.8}
+@media(max-width:900px){.voucher-page .voucher-row{grid-template-columns:repeat(2,minmax(0,1fr))}.voucher-page .voucher-card:nth-child(n){grid-column:span 1}.voucher-page .voucher-card:last-child{grid-column:1/-1}.personnel-voucher #itemsTable td:nth-child(n){grid-column:span 6}.personnel-voucher #itemsTable td:nth-child(3),.personnel-voucher #itemsTable td:nth-child(4),.personnel-voucher #itemsTable td:last-child{grid-column:1/-1}}
+@media(max-width:575px){.voucher-page .voucher-row{grid-template-columns:minmax(0,1fr)}.voucher-page .voucher-card:nth-child(n){grid-column:1}.voucher-page .hero-box,.personnel-voucher>div:first-child{padding:16px;gap:12px;flex-wrap:wrap}.personnel-voucher .card-body{padding:14px}.personnel-voucher #itemsTable tr{padding:14px;gap:14px}.personnel-voucher #itemsTable td:nth-child(n){grid-column:1/-1}.personnel-voucher #itemsTable td:nth-child(5),.personnel-voucher #itemsTable td:nth-child(6){grid-column:span 6}.personnel-voucher .btn{min-height:44px}.voucher-page .bottom-box .btn{width:100%}}

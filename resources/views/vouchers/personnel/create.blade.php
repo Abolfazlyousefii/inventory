@@ -65,7 +65,8 @@
 @endphp
 
 @section('content')
-<div class="container py-3" dir="rtl">
+<link rel="stylesheet" href="{{ asset('css/warehouse-vouchers.css') }}?v=20261024">
+<div class="container py-3 personnel-voucher" dir="rtl">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="mb-0">{{ $isEdit ? 'ویرایش حواله پرسنل' : 'ثبت حواله پرسنل' }}</h4>
         <a class="btn btn-outline-secondary" href="{{ route('vouchers.section.index', 'personnel') }}">بازگشت</a>
@@ -98,6 +99,7 @@
                     انجام می‌شود و نیازی به انتخاب دستی انبار نیست.
                 </div>
 
+                <div class="voucher-step"><strong>۱ · مشخصات تحویل</strong><span>تحویل‌گیرنده و تاریخ سند را مشخص کنید.</span></div>
                 <div class="row g-3">
                     <div class="col-lg-4">
                         <label class="form-label">تحویل‌گیرنده</label>
@@ -125,6 +127,7 @@
                     </div>
 
                     <div class="col-12">
+                        <div class="voucher-step"><strong>۲ · اقلام حواله</strong><span>دسته، کالا و مدل را انتخاب کنید؛ سپس تعداد و کد اموال را وارد کنید.</span></div>
                         <div class="table-responsive">
                             <table class="table align-middle" id="itemsTable">
                                 <thead class="table-light">
@@ -145,7 +148,7 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="addItemBtn">+ افزودن ردیف</button>
                     </div>
                     <div class="col-12">
-                        <button class="btn btn-primary">{{ $isEdit ? 'ذخیره تغییرات حواله' : 'ثبت حواله پرسنل' }}</button>
+                        <div id="voucherFormError" class="alert alert-danger d-none" role="alert"></div><button class="btn btn-primary">{{ $isEdit ? 'ذخیره تغییرات حواله' : 'ثبت حواله پرسنل' }}</button>
                     </div>
                 </div>
             </form>
@@ -186,7 +189,7 @@ function esc(value) {
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch]));
 }
 function normalize(value) {
-    return String(value || '').trim().toLowerCase();
+    return String(value || '').trim().toLowerCase().replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[۰-۹٠-٩]/g, ch => String('۰۱۲۳۴۵۶۷۸۹'.includes(ch) ? '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch) : '٠١٢٣٤٥٦٧٨٩'.indexOf(ch)));
 }
 function faNumber(value) {
     return Number(value || 0).toLocaleString('fa-IR');
@@ -198,10 +201,52 @@ function debounce(fn, delay = 350) {
         timer = setTimeout(() => fn(...args), delay);
     };
 }
-async function fetchJson(url) {
-    const response = await fetch(url, {headers: {'Accept': 'application/json'}});
-    if (!response.ok) throw new Error('خطا در دریافت اطلاعات');
-    return await response.json();
+const requests = new WeakMap();
+function cancelLookup(select) {
+    requests.get(select)?.abort();
+    requests.delete(select);
+    select.disabled = false;
+}
+async function lookup(select, url, apply, retry) {
+    cancelLookup(select);
+    const controller = new AbortController();
+    requests.set(select, controller);
+    select.disabled = true;
+    const box = select.closest('td');
+    box.querySelector('.lookup-error')?.remove();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+        const response = await fetch(url, {headers: {'Accept': 'application/json'}, signal: controller.signal});
+        if (!response.ok) throw new Error('lookup failed');
+        const data = await response.json();
+        if (requests.get(select) === controller) apply(data);
+    } catch (error) {
+        if (requests.get(select) !== controller || !select.isConnected) return;
+        select.innerHTML = '<option value="">اطلاعات دریافت نشد</option>';
+        const message = document.createElement('div');
+        message.className = 'lookup-error'; message.setAttribute('role', 'alert');
+        message.textContent = error.name === 'AbortError' ? 'دریافت اطلاعات طول کشید. اتصال را بررسی کنید. ' : 'دریافت اطلاعات ناموفق بود. ';
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'btn btn-sm btn-outline-primary';
+        button.textContent = 'تلاش مجدد'; button.addEventListener('click', retry);
+        message.append(button); box.append(message);
+    } finally {
+        clearTimeout(timeout);
+        if (requests.get(select) === controller) { requests.delete(select); select.disabled = false; }
+    }
+}
+function resetVariants(tr) {
+    const select = tr.querySelector('.variant-select'); cancelLookup(select);
+    select.closest('td').querySelector('.lookup-error')?.remove();
+    select.innerHTML = '<option value="">ابتدا کالا را انتخاب کنید</option>';
+    syncVariant(tr);
+}
+function resetProducts(tr) {
+    const select = tr.querySelector('.product-select'); cancelLookup(select);
+    select.innerHTML = '<option value="">ابتدا دسته را انتخاب کنید</option>';
+    tr.querySelector('.product-search').value = '';
+    tr.querySelectorAll('.lookup-error').forEach(el => el.remove());
+    resetVariants(tr);
 }
 function rootOptions(selected = '') {
     return '<option value="">انتخاب دسته اصلی...</option>' + rootCategories.map(c => `<option value="${c.id}" ${String(selected) === String(c.id) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
@@ -245,6 +290,8 @@ function rowError(tr, message = '') {
 async function loadChildren(tr, selected = '') {
     const rootId = tr.querySelector('.root-cat').value;
     const sub = tr.querySelector('.sub-cat');
+    cancelLookup(sub);
+    sub.closest('td').querySelector('.lookup-error')?.remove();
     const hidden = tr.querySelector('.cat-hidden');
     hidden.value = '';
     sub.innerHTML = '<option value="">در حال دریافت...</option>';
@@ -254,20 +301,22 @@ async function loadChildren(tr, selected = '') {
         return;
     }
 
-    const data = await fetchJson(endpoints.children.replace('__ID__', rootId));
-    const rows = data.data || [];
-    if (!rows.length) {
-        sub.innerHTML = '<option value="">زیر دسته ندارد</option>';
-        hidden.value = rootId;
-        return;
-    }
+    await lookup(sub, endpoints.children.replace('__ID__', rootId), data => {
+        const rows = data.data || [];
+        if (!rows.length) {
+            sub.innerHTML = '<option value="">زیر دسته ندارد</option>';
+            hidden.value = rootId;
+            return;
+        }
 
-    sub.innerHTML = '<option value="">انتخاب زیر دسته...</option>' + rows.map(c => optionHtml(c.id, c.name, String(selected) === String(c.id))).join('');
-    hidden.value = sub.value || '';
+        sub.innerHTML = '<option value="">انتخاب زیر دسته...</option>' + rows.map(c => optionHtml(c.id, c.name, String(selected) === String(c.id))).join('');
+        hidden.value = sub.value || '';
+    }, () => loadChildren(tr, selected).then(() => { if (hidden.value) searchProducts(tr); }));
 }
 async function searchProducts(tr, selectedId = '', selectedText = '') {
     const catId = tr.querySelector('.cat-hidden').value;
     const product = tr.querySelector('.product-select');
+    cancelLookup(product);
     const term = tr.querySelector('.product-search').value;
     const variant = tr.querySelector('.variant-select');
 
@@ -281,17 +330,19 @@ async function searchProducts(tr, selectedId = '', selectedText = '') {
     const url = new URL(endpoints.products, window.location.origin);
     url.searchParams.set('category_id', catId);
     if (term) url.searchParams.set('q', term);
-    const data = await fetchJson(url.toString());
-    const rows = data.results || [];
-    let html = '<option value="">انتخاب کالا...</option>' + rows.map(p => optionHtml(p.id, p.text || p.name, String(selectedId) === String(p.id))).join('');
-    if (selectedId && !rows.some(p => String(p.id) === String(selectedId))) {
-        html += optionHtml(selectedId, selectedText || ('کالا #' + selectedId), true);
-    }
-    product.innerHTML = html;
+    await lookup(product, url.toString(), data => {
+        const rows = data.results || [];
+        let html = '<option value="">انتخاب کالا...</option>' + rows.map(p => optionHtml(p.id, p.text || p.name, String(selectedId) === String(p.id))).join('');
+        if (selectedId && !rows.some(p => String(p.id) === String(selectedId))) {
+            html += optionHtml(selectedId, selectedText || ('کالا #' + selectedId), true);
+        }
+        product.innerHTML = html;
+    }, () => searchProducts(tr, selectedId, selectedText));
 }
 async function loadVariants(tr, selectedId = '', selectedText = '') {
     const productId = tr.querySelector('.product-select').value;
     const variant = tr.querySelector('.variant-select');
+    cancelLookup(variant);
     if (!productId) {
         variant.innerHTML = '<option value="">ابتدا کالا...</option>';
         syncVariant(tr);
@@ -299,19 +350,21 @@ async function loadVariants(tr, selectedId = '', selectedText = '') {
     }
 
     variant.innerHTML = '<option value="">در حال دریافت تنوع‌ها...</option>';
+    syncVariant(tr);
     const url = new URL(endpoints.variants.replace('__ID__', productId), window.location.origin);
     if (editingVoucherId) url.searchParams.set('editing_voucher_id', editingVoucherId);
-    const data = await fetchJson(url.toString());
-    const rows = data.results || [];
-    let html = '<option value="">انتخاب تنوع...</option>' + rows.map(v => {
-        const extra = `data-stock="${v.central_stock}" data-max="${v.available_for_edit}" data-prev="${v.previous_quantity}"`;
-        return optionHtml(v.id, `${v.text} — موجودی: ${faNumber(v.available_for_edit)}`, String(selectedId) === String(v.id), extra);
-    }).join('');
-    if (selectedId && !rows.some(v => String(v.id) === String(selectedId))) {
-        html += optionHtml(selectedId, selectedText || ('تنوع #' + selectedId), true, 'data-stock="0" data-max="0" data-prev="0"');
-    }
-    variant.innerHTML = html;
-    syncVariant(tr);
+    await lookup(variant, url.toString(), data => {
+        const rows = data.results || [];
+        let html = '<option value="">انتخاب تنوع...</option>' + rows.map(v => {
+            const extra = `data-stock="${Number(v.central_stock) || 0}" data-max="${Number(v.available_for_edit) || 0}" data-prev="${Number(v.previous_quantity) || 0}"`;
+            return optionHtml(v.id, `${v.text} — موجودی: ${faNumber(v.available_for_edit)}`, String(selectedId) === String(v.id), extra);
+        }).join('');
+        if (selectedId && !rows.some(v => String(v.id) === String(selectedId))) {
+            html += optionHtml(selectedId, selectedText || ('تنوع #' + selectedId), true, 'data-stock="0" data-max="0" data-prev="0"');
+        }
+        variant.innerHTML = html;
+        syncVariant(tr);
+    }, () => loadVariants(tr, selectedId, selectedText));
 }
 function syncVariant(tr) {
     const variant = tr.querySelector('.variant-select');
@@ -325,14 +378,13 @@ function syncVariant(tr) {
     badge.textContent = opt?.value ? faNumber(max) : '—';
     badge.title = opt?.value ? `موجودی مرکزی: ${stock} | مقدار قبلی همین سند: ${prev}` : '';
     qty.max = opt?.value ? String(max) : '';
-    qty.disabled = !!opt?.value && max <= 0;
+    qty.disabled = !opt?.value || max <= 0;
 
     if (opt?.value && max <= 0) {
-        qty.value = '';
         rowError(tr, 'موجودی قابل حواله برای این تنوع صفر است.');
     } else {
         rowError(tr, '');
-        if (qty.value && Number(qty.value) > max) qty.value = max;
+        if (qty.value && Number(qty.value) > max) rowError(tr, `حداکثر موجودی قابل حواله: ${faNumber(max)}`);
     }
 }
 function validateRow(tr) {
@@ -342,13 +394,13 @@ function validateRow(tr) {
     const code = tr.querySelector('.asset-code-input');
     rowError(tr, '');
 
-    if (!product.value || !variant.value) {
+    if (tr.querySelector('.lookup-error') || [...tr.querySelectorAll('select')].some(select => requests.has(select)) || !product.value || !variant.value) {
         rowError(tr, 'کالا و تنوع را کامل انتخاب کنید.');
         return false;
     }
     const max = Number(qty.max || 0);
     const value = Number(qty.value || 0);
-    if (!value || value < 1) {
+    if (!Number.isInteger(value) || value < 1) {
         rowError(tr, 'تعداد باید حداقل ۱ باشد.');
         return false;
     }
@@ -372,22 +424,22 @@ function bindRow(tr, item = {}) {
     const qty = tr.querySelector('.quantity-input');
 
     root.addEventListener('change', async () => {
+        delete tr.dataset.initializing;
+        resetProducts(tr);
         await loadChildren(tr);
-        product.innerHTML = '<option value="">ابتدا زیر دسته...</option>';
-        variant.innerHTML = '<option value="">ابتدا کالا...</option>';
-        syncVariant(tr);
+        if (tr.querySelector('.cat-hidden').value) await searchProducts(tr);
     });
-    sub.addEventListener('change', async () => {
+    sub.addEventListener('change', () => {
+        delete tr.dataset.initializing;
+        resetProducts(tr);
         tr.querySelector('.cat-hidden').value = sub.value || '';
-        await searchProducts(tr);
-        variant.innerHTML = '<option value="">ابتدا کالا...</option>';
-        syncVariant(tr);
+        searchProducts(tr);
     });
     search.addEventListener('input', debounce(() => searchProducts(tr, product.value, product.selectedOptions[0]?.textContent || ''), 350));
-    product.addEventListener('change', () => loadVariants(tr));
+    product.addEventListener('change', () => { delete tr.dataset.initializing; resetVariants(tr); loadVariants(tr); });
     variant.addEventListener('change', () => syncVariant(tr));
     qty.addEventListener('input', () => validateRow(tr));
-    remove.addEventListener('click', () => { tr.remove(); reindexRows(); });
+    remove.addEventListener('click', () => { tr.querySelectorAll('select').forEach(cancelLookup); tr.remove(); reindexRows(); });
 }
 function reindexRows() {
     [...tbody.querySelectorAll('tr')].forEach((tr, index) => {
@@ -398,20 +450,34 @@ function reindexRows() {
         tr.querySelector('.asset-code-input').name = `items[${index}][personnel_asset_code]`;
     });
 }
+let fieldSequence = 0;
 async function addRow(item = {}) {
     tbody.insertAdjacentHTML('beforeend', rowTemplate(tbody.querySelectorAll('tr').length, item));
     const tr = tbody.querySelector('tr:last-child');
+    tr.dataset.initializing = '1';
+    const labels = ['دسته اصلی', 'زیر دسته', 'کالا', 'تنوع / مدل', 'موجودی قابل حواله', 'تعداد تحویل', 'کد اموال ۴ رقمی', 'عملیات'];
+    [...tr.cells].forEach((cell, index) => {
+        const label = document.createElement('label');
+        const control = cell.querySelector('select') || cell.querySelector('input:not([type="hidden"]), button');
+        if (control) {
+            control.id = `voucher-field-${++fieldSequence}`;
+            label.htmlFor = control.id;
+        }
+        label.className = 'item-field-label'; label.textContent = labels[index]; cell.prepend(label);
+    });
+    tr.querySelector('.product-search').setAttribute('aria-label', 'جستجوی کالا در دسته انتخاب‌شده');
     bindRow(tr, item);
     if (item.root_category_id) {
         await loadChildren(tr, item.category_id || '');
+        if (!tr.dataset.initializing || tr.querySelector('.lookup-error')) return;
         tr.querySelector('.cat-hidden').value = item.category_id || tr.querySelector('.cat-hidden').value;
     }
     if (item.product_id) {
         await searchProducts(tr, item.product_id, item.product_label || '');
+        if (!tr.dataset.initializing || tr.querySelector('.lookup-error')) return;
         tr.querySelector('.product-select').value = item.product_id;
         await loadVariants(tr, item.variant_id, item.variant_label || '');
-        tr.querySelector('.variant-select').value = item.variant_id;
-        syncVariant(tr);
+        // loadVariants restores the selected value only after a successful lookup.
     }
     reindexRows();
 }
@@ -426,7 +492,10 @@ document.querySelectorAll('.user-select-filter').forEach(input => input.addEvent
 }));
 addBtn.addEventListener('click', () => addRow());
 form.addEventListener('submit', event => {
-    let ok = true;
+    let ok = !!document.getElementById('receiverUserSelect').value && tbody.rows.length > 0;
+    const formError = document.getElementById('voucherFormError');
+    formError.textContent = 'تحویل‌گیرنده و حداقل یک ردیف کامل و معتبر لازم است. خطاهای اقلام را بررسی کنید.';
+    formError.classList.add('d-none');
     const seen = new Set();
     [...tbody.querySelectorAll('tr')].forEach(tr => {
         const rowOk = validateRow(tr);
@@ -440,6 +509,7 @@ form.addEventListener('submit', event => {
     });
     if (!ok) {
         event.preventDefault();
+        formError.classList.remove('d-none');
         tbody.querySelector('.row-error:not(.d-none)')?.scrollIntoView({behavior: 'smooth', block: 'center'});
     }
 });

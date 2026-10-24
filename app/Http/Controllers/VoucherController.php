@@ -1542,18 +1542,21 @@ class VoucherController extends Controller
                 'stock',
             ]);
 
+        // Use authoritative warehouse balances in one query, not per-variant lookups.
+        $centralStocks = \Illuminate\Support\Facades\DB::table('warehouse_stocks')
+            ->where('warehouse_id', $centralWarehouseId)
+            ->where('product_id', $product->id)
+            ->whereIn('product_variant_id', $variants->modelKeys())
+            ->pluck('quantity', 'product_variant_id');
+
         return response()->json([
             'product' => [
                 'id' => (int) $product->id,
                 'name' => (string) $product->name,
                 'category_id' => (int) $product->category_id,
             ],
-            'results' => $variants->map(function (ProductVariant $variant) use ($centralWarehouseId, $product, $previousQtyByVariant) {
-                $centralStock = WarehouseStockService::available(
-                    $centralWarehouseId,
-                    (int) $product->id,
-                    (int) $variant->id
-                );
+            'results' => $variants->map(function (ProductVariant $variant) use ($centralStocks, $previousQtyByVariant) {
+                $centralStock = max(0, (int) ($centralStocks[$variant->id] ?? 0));
                 $previousQty = (int) ($previousQtyByVariant[(int) $variant->id] ?? 0);
                 $availableForEdit = $centralStock + $previousQty;
 
