@@ -88,6 +88,12 @@ class PersonnelVoucherManagementTest extends TestCase
 
         $transfer = WarehouseTransfer::query()->where('reference', 'PER-101')->firstOrFail();
         $originalId = $transfer->id;
+        $editHtml = $this->get(route('vouchers.edit', $transfer))->assertOk()->getContent();
+        preg_match('/const rootCategories = (.*);/', $editHtml, $matches);
+        $roots = array_column(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR), 'id');
+        $this->assertContains($category->parent_id, $roots);
+        $this->assertNotContains($category->id, $roots);
+
 
         $this->actingAs($admin)
             ->put(route('vouchers.update', $transfer), [
@@ -286,6 +292,27 @@ class PersonnelVoucherManagementTest extends TestCase
         $this->assertSame(10, $rows[$first->id]['central_stock']);
         $this->assertSame(35, $rows[$variant->id]['central_stock']);
         $this->assertSame($before, \Illuminate\Support\Facades\DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
+    }
+
+    public function test_personnel_category_picker_only_contains_roots_despite_global_category_composer(): void
+    {
+        [$admin,,,, $child, $product] = $this->fixture();
+        $root = $child->parent;
+        $otherRoot = Category::create(['name' => 'Other root', 'code' => '91']);
+        $otherChild = Category::create(['name' => 'Other child', 'code' => '92', 'parent_id' => $otherRoot->id]);
+
+        $html = $this->actingAs($admin)->get(route('vouchers.section.create', 'personnel'))->assertOk()->getContent();
+        preg_match('/const rootCategories = (.*);/', $html, $matches);
+        $this->assertNotEmpty($matches, 'Category picker configuration was not rendered.');
+        $ids = array_column(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR), 'id');
+        $this->assertContains($root->id, $ids);
+        $this->assertContains($otherRoot->id, $ids);
+        $this->assertNotContains($child->id, $ids);
+        $this->assertNotContains($otherChild->id, $ids);
+        $this->getJson(route('vouchers.personnel.categories.children', $root))
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $child->id);
+        $this->getJson(route('vouchers.personnel.products.search', ['category_id' => $child->id]))
+            ->assertOk()->assertJsonPath('results.0.id', $product->id);
     }
 
     private function fixture(): array

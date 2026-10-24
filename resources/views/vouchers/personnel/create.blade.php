@@ -2,7 +2,7 @@
 
 @php
     $isEdit = isset($voucher) && $voucher?->exists;
-    $rootCategoriesJson = $categories->map(fn($c) => [
+    $rootCategoriesJson = $personnelRootCategories->map(fn($c) => [
         'id' => (int) $c->id,
         'name' => (string) $c->name,
     ])->values();

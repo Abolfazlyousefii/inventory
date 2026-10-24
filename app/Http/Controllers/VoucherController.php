@@ -1411,7 +1411,7 @@ class VoucherController extends Controller
 
     private function personnelCreate()
     {
-        $categories = Category::query()
+        $personnelRootCategories = Category::query()
             ->whereNull('parent_id')
             ->orderBy('name')
             ->get(['id', 'name', 'parent_id']);
@@ -1423,7 +1423,7 @@ class VoucherController extends Controller
 
         return view('vouchers.personnel.create', compact(
             'voucher',
-            'categories',
+            'personnelRootCategories',
             'centralWarehouse',
             'personnelWarehouse',
             'receiverUsers'
@@ -1442,7 +1442,7 @@ class VoucherController extends Controller
             'receiverUser',
         ]);
 
-        $categories = Category::query()
+        $personnelRootCategories = Category::query()
             ->whereNull('parent_id')
             ->orderBy('name')
             ->get(['id', 'name', 'parent_id']);
@@ -1453,7 +1453,7 @@ class VoucherController extends Controller
 
         return view('vouchers.personnel.create', compact(
             'voucher',
-            'categories',
+            'personnelRootCategories',
             'centralWarehouse',
             'personnelWarehouse',
             'receiverUsers'
