@@ -89,6 +89,42 @@
                 <tr class="final-row"><td>مبلغ نهایی</td><td>{{ $money($printData['totals']['total']) }}</td></tr>
             </tbody></table>
         </section>
+        @if(($printData['documentType'] ?? null) === 'invoice')
+            @if($printData['accountBalance'] ?? null)
+                <section class="customer-balance-box">
+                    <div class="info-title">مانده کل حساب مشتری</div>
+                    <div class="customer-balance-details">
+                        <strong>{{ $money($printData['accountBalance']['amount']) }}</strong>
+                        <span class="customer-balance-status">{{ $printData['accountBalance']['status'] }}</span>
+                        <span class="customer-balance-time">تا زمان چاپ: {{ $fmtDate($printData['accountBalance']['asOf']) }}</span>
+                    </div>
+                    <div class="customer-balance-hint">این مبلغ مربوط به کل گردش حساب مشتری است و با مانده همین فاکتور تفاوت دارد.</div>
+                </section>
+            @endif
+            @php($paymentDetails = $printData['customerPayment'] ?? [])
+            @if(collect($paymentDetails)->contains(fn ($value) => filled($value)))
+                <section class="customer-payment-box">
+                    <div class="info-title">مشخصات واریز</div>
+                    <div class="customer-payment-grid">
+                        @if(filled($paymentDetails['name'] ?? null))
+                            <div><span class="payment-label">صاحب حساب:</span><strong>{{ $paymentDetails['name'] }}</strong></div>
+                        @endif
+                        @if(filled($paymentDetails['national_id'] ?? null))
+                            <div><span class="payment-label">شماره ملی:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['national_id'] }}</strong></div>
+                        @endif
+                        @if(filled($paymentDetails['iban'] ?? null))
+                            <div><span class="payment-label">شماره شبا:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['iban'] }}</strong></div>
+                        @endif
+                        @if(filled($paymentDetails['account'] ?? null))
+                            <div><span class="payment-label">شماره حساب:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['account'] }}</strong></div>
+                        @endif
+                        @if(filled($paymentDetails['card'] ?? null))
+                            <div><span class="payment-label">شماره کارت:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['card'] }}</strong></div>
+                        @endif
+                    </div>
+                </section>
+            @endif
+        @endif
         <section class="company-box"><div class="info-title">اطلاعات شرکت و پرداخت</div>
             <div><strong>{{ $printData['company']['name'] }}</strong> | تلفن: {{ $printData['company']['phone'] }}</div>
             <div>آدرس: {{ $printData['company']['address'] }}</div>

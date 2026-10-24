@@ -73,7 +73,7 @@
         <div>
             <h1 class="ps-title">سند خرید #{{ $purchase->id }}</h1>
             <div class="ps-hint mt-1">
-                {{ \App\Support\JalaliDate::dateTime($purchase->purchased_at) }}
+                تاریخ ثبت اولیه: {{ \App\Support\JalaliDate::dateTime($purchase->created_at) }}
                 @if($purchase->user) · ثبت‌کننده: {{ $purchase->user->name }} @endif
             </div>
         </div>

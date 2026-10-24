@@ -2,6 +2,8 @@
 
 @section('title', 'صف ارسال بار')
 
+@push('styles')<link rel="stylesheet" href="{{ asset('css/shipping-queue.css') }}?v=2">@endpush
+
 @section('content')
 	@php
 		$rial = fn($amount) => number_format((int) $amount) . ' ریال';
@@ -10,9 +12,7 @@
 			try { return \Morilog\Jalali\Jalalian::fromDateTime($value)->format('Y/m/d H:i'); } catch (\Throwable) { return (string) $value; }
 		};
 	@endphp
-	<style>
-		.shipping-page{max-width:100%;overflow-x:hidden}.shipping-hero{background:linear-gradient(135deg,#eff6ff,#fff);border:1px solid #dbeafe;border-radius:22px;padding:22px;box-shadow:0 14px 36px rgba(37,99,235,.08)}.shipping-stat{border:1px solid #dbeafe;border-radius:18px;background:#fff;padding:16px}.shipping-table-card{border:1px solid #e5e7eb;border-radius:20px;overflow:hidden;background:#fff}.shipping-table{margin:0;table-layout:fixed}.shipping-table th{background:#f8fafc;color:#475569;font-size:.82rem}.shipping-table td{vertical-align:middle}.shipping-actions{display:flex;flex-wrap:wrap;gap:.35rem}.shipping-mobile-card{border:1px solid #dbeafe;border-radius:18px;background:#fff;box-shadow:0 8px 22px rgba(15,23,42,.05)}@media(max-width:767.98px){.shipping-desktop{display:none!important}.shipping-mobile{display:block!important}}@media(min-width:768px){.shipping-mobile{display:none!important}}
-	</style>
+
 	<div class="container-fluid py-4 shipping-page">
 		<div class="shipping-hero mb-4">
 			<div class="d-flex flex-column flex-lg-row justify-content-between gap-3">

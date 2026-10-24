@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\SalesDocumentTotals;
+use App\Support\DiscountMath;
 use Illuminate\Support\Collection;
 
 class ProductDiscountAllocator
@@ -21,28 +22,13 @@ class ProductDiscountAllocator
 
         foreach ($rows->groupBy('product_id') as $productId => $productItems) {
             $productId = (int) $productId;
-            $gross = (int) $productItems->sum(fn ($item) => SalesDocumentTotals::lineSubtotal($item));
+            $gross = SalesDocumentTotals::calculate($productItems)['subtotal_before_discount'];
             $input = $byProduct[$productId] ?? null;
             $amount = 0;
 
-            if ($input) {
-                $amount = $input['type'] === 'percent'
-                    ? (int) floor($gross * $input['value'] / 100)
-                    : (int) $input['value'];
-                $amount = min(max($amount, 0), $gross);
-            }
-
-            $positive = $productItems->filter(fn ($item) => SalesDocumentTotals::lineSubtotal($item) > 0)->values();
-            $allocated = 0;
-            foreach ($positive as $index => $item) {
-                $lineGross = SalesDocumentTotals::lineSubtotal($item);
-                $share = $index === $positive->count() - 1
-                    ? $amount - $allocated
-                    : (int) floor($amount * $lineGross / max($gross, 1));
-                $share = min(max($share, 0), $lineGross);
-                $lines[(int) $item->id] = $share;
-                $allocated += $share;
-            }
+            if ($input) $amount = DiscountMath::amount($gross, $input['type'], $input['value']);
+            $weights = $productItems->mapWithKeys(fn ($item) => [(int)$item->id => SalesDocumentTotals::lineSubtotal($item)])->all();
+            foreach (DiscountMath::allocate($weights, $amount) as $id => $share) $lines[$id] = $share;
 
             foreach ($productItems as $item) {
                 $lines[(int) $item->id] = $lines[(int) $item->id] ?? 0;
@@ -53,7 +39,7 @@ class ProductDiscountAllocator
                 $groups[] = [
                     'product_id' => $productId,
                     'discount_type' => $input['type'] ?? 'amount',
-                    'discount_value' => (int) ($input['value'] ?? 0),
+                    'discount_value' => $input['value'] ?? 0,
                     'discount_amount' => $actual,
                     'raw_subtotal' => $gross,
                     'final_amount' => max($gross - $actual, 0),
@@ -71,10 +57,13 @@ class ProductDiscountAllocator
             if (! is_array($input)) continue;
             $productId = (int) ($input['product_id'] ?? 0);
             if ($productId <= 0) continue;
+            if (isset($byProduct[$productId])) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['product_discounts' => 'تخفیف یک کالا بیش از یک بار ارسال شده است. صفحه را دوباره باز کنید.']);
+            }
             $type = (string) ($input['type'] ?? $input['discount_type'] ?? 'amount');
             $type = in_array($type, ['amount', 'percent'], true) ? $type : 'amount';
-            $value = max((int) ($input['value'] ?? $input['discount_value'] ?? 0), 0);
-            $byProduct[$productId] = ['type' => $type, 'value' => $type === 'percent' ? min($value, 100) : $value];
+            $value = DiscountMath::value($type, $input['value'] ?? $input['discount_value'] ?? 0);
+            $byProduct[$productId] = ['type' => $type, 'value' => $value];
         }
 
         return $byProduct;

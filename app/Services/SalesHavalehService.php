@@ -799,7 +799,7 @@ class SalesHavalehService
                 'discount_amount' => (int) $order->discount_amount,
                 'discount_breakdown' => $order->discount_breakdown,
                 'invoice_discount_type' => $order->invoice_discount_type,
-                'invoice_discount_value' => (int) $order->invoice_discount_value,
+                'invoice_discount_value' => $order->invoice_discount_value,
                 'invoice_discount_amount' => (int) $order->invoice_discount_amount,
                 'product_discount_amount' => (int) $order->product_discount_amount,
                 'discount_allocation_mode' => $order->discount_allocation_mode,

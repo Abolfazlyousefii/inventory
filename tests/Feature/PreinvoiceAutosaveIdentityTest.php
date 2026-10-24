@@ -93,14 +93,13 @@ it('does not create another document when a stale autosave identity is submitted
         ->and(PreinvoiceOrder::query()->count())->toBe($before);
 })->with(['draft', 'submit']);
 
-it('never misspells the autosave identity variable in the preinvoice form', function () {
+it('uses the same uuid and version when recovering a server autosave into the form', function () {
     $source = file_get_contents(resource_path('views/preinvoice/create.blade.php'));
-
-    // A misspelling silently creates a new global and leaves the real uuid set.
-    expect($source)->not->toContain('currentAutosaveUUID')
-        ->and($source)->toContain('function resetAutosaveIdentity()');
-
-    // Clearing the identity goes only through the helper, which resets uuid and version together.
-    expect(preg_match_all('/(?<!let )currentAutosaveUuid = null/', $source))->toBe(1)
-        ->and(preg_match_all('/(?<!let )currentAutosaveVersion = null/', $source))->toBe(1);
+    expect($source)->not->toContain('currentAutosaveUUID');
+    $start = strpos($source, 'async function applyDbAutosaveDraft(');
+    $end = strpos($source, 'clearVisibleFormOnly()', $start);
+    $restore = substr($source, $start, $end - $start);
+    expect($restore)->toContain('currentAutosaveUuid = draft.uuid || null')
+        ->and($restore)->toContain('currentAutosaveVersion = draft.version || null')
+        ->and($restore)->toContain("autosaveInput.value = currentAutosaveUuid || ''");
 });

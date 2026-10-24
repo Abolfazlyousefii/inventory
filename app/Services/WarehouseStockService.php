@@ -132,14 +132,40 @@ class WarehouseStockService
 
     public static function syncProductStockFromCentral(int $productId): void
     {
+        self::writeProductStockFromCentral($productId);
+        if (DB::transactionLevel() > 0) {
+            DB::afterCommit(function () use ($productId) {
+                try {
+                    // Re-read after the outer transaction commits. Lock the projection
+                    // first, then start a fresh non-locking stock snapshot. This avoids
+                    // both stale REPEATABLE READ totals and cross-variant stock locks.
+                    DB::transaction(function () use ($productId) {
+                        if (Product::query()->whereKey($productId)->lockForUpdate()->first(['id'])) {
+                            self::writeProductStockFromCentral($productId);
+                        }
+                    }, 3);
+                } catch (\Throwable $exception) {
+                    // Physical stock is already committed; never report a failed sale
+                    // and invite a duplicate retry because a display refresh failed.
+                    Log::error('Committed product stock projection refresh failed.', [
+                        'product_id' => $productId, 'exception' => $exception::class,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            });
+        }
+    }
+
+    private static function writeProductStockFromCentral(int $productId): void
+    {
         $centralId = self::centralWarehouseId();
+        $hasVariants = ProductVariant::query()->where('product_id', $productId)->exists();
 
         $centralQty = (int) WarehouseStock::query()
             ->where('warehouse_id', $centralId)
             ->where('product_id', $productId)
-            ->whereNotNull('product_variant_id')
+            ->when($hasVariants, fn ($query) => $query->whereNotNull('product_variant_id'), fn ($query) => $query->whereNull('product_variant_id'))
             ->sum('quantity');
-
         Product::query()
             ->whereKey($productId)
             ->update([
@@ -399,6 +425,10 @@ class WarehouseStockService
 
     private static function syncWarehouseProductAggregate(int $warehouseId, int $productId): void
     {
+        // A return/branch warehouse must never replace the central sellable projection.
+        if ($warehouseId !== self::centralWarehouseId()) {
+            return;
+        }
         if (ProductVariant::query()->where('product_id', $productId)->exists()) {
             return;
         }

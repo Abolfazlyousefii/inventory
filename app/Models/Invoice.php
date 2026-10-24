@@ -41,7 +41,7 @@ class Invoice extends Model
         'shipping_status' => 'string',
         'shipping_cost' => 'integer',
         'discount_breakdown' => 'array',
-        'invoice_discount_value' => 'integer',
+        'invoice_discount_value' => 'decimal:2',
         'invoice_discount_amount' => 'integer',
         'product_discount_amount' => 'integer',
         'shipped_at' => 'datetime',
@@ -189,6 +189,21 @@ class Invoice extends Model
     public function attachments() { return $this->hasMany(InvoiceAttachment::class)->latest(); }
     public function preinvoiceOrder() { return $this->belongsTo(PreinvoiceOrder::class); }
     public function seller() { return $this->belongsTo(User::class, 'seller_id'); }
+    /**
+     * Keep the invoice's original delivery address when one was recorded.
+     * Older invoices with no address snapshot may display the customer's
+     * address from the people registry without rewriting accounting records.
+     */
+    public function getDisplayCustomerAddressAttribute(): string
+    {
+        $snapshot = trim((string) ($this->customer_address ?? ''));
+        if ($snapshot !== '') {
+            return $snapshot;
+        }
+
+        return trim((string) ($this->customer?->address ?? ''));
+    }
+
     public function customer() { return $this->belongsTo(Customer::class); }
     public function shippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_id'); }
     public function dispatchShippingMethod() { return $this->belongsTo(ShippingMethod::class, 'shipping_method_id'); }

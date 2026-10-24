@@ -441,6 +441,9 @@
             <b>موجودی، قیمت خرید و قیمت فروش</b> بعداً در بخش <b>خرید کالا</b> ثبت می‌شوند.
         </div>
 
+        @if($product->uniform_sale_price !== null)
+            <div class="alert alert-info">قیمت فروش مرجع این کالا {{ \App\Support\Currency::formatRial($product->uniform_sale_price) }} است و همهٔ تنوع‌ها از آن پیروی می‌کنند. برای اصلاح قیمت فروش از بخش «تغییر قیمت کالا» استفاده کنید؛ ویرایش قیمت خرید مستقل است.</div>
+        @endif
         <form method="POST" action="{{ route('products.update', $product) }}" id="productEditForm" class="row g-3" enctype="multipart/form-data">
             @csrf
             @method('PUT')

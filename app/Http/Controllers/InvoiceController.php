@@ -141,24 +141,26 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function salesCorrectionSubmit( string $uuid, Request $request ) {
+    public function salesCorrectionSubmit(string $uuid, Request $request)
+    {
+        $request->merge(['invoice_discount_value' => \App\Support\DiscountMath::input($request->input('invoice_discount_value', 0))]);
         $data = $request->validate([
             // Seller corrections may only change items and discounts. Customer, sale mode, shipping,
             // address and payment terms are not accepted here; the service keeps their current values.
-            'opened_fingerprint'           => [ 'required', 'string', 'size:64' ],
-            'invoice_discount_type'        => [ 'required', Rule::in([ 'amount', 'percent' ]) ],
-            'invoice_discount_value'       => [ 'required', 'integer', 'min:0' ],
-            'items'                        => [ 'required', 'array', 'min:1' ],
-            'items.*.id'                   => [ 'nullable', 'integer', 'exists:invoice_items,id' ],
-            'items.*.product_id'           => [ 'required', 'integer', 'exists:products,id' ],
-            'items.*.variant_id'           => [ 'required', 'integer', 'exists:product_variants,id' ],
-            'items.*.quantity'             => [ 'required', 'integer', 'min:0' ],
-            'items.*.price'                => [ 'required', 'integer', 'min:1' ],
-            'items.*.line_discount_amount' => [ 'required', 'integer', 'min:0' ],
-            'change_note'                  => [ 'required', 'string', 'max:2000' ],
+            'opened_fingerprint' => ['required', 'string', 'size:64'],
+            'invoice_discount_type' => ['required', Rule::in(['amount', 'percent'])],
+            'invoice_discount_value' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['nullable', 'integer', 'exists:invoice_items,id'],
+            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.variant_id' => ['required', 'integer', 'exists:product_variants,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:0'],
+            'items.*.price' => ['required', 'integer', 'min:1'],
+            'items.*.line_discount_amount' => ['required', 'integer', 'min:0'],
+            'change_note' => ['required', 'string', 'max:2000'],
         ]);
-        if ( $data['invoice_discount_type'] === 'percent' && (int) $data['invoice_discount_value'] > 100 ) {
-            throw ValidationException::withMessages([ 'invoice_discount_value' => 'درصد تخفیف باید بین صفر تا صد باشد.' ]);
+        if ($data['invoice_discount_type'] === 'percent' && (float) $data['invoice_discount_value'] > 100) {
+            throw ValidationException::withMessages(['invoice_discount_value' => 'درصد تخفیف باید بین صفر تا صد باشد.']);
         }
         $invoice = Invoice::query()
             ->where('uuid', $uuid)

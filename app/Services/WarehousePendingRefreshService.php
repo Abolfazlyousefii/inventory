@@ -56,7 +56,7 @@ class WarehousePendingRefreshService
             'discount_amount' => (int) $invoice->discount_amount,
             'discount_breakdown' => $invoice->discount_breakdown,
             'invoice_discount_type' => $invoice->invoice_discount_type,
-            'invoice_discount_value' => (int) $invoice->invoice_discount_value,
+            'invoice_discount_value' => $invoice->invoice_discount_value,
             'invoice_discount_amount' => (int) $invoice->invoice_discount_amount,
             'product_discount_amount' => (int) $invoice->product_discount_amount,
             'discount_allocation_mode' => $invoice->discount_allocation_mode,

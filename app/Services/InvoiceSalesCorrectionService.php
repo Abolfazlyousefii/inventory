@@ -60,7 +60,7 @@ class InvoiceSalesCorrectionService
             $before = $invoice->items->map(fn (InvoiceItem $item) => clone $item);
             $oldHeader = [
                 'discount_type' => (string) ($invoice->invoice_discount_type ?: 'amount'),
-                'discount_value' => (string) (int) ($invoice->invoice_discount_value ?? $invoice->invoice_discount_amount ?? 0),
+                'discount_value' => (string) ($invoice->invoice_discount_value ?? $invoice->invoice_discount_amount ?? 0),
             ];
             $note = trim((string) $data['change_note']);
             $items = array_values($data['items']);
@@ -69,10 +69,8 @@ class InvoiceSalesCorrectionService
                 throw ValidationException::withMessages(['items' => 'فاکتور باید حداقل یک قلم کالا داشته باشد.']);
             }
             $base = $activeItems->sum(fn (array $row) => (int) $row['quantity'] * (int) $row['price'] - (int) $row['line_discount_amount']);
-            $discountValue = (int) $data['invoice_discount_value'];
-            $discountAmount = $data['invoice_discount_type'] === 'percent'
-                ? intdiv($base * min($discountValue, 100), 100)
-                : min($discountValue, $base);
+            $discountValue = \App\Support\DiscountMath::value($data['invoice_discount_type'], $data['invoice_discount_value']);
+            $discountAmount = \App\Support\DiscountMath::amount($base, $data['invoice_discount_type'], $discountValue);
 
             $invoice->update([
                 'invoice_discount_type' => $data['invoice_discount_type'],
@@ -91,7 +89,7 @@ class InvoiceSalesCorrectionService
 
             $newHeader = [
                 'discount_type' => (string) $invoice->invoice_discount_type,
-                'discount_value' => (string) (int) $invoice->invoice_discount_value,
+                'discount_value' => (string) $invoice->invoice_discount_value,
             ];
             $labels = [
                 'discount_type' => 'نوع تخفیف کلی', 'discount_value' => 'مقدار تخفیف کلی',

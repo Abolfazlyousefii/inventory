@@ -117,10 +117,13 @@ class ProductCatalogGroupingService
 
     public function effectivePrice(ProductVariant $variant, Product $product): ?int
     {
+        // A real variant's selling price is authoritative. The parent price is
+        // a cached summary and can be stale after individual variant changes.
+        // Never substitute it for a variant with no price: doing so makes
+        // export cards and PDFs disagree with the live product list.
         $variantPrice = (int) ($variant->sell_price ?? 0);
-        if ($variantPrice > 0) return $variantPrice;
-        $productPrice = (int) ($product->price ?? 0);
-        return $productPrice > 0 ? $productPrice : null;
+
+        return $variantPrice > 0 ? $variantPrice : null;
     }
 
     public function priceLabel(?int $price): string { return $price ? number_format($price).' ریال' : 'قیمت ثبت نشده'; }

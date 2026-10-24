@@ -8,6 +8,28 @@ use Illuminate\Database\Eloquent\Model;
 
 class ProductVariant extends Model
 {
+    public function save(array $options = []): bool
+    {
+        if (! $this->exists || $this->isDirty('sell_price') || $this->isDirty('product_id')) {
+            // Keep the parent-price lock through INSERT/UPDATE even outside a caller transaction.
+            return $this->getConnection()->transaction(fn () => parent::save($options), 3);
+        }
+
+        return parent::save($options);
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $variant): void {
+            if (! $variant->exists || $variant->isDirty('sell_price') || $variant->isDirty('product_id')) {
+                $product = Product::query()->whereKey($variant->product_id)->lockForUpdate()->first();
+                if ($product?->uniform_sale_price !== null) {
+                    $variant->sell_price = (int) $product->uniform_sale_price;
+                }
+            }
+        });
+    }
+
     protected $fillable = [
         'product_id',
         'is_active',

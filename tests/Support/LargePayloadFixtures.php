@@ -65,6 +65,7 @@ function largePayloadPost(array $rows, array $overrides = []): array
 {
     return array_merge([
         'intent' => 'submit',
+        'reservation_token' => (string) \Illuminate\Support\Str::uuid(),
         'customer_name' => 'مشتری بزرگ',
         'customer_mobile' => '09120000000',
         'is_in_person' => 0,

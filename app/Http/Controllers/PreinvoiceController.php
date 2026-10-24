@@ -49,6 +49,8 @@ use App\Http\Requests\FinanceUpdatePreinvoiceRequest;
 use App\Http\Requests\PreinvoiceAutosaveRequest;
 use App\Support\SalesDocumentTotals;
 use App\Support\PageAccessCatalog;
+use App\Support\FinanceDocumentVersion;
+use App\Support\SalesDiscountPayload;
 
 class PreinvoiceController extends Controller
 {
@@ -316,7 +318,7 @@ class PreinvoiceController extends Controller
         }
 
         $basePreinvoiceQuery = PreinvoiceOrder::query()
-            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items:id,preinvoice_order_id,quantity'])
+            ->with(['creator:id,name', 'customer:id,reservation_tier', 'items'])
             ->where('status', PreinvoiceOrder::STATUS_PENDING_FINANCE)
             ->where(function ($query) {
                 $query->whereNull('stock_frozen_until')
@@ -860,7 +862,7 @@ class PreinvoiceController extends Controller
                 'discount_amount' => (int) ($validated['discount_amount'] ?? 0),
                 'discount_breakdown' => $this->decodeDiscountBreakdown($validated['discount_breakdown'] ?? null),
                 'invoice_discount_type' => $validated['invoice_discount_type'] ?? null,
-                'invoice_discount_value' => (int) ($validated['invoice_discount_value'] ?? 0),
+                'invoice_discount_value' => $validated['invoice_discount_value'] ?? 0,
                 'stock_frozen_until' => null,
                 'stock_released_at' => null,
                 'is_auto_draft' => $order ? (bool) $order->is_auto_draft : true,
@@ -951,8 +953,8 @@ class PreinvoiceController extends Controller
             }
             $base = SalesDocumentTotals::calculate($items)['subtotal_after_product_discount'];
             $type = $breakdown['order_discount_type'] ?? $payload['invoice_discount_type'] ?? 'amount';
-            $value = max(0, (int) ($breakdown['order_discount_value'] ?? $payload['invoice_discount_value'] ?? 0));
-            $discount = $type === 'percent' ? (int) floor($base * min($value, 100) / 100) : min($value, $base);
+            $value = \App\Support\DiscountMath::value($type, $breakdown['order_discount_value'] ?? $payload['invoice_discount_value'] ?? 0);
+            $discount = \App\Support\DiscountMath::amount($base, $type, $value);
 
             return (int) SalesDocumentTotals::calculate($items, $discount, $shipping)['grand_total'];
         } catch (\DomainException $exception) {
@@ -1027,7 +1029,7 @@ class PreinvoiceController extends Controller
             'saved_at' => optional($order->auto_saved_at ?? $order->updated_at)->toIso8601String(),
             'customer' => ['id' => $order->customer_id, 'name' => $order->customer_name, 'mobile' => $order->customer_mobile],
             'payment_terms_note' => $order->payment_terms_note,
-            'discount' => ['type' => $order->invoice_discount_type ?: data_get($order->discount_breakdown, 'order_discount_type', 'amount'), 'value' => (int) ($order->invoice_discount_value ?? data_get($order->discount_breakdown, 'order_discount_value', 0))],
+            'discount' => ['type' => $order->invoice_discount_type ?: data_get($order->discount_breakdown, 'order_discount_type', 'amount'), 'value' => ($order->invoice_discount_value ?? data_get($order->discount_breakdown, 'order_discount_value', 0))],
             'discount_breakdown' => $order->discount_breakdown,
             'items' => $order->items->map(fn ($item) => [
                 'product_id' => (int) $item->product_id,
@@ -1200,6 +1202,7 @@ class PreinvoiceController extends Controller
                     'preinvoice' => 'این درخواست قبلاً ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، صفحه پیش‌فاکتورها را بررسی کنید.',
                 ]);
             }
+            $this->assertDraftPricesForSubmission($validated['products']);
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
@@ -1354,9 +1357,9 @@ class PreinvoiceController extends Controller
     {
         abort_unless(auth()->check(), 403);
 
-        $order = PreinvoiceOrder::with(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice'])->where('uuid', $uuid)->firstOrFail();
+        $order = PreinvoiceOrder::with(['items.product:id,name,code,sku,uniform_sale_price', 'items.variant:id,variant_name', 'invoice'])->where('uuid', $uuid)->firstOrFail();
         $this->expireSellerFacingPreinvoiceIfOverdue($order);
-        $order->refresh()->load(['items.product:id,name,code,sku', 'items.variant:id,variant_name', 'invoice']);
+        $order->refresh()->load(['items.product:id,name,code,sku,uniform_sale_price', 'items.variant:id,variant_name', 'invoice']);
 
         abort_unless($this->accessService->canSellerEditPreinvoiceItems($order, auth()->user()), 403);
 
@@ -1642,15 +1645,7 @@ class PreinvoiceController extends Controller
 
     private function decodeDiscountBreakdown(mixed $value): ?array
     {
-        if (is_array($value)) {
-            return $value;
-        }
-        if (! is_string($value) || trim($value) === '') {
-            return null;
-        }
-        $decoded = json_decode($value, true);
-
-        return is_array($decoded) ? $decoded : null;
+        return $value === null || $value === '' ? null : SalesDiscountPayload::decode($value);
     }
 
     private function validateDraftPayload(Request $request, bool $checkCurrentStock = true, ?PreinvoiceOrder $editingOrder = null): array
@@ -1688,7 +1683,7 @@ class PreinvoiceController extends Controller
             'products.*.price' => 'nullable|integer|min:0',
             'products.*.item_id' => 'nullable|integer',
             'products.*.line_discount_amount' => 'nullable|integer|min:0',
-            'discount_breakdown' => 'nullable|string',
+            'discount_breakdown' => 'nullable|string|json',
         ], [
             'customer_name.required' => 'نام مشتری الزامی است.',
             'customer_mobile.required' => 'شماره موبایل مشتری الزامی است.',
@@ -1752,8 +1747,21 @@ class PreinvoiceController extends Controller
     }
 
     /** Validate inside the submit transaction, before any document or reservation writes. */
+    private function assertDraftPricesForSubmission(array $rows): void
+    {
+        $prices = ProductVariant::query()->whereIn('id', collect($rows)->pluck('variety_id'))->pluck('sell_price', 'id');
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            if ((int) ($row['price'] ?? $prices->get((int) $row['variety_id'], 0)) <= 0) {
+                $errors["products.{$index}.price"] = 'قیمت این ردیف صفر است؛ قبل از ارسال به مالی، قیمت فروش را مشخص کنید. پیش‌نویس قابل نگهداری است.';
+            }
+        }
+        if ($errors !== []) throw ValidationException::withMessages($errors);
+    }
+
     private function assertDraftItemsSellableForSubmission(array $rows): void
     {
+        $this->assertDraftPricesForSubmission($rows);
         // Match the product-status writer's product -> variant lock order, so a
         // concurrent deactivation cannot slip between validation and reservation.
         $products = Product::query()
@@ -2136,7 +2144,7 @@ class PreinvoiceController extends Controller
             'discount_amount' => (int) $totals['total_discount'],
             'discount_breakdown' => $order->discount_breakdown,
             'invoice_discount_type' => $order->invoice_discount_type,
-            'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+            'invoice_discount_value' => $order->invoice_discount_value ?? 0,
             'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
             'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
             'discount_allocation_mode' => $order->discount_allocation_mode,
@@ -2253,12 +2261,15 @@ class PreinvoiceController extends Controller
             return null;
         }
 
-        return PreinvoiceOrder::query()
+        $order = PreinvoiceOrder::query()
             ->where('uuid', $uuid)
             ->where('created_by', auth()->id())
             ->where('status', PreinvoiceOrder::STATUS_DRAFT)
             ->lockForUpdate()
             ->first();
+        abort_unless($order, 409, 'پیش‌نویس دیگر قابل ذخیره نیست؛ صفحه را تازه کنید و نسخه معتبر را بازیابی کنید.');
+
+        return $order;
     }
 
     private function orderCustomerName(array $validated, ?Customer $customer): string
@@ -2514,6 +2525,32 @@ class PreinvoiceController extends Controller
             ->lockForUpdate()
             ->get()
             ->groupBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
+
+        if (! $stockAlreadyAdjusted) {
+            $shortfalls = [];
+            $messages = [];
+            $suggested = [];
+            foreach ($required as $key => $row) {
+                $held = (int) $rows->get($key, collect())->sum('quantity');
+                $available = WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $row['product_id'], $row['variant_id']);
+                $maximum = $held + $available;
+                $suggested[] = $row + ['requested_quantity' => $row['quantity'], 'remove' => $maximum <= 0];
+                $suggested[array_key_last($suggested)]['quantity'] = min($row['quantity'], $maximum);
+                if ($row['quantity'] > $maximum) {
+                    $variant = ProductVariant::with('product:id,name')->findOrFail($row['variant_id']);
+                    $productName = (string) ($variant->product?->name ?? 'نامشخص');
+                    $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
+                    $delta = $row['quantity'] - $held;
+                    $message = "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$productName} | تنوع: {$variantName} | تعداد درخواستی: {$delta} | موجودی قابل فروش: {$available}";
+                    $messages[] = $message;
+                    $shortfalls[] = $row + ['product_name' => $productName, 'variant_name' => $variantName,
+                        'requested_quantity' => $delta, 'available_quantity' => $available, 'max_allowed' => $maximum, 'message' => $message];
+                }
+            }
+            if ($shortfalls !== []) {
+                throw new PreinvoiceItemStockException($shortfalls, $suggested, $messages);
+            }
+        }
 
         foreach ($required as $key => $row) {
             $reservations = $rows->get($key, collect());
@@ -2892,7 +2929,8 @@ class PreinvoiceController extends Controller
         try {
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
             $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
-            $updated->refresh()->load('items');
+            // Approve the version this request just saved, not a later concurrent edit.
+            $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
         } catch (QueryException $exception) {
             Log::error('Finance preinvoice save-and-finalize update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, 'save_and_finalize'));
 
@@ -2980,6 +3018,7 @@ class PreinvoiceController extends Controller
         ], true), 403);
 
         $validated = $request->validate([
+            'finance_version' => ['required', 'string', 'size:64'],
             'payments' => 'nullable|array',
             'payments.*.method' => 'required_with:payments|in:cash,cheque',
             'payments.*.amount' => 'required_with:payments|integer|min:1',
@@ -3034,6 +3073,7 @@ class PreinvoiceController extends Controller
                 }
 
                 $this->reservationService->assertFinanceApprovable($order, auth()->user());
+                FinanceDocumentVersion::assertCurrent($order, $validated['finance_version'] ?? null);
 
                 if (! in_array($order->status, [
                     PreinvoiceOrder::STATUS_PENDING_FINANCE,
@@ -3041,8 +3081,6 @@ class PreinvoiceController extends Controller
                 ], true)) {
                     abort(403);
                 }
-
-                $centralStockMovedToReserve = $this->hasCentralStockMovedToReserve($order);
 
                 foreach ($order->items as $it) {
                     $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $it->variant_id)->lockForUpdate()->first();
@@ -3064,30 +3102,9 @@ class PreinvoiceController extends Controller
                 $discount = (int) $totals['total_discount'];
                 $total = (int) $totals['grand_total'];
 
-                $requiredByVariant = $order->items
-                    ->groupBy('variant_id')
-                    ->map(fn($rows) => (int) $rows->sum('quantity'));
-
-                $this->coverReservationShortfalls($requiredByVariant, $centralStockMovedToReserve);
-
-                $reservedByVariant = ProductVariant::query()
-                    ->whereIn('id', $requiredByVariant->keys())
-                    ->lockForUpdate()
-                    ->pluck('reserved', 'id');
-
-                foreach ($requiredByVariant as $variantId => $requiredQty) {
-                    $reservedQty = (int) ($reservedByVariant[(int) $variantId] ?? 0);
-
-                    if ($reservedQty < $requiredQty) {
-                        $variant = ProductVariant::query()->with('product:id,name')->whereKey((int) $variantId)->first();
-                        $productName = (string) ($variant?->product?->name ?? 'نامشخص');
-
-                        throw ValidationException::withMessages([
-                            'products' => "موجودی رزروشده برای محصول «{$productName}» کافی نیست. رزروشده: {$reservedQty} | درخواست: {$requiredQty}",
-                            //there product is reserved some other place in some other draft and is not in stocka anymore
-                        ]);
-                    }
-                }
+                // assertFinanceApprovable already locked and verified this order's
+                // canonical official reservations. A display cache is never a reason
+                // to reserve physical stock a second time during finance approval.
 
                 $invoice = $existingInvoice;
 
@@ -3107,7 +3124,7 @@ class PreinvoiceController extends Controller
                         'discount_amount' => (int) $discount,
                         'discount_breakdown' => $order->discount_breakdown,
                         'invoice_discount_type' => $order->invoice_discount_type,
-                        'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                        'invoice_discount_value' => $order->invoice_discount_value ?? 0,
                         'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
                         'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
                         'discount_allocation_mode' => $order->discount_allocation_mode,
@@ -3136,7 +3153,7 @@ class PreinvoiceController extends Controller
                         'discount_amount' => (int) $discount,
                         'discount_breakdown' => $order->discount_breakdown,
                         'invoice_discount_type' => $order->invoice_discount_type,
-                        'invoice_discount_value' => (int) ($order->invoice_discount_value ?? 0),
+                        'invoice_discount_value' => $order->invoice_discount_value ?? 0,
                         'invoice_discount_amount' => (int) ($order->invoice_discount_amount ?? 0),
                         'product_discount_amount' => (int) ($order->product_discount_amount ?? 0),
                         'discount_allocation_mode' => $order->discount_allocation_mode,

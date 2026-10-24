@@ -21,7 +21,7 @@
             <div class="col-md-4"><strong>مبلغ کل:</strong> {{ \App\Support\Currency::formatRial($invoice->total) }}</div>
             <div class="col-md-4"><strong>مشتری:</strong> {{ $invoice->customer_name ?: '—' }}</div>
             <div class="col-md-4"><strong>شماره تماس:</strong> {{ $invoice->customer_mobile ?: '—' }}</div>
-            <div class="col-md-12"><strong>آدرس:</strong> {{ $invoice->customer_address ?: '—' }}</div>
+            <div class="col-md-12"><strong>آدرس:</strong> {{ $invoice->display_customer_address ?: '—' }}</div>
         </div>
     </div>
 </div>

@@ -124,7 +124,7 @@
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ تایید/تغییر مالی</div><div class="invoice-summary-value">{{ $toJalali($invoice->status_changed_at) }}</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ آماده ارسال</div><div class="invoice-summary-value">{{ $invoice->status === Invoice::STATUS_READY_TO_SHIP ? $toJalali($invoice->status_changed_at) : $toJalali($invoice->collected_at) }}</div></div>
 				<div class="invoice-summary-item"><div class="invoice-summary-label">تاریخ ارسال</div><div class="invoice-summary-value">{{ $toJalali($invoice->shipped_at) }}</div></div>
-				<div class="invoice-summary-item"><div class="invoice-summary-label">آدرس</div><div class="invoice-summary-value">{{ $invoice->customer_address ?: '—' }}</div></div>
+				<div class="invoice-summary-item"><div class="invoice-summary-label">آدرس</div><div class="invoice-summary-value">{{ $invoice->display_customer_address ?: '—' }}</div></div>
 			</div>
 		</div>
 

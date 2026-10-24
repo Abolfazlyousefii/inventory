@@ -1,0 +1,111 @@
+.stocktake-archive{max-width:1500px;margin:0 auto;padding:22px;color:#173d53}
+.sa-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px;background:#edf5ff;border:1px solid #bdd7f4;border-right:4px solid #367cc0;border-radius:14px;margin-bottom:16px}
+.sa-heading{display:flex;align-items:center;gap:14px}
+.sa-icon{width:48px;height:48px;background:#287ab4;color:white;border-radius:13px;display:grid;place-items:center;font-size:30px}
+.sa-eyebrow{font-size:11px;color:#487596}
+.sa-header h1{font-size:22px;font-weight:800;margin:3px 0 6px}
+.sa-header p{margin:0;font-size:12px;color:#496a82}
+.sa-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.sa-stat{display:flex;align-items:center;gap:13px;border:1px solid var(--line);background:var(--tint);border-radius:12px;padding:16px;color:var(--ink)}
+.sa-stat span{font-size:12px}
+.sa-stat strong{display:block;font-size:25px;margin-top:5px}
+.sa-stat-icon{display:grid;place-items:center;width:40px;height:40px;background:white;border-radius:11px;font-size:23px!important}
+.sa-stat.blue{--line:#bdd7f4;--tint:#edf5ff;--ink:#22629b}
+.sa-stat.green{--line:#a6ddce;--tint:#edf9f4;--ink:#087e60}
+.sa-stat.amber{--line:#f2d396;--tint:#fff7e7;--ink:#93600d}
+.sa-stat.purple{--line:#d6c5f2;--tint:#f5efff;--ink:#7348a8}
+.sa-filters{display:grid;grid-template-columns:2fr 1.5fr 1fr 1fr 1fr;gap:12px;padding:18px;background:#fff;border:1px solid #d4e1ed;border-top:3px solid #9373c3;border-radius:13px;margin-bottom:16px}
+.sa-filters label{display:block;font-size:12px;font-weight:600;margin-bottom:7px}
+.sa-filters .form-control,.sa-filters .form-select{width:100%;min-height:39px;border-radius:8px;font-size:12px}
+.sa-filter-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+.sa-list{border:1px solid #c6dbe8;border-radius:13px;background:white;overflow:hidden}
+.sa-list-title{padding:15px 17px;display:flex;justify-content:space-between;align-items:center;background:#f0f7fb;gap:10px}
+.sa-list-title span{font-size:11px;color:#4d6b80}
+.sa-table-wrap{overflow-x:auto}
+.sa-table{width:100%;border-collapse:collapse;font-size:12px}
+.sa-table th{background:#204e65;color:#fff;padding:13px 12px;font-weight:600;white-space:nowrap}
+.sa-table td{padding:15px 12px;border-bottom:1px solid #dbe7ee;vertical-align:middle;max-width:260px;overflow-wrap:anywhere}
+.sa-table tbody tr:nth-child(even){background:#f5f9fc}
+.sa-table tbody tr:hover{background:#edf7fa}
+.sa-code{font-weight:750;color:#226a9d;text-decoration:none}
+.sa-subtitle{display:block;margin-top:6px;font-size:11px;color:#557086;line-height:1.7}
+.sa-category{font-size:12px;line-height:1.8;color:#604295}
+.sa-change{font-size:11px}
+.sa-change.up{color:#087f69}
+.sa-change.down{color:#bd394a}
+.sa-change-value{display:block;margin-top:7px;font-size:12px}
+.sa-status{display:inline-block;border-radius:7px;padding:4px 9px;font-size:11px;font-weight:650;background:#e9edf2;color:#4e6271}
+.sa-status.applied{background:#d9f3e7;color:#087349}
+.sa-status.draft{background:#fff0c9;color:#865408}
+.sa-status.cancelled{background:#ffe7e7;color:#b63e48}
+.sa-status.reverted{background:#eee6fa;color:#7445a0}
+.sa-actions{display:flex;flex-wrap:wrap;gap:5px}
+.sa-actions form{margin:0}
+.sa-pagination{padding:14px}
+.sa-empty{padding:42px 20px;text-align:center}
+.sa-empty p{color:#557086;font-size:13px;margin:10px 0}
+.sa-table time{white-space:nowrap;font-size:11px}
+@media(max-width:1100px){.sa-filters{grid-template-columns:repeat(3,minmax(0,1fr))}
+.sa-search{grid-column:span 2}
+.sa-table td{padding:13px 9px}
+.stocktake-archive{padding:16px}
+}
+@media(max-width:767px){.stocktake-archive{padding:12px 4px}
+.sa-header{padding:15px;align-items:flex-start;flex-direction:column}
+.sa-header h1{font-size:19px}
+.sa-header .btn{align-self:flex-end}
+.sa-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.sa-stat{padding:12px;gap:8px}
+.sa-stat strong{font-size:22px}
+.sa-filters{grid-template-columns:repeat(2,minmax(0,1fr));padding:13px;gap:11px}
+.sa-search{grid-column:1/-1}
+.sa-filter-actions .btn{flex:1}
+.sa-list-title{flex-wrap:wrap}
+.sa-table thead{display:none}
+.sa-table,.sa-table tbody{display:block}
+.sa-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:12px;border:1px solid #cbdfe9;border-right:3px solid #3487ad;border-radius:11px;overflow:hidden;background:#fff!important}
+.sa-table td{display:block;max-width:none;padding:11px;border-bottom:1px solid #e3ecf2}
+.sa-table td::before{content:attr(data-label);display:block;font-size:10px;color:#647e8e;margin-bottom:6px}
+.sa-table td:first-child,.sa-table td:nth-child(2),.sa-table td:last-child{grid-column:1/-1}
+.sa-table td:last-child{border:0}
+.sa-table time{font-size:12px}
+.sa-actions{justify-content:flex-end}
+.sa-code{font-size:13px}
+.sa-subtitle{font-size:12px}
+.sa-category{font-size:13px}
+}
+
+
+.stocktake-archive .sa-header{background:#fff5eb;border-color:#efd0ae;border-right-color:#bf7b32}
+
+.stocktake-archive .sa-icon{background:#b97429}
+.stocktake-archive .sa-eyebrow{color:#916027}
+
+.stocktake-archive .sa-filters{border-top-color:#cb9e69}
+
+.stocktake-archive .sa-stat.red{--line:#efc2cc;--tint:#fff1f4;--ink:#b43b56}
+
+.stocktake-archive .sa-status.finalized{background:#dff4e8;color:#12724c}
+
+.stocktake-archive .sa-product{color:#254c65;line-height:1.9;font-size:12px}
+
+.stocktake-archive .sa-delta{display:inline-block;padding:5px 9px;border-radius:7px;font-weight:700;white-space:nowrap}
+
+.stocktake-archive .sa-delta.positive{background:#e6f6ed;color:#14794f}
+
+.stocktake-archive .sa-delta.negative{background:#ffebef;color:#ba3852}
+
+.stocktake-archive .sa-delta.neutral{background:#eff3f6;color:#647c8e}
+
+.stocktake-archive .sa-table th:nth-child(1){width:17%}
+.stocktake-archive .sa-table th:nth-child(2){width:21%}
+
+.stocktake-archive .sa-table th:nth-child(3){width:14%}
+.stocktake-archive .sa-table th:nth-child(8){width:16%}
+
+@media(max-width:767px){.stocktake-archive .sa-table td:nth-child(3){grid-column:1/-1}
+.stocktake-archive .sa-table td:nth-child(7){grid-column:1/-1}
+.stocktake-archive .sa-table td:nth-child(6){grid-column:auto}
+.stocktake-archive .sa-product{font-size:13px}
+}
+.stocktake-archive .sa-status{white-space:nowrap}.stocktake-archive .sa-table th:nth-child(7){min-width:80px}

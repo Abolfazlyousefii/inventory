@@ -72,13 +72,160 @@ class ProductStockHistoryService
         }
         $this->transfers($rows, $direct, $productId, $variantId);
         $this->stocktakes($rows, $direct, $productId, $variantId);
+        $this->invoiceRevisions($rows, $productId, $variantId, $central);
+        $this->inboundReceipts($rows, $direct, $productId, $variantId);
+        $this->salesReturnDocuments($rows, $productId, $variantId);
+        $this->explainEffects($rows);
         $this->hydrate($rows);
         $stocks = DB::table('warehouse_stocks')->where('warehouse_id', $central)->where('product_id', $productId);
         // Aggregate-only rows duplicate variant quantities; use variants when present.
         if ($variantId) $stocks->where('product_variant_id', $variantId);
         elseif (DB::table('product_variants')->where('product_id', $productId)->exists()) $stocks->whereNotNull('product_variant_id');
+        $current = $central ? (int) $stocks->sum('quantity') : null;
+        $variants = DB::table('product_variants')->where('product_id', $productId)
+            ->when($variantId, fn ($q) => $q->where('id', $variantId))->get(['stock', 'reserved']);
+        $cached = $variants->isNotEmpty() ? (int) $variants->sum('stock') : null;
         return ['rows' => $rows->sort(function($a, $b) { return strcmp((string)$b->created_at, (string)$a->created_at) ?: strcmp((string)$b->id, (string)$a->id); })->values(),
-            'sold' => $sold, 'current' => $central ? (int)$stocks->sum('quantity') : null];
+            'sold' => $sold, 'current' => $current, 'cached_current' => $cached,
+            'reserved' => (int) $variants->sum('reserved'),
+            // This checks the current projection only, not an opening-to-closing ledger.
+            'projection_matches' => $current !== null && $cached !== null && $current === $cached,
+            'history_complete' => false,
+            'incomplete_records' => $rows->where('evidence_level', 'incomplete')->count()];
+    }
+
+    private function invoiceRevisions(Collection $rows, int $product, ?int $variant, ?int $central): void
+    {
+        $items = DB::table('invoice_collection_revision_items as ci')
+            ->join('invoice_collection_revisions as c', 'c.id', '=', 'ci.invoice_collection_revision_id')
+            ->join('invoices as i', 'i.id', '=', 'c.invoice_id')
+            ->where('ci.product_id', $product)->when($variant, fn ($q) => $q->where('ci.product_variant_id', $variant))
+            ->get(['ci.id','ci.product_variant_id','ci.old_quantity','ci.new_quantity','ci.change_type',
+                'ci.variant_name_snapshot','ci.sku_snapshot','c.invoice_id','c.changed_by','c.reason_note','c.created_at','i.uuid']);
+        foreach ($items as $item) {
+            $before = (int) $item->old_quantity;
+            $after = (int) $item->new_quantity;
+            if ($before === $after) continue; // Price-only revisions do not explain stock changes.
+            $label = $after === 0 ? 'حذف قلم از فاکتور' : ($after < $before ? 'کاهش تعداد قلم فاکتور' : 'افزایش تعداد قلم فاکتور');
+            $row = $this->row('revision-item-'.$item->id, $item->created_at, $item->product_variant_id, $central,
+                'info', $label, abs($after - $before), 'فاکتور '.$item->uuid, route('invoices.show', $item->uuid),
+                $item->changed_by, trim(($item->reason_note ?? '').' | تغییر تعداد سند به‌تنهایی دریافت انبار نیست؛ نتیجهٔ رسید ورودی را بررسی کنید.'), 'اصلاح سند فروش');
+            $row->document_quantity_before = $before;
+            $row->document_quantity_after = $after;
+            $row->variant_snapshot = $item->variant_name_snapshot;
+            $row->variant_code_snapshot = $item->sku_snapshot;
+            $row->available_delta = 0; // Supporting document; never counted again.
+            $rows->push($row);
+        }
+    }
+
+    private function inboundReceipts(Collection $rows, Collection $direct, int $product, ?int $variant): void
+    {
+        $items = DB::table('warehouse_inbound_receipt_items as ri')
+            ->join('warehouse_inbound_receipts as r', 'r.id', '=', 'ri.receipt_id')
+            ->where('ri.product_id', $product)->when($variant, fn ($q) => $q->where('ri.product_variant_id', $variant))
+            ->get(['ri.id','ri.product_variant_id','ri.expected_quantity','ri.accepted_quantity',
+                'ri.suggested_warehouse_id','ri.received_warehouse_id','ri.stock_movement_id','ri.reason','ri.note',
+                'r.id as receipt_id','r.receipt_number','r.source_type','r.source_id','r.status','r.created_at',
+                'r.reviewed_at','r.requested_by','r.reviewed_by','r.review_note']);
+        $invoiceIds = $items->whereIn('source_type', ['invoice_adjustment','invoice_cancel','finance_adjustment'])->pluck('source_id')->unique();
+        $invoices = DB::table('invoices')->whereIn('id', $invoiceIds)->pluck('uuid', 'id');
+        $movementRows = $direct->keyBy('id');
+        foreach ($items as $item) {
+            $final = in_array($item->status, ['received', 'discrepancy'], true);
+            $accepted = $final ? (int) $item->accepted_quantity : 0;
+            $expected = (int) $item->expected_quantity;
+            $label = match ($item->status) {
+                'pending' => 'در انتظار دریافت انبار',
+                'cancelled' => 'رسید ورودی لغوشده',
+                default => $accepted === 0 ? 'دریافت صفر؛ موجودی اضافه نشده' : ($item->status === 'discrepancy' ? 'دریافت انبار با مغایرت' : 'دریافت تأییدشدهٔ انبار'),
+            };
+            $row = $this->row('inbound-item-'.$item->id, $final ? ($item->reviewed_at ?: $item->created_at) : $item->created_at,
+                $item->product_variant_id, $item->received_warehouse_id ?: $item->suggested_warehouse_id,
+                'info', $label, $expected, $item->receipt_number, route('warehouse.inbound.show', $item->receipt_id),
+                $final ? $item->reviewed_by : $item->requested_by,
+                trim(($item->note ?? '').' | '.($item->review_note ?? '')),
+                'نتیجهٔ رسید ورودی');
+            $row->expected_quantity = $expected;
+            $row->accepted_quantity = $accepted;
+            $row->event_status = $item->status;
+            $row->available_delta = 0; // The linked movement is the numeric event.
+            $row->related_reference = null;
+            $row->related_url = null;
+            if ($invoices->has($item->source_id) && in_array($item->source_type, ['invoice_adjustment','invoice_cancel','finance_adjustment'], true)) {
+                $row->related_reference = 'فاکتور '.$invoices[$item->source_id];
+                $row->related_url = route('invoices.show', $invoices[$item->source_id]);
+            }
+            $row->evidence_note = $final
+                ? ($accepted === 0 ? 'از تعداد مورد انتظار، هیچ کالایی به موجودی تحویل نشده است.' : 'تعداد دریافت‌شده در گردش مرتبط ثبت می‌شود؛ این ردیف دوباره جمع نمی‌شود.')
+                : ($item->status === 'cancelled' ? 'این رسید اثر دریافتی ندارد.' : 'تا تأیید دریافت، مقداری از این رسید وارد موجودی نمی‌شود.');
+            $linked = $movementRows->get($item->stock_movement_id);
+            $validLink = $linked && $linked->type === 'in'
+                && (int) $linked->product_variant_id === (int) $item->product_variant_id
+                && (int) $linked->warehouse_id === (int) $item->received_warehouse_id
+                && (int) $linked->quantity === $accepted;
+            if ($final && $accepted > 0 && ! $validLink) {
+                $row->evidence_level = 'incomplete';
+                $row->evidence_note = 'دریافت مثبت ثبت شده، ولی گردش مطابق با تنوع، انبار و تعداد در این گزارش پیدا نشد؛ نیازمند بررسی است.';
+            }
+            // Give the actual numeric event a useful source even when old reference fields are absent.
+            if ($final && $accepted > 0 && $validLink) {
+                $movement = $linked;
+                $movement->source_url = route('warehouse.inbound.show', $item->receipt_id);
+                $movement->source_label = $item->receipt_number;
+                $movement->related_reference = $row->related_reference;
+                $movement->related_url = $row->related_url;
+            }
+            $rows->push($row);
+        }
+    }
+
+    private function salesReturnDocuments(Collection $rows, int $product, ?int $variant): void
+    {
+        $items = DB::table('sales_return_document_items as ri')->join('sales_return_documents as r', 'r.id', '=', 'ri.document_id')
+            ->where('ri.product_id', $product)->when($variant, fn ($q) => $q->where('ri.product_variant_id', $variant))
+            ->get(['ri.id','ri.product_variant_id','ri.return_quantity','ri.item_condition','ri.destination_warehouse_id',
+                'r.id as document_id','r.document_number','r.status','r.created_at','r.created_by','r.applied_at']);
+        foreach ($items as $item) {
+            $row = $this->row('sales-return-item-'.$item->id, $item->applied_at ?: $item->created_at, $item->product_variant_id,
+                $item->destination_warehouse_id, 'info', 'سند برگشت از فروش؛ '.($item->item_condition === 'healthy' ? 'سالم' : 'مرجوعی / خراب'),
+                $item->return_quantity, 'برگشت از فروش '.$item->document_number, route('sales-returns.show', $item->document_id), $item->created_by,
+                'ثبت یا اعمال سند برگشت، به‌تنهایی ورود به موجودی آزاد مرکزی نیست؛ مقصد و نتیجهٔ دریافت را بررسی کنید.', 'سند برگشت از فروش');
+            $row->available_delta = 0;
+            $row->event_status = $item->status;
+            $rows->push($row);
+        }
+    }
+
+    private function explainEffects(Collection $rows): void
+    {
+        foreach ($rows as $row) {
+            $row->snapshot_reliable = false;
+            $row->reserved_delta = null; // Mutable reservation rows cannot prove historical deltas.
+            if ($row instanceof StockMovement || ($row->history_kind === 'سند انبارگردانی' && $row->stock_before !== null && $row->stock_after !== null)) {
+                $hasSnapshot = $row->stock_before !== null && $row->stock_after !== null;
+                $signed = in_array($row->type, ['in','out'], true) ? (int) $row->quantity * ($row->type === 'in' ? 1 : -1) : 0;
+                $valid = $hasSnapshot && (int) $row->stock_after - (int) $row->stock_before === $signed
+                    && in_array($row->type, ['in','out','info'], true) && (int) $row->quantity >= 0
+                    && $row->warehouse_id !== null && $row->product_variant_id !== null;
+                $row->evidence_level = $valid ? 'recorded' : 'incomplete';
+                $row->available_delta = $valid ? $signed : null;
+                $row->snapshot_reliable = $valid;
+                $row->effect_label = $valid ? ($signed > 0 ? 'افزایش موجودی همین انبار' : ($signed < 0 ? 'کاهش موجودی همین انبار' : 'بدون تغییر موجودی')) : 'اثر دقیق در سابقه اثبات نشده';
+                $row->evidence_note = $valid ? 'قبل و بعد با تعداد این گردش تطبیق دارد؛ این به معنی تأیید قصد عملیات نیست.' : 'سابقهٔ قدیمی، انبار نامشخص یا قبل/بعد ناسازگار است؛ مقدار تاریخی حدس زده نمی‌شود.';
+            } else {
+                $reservation = $row->history_kind === 'سابقه رزرو';
+                $row->evidence_level ??= $reservation ? 'incomplete' : 'reference';
+                $row->available_delta = $reservation ? null : 0;
+                $row->effect_label = $reservation ? 'سابقهٔ رزرو؛ تغییر مستقل اثبات نشده' : 'سند توضیحی؛ دوباره جمع نمی‌شود';
+                $row->evidence_note ??= $reservation ? 'رکورد رزرو ممکن است چند بار ویرایش شده باشد؛ این تعداد را جمع جبری گردش نکنید.' : 'این ردیف سند و نتیجهٔ عملیات را توضیح می‌دهد؛ اثر عددی باید در گردش مستقل دیده شود.';
+            }
+            $row->evidence_label = match ($row->evidence_level) {
+                'recorded' => 'گردش دارای قبل/بعد مطابق',
+                'reference' => 'سند توضیحی',
+                default => 'سابقهٔ ناقص / نیازمند بررسی',
+            };
+        }
     }
 
     private function row(string $id, mixed $date, ?int $variant, ?int $warehouse, string $type, string $label, int $quantity, string $reference, ?string $url, ?int $user, string $note, string $kind, ?int $before = null, ?int $after = null): object
@@ -91,7 +238,7 @@ class ProductStockHistoryService
 
     private function hydrate(Collection $rows): void
     {
-        $variants=DB::table('product_variants')->whereIn('id',$rows->pluck('product_variant_id')->filter()->unique())->get(['id','variant_name'])->keyBy('id');
+        $variants=DB::table('product_variants')->whereIn('id',$rows->pluck('product_variant_id')->filter()->unique())->get(['id','variant_name','variant_code'])->keyBy('id');
         $warehouses=DB::table('warehouses')->whereIn('id',$rows->pluck('warehouse_id')->filter()->unique())->get(['id','name'])->keyBy('id');
         $users=DB::table('users')->whereIn('id',$rows->pluck('user_id')->filter()->unique())->get(['id','name'])->keyBy('id');
         foreach($rows as $row) if(!($row instanceof StockMovement)) { $row->variant=$variants->get($row->product_variant_id); $row->warehouse=$warehouses->get($row->warehouse_id); $row->user=$users->get($row->user_id); }

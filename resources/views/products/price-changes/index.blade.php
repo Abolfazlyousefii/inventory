@@ -1,58 +1,45 @@
 @extends('layouts.app')
-
+@section('title', 'آرشیو تغییرات قیمت')
+@push('styles')<link rel="stylesheet" href="{{ asset('css/price-change-archive.css') }}?v=2">@endpush
 @section('content')
-<div class="container py-4" dir="rtl">
-    <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h4 fw-bold text-primary mb-1">تغییرات قیمت کالا</h1>
-            <p class="text-muted mb-0">مدیریت سندی افزایش یا کاهش قیمت کالاها و تنوع‌ها</p>
-        </div>
-        <a class="btn btn-primary align-self-start" href="{{ route('products.price-changes.create') }}">ثبت سند جدید</a>
-    </div>
-
-    @if (session('success')) <div class="alert alert-success">{{ session('success') }}</div> @endif
-    @if (session('status')) <div class="alert alert-info">{{ session('status') }}</div> @endif
-    @if ($errors->any()) <div class="alert alert-danger">{{ $errors->first() }}</div> @endif
-
-    <div class="row g-3 mb-4">
-        @foreach ([['کل اسناد',$stats['total']], ['پیش‌نویس‌ها',$stats['draft']], ['اعمال‌شده‌ها',$stats['applied']], ['اسناد امروز',$stats['today']]] as [$label,$value])
-            <div class="col-6 col-lg-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted small">{{ $label }}</div><div class="fs-4 fw-bold text-primary">{{ number_format($value) }}</div></div></div></div>
+@php($fa = fn($v) => strtr((string)$v, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']))
+<div class="price-archive" dir="rtl">
+    <header class="pa-header"><div class="pa-heading"><span class="pa-icon" aria-hidden="true">↗</span><div><span class="pa-eyebrow">مدیریت قیمت فروش</span><h1>آرشیو تغییرات قیمت</h1><p>سوابق قیمت‌گذاری کالاها و تنوع‌ها، در یک نگاه</p></div></div><a class="btn btn-primary" href="{{ route('products.price-changes.create') }}">+ ثبت سند جدید</a></header>
+    @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
+    @if(session('status'))<div class="alert alert-info">{{ session('status') }}</div>@endif
+    @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
+    <div class="pa-stats">
+        @foreach([['کل نتایج',$stats['total'],'blue','▤'],['اعمال‌شده',$stats['applied'],'green','✓'],['پیش‌نویس',$stats['draft'],'amber','✎'],['ثبت امروز',$stats['today'],'purple','◷']] as [$label,$value,$color,$icon])
+        <div class="pa-stat {{ $color }}"><span class="pa-stat-icon" aria-hidden="true">{{ $icon }}</span><div><span>{{ $label }}</span><strong>{{ $fa(number_format($value)) }}</strong></div></div>
         @endforeach
     </div>
-
-    <div class="card border-0 shadow-sm">
-        <div class="card-body p-0">
-            @if ($documents->isEmpty())
-                <div class="text-center p-5">
-                    <div class="fs-5 fw-bold mb-2">هنوز سند تغییر قیمتی ثبت نشده است.</div>
-                    <p class="text-muted">اولین سند را بسازید، پیش‌نمایش بگیرید و سپس در صورت تأیید اعمال کنید.</p>
-                    <a class="btn btn-primary" href="{{ route('products.price-changes.create') }}">ثبت اولین سند تغییر قیمت</a>
-                </div>
-            @else
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light"><tr><th>کد سند</th><th>عنوان</th><th>محدوده</th><th>نوع تغییر</th><th>تعداد آیتم</th><th>وضعیت</th><th>ثبت‌کننده</th><th>تاریخ ثبت</th><th>تاریخ اعمال</th><th>عملیات</th></tr></thead>
-                        <tbody>
-                            @foreach ($documents as $document)
-                                <tr>
-                                    <td class="fw-bold">{{ $document->code ?? $document->id }}</td>
-                                    <td>{{ $document->title ?: '—' }}</td>
-                                    <td>{{ $document->scopeLabel() }}</td>
-                                    <td>{{ $document->changeTypeLabel() }}</td>
-                                    <td>{{ number_format($document->items_count) }}</td>
-                                    <td><span class="badge {{ $document->status === 'applied' ? 'bg-success' : ($document->status === 'draft' ? 'bg-warning text-dark' : 'bg-secondary') }}">{{ $document->statusLabel() }}</span></td>
-                                    <td>{{ $document->createdBy?->name ?: '—' }}</td>
-                                    <td>{{ optional($document->created_at)->format('Y-m-d H:i') }}</td>
-                                    <td>{{ optional($document->applied_at)->format('Y-m-d H:i') ?: '—' }}</td>
-                                    <td><div class="d-flex flex-wrap gap-1"><a class="btn btn-sm btn-outline-primary" href="{{ route('products.price-changes.show', $document) }}">مشاهده</a>@if($document->status === 'draft')<form method="post" action="{{ route('products.price-changes.apply', $document) }}">@csrf<button class="btn btn-sm btn-success">اعمال</button></form><form method="post" action="{{ route('products.price-changes.cancel', $document) }}">@csrf<button class="btn btn-sm btn-outline-danger">لغو</button></form>@endif</div></td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-                <div class="p-3">{{ $documents->links() }}</div>
-            @endif
-        </div>
-    </div>
+    <form method="get" action="{{ route('products.price-changes.index') }}" class="pa-filters">
+        <div class="pa-search"><label for="pa-q">جست‌وجوی اسناد</label><input id="pa-q" type="search" name="q" value="{{ $filters['q'] ?? '' }}" placeholder="کد سند، عنوان، کالا، دسته‌بندی یا ثبت‌کننده" class="form-control"></div>
+        <div><label for="pa-category">دسته‌بندی</label><select id="pa-category" name="category_id" class="form-select"><option value="">همه دسته‌ها</option>@foreach($categoryOptions as $category)<option value="{{ $category['id'] }}" @selected((string)($filters['category_id'] ?? '') === (string)$category['id'])>{{ $category['name'] }}</option>@endforeach</select></div>
+        <div><label for="pa-status">وضعیت سند</label><select id="pa-status" name="status" class="form-select"><option value="">همه وضعیت‌ها</option>@foreach(\App\Models\PriceChangeDocument::statusLabels() as $key=>$label)<option value="{{ $key }}" @selected(($filters['status'] ?? '') === $key)>{{ $label }}</option>@endforeach</select></div>
+        <div><label for="pa-from">از تاریخ ثبت</label><input id="pa-from" data-jdp data-jdp-only-date name="date_from" class="form-control" value="{{ $filters['date_from'] ?? '' }}" placeholder="۱۴۰۵/۰۷/۰۱" inputmode="numeric" dir="ltr" autocomplete="off"></div>
+        <div><label for="pa-to">تا تاریخ ثبت</label><input id="pa-to" data-jdp data-jdp-only-date name="date_to" class="form-control" value="{{ $filters['date_to'] ?? '' }}" placeholder="۱۴۰۵/۰۷/۳۰" inputmode="numeric" dir="ltr" autocomplete="off"></div>
+        <div class="pa-filter-actions"><button class="btn btn-primary">جست‌وجو</button><a class="btn btn-outline-secondary" href="{{ route('products.price-changes.index') }}">پاک‌کردن</a></div>
+    </form>
+    <section class="pa-list" aria-label="اسناد تغییر قیمت">
+        <div class="pa-list-title"><strong>سوابق تغییر قیمت</strong><span>{{ $fa(number_format($documents->total())) }} سند مطابق جست‌وجو</span></div>
+        @if($documents->isEmpty())
+            <div class="pa-empty"><strong>سندی پیدا نشد</strong><p>عبارت جست‌وجو یا فیلترها را تغییر دهید.</p><a href="{{ route('products.price-changes.index') }}">نمایش همه اسناد</a></div>
+        @else
+        <div class="pa-table-wrap"><table class="pa-table"><thead><tr><th>سند / عنوان</th><th>دسته‌بندی / کالا</th><th>تغییر قیمت</th><th>وضعیت / تعداد تنوع</th><th>ثبت سند</th><th>تاریخ اعمال</th><th>عملیات</th></tr></thead><tbody>
+            @foreach($documents as $document)
+            <tr>
+                <td data-label="سند"><a class="pa-code" href="{{ route('products.price-changes.show',$document) }}"><bdi>{{ $fa($document->code ?? $document->id) }}</bdi></a><span class="pa-subtitle">{{ $document->title ?: 'بدون عنوان' }}</span></td>
+                <td data-label="دسته‌بندی / کالا"><strong class="pa-category">{{ $document->archive_category }}</strong><span class="pa-subtitle">{{ $document->archive_product ?: $document->scopeLabel() }}</span></td>
+                <td data-label="تغییر قیمت"><span class="pa-change {{ str_starts_with($document->change_type,'decrease') ? 'down' : 'up' }}">{{ $document->changeTypeLabel() }}</span><strong class="pa-change-value">{{ $fa(number_format((float)$document->change_value, str_contains($document->change_type,'percent') ? 2 : 0)) }} {{ str_contains($document->change_type,'percent') ? '٪' : 'ریال' }}</strong></td>
+                <td data-label="وضعیت"><span class="pa-status {{ $document->status }}">{{ $document->statusLabel() }}</span><span class="pa-subtitle">{{ $fa(number_format($document->items_count)) }} تنوع</span></td>
+                <td data-label="ثبت سند"><time dir="ltr">{{ $fa(\App\Support\JalaliDate::dateTime($document->created_at)) }}</time><span class="pa-subtitle">{{ $document->createdBy?->name ?: '—' }}</span></td>
+                <td data-label="اعمال"><time dir="ltr">{{ $fa(\App\Support\JalaliDate::dateTime($document->applied_at)) }}</time></td>
+                <td data-label="عملیات"><div class="pa-actions"><a class="btn btn-sm btn-outline-primary" href="{{ route('products.price-changes.show',$document) }}">مشاهده</a>@if($document->status === 'draft')<form method="post" action="{{ route('products.price-changes.apply',$document) }}">@csrf<button class="btn btn-sm btn-success">اعمال</button></form><form method="post" action="{{ route('products.price-changes.cancel',$document) }}">@csrf<button class="btn btn-sm btn-outline-danger">لغو</button></form>@endif</div></td>
+            </tr>
+            @endforeach
+        </tbody></table></div><div class="pa-pagination">{{ $documents->links() }}</div>
+        @endif
+    </section>
 </div>
 @endsection

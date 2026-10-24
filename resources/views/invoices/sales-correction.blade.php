@@ -1,10 +1,12 @@
 @extends('layouts.app')
 
+@push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
+
 @section('content')
 @php
     $rial = fn ($value) => number_format((int) $value).' ریال';
     $discountType = old('invoice_discount_type', $invoice->invoice_discount_type ?: 'amount');
-    $discountValue = (int) old('invoice_discount_value', $invoice->invoice_discount_value ?? $invoice->invoice_discount_amount ?? 0);
+    $discountValue = old('invoice_discount_value', $invoice->invoice_discount_value ?? $invoice->invoice_discount_amount ?? 0);
     $originalItems = $invoice->items->keyBy('id');
 
     $variantLabel = function ($variant) {
@@ -307,7 +309,7 @@
     const calcDiscount = (base, type, value) => {
         base = Math.max(0, Number(base) || 0);
         value = Math.max(0, Number(value) || 0);
-        return type === 'percent' ? Math.min(base, Math.floor(base * Math.min(value, 100) / 100)) : Math.min(base, Math.floor(value));
+        return SalesDiscountMath.amount(base,type,value);
     };
     const formatInput = (input, raw) => {
         const formatted = input.value.trim() === '' ? '' : fmt(raw);
@@ -480,7 +482,7 @@
 
         const base = Math.max(gross - lineDiscount, 0);
         const type = discountType.value;
-        const value = toInt(discountRaw.value);
+        const value = discountType.value==='percent'?SalesDiscountMath.percentValue(discountRaw.value):toInt(discountRaw.value);
         const discountError = type === 'percent' && value > 100 ? 'درصد تخفیف باید بین ۰ تا ۱۰۰ باشد.' : '';
         const invoiceDiscount = calcDiscount(base, type, value);
         const total = Math.max(base - invoiceDiscount, 0) + SHIPPING_PRICE;
@@ -663,7 +665,7 @@
             if (q > 0) { rows++; qty += q; raw += q * pickerPriceFor(v); }
         });
         const type = $('modalGroupDiscountType').value;
-        const value = toInt($('modalGroupDiscountValue').value);
+        const value = ($('modalGroupDiscountType').value==='percent'?SalesDiscountMath.percentValue($('modalGroupDiscountValue').value):toInt($('modalGroupDiscountValue').value));
         const discount = picker.discountTouched
             ? calcDiscount(raw, type, value)
             : groupItems(picker.pid).filter(i => !i.removed).reduce((s, i) => s + i.line_discount_amount, 0);
@@ -795,7 +797,7 @@
         if (picker.discountTouched) {
             const type = $('modalGroupDiscountType').value;
             const raw = groupItems(pid).filter(i => !i.removed).reduce((s, i) => s + i.quantity * i.price, 0);
-            distributeGroupDiscount(pid, calcDiscount(raw, type, toInt($('modalGroupDiscountValue').value)));
+            distributeGroupDiscount(pid, calcDiscount(raw, type, ($('modalGroupDiscountType').value==='percent'?SalesDiscountMath.percentValue($('modalGroupDiscountValue').value):toInt($('modalGroupDiscountValue').value))));
         }
         dirty = true;
         openGroups.add(pid);
@@ -819,7 +821,7 @@
     $('modalGroupDiscountType').addEventListener('change', () => { picker.discountTouched = true; updatePickerSummary(); });
     $('modalGroupDiscountValue').addEventListener('input', e => {
         picker.discountTouched = true;
-        formatInput(e.target, toInt(e.target.value));
+        if($('modalGroupDiscountType').value!=='percent')formatInput(e.target, toInt(e.target.value));
         updatePickerSummary();
     });
     $('savePickerBtn').addEventListener('click', savePicker);
@@ -873,14 +875,14 @@
 
     // ---------- invoice discount / note ----------
     discountView.addEventListener('input', () => {
-        const v = toInt(discountView.value);
+        const v = discountType.value==='percent'?SalesDiscountMath.input(discountView.value):toInt(discountView.value);
         discountRaw.value = String(v);
-        formatInput(discountView, v);
+        if(discountType.value!=='percent')formatInput(discountView, v);
         dirty = true;
         refresh();
     });
     discountView.addEventListener('blur', () => { if (discountView.value.trim() === '') { discountView.value = '0'; discountRaw.value = '0'; refresh(); } });
-    discountView.value = fmt(toInt(discountRaw.value));
+    discountView.value = discountType.value==='percent'?String(discountRaw.value):fmt(toInt(discountRaw.value));
     discountType.addEventListener('change', () => { dirty = true; refresh(); });
     noteEl.addEventListener('input', () => { dirty = true; refresh(); });
 
@@ -891,7 +893,7 @@
     form.addEventListener('submit', e => {
         refresh();
         if (submitBtn.disabled) { e.preventDefault(); return; }
-        discountRaw.value = String(toInt(discountRaw.value));
+        discountRaw.value = discountType.value==='percent'?SalesDiscountMath.input(discountView.value):String(toInt(discountView.value));
         const box = $('correctionItemInputs');
         box.innerHTML = '';
         items.forEach((it, i) => {

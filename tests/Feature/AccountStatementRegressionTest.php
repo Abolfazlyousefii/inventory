@@ -158,6 +158,57 @@ class AccountStatementRegressionTest extends TestCase
         $ascending->assertOk()->assertDontSee('sort=credit&amp;direction=', false);
     }
 
+    public function test_invoice_ledger_row_shows_the_recorded_customer_name_and_a_view_eye_link(): void
+    {
+        $invoice = Invoice::query()->create([
+            'uuid' => 'AS-EYE-01979',
+            'customer_id' => $this->target->id,
+            'customer_name' => 'مشتری هنگام صدور',
+            'total' => 125000,
+            'status' => Invoice::STATUS_SHIPPED,
+        ]);
+
+        CustomerLedger::query()->create([
+            'customer_id' => $this->target->id,
+            'type' => 'debit',
+            'amount' => 125000,
+            'reference_type' => Invoice::class,
+            'reference_id' => $invoice->id,
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('account-statements.show', $this->target))
+            ->assertOk()
+            ->assertSee('مشتری فاکتور: مشتری هنگام صدور')
+            ->assertSee('title="مشاهده فاکتور AS-EYE-01979"', false)
+            ->assertSee('class="asd-invoice-eye"', false)
+            ->assertSee('href="'.route('vouchers.sales.show', 'AS-EYE-01979').'"', false);
+    }
+
+    public function test_invoice_ledger_row_falls_back_to_its_linked_customer_if_snapshot_is_blank(): void
+    {
+        $invoice = Invoice::query()->create([
+            'uuid' => 'AS-EYE-01977',
+            'customer_id' => $this->target->id,
+            'customer_name' => '',
+            'total' => 210000,
+            'status' => Invoice::STATUS_SHIPPED,
+        ]);
+
+        CustomerLedger::query()->create([
+            'customer_id' => $this->target->id,
+            'type' => 'debit',
+            'amount' => 210000,
+            'reference_type' => Invoice::class,
+            'reference_id' => $invoice->id,
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('account-statements.show', $this->target))
+            ->assertOk()
+            ->assertSee('مشتری فاکتور: '.$this->target->display_name);
+    }
+
     public function test_detail_balance_matches_list_when_an_invoice_was_cancelled(): void
     {
         $cancelled = Invoice::query()->create([

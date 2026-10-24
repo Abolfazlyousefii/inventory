@@ -17,11 +17,23 @@ class PurchaseJalaliFilterQueryTest extends TestCase
         $selectedSupplier = Supplier::query()->create(['name' => 'تأمین‌کننده منتخب']);
         $otherSupplier = Supplier::query()->create(['name' => 'تأمین‌کننده دیگر']);
 
-        Purchase::query()->create(['supplier_id' => $selectedSupplier->id, 'purchased_at' => '2026-07-18 23:59:59', 'total_amount' => 1]);
-        $first = Purchase::query()->create(['supplier_id' => $selectedSupplier->id, 'purchased_at' => '2026-07-19 00:00:00', 'total_amount' => 2]);
-        $last = Purchase::query()->create(['supplier_id' => $selectedSupplier->id, 'purchased_at' => '2026-07-20 23:59:59', 'total_amount' => 3]);
-        Purchase::query()->create(['supplier_id' => $selectedSupplier->id, 'purchased_at' => '2026-07-21 00:00:00', 'total_amount' => 4]);
-        Purchase::query()->create(['supplier_id' => $otherSupplier->id, 'purchased_at' => '2026-07-20 12:00:00', 'total_amount' => 5]);
+        // Registration date (created_at), not editable purchased_at, defines filter results.
+        $createAt = function (Supplier $supplier, string $timestamp, int $amount): Purchase {
+            $this->travelTo(\Carbon\Carbon::parse($timestamp));
+
+            return Purchase::query()->create([
+                'supplier_id' => $supplier->id,
+                'purchased_at' => $timestamp,
+                'total_amount' => $amount,
+            ]);
+        };
+
+        $createAt($selectedSupplier, '2026-07-18 23:59:59', 1);
+        $first = $createAt($selectedSupplier, '2026-07-19 00:00:00', 2);
+        $last = $createAt($selectedSupplier, '2026-07-20 23:59:59', 3);
+        $createAt($selectedSupplier, '2026-07-21 00:00:00', 4);
+        $createAt($otherSupplier, '2026-07-20 12:00:00', 5);
+        $this->travelBack();
 
         $rows = (new PurchasesExport([
             'supplier_id' => $selectedSupplier->id,

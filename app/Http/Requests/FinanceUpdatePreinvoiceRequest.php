@@ -14,6 +14,9 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if ($this->exists('finance_payload')) {
+            $this->unpackFinancePayload();
+        }
         $items = collect((array) $this->input('items', []))->map(function ($row) {
             if (! is_array($row)) {
                 return $row;
@@ -34,7 +37,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
                 return $row;
             }
             if (array_key_exists('value', $row)) {
-                $row['value'] = $this->normalizeMoney($row['value']);
+                $row['value'] = \App\Support\DiscountMath::input($row['value']);
             }
             return $row;
         })->all();
@@ -44,24 +47,44 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'intent' => $intent,
             'action' => $intent,
             'items' => $items,
-            'product_discounts' => $productDiscounts,
-            'invoice_discount_value' => $this->normalizeMoney($this->input('invoice_discount_value', 0)),
+            ...($this->exists('product_discounts') ? ['product_discounts' => $productDiscounts] : []),
+            ...($this->exists('invoice_discount_value') ? ['invoice_discount_value' => \App\Support\DiscountMath::input($this->input('invoice_discount_value'))] : []),
         ]);
+    }
+
+    private function unpackFinancePayload(): void
+    {
+        $message = 'اطلاعات فرم ویرایش مالی ناقص یا نامعتبر ارسال شده است؛ صفحه را تازه کنید و دوباره ذخیره کنید. هیچ تغییری ثبت نشد.';
+        $raw = $this->input('finance_payload');
+        $data = null;
+        if (is_string($raw) && strlen($raw) <= 2_000_000) {
+            try { $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR); }
+            catch (\JsonException) { /* Reject incomplete JSON before any business mutation. */ }
+        }
+        $fields = ['finance_version', 'items', 'product_discounts', 'invoice_discount_type', 'invoice_discount_value', 'edit_reason', 'intent'];
+        $count = filter_var($this->input('finance_payload_item_count'), FILTER_VALIDATE_INT);
+        if (! is_array($data) || array_is_list($data) || array_diff($fields, array_keys($data)) !== []
+            || ! is_array($data['items'] ?? null) || ! array_is_list($data['items'])
+            || $count === false || $count < 1 || $count > 3000 || count($data['items']) !== $count) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['finance_payload' => $message]);
+        }
+        $this->merge(array_intersect_key($data, array_flip($fields)));
     }
 
     public function rules(): array
     {
         return [
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.id' => ['required', 'integer'],
+            'finance_version' => ['required', 'string', 'size:64'],
+            'items' => ['required', 'array', 'min:1', 'max:3000'],
+            'items.*.id' => ['required', 'integer', 'distinct'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.price' => ['required', 'integer', 'min:0'],
             'product_discounts' => ['nullable', 'array'],
-            'product_discounts.*.product_id' => ['required_with:product_discounts', 'integer'],
+            'product_discounts.*.product_id' => ['required_with:product_discounts', 'integer', 'min:1', 'distinct'],
             'product_discounts.*.type' => ['required_with:product_discounts', 'in:amount,percent'],
-            'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0'],
+            'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0', 'decimal:0,2'],
             'invoice_discount_type' => ['required', 'in:none,amount,percent'],
-            'invoice_discount_value' => ['nullable', 'integer', 'min:0'],
+            'invoice_discount_value' => ['required_unless:invoice_discount_type,none', 'nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
             'intent' => ['nullable', 'in:save,save_and_finalize'],
             'action' => ['nullable', 'in:save,save_and_finalize'],
@@ -71,6 +94,11 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'finance_version.required' => 'نسخه صفحه ارسال نشده است؛ صفحه را دوباره بارگذاری و تخفیف‌ها را بررسی کنید.',
+            'items.*.id.distinct' => 'یک ردیف کالا بیش از یک بار ارسال شده است.',
+            'product_discounts.*.product_id.distinct' => 'تخفیف یک کالا بیش از یک بار ارسال شده است.',
+            'invoice_discount_type.required' => 'نوع تخفیف کلی ارسال نشده است؛ صفحه را تازه کنید و دوباره ذخیره کنید.',
+            'invoice_discount_value.required_unless' => 'مقدار تخفیف کلی را وارد کنید.',
             'edit_reason.required' => 'لطفاً دلیل ویرایش مالی را وارد کنید.',
             'edit_reason.string' => 'دلیل ویرایش مالی نامعتبر است.',
             'edit_reason.min' => 'دلیل ویرایش مالی باید حداقل ۳ کاراکتر باشد.',
@@ -90,17 +118,24 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty()) return;
+            $discounts = ['invoice_discount_value' => [$this->input('invoice_discount_type', 'none'), $this->input('invoice_discount_value', 0)]];
+            foreach ((array)$this->input('product_discounts', []) as $index => $row) $discounts["product_discounts.{$index}.value"] = [$row['type'] ?? 'amount', $row['value'] ?? 0];
+            foreach ($discounts as $field => [$type, $value]) {
+                try { \App\Support\DiscountMath::value($type, $value); }
+                catch (\Illuminate\Validation\ValidationException $exception) { $validator->errors()->add($field, 'مقدار تخفیف نامعتبر است؛ مبلغ باید ریال صحیح و درصد حداکثر دو رقم اعشار باشد.'); }
+            }
             foreach ((array) $this->input('items', []) as $index => $row) {
                 if (($this->input('intent') === 'save_and_finalize') && (int) ($row['price'] ?? 0) <= 0) {
                     $validator->errors()->add("items.{$index}.price", 'برای تأیید مالی، قیمت تمام اقلام باید بیشتر از صفر باشد.');
                 }
             }
-            if ($this->input('invoice_discount_type') === 'percent' && (int) $this->input('invoice_discount_value', 0) > 100) {
+            if ($this->input('invoice_discount_type') === 'percent' && (float) $this->input('invoice_discount_value', 0) > 100) {
                 $validator->errors()->add('invoice_discount_value', 'درصد تخفیف کلی نمی‌تواند بیشتر از ۱۰۰ باشد.');
             }
 
             foreach ((array) $this->input('product_discounts', []) as $index => $row) {
-                if (($row['type'] ?? null) === 'percent' && (int) ($row['value'] ?? 0) > 100) {
+                if (($row['type'] ?? null) === 'percent' && (float) ($row['value'] ?? 0) > 100) {
                     $validator->errors()->add("product_discounts.{$index}.value", 'درصد تخفیف محصول نمی‌تواند بیشتر از ۱۰۰ باشد.');
                 }
             }

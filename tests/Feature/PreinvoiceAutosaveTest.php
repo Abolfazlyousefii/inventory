@@ -192,12 +192,13 @@ it('does not overwrite another owner, a manual draft or a submitted preinvoice',
     expect(autosaveStoredState())->toBe($before);
 })->with(['other owner', 'manual draft', 'submitted']);
 
-it('keeps stock and reservations unchanged for accepted and rejected autosaves', function () {
-    $before = autosaveInventoryState();
+it('reserves the accepted autosave once and preserves its stock when a reduced snapshot is rejected', function () {
     $payload = autosaveExistingPayload($this);
+    expect(\App\Models\PreinvoiceDraftReservation::whereNull('released_at')->sum('quantity'))->toEqual(4);
+    $beforeRejected = autosaveInventoryState();
     $payload['products'][0]['quantity'] = 1;
     $this->postJson(route('preinvoice.autosave'), $payload)->assertUnprocessable();
-    expect(autosaveInventoryState())->toBe($before);
+    expect(autosaveInventoryState())->toBe($beforeRejected);
 });
 
 it('recovers the same items and version after a refresh and preserves omitted optional fields', function () {
@@ -269,7 +270,7 @@ it('keeps a large discounted draft intact through reservation autosave recovery 
         ->and($latest['customer']['mobile'])->toBe($autosavePayload['customer_mobile'])
         ->and($latest['payment_terms_note'])->toBe($autosavePayload['payment_terms_note'])
         ->and($latest['discount']['type'])->toBe('amount')
-        ->and($latest['discount']['value'])->toBe(5_000)
+        ->and((float) $latest['discount']['value'])->toBe(5_000.0)
         ->and(collect($latest['items'])->pluck('variant_id')->all())->toBe(collect($rows)->pluck('variant_id')->all())
         ->and(collect($latest['items'])->pluck('quantity')->all())->toBe(collect($rows)->pluck('quantity')->all())
         ->and(collect($latest['items'])->pluck('price')->all())->toBe(collect($rows)->pluck('price')->all())
@@ -291,6 +292,6 @@ it('keeps a large discounted draft intact through reservation autosave recovery 
         ->and($submitted->is_auto_draft)->toBeFalse()
         ->and($submitted->items)->toHaveCount(20)
         ->and((int) $submitted->total_price)->toBe(collect($rows)->sum(fn ($row) => $row['quantity'] * $row['price']) - 6_000)
-        ->and(PreinvoiceDraftReservation::query()->where('token', $token)->where('preinvoice_order_id', $submitted->id)->where('reservation_scope', 'official')->count())->toBe(20)
-        ->and((int) PreinvoiceDraftReservation::query()->where('token', $token)->where('preinvoice_order_id', $submitted->id)->sum('quantity'))->toBe(40);
+        ->and(PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $submitted->id)->whereNull('released_at')->where('reservation_scope', 'official')->count())->toBe(20)
+        ->and((int) PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $submitted->id)->whereNull('released_at')->sum('quantity'))->toBe(40);
 });

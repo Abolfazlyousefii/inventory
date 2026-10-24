@@ -170,6 +170,17 @@ $productsPayload = $products->map(function ($p) {
 			<input type="hidden" name="submission_token" value="{{ old('submission_token', (string) \Illuminate\Support\Str::uuid()) }}">
 			<input type="hidden" name="warehouse_id" value="{{ old('warehouse_id', $purchase->warehouse_id ?? '') }}">
 			<input type="hidden" name="items_json" id="itemsPayload" value="">
+            <input type="hidden" name="sale_price_change_confirmed" id="salePriceChangeConfirmed" value="0">
+            <input type="hidden" name="sale_price_change_reason" id="salePriceChangeReason" value="">
+            @if($isEdit)
+                <div class="alert alert-info small mt-2 mb-2">
+                    قیمت فروش ثبت‌شده در سند برای سابقه محفوظ است. ویرایش تعداد، توضیحات یا قیمت خرید،
+                    قیمت فروش روز کالا را تغییر نمی‌دهد؛ تغییر عمدی قیمت فروش نیازمند تأیید کاربر مجاز است.
+                </div>
+            @endif
+            @if($errors->has('sale_price_change_confirmed') || $errors->has('items'))
+                <div class="alert alert-danger small mt-2" role="alert">{{ $errors->first('sale_price_change_confirmed') ?: $errors->first('items') }}</div>
+            @endif
 
 			<div class="card purchase-main-card mb-3">
 				<div class="card-body">
@@ -211,8 +222,8 @@ $productsPayload = $products->map(function ($p) {
 						</div>
 						@if($isEdit)
 							<div class="col-md-3">
-								<label class="form-label">تاریخ خرید</label>
-								<input type="datetime-local" class="form-control form-control-sm" name="purchased_at" value="{{ old('purchased_at', optional($purchase->purchased_at)->format('Y-m-d\TH:i')) }}">
+								<label class="form-label">تاریخ ثبت اولیه (غیرقابل تغییر)</label>
+								<input type="text" class="form-control form-control-sm" value="{{ \App\Support\JalaliDate::dateTime($purchase->created_at) }}" readonly aria-label="تاریخ ثبت اولیه سند خرید">
 							</div>
 						@endif
 					</div>
@@ -299,6 +310,8 @@ $productsPayload = $products->map(function ($p) {
 			const products = @json($productsPayload);
 			const categories = @json($categoriesPayload);
 			const initialItems = @json($initialItems);
+            const IS_EDIT_PURCHASE = @json($isEdit);
+            const CAN_CHANGE_SALE_PRICE = @json(\App\Support\PermissionCatalog::userHasPermission(auth()->user(), 'products.price_changes.apply'));
 			const variantsUrlTemplate = @json(route('purchases.products.variants', ['product' => '__PRODUCT__']));
 
 			const purchaseForm = document.getElementById('purchaseForm');
@@ -761,9 +774,15 @@ $productsPayload = $products->map(function ($p) {
 						if (!row) return;
 
 						row.dataset.purchaseItemId = item.id || '';
+                    row.dataset.originalPurchaseSellPrice = Number(item.sell_price || 0);
 						row.querySelector('[data-qty]').value = item.quantity || '';
 						row.querySelector('[data-buy]').value = formatNumericInput(item.buy_price || '');
 						row.querySelector('[data-sell]').value = formatNumericInput(item.sell_price || '');
+                    const livePrice = Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
+                    if (Number(item.sell_price || 0) !== livePrice) {
+                        row.querySelector('[data-current-sale-price]')?.insertAdjacentHTML('afterend',
+                            '<div class="small text-warning mt-1">قیمت این سند با قیمت فعلی فرق دارد؛ بدون تغییر عمدی قیمت فعلی محفوظ می‌ماند.</div>');
+                    }
 						row.dataset.buyOverridden = item.price_overridden ? '1' : '0';
 						row.dataset.sellOverridden = item.price_overridden ? '1' : '0';
 						updatePriceBadge(row);
@@ -847,6 +866,7 @@ $productsPayload = $products->map(function ($p) {
 							quantity: qty,
 							buy_price: numericPayloadValue(row.querySelector('[data-buy]')?.value || ''),
 							sell_price: numericPayloadValue(row.querySelector('[data-sell]')?.value || ''),
+                            expected_current_sell_price: Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0),
 							product_buy_price: numericPayloadValue(defaults.buy || ''),
 							product_sell_price: numericPayloadValue(defaults.sell || ''),
 							name: product?.name || '',
@@ -1006,7 +1026,49 @@ $productsPayload = $products->map(function ($p) {
 					return;
 				}
 
-				purchaseForm.dataset.submitting = '1';
+				// Only real edits to historical sale prices need deliberate confirmation.
+                const rows = JSON.parse(payloadEl.value || '[]');
+                const findRow = item => Array.from(productCardsEl.querySelectorAll('[data-variant-row]'))
+                    .find(row => Number(row.dataset.variantId) === Number(item.variant_id));
+                const saleChanges = rows.filter(item => {
+                    const row = findRow(item);
+                    if (!row || Number(item.quantity) <= 0) return false;
+                    const original = row.dataset.originalPurchaseSellPrice;
+                    const live = Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
+                    return IS_EDIT_PURCHASE && original !== undefined && original !== ''
+                        ? Number(item.sell_price) !== Number(original)
+                        : live > 0 && Number(item.sell_price) !== live;
+                });
+                document.getElementById('salePriceChangeConfirmed').value = '0';
+                document.getElementById('salePriceChangeReason').value = '';
+                if (saleChanges.length) {
+                    if (!CAN_CHANGE_SALE_PRICE) {
+                        event.preventDefault();
+                        alert('برای تغییر قیمت فروش، مجوز اعمال تغییر قیمت کالا لازم است. سایر اطلاعات سند را بدون تغییر قیمت فروش ذخیره کنید.');
+                        return;
+                    }
+                    const lines = saleChanges.slice(0, 15).map(item => {
+                        const row = findRow(item);
+                        const live = Number(row?.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
+                        return 'تنوع ' + item.variant_id + ': ' + formatMoney(live) + ' ← ' + formatMoney(item.sell_price);
+                    });
+                    const more = saleChanges.length > 15 ? '\nو ' + (saleChanges.length - 15) + ' تنوع دیگر' : '';
+                    if (!confirm('تغییر قیمت فروش جاری ' + saleChanges.length + ' تنوع:\n'
+                        + lines.join('\n') + more + '\n\nتغییر قیمت را تأیید می‌کنید؟')) {
+                        event.preventDefault();
+                        return;
+                    }
+                    const reason = prompt('دلیل تغییر قیمت فروش برای ثبت در تاریخچه:');
+                    if (!reason || !reason.trim()) {
+                        event.preventDefault();
+                        alert('بدون ثبت دلیل، قیمت فروش تغییر نمی‌کند.');
+                        return;
+                    }
+                    document.getElementById('salePriceChangeConfirmed').value = '1';
+                    document.getElementById('salePriceChangeReason').value = reason.trim().slice(0, 500);
+                }
+
+                purchaseForm.dataset.submitting = '1';
 				purchaseForm.querySelectorAll('button[type="submit"]').forEach((button) => {
 					button.disabled = true;
 					button.dataset.originalText = button.textContent;

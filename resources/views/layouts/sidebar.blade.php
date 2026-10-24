@@ -18,7 +18,7 @@
 
     $salesActive = $isSalesReturnRoute || $isRoute('sales-returns.*', 'preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.invoice-reassignments.*');
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
-    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*');
+    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*', 'admin.invoice-payment-settings.*');
 
     $initialOpenSection = match (true) {
         $productsActive => 'products',
@@ -247,7 +247,7 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view'])
+        @canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view','settings.edit'])
             <div class="sidebar-accordion-item {{ $configActive ? 'is-open' : '' }}" data-accordion-section="config">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $configActive ? 'is-active' : '' }}"
@@ -287,6 +287,9 @@
                         @endcanPermission
                         @canPermission('inventory_webhooks.view')
                             <a class="sidebar-sublink {{ $is('inventory-webhooks.*') }}" href="{{ route('inventory-webhooks.index') }}">مدیریت API موجودی/قیمت</a>
+                        @endcanPermission
+                        @canPermission('settings.edit')
+                            <a class="sidebar-sublink {{ $is('admin.invoice-payment-settings.*') }}" href="{{ route('admin.invoice-payment-settings.edit') }}">اطلاعات واریز فاکتور مشتری</a>
                         @endcanPermission
                     </div>
                 </div>

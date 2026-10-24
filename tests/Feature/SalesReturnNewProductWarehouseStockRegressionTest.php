@@ -6,7 +6,7 @@ use App\Services\WarehouseStockService;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
-uses(TestCase::class);
+// The base test case is registered centrally in tests/Pest.php.
 
 it('rejects zero product and variant ids before warehouse stock insertion', function () {
     expect(fn () => WarehouseStockService::change(1, 0, 1, 0))

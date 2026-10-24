@@ -226,6 +226,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('admin/product-exports')->name('admin.product-exports.')->group(function () {
         Route::get('/', [\App\Http\Controllers\ProductExportBuilderController::class, 'index'])->name('index');
         Route::get('/builder/products', [\App\Http\Controllers\ProductExportBuilderController::class, 'products'])->name('builder.products');
+        Route::get('/builder/selection-batch', [\App\Http\Controllers\ProductExportBuilderController::class, 'selectionBatch'])->name('builder.selection-batch');
         Route::post('/builder/print', [\App\Http\Controllers\ProductExportBuilderController::class, 'print'])->name('builder.print');
         Route::post('/builder/preview', [\App\Http\Controllers\ProductExportBuilderController::class, 'preview'])->name('builder.preview');
         Route::get('/data', [ProductExportController::class, 'filter'])->name('data');
@@ -716,6 +717,14 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::put('/admin/permissions/{user}', [UserPermissionController::class, 'update'])->name('admin.permissions.update');
     Route::resource('/admin/roles', RoleController::class)->except(['show'])->names('admin.roles');
 });
+// Only holders of the existing settings.edit permission can view/change bank details.
+Route::middleware(['auth', 'route.permission:settings.edit'])
+    ->prefix('admin/invoice-payment-settings')->name('admin.invoice-payment-settings.')
+    ->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\CustomerInvoicePaymentSettingsController::class, 'edit'])->name('edit');
+        Route::put('/', [\App\Http\Controllers\Admin\CustomerInvoicePaymentSettingsController::class, 'update'])->name('update');
+    });
+
 Route::post('model-lists/import-phone-catalog', [ModelListController::class, 'importPhoneCatalog'])
     ->middleware(['auth', 'route.permission'])
     ->name('model-lists.import-phone-catalog');

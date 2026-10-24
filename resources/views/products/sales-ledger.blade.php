@@ -1,166 +1,197 @@
 @extends('layouts.app')
-
+@section('title', 'کارتکس فروش کالا')
+@push('styles')
+<link rel="stylesheet" href="{{ asset('css/product-sales-ledger.css') }}?v=2">
+@endpush
 @section('content')
 	@php
-		use Morilog\Jalali\Jalalian;
-
-		$toFa = static function ($value) {
-			return strtr((string) $value, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']);
-		};
+		$fa = fn($v) => strtr((string) $v, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']);
+		$number = fn($v) => $fa(number_format((int) $v));
 	@endphp
-
-	<div class="container">
-		<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
-			<div>
-				<h4 class="mb-1">کارتکس فروش کالا</h4>
-				<div class="text-muted">
-					کالا: <strong>{{ $product->name }}</strong>@include('partials.bundle-contents', ['productIsBundle' => $product->is_bundle, 'productId' => $product->id])
-					@if($selectedVariant)
-						<span class="mx-1">|</span> تنوع: <strong>{{ $selectedVariant->variant_name }}</strong>
-					@endif
+	<div class="sales-ledger" dir="rtl">
+		<header class="sl-header">
+			<div class="sl-heading">
+				<span class="sl-icon" aria-hidden="true">↗</span>
+				<div>
+					<span class="sl-eyebrow">سوابق فروش کالا</span>
+					<h1>کارتکس فروش</h1>
+					<p>{{ $product->name }} @if($selectedVariant)<span> / {{ $selectedVariant->variant_name }}</span>@endif</p>
+					@include('partials.bundle-contents', [
+						'productIsBundle' => $product->is_bundle,
+						'productId' => $product->id,
+						'variantId' => $selectedVariant?->id,
+					])
 				</div>
 			</div>
-
-			<div class="d-flex gap-2 flex-wrap">
-				<button type="button" class="btn btn-outline-secondary" onclick="window.print()">چاپ</button>
-				<a class="btn btn-outline-success" href="{{ request()->fullUrlWithQuery(['export' => 'csv']) }}">خروجی اکسل (CSV)</a>
-				<a class="btn btn-outline-dark" href="{{ route('products.index') }}">بازگشت به کالاها</a>
+			<div class="sl-actions sl-no-print">
+				<button type="button" class="btn btn-outline-primary" onclick="window.print()">چاپ</button>
+				<a class="btn btn-outline-success" href="{{ request()->fullUrlWithQuery(['export'=>'csv', 'page'=>null]) }}">خروجی اکسل (CSV)</a>
+				<a class="btn btn-outline-secondary" href="{{ route('products.index') }}">بازگشت به کالاها</a>
+			</div>
+		</header>
+		<div class="sl-stats">
+			<div class="sl-stat blue">
+				<span class="sl-stat-icon" aria-hidden="true">▤</span>
+				<div>
+					<span>ردیف‌های فروش</span>
+					<strong>{{ $number($ledgerItems->total()) }} <small>ردیف</small></strong>
+					<p>مطابق فیلترهای انتخاب‌شده</p>
+				</div>
+			</div>
+			<div class="sl-stat purple">
+				<span class="sl-stat-icon" aria-hidden="true">▦</span>
+				<div>
+					<span>تعداد فروش کالا</span>
+					<strong>{{ $number($summary->total_quantity ?? 0) }} <small>عدد</small></strong>
+					<p>مجموع تعداد در همه نتایج</p>
+				</div>
+			</div>
+			<div class="sl-stat green">
+				<span class="sl-stat-icon" aria-hidden="true">↗</span>
+				<div>
+					<span>جمع مبلغ فروش</span>
+					<strong>{{ $number($summary->total_amount ?? 0) }} <small>ریال</small></strong>
+					<p>مجموع مبلغ ردیف‌های فروش</p>
+				</div>
 			</div>
 		</div>
-
-		<div class="row g-3 mb-3">
-			<div class="col-md-4">
-				<div class="card h-100">
-					<div class="card-body">
-						<div class="text-muted small">تعداد کل فروش در بازه</div>
-						<div class="h5 mb-0 mt-1">{{ $toFa(number_format((int) ($summary->total_quantity ?? 0))) }}</div>
-					</div>
-				</div>
+		@if($errors->any())
+			<div class="alert alert-danger">{{ $errors->first() }}</div>
+		@endif
+		<form method="get" action="{{ route('products.sales-ledger', $product) }}" class="sl-filters sl-no-print">
+			<div class="sl-section-heading">
+				<strong>جست‌وجو در فروش‌ها</strong>
+				<span>نام مشتری، شماره فاکتور یا بازهٔ فروش را مشخص کنید</span>
 			</div>
-			<div class="col-md-4">
-				<div class="card h-100">
-					<div class="card-body">
-						<div class="text-muted small">جمع مبلغ فروش در بازه</div>
-						<div class="h5 mb-0 mt-1">{{ $toFa(\App\Support\Currency::formatRial($summary->total_amount ?? 0)) }}</div>
-					</div>
+			<div class="sl-filter-grid">
+				<div class="sl-customer-search">
+					<label for="sl-customer-search">جست‌وجوی مشتری</label>
+					<input id="sl-customer-search" type="search" name="customer_search" value="{{ request('customer_search') }}" class="form-control" placeholder="نام، شماره موبایل یا کد مشتری" maxlength="150" minlength="2">
 				</div>
-			</div>
-		</div>
-
-		<div class="card mb-3">
-			<div class="card-body">
-				<form method="GET" class="row g-3 align-items-end">
-					<div class="col-md-3">
-						<label class="form-label">تاریخ از</label>
-						<input type="date" name="date_from" value="{{ request('date_from') }}" class="form-control">
-					</div>
-					<div class="col-md-3">
-						<label class="form-label">تاریخ تا</label>
-						<input type="date" name="date_to" value="{{ request('date_to') }}" class="form-control">
-					</div>
-					<div class="col-md-3">
-						<label class="form-label">مشتری</label>
-						<select name="customer_id" class="form-select">
-							<option value="">همه</option>
-							@foreach($customers as $customer)
-								<option value="{{ $customer->id }}" @selected((int) request('customer_id') === $customer->id)>
-									{{ trim(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? '')) ?: 'مشتری #' . $customer->id }}
-								</option>
+				<div>
+					<label for="sl-invoice">شماره فاکتور</label>
+					<input id="sl-invoice" name="invoice_uuid" value="{{ request('invoice_uuid') }}" class="form-control" placeholder="مثلاً ۰۲۰۱۹">
+				</div>
+				<div>
+					<label for="sl-from">از تاریخ ثبت فروش</label>
+					<input id="sl-from" type="date" name="date_from" value="{{ request('date_from') }}" class="form-control">
+				</div>
+				<div>
+					<label for="sl-to">تا تاریخ ثبت فروش</label>
+					<input id="sl-to" type="date" name="date_to" value="{{ request('date_to') }}" class="form-control">
+				</div>
+				<div class="sl-customer-picker">
+					<label for="sl-customer">انتخاب مشتری</label>
+					<select id="sl-customer" name="customer_id" class="form-select" data-search-url="{{ route('products.sales-ledger', $product) }}">
+						<option value="">همه مشتریان</option>
+						@foreach($customers as $customer)
+							<option value="{{ $customer->id }}" selected>{{ $fa((trim(($customer->first_name ?? '').' '.($customer->last_name ?? '')) ?: ($customer->name ?: 'مشتری')).' · '.($customer->mobile ?: 'بدون شماره').' · کد '.($customer->crm_customer_id ?: $customer->id)) }}</option>
+						@endforeach
+					</select>
+					<small class="sl-search-hint">نام، موبایل یا کد مشتری؛ حداقل ۲ کاراکتر</small>
+				</div>
+				@if($variants->isNotEmpty())
+					<div>
+						<label for="sl-variant">تنوع / مدل</label>
+						<select id="sl-variant" name="variant_id" class="form-select">
+							<option value="">همه تنوع‌های کالا</option>
+							@foreach($variants as $variant)
+								<option value="{{ $variant->id }}" @selected((int) request('variant_id') === $variant->id)>{{ $variant->variant_name }} ({{ $fa($variant->variant_code) }})</option>
 							@endforeach
 						</select>
 					</div>
-					<div class="col-md-3">
-						<label class="form-label">شماره فاکتور</label>
-						<input type="text" name="invoice_uuid" value="{{ request('invoice_uuid') }}" class="form-control" placeholder="مثال: INV-...">
-					</div>
-
-					@if($variants->isNotEmpty())
-						<div class="col-md-4">
-							<label class="form-label">تنوع</label>
-							<select name="variant_id" class="form-select">
-								<option value="">همه تنوع‌های کالا</option>
-								@foreach($variants as $variant)
-									<option value="{{ $variant->id }}" @selected((int) request('variant_id') === $variant->id)>
-										{{ $variant->variant_name }} ({{ $variant->variant_code }})
-									</option>
-								@endforeach
-							</select>
-						</div>
-					@endif
-
-					<div class="col-md-4">
-						<label class="form-label">ثبت‌کننده</label>
-						<select name="creator_id" class="form-select">
-							<option value="">همه</option>
-							@foreach($creators as $creator)
-								<option value="{{ $creator->id }}" @selected((int) request('creator_id') === $creator->id)>
-									{{ $creator->name }}
-								</option>
-							@endforeach
-						</select>
-					</div>
-
-					<div class="col-12 d-flex gap-2">
-						<button class="btn btn-primary">اعمال فیلتر</button>
-						<a class="btn btn-outline-secondary" href="{{ route('products.sales-ledger', $product) }}">حذف فیلتر</a>
-					</div>
-				</form>
+				@endif
+				<div>
+					<label for="sl-creator">ثبت‌کننده</label>
+					<select id="sl-creator" name="creator_id" class="form-select">
+						<option value="">همه ثبت‌کنندگان</option>
+						@foreach($creators as $creator)
+							<option value="{{ $creator->id }}" @selected((int) request('creator_id') === $creator->id)>{{ $creator->name }}</option>
+						@endforeach
+					</select>
+				</div>
 			</div>
-		</div>
-
-		<div class="card">
-			<div class="table-responsive">
-				<table class="table table-hover align-middle mb-0">
-					<thead class="table-light">
-					<tr>
-						<th>تاریخ فروش</th>
-						<th>شماره فاکتور</th>
-						<th>نام مشتری</th>
-						<th>نام کالا</th>
-						<th>تنوع / مدل</th>
-						<th class="text-end">تعداد</th>
-						<th class="text-end">قیمت واحد</th>
-						<th class="text-end">مبلغ کل ردیف</th>
-						<th>ثبت‌کننده</th>
-						<th>عملیات</th>
-					</tr>
-					</thead>
-					<tbody>
-					@forelse($ledgerItems as $item)
+			@if(request()->boolean('only_without_variant'))
+				<input type="hidden" name="only_without_variant" value="1">
+			@endif
+			<div class="sl-filter-footer">
+				<span>خلاصه و خروجی اکسل بر اساس همین فیلترها هستند.</span>
+				<div class="sl-actions">
+					<button class="btn btn-primary">جست‌وجو</button>
+					<a class="btn btn-outline-secondary" href="{{ route('products.sales-ledger', $product) }}">پاک‌کردن فیلترها</a>
+				</div>
+			</div>
+		</form>
+		<section class="sl-list" aria-label="سوابق فروش">
+			<div class="sl-section-heading">
+				<strong>جزئیات فروش {{ $product->name }}</strong>
+				<span>{{ $number($ledgerItems->total()) }} ردیف @if($ledgerItems->total()) · نمایش {{ $number($ledgerItems->firstItem()) }} تا {{ $number($ledgerItems->lastItem()) }} @endif</span>
+			</div>
+			@if($ledgerItems->isEmpty())
+				<div class="sl-empty">
+					<span aria-hidden="true">⌕</span>
+					<strong>فروشی با این مشخصات پیدا نشد</strong>
+					<p>نام مشتری یا فیلترهای انتخاب‌شده را بررسی کنید.</p>
+				</div>
+			@else
+				<div class="sl-table-wrap">
+					<table class="sl-table">
+						<thead>
 						<tr>
-							<td>{{ $item->invoice ? \App\Support\JalaliDate::dateTime($item->invoice->display_document_date) : '—' }}</td>
-							<td>{{ $item->invoice?->uuid ?? '—' }}</td>
-							<td>{{ $item->invoice?->customer_name ?? '—' }}</td>
-							<td>{{ $item->product?->name ?? $product->name }} @include('partials.bundle-contents', ['productIsBundle' => $item->product?->is_bundle, 'snapshot' => $item->bundle_components_snapshot ?? null, 'variantId' => $item->variant_id, 'bundleQuantity' => $item->quantity])</td>
-							<td>{{ $item->variant?->variant_name ?? '—' }}</td>
-							<td class="text-end">{{ number_format((int) $item->quantity) }}</td>
-							<td class="text-end">{{ number_format((int) $item->price) }}</td>
-							<td class="text-end fw-bold">{{ number_format((int) $item->line_total) }}</td>
-							<td>{{ $item->invoice?->preinvoiceOrder?->creator?->name ?? '—' }}</td>
-							<td>
-								@if($item->invoice?->uuid)
-									@if($item->invoice && $item->can_view_invoice)
+							<th>فاکتور / تاریخ فروش</th>
+							<th>مشتری</th>
+							<th>تنوع / مدل</th>
+							<th>تعداد</th>
+							<th>قیمت واحد <small>ریال</small></th>
+							<th>مبلغ ردیف <small>ریال</small></th>
+							<th>ثبت‌کننده</th>
+							<th class="sl-no-print">عملیات</th>
+						</tr>
+						</thead>
+						<tbody>
+						@foreach($ledgerItems as $item)
+							<tr>
+								<td data-label="فاکتور / تاریخ">
+									<strong class="sl-code"><bdi>{{ $fa($item->invoice?->uuid ?? '—') }}</bdi></strong>
+									<time class="sl-sub" dir="ltr">{{ $fa(\App\Support\JalaliDate::dateTime($item->invoice?->display_document_date)) }}</time>
+								</td>
+								<td data-label="مشتری">
+									<strong>{{ $item->invoice?->customer_name ?? '—' }}</strong>
+									<span class="sl-sub"><bdi>{{ $fa($item->invoice?->customer_mobile ?? '') }}</bdi></span>
+								</td>
+								<td data-label="تنوع / مدل">
+									{{ $item->variant?->variant_name ?? 'بدون تنوع' }}
+									@include('partials.bundle-contents', [
+										'productIsBundle' => $item->product?->is_bundle ?? $product->is_bundle,
+										'snapshot' => $item->bundle_components_snapshot ?? null,
+										'variantId' => $item->variant_id,
+										'bundleQuantity' => $item->quantity,
+									])
+								</td>
+								<td data-label="تعداد"><span class="sl-quantity">{{ $number($item->quantity) }}</span></td>
+								<td data-label="قیمت واحد (ریال)"><bdi>{{ $number($item->price) }}</bdi></td>
+								<td data-label="مبلغ ردیف (ریال)"><strong class="sl-amount"><bdi>{{ $number($item->line_total) }}</bdi></strong></td>
+								<td data-label="ثبت‌کننده">{{ $item->invoice?->preinvoiceOrder?->creator?->name ?? '—' }}</td>
+								<td data-label="عملیات" class="sl-no-print">
+									@if($item->invoice?->uuid && $item->can_view_invoice)
 										<a class="btn btn-sm btn-outline-primary" href="{{ route('invoices.show', $item->invoice->uuid) }}">مشاهده فاکتور</a>
 									@else
 										<span class="text-muted">—</span>
 									@endif
-								@else
-									—
-								@endif
-							</td>
-						</tr>
-					@empty
-						<tr>
-							<td colspan="10" class="text-center text-muted py-4">فروشی برای این فیلترها پیدا نشد.</td>
-						</tr>
-					@endforelse
-					</tbody>
-				</table>
-			</div>
-		</div>
-
-		<div class="mt-3">
-			{{ $ledgerItems->links() }}
-		</div>
+								</td>
+							</tr>
+						@endforeach
+						</tbody>
+					</table>
+				</div>
+				<div class="sl-pagination sl-no-print">{{ $ledgerItems->links() }}</div>
+			@endif
+		</section>
+		<p class="sl-print-note">مبالغ به ریال · چاپ ردیف‌های صفحهٔ جاری؛ برای دریافت همهٔ نتایج از خروجی اکسل استفاده کنید.</p>
 	</div>
+
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/product-sales-ledger.js') }}?v=1"></script>
+@endpush

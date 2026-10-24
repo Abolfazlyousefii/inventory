@@ -182,10 +182,13 @@ class AccountStatementController extends Controller
             ->values();
 
         $invoices = Invoice::query()
+            ->with('customer:id,name,first_name,last_name')
             ->whereIn('id', $relatedInvoiceIds)
             ->get([
                 'id',
                 'uuid',
+                'customer_id',
+                'customer_name',
                 'subtotal',
                 'shipping_price',
                 'discount_amount',

@@ -26,7 +26,7 @@ class ProductExportBuilderService
                 ->orWhereHas('catalogVariants', fn (Builder $variants) => $variants->where('is_active', true)));
     }
 
-    public function page(array $filters): array
+    private function filteredProducts(array $filters): Builder
     {
         $query = $this->products();
         if (! empty($filters['category_id'])) {
@@ -61,6 +61,12 @@ class ProductExportBuilderService
                 });
             }
         }
+        return $query;
+    }
+
+    public function page(array $filters): array
+    {
+        $query = $this->filteredProducts($filters);
         match ($filters['sort'] ?? 'relevant') {
             'name' => $query->orderBy('name'),
             'low' => $query->orderBy('price')->orderBy('name'),
@@ -74,6 +80,29 @@ class ProductExportBuilderService
             'total' => $page->total(),
             'page' => $page->currentPage(),
             'last_page' => $page->lastPage(),
+        ];
+    }
+
+    /**
+     * Bulk selection uses a stable ID cursor rather than the 18-item display pagination.
+     * Each response remains bounded; the total number of selected products does not.
+     */
+    public function selectionBatch(array $filters): array
+    {
+        $cursor = max(0, (int) ($filters['after_id'] ?? 0));
+        $batchSize = 80;
+        $query = $this->filteredProducts($filters);
+        $total = $cursor === 0 ? (clone $query)->count() : null;
+        $rows = $query->where('id', '>', $cursor)->orderBy('id')
+            ->limit($batchSize + 1)->get();
+        $hasMore = $rows->count() > $batchSize;
+        $items = $rows->take($batchSize);
+
+        return [
+            'items' => $items->map(fn (Product $product) => $this->card($product))->values(),
+            'has_more' => $hasMore,
+            'next_cursor' => (int) ($items->last()?->id ?? $cursor),
+            'total' => $total,
         ];
     }
 
@@ -109,49 +138,59 @@ class ProductExportBuilderService
 
     public function selected(array $selection): Collection
     {
-        $ids = array_map('intval', array_keys($selection));
-        $products = $this->products()->whereIn('id', $ids)->get()->keyBy('id');
-        if ($products->count() !== count($ids)) {
-            throw ValidationException::withMessages(['selection' => 'یکی از کالاها دیگر برای خروجی در دسترس نیست.']);
+        $results = collect();
+
+        // Keep only one bounded Eloquent batch in memory while building large exports.
+        foreach (array_chunk(array_keys($selection), 80) as $keys) {
+            $batch = $this->products()->whereIn('id', array_map('intval', $keys))
+                ->get()->keyBy('id');
+            if ($batch->count() !== count($keys)) {
+                throw ValidationException::withMessages(['selection' => 'یکی از کالاها دیگر برای خروجی در دسترس نیست.']);
+            }
+            foreach ($keys as $id) {
+                $results->push($this->mapSelectedProduct($batch->get((int) $id), $selection[$id]));
+            }
         }
 
-        return collect($selection)->map(function ($chosen, $id) use ($products) {
-            $product = $products->get((int) $id);
-            $chosen = array_map('intval', $chosen);
-            $all = $product->catalogVariants;
-            if ($all->isEmpty()) {
-                if ($chosen !== [0] || $product->variants()->exists()) {
-                    throw ValidationException::withMessages(['selection' => 'مدل انتخاب‌شده برای کالا معتبر نیست.']);
-                }
-            } else {
-                $byId = $all->keyBy('id');
-                if (array_diff($chosen, $byId->keys()->map(fn ($id) => (int) $id)->all()) !== [] || count($chosen) !== count(array_unique($chosen))) {
-                    throw ValidationException::withMessages(['selection' => 'یکی از مدل‌های انتخاب‌شده دیگر فعال نیست.']);
-                }
-                $modelNames = collect($chosen)->map(fn (int $variantId) => $this->grouping->modelName($byId->get($variantId)))->unique()->all();
-                $product->setRelation('catalogVariants', $all->filter(fn ($variant) => in_array($this->grouping->modelName($variant), $modelNames, true))->values());
-            }
-            $mapped = $this->exports->mapProduct($product, []);
-            $mapped['code'] = (string) ($product->code ?: $product->sku ?: '');
-            $mapped['total_stock'] = $all->isEmpty() ? max(0, (int) $product->stock) : (int) $product->catalogVariants->sum('stock');
-            $selectedVariants = $product->catalogVariants;
-            $prices = $selectedVariants->isEmpty()
-                ? collect([(int) $product->price > 0 ? (int) $product->price : null])
-                : $selectedVariants->map(fn ($variant) => $this->grouping->effectivePrice($variant, $product));
-            $prices = $prices->filter(fn ($price) => $price !== null && $price > 0);
-            $mapped['approximate_price'] = $prices->isEmpty() ? null : (int) $prices->max();
-            $mapped['approximate_price_label'] = $mapped['approximate_price'] === null
-                ? 'قیمت ثبت نشده' : number_format($mapped['approximate_price']).' ریال';
-            $mapped['selected_models'] = $selectedVariants->isEmpty()
-                ? ['مدل عمومی']
-                : $selectedVariants->map(fn ($variant) => $this->grouping->modelName($variant))
-                    ->unique()->sort(fn ($a, $b) => strnatcasecmp($a, $b))->values()->all();
-            $mapped['selected_colors'] = $selectedVariants
-                ->map(fn ($variant) => $this->grouping->colorData($variant))
-                ->filter()->unique(fn (array $color) => mb_strtolower($color['name']))
-                ->sort(fn ($a, $b) => strnatcasecmp($a['name'], $b['name']))->values()->all();
+        return $results;
+    }
 
-            return $mapped;
-        })->values();
+    private function mapSelectedProduct(Product $product, array $chosen): array
+    {
+        $chosen = array_map('intval', $chosen);
+        $all = $product->catalogVariants;
+        if ($all->isEmpty()) {
+            if ($chosen !== [0] || $product->variants()->exists()) {
+                throw ValidationException::withMessages(['selection' => 'مدل انتخاب‌شده برای کالا معتبر نیست.']);
+            }
+        } else {
+            $byId = $all->keyBy('id');
+            if (array_diff($chosen, $byId->keys()->map(fn ($id) => (int) $id)->all()) !== [] || count($chosen) !== count(array_unique($chosen))) {
+                throw ValidationException::withMessages(['selection' => 'یکی از مدل‌های انتخاب‌شده دیگر فعال نیست.']);
+            }
+            $modelNames = collect($chosen)->map(fn (int $variantId) => $this->grouping->modelName($byId->get($variantId)))->unique()->all();
+            $product->setRelation('catalogVariants', $all->filter(fn ($variant) => in_array($this->grouping->modelName($variant), $modelNames, true))->values());
+        }
+        $mapped = $this->exports->mapProduct($product, []);
+        $mapped['code'] = (string) ($product->code ?: $product->sku ?: '');
+        $mapped['total_stock'] = $all->isEmpty() ? max(0, (int) $product->stock) : (int) $product->catalogVariants->sum('stock');
+        $selectedVariants = $product->catalogVariants;
+        $prices = $selectedVariants->isEmpty()
+            ? collect([(int) $product->price > 0 ? (int) $product->price : null])
+            : $selectedVariants->map(fn ($variant) => $this->grouping->effectivePrice($variant, $product));
+        $prices = $prices->filter(fn ($price) => $price !== null && $price > 0);
+        $mapped['approximate_price'] = $prices->isEmpty() ? null : (int) $prices->max();
+        $mapped['approximate_price_label'] = $mapped['approximate_price'] === null
+            ? 'قیمت ثبت نشده' : number_format($mapped['approximate_price']).' ریال';
+        $mapped['selected_models'] = $selectedVariants->isEmpty()
+            ? ['مدل عمومی']
+            : $selectedVariants->map(fn ($variant) => $this->grouping->modelName($variant))
+                ->unique()->sort(fn ($a, $b) => strnatcasecmp($a, $b))->values()->all();
+        $mapped['selected_colors'] = $selectedVariants
+            ->map(fn ($variant) => $this->grouping->colorData($variant))
+            ->filter()->unique(fn (array $color) => mb_strtolower($color['name']))
+            ->sort(fn ($a, $b) => strnatcasecmp($a['name'], $b['name']))->values()->all();
+
+        return $mapped;
     }
 }

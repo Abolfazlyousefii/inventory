@@ -25,6 +25,7 @@
         'stock' => route('products.warehouse-stock', $p),
         'sales_ledger' => route('products.sales-ledger', $p),
         'purchase_ledger' => route('products.purchase-ledger', $p),
+        'stock_ledger' => route('products.stock-ledger', $p),
         'deactivate' => route('product-deactivation-documents.create', ['product_id' => $p->id]),
     ];
 @endphp
@@ -32,7 +33,7 @@
 @if(($mode ?? 'desktop') === 'desktop')
 <tr>
     <td>@if($p->image_path)<a href="{{ route('products.image', $p) }}" target="_blank" class="product-thumb" title="نمایش عکس کالا"><img src="{{ route('products.image', $p) }}" alt="عکس {{ $p->name }}"></a>@else<span class="product-thumb-placeholder" title="بدون عکس">📷</span>@endif</td>
-    <td><span class="truncate fw-bold" title="{{ $p->name }}">{{ $p->name }}</span><div class="small text-muted truncate" title="{{ $p->category?->name ?? 'بدون دسته‌بندی' }}">{{ $p->category?->name ?? 'بدون دسته‌بندی' }}</div></td>
+    <td><a class="truncate fw-bold product-history-link" href="{{ $actionRoutes['stock_ledger'] }}" title="گردش موجودی {{ $p->name }}">{{ $p->name }} ↗</a><div class="small text-muted truncate" title="{{ $p->category?->name ?? 'بدون دسته‌بندی' }}">{{ $p->category?->name ?? 'بدون دسته‌بندی' }}</div></td>
     <td class="mono"><span class="pill pill-gray">{{ $short ?: '—' }}</span></td>
     <td class="mono"><span class="truncate safe-break" title="{{ $sampleBarcode ?: '—' }}">{{ $sampleBarcode ?: '—' }}</span></td>
     <td><span class="pill {{ $centralStock === 0 ? 'pill-danger' : 'pill-success' }}">{{ $toFa($centralStock) }}</span></td>
@@ -47,7 +48,7 @@
 <div class="mobile-card">
     <div class="mobile-card-top">
         @if($p->image_path)<a href="{{ route('products.image', $p) }}" target="_blank" class="product-thumb"><img src="{{ route('products.image', $p) }}" alt="عکس {{ $p->name }}"></a>@else<span class="product-thumb-placeholder">📷</span>@endif
-        <div class="min-w-0"><div class="mobile-title truncate" title="{{ $p->name }}">{{ $p->name }}</div>@if($isSellable)<span class="sellable-badge active">قابل فروش</span>@else<span class="sellable-badge inactive">غیرفعال</span>@endif</div>
+        <div class="min-w-0"><a class="mobile-title truncate product-history-link" href="{{ $actionRoutes['stock_ledger'] }}" title="گردش موجودی {{ $p->name }}">{{ $p->name }} ↗</a>@if($isSellable)<span class="sellable-badge active">قابل فروش</span>@else<span class="sellable-badge inactive">غیرفعال</span>@endif</div>
     </div>
     <div class="mobile-meta"><span>کد: <span class="mono">{{ $short ?: '—' }}</span></span><span class="safe-break">بارکد: <span class="mono">{{ $sampleBarcode ?: '—' }}</span></span></div>
     <div class="mobile-values"><span>موجودی مرکزی: <b>{{ $toFa($centralStock) }}</b></span><span>قیمت فروش: <b>{{ $money($p->price) }}</b></span></div>

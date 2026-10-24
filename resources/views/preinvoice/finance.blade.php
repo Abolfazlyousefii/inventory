@@ -104,6 +104,7 @@
   </div>
 
   <form id="finalizePreinvoiceForm" method="POST" action="{{ route('preinvoice.draft.finalize', $order->uuid) }}" enctype="multipart/form-data" class="card shadow-sm border-0">
+    <input type="hidden" name="finance_version" value="{{ \App\Support\FinanceDocumentVersion::token($order) }}">
     <input type="hidden" name="action" value="finalize">
     @csrf
     <div class="card-body">

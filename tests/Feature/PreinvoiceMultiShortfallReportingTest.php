@@ -149,7 +149,7 @@ it('keeps the single-shortfall sync error exactly as before', function () {
     $response = $this->actingAs($seller)
         ->postJson(route('preinvoice.api.reservations.sync'), multiShortfallSyncPayload((string) Str::uuid(), [[$ok, 3], [$short, 5]]))
         ->assertStatus(422)
-        ->assertJsonPath('message', 'موجودی یک یا چند قلم برای رزرو کافی نیست.')
+        ->assertJsonPath('message', $legacyMessage)
         ->assertJsonPath('errors', ['items' => [$legacyMessage]])
         ->assertJsonCount(1, 'item_errors');
 
@@ -297,6 +297,7 @@ it('returns every shortfall with suggested_items on final submit before writing 
 
     $response = $this->actingAs($seller)->postJson(route('preinvoice.draft.save'), [
         'intent' => 'submit',
+        'reservation_token' => (string) Str::uuid(),
         'customer_name' => 'Multi shortfall customer',
         'customer_mobile' => '09120000000',
         'is_in_person' => 0,
@@ -322,78 +323,6 @@ it('returns every shortfall with suggested_items on final submit before writing 
         ->and(PreinvoiceOrder::query()->count())->toBe($ordersBefore);
 });
 
-it('reports every shortfall on finance finalize before any stock or reservation write', function () {
-    $finance = multiShortfallUser(['page.sales.preinvoice_finance_review']);
-    $covered = multiShortfallItem('COVERED', 10);
-    $b = multiShortfallItem('B', 1);
-    $c = multiShortfallItem('C', 2);
-
-    $order = PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->forceCreate([
-        'uuid' => (string) random_int(10000, 99999),
-        'created_by' => $finance->id,
-        'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
-        'customer_name' => 'Finance shortfall customer',
-        'customer_mobile' => '09120000000',
-        'shipping_price' => 0,
-        'discount_amount' => 0,
-        'total_price' => 11 * 1000,
-        'stock_frozen_until' => now()->addHours(3),
-    ]));
-    foreach ([[$covered, 2], [$b, 5], [$c, 4]] as $i => [$item, $qty]) {
-        $order->items()->create([
-            'product_id' => $item['product']->id,
-            'variant_id' => $item['variant']->id,
-            'quantity' => $qty,
-            'price' => 1000,
-            'line_total' => $qty * 1000,
-            'line_discount_amount' => 0,
-            'sort_order' => $i + 1,
-        ]);
-    }
-    // Official rows match every line (finance approvable), but the reserved
-    // projection of B and C has drifted to 0, so finalize must re-reserve them
-    // from central stock, which is too low for both.
-    foreach ([[$covered, 2], [$b, 5], [$c, 4]] as [$item, $qty]) {
-        PreinvoiceDraftReservation::query()->create([
-            'token' => (string) Str::uuid(),
-            'user_id' => $finance->id,
-            'preinvoice_order_id' => $order->id,
-            'product_id' => $item['product']->id,
-            'variant_id' => $item['variant']->id,
-            'quantity' => $qty,
-            'expires_at' => now()->addHours(3),
-            'reservation_tier' => 'normal',
-            'reservation_scope' => 'official',
-        ]);
-    }
-    $covered['variant']->forceFill(['reserved' => 2])->saveQuietly();
-
-    $before = multiShortfallStockSnapshot();
-
-    $this->actingAs($finance)
-        ->from(route('preinvoice.draft.finance', $order->uuid))
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
-        ->assertRedirect(route('preinvoice.draft.finance', $order->uuid))
-        ->assertSessionHasErrors('products');
-
-    $messages = session('errors')->get('products');
-    expect($messages)->toHaveCount(2)
-        ->and($messages[0])->toContain($b['product']->name)
-        ->and($messages[1])->toContain($c['product']->name)
-        ->and(session('preinvoice_item_errors'))->toHaveCount(2)
-        ->and(collect(session('preinvoice_suggested_items'))->keyBy('variant_id')[$c['variant']->id])
-        ->toMatchArray(['quantity' => 2, 'remove' => false]);
-
-    expect(multiShortfallStockSnapshot())->toBe($before)
-        ->and(Invoice::query()->where('preinvoice_order_id', $order->id)->exists())->toBeFalse()
-        ->and($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE);
-});
-
-/**
- * Pending-finance order whose official rows match every line (finance approvable).
- * Lines listed in $projected keep a matching reserved projection; the rest have
- * drifted to 0, so finalize must re-reserve them from central stock.
- */
 function multiShortfallFinanceOrder(User $finance, array $lines, array $projected): PreinvoiceOrder
 {
     $order = PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::query()->forceCreate([
@@ -437,62 +366,45 @@ function multiShortfallFinanceOrder(User $finance, array $lines, array $projecte
     return $order;
 }
 
-it('keeps the legacy message for a single finance shortfall and still returns suggested_items', function () {
+it('finance consumes matching official reservations without freezing again when caches are stale', function (int $freeB, int $freeC) {
     $finance = multiShortfallUser(['page.sales.preinvoice_finance_review']);
     $covered = multiShortfallItem('COVERED', 10);
-    $short = multiShortfallItem('SHORT', 1);
-    $order = multiShortfallFinanceOrder($finance, [[$covered, 2], [$short, 5]], [0]);
+    $b = multiShortfallItem('B', $freeB);
+    $c = multiShortfallItem('C', $freeC);
+    $order = multiShortfallFinanceOrder($finance, [[$covered, 2], [$b, 5], [$c, 4]], [0]);
     $before = multiShortfallStockSnapshot();
+    $this->actingAs($finance)->post(route('preinvoice.draft.finalize', $order->uuid), [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+    ])->assertRedirect()->assertSessionHasNoErrors();
+    $after = multiShortfallStockSnapshot();
+    expect($after['warehouse_stocks'])->toBe($before['warehouse_stocks'])
+        ->and($after['stock_movements'])->toBe($before['stock_movements'])
+        ->and(Invoice::where('preinvoice_order_id', $order->id)->count())->toBe(1)
+        ->and(PreinvoiceDraftReservation::where('preinvoice_order_id', $order->id)->whereNull('released_at')->count())->toBe(0);
+})->with(['low free stock' => [1, 2], 'ample free stock' => [20, 30]]);
 
-    // Exact text reserveStockForItem produced before this change.
-    $legacyMessage = "موجودی کافی برای ثبت نهایی وجود ندارد. کالا: {$short['product']->name} | تنوع: {$short['variant']->variant_name} | تعداد درخواستی: 5 | موجودی قابل فروش: 1";
-
-    $this->actingAs($finance)
-        ->from(route('preinvoice.draft.finance', $order->uuid))
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
-        ->assertRedirect(route('preinvoice.draft.finance', $order->uuid));
-
-    expect(session('errors')->getBag('default')->toArray())->toBe(['products' => [$legacyMessage]])
-        ->and(session('preinvoice_item_errors'))->toHaveCount(1)
-        ->and(session('preinvoice_item_errors.0.max_allowed'))->toBe(1);
-    $suggested = collect(session('preinvoice_suggested_items'))->keyBy('variant_id');
-    expect($suggested)->toHaveCount(2)
-        ->and($suggested[$covered['variant']->id])->toMatchArray(['quantity' => 2, 'remove' => false])
-        ->and($suggested[$short['variant']->id])->toMatchArray(['quantity' => 1, 'requested_quantity' => 5, 'remove' => false]);
-
-    // JSON clients get the same message/errors a single-message ValidationException gave.
-    $this->actingAs($finance)
-        ->postJson(route('preinvoice.draft.finalize', $order->uuid), [])
-        ->assertStatus(422)
-        ->assertJsonPath('message', $legacyMessage)
-        ->assertJsonPath('errors', ['products' => [$legacyMessage]])
-        ->assertJsonCount(1, 'item_errors')
-        ->assertJsonCount(2, 'suggested_items');
-
+it('finance rejects an official reservation shortfall without using another stock cache', function () {
+    $finance = multiShortfallUser(['page.sales.preinvoice_finance_review']);
+    $item = multiShortfallItem('SHORT', 10);
+    $order = multiShortfallFinanceOrder($finance, [[$item, 5]], [0]);
+    PreinvoiceDraftReservation::where('preinvoice_order_id', $order->id)->update(['quantity' => 1]);
+    $before = multiShortfallStockSnapshot();
+    $this->actingAs($finance)->post(route('preinvoice.draft.finalize', $order->uuid), [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+    ])->assertSessionHasErrors('preinvoice');
     expect(multiShortfallStockSnapshot())->toBe($before)
-        ->and(Invoice::query()->where('preinvoice_order_id', $order->id)->exists())->toBeFalse();
+        ->and(Invoice::where('preinvoice_order_id', $order->id)->exists())->toBeFalse();
 });
 
-it('keeps checking past an inactive variant and reports the shortfall after it', function () {
+it('finance rejects a stale reviewed version without changing inventory or reservations', function () {
     $finance = multiShortfallUser(['page.sales.preinvoice_finance_review']);
-    $covered = multiShortfallItem('COVERED', 10);
-    $inactive = multiShortfallItem('INACTIVE', 10);
-    $short = multiShortfallItem('SHORT', 1);
-    $inactive['variant']->forceFill(['is_active' => false])->saveQuietly();
-    $order = multiShortfallFinanceOrder($finance, [[$covered, 2], [$inactive, 3], [$short, 4]], [0]);
+    $item = multiShortfallItem('REVIEW', 10);
+    $order = multiShortfallFinanceOrder($finance, [[$item, 5]], [0]);
+    $version = \App\Support\FinanceDocumentVersion::token($order->fresh('items'));
+    $order->items()->update(['price' => 2000]);
     $before = multiShortfallStockSnapshot();
-
-    $this->actingAs($finance)
-        ->from(route('preinvoice.draft.finance', $order->uuid))
-        ->post(route('preinvoice.draft.finalize', $order->uuid), [])
-        ->assertRedirect(route('preinvoice.draft.finance', $order->uuid))
-        ->assertSessionHasErrors('products');
-
-    expect(session('errors')->get('products'))->toHaveCount(1)
-        ->and(session('errors')->first('products'))->toContain($short['product']->name)
-        ->and(collect(session('preinvoice_item_errors'))->pluck('variant_id')->all())->toBe([$short['variant']->id])
-        ->and(collect(session('preinvoice_suggested_items'))->keyBy('variant_id')[$short['variant']->id])
-        ->toMatchArray(['quantity' => 1, 'remove' => false]);
-
-    expect(multiShortfallStockSnapshot())->toBe($before);
+    $this->actingAs($finance)->post(route('preinvoice.draft.finalize', $order->uuid), ['finance_version' => $version])
+        ->assertSessionHasErrors('finance_version');
+    expect(multiShortfallStockSnapshot())->toBe($before)
+        ->and(Invoice::where('preinvoice_order_id', $order->id)->exists())->toBeFalse();
 });

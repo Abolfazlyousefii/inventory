@@ -473,6 +473,7 @@ class ProductController extends Controller {
                 'short_barcode' => $seq4,
                 'stock'         => 0,
                 'price'         => 0,
+                'uniform_sale_price' => (int) ($data['sell_price'] ?? 0) > 0 ? (int) $data['sell_price'] : null,
                 'is_sellable'   => $isSellable,
                 'is_bundle'     => $isBundle,
                 'bundle_stock_mode' => $isBundle ? ($data['bundle_stock_mode'] ?? 'automatic') : 'physical',

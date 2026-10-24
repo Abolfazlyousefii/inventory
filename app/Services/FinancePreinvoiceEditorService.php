@@ -6,6 +6,7 @@ use App\Models\PreinvoiceOrder;
 use App\Models\User;
 use App\Support\ActivityLogger;
 use App\Support\SalesDocumentTotals;
+use App\Support\DiscountMath;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -31,14 +32,29 @@ class FinancePreinvoiceEditorService
             }
 
             $items = $lockedOrder->items()->with(['product', 'variant'])->lockForUpdate()->get()->keyBy('id');
+            $lockedOrder->setRelation('items', $items->values());
+            \App\Support\FinanceDocumentVersion::assertCurrent($lockedOrder, $data['finance_version'] ?? null);
             $payload = collect($data['items'] ?? [])->keyBy(fn ($row) => (int) $row['id']);
+            if ($payload->count() !== count($data['items'] ?? [])) {
+                throw ValidationException::withMessages(['items' => 'شناسه تکراری در اقلام ارسالی وجود دارد.']);
+            }
             if ($items->keys()->sort()->values()->all() !== $payload->keys()->sort()->values()->all()) {
                 throw ValidationException::withMessages(['items' => 'اقلام ارسالی باید دقیقاً با اقلام پیش‌فاکتور برابر باشند؛ افزودن یا حذف ردیف مجاز نیست.']);
             }
 
             $beforeItems = $this->snapshot($lockedOrder->fresh(['items.product', 'items.variant']));
+            $productIds = $items->pluck('product_id')->map(fn ($id) => (int) $id)->all();
+            foreach ($data['product_discounts'] ?? [] as $discount) {
+                if (! in_array((int) ($discount['product_id'] ?? 0), $productIds, true)) {
+                    throw ValidationException::withMessages(['product_discounts' => 'کالای تخفیف باید در اقلام همین پیش‌فاکتور باشد.']);
+                }
+            }
             $beforeTotal = (int) $lockedOrder->total_price;
             $beforeInvoiceDiscount = (int) ($lockedOrder->invoice_discount_amount ?? 0);
+            // Missing optional groups must preserve legacy discounts, not clear them.
+            $productDiscountPayload = array_key_exists('product_discounts', $data)
+                ? (array) $data['product_discounts']
+                : $this->productDiscountInputsFromBreakdown($lockedOrder);
 
             foreach ($items as $itemId => $item) {
                 $row = $payload[$itemId];
@@ -58,9 +74,6 @@ class FinancePreinvoiceEditorService
             }
 
             $lockedOrder->load('items.product', 'items.variant');
-            $productDiscountPayload = array_key_exists('product_discounts', $data)
-                ? (array) $data['product_discounts']
-                : $this->productDiscountInputsFromBreakdown($lockedOrder);
             $productDiscounts = $this->productDiscountAllocator->allocate($lockedOrder->items, $productDiscountPayload);
             foreach ($lockedOrder->items as $item) {
                 $lineDiscount = (int) ($productDiscounts['lines'][$item->id] ?? $item->line_discount_amount ?? 0);
@@ -76,17 +89,13 @@ class FinancePreinvoiceEditorService
             if (! in_array($invoiceDiscountType, ['none', 'amount', 'percent'], true)) {
                 $invoiceDiscountType = 'none';
             }
-            $invoiceDiscountValue = (int) ($data['invoice_discount_value'] ?? $lockedOrder->invoice_discount_value ?? 0);
+            $invoiceDiscountValue = DiscountMath::value($invoiceDiscountType, $data['invoice_discount_value'] ?? $lockedOrder->invoice_discount_value ?? 0);
             if ($invoiceDiscountType === 'none') {
                 $invoiceDiscountValue = 0;
             }
 
             $discountableBase = max((int) $lockedOrder->items->sum(fn ($item) => SalesDocumentTotals::lineSubtotal($item)) - $itemsDiscount, 0);
-            $invoiceDiscountAmount = match ($invoiceDiscountType) {
-                'amount' => min($invoiceDiscountValue, $discountableBase),
-                'percent' => (int) floor($discountableBase * min(max($invoiceDiscountValue, 0), 100) / 100),
-                default => 0,
-            };
+            $invoiceDiscountAmount = DiscountMath::amount($discountableBase, $invoiceDiscountType, $invoiceDiscountValue);
 
             $totals = SalesDocumentTotals::calculate($lockedOrder->items, $invoiceDiscountAmount, (int) $lockedOrder->shipping_price, ['discount_allocation_mode' => 'product_lines']);
             $breakdown = [
@@ -142,11 +151,11 @@ class FinancePreinvoiceEditorService
 
     private function productDiscountInputsFromBreakdown(PreinvoiceOrder $order): array
     {
-        return collect($order->discount_breakdown['groups'] ?? [])->map(function ($group) {
+        return collect(app(PreinvoiceDiscountHydrator::class)->hydrateForEditing($order)['product_groups'])->map(function ($group) {
             return [
                 'product_id' => (int) ($group['product_id'] ?? 0),
                 'type' => (string) ($group['discount_type'] ?? 'amount'),
-                'value' => (int) ($group['discount_value'] ?? 0),
+                'value' => $group['discount_value'] ?? 0,
             ];
         })->filter(fn ($group) => (int) $group['product_id'] > 0)->values()->all();
     }

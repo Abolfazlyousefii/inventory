@@ -1,0 +1,65 @@
+name: Inventory safety
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', 'tests/**', 'database/**', 'resources/**', 'composer.*', 'package*.json', 'vite.config.js', 'phpunit.xml', '.github/workflows/inventory-safety.yml']
+  pull_request:
+    paths: ['app/**', 'tests/**', 'database/**', 'resources/**', 'composer.*', 'package*.json', 'vite.config.js', 'phpunit.xml', '.github/workflows/inventory-safety.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: php tests/run-inventory.php --log-junit inventory-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inventory-results-php-${{ matrix.php }}
+          path: inventory-results.xml
+  document-number-concurrency:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: inventory_isolated_audit_numbering_20261020
+        ports:
+          - 33319:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, pdo_mysql
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: php tests/integration/document-number-concurrency.php
+        env:
+          APP_ENV: testing
+          INVENTORY_TEST_MYSQL_DATABASE: inventory_isolated_audit_numbering_20261020
+          INVENTORY_TEST_MYSQL_PORT: '33319'

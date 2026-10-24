@@ -3,7 +3,7 @@
 @section('title', 'فاکتورهای فروش')
 
 @push('styles')
-    <link rel="stylesheet" href="{{ asset('css/invoices-index.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/invoices-index.css') }}?v=20261015-2">
 @endpush
 
 @section('content')
@@ -12,10 +12,10 @@
       data-customers-endpoint="{{ route('invoices.customers.search') }}"
       data-index-url="{{ route('invoices.index') }}">
     <header class="invoice-live__header">
-        <div>
+        <div class="invoice-live__heading"><span class="invoice-live__icon" aria-hidden="true">▤</span><div><span class="invoice-live__eyebrow">مدیریت و پیگیری اسناد فروش</span>
             <h1>فاکتورهای فروش</h1>
             <p>جست‌وجو و پیگیری سریع فاکتورهای ثبت‌شده</p>
-        </div>
+        </div></div>
         @if($canViewCancelled)
             <a class="btn btn-outline-danger" href="{{ route('invoices.cancelled') }}">بایگانی لغوشده‌ها</a>
         @endif
@@ -50,12 +50,12 @@
         </div>
         <div class="invoice-filter-field">
             <label for="invoiceDateFrom">از تاریخ</label>
-            <input id="invoiceDateFrom" class="form-control" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۱/۰۱">
+            <input id="invoiceDateFrom" data-jdp data-jdp-only-date dir="ltr" class="form-control" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۰۱/۰۱">
             <small class="field-error" data-error-for="date_from"></small>
         </div>
         <div class="invoice-filter-field">
             <label for="invoiceDateTo">تا تاریخ</label>
-            <input id="invoiceDateTo" class="form-control" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۱۲/۲۹">
+            <input id="invoiceDateTo" data-jdp data-jdp-only-date dir="ltr" class="form-control" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۵/۱۲/۲۹">
             <small class="field-error" data-error-for="date_to"></small>
         </div>
         <div class="invoice-filter-actions">

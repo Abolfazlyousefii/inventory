@@ -45,7 +45,7 @@ class AuditSalesDiscountContracts extends Command
                         DB::transaction(fn () => $discountService->applyToOrder($doc->refresh()->load('items'), [
                             'discount_breakdown' => $doc->discount_breakdown,
                             'invoice_discount_type' => $doc->invoice_discount_type,
-                            'invoice_discount_value' => (int) ($doc->invoice_discount_value ?? 0),
+                            'invoice_discount_value' => $doc->invoice_discount_value ?? 0,
                         ]));
                         $fixed++;
                     }

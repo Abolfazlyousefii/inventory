@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
+
 @section('content')
 	@php
 		$order = $order ?? null;
@@ -1361,6 +1363,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			</div>
 		</div>
 
+        @if($order && $order->items->contains(fn($item) => $item->product?->uniform_sale_price !== null && (int) $item->price !== (int) $item->product->uniform_sale_price))
+            <div class="alert alert-warning" role="alert">قیمت روز بعضی اقلام با قیمت ذخیره‌شدهٔ این پیش‌نویس متفاوت است. قیمت‌های ذخیره‌شده خودکار تغییر نکرده‌اند؛ پیش از ثبت نهایی، قیمت اقلام را بررسی و در صورت نیاز اصلاح کنید.</div>
+        @endif
 		<div class="local-draft-banner" id="localDraftBanner">
 			<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
 				<div>
@@ -1625,6 +1630,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 	@endphp
 
 	<script src="{{ asset('js/preinvoice-merge.js') }}"></script>
+	<script src="{{ asset('js/variant-search.js') }}?v=20261018"></script>
 	<script>
 		window.PREINVOICE_BOOT = {
 			api: {
@@ -2042,13 +2048,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			return type === 'percent' ? n : Math.floor(n);
 		}
 
-		function calcDiscount(baseAmount, type, value) {
-			const base = Math.max(0, Number(baseAmount || 0));
-			const safeType = type === 'percent' ? 'percent' : 'amount';
-			const safeValue = safeDiscountValue(safeType, value);
-			if (safeType === 'percent') return Math.min(base, Math.floor(base * safeValue / 100));
-			return Math.min(base, Math.floor(safeValue));
-		}
+        function calcDiscount(baseAmount, type, value) {
+            return SalesDiscountMath.amount(baseAmount, type, value);
+        }
 
 		function customerFullName(c) {
 			if (!c) return '';
@@ -3063,13 +3065,12 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function filteredModalItems() {
-			const q = normalize(document.getElementById('pickerSearchInput').value).toLowerCase();
+			const q = document.getElementById('pickerSearchInput').value;
 			return activeModalItems.filter(v => {
 				const availability = variantAvailability(v);
 				if (modalOnlyInStock && availability.maxSelectable <= 0 && Number(modalQuantities.get(variantId(v)) || 0) <= 0) return false;
 				if (!q) return true;
-				const haystack = [variantModel(v), variantDesign(v), variantName(v), v?.sku, v?.code, v?.variant_code, v?.barcode].join(' ').toLowerCase();
-				return haystack.includes(q);
+				return window.InventoryVariantSearch.matches(q, [variantModel(v), variantDesign(v), variantName(v), v?.sku, v?.code, v?.variant_code, v?.variety_code, v?.barcode]);
 			});
 		}
 

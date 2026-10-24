@@ -138,7 +138,7 @@ class SalesDocumentTotals
             'product_discount_amount' => (int) $totals['items_discount'],
             'subtotal_after_product_discount' => (int) $totals['subtotal_after_product_discount'],
             'invoice_discount_type' => (string) ($document->invoice_discount_type ?? 'amount'),
-            'invoice_discount_value' => (int) ($document->invoice_discount_value ?? 0),
+            'invoice_discount_value' => $document->invoice_discount_value ?? 0,
             'invoice_discount_amount' => (int) $totals['invoice_discount'],
             'total_discount_amount' => (int) $totals['total_discount'],
             'shipping' => (int) $totals['shipping'],

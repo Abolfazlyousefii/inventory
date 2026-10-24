@@ -1,0 +1,24 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('resources/views/products/index.blade.php','utf8');
+const code=source.slice(source.indexOf('async function loadVariants('),source.indexOf('function variantRow('));
+const pending=[],input={value:'old'},elements={variantSearch:input,variantStock:{value:''},variantSellable:{value:''},drawerTitle:{},drawerSubTitle:{}};
+const list={children:[],insertAdjacentHTML(_,html){this.children.push(html)}};
+const context=vm.createContext({URL,AbortController,location:{origin:'https://example.test'},variant:{productId:1,seq:0,loading:false,hasMore:true},document:{getElementById:id=>elements[id]},vList:list,vState:{},variantRow:v=>v.name,fetch:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))});
+vm.runInContext(code,context);
+(async()=>{
+ const first=vm.runInContext('loadVariants(true)',context);
+ input.value='new';const second=vm.runInContext('loadVariants(true)',context);
+ assert.equal(pending.length,2,'Typing while loading must start latest request');
+ assert.equal(pending[0].options.signal.aborted,true);
+ pending[1].resolve({ok:true,json:async()=>({data:[{name:'new'}],meta:{has_more:false}})});await second;
+ pending[0].resolve({ok:true,json:async()=>({data:[{name:'old'}],meta:{has_more:true}})});await first;
+ assert.deepEqual(list.children,['new'],'Old response must not replace or append stale rows');
+ assert.equal(context.variant.loading,false);assert.equal(context.variant.hasMore,false);
+ const third=vm.runInContext('loadVariants(true)',context);
+ context.variant={productId:2,seq:0,loading:false,hasMore:true};
+ const fourth=vm.runInContext('loadVariants(true)',context);
+ pending[3].resolve({ok:true,json:async()=>({data:[{name:'product2'}],meta:{has_more:false}})});await fourth;
+ pending[2].resolve({ok:true,json:async()=>({data:[{name:'product1'}],meta:{has_more:true}})});await third;
+ assert.deepEqual(list.children,['new','product2'],'Previous product response must be ignored');
+ console.log('Actual drawer request handler: latest query wins, aborted/stale responses and switching products passed.');
+})().catch(error=>{console.error(error);process.exit(1)});

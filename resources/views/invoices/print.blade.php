@@ -116,19 +116,19 @@
 		</div>
 	</header>
 
-	<section class="info-grid">
-		<div class="info-box">
-			<div class="info-box-title">مشخصات مشتری</div>
-			<div class="info-row"><div class="info-label">نام:</div><div><strong>{{ $invoice->customer_name ?: '—' }}</strong></div></div>
-			<div class="info-row"><div class="info-label">موبایل:</div><div>{{ $invoice->customer_mobile ?: '—' }}</div></div>
-			<div class="info-row"><div class="info-label">آدرس:</div><div>{{ $invoice->customer_address ?: '—' }}</div></div>
-		</div>
-		<div class="info-box">
-			<div class="info-box-title">ارسال</div>
-			<div class="info-row"><div class="info-label">روش ارسال:</div><div>{{ $shippingName }}</div></div>
-			<div class="info-row"><div class="info-label">هزینه ارسال:</div><div>{{ $money($totals['shipping']) }}</div></div>
-		</div>
-	</section>
+    <section class="info-grid">
+        <div class="info-box">
+            <div class="info-box-title">مشخصات مشتری</div>
+            <div class="info-row"><div class="info-label">نام:</div><div><strong>{{ $invoice->customer_name ?: '—' }}</strong></div></div>
+            <div class="info-row"><div class="info-label">موبایل:</div><div>{{ $invoice->customer_mobile ?: '—' }}</div></div>
+            <div class="info-row"><div class="info-label">آدرس:</div><div>{{ $invoice->display_customer_address ?: '—' }}</div></div>
+        </div>
+        <div class="info-box">
+            <div class="info-box-title">ارسال</div>
+            <div class="info-row"><div class="info-label">روش ارسال:</div><div>{{ $shippingName }}</div></div>
+            <div class="info-row"><div class="info-label">هزینه ارسال:</div><div>{{ $money($totals['shipping']) }}</div></div>
+        </div>
+    </section>
 
 	<section>
 		<table class="invoice-table">
