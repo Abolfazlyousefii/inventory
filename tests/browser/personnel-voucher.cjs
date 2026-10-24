@@ -82,6 +82,12 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
         assert(invalidPrevented, 'Receiver is required');
         await page.locator('#addItemBtn').click();
         assert.equal(await page.locator('#itemsTable tbody tr').count(), 2);
+        assert.equal(await page.locator('.item-toggle').first().getAttribute('aria-expanded'), 'false');
+        assert(!(await page.locator('.product-select').first().isVisible()));
+        assert((await page.locator('.item-summary-name').first().textContent()).includes('کالای دوم'));
+        await page.locator('.item-toggle').first().click();
+        assert.equal(await page.locator('.quantity-input').first().inputValue(), '2');
+        assert.equal(await page.locator('.asset-code-input').first().inputValue(), '2039');
         await page.locator('.remove-row').first().click();
         assert.equal(await page.locator('.product-select').getAttribute('name'), 'items[0][product_id]');
         // Edit/old-input restoration must retain quantity, asset code and selected model.
@@ -99,6 +105,15 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
             return !event.defaultPrevented;
         });
         assert(valid, 'A complete, restored voucher passes client validation');
+        await page.locator('.item-toggle').click();
+        const payload = await page.evaluate(() => Object.fromEntries(new FormData(document.getElementById('personnelVoucherForm'))));
+        assert.equal(payload['items[0][quantity]'], '2', 'Collapsed fields remain in the submitted form');
+        assert.equal(payload['items[0][variant_id]'], '904');
+        await page.evaluate(() => {
+            document.querySelector('.asset-code-input').value = '';
+            document.getElementById('personnelVoucherForm').dispatchEvent(new Event('submit', {cancelable: true}));
+        });
+        assert.equal(await page.locator('.item-toggle').getAttribute('aria-expanded'), 'true', 'Validation errors reveal the row');
         restore = false;
         // Both upstream selectors recover too, including root categories with no children.
         await page.goto('http://localhost/fixture');

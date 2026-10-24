@@ -65,7 +65,7 @@
 @endphp
 
 @section('content')
-<link rel="stylesheet" href="{{ asset('css/warehouse-vouchers.css') }}?v=20261024">
+<link rel="stylesheet" href="{{ asset('css/warehouse-vouchers.css') }}?v=20261024b">
 <div class="container py-3 personnel-voucher" dir="rtl">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="mb-0">{{ $isEdit ? 'ویرایش حواله پرسنل' : 'ثبت حواله پرسنل' }}</h4>
@@ -286,6 +286,25 @@ function rowError(tr, message = '') {
     if (!error) return;
     error.textContent = message;
     error.classList.toggle('d-none', message === '');
+    if (message) setRowExpanded(tr, true);
+}
+function setRowExpanded(tr, expanded) {
+    tr.classList.toggle('item-collapsed', !expanded);
+    const button = tr.querySelector('.item-toggle');
+    if (button) {
+        button.setAttribute('aria-expanded', String(expanded));
+        button.querySelector('.item-toggle-label').textContent = expanded ? 'جمع کردن' : 'باز کردن';
+    }
+}
+function updateRowSummary(tr) {
+    const product = tr.querySelector('.product-select');
+    const variant = tr.querySelector('.variant-select');
+    const quantity = tr.querySelector('.quantity-input').value;
+    tr.querySelector('.item-summary-name').textContent = product.value ? product.selectedOptions[0].textContent : 'کالا را انتخاب کنید';
+    tr.querySelector('.item-summary-detail').textContent = [
+        variant.value ? variant.selectedOptions[0].textContent.split(' — موجودی:')[0] : 'مدل انتخاب نشده',
+        quantity ? `تعداد: ${faNumber(quantity)}` : 'تعداد وارد نشده',
+    ].join(' · ');
 }
 async function loadChildren(tr, selected = '') {
     const rootId = tr.querySelector('.root-cat').value;
@@ -380,6 +399,7 @@ function syncVariant(tr) {
     qty.max = opt?.value ? String(max) : '';
     qty.disabled = !opt?.value || max <= 0;
 
+    updateRowSummary(tr);
     if (opt?.value && max <= 0) {
         rowError(tr, 'موجودی قابل حواله برای این تنوع صفر است.');
     } else {
@@ -438,11 +458,12 @@ function bindRow(tr, item = {}) {
     search.addEventListener('input', debounce(() => searchProducts(tr, product.value, product.selectedOptions[0]?.textContent || ''), 350));
     product.addEventListener('change', () => { delete tr.dataset.initializing; resetVariants(tr); loadVariants(tr); });
     variant.addEventListener('change', () => syncVariant(tr));
-    qty.addEventListener('input', () => validateRow(tr));
+    qty.addEventListener('input', () => { updateRowSummary(tr); validateRow(tr); });
     remove.addEventListener('click', () => { tr.querySelectorAll('select').forEach(cancelLookup); tr.remove(); reindexRows(); });
 }
 function reindexRows() {
     [...tbody.querySelectorAll('tr')].forEach((tr, index) => {
+        tr.querySelector('.item-row-number').textContent = `قلم ${faNumber(index + 1)}`;
         tr.querySelector('.cat-hidden').name = `items[${index}][category_id]`;
         tr.querySelector('.product-select').name = `items[${index}][product_id]`;
         tr.querySelector('.variant-select').name = `items[${index}][variant_id]`;
@@ -452,6 +473,7 @@ function reindexRows() {
 }
 let fieldSequence = 0;
 async function addRow(item = {}) {
+    tbody.querySelectorAll('tr').forEach(tr => setRowExpanded(tr, false));
     tbody.insertAdjacentHTML('beforeend', rowTemplate(tbody.querySelectorAll('tr').length, item));
     const tr = tbody.querySelector('tr:last-child');
     tr.dataset.initializing = '1';
@@ -465,6 +487,20 @@ async function addRow(item = {}) {
         }
         label.className = 'item-field-label'; label.textContent = labels[index]; cell.prepend(label);
     });
+    tr.cells[7].classList.add('item-actions');
+    const fieldIds = [...tr.cells].map(cell => {
+        cell.id = `voucher-cell-${++fieldSequence}`;
+        return cell.id;
+    });
+    const header = tr.insertCell();
+    header.className = 'item-header';
+    header.innerHTML = `<button type="button" class="item-toggle" aria-expanded="true" aria-controls="${fieldIds.join(' ')}">
+        <span class="item-row-number"></span><span class="item-summary"><strong class="item-summary-name"></strong><small class="item-summary-detail"></small></span>
+        <span class="item-toggle-label">جمع کردن</span><span class="item-chevron" aria-hidden="true">⌃</span>
+    </button>`;
+    header.querySelector('button').addEventListener('click', () => setRowExpanded(tr, tr.classList.contains('item-collapsed')));
+    updateRowSummary(tr);
+    reindexRows();
     tr.querySelector('.product-search').setAttribute('aria-label', 'جستجوی کالا در دسته انتخاب‌شده');
     bindRow(tr, item);
     if (item.root_category_id) {
