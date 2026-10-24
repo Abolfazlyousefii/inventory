@@ -22,6 +22,20 @@
     .kit-choice {border:1px solid #dbe4ef;border-radius:14px;padding:14px;background:#fff;cursor:pointer}
     .kit-choice:has(input:checked){border-color:#2563eb;background:#eff6ff}
     .kit-result {position:absolute;inset-inline:0;top:100%;z-index:40;background:#fff;border:1px solid #dbe4ef;border-radius:12px;max-height:350px;overflow:auto;box-shadow:0 10px 24px #0f172a20}
+    .kit-product {padding:12px;border-bottom:1px solid #e2e8f0}
+    .kit-product-head {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .kit-product-toggle {flex:1;background:none;border:0;text-align:start;color:#243b53;font-weight:700;padding:10px;cursor:pointer;border-radius:10px}
+    .kit-select {display:flex;align-items:center;gap:12px;cursor:pointer;margin:6px 0;padding:12px;border:1px solid #dbe4ef;border-radius:14px;background:#fff;color:#243b53;transition:background .15s,border-color .15s}
+    .kit-select:hover {background:#f8fafc;border-color:#93b4e8}
+    .kit-select:has(input:checked),.kit-select:has(input:indeterminate) {background:#eff6ff;border-color:#3b82f6}
+    .kit-select input[type=checkbox] {appearance:none;-webkit-appearance:none;flex:0 0 24px;width:24px;height:24px;padding:0;margin:0;border:2px solid #94a3b8;border-radius:50%;background:#fff;display:grid;place-content:center;cursor:pointer}
+    .kit-select input:checked,.kit-select input:indeterminate {background:#2563eb;border-color:#2563eb}
+    .kit-select input:checked::after {content:'';width:6px;height:11px;border:solid white;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+    .kit-select input:indeterminate::after {content:'';width:10px;height:2px;background:#fff;transform:none;border:0}
+    .kit-select input:focus-visible,.kit-product-toggle:focus-visible {outline:3px solid #93c5fd;outline-offset:3px}
+    .kit-variant-copy {min-width:0;overflow-wrap:anywhere}
+    .kit-variant-meta {display:block;color:#52657d;font-size:.85rem;margin-top:4px}
+    .kit-group-status {font-size:.8rem;color:#52657d}
     .kit-selected {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:8px}
     .kit-preview {background:#f8fafc;border:1px solid #dbeafe;border-radius:14px;padding:16px}
     .kit-component-discount {display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -51,8 +65,8 @@
       <div class="mb-3 position-relative">
         <label class="form-label fw-bold" for="bundleCreateSearch">افزودن محصول</label>
         <input id="bundleCreateSearch" class="form-control" type="search" autocomplete="off" placeholder="جستجو با نام محصول، کد یا SKU (حداقل ۲ حرف)" aria-expanded="false" aria-controls="bundleCreateResults">
-        <div id="bundleCreateResults" class="kit-result" role="listbox" hidden></div>
-        <div class="form-text">مرحله اول: محصول را انتخاب کنید. مرحله دوم: تنوع/رنگ دقیق را انتخاب کنید. اگر یک محصول تنها یک تنوع دارد، همان را اضافه کنید.</div>
+        <div id="bundleCreateResults" class="kit-result" role="group" aria-label="انتخاب محصولات و تنوع‌ها" hidden></div>
+        <div class="form-text">برای افزودن همه تنوع‌های موجود، کنار محصول تیک بزنید؛ یا تنوع‌ها را جداگانه انتخاب کنید. تعداد هر تنوع خودکار ۱ است و قابل تغییر است.</div>
       </div>
       <div class="d-flex align-items-center justify-content-between mb-2"><strong>اقلام بسته</strong><small id="bundleCreateCount" class="text-muted"></small></div>
       <div id="bundleCreateItems" aria-live="polite"></div>
@@ -87,6 +101,9 @@
     </div>
   </div>
 </div>
+@once
+<script src="{{ asset('js/bundle-form-payload.js') }}?v=20261024"></script>
+@endonce
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const form=document.getElementById('productCreateForm'), section=document.getElementById('bundleCreateSection');
@@ -177,6 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
       row.append(details,hidden,qWrap,discount,rm);list.append(row);
     });
     empty.hidden=selected.size>0;
+    syncSelection();
     updateTotals();
   }
   function updateTotals(){
@@ -185,31 +203,71 @@ document.addEventListener('DOMContentLoaded', () => {
     review.textContent=`${nameInput?.value?.trim()||'نام بسته هنوز وارد نشده'} · ${pieces} قطعه در هر بسته · ${Number.isInteger(qty)&&qty>=0?money(qty):'—'} بسته قابل اختصاص · قیمت نهایی: ${good?money(Number(sell.value)):'نامعتبر'} ریال`;
   }
   let timer,controller,revision=0;
+  let selectionControls=[];
   function hide(){results.hidden=true;search.setAttribute('aria-expanded','false');}
-  function info(s){results.replaceChildren();const e=document.createElement('div');e.className='p-3 small text-muted';e.textContent=s;results.append(e);results.hidden=false;}
-  function choose(i){if(!selected.has(Number(i.id))){selected.set(Number(i.id),{...i,quantity:1,discount_type:'percent',discount_value:0});refresh();}hide();search.value='';search.focus();}
+  function info(s){selectionControls=[];results.replaceChildren();search.setAttribute('aria-expanded','true');const e=document.createElement('div');e.className='p-3 small text-muted';e.textContent=s;results.append(e);results.hidden=false;}
+  function syncSelection(){
+    for(const {box,items,status} of selectionControls){
+      const n=items.filter(i=>selected.has(Number(i.id))).length;
+      box.checked=n===items.length && n>0;box.indeterminate=n>0&&n<items.length;
+      if(status)status.textContent=`${money(n)} از ${money(items.length)} انتخاب شده`;
+    }
+  }
+  const maxComponents = @json(\App\Support\BundleRecipe::MAX_COMPONENTS);
+  function selectItems(items,checked){
+    const additions=items.filter(i=>!selected.has(Number(i.id)));
+    if(checked && selected.size+additions.length>maxComponents){
+      alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);syncSelection();return;
+    }
+    for(const i of items){
+      const id=Number(i.id);
+      if(checked){if(!selected.has(id))selected.set(id,{...i,quantity:1,discount_type:'percent',discount_value:0});}
+      else selected.delete(id);
+    }
+    refresh();
+  }
+  function selectionLabel(items,labelText){
+    const label=document.createElement('label');label.className='kit-select';
+    const box=document.createElement('input');box.type='checkbox';box.setAttribute('aria-label',labelText);
+    box.addEventListener('change',()=>selectItems(items,box.checked));label.append(box);
+    const control={box,items};selectionControls.push(control);
+    return {label,control};
+  }
   async function lookup(term){
     const rev=++revision;if(controller)controller.abort();if(term.length<2){hide();return;}
     controller=new AbortController();info('در حال جستجو...');
     try{
-      const url=new URL(@json(route('products.bundle.search')),location.origin);url.searchParams.set('q',term);
+      const url=new URL(@json(route('products.bundle.search')),location.origin);url.searchParams.set('q',term);url.searchParams.set('complete_products','1');
       const res=await fetch(url,{credentials:'same-origin',headers:{'Accept':'application/json'},signal:controller.signal});
       if(!res.ok)throw Error('search unavailable');const data=await res.json();if(rev!==revision)return;
       results.replaceChildren();const groups=new Map();
       for(const i of data.results||[]){const id=Number(i.product_id);if(!groups.has(id))groups.set(id,{name:i.name,items:[]});groups.get(id).items.push(i);}
       if(!groups.size){info('کالایی پیدا نشد.');return;}
-      for(const group of groups.values()){
-        const wrap=document.createElement('details');wrap.className='border-bottom p-2';
-        const title=document.createElement('summary');title.className='fw-semibold';title.style.cursor='pointer';title.textContent=`${group.name} — انتخاب تنوع (${group.items.length})`;
-        wrap.append(title);
+      selectionControls=[];
+      for(const [productId,group] of groups){
+        const wrap=document.createElement('div');wrap.className='kit-product';
+        const head=document.createElement('div');head.className='kit-product-head';
+        const {label,control}=selectionLabel(group.items,`انتخاب همه تنوع‌های ${group.name}`);
+        const caption=document.createElement('span');caption.textContent='انتخاب همه';
+        const status=document.createElement('span');status.className='kit-group-status';control.status=status;
+        label.append(caption,status);
+        const toggle=document.createElement('button');toggle.type='button';toggle.className='kit-product-toggle';
+        toggle.textContent=`${group.name} · ${money(group.items.length)} تنوع موجود`;
+        const variants=document.createElement('div');variants.id=`kit-variants-${productId}`;
+        variants.hidden=groups.size!==1;toggle.setAttribute('aria-controls',variants.id);toggle.setAttribute('aria-expanded',String(!variants.hidden));
+        toggle.addEventListener('click',()=>{variants.hidden=!variants.hidden;toggle.setAttribute('aria-expanded',String(!variants.hidden));});
+        head.append(label,toggle);wrap.append(head,variants);
         for(const i of group.items){
-          const button=document.createElement('button');button.type='button';button.className='btn btn-outline-primary btn-sm d-block w-100 text-end my-1';
-          button.disabled=selected.has(Number(i.id));button.textContent=`${i.variant||'تنوع اصلی'} · ${i.code||''} · آزاد: ${i.stock} · ${money(Number(i.sell_price)||0)} ریال`;
-          button.addEventListener('click',()=>choose(i));wrap.append(button);
+          const {label}=selectionLabel([i],`انتخاب ${i.variant||'تنوع اصلی'}`);
+          const copy=document.createElement('span');copy.className='kit-variant-copy';
+          const title=document.createElement('strong');title.textContent=i.variant||'تنوع اصلی';
+          const meta=document.createElement('span');meta.className='kit-variant-meta';
+          meta.textContent=`${i.code||''} · موجودی آزاد: ${money(i.stock)} · ${money(Number(i.sell_price)||0)} ریال`;
+          copy.append(title,meta);label.append(copy);variants.append(label);
         }
-        if(groups.size===1)wrap.open=true;
         results.append(wrap);
       }
+      syncSelection();
       results.hidden=false;search.setAttribute('aria-expanded','true');
     }catch(e){if(e.name!=='AbortError'&&rev===revision)info('جستجو انجام نشد. دسترسی یا اتصال را بررسی کنید.');}
   }
@@ -224,9 +282,12 @@ document.addEventListener('DOMContentLoaded', () => {
   type.addEventListener('change',()=>updateDiscountMode(true));value.addEventListener('input',()=>{normalizeDiscount();updateTotals();});
   shared.addEventListener('input',updateTotals);nameInput?.addEventListener('input',updateTotals);
   buy.addEventListener('input',()=>{buy.value=digits(buy.value);});
-  search.addEventListener('input',()=>{clearTimeout(timer);const q=search.value.trim();if(q.length<2){revision++;controller?.abort();hide();return;}timer=setTimeout(()=>lookup(q),250);});
+  search.addEventListener('input',()=>{clearTimeout(timer);const q=search.value.trim();revision++;controller?.abort();hide();if(q.length<2){return;}timer=setTimeout(()=>lookup(q),250);});
+  search.addEventListener('focus',()=>{if(search.value.trim().length>=2&&!results.hidden)return;if(search.value.trim().length>=2)lookup(search.value.trim());});
+  results.addEventListener('keydown',e=>{if(e.key==='Escape'){search.focus();hide();}});
   search.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});
   document.addEventListener('click',e=>{if(!section.contains(e.target))hide();});
+  window.BundleFormPayload.attach(form, ['components']);
   form.addEventListener('submit',e=>{
     if(!on())return;
     if(!selected.size){e.preventDefault();alert('حداقل یک محصول و تنوع انتخاب کنید.');search.focus();return;}

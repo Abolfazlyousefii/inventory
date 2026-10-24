@@ -40,4 +40,9 @@ if (BundleRecipe::requirements([3 => 1, 10 => 2], 5) !== [3 => 5, 10 => 10]) {
 }
 expectedFailure(fn () => BundleRecipe::requirements([3 => 1], 0), 'Zero production quantity must fail.');
 
+$large = array_map(fn ($id) => ['variant_id' => $id, 'quantity' => 1], range(1, 300));
+if (count(BundleRecipe::normalize(99999, $large)) !== 300) {
+    throw new RuntimeException('A bundle with 300 variants must preserve every component.');
+}
+
 print "BundleRecipe contract checks passed.\n";

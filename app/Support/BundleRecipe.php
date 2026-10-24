@@ -7,14 +7,16 @@ use InvalidArgumentException;
 /** Normalizes a fixed, physical bundle bill of materials without touching stock. */
 final class BundleRecipe
 {
+    public const MAX_COMPONENTS = 5000;
+
     /**
      * @param array<int,array{variant_id:mixed,quantity:mixed}> $components
      * @return array<int,int> Ordered component variant ID => quantity per finished unit.
      */
     public static function normalize(int $bundleVariantId, array $components): array
     {
-        if ($bundleVariantId < 1 || $components === [] || count($components) > 100) {
-            throw new InvalidArgumentException('Bundle recipe must contain 1 to 100 components.');
+        if ($bundleVariantId < 1 || $components === [] || count($components) > self::MAX_COMPONENTS) {
+            throw new InvalidArgumentException('Bundle recipe must contain 1 to '.self::MAX_COMPONENTS.' components.');
         }
 
         $normalized = [];

@@ -24,11 +24,12 @@ class ProductBundleController extends Controller
         $data = $request->validate([
             'q' => ['required', 'string', 'min:2', 'max:100'],
             'exclude_variant_id' => ['nullable', 'integer', 'min:1'],
+            'complete_products' => ['sometimes', 'boolean'],
         ]);
         $term = trim($data['q']);
         $like = '%'.addcslashes($term, '%_\\').'%';
         $warehouseId = WarehouseStockService::centralWarehouseId();
-        $variants = ProductVariant::query()
+        $eligible = ProductVariant::query()
             ->with('product:id,name,code,sku,is_bundle')
             ->where('is_active', true)
             ->whereHas('product', fn ($query) => $query->where('is_bundle', false)->where('is_sellable', true))
@@ -39,16 +40,24 @@ class ProductBundleController extends Controller
                     ->where('warehouse_id', $warehouseId)
                     ->groupBy('product_variant_id')
                     ->havingRaw('SUM(quantity) > 0');
-            })
-            ->where(function ($query) use ($like) {
+            });
+        $matching = (clone $eligible)->where(function ($query) use ($like) {
                 $query->where('variant_name', 'like', $like)
                     ->orWhere('variant_code', 'like', $like)
                     ->orWhere('variety_name', 'like', $like)
                     ->orWhereHas('product', fn ($product) => $product->where('name', 'like', $like)
                         ->orWhere('code', 'like', $like)
                         ->orWhere('sku', 'like', $like));
-            })
-            ->orderBy('product_id')->orderBy('id')->limit(100)->get();
+            });
+        if ($request->boolean('complete_products')) {
+            // Limit products, not variants: a product checkbox must represent its complete eligible group.
+            $productIds = (clone $matching)->select('product_id')->distinct()
+                ->orderBy('product_id')->limit(20)->pluck('product_id');
+            $variants = $eligible->whereIn('product_id', $productIds)
+                ->orderBy('product_id')->orderBy('id')->get();
+        } else {
+            $variants = $matching->orderBy('product_id')->orderBy('id')->limit(100)->get();
+        }
 
         $stocks = WarehouseStock::query()
             ->where('warehouse_id', $warehouseId)
@@ -70,6 +79,7 @@ class ProductBundleController extends Controller
 
     public function recipe(Request $request, Product $product, ProductBundleService $service): RedirectResponse
     {
+        \App\Support\BundleFormPayload::merge($request, ['components']);
         // Optional empty editor rows are not recipe components.
         $request->merge(['components' => array_values(array_filter(
             (array) $request->input('components', []),
@@ -77,7 +87,7 @@ class ProductBundleController extends Controller
         ))]);
         $payload = $request->validate([
             'bundle_variant_id' => ['required', 'integer', 'exists:product_variants,id'],
-            'components' => ['required', 'array', 'min:1', 'max:100'],
+            'components' => ['required', 'array', 'min:1', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
             'components.*.variant_id' => ['required', 'integer', 'exists:product_variants,id'],
             'components.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
             'components.*.discount_type' => ['nullable', 'in:percent,fixed'],
@@ -225,12 +235,13 @@ class ProductBundleController extends Controller
     /** Allocate real, protected stock to the bundle. Not a virtual sales cap. */
     public function policy(Request $request, Product $product): RedirectResponse
     {
+        \App\Support\BundleFormPayload::merge($request, ['allocations', 'expected_allocations']);
         $data = $request->validate([
             'bundle_quantity_mode' => ['required', 'in:shared'],
             'bundle_shared_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
-            'allocations' => ['nullable', 'array', 'max:100'],
+            'allocations' => ['nullable', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
             'allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
-            'expected_allocations' => ['required', 'array', 'max:100'],
+            'expected_allocations' => ['required', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
             'expected_allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
         ]);
         if (!$product->is_bundle || $product->bundle_stock_mode !== 'automatic' || $product->variants()->count() !== 1) {

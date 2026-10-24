@@ -15,3 +15,16 @@ when running in a Git worktree without installed dependencies. The script checks
 request failures/retry, stale responses, quantity limits, required receiver,
 restored items, root categories without children, row reindexing, and overflow at
 390, 768 and 1366 pixels. Screenshots are saved beside the fixtures.
+
+## Large bundle regression
+
+Set `BUNDLE_BROWSER_FIXTURE` to an HTML file in `storage/app/`, run
+`tests/Feature/LargeProductBundleTest.php` with the isolated PHPUnit runner, then:
+
+```
+node tests/browser/large-bundle.cjs <fixture.html>
+```
+
+This selects all 300 variants, checks totals, checks deselection/reselection,
+and verifies that recipe and allocation snapshots use one complete JSON field.
+All requests are intercepted; no products or warehouse stock change on a live server.

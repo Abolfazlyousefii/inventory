@@ -359,6 +359,7 @@ class ProductController extends Controller {
     }
 
     public function store( Request $request ) {
+        \App\Support\BundleFormPayload::merge($request, ['components']);
         $isBundle = $request->input('product_type', 'regular') === 'bundle';
         $data = $request->validate([
             'product_type' => ['nullable', Rule::in(['regular', 'bundle'])],
@@ -367,7 +368,7 @@ class ProductController extends Controller {
             'bundle_discount_type' => [$isBundle ? 'required' : 'nullable', Rule::in(['percent', 'final'])],
             'bundle_discount_value' => [$isBundle ? 'required' : 'nullable', 'integer', 'min:0', 'max:999999999999'],
             'bundle_shared_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
-            'components' => [$isBundle ? 'required' : 'nullable', 'array', 'max:100', ...($isBundle ? ['min:1'] : [])],
+            'components' => [$isBundle ? 'required' : 'nullable', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS, ...($isBundle ? ['min:1'] : [])],
             'components.*.variant_id' => ['required', 'integer', 'distinct', 'exists:product_variants,id'],
             'components.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
             'components.*.discount_type' => ['nullable', Rule::in(['percent', 'fixed'])],

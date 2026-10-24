@@ -1,3 +1,6 @@
+@once
+<script src="{{ asset('js/bundle-form-payload.js') }}?v=20261024"></script>
+@endonce
 @php
     // The commercial bundle is one selling SKU; availability can be automatic or physically assembled.
     $bundleVariant = $product->variants->count() === 1 ? $product->variants->first() : null;
@@ -83,7 +86,7 @@
                 @if(($product->bundle_quantity_mode ?? 'custom') !== 'shared')
                     <div class="alert alert-warning">این بسته با روش قدیمی موجودی جداگانه ساخته شده است. برای تبدیل ایمن به موجودی یکسان، ابتدا فروش/سفارش فعال را بررسی کنید، بسته را از انتشار خارج کنید و سهمیه قبلی را آزاد کنید. این فرم موجودی قبلی را خودکار تغییر نمی‌دهد.</div>
                 @else
-                    <form method="POST" action="{{ route('products.bundle.policy', $product) }}" class="border rounded p-3 mb-3">
+                    <form method="POST" action="{{ route('products.bundle.policy', $product) }}" data-bundle-payload="allocations expected_allocations" class="border rounded p-3 mb-3">
                         @csrf
                         <input type="hidden" name="bundle_quantity_mode" value="shared">
                         @foreach($components as $component)
@@ -190,7 +193,7 @@
                 <div class="alert alert-secondary">ویرایش ترکیب فعلاً قفل است. برای بسته خودکار، از بخش «انتشار و همگام‌سازی در سایت» انتشار را موقتاً متوقف کنید، موجودی اختصاصی بالا را صفر کرده و ذخیره کنید؛ سپس قطعات را ویرایش کنید. بسته مونتاژشده یا دارای سابقه فروش، به محصول جدید نیاز دارد.</div>
             @endif
             @if (!$recipeLocked)
-                <form method="POST" action="{{ route('products.bundle.recipe', $product) }}" class="mb-4" id="bundle-recipe-form-{{ $product->id }}">
+                <form method="POST" action="{{ route('products.bundle.recipe', $product) }}" data-bundle-payload="components" class="mb-4" id="bundle-recipe-form-{{ $product->id }}">
                     @csrf
                     <input type="hidden" name="bundle_variant_id" value="{{ $bundleVariant->id }}">
                     <h6>قطعات مورد نیاز برای ساخت یک بسته</h6>
