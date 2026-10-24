@@ -28,10 +28,10 @@
         <div class="asd-current {{ $netBalance > 0 ? 'asd-debt' : ($netBalance < 0 ? 'asd-credit' : '') }}"><span>ماندهٔ فعلی حساب</span><strong>{{ $rial($netBalance) }}</strong><small>{{ $balanceText($netBalance) }}</small></div>
     </section>
     <section class="asd-book">
-        <div class="asd-book-heading"><h2>گردش حساب</h2><span>به ترتیب ثبت در سامانه · مبالغ به ریال</span></div>
+        <div class="asd-book-heading"><h2>گردش حساب</h2><span>بر اساس تاریخ سند، جدیدترین ابتدا · مبالغ به ریال</span></div>
         <div class="asd-table-wrap">
             <table class="asd-table">
-                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از ثبت</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
+                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از سند</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
                 <tbody>
                 @forelse($ledgers as $ledger)
                     @php
@@ -97,7 +97,7 @@
                         </td>
                         <td class="asd-money" data-label="بدهکار">{{ $ledger->type === 'debit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-money" data-label="بستانکار">{{ $ledger->type === 'credit' ? $rial($ledger->amount) : '—' }}</td>
-                        <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از ثبت"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
+                        <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از سند"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
                         @if($canManagePayments)<td class="asd-operations" data-label="عملیات">@if($payment) @include('payments.manage-link', ['payment' => $payment, 'compactPaymentLink' => true]) @endif</td>@endif
                     </tr>
                 @empty

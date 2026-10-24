@@ -133,8 +133,9 @@ class AccountStatementController extends Controller
 
     public function show(Customer $customer)
     {
-        $ledgers = CustomerLedger::query()
-            ->where('customer_id', $customer->id)
+        $presentation = app(\App\Services\AccountStatementPresentationService::class);
+        $ledgers = $presentation->entries($customer)
+            ->orderByDesc('statement_date')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(25);
@@ -213,8 +214,7 @@ class AccountStatementController extends Controller
             ->sum('amount');
 
         $netBalance = (int) $customer->opening_balance + $totalDebit - $totalCredit;
-        $ledgerBalances = app(\App\Services\AccountStatementPresentationService::class)
-            ->pageBalances($customer, $ledgers->getCollection(), $effectiveLedgerIds, $netBalance);
+        $ledgerBalances = $presentation->pageBalances($customer, $ledgers->getCollection(), $effectiveLedgerIds, $netBalance);
         $adjustments = ActivityLog::query()
             ->with('user:id,name')
             ->where('subject_type', Customer::class)
