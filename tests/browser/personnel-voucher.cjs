@@ -46,6 +46,7 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
             return route.fulfill({json: {}});
         });
         await page.goto('http://localhost/fixture');
+        if (!restore) await page.locator('#addItemBtn').click();
         await page.waitForSelector('.root-cat');
         const root = await page.locator('.root-cat option').nth(1).getAttribute('value');
         await page.selectOption('.root-cat', root);
@@ -80,6 +81,8 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
             return event.defaultPrevented;
         });
         assert(invalidPrevented, 'Receiver is required');
+        await page.locator('.save-item').click();
+        assert.equal(await page.locator('.item-toggle').getAttribute('aria-expanded'), 'false');
         await page.locator('#addItemBtn').click();
         assert.equal(await page.locator('#itemsTable tbody tr').count(), 2);
         assert.equal(await page.locator('.item-toggle').first().getAttribute('aria-expanded'), 'false');
@@ -94,7 +97,9 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
         restore = true;
         delayVariants = false;
         await page.goto('http://localhost/fixture');
+        if (!restore) await page.locator('#addItemBtn').click();
         await page.waitForFunction(() => document.querySelector('.variant-select').value === '904');
+        if (await page.locator('.item-toggle').getAttribute('aria-expanded') === 'false') await page.locator('.item-toggle').click();
         assert.equal(await page.locator('.quantity-input').inputValue(), '2');
         assert.equal(await page.locator('.asset-code-input').inputValue(), '2039');
         const receiver = await page.locator('#receiverUserSelect option').nth(1).getAttribute('value');
@@ -105,7 +110,16 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
             return !event.defaultPrevented;
         });
         assert(valid, 'A complete, restored voucher passes client validation');
-        await page.locator('.item-toggle').click();
+        if (await page.locator('.item-toggle').getAttribute('aria-expanded') === 'false') await page.locator('.item-toggle').click();
+        await page.locator('.save-item').click();
+        for (const width of [1366, 390]) {
+            await page.setViewportSize({width, height: 1000});
+            await page.goto('http://localhost/fixture');
+            await page.waitForFunction(() => document.querySelector('.item-toggle')?.getAttribute('aria-expanded') === 'false');
+            await page.selectOption('#receiverUserSelect', receiver);
+            assert(!(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)));
+            await page.screenshot({path: path.join(fixtures, `voucher-saved-${width}.png`), fullPage: true});
+        }
         const payload = await page.evaluate(() => Object.fromEntries(new FormData(document.getElementById('personnelVoucherForm'))));
         assert.equal(payload['items[0][quantity]'], '2', 'Collapsed fields remain in the submitted form');
         assert.equal(payload['items[0][variant_id]'], '904');
@@ -114,9 +128,12 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
             document.getElementById('personnelVoucherForm').dispatchEvent(new Event('submit', {cancelable: true}));
         });
         assert.equal(await page.locator('.item-toggle').getAttribute('aria-expanded'), 'true', 'Validation errors reveal the row');
+        assert(!(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)));
+        await page.screenshot({path: path.join(fixtures, 'voucher-editor-390.png'), fullPage: true});
         restore = false;
         // Both upstream selectors recover too, including root categories with no children.
         await page.goto('http://localhost/fixture');
+        if (!restore) await page.locator('#addItemBtn').click();
         failStage = 'children';
         await page.selectOption('.root-cat', root);
         await page.locator('.lookup-error button').waitFor();

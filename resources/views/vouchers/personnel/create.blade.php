@@ -65,7 +65,7 @@
 @endphp
 
 @section('content')
-<link rel="stylesheet" href="{{ asset('css/warehouse-vouchers.css') }}?v=20261024b">
+<link rel="stylesheet" href="{{ asset('css/warehouse-vouchers.css') }}?v=20261024c">
 <div class="container py-3 personnel-voucher" dir="rtl">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="mb-0">{{ $isEdit ? 'ویرایش حواله پرسنل' : 'ثبت حواله پرسنل' }}</h4>
@@ -127,7 +127,9 @@
                     </div>
 
                     <div class="col-12">
-                        <div class="voucher-step"><strong>۲ · اقلام حواله</strong><span>دسته، کالا و مدل را انتخاب کنید؛ سپس تعداد و کد اموال را وارد کنید.</span></div>
+                        <div class="voucher-step"><strong>۲ · اقلام حواله</strong><span>پس از انتخاب کالا، «ذخیره قلم» را بزنید؛ در پایان، حواله را ثبت کنید.</span></div>
+                        <button type="button" class="btn btn-outline-primary mb-3" id="addItemBtn">+ افزودن کالا</button>
+                        <p id="voucherItemsEmpty" class="voucher-items-empty">هنوز کالایی اضافه نشده است. برای انتخاب کالا، «افزودن کالا» را بزنید.</p>
                         <div class="table-responsive">
                             <table class="table align-middle" id="itemsTable">
                                 <thead class="table-light">
@@ -145,7 +147,6 @@
                                 <tbody></tbody>
                             </table>
                         </div>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" id="addItemBtn">+ افزودن ردیف</button>
                     </div>
                     <div class="col-12">
                         <div id="voucherFormError" class="alert alert-danger d-none" role="alert"></div><button class="btn btn-primary">{{ $isEdit ? 'ذخیره تغییرات حواله' : 'ثبت حواله پرسنل' }}</button>
@@ -278,7 +279,7 @@ function rowTemplate(index, item = {}) {
             <div class="text-danger row-error d-none"></div>
         </td>
         <td><input name="items[${index}][personnel_asset_code]" class="form-control asset-code-input" inputmode="numeric" pattern="\\d{4}" maxlength="4" required value="${esc(item.personnel_asset_code || '')}" placeholder="مثلاً 2039"></td>
-        <td><button type="button" class="btn btn-sm btn-outline-danger remove-row">حذف</button></td>
+        <td><button type="button" class="btn btn-primary save-item">ذخیره قلم</button><button type="button" class="btn btn-sm btn-outline-danger remove-row">حذف</button></td>
     </tr>`;
 }
 function rowError(tr, message = '') {
@@ -293,7 +294,8 @@ function setRowExpanded(tr, expanded) {
     const button = tr.querySelector('.item-toggle');
     if (button) {
         button.setAttribute('aria-expanded', String(expanded));
-        button.querySelector('.item-toggle-label').textContent = expanded ? 'جمع کردن' : 'باز کردن';
+        button.disabled = expanded;
+        button.querySelector('.item-toggle-label').textContent = expanded ? 'در حال ویرایش' : 'ویرایش';
     }
 }
 function updateRowSummary(tr) {
@@ -459,9 +461,19 @@ function bindRow(tr, item = {}) {
     product.addEventListener('change', () => { delete tr.dataset.initializing; resetVariants(tr); loadVariants(tr); });
     variant.addEventListener('change', () => syncVariant(tr));
     qty.addEventListener('input', () => { updateRowSummary(tr); validateRow(tr); });
+    tr.querySelector('.save-item').addEventListener('click', () => {
+        if (!validateRow(tr)) return;
+        const variantId = variant.value;
+        const duplicate = [...tbody.rows].some(other => other !== tr && other.querySelector('.variant-select').value === variantId);
+        if (duplicate) { rowError(tr, 'این تنوع قبلاً به حواله اضافه شده است. همان قلم را ویرایش کنید.'); return; }
+        updateRowSummary(tr);
+        setRowExpanded(tr, false);
+        addBtn.focus();
+    });
     remove.addEventListener('click', () => { tr.querySelectorAll('select').forEach(cancelLookup); tr.remove(); reindexRows(); });
 }
 function reindexRows() {
+    document.getElementById('voucherItemsEmpty').hidden = tbody.rows.length > 0;
     [...tbody.querySelectorAll('tr')].forEach((tr, index) => {
         tr.querySelector('.item-row-number').textContent = `قلم ${faNumber(index + 1)}`;
         tr.querySelector('.cat-hidden').name = `items[${index}][category_id]`;
@@ -473,7 +485,6 @@ function reindexRows() {
 }
 let fieldSequence = 0;
 async function addRow(item = {}) {
-    tbody.querySelectorAll('tr').forEach(tr => setRowExpanded(tr, false));
     tbody.insertAdjacentHTML('beforeend', rowTemplate(tbody.querySelectorAll('tr').length, item));
     const tr = tbody.querySelector('tr:last-child');
     tr.dataset.initializing = '1';
@@ -496,9 +507,10 @@ async function addRow(item = {}) {
     header.className = 'item-header';
     header.innerHTML = `<button type="button" class="item-toggle" aria-expanded="true" aria-controls="${fieldIds.join(' ')}">
         <span class="item-row-number"></span><span class="item-summary"><strong class="item-summary-name"></strong><small class="item-summary-detail"></small></span>
-        <span class="item-toggle-label">جمع کردن</span><span class="item-chevron" aria-hidden="true">⌃</span>
+        <span class="item-toggle-label">در حال ویرایش</span>
     </button>`;
-    header.querySelector('button').addEventListener('click', () => setRowExpanded(tr, tr.classList.contains('item-collapsed')));
+    header.querySelector('button').addEventListener('click', () => setRowExpanded(tr, true));
+    setRowExpanded(tr, true);
     updateRowSummary(tr);
     reindexRows();
     tr.querySelector('.product-search').setAttribute('aria-label', 'جستجوی کالا در دسته انتخاب‌شده');
@@ -513,7 +525,8 @@ async function addRow(item = {}) {
         if (!tr.dataset.initializing || tr.querySelector('.lookup-error')) return;
         tr.querySelector('.product-select').value = item.product_id;
         await loadVariants(tr, item.variant_id, item.variant_label || '');
-        // loadVariants restores the selected value only after a successful lookup.
+        // Existing items start as summaries; invalid rows stay open for correction.
+        if (tr.dataset.initializing && validateRow(tr)) setRowExpanded(tr, false);
     }
     reindexRows();
 }
@@ -526,7 +539,15 @@ document.querySelectorAll('.user-select-filter').forEach(input => input.addEvent
         option.hidden = term !== '' && !normalize(option.dataset.search || option.textContent).includes(term);
     });
 }));
-addBtn.addEventListener('click', () => addRow());
+addBtn.addEventListener('click', () => {
+    const editor = tbody.querySelector('tr:not(.item-collapsed)');
+    if (editor) {
+        editor.scrollIntoView({behavior: 'smooth', block: 'center'});
+        editor.querySelector('.save-item').focus();
+        return;
+    }
+    addRow().then(() => tbody.querySelector('tr:last-child .root-cat')?.focus());
+});
 form.addEventListener('submit', event => {
     let ok = !!document.getElementById('receiverUserSelect').value && tbody.rows.length > 0;
     const formError = document.getElementById('voucherFormError');
@@ -553,8 +574,6 @@ form.addEventListener('submit', event => {
 (async function bootRows() {
     if (initialItems.length) {
         for (const item of initialItems) await addRow(item);
-    } else {
-        await addRow();
     }
 })();
 
