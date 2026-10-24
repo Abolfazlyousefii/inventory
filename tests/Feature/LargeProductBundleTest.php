@@ -20,9 +20,7 @@ class LargeProductBundleTest extends TestCase
         // Bundle tables are provisioned separately in production, outside the recovered baseline.
         Schema::table('products', function(Blueprint $t) {
             $t->boolean('is_bundle')->default(false); $t->string('bundle_stock_mode')->default('physical');
-            $t->boolean('bundle_site_auto_publish')->nullable(); $t->string('bundle_quantity_mode')->default('shared');
             $t->string('bundle_discount_type')->nullable(); $t->bigInteger('bundle_discount_value')->nullable();
-            $t->integer('bundle_shared_remaining')->nullable();
         });
         Schema::create('product_bundle_components', function(Blueprint $t) {
             $t->id(); $t->integer('bundle_variant_id'); $t->integer('component_variant_id'); $t->integer('quantity');
@@ -33,8 +31,8 @@ class LargeProductBundleTest extends TestCase
             $t->id(); $t->integer('bundle_variant_id'); $t->integer('component_variant_id'); $t->integer('remaining'); $t->timestamps();
             $t->unique(['bundle_variant_id','component_variant_id']);
         });
-        Schema::create('bundle_assemblies', function(Blueprint $t) {$t->id();$t->integer('bundle_variant_id');});
-        Schema::create('site_stock_holds', function(Blueprint $t) {$t->id();$t->string('status');$t->text('bundle_allocated_lines')->nullable();});
+        (require database_path('migrations/2026_10_24_210000_complete_legacy_bundle_settings.php'))->up();
+
     }
 
     private function catalog(): array

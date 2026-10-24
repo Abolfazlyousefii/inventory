@@ -276,7 +276,7 @@ class ProductBundleController extends Controller
                     throw ValidationException::withMessages(['allocations' => 'موجودی این بسته تغییر کرده است. صفحه را تازه کنید و دوباره ثبت کنید.']);
                 }
             }
-            if (DB::table('site_stock_holds')
+            if (\Illuminate\Support\Facades\Schema::hasTable('site_stock_holds') && DB::table('site_stock_holds')
                 ->whereIn('status', ['held','payment_confirmed'])
                 ->whereRaw('JSON_CONTAINS_PATH(bundle_allocated_lines, \'one\', ?) = 1', ['$.' . '"' . $bundleVariantId . '"'])
                 ->exists()) {

@@ -3,7 +3,7 @@
 // A repeatable gate for current inventory workflows. The full suite remains
 // available via tests/run.php; this does not suppress or skip its legacy tests.
 $files = [];
-$pattern = '/LargeProductBundle|DocumentCodeGenerator|PersonnelVoucherManagement|AccountStatementChronology|AccountStatementPaymentDate|Inventory|Stock|Purchase|SalesReturn|PreinvoiceScopedReservation|ReservationLifecycleContract|PreinvoiceReservationPayload|PreinvoiceMultiShortfall|WarehouseInbound|WarehouseCollection|ReservationLifecycleHardening|ReservationProjection|WarehouseReservationFullLifecycle|TestEnvironmentSafety|PreinvoiceSubmissionSchema|ProductSalesLedger|ProductSummaryProjection|Discount|PreinvoiceAutosave|PreinvoiceLargePayload|UniformProductPricing|FinancePreinvoice(?:Update|EditPersistence|SaveAndFinalize)|PreinvoiceSubmitted/';
+$pattern = '/LegacyBundleSchemaUpgrade|LargeProductBundle|DocumentCodeGenerator|PersonnelVoucherManagement|AccountStatementChronology|AccountStatementPaymentDate|Inventory|Stock|Purchase|SalesReturn|PreinvoiceScopedReservation|ReservationLifecycleContract|PreinvoiceReservationPayload|PreinvoiceMultiShortfall|WarehouseInbound|WarehouseCollection|ReservationLifecycleHardening|ReservationProjection|WarehouseReservationFullLifecycle|TestEnvironmentSafety|PreinvoiceSubmissionSchema|ProductSalesLedger|ProductSummaryProjection|Discount|PreinvoiceAutosave|PreinvoiceLargePayload|UniformProductPricing|FinancePreinvoice(?:Update|EditPersistence|SaveAndFinalize)|PreinvoiceSubmitted/';
 foreach (glob(__DIR__.'/Feature/*Test.php') as $file) {
     if (preg_match($pattern, basename($file))) $files[] = $file;
 }
