@@ -112,6 +112,14 @@ html[data-app-theme="dark"] .app-theme-toggle .theme-moon { display: none; }
     html[data-app-theme="dark"] jdp-container :is(jdp-day,jdp-month,jdp-year):hover { background: #285b80; color: #fff; }
 }
 @media print {
-    html[data-app-theme] { color-scheme: light; }
+    html[data-app-theme] {
+        color-scheme: light;
+        --bs-body-bg: #fff; --bs-body-color: #172b3a;
+        --bs-body-bg-rgb: 255,255,255; --bs-body-color-rgb: 23,43,58;
+        --bs-emphasis-color: #172b3a; --bs-emphasis-color-rgb: 23,43,58;
+        --bs-secondary-color: #71808c; --bs-secondary-bg: #eef3f6;
+        --bs-tertiary-bg: #f8fafb; --bs-border-color: #dce5ea;
+        --bs-heading-color: #172b3a; --bs-link-color: #2879a8;
+    }
     .app-theme-toggle { display: none !important; }
 }

@@ -91,5 +91,10 @@ test('toggle is usable without storage, updates its accessible name and accepts 
         assert.equal(attrs['data-app-theme'],'dark');
         listeners.storage({key:'unrelated',newValue:'light'});
         assert.equal(attrs['data-app-theme'],'dark');
+        listeners.beforeprint();
+        assert.equal(attrs['data-bs-theme'],'light');
+        assert.equal(attrs['data-app-theme'],'dark');
+        listeners.afterprint();
+        assert.equal(attrs['data-bs-theme'],'dark');
     }
 });

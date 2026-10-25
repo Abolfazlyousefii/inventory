@@ -4,13 +4,16 @@
     const key = 'ariya.display-theme.v1';
     const root = document.documentElement;
     let theme = 'light';
+    let printing = false;
     try { if (window.localStorage.getItem(key) === 'dark') theme = 'dark'; } catch (_) { /* Optional browser storage. */ }
     const apply = value => {
         theme = value === 'dark' ? 'dark' : 'light';
         root.setAttribute('data-app-theme', theme);
-        root.setAttribute('data-bs-theme', theme);
+        root.setAttribute('data-bs-theme', printing ? 'light' : theme);
     };
     apply(theme);
+    window.addEventListener('beforeprint', () => { printing = true; apply(theme); });
+    window.addEventListener('afterprint', () => { printing = false; apply(theme); });
     document.addEventListener('DOMContentLoaded', () => {
         const button = document.getElementById('appThemeToggle');
         const updateButton = () => {
