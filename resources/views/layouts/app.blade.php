@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="{{ asset('js/app-theme.js') }}?v=20261025"></script>
 
     @if(session('preinvoice_submit_succeeded'))
         <script>
@@ -57,6 +58,8 @@
     <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v=20261011">
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
+    <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025">
+    <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025" defer></script>
 </head>
 @php
     $backFallbackUrl = \Illuminate\Support\Facades\Route::has('dashboard')
@@ -114,6 +117,7 @@
             </div>
 
             <div class="app-topbar__actions">
+                @include('layouts.theme-toggle')
                 <button class="app-icon-btn app-notification-btn"
                         type="button"
                         id="notifBell"

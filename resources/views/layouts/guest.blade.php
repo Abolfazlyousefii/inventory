@@ -4,6 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <script src="{{ asset('js/app-theme.js') }}?v=20261025"></script>
 
         @php
             $appName = config('app.name', 'نرم افزار داخلی آریا گستر');
@@ -24,8 +25,11 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+        <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025">
+        <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025" defer></script>
     </head>
     <body class="text-gray-900 antialiased" style="font-family: 'Vazirmatn', sans-serif;">
+        @include('layouts.theme-toggle', ['themeToggleClass' => 'guest-theme-toggle'])
         <div class="min-h-screen flex flex-col sm:justify-center items-center px-4 py-8 sm:pt-0 bg-gray-100">
            <div class="flex flex-col items-center justify-center text-center">
     <a href="/" class="flex justify-center">
