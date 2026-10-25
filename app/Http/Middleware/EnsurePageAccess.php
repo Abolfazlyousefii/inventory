@@ -19,7 +19,7 @@ class EnsurePageAccess
         $user = $request->user();
         if (! $user) return redirect()->guest(route('login'));
 
-        if ($user->isSuperAdmin()) return $next($request);
+        if ($user->isAdministrator()) return $next($request);
 
         $routeName = $request->route()?->getName();
         if ($pageKey === null && in_array($routeName, PageAccessCatalog::authenticatedRouteAllowlist(), true)) {

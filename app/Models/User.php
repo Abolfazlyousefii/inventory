@@ -139,6 +139,12 @@ class User extends Authenticatable
         return false;
     }
 
+    /** Administrators have complete page access without acquiring Super Admin identity. */
+    public function isAdministrator(): bool
+    {
+        return $this->hasAnyRole(PermissionCatalog::administratorRoles());
+    }
+
     public function isSuperAdmin(): bool
     {
         return $this->hasAnyRole(PermissionCatalog::superAdminRoles());

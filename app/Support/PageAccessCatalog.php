@@ -202,6 +202,13 @@ class PageAccessCatalog
         'finance.invoices.return-to-sales' => ['finance.payments'],
         'finance.cheques.registered' => ['finance.payments'],
         'finance.reports.index' => ['finance.accounts'],
+        'finance.reports.receipts' => ['finance.accounts'],
+        'finance.reports.receipts.detail' => ['finance.accounts'],
+        'finance.reports.receipts.export' => ['finance.accounts'],
+        'finance.reports.top-products' => ['finance.accounts'],
+        'finance.reports.top-products.detail' => ['finance.accounts'],
+        'finance.reports.top-products.export' => ['finance.accounts'],
+        'finance.reports.top-products.image' => ['finance.accounts'],
         'finance.reports.sales-visitors' => ['finance.accounts'],
         'finance.reports.sales-visitors.commission-batches.store' => ['finance.accounts'],
         'finance.reports.sales-visitors.commission-batches.show' => ['finance.accounts'],
@@ -759,7 +766,7 @@ class PageAccessCatalog
 
     public static function userCan(User $user, string $pagePermission): bool
     {
-        if ($user->isSuperAdmin()) {
+        if ($user->isAdministrator()) {
             return true;
         }
         $page = collect(self::pages())->firstWhere('permission', $pagePermission);
@@ -771,7 +778,7 @@ class PageAccessCatalog
 
     public static function userCanRoute(User $user, ?string $routeName): bool
     {
-        if ($user->isSuperAdmin()) {
+        if ($user->isAdministrator()) {
             return true;
         }
 
