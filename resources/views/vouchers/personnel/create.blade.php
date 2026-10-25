@@ -5,6 +5,7 @@
     $rootCategoriesJson = $personnelRootCategories->map(fn($c) => [
         'id' => (int) $c->id,
         'name' => (string) $c->name,
+        'children' => $c->children->map(fn($child) => ['id' => (int) $child->id, 'name' => (string) $child->name])->values(),
     ])->values();
 
     $oldItems = old('items');
@@ -178,7 +179,6 @@ const rootCategories = @json($rootCategoriesJson);
 const initialItems = @json($initialItems->values());
 const editingVoucherId = @json($isEdit ? (int) $voucher->id : null);
 const endpoints = {
-    children: @json(route('vouchers.personnel.categories.children', ['category' => '__ID__'])),
     products: @json(route('vouchers.personnel.products.search')),
     variants: @json(route('vouchers.personnel.products.variants', ['product' => '__ID__'])),
 };
@@ -322,17 +322,16 @@ async function loadChildren(tr, selected = '') {
         return;
     }
 
-    await lookup(sub, endpoints.children.replace('__ID__', rootId), data => {
-        const rows = data.data || [];
-        if (!rows.length) {
-            sub.innerHTML = '<option value="">زیر دسته ندارد</option>';
-            hidden.value = rootId;
-            return;
-        }
+    // The small category tree arrives with the form; selecting a root needs no network.
+    const rows = rootCategories.find(category => String(category.id) === String(rootId))?.children || [];
+    if (!rows.length) {
+        sub.innerHTML = '<option value="">زیر دسته ندارد</option>';
+        hidden.value = rootId;
+        return;
+    }
+    sub.innerHTML = '<option value="">انتخاب زیر دسته...</option>' + rows.map(c => optionHtml(c.id, c.name, String(selected) === String(c.id))).join('');
+    hidden.value = sub.value || '';
 
-        sub.innerHTML = '<option value="">انتخاب زیر دسته...</option>' + rows.map(c => optionHtml(c.id, c.name, String(selected) === String(c.id))).join('');
-        hidden.value = sub.value || '';
-    }, () => loadChildren(tr, selected).then(() => { if (hidden.value) searchProducts(tr); }));
 }
 async function searchProducts(tr, selectedId = '', selectedText = '') {
     const catId = tr.querySelector('.cat-hidden').value;

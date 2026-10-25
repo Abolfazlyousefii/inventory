@@ -17,6 +17,7 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
         let noChildren = false;
         let delayVariants = false;
         let variantCalls = 0;
+        let categoryCalls = 0;
         let mutations = 0;
         let restore = false;
         await page.route('**/*', async route => {
@@ -25,12 +26,19 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
             if (request.method() !== 'GET') { mutations++; return route.abort(); }
             if (url.pathname === '/fixture' || url.pathname === '/hub') {
                 let body = fs.readFileSync(path.join(fixtures, `voucher-candidate-${url.pathname === '/hub' ? 'hub' : 'create'}.html`), 'utf8');
+                body = body.replace(/const rootCategories = (.*);/, (_, json) => {
+                    const roots = JSON.parse(json);
+                    for (const root of roots) {
+                        assert(Array.isArray(root.children), 'The rendered form must contain its subcategories');
+                        root.children = noChildren ? [] : [{id: 901, name: 'آزمایشی'}];
+                    }
+                    return `const rootCategories = ${JSON.stringify(roots)};`;
+                });
                 if (restore) body = body.replace(/const initialItems = .*;/, `const initialItems = ${JSON.stringify([{root_category_id: root, category_id: 901, product_id: 902, product_label: 'کالای اول', variant_id: 904, variant_label: 'مدل اول', quantity: 2, personnel_asset_code: '2039'}])};`);
                 return route.fulfill({contentType: 'text/html', body});
             }
-            if ((failStage === 'children' && url.pathname.includes('/categories/')) || (failStage === 'products' && url.pathname.endsWith('/products/search'))) return route.fulfill({status: 503, json: {}});
-            if (url.pathname.includes('/categories/') && noChildren) return route.fulfill({json: {data: []}});
-            if (url.pathname.includes('/categories/')) return route.fulfill({json: {data: [{id: 901, name: 'آزمایشی'}]}});
+            if (url.pathname.includes('/categories/')) { categoryCalls++; return route.fulfill({status: 503, json: {}}); }
+            if (failStage === 'products' && url.pathname.endsWith('/products/search')) return route.fulfill({status: 503, json: {}});
             if (url.pathname.endsWith('/products/search')) return route.fulfill({json: {results: [{id: 902, text: 'کالای اول'}, {id: 903, text: 'کالای دوم'}]}});
             if (url.pathname.endsWith('/variants')) {
                 variantCalls++;
@@ -134,12 +142,9 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
         // Both upstream selectors recover too, including root categories with no children.
         await page.goto('http://localhost/fixture');
         if (!restore) await page.locator('#addItemBtn').click();
-        failStage = 'children';
         await page.selectOption('.root-cat', root);
-        await page.locator('.lookup-error button').waitFor();
-        failStage = '';
-        await page.locator('.lookup-error button').click();
         await page.waitForFunction(() => document.querySelector('.sub-cat').options.length > 1);
+        assert.equal(categoryCalls, 0, 'Subcategory selection must work even when its endpoint is unavailable');
         failStage = 'products';
         await page.selectOption('.sub-cat', '901');
         await page.locator('.lookup-error button').waitFor();
@@ -147,7 +152,8 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
         await page.locator('.lookup-error button').click();
         await page.waitForFunction(() => document.querySelector('.product-select').options.length > 1);
         noChildren = true;
-        await page.selectOption('.root-cat', '');
+        await page.goto('http://localhost/fixture');
+        await page.locator('#addItemBtn').click();
         await page.selectOption('.root-cat', root);
         await page.waitForFunction(() => document.querySelector('.product-select').options.length > 1);
         assert.equal(await page.locator('.cat-hidden').inputValue(), root);
@@ -162,6 +168,7 @@ const publicRoots = [path.resolve('public'), process.env.VOUCHER_PUBLIC_FALLBACK
                 await page.screenshot({path: path.join(fixtures, `voucher-${screen}-${width}.png`), fullPage: true});
             }
         }
+        assert.equal(categoryCalls, 0);
         assert.equal(mutations, 0);
         assert.deepEqual(errors, []);
         console.log(JSON.stringify({passed: true, variantCalls, browserErrors: errors.length, mutations, widths: [1366, 768, 390]}));

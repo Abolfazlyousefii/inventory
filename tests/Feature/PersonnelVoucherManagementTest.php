@@ -305,6 +305,10 @@ class PersonnelVoucherManagementTest extends TestCase
         preg_match('/const rootCategories = (.*);/', $html, $matches);
         $this->assertNotEmpty($matches, 'Category picker configuration was not rendered.');
         $ids = array_column(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR), 'id');
+        $roots = collect(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR))->keyBy('id');
+        $this->assertSame([$child->id], array_column($roots[$root->id]['children'] ?? [], 'id'), 'Subcategories must be embedded so selection works without another HTTP request.');
+        $this->assertSame([$otherChild->id], array_column($roots[$otherRoot->id]['children'] ?? [], 'id'));
+
         $this->assertContains($root->id, $ids);
         $this->assertContains($otherRoot->id, $ids);
         $this->assertNotContains($child->id, $ids);

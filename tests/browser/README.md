@@ -12,7 +12,7 @@ node tests/browser/personnel-voucher.cjs $env:VOUCHER_BROWSER_FIXTURES
 Install/provide Playwright and Chrome. `PLAYWRIGHT_MODULE` can point to an existing
 Playwright module; `VOUCHER_PUBLIC_FALLBACK` optionally provides shared public assets
 when running in a Git worktree without installed dependencies. The script checks
-request failures/retry, stale responses, quantity limits, required receiver,
+preloaded subcategories without HTTP requests, product/variant request failures and retry, stale responses, quantity limits, required receiver,
 restored items, root categories without children, row reindexing, and overflow at
 390, 768 and 1366 pixels. Screenshots are saved beside the fixtures.
 

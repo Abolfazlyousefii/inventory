@@ -1413,6 +1413,7 @@ class VoucherController extends Controller
     {
         $personnelRootCategories = Category::query()
             ->whereNull('parent_id')
+            ->with('children:id,name,parent_id')
             ->orderBy('name')
             ->get(['id', 'name', 'parent_id']);
 
@@ -1444,6 +1445,7 @@ class VoucherController extends Controller
 
         $personnelRootCategories = Category::query()
             ->whereNull('parent_id')
+            ->with('children:id,name,parent_id')
             ->orderBy('name')
             ->get(['id', 'name', 'parent_id']);
 
