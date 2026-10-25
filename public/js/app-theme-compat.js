@@ -63,12 +63,12 @@
         }
         return vars(source).replace(/__ARIA_IMAGE_(\d+)__/g, (_, index) => urls[+index]);
     };
-    const declarations = style => {
+    const declarations = (style, forcePriority = false) => {
         let result = '';
         for (const property of properties(style)) {
             const value = style.getPropertyValue(property);
             if (!value) continue;
-            const priority = style.getPropertyPriority(property) ? ' !important' : '';
+            const priority = forcePriority || style.getPropertyPriority(property) ? ' !important' : '';
             if (property === 'color-scheme') result += `color-scheme:dark${priority};`;
             else if (property.startsWith('--')) {
                 // Shared semantic tokens are deliberately authored in app-theme.css.
@@ -141,23 +141,7 @@
             }
             for (const element of document.querySelectorAll('[style]')) {
                 if (element.namespaceURI !== 'http://www.w3.org/1999/xhtml') continue;
-                let body = '';
-                for (const property of properties(element.style)) {
-                    if (property.startsWith('--')) {
-                        const value = element.style.getPropertyValue(property);
-                        colorPattern.lastIndex = 0;
-                        if (colorPattern.test(value) || value.includes('var(')) {
-                            for (const role of ['text','surface','border']) body += `--aria-${role}-${property.slice(2)}:${convert(value,role)} !important;`;
-                        }
-                        continue;
-                    }
-                    if (!colorProperty(property)) continue;
-                    const value = element.style.getPropertyValue(property);
-                    if (!value) continue;
-                    colorPattern.lastIndex = 0;
-                    if (!colorPattern.test(value)) continue;
-                    body += `${property}:${convert(value,roleFor(property))} !important;`;
-                }
+                const body = declarations(element.style,true);
                 if (!body) continue;
                 if (!element.dataset.ariaThemeInline) element.dataset.ariaThemeInline = String(++inlineSequence);
                 css += `html[data-app-theme="dark"] [data-aria-theme-inline="${element.dataset.ariaThemeInline}"]{${body}}`;

@@ -59,7 +59,7 @@
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
     <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025">
-    <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025b" defer></script>
+    <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025c" defer></script>
 </head>
 @php
     $backFallbackUrl = \Illuminate\Support\Facades\Route::has('dashboard')

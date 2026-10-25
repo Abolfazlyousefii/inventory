@@ -63,6 +63,12 @@ test('shorthand color variables survive CSSOM empty longhands without copying di
     assert.ok(!css.includes('width:'));
     assert.ok(!css.includes('background-color:;'));
 });
+test('inline variable ink gets a readable role alias with stylesheet priority', () => {
+    const style = ['color'];
+    style.getPropertyValue = key => key === 'color' ? 'var(--accent-dark)' : '';
+    style.getPropertyPriority = () => '';
+    assert.equal(declarations(style,true),'color:var(--aria-text-accent-dark,var(--accent-dark)) !important;');
+});
 test('toggle is usable without storage, updates its accessible name and accepts cross-tab changes', () => {
     for (const blocked of [false,true]) {
         const attrs = {}, buttonAttrs = {}, listeners = {}, clicks = {};

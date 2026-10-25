@@ -26,7 +26,7 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025">
-        <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025b" defer></script>
+        <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025c" defer></script>
     </head>
     <body class="text-gray-900 antialiased" style="font-family: 'Vazirmatn', sans-serif;">
         @include('layouts.theme-toggle', ['themeToggleClass' => 'guest-theme-toggle'])
