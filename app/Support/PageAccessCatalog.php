@@ -6,6 +6,15 @@ use App\Models\User;
 
 class PageAccessCatalog
 {
+    /** Read-only selectors inherit access from the forms that embed them.
+     * These dependencies must never be added to write/confirm/delete routes.
+     */
+    private const FORM_LOOKUP_DEPENDENCIES = [
+        'vouchers.personnel.categories.children' => ['vouchers.section.create', 'vouchers.edit'],
+        'vouchers.personnel.products.search' => ['vouchers.section.create', 'vouchers.edit'],
+        'vouchers.personnel.products.variants' => ['vouchers.section.create', 'vouchers.edit'],
+    ];
+
     private const PAGE_ACTION_PERMISSIONS = [
         'warehouse.reservations' => [
             'warehouse_reservations.view',
@@ -788,6 +797,12 @@ class PageAccessCatalog
 
         if ($actionPermission && $user->hasPermission($actionPermission)) {
             return true;
+        }
+
+        foreach (self::FORM_LOOKUP_DEPENDENCIES[$routeName ?? ''] ?? [] as $formRoute) {
+            if (self::userCanRoute($user, $formRoute)) {
+                return true;
+            }
         }
 
         return collect(self::permissionsForRoute($routeName))

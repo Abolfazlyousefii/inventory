@@ -319,6 +319,45 @@ class PersonnelVoucherManagementTest extends TestCase
             ->assertOk()->assertJsonPath('results.0.id', $product->id);
     }
 
+    public function test_personnel_form_action_permissions_include_its_read_only_lookups(): void
+    {
+        [, , $central, , $category, $product, $variant] = $this->fixture();
+        $before = $this->stock($central, $product, $variant);
+        foreach (['issues.create', 'issues.edit'] as $action) {
+            $role = Role::findOrCreate('Personnel '.$action, 'web');
+            $role->givePermissionTo(\Spatie\Permission\Models\Permission::where('key', $action)->firstOrFail());
+            $staff = User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
+            $staff->assignRole($role);
+            $this->actingAs($staff);
+            if ($action === 'issues.create') {
+                $this->get(route('vouchers.section.create', 'personnel'))->assertOk();
+            }
+            $this->getJson(route('vouchers.personnel.products.search', ['category_id' => $category->id]))
+                ->assertOk()->assertJsonPath('results.0.id', $product->id);
+            $this->getJson(route('vouchers.personnel.categories.children', $category->parent_id))
+                ->assertOk()->assertJsonPath('data.0.id', $category->id);
+            $this->getJson(route('vouchers.personnel.products.variants', $product))
+                ->assertOk()->assertJsonPath('results.0.id', $variant->id);
+            $this->assertSame($action === 'issues.create', \App\Support\PageAccessCatalog::userCanRoute($staff, 'vouchers.section.store'));
+        }
+        $this->assertSame($before, $this->stock($central, $product, $variant));
+    }
+
+    public function test_personnel_lookups_still_reject_users_without_form_access(): void
+    {
+        [, , , , $category, $product] = $this->fixture();
+        $role = Role::findOrCreate('Personnel list only', 'web');
+        $role->givePermissionTo(\Spatie\Permission\Models\Permission::where('key', 'issues.view')->firstOrFail());
+        foreach ([false, true] as $listOnly) {
+            $staff = User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
+            if ($listOnly) $staff->assignRole($role);
+            $this->actingAs($staff);
+            $this->getJson(route('vouchers.personnel.products.search', ['category_id' => $category->id]))->assertForbidden();
+            $this->getJson(route('vouchers.personnel.categories.children', $category->parent_id))->assertForbidden();
+            $this->getJson(route('vouchers.personnel.products.variants', $product))->assertForbidden();
+        }
+    }
+
     private function fixture(): array
     {
         $role = Role::findOrCreate('Owner', 'web');
