@@ -21,6 +21,16 @@ const compatibility = fs.readFileSync(require('node:path').join(__dirname, '../.
 const context = {module: {exports: {}}};
 vm.runInNewContext(compatibility, context);
 const {convert,scope,mapColor,luminance,declarations} = context.module.exports;
+test('page themes loaded through CSS imports are included, while print imports stay untouched', () => {
+    const style = ['background-color'];
+    style.getPropertyValue = key => key === 'background-color' ? '#fff' : '';
+    style.getPropertyPriority = () => '';
+    const imported = {type:3,media:{mediaText:''},styleSheet:{cssRules:[{type:1,selectorText:'#orderForm .soft-card',style}]}};
+    const {rules} = context.module.exports;
+    assert.ok(rules([imported]).includes('html[data-app-theme="dark"] #orderForm .soft-card{background-color:rgba(24,35,49,1)'));
+    imported.media.mediaText = 'print';
+    assert.equal(rules([imported]),'');
+});
 test('every selector is scoped, including root, pseudo classes and quoted commas', () => {
     assert.equal(scope('body, .card'), 'html[data-app-theme="dark"] body,html[data-app-theme="dark"] .card');
     assert.equal(scope(':root, html, :is(.a,.b), [data-x="a,b"]'), 'html[data-app-theme="dark"],html[data-app-theme="dark"],html[data-app-theme="dark"] :is(.a,.b),html[data-app-theme="dark"] [data-x="a,b"]');

@@ -97,18 +97,27 @@
             ? selector.replace(/^(?:html|:root)/,'html[data-app-theme="dark"]')
             : `html[data-app-theme="dark"] ${selector}`).join(',');
     };
-    const rules = list => {
+    const rules = (list, depth = 0) => {
+        if (depth > 8) return '';
         let output = '';
         for (const rule of list) {
             if (rule.type === 1) {
                 const body = declarations(rule.style);
                 if (body) output += `${scope(rule.selectorText)}{${body}}`;
-            } else if (rule.type === 4 && !/print/i.test(rule.conditionText)) output += `@media ${rule.conditionText}{${rules(rule.cssRules)}}`;
-            else if (rule.type === 12) output += `@supports ${rule.conditionText}{${rules(rule.cssRules)}}`;
+            } else if (rule.type === 3) {
+                // Some page themes are imported inside a Blade style block.
+                const media = rule.media?.mediaText;
+                if (media && /print/i.test(media)) continue;
+                try {
+                    const imported = rules(rule.styleSheet.cssRules,depth+1);
+                    output += media ? `@media ${media}{${imported}}` : imported;
+                } catch (_) { /* A cross-origin import cannot be inspected. */ }
+            } else if (rule.type === 4 && !/print/i.test(rule.conditionText)) output += `@media ${rule.conditionText}{${rules(rule.cssRules,depth+1)}}`;
+            else if (rule.type === 12) output += `@supports ${rule.conditionText}{${rules(rule.cssRules,depth+1)}}`;
         }
         return output;
     };
-    if (typeof module !== 'undefined' && module.exports) module.exports = {mapColor,convert,luminance,scope,declarations};
+    if (typeof module !== 'undefined' && module.exports) module.exports = {mapColor,convert,luminance,scope,declarations,rules};
     if (typeof document === 'undefined') return;
     document.addEventListener('DOMContentLoaded', () => {
         const output = document.createElement('style');
@@ -165,7 +174,8 @@
                 (sourceStylesChanged || record.type === 'attributes' || [...record.addedNodes,...record.removedNodes].some(node => node.nodeType === 1 && (node.matches('style,link[rel="stylesheet"],[style]') || node.querySelector('style,link[rel="stylesheet"],[style]')))))) schedule();
         });
         observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style','disabled','media']});
-        document.addEventListener('load', event => { if(event.target.matches?.('link[rel="stylesheet"]')) schedule(); },true);
+        document.addEventListener('load', event => { if(event.target.matches?.('style,link[rel="stylesheet"]')) { sheetCache = new WeakMap(); schedule(); } },true);
+        window.addEventListener('load', () => { sheetCache = new WeakMap(); schedule(); },{once:true});
         refresh();
     });
 })();
