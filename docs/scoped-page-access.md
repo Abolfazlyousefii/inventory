@@ -30,8 +30,10 @@ the operation; permission caches are cleared even after failure. The deployment
 operator also saves a private full ACL snapshot before applying the reviewed plan.
 No inventory, return, invoice or accounting business records are modified.
 
-Validation: dedicated scope, definition, linked-page, administrator and preinvoice
-regressions pass (13 tests, 269 assertions). The broader access suite has existing
+Validation: dedicated scope, definition, linked-page, administrator, asset,
+preinvoice and CRM regressions pass (35 tests, 369 assertions). The expanded live
+policy passed 748 user/page checks, 6,820 route-middleware checks and 14 additional
+asset-action/administrator checks. The broader access suite has existing
 failures in PageAccessArchitectureTest, PageAccessMiddlewareTest and
 UserPermissionManagementTest; the same failures were reproduced against the
 pre-change catalog. These are not evidence that all historical access behavior is
