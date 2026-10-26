@@ -41,20 +41,38 @@ class ScopedPageAccessService
         return array_values(array_unique($keys));
     }
 
-    public function replace(array $grants, User $actor): void
+    public function replace(array $grants, User $actor, array $administratorRemovals = []): void
     {
         if (! $actor->isAdministrator()) {
             throw new InvalidArgumentException('An administrator is required.');
         }
         $keys = $this->permissionKeys(array_keys($grants));
+        $administratorRemovals = array_values(array_unique(array_map('intval', $administratorRemovals)));
+        if (in_array((int) $actor->id, $administratorRemovals, true)
+            || User::whereIn('id', $administratorRemovals)->count() !== count($administratorRemovals)) {
+            throw new InvalidArgumentException('Invalid administrator removal.');
+        }
         foreach ($grants as $ids) {
             if (User::whereIn('id', array_unique($ids))->count() !== count(array_unique($ids))) {
                 throw new InvalidArgumentException('A target user does not exist.');
             }
         }
         try {
-            DB::transaction(function () use ($grants, $keys, $actor) {
+            DB::transaction(function () use ($grants, $keys, $actor, $administratorRemovals) {
                 User::orderBy('id')->lockForUpdate()->get(['id']);
+                if (! User::findOrFail($actor->id)->isAdministrator()) {
+                    throw new InvalidArgumentException('The operator is no longer an administrator.');
+                }
+                $administratorBefore = [];
+                foreach ($administratorRemovals as $id) {
+                    $target = User::with('roles')->findOrFail($id);
+                    $administratorBefore[$id] = $target->roles->pluck('name')->all();
+                    $target->syncRoles($target->roles->reject(fn ($role) => in_array($role->name, PermissionCatalog::administratorRoles(), true)));
+                    $target->assignRole(Role::findOrCreate(PermissionCatalog::ADMINISTRATOR_SYNC_BLOCK_ROLE, 'web'));
+                    if ($target->fresh()->isAdministrator()) {
+                        throw new InvalidArgumentException('Administrator removal did not take effect.');
+                    }
+                }
                 PermissionCatalog::syncToDatabase();
                 $ids = DB::table('permissions')->where('guard_name', 'web')->whereIn('key', $keys)->pluck('id')->all();
                 $before = [];
@@ -64,8 +82,10 @@ class ScopedPageAccessService
                 }
                 foreach ($grants as $page => $users) {
                     $role = Role::findOrCreate('Org:'.$page, 'web');
-                    $permission = DB::table('permissions')->where('key', 'page.'.$page)->where('guard_name', 'web')->value('id');
-                    DB::table('role_has_permissions')->insertOrIgnore(['role_id' => $role->id, 'permission_id' => $permission]);
+                    $roleKeys = array_merge(['page.'.$page], PageAccessCatalog::page($page)['action_permissions']);
+                    foreach (DB::table('permissions')->whereIn('key', $roleKeys)->where('guard_name', 'web')->pluck('id') as $permission) {
+                        DB::table('role_has_permissions')->insertOrIgnore(['role_id' => $role->id, 'permission_id' => $permission]);
+                    }
                     // This dedicated role contains only this page; old membership cannot retain access.
                     DB::table('model_has_roles')->where('role_id', $role->id)->delete();
                     foreach (array_unique($users) as $id) {
@@ -86,7 +106,7 @@ class ScopedPageAccessService
                     'user_id' => $actor->id, 'action' => 'permissions.scoped_replaced',
                     'subject_type' => User::class, 'subject_id' => $actor->id,
                     'description' => 'تنظیم دسترسی بخش‌های مالی و انبار طبق فهرست مصوب مدیریت',
-                    'properties' => ['grants' => $grants, 'scoped_keys' => $keys, 'before' => $before],
+                    'properties' => ['grants' => $grants, 'scoped_keys' => $keys, 'before' => $before, 'administrator_roles_before' => $administratorBefore],
                     'occurred_at' => now(),
                 ]);
             });

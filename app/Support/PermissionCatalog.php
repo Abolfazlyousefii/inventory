@@ -9,6 +9,8 @@ use Spatie\Permission\PermissionRegistrar;
 
 class PermissionCatalog
 {
+    /** Local revocation must survive roles arriving again from CRM. */
+    public const ADMINISTRATOR_SYNC_BLOCK_ROLE = 'local_no_administrator_sync';
     public static function superAdminRoles(): array
     {
         return ['super_admin', 'super-admin', 'Super Admin', 'مدیرکل', 'Owner'];

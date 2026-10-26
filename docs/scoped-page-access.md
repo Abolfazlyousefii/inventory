@@ -11,6 +11,19 @@ page through a dedicated `Org:<page>` role to approved users. Unrelated permissi
 and roles remain intact. Administrator aliases retain their existing bypass.
 No administrator identity is assigned by this service.
 
+The expanded warehouse policy covers warehouses/personnel, stocks and bundle
+assembly, purchasing, counts, receiving, issues, collection, shipping, transfers,
+receipts, reservations, daily warehouse reports, assets and preinvoice warehouse
+review. Payment entry alone does not grant invoice financial reapproval.
+
+Explicit administrator removals are atomic with the selected page grants and
+cannot target the operator. Ordinary roles are retained. The local marker role
+`local_no_administrator_sync` prevents CRM from reintroducing an administrator
+alias for a manually demoted user; administrators can remove that marker when
+intentionally reversing the revocation. Other users' CRM role mappings remain
+unchanged. Asset actions require the asset page as well as their action permission;
+approved warehouse staff receive both, and administrator aliases retain full access.
+
 All changes and the before-image of affected permission pivots are saved in one
 transaction with an activity log. Validation failure or audit failure rolls back
 the operation; permission caches are cleared even after failure. The deployment

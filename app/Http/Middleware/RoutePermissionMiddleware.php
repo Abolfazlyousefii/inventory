@@ -88,13 +88,13 @@ class RoutePermissionMiddleware
             return redirect()->guest(route('login'));
         }
 
-        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+        if (method_exists($user, 'isAdministrator') && $user->isAdministrator()) {
             return $next($request);
         }
 
         // The action permission is not enough by itself; the user must also have
         // access to the parent asset page/workflow.
-        if (! PageAccessCatalog::userCanRoute($user, $routeName)) {
+        if (! PageAccessCatalog::userCan($user, 'page.assets')) {
             abort(403, 'شما دسترسی لازم برای مشاهده این بخش را ندارید.');
         }
 
