@@ -10,7 +10,6 @@
     const percent = input => input.matches('[data-product-discount-value]')
         ? input.closest('[data-product-discount-group]').querySelector('[data-product-discount-type]').value === 'percent'
         : input.matches('[data-invoice-discount-value]') && form.querySelector('[data-invoice-discount-type]').value === 'percent';
-    let dirty = false;
     function validate(input) {
         const value = normalized(input.value);
         const isPercent = percent(input);
@@ -61,9 +60,8 @@
     document.querySelector('.finance-review').addEventListener('keydown', event => {
         if (event.target.matches('[data-finance-number]') && ['ArrowUp','ArrowDown','Enter'].includes(event.key)) event.preventDefault();
     });
-    form.addEventListener('input', event => { dirty = true; if (event.target.matches('[data-finance-number]')) validate(event.target); recalculate(); });
+    form.addEventListener('input', event => { if (event.target.matches('[data-finance-number]')) validate(event.target); recalculate(); });
     form.addEventListener('change', event => {
-        dirty = true;
         const group = event.target.closest('[data-product-discount-group]');
         if (event.target.matches('[data-product-discount-type],[data-invoice-discount-type]')) {
             const input = group?.querySelector('[data-product-discount-value]') ?? form.querySelector('[data-invoice-discount-value]');
@@ -87,14 +85,6 @@
     form.addEventListener('invalid', event => {
         event.target.closest('details')?.setAttribute('open','');
     }, true);
-    document.querySelector('[data-collaborative-link]')?.addEventListener('click', event => {
-        if (dirty || (window.FinanceReviewPayments?.rows().length ?? 0)>0) {
-            event.preventDefault();
-            const notice = document.getElementById('financeInputError'); notice.hidden = false;
-            notice.textContent = 'ابتدا تغییرات را با «فقط ذخیره تغییرات» ذخیره کنید. برای افزودن یا حذف کالا، پرداخت‌های آماده‌شده را فعلاً حذف کنید تا اطلاعات از دست نرود.';
-            notice.scrollIntoView({block:'center'});
-        }
-    });
     document.addEventListener('finance:payments-changed', updateRemaining);
     recalculate();
 })();

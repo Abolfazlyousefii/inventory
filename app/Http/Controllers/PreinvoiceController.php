@@ -2913,7 +2913,7 @@ class PreinvoiceController extends Controller
 
         try {
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
-            $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
+            $this->financePreinvoiceEditorService->updateDiscounts($order, $validated, auth()->user());
         } catch (QueryException $exception) {
             Log::error('Finance preinvoice update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, $validated['intent'] ?? 'save'));
 
@@ -2940,7 +2940,7 @@ class PreinvoiceController extends Controller
                     || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
                     return $this->finalize($uuid, $request);
                 }
-                $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
+                $updated = $this->financePreinvoiceEditorService->updateDiscounts($order, $validated, auth()->user());
                 $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
                 $response = $this->finalize($uuid, $request);
                 if (! $updated->invoice()->exists()) {

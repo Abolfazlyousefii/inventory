@@ -11,7 +11,7 @@
     $groups = collect($discountEditorState['product_groups'] ?? [])->keyBy('product_id');
     $indices = $order->items->values()->mapWithKeys(fn($item,$index) => [$item->id => $index]);
 @endphp
-@push('styles')<link rel="stylesheet" href="{{ asset('css/finance-review.css') }}?v=20261026a">@endpush
+@push('styles')<link rel="stylesheet" href="{{ asset('css/finance-review.css') }}?v=20261026b">@endpush
 @section('content')
 <div class="finance-review" dir="rtl">
     <header class="fr-heading"><div><span class="fr-eyebrow">مالی / بررسی اولیه</span><h1>بررسی پیش‌فاکتور <b>{{ $order->uuid }}</b></h1><p>اقلام و تخفیف‌ها را بررسی کنید؛ سپس ذخیره یا تأیید کنید.</p></div><a class="btn btn-outline-secondary" href="{{ route('preinvoice.draft.index') }}">بازگشت به صف مالی</a></header>
@@ -31,9 +31,8 @@
         @csrf @method('PUT')
         <input type="hidden" name="finance_version" value="{{ old('finance_version', \App\Support\FinanceDocumentVersion::token($order)) }}">
         <div class="fr-workspace"><main class="fr-items">
-            <div class="fr-section-heading"><div><h2>کالاها و تخفیف محصول</h2><p>{{ $order->items->groupBy('product_id')->count() }} کالا · {{ $order->items->count() }} ردیف تنوع · مبالغ به ریال</p></div><a class="btn btn-outline-primary" data-collaborative-link href="{{ route('preinvoice.collaborative', $order->uuid) }}">افزودن / حذف کالا</a></div>
-            <div class="fr-notice" id="financeInputError" role="alert" hidden></div>
-            @if(count($zeroPriceItems))<div class="alert alert-warning">قیمت برخی اقلام صفر است؛ پیش از تأیید، قیمت آن‌ها را اصلاح کنید.</div>@endif
+            <div class="fr-section-heading"><div><h2>کالاها و تخفیف محصول</h2><p>مبالغ به ریال · تغییر تخفیف هر کالا یا کل فاکتور</p></div></div>
+            @if(count($zeroPriceItems))<div class="alert alert-warning">قیمت برخی اقلام صفر است؛ برای اصلاح، پیش‌فاکتور را به فروشنده ارجاع دهید.</div>@endif
             @foreach($order->items->groupBy('product_id') as $productId=>$groupItems)
                 @php
                     $group = $groups->get($productId, []); $groupIndex = $loop->index;
@@ -41,21 +40,17 @@
                     $value = old('product_discounts.'.$groupIndex.'.value', $group['discount_value'] ?? 0);
                 @endphp
                 <section class="fr-card fr-product" data-product-discount-group data-product-id="{{ $productId }}">
-                    <header><div><span class="fr-product-icon" aria-hidden="true">{{ $loop->iteration }}</span><h3>{{ $groupItems->first()->product?->name ?? '#'.$productId }}</h3></div><span>{{ $groupItems->count() }} تنوع · <b data-group-quantity>{{ $groupItems->sum('quantity') }}</b> عدد</span></header>
+                    <header><div><span class="fr-product-icon" aria-hidden="true">{{ $loop->iteration }}</span><h3>{{ $groupItems->first()->product?->name ?? '#'.$productId }}</h3></div></header>
                     <div class="fr-product-totals"><span>جمع قبل از تخفیف <strong data-group-gross>—</strong></span><span>تخفیف این کالا <strong class="fr-discount" data-group-discount-amount>—</strong></span><span>بعد از تخفیف محصول <strong class="fr-success" data-group-final>—</strong></span></div>
                     <div class="fr-discount-editor"><label for="product-discount-{{ $productId }}">تخفیف روی مجموع این کالا<small>روی مجموع تعداد × قیمت واحد محاسبه می‌شود.</small></label><div class="fr-input-pair"><select class="form-select" aria-label="نوع تخفیف کالا {{ $loop->iteration }}" name="product_discounts[{{ $groupIndex }}][type]" data-product-discount-type><option value="amount" @selected($type==='amount')>مبلغ (ریال)</option><option value="percent" @selected($type==='percent')>درصد</option></select><input id="product-discount-{{ $productId }}" type="text" inputmode="decimal" autocomplete="off" class="form-control" data-finance-number data-product-discount-value name="product_discounts[{{ $groupIndex }}][value]" value="{{ $type==='percent' ? $value : $money($value) }}"></div><input type="hidden" name="product_discounts[{{ $groupIndex }}][product_id]" value="{{ $productId }}"></div>
-                    <details class="fr-variants" @if($groupItems->contains(fn($item)=>(int)$item->price<=0) || $errors->has('items.*')) open @endif><summary>مشاهده و ویرایش {{ $groupItems->count() }} تنوع <small>تعداد، قیمت واحد و جزئیات تخفیف</small></summary>
                     @foreach($groupItems as $item)
                         @php($idx=$indices[$item->id])
-                        <article id="item-row-{{ $item->id }}" class="fr-variant" data-finance-item-row data-product-id="{{ $productId }}" data-item-id="{{ $item->id }}">
-                            <div class="fr-variant-title"><strong>{{ $item->variant?->variant_name ?? $item->variant?->variety_name ?? 'تنوع پیش‌فرض' }}</strong><small>کد: {{ $item->variant?->sku ?? $item->variant?->variant_code ?? '—' }} · موجودی مرجع: {{ number_format((int)($item->variant?->available_stock ?? $item->variant?->stock ?? 0)) }}</small></div>
-                            @include('partials.bundle-contents', ['productIsBundle'=>$item->product?->is_bundle,'variantId'=>$item->variant_id,'productId'=>$item->product_id,'bundleQuantity'=>$item->quantity])
+                        <div hidden data-finance-item-row data-product-id="{{ $productId }}" data-item-id="{{ $item->id }}">
                             <input type="hidden" name="items[{{ $idx }}][id]" value="{{ $item->id }}">
-                            <div class="fr-variant-inputs"><label>تعداد<input type="text" inputmode="numeric" autocomplete="off" data-finance-number class="form-control js-qty" name="items[{{ $idx }}][quantity]" value="{{ old('items.'.$idx.'.quantity', $item->quantity) }}"></label><label>قیمت واحد (ریال)<input type="text" inputmode="numeric" autocomplete="off" data-finance-number class="form-control js-price" name="items[{{ $idx }}][price]" value="{{ $money(old('items.'.$idx.'.price', $item->price)) }}"><small>قیمت مرجع: {{ $rial($item->variant?->sell_price ?? 0) }}</small></label></div>
-                            <div class="fr-line-totals"><span>ناخالص <b data-line-gross>—</b></span><span>سهم تخفیف محصول <b data-line-discount>—</b></span><span>خالص ردیف <b data-line-net>—</b></span></div>
-                        </article>
+                            <input type="hidden" class="js-qty" name="items[{{ $idx }}][quantity]" value="{{ (int)$item->quantity }}">
+                            <input type="hidden" class="js-price" name="items[{{ $idx }}][price]" value="{{ (int)$item->price }}">
+                        </div>
                     @endforeach
-                    </details>
                 </section>
             @endforeach
             <section class="fr-card"><div class="fr-section-heading"><div><h2>دریافت از مشتری <span class="fr-tag">اختیاری</span></h2><p>پرداخت‌ها فقط با «ذخیره و تأیید مالی» ثبت می‌شوند.</p></div><button type="button" class="btn btn-outline-primary" id="addPaymentRow">＋ افزودن پرداخت</button></div><div id="paymentRows" class="fr-payment-list"></div><p id="paymentGuide" class="fr-empty">هنوز پرداختی آماده نشده است.</p><div class="fr-line-totals"><span>نقدی <b id="cashTotalLabel">۰ ریال</b></span><span>چک <b id="chequeTotalLabel">۰ ریال</b></span></div></section>
@@ -75,7 +70,7 @@
 @endsection
 @push('scripts')
 <script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>
-<script src="{{ asset('js/finance-review.js') }}?v=20261026a"></script>
-<script src="{{ asset('js/finance-review-payments.js') }}?v=20261026a"></script>
-<script src="{{ asset('js/finance-preinvoice-payload.js') }}?v=20261026a"></script>
+<script src="{{ asset('js/finance-review.js') }}?v=20261026b"></script>
+<script src="{{ asset('js/finance-review-payments.js') }}?v=20261026b"></script>
+<script src="{{ asset('js/finance-preinvoice-payload.js') }}?v=20261026b"></script>
 @endpush

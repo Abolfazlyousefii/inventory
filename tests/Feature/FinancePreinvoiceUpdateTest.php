@@ -18,6 +18,33 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+it('rejects changes to quantity or unit price from the discounts-only finance screen', function (string $intent, string $field, int $value) {
+    ['product'=>$product,'variant'=>$variant,'order'=>$order,'item'=>$item] = financeEditableOrderFixture();
+    $row = ['id'=>$item->id,'quantity'=>2,'price'=>10_000_000];
+    $row[$field] = $value;
+    $payload = ['finance_version'=>\App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items'=>[$row], 'product_discounts'=>[], 'invoice_discount_type'=>'none', 'invoice_discount_value'=>0,
+        'edit_reason'=>'تست محدودیت مالی','intent'=>$intent];
+    $this->actingAs(financeEditorUser());
+    $response = $intent === 'save' ? $this->put(route('preinvoice.draft.finance.update',$order->uuid),$payload)
+        : $this->post(route('preinvoice.draft.finance.save-and-finalize',$order->uuid),$payload);
+    $response->assertSessionHasErrors('items');
+    expect($item->fresh()->quantity)->toBe(2)->and($item->fresh()->price)->toBe(10_000_000)
+        ->and($variant->fresh()->stock)->toBe(50)->and(Invoice::count())->toBe(0)
+        ->and(PreinvoiceOrderReview::count())->toBe(0);
+})->with([
+    ['save','quantity',3],['save','quantity',1],['save','price',11_000_000],
+    ['save_and_finalize','quantity',3],['save_and_finalize','quantity',1],['save_and_finalize','price',11_000_000],
+]);
+
+it('shows a single green review link in the queue without approving directly', function () {
+    ['order'=>$order] = financeEditableOrderFixture();
+    $html = view('preinvoice.partials.finance-actions',['o'=>$order,'isExpired'=>false])->render();
+    expect($html)->toContain('مشاهده و تأیید')->toContain('btn-success')
+        ->not->toContain('ویرایش مالی')->not->toContain('method="POST"')
+        ->and(substr_count($html,route('preinvoice.draft.finance',$order->uuid)))->toBe(1);
+});
+
 it('rolls back financial edits when a staged payment fails validation during approval', function () {
     ['product' => $product, 'variant' => $variant, 'order' => $order, 'item' => $item] = financeEditableOrderFixture();
     $this->mock(\App\Services\PreinvoiceReservationService::class, function ($mock) {
@@ -26,7 +53,7 @@ it('rolls back financial edits when a staged payment fails validation during app
     $before = $item->getAttributes();
     $response = $this->actingAs(financeEditorUser())->post(route('preinvoice.draft.finance.save-and-finalize', $order->uuid), [
         'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
-        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 11_000_000]],
+        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 10_000_000]],
         'product_discounts' => [['product_id' => $product->id, 'type' => 'amount', 'value' => 0]],
         'invoice_discount_type' => 'none', 'invoice_discount_value' => 0,
         'edit_reason' => 'اصلاح قیمت و دریافت', 'intent' => 'save_and_finalize',
@@ -46,7 +73,9 @@ it('opens the unified initial finance review with accessible numeric fields and 
     ['order' => $order] = financeEditableOrderFixture();
     $response = $this->actingAs(financeEditorUser())->get(route('preinvoice.draft.finance', $order->uuid))
         ->assertOk()->assertSee('financeEditForm', false)->assertSee('financePaymentComposer', false)
-        ->assertSee('تخفیف روی مجموع این کالا')->assertDontSee('type="number"', false);
+        ->assertSee('تخفیف روی مجموع این کالا')->assertDontSee('type="number"', false)
+        ->assertDontSee('افزودن / حذف کالا')->assertDontSee('مشاهده و ویرایش')
+        ->assertSee('type="hidden" class="js-qty"', false)->assertSee('type="hidden" class="js-price"', false);
     if (getenv('FINANCE_UI_QA_RENDER')) {
         file_put_contents(storage_path('app/finance-review-qa.html'), $response->getContent());
     }
@@ -131,7 +160,7 @@ it('saves finance edits behaviorally without finalizing or creating invoices', f
         'items' => [[
             'id' => $item->id,
             'quantity' => 2,
-            'price' => '11,000,000',
+            'price' => '10,000,000',
         ]],
         'product_discounts' => [[
             'product_id' => $product->id,
@@ -149,16 +178,16 @@ it('saves finance edits behaviorally without finalizing or creating invoices', f
     $order->refresh();
 
     expect($item->quantity)->toBe(2)
-        ->and($item->price)->toBe(11_000_000)
-        ->and($item->line_discount_amount)->toBe(2_200_000)
-        ->and($item->line_total)->toBe(19_800_000)
+        ->and($item->price)->toBe(10_000_000)
+        ->and($item->line_discount_amount)->toBe(2_000_000)
+        ->and($item->line_total)->toBe(18_000_000)
         ->and($order->status)->toBe($oldStatus)
-        ->and($order->product_discount_amount)->toBe(2_200_000)
+        ->and($order->product_discount_amount)->toBe(2_000_000)
         ->and($order->invoice_discount_type)->toBe('percent')
         ->and((float) $order->invoice_discount_value)->toBe(5.0)
-        ->and($order->invoice_discount_amount)->toBe(990_000)
-        ->and($order->discount_amount)->toBe(3_190_000)
-        ->and($order->total_price)->toBe(18_810_000)
+        ->and($order->invoice_discount_amount)->toBe(900_000)
+        ->and($order->discount_amount)->toBe(2_900_000)
+        ->and($order->total_price)->toBe(17_100_000)
         ->and($order->discount_breakdown['groups'][0]['discount_type'])->toBe('percent')
         ->and($order->discount_breakdown['groups'][0]['discount_value'])->toBe(10)
         ->and(Invoice::query()->count())->toBe(0)
@@ -179,7 +208,7 @@ it('preserves staged payments after saving only without posting them or changing
     ['product'=>$product,'variant'=>$variant,'order'=>$order,'item'=>$item] = financeEditableOrderFixture();
     $payments = [['method'=>'cash','amount'=>1000,'paid_at'=>'2026-10-26']];
     $payload = ['finance_version'=>\App\Support\FinanceDocumentVersion::token($order->fresh('items')),
-        'items'=>[['id'=>$item->id,'quantity'=>2,'price'=>11_000_000]],'product_discounts'=>[],
+        'items'=>[['id'=>$item->id,'quantity'=>2,'price'=>10_000_000]],'product_discounts'=>[],
         'invoice_discount_type'=>'none','invoice_discount_value'=>0,'edit_reason'=>'ذخیره بدون تأیید',
         'intent'=>'save','payments'=>$payments];
     $this->actingAs(financeEditorUser())->put(route('preinvoice.draft.finance.update',$order->uuid),[
