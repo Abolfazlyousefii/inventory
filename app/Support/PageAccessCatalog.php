@@ -519,6 +519,11 @@ class PageAccessCatalog
      * @var array<string, array<int, string>>
      */
     private const LINKED_ROUTE_ACCESS = [
+        'finance.account_statements_readonly' => [
+            'account-statements.index', 'account-statements.show',
+            'account-statements.documents.invoices.show', 'account-statements.documents.returns.show',
+            'account-statements.documents.payments.show',
+        ],
         // Defining a product is separate from browsing the product catalogue.
         'products.definition' => [
             'products.bundle.search', 'products.variants',
@@ -626,6 +631,7 @@ class PageAccessCatalog
             'suppliers' => ['بازرگانی و فروش', 'تأمین‌کنندگان', ['suppliers']],
             'finance.payments' => ['مالی', 'پرداخت‌ها و چک‌ها', ['payments', 'cheques']],
             'finance.accounts' => ['مالی', 'گردش حساب و گزارش مالی', ['account_statements', 'finance.reports']],
+            'finance.account_statements_readonly' => ['مالی', 'فقط مشاهده گردش حساب اشخاص', []],
             'finance.seller_sales_documents' => ['مالی', 'گزارش پورسانت فروشندگان', ['seller_sales_documents']],
             'reports' => ['گزارش‌ها', 'گزارش‌های مدیریتی', ['reports']],
             'tickets' => ['مدیریت سیستم', 'تیکت‌ها', ['tickets']],
@@ -820,6 +826,10 @@ class PageAccessCatalog
     {
         if ($user->isAdministrator()) {
             return true;
+        }
+
+        if (AccountStatementAccess::deniesRoute($user, $routeName)) {
+            return false;
         }
 
         $actionPermission = $routeName

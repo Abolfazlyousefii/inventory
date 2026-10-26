@@ -660,6 +660,14 @@ class PermissionCatalog
             return false;
         }
 
+        if ($user instanceof User && AccountStatementAccess::deniesPermission($user, $permission)) {
+            return false;
+        }
+        if ($permission === 'account_statements.view' && $user instanceof User
+            && PageAccessCatalog::userCan($user, 'page.finance.account_statements_readonly')) {
+            return true;
+        }
+
         if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(self::superAdminRoles())) {
             return true;
         }

@@ -108,6 +108,9 @@ class User extends Authenticatable
 
     public function hasPermission(string $key): bool
     {
+        if (\App\Support\AccountStatementAccess::deniesPermission($this, $key)) {
+            return false;
+        }
         if ($this->hasAnyRole(PermissionCatalog::administratorRoles())) {
             return true;
         }

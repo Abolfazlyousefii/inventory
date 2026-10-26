@@ -7,6 +7,7 @@
 @php
     $rial = fn ($value) => \App\Support\Currency::formatRial(abs((int) $value));
     $financeActor = auth()->user();
+    $canAddPayment = $financeActor && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.store');
     $canManagePayments = $financeActor && ($financeActor->hasAnyRole(['admin','Admin','Manager','manager','finance','Accountant']) || $financeActor->can('finance.approve')) && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.edit');
     $balanceText = fn ($value) => $value > 0 ? 'بدهکار' : ($value < 0 ? 'بستانکار' : 'تسویه');
 @endphp
@@ -14,7 +15,8 @@
     <header class="asd-toolbar">
         <div><span class="asd-eyebrow">دفتر حساب شخص</span><h1>{{ $customer->display_name ?: 'شخص' }}</h1><div class="asd-identity"><span>کد: {{ $customer->crm_customer_id ?: $customer->id }}</span><span dir="ltr">{{ $customer->mobile ?: '—' }}</span></div></div>
         <div class="asd-actions">
-            <button type="button" class="btn asd-primary" id="openPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#paymentModal">+ افزودن پرداخت</button>
+            @if($canAddPayment)<button type="button" class="btn asd-primary" id="openPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#paymentModal">+ افزودن پرداخت</button>@endif
+            @if($financeActor && \App\Support\AccountStatementAccess::readOnly($financeActor))<span class="badge bg-light text-secondary">فقط مشاهده</span>@endif
             @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#balanceAdjustmentModal">اصلاح مانده</button>@endif
             <a href="{{ route('account-statements.index') }}" class="btn asd-secondary">بازگشت</a>
         </div>
@@ -110,7 +112,7 @@
     </section>
     @include('account-statements.partials.balance-adjustment', ['collapseBalanceHistory' => true])
 </div>
-@include('payments.entry-modal', ['paymentModalId' => 'paymentModal', 'paymentAction' => route('account-statements.payments.store', $customer->id), 'paymentInvoiceOptions' => $paymentInvoiceOptions])
+@if($canAddPayment)@include('payments.entry-modal', ['paymentModalId' => 'paymentModal', 'paymentAction' => route('account-statements.payments.store', $customer->id), 'paymentInvoiceOptions' => $paymentInvoiceOptions])@endif
 @endsection
 
 @push('scripts')<script src="{{ asset('js/account-statement-display.js') }}?v=20261011" defer></script>@endpush

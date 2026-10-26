@@ -348,6 +348,7 @@ class InvoicePaymentController extends Controller
     {
         $user = auth()->user();
 
-        return $user && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve'));
+        return $user && ! \App\Support\AccountStatementAccess::readOnly($user)
+            && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve'));
     }
 }
