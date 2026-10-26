@@ -131,6 +131,9 @@ class SalesReturnReportService extends SalesReturnQueryService
         $damaged = (int) $document->items->where('item_condition', SalesReturnDocumentItem::CONDITION_DAMAGED)->sum('refund_amount');
         $warehouses = $document->items->pluck('destinationWarehouse.name')->filter()->unique()->values();
         $returnedAt = $document->applied_at ?: $document->created_at;
+        $user=auth()->user();
+        $protected=$document->isApplied() && app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
+        $canApplied=$user && \App\Support\PageAccessCatalog::userCanRoute($user,$protected?'warehouse.inbound.receive':'vouchers.return-from-sale.applied.update');
 
         return [
             'row_key' => 'new-'.$document->id,
@@ -141,10 +144,12 @@ class SalesReturnReportService extends SalesReturnQueryService
             'is_draft' => $document->isDraft(),
             'is_applied' => $document->isApplied(),
             'is_cancelled' => $document->isCancelled(),
-            'can_edit' => ($document->isDraft() || $document->isPendingWarehouse()) ? (auth()->user()?->can('sales_returns.edit_draft') ?? false) : ($document->isApplied() && (auth()->user()?->can('sales_returns.edit_applied') ?? false)),
-            'can_cancel' => $document->isDraft() ? (auth()->user()?->can('sales_returns.cancel_draft') ?? false) : false,
+            'can_edit' => ($document->isDraft() || $document->isPendingWarehouse()) ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.edit')) : ($document->isApplied() && $canApplied),
+            'can_cancel' => $document->isDraft() ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.cancel')) : ($document->isApplied() && $canApplied),
+            'edit_label' => $protected?'اصلاح دریافت':'ویرایش',
+            'document_version' => \App\Support\InboundReviewVersion::token($document),
             'edit_url' => ($document->isDraft() || $document->isPendingWarehouse()) ? route('vouchers.return-from-sale.edit', $document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.edit', $document) : null),
-            'cancel_url' => $document->isDraft() ? route('vouchers.return-from-sale.cancel', $document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.void', $document) : null),
+            'cancel_url' => $document->isDraft() ? route('vouchers.return-from-sale.cancel',$document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.void',$document) : null),
             'document_number' => $document->document_number,
             'customer_name' => $document->customer?->display_name ?: '—',
             'returned_at' => $returnedAt,

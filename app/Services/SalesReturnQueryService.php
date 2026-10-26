@@ -116,7 +116,7 @@ class SalesReturnQueryService
             ? \App\Models\SalesReturnCorrection::where('document_id', $document->id)->where('status', 'applied')->pluck('id')
             : collect();
         $receiptIds = \Illuminate\Support\Facades\Schema::hasTable('warehouse_inbound_receipts')
-            ? \App\Models\WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$document->id)->whereIn('status',['received','discrepancy'])->pluck('id')
+            ? \App\Models\WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$document->id)->pluck('id')
             : collect();
         $correctionLedger = CustomerLedger::where('reference_type', \App\Models\SalesReturnCorrection::class)->whereIn('reference_id', $correctionIds)->get(['type', 'amount']);
         $ledgerAmount += (int)$correctionLedger->sum(fn($row) => $row->type === 'credit' ? (int)$row->amount : -(int)$row->amount);
@@ -125,7 +125,7 @@ class SalesReturnQueryService
             ? 0
             : StockMovement::where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $positiveItems->pluck('id'))->count();
         $stockComplete = $movementCount >= $positiveItems->count();
-        if ($correctionIds->isNotEmpty() || $receiptIds->isNotEmpty()) {
+        if (\Illuminate\Support\Facades\Schema::hasTable('warehouse_inbound_receipt_items')) {
             $receiptItemIds = \App\Models\WarehouseInboundReceiptItem::whereIn('receipt_id',$receiptIds)->pluck('id');
             $revisionIds = $document->revisions()->whereIn('action',['applied_updated','applied_voided'])->pluck('id');
             $legacyAdjustments = CustomerLedger::where(function($query) use ($receiptIds,$revisionIds) {
@@ -141,7 +141,9 @@ class SalesReturnQueryService
             })->get(['warehouse_id','product_variant_id','type','quantity']);
             $key = fn($row) => $row->warehouse_id.':'.$row->product_variant_id;
             $net = $movements->groupBy($key)->map(fn($rows) => (int)$rows->sum(fn($row) => $row->type === 'in' ? (int)$row->quantity : -(int)$row->quantity));
-            $expected = $positiveItems->groupBy(fn($item) => $item->destination_warehouse_id.':'.$item->product_variant_id)->map(fn($rows) => (int)$rows->sum('return_quantity'));
+            $central=WarehouseStockService::centralWarehouseId();
+            // Return-only financial documents intentionally do not create physical warehouse stock.
+            $expected = $positiveItems->filter(fn($item)=>(int)$item->destination_warehouse_id===$central || $net->has($item->destination_warehouse_id.':'.$item->product_variant_id))->groupBy(fn($item) => $item->destination_warehouse_id.':'.$item->product_variant_id)->map(fn($rows) => (int)$rows->sum('return_quantity'));
             $stockComplete = $expected->every(fn($qty,$group) => (int)$net->get($group,0) === $qty) && $net->every(fn($qty,$group) => $qty === (int)$expected->get($group,0));
             $movementCount = $movements->count();
         }

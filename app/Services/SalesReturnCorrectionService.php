@@ -9,8 +9,11 @@ use App\Models\Invoice;
 use App\Models\ProductVariant;
 use App\Models\SalesReturnCorrection;
 use App\Models\SalesReturnDocument;
+use App\Models\SalesReturnDocumentItem;
 use App\Models\SalesReturnDocumentRevision;
 use App\Models\StockMovement;
+use App\Models\WarehouseInboundReceipt;
+use App\Models\WarehouseInboundReceiptItem;
 use App\Models\WarehouseStock;
 use App\Services\Commissions\CommissionReturnSyncOutboxService;
 use App\Support\InboundReviewVersion;
@@ -22,6 +25,135 @@ use Illuminate\Validation\ValidationException;
 class SalesReturnCorrectionService
 {
     public function __construct(private SalesReturnService $returns, private CommissionReturnSyncOutboxService $outbox) {}
+
+    /** Destination alone is insufficient: an older received document can have been reclassified. */
+    public function requiresWarehouse(SalesReturnDocument $document): bool
+    {
+        $document->loadMissing('items.destinationWarehouse');
+        if ($document->items->contains(fn ($i) => (int) $i->return_quantity > 0 && $i->destinationWarehouse?->type !== 'return')) {
+            return true;
+        }
+        $central = WarehouseStockService::centralWarehouseId();
+
+        return $this->movementQuery($document)->where('warehouse_id', $central)->exists()
+            || WarehouseInboundReceiptItem::whereIn('receipt_id', WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $document->id)->select('id'))->where('received_warehouse_id', $central)->where('accepted_quantity', '>', 0)->exists();
+    }
+
+    private function movementQuery(SalesReturnDocument $document)
+    {
+        $receiptIds = WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $document->id)->pluck('id');
+        $receiptItemIds = WarehouseInboundReceiptItem::whereIn('receipt_id', $receiptIds)->pluck('id');
+        $correctionIds = SalesReturnCorrection::where('document_id', $document->id)->pluck('id');
+
+        return StockMovement::where(function ($q) use ($document, $receiptItemIds, $correctionIds) {
+            $q->where(fn ($r) => $r->where('reference_type', SalesReturnDocument::class)->where('reference_id', $document->id))
+                ->orWhere(fn ($r) => $r->where('reference_type', SalesReturnDocumentItem::class)->whereIn('reference_id', $document->items->pluck('id')))
+                ->orWhere(fn ($r) => $r->where('reference_type', WarehouseInboundReceiptItem::class)->whereIn('reference_id', $receiptItemIds))
+                ->orWhere(fn ($r) => $r->where('reference_type', SalesReturnCorrection::class)->whereIn('reference_id', $correctionIds));
+        });
+    }
+
+    private function directStockGroups(SalesReturnDocument $doc, array $proposal, bool $requeue): array
+    {
+        $central = WarehouseStockService::centralWarehouseId();
+        $old = $this->groups($this->snapshot($doc)['items']);
+        $new = $this->groups($proposal['items']);
+        $effects = [];
+        foreach ($this->movementQuery($doc)->get() as $movement) {
+            $key = sprintf('%012d:%012d', (int) $movement->warehouse_id, (int) $movement->product_variant_id);
+            $effects[$key] = ($effects[$key] ?? 0) + ($movement->type === 'in' ? 1 : -1) * (int) $movement->quantity;
+        }
+        foreach ($effects as $key => $qty) {
+            if ($qty < 0 || ($qty !== 0 && (! isset($old[$key]) || $qty !== (int) $old[$key]['quantity']))) {
+                $this->fail('stock', 'سابقه دریافت این سند با اقلام فعلی همخوان نیست؛ برای حفاظت موجودی، اصلاح مستقیم انجام نشد.');
+            }
+        }
+        foreach ($old as $key => $row) {
+            if ($row['warehouse_id'] === $central && ($effects[$key] ?? 0) !== $row['quantity']) {
+                $this->fail('stock', 'رسید یا گردش قابل ردیابی این سند قدیمی کامل نیست؛ موجودی بدون بررسی سابقه تغییر نمی‌کند.');
+            }
+        }
+        $trackedOld = [];
+        $trackedNew = [];
+        foreach ($old as $key => $row) {
+            if (($effects[$key] ?? 0) > 0) {
+                $trackedOld[$key] = $row;
+            }
+        }
+        foreach ($new as $key => $row) {
+            if ($requeue && $row['warehouse_id'] === $central) {
+                continue;
+            }
+            $financialOnly = isset($old[$key]) && ($effects[$key] ?? 0) === 0 && $row['warehouse_id'] !== $central;
+            if ($financialOnly || ($trackedOld === [] && $row['warehouse_id'] !== $central)) {
+                continue;
+            }
+            $trackedNew[$key] = $row;
+        }
+
+        return [$trackedOld, $trackedNew];
+    }
+
+    public function updateDirect(SalesReturnDocument $document, array $data, int $actor, string $reason, bool $warehouseMode = false): SalesReturnDocument
+    {
+        return $this->direct($document, $data, $actor, $reason, $warehouseMode, false);
+    }
+
+    public function voidDirect(SalesReturnDocument $document, int $actor, string $reason, string $version, bool $warehouseMode = false): SalesReturnDocument
+    {
+        return $this->direct($document, ['document_version' => $version], $actor, $reason, $warehouseMode, true);
+    }
+
+    private function direct(SalesReturnDocument $document, array $data, int $actor, string $reason, bool $warehouseMode, bool $void): SalesReturnDocument
+    {
+        return DB::transaction(function () use ($document, $data, $actor, $reason, $warehouseMode, $void) {
+            $locked = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
+            if ($void && $locked->isCancelled()) {
+                return $locked;
+            }
+            $doc = $this->lockDocument($locked->id);
+            $this->assertVersion($doc, (string) ($data['document_version'] ?? ''));
+            $this->assertReason($reason);
+            if (SalesReturnCorrection::where('document_id', $doc->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->exists()) {
+                $this->fail('correction', 'این سند درخواست اصلاح قبلی دارد؛ ابتدا همان درخواست را بدون تغییر سند تعیین تکلیف کنید.');
+            }
+            $protected = $this->requiresWarehouse($doc);
+            if ($protected && ! $warehouseMode) {
+                $this->fail('document', 'دریافت مرکزی ثبت شده است؛ اصلاح یا ابطال فقط توسط مسئول مجاز انبار انجام می‌شود.');
+            }
+            $before = $this->snapshot($doc);
+            if ((int) app(SalesReturnQueryService::class)->appliedHealthCheck($doc)['ledger_amount'] !== (int) $doc->total_refund_amount) {
+                $this->fail('document', 'اثر مالی این سند قدیمی با مبلغ فعلی همخوان نیست؛ اصلاح بدون بررسی سابقه انجام نمی‌شود.');
+            }
+            $proposal = $void ? ['document' => $before['document'], 'items' => [], 'total_quantity' => 0, 'total_refund_amount' => 0] : $this->prepare($doc, $data);
+            if (! $void && ($proposal['items'] === [] || $this->comparable($before) === $this->comparable($proposal))) {
+                $this->fail('document', 'حداقل یک قلم و یک تغییر واقعی لازم است.');
+            }
+            $central = WarehouseStockService::centralWarehouseId();
+            $requeue = ! $protected && ! $void && collect($proposal['items'])->contains(fn ($i) => (int) $i['destination_warehouse_id'] === $central);
+            [$stockBefore,$stockAfter] = $this->directStockGroups($doc, $proposal, $requeue);
+            $correction = SalesReturnCorrection::create(['document_id' => $doc->id, 'base_version' => InboundReviewVersion::token($doc), 'payload' => $data, 'before_snapshot' => $before, 'proposed_snapshot' => $proposal, 'reason' => trim($reason), 'requested_by' => $actor, 'status' => 'applied', 'warehouse_approved_by' => $warehouseMode ? $actor : null, 'warehouse_approved_at' => $warehouseMode ? now() : null]);
+            $this->applyDelta($doc, $correction, $proposal, $actor, [$stockBefore, $stockAfter], ! $requeue);
+            $destinations = collect($proposal['items'])->pluck('destination_warehouse_id')->unique()->values();
+            $doc->update(['default_destination_warehouse_id' => $destinations->count() === 1 ? $destinations->first() : null]);
+            if ($requeue) {
+                if ((int) $before['total_refund_amount'] > 0) {
+                    CustomerLedger::create(['customer_id' => $doc->customer_id, 'reference_type' => SalesReturnCorrection::class, 'reference_id' => $correction->id, 'type' => 'debit', 'amount' => (int) $before['total_refund_amount'], 'note' => 'بازگردانی بستانکاری برای دریافت مجدد برگشت '.$doc->document_number]);
+                }
+                $doc->update(['status' => SalesReturnDocument::STATUS_DRAFT, 'applied_at' => null, 'applied_by' => null]);
+                $doc = $this->returns->apply($doc, $actor);
+                WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $doc->id)->where('status', 'pending')->update(['operation_key' => 'revision-direct-'.$correction->id]);
+            }
+            if ($void) {
+                $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actor, 'cancelled_at' => now(), 'cancel_reason' => trim($reason)]);
+            }
+            $correction->update(['after_snapshot' => $this->snapshot($doc->fresh('items'))]);
+            $this->audit($correction, $actor, $void ? 'direct_void' : ($requeue ? 'requeued' : ($warehouseMode ? 'warehouse_direct' : 'return_direct')), $reason);
+            $this->outbox->stage((int) $doc->id, $actor);
+
+            return $doc->fresh('items');
+        });
+    }
 
     public function request(SalesReturnDocument $document, array $data, int $actor, string $reason): SalesReturnCorrection
     {
@@ -172,11 +304,11 @@ class SalesReturnCorrectionService
         return ['document' => $metadata, 'items' => $items, 'total_quantity' => array_sum(array_column($items, 'return_quantity')), 'total_refund_amount' => array_sum(array_column($items, 'refund_amount'))];
     }
 
-    private function applyDelta(SalesReturnDocument $doc, SalesReturnCorrection $correction, array $proposal, int $actor): void
+    private function applyDelta(SalesReturnDocument $doc, SalesReturnCorrection $correction, array $proposal, int $actor, ?array $stockGroups = null, bool $writeLedger = true): void
     {
         $before = $this->snapshot($doc);
-        $old = $this->groups($before['items']);
-        $new = $this->groups($proposal['items']);
+        $old = $stockGroups[0] ?? $this->groups($before['items']);
+        $new = $stockGroups[1] ?? $this->groups($proposal['items']);
         $keys = array_unique(array_merge(array_keys($old), array_keys($new)));
         sort($keys);
         // Lock variants before stock, matching the reservation service; quantities in warehouse stock are already free stock.
@@ -196,13 +328,19 @@ class SalesReturnCorrectionService
             StockMovement::create(['product_id' => $group['product_id'], 'product_variant_id' => $group['variant_id'], 'warehouse_id' => $group['warehouse_id'], 'user_id' => $actor, 'type' => $delta > 0 ? 'in' : 'out', 'reason' => 'sales_return_correction', 'quantity' => abs($delta), 'stock_before' => $quantity, 'stock_after' => (int) $result->quantity, 'note' => 'اختلاف اصلاح برگشت '.$doc->document_number.' درخواست #'.$correction->id, 'reference' => $doc->document_number.'#correction-'.$correction->id, 'reference_type' => SalesReturnCorrection::class, 'reference_id' => $correction->id]);
         }
         $amount = (int) $proposal['total_refund_amount'] - (int) $doc->total_refund_amount;
-        if ($amount !== 0) {
+        if ($writeLedger && $amount !== 0) {
             CustomerLedger::create(['customer_id' => $doc->customer_id, 'reference_type' => SalesReturnCorrection::class, 'reference_id' => $correction->id, 'type' => $amount > 0 ? 'credit' : 'debit', 'amount' => abs($amount), 'note' => 'اختلاف اصلاح برگشت '.$doc->document_number.' درخواست #'.$correction->id]);
         }
         // Keep original item IDs for historical receipt links. Removed lines become zero, never deleted.
         $remaining = $doc->items->keyBy('id');
         foreach ($proposal['items'] as $index => $attrs) {
-            $item = $remaining->first(fn ($item) => $doc->isInternal() ? (int) $item->invoice_item_id === (int) ($attrs['invoice_item_id'] ?? 0) : (int) $item->product_variant_id === (int) $attrs['product_variant_id']);
+            $item = $remaining->first(fn ($item) => $doc->isInternal() ? (int) $item->invoice_item_id === (int) ($attrs['invoice_item_id'] ?? 0) : ((int) $item->product_variant_id === (int) $attrs['product_variant_id'] && (int) $item->destination_warehouse_id === (int) $attrs['destination_warehouse_id'] && $item->item_condition === $attrs['item_condition']));
+            if (! $item && ! $doc->isInternal()) {
+                $sameVariant = $remaining->filter(fn ($line) => (int) $line->product_variant_id === (int) $attrs['product_variant_id']);
+                if ($sameVariant->count() === 1) {
+                    $item = $sameVariant->first();
+                }
+            }
             $attrs['sort_order'] = $index + 1;
             if ($item) {
                 $item->update($attrs);

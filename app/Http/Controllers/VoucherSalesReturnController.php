@@ -12,16 +12,19 @@ use App\Http\Requests\VoidAppliedSalesReturnRequest;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\ModelList;
+use App\Models\SalesReturnCorrection;
 use App\Models\SalesReturnDocument;
 use App\Models\SalesReturnDocumentItem;
 use App\Models\Warehouse;
 use App\Models\WarehouseTransfer;
 use App\Services\SalesDocumentAccessService;
 use App\Services\SalesReturnAppliedAdjustmentService;
+use App\Services\SalesReturnCorrectionService;
 use App\Services\SalesReturnReportService;
 use App\Services\SalesReturnService;
 use App\Support\PageAccessCatalog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Maatwebsite\Excel\Facades\Excel;
 
 class VoucherSalesReturnController extends Controller
@@ -104,11 +107,11 @@ class VoucherSalesReturnController extends Controller
         $healthCheck = $this->reports->appliedHealthCheck($document);
         $user = auth()->user();
         $canViewSourceInvoice = $document->invoice && $user && PageAccessCatalog::userCanRoute($user, 'vouchers.sales.show') && $accessService->canViewInvoiceReadonly($document->invoice, $user);
-        $pendingCorrection = \Illuminate\Support\Facades\Schema::hasTable('sales_return_corrections')
-            ? \App\Models\SalesReturnCorrection::where('document_id',$document->id)->whereIn('status',['pending_warehouse','pending_finance'])->first()
+        $pendingCorrection = Schema::hasTable('sales_return_corrections')
+            ? SalesReturnCorrection::where('document_id', $document->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->first()
             : null;
 
-        return view('vouchers.return-from-sale.show', compact('document', 'healthCheck', 'canViewSourceInvoice','pendingCorrection'));
+        return view('vouchers.return-from-sale.show', compact('document', 'healthCheck', 'canViewSourceInvoice', 'pendingCorrection'));
     }
 
     public function edit(SalesReturnDocument $document)
@@ -128,25 +131,28 @@ class VoucherSalesReturnController extends Controller
     public function editApplied(SalesReturnDocument $document)
     {
         abort_unless($document->isApplied(), 403);
-        if (\App\Models\SalesReturnCorrection::where('document_id',$document->id)->whereIn('status',['pending_warehouse','pending_finance'])->exists()) {
-            return redirect()->route('sales-return-corrections.index',['document_id'=>$document->id,'status'=>'all'])->with('error','این سند یک درخواست اصلاح در انتظار بررسی دارد؛ ابتدا همان درخواست تعیین تکلیف شود.');
+        $warehouseMode = $this->appliedAccess($document);
+        if (SalesReturnCorrection::where('document_id', $document->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->exists()) {
+            return redirect()->route('sales-return-corrections.index', ['document_id' => $document->id, 'status' => 'all'])->with('error', 'این سند یک درخواست اصلاح در انتظار بررسی دارد؛ ابتدا همان درخواست تعیین تکلیف شود.');
         }
         $document->load('items', 'customer', 'invoice');
 
-        return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document, 'isAppliedEdit' => true]);
+        return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document, 'isAppliedEdit' => true, 'warehouseMode' => $warehouseMode]);
     }
 
     public function updateApplied(UpdateAppliedSalesReturnRequest $request, SalesReturnDocument $document)
     {
         $data = $request->validated();
-        app(\App\Services\SalesReturnCorrectionService::class)->request($document, $this->enrich($request) + $data, (int)auth()->id(), $data['adjustment_reason']);
+        $warehouseMode = $this->appliedAccess($document);
+        $doc = app(SalesReturnCorrectionService::class)->updateDirect($document, $this->enrich($request) + $data, (int) auth()->id(), $data['adjustment_reason'], $warehouseMode);
 
-        return $this->savedResponse($request, $document, 'درخواست اصلاح ثبت شد؛ تا تأیید انبار و مالی، موجودی و حساب مشتری تغییر نمی‌کند.');
+        return $this->savedResponse($request, $doc, $doc->isPendingWarehouse() ? 'تغییرات ذخیره شد؛ کالای سالم پس از تأیید دریافت وارد موجودی مرکزی می‌شود.' : 'اصلاح ثبت شد؛ فقط اختلاف لازم در موجودی و حساب مشتری اعمال شد.');
     }
 
     public function voidApplied(VoidAppliedSalesReturnRequest $request, SalesReturnDocument $document)
     {
-        $doc = $this->adjustments->voidApplied($document, auth()->id(), $request->validated('reason'));
+        $warehouseMode = $this->appliedAccess($document);
+        $doc = app(SalesReturnCorrectionService::class)->voidDirect($document, (int) auth()->id(), $request->validated('reason'), $request->validated('document_version'), $warehouseMode);
 
         return redirect()->route('vouchers.return-from-sale.index')->with('success', 'سند ابطال شد و آثار آن برگشت خورد.');
     }
@@ -172,9 +178,27 @@ class VoucherSalesReturnController extends Controller
 
     public function cancel(Request $request, SalesReturnDocument $document)
     {
-        $doc = $this->service->cancelDraft($document, auth()->id(), $request->input('cancel_reason'));
+        if ($document->isPendingWarehouse()) {
+            $data = $request->validate(['cancel_reason' => ['required', 'string', 'min:3', 'max:1000'], 'document_version' => ['required', 'string', 'size:64']]);
+            $doc = $this->service->cancelPending($document, (int) auth()->id(), $data['cancel_reason'], $data['document_version']);
+        } else {
+            $doc = $this->service->cancelDraft($document, auth()->id(), $request->input('cancel_reason'));
+        }
 
         return redirect()->route('vouchers.return-from-sale.show', $doc)->with('success', 'پیش‌نویس لغو شد.');
+    }
+
+    private function appliedAccess(SalesReturnDocument $document): bool
+    {
+        $user = auth()->user();
+        $protected = app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
+        if ($protected) {
+            abort_unless($user && PageAccessCatalog::userCanRoute($user, 'warehouse.inbound.receive'), 403, 'اصلاح سند دریافت‌شدهٔ مرکزی فقط برای مسئول مجاز انبار امکان‌پذیر است.');
+        } else {
+            abort_unless($user && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index'), 403);
+        }
+
+        return $protected;
     }
 
     public function print(SalesReturnDocument $document)

@@ -524,12 +524,15 @@ class WarehouseInboundService
                 ]);
             }
 
+            // A return moved to central and then back to return-only has already
+            // reversed its original credit. Keep that history and post a new credit.
+            $requeuedReceipt=WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$doc->id)->where('operation_key','like','revision-direct-%')->where('status','cancelled')->where('accepted_quantity',0)->latest('id')->first();
             if ((int) $doc->total_refund_amount > 0) {
                 CustomerLedger::updateOrCreate(
                     [
                         'customer_id' => $doc->customer_id,
-                        'reference_type' => SalesReturnDocument::class,
-                        'reference_id' => $doc->id,
+                        'reference_type' => $requeuedReceipt ? self::TRANSACTION_TYPE : SalesReturnDocument::class,
+                        'reference_id' => $requeuedReceipt ? $requeuedReceipt->id : $doc->id,
                         'type' => 'credit',
                     ],
                     [

@@ -189,7 +189,7 @@ class PendingSalesReturnEditTest extends TestCase
         file_put_contents(storage_path('app/purchase-returns-20261011/pending-edit.html'), $html);
         $changed = app(SalesReturnService::class)->updatePending($d, $this->payload($d), 1);
         $show = view('vouchers.return-from-sale.show', ['document' => $changed, 'healthCheck' => [], 'canViewSourceInvoice' => false])->render();
-        $this->assertStringContainsString('سوابق اصلاح گارانتی', $show);
+        $this->assertStringContainsString('سوابق تغییرات سند', $show);
         $this->assertStringContainsString('اصلاح تعداد و وضعیت کالا', $show);
         $receipt = view('warehouse.inbound-queue.partials.receipt', ['receipt' => $r->load('requester', 'items.suggestedWarehouse'), 'warehouses' => Warehouse::all(), 'sourceUrl' => '/'])->render();
         $this->assertStringContainsString('name="receipt_version"', $receipt);

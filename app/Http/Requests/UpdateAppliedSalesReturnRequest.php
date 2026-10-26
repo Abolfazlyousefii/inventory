@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\SalesReturnDocument;
+use Illuminate\Validation\Rule;
+
 class UpdateAppliedSalesReturnRequest extends StoreSalesReturnRequest
 {
     protected function prepareForValidation(): void
@@ -15,6 +18,8 @@ class UpdateAppliedSalesReturnRequest extends StoreSalesReturnRequest
                 'invoice_id' => $document->invoice_id,
                 'external_invoice_number' => $document->external_invoice_number,
                 'external_invoice_date' => optional($document->external_invoice_date)->format('Y-m-d'),
+                'return_reason' => $document->return_reason,
+                'commission_effect_type' => $document->commission_effect_type,
                 'action' => 'apply',
             ]);
         }
@@ -23,11 +28,15 @@ class UpdateAppliedSalesReturnRequest extends StoreSalesReturnRequest
     public function rules(): array
     {
         $rules = parent::rules();
+        if (blank($this->route('document')?->return_reason)) {
+            $rules['return_reason'] = ['nullable', Rule::in(array_keys(SalesReturnDocument::returnReasonLabels()))];
+        }
         $rules['adjustment_reason'] = ['required', 'string', 'min:3', 'max:1000'];
         $rules['document_version'] = ['required', 'string', 'size:64'];
         $rules['items'][] = 'max:500';
         $rules['items.*.return_quantity'][] = 'max:1000000';
         $rules['items.*.refund_unit_price'][] = 'max:1000000000000';
+
         return $rules;
     }
 

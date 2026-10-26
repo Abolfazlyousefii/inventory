@@ -2,10 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\SalesReturnDocumentRevision;
-use App\Models\WarehouseInboundReceipt;
-use App\Support\InboundReviewVersion;
-use Illuminate\Support\Str;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -15,8 +11,12 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\SalesReturnDocument;
 use App\Models\SalesReturnDocumentItem;
+use App\Models\SalesReturnDocumentRevision;
 use App\Models\Warehouse;
+use App\Models\WarehouseInboundReceipt;
+use App\Support\InboundReviewVersion;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class SalesReturnService
@@ -53,7 +53,10 @@ class SalesReturnService
     {
         return DB::transaction(function () use ($doc, $data, $actorId) {
             $locked = SalesReturnDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
-            if (! $locked->isDraft()) throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            if (! $locked->isDraft()) {
+                throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            }
+
             return $this->persistDraft($locked, $data, $actorId);
         });
     }
@@ -177,9 +180,42 @@ class SalesReturnService
     {
         return DB::transaction(function () use ($doc, $actorId, $reason) {
             $locked = SalesReturnDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
-            if (! $locked->isDraft()) throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل لغو است؛ وضعیت سند تغییر کرده است.']);
+            if (! $locked->isDraft()) {
+                throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل لغو است؛ وضعیت سند تغییر کرده است.']);
+            }
             $locked->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => $reason]);
+
             return $locked;
+        });
+    }
+
+    public function cancelPending(SalesReturnDocument $document, int $actorId, string $reason, string $version): SalesReturnDocument
+    {
+        return DB::transaction(function () use ($document, $actorId, $reason, $version) {
+            $doc = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
+            if ($doc->isCancelled()) {
+                return $doc;
+            }
+            if (! $doc->isPendingWarehouse() || ! hash_equals(InboundReviewVersion::token($doc), $version)) {
+                throw ValidationException::withMessages(['document' => 'وضعیت یا نسخه سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            }
+            Customer::whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
+            if ((int) (app(SalesReturnQueryService::class)->appliedHealthCheck($doc)['ledger_amount'] ?? 0) !== 0) {
+                throw ValidationException::withMessages(['document' => 'این سند قدیمی اثر مالی باز دارد؛ لغو بدون بررسی سابقه انجام نمی‌شود.']);
+            }
+            if (mb_strlen(trim($reason)) < 3 || mb_strlen($reason) > 1000) {
+                throw ValidationException::withMessages(['cancel_reason' => 'دلیل لغو را وارد کنید (۳ تا ۱۰۰۰ نویسه).']);
+            }
+            $receipts = WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $doc->id)->lockForUpdate()->get();
+            if ($receipts->count() !== 1 || $receipts->first()->status !== 'pending' || (int) $receipts->first()->accepted_quantity !== 0 || $receipts->first()->items()->whereNotNull('stock_movement_id')->exists()) {
+                throw ValidationException::withMessages(['document' => 'دریافت این سند تغییر کرده است؛ لغو بدون بررسی انبار مجاز نیست.']);
+            }
+            $before = ['document' => $doc->getAttributes(), 'items' => $doc->items->map->getAttributes()->all()];
+            $receipts->first()->update(['status' => 'cancelled']);
+            $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => trim($reason), 'updated_by' => $actorId]);
+            SalesReturnDocumentRevision::create(['document_id' => $doc->id, 'action' => 'pending_cancel', 'token' => (string) Str::uuid(), 'reason' => trim($reason), 'before_snapshot' => $before, 'after_snapshot' => ['document' => $doc->getAttributes(), 'items' => $before['items']], 'previous_total' => $doc->total_refund_amount, 'new_total' => 0, 'created_by' => $actorId, 'created_at' => now()]);
+
+            return $doc->fresh('items');
         });
     }
 

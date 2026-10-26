@@ -80,8 +80,8 @@
 	</style>
 	<div class="container-fluid sr-page py-3" dir="rtl" data-module="sales-return-create">
 		<div class="d-flex justify-content-between align-items-center mb-3">
-			<div><h4 class="mb-1">{{ $isAppliedEdit ? 'درخواست اصلاح برگشت دریافت‌شده' : ($isEdit ? 'ویرایش سند برگشت از فروش' : 'ثبت سند برگشت از فروش') }}</h4><div class="sr-muted small">شماره سند: {{ $document?->document_number ?: 'پس از ذخیره به‌صورت خودکار ایجاد می‌شود.' }}</div></div>
-			<a class="btn btn-sm btn-outline-secondary" href="{{ route('vouchers.return-from-sale.index') }}">بازگشت</a>
+			<div><h4 class="mb-1">{{ $isAppliedEdit ? (($warehouseMode ?? false) ? 'اصلاح دریافت انبار' : 'ویرایش برگشت مرجوعی') : ($isEdit ? 'ویرایش سند برگشت از فروش' : 'ثبت سند برگشت از فروش') }}</h4><div class="sr-muted small">شماره سند: {{ $document?->document_number ?: 'پس از ذخیره به‌صورت خودکار ایجاد می‌شود.' }}</div></div>
+			<a class="btn btn-sm btn-outline-secondary" href="{{ route(($warehouseMode ?? false) ? 'warehouse.inbound.index' : 'vouchers.return-from-sale.index') }}">بازگشت</a>
 		</div>
 
 		<div id="formErrorSummary" class="alert alert-danger small {{ $errors->any() ? '' : 'd-none' }}">{{ $errors->any() ? 'اطلاعات فرم نیاز به اصلاح دارد.' : '' }}</div>
@@ -91,7 +91,7 @@
 
 		<form method="POST" action="{{ $isAppliedEdit ? route('vouchers.return-from-sale.applied.update', $document) : ($isEdit ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store')) }}" id="salesReturnForm" novalidate>
 			@csrf
-            @if($isAppliedEdit)<input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}"><div class="alert alert-info">این فرم فقط درخواست اصلاح است. تا تأیید مستقل انبار و مالی، موجودی و حساب مشتری تغییر نمی‌کند. علت و سیاست پورسانت ثابت است؛ کالای جدید را در سند جدا ثبت کنید.</div>@endif
+            @if($isAppliedEdit)<input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}"><div class="alert alert-info">{{ ($warehouseMode ?? false) ? 'ثبت این فرم فقط اختلاف دریافت و حساب مشتری را اعمال می‌کند؛ در صورت کمبود موجودی آزاد هیچ تغییری انجام نمی‌شود.' : 'اصلاح مرجوعی مستقیم ثبت می‌شود. تغییر مقصد به مرکزی، سند را برای تأیید دریافت به صف انبار می‌فرستد؛ موجودی مرکزی اکنون افزایش نمی‌یابد.' }} علت و سیاست پورسانت ثابت است؛ کالای جدید را در سند جدا ثبت کنید.</div>@endif
             @if($isPendingEdit)<input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}"><div class="alert alert-info">اصلاح این سند، صف ورودی انبار را هم به‌روز می‌کند؛ تأیید نسخهٔ قبلی امکان‌پذیر نیست.</div>@endif @if($isEdit) @method('PATCH') @endif
 			<textarea name="items_payload" id="itemsPayload" hidden>{{ old('items_payload') }}</textarea>
 			<input type="hidden" name="source_type" id="sourceTypeInput" value="{{ old('source_type', $document?->source_type ?? 'internal_invoice') }}">
@@ -138,7 +138,7 @@
 				<div class="col-12"><div class="sr-card sr-compact"><label class="form-label">توضیحات سند</label><textarea class="form-control" name="description" id="description" rows="3" placeholder="توضیحات تکمیلی درباره این برگشت...">{{ old('description', $document?->description) }}</textarea><div class="small sr-muted">در صورت انتخاب «سایر»، توضیحات یا توضیح علت اجباری است.</div></div></div>
 				@if($isAppliedEdit || $isPendingEdit)<div class="col-12"><div class="sr-card sr-compact"><label class="form-label" for="adjustment_reason">دلیل اصلاح سند <span class="text-danger">*</span></label><textarea class="form-control" id="adjustment_reason" name="adjustment_reason" rows="2" minlength="3" maxlength="1000" required>{{ old('adjustment_reason') }}</textarea><div class="np-field-error" data-field-error="adjustment_reason">{{ $errors->first('adjustment_reason') }}</div></div></div>@endif
 
-				<div class="col-12"><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-danger" type="button" id="clearForm">پاک‌کردن فرم</button>@if($isAppliedEdit || $isPendingEdit)<button class="btn btn-success" type="submit" id="applyButton">{{ $isAppliedEdit ? 'ثبت درخواست اصلاح' : 'ذخیره اصلاحات' }}</button>@else<button class="btn btn-secondary" type="submit" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-success" type="submit" name="action" value="apply" id="applyButton">ارسال به صف انبار</button>@endif</div></div>
+				<div class="col-12"><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-danger" type="button" id="clearForm">پاک‌کردن فرم</button>@if($isAppliedEdit || $isPendingEdit)<button class="btn btn-success" type="submit" id="applyButton">{{ $isAppliedEdit ? 'ذخیره اصلاحات' : 'ذخیره اصلاحات' }}</button>@else<button class="btn btn-secondary" type="submit" name="action" value="draft">ذخیره پیش‌نویس</button><button class="btn btn-success" type="submit" name="action" value="apply" id="applyButton">ارسال به صف انبار</button>@endif</div></div>
 			</div>
 		</form>
 	</div>

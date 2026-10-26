@@ -1,6 +1,6 @@
 @extends('layouts.app')
 @section('content')
-<div dir="rtl" class="mb-3"><a class="btn btn-sm btn-outline-primary" href="{{ route('sales-return-corrections.index',['status'=>'all']) }}">درخواست‌های اصلاح برگشت از فروش</a></div>
+<div dir="rtl" class="mb-3"><a class="btn btn-sm btn-outline-primary" href="{{ route('sales-return-corrections.index',['status'=>'all']) }}">سوابق اصلاح و درخواست‌های قبلی</a></div>
 	<style>
 		.sr-index {
 			font-size: 12px;

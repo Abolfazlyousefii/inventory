@@ -508,6 +508,15 @@ class PageAccessCatalog
      * @var array<string, array<int, string>>
      */
     private const LINKED_ROUTE_ACCESS = [
+        // Received-return corrections belong to the warehouse, never to warranty alone.
+        'warehouse.inbound_queue' => [
+            'vouchers.return-from-sale.show', 'vouchers.return-from-sale.applied.edit',
+            'vouchers.return-from-sale.applied.update', 'vouchers.return-from-sale.applied.void',
+            'vouchers.return-from-sale.customers.search', 'vouchers.return-from-sale.customers.invoices',
+            'vouchers.return-from-sale.invoices.items', 'vouchers.return-from-sale.categories.index',
+            'vouchers.return-from-sale.categories.products', 'vouchers.return-from-sale.products.search',
+            'vouchers.return-from-sale.products.variants', 'vouchers.return-from-sale.preview',
+        ],
         // Warehouse workflows need read-only access to the sale document.
         'warehouse.collection' => [
             'vouchers.sales.show',
