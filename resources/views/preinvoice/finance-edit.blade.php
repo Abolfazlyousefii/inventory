@@ -1,80 +1,81 @@
 @extends('layouts.app')
+@section('title', 'بررسی مالی پیش‌فاکتور '.$order->uuid)
 @php
-	use Morilog\Jalali\Jalalian;
-	use App\Support\SalesDocumentTotals;
-	$rial = fn($v) => number_format((int)$v).' ریال';
-	$fmtDate = fn($d) => $d ? Jalalian::fromDateTime($d)->format('Y/m/d H:i') : '—';
-	$firstZero = $order->items->first(fn($it)=>(int)$it->price<=0);
-	$fmtMoney = fn($v) => number_format((int)$v);
-    $fmtDiscount = fn($type,$v) => $type === 'percent' ? (string)$v : $fmtMoney($v);
-	$discountEditorState = $discountEditorState ?? [];
-	$hydratedInvoiceDiscount = $discountEditorState['invoice_discount'] ?? [];
-	$currentInvoiceDiscountType = old('invoice_discount_type', $hydratedInvoiceDiscount['type'] ?? ($order->invoice_discount_type ?: 'none'));
-	$currentInvoiceDiscountValue = old('invoice_discount_value', ($hydratedInvoiceDiscount['value'] ?? $order->invoice_discount_value ?? 0));
-	$breakdownGroups = collect($discountEditorState['product_groups'] ?? [])->keyBy(fn($g)=>(int)($g['product_id'] ?? 0));
-	$productGroups = $order->items->groupBy('product_id');
-	$totals = SalesDocumentTotals::fromDocument($order);
-	$legacyDiscount = (bool)($discountEditorState['is_legacy_unstructured'] ?? (empty($order->discount_breakdown) && (int)($order->discount_amount ?? 0) > 0));
+    use Morilog\Jalali\Jalalian;
+    $rial = fn($v) => number_format((int)$v).' ریال';
+    $money = fn($v) => number_format((int)\App\Support\DiscountMath::input($v));
+    $date = fn($v) => $v ? Jalalian::fromDateTime($v)->format('Y/m/d H:i') : '—';
+    $invoiceDiscount = $discountEditorState['invoice_discount'] ?? [];
+    $invoiceType = old('invoice_discount_type', $invoiceDiscount['type'] ?? ($order->invoice_discount_type ?: 'none'));
+    $invoiceValue = old('invoice_discount_value', $invoiceDiscount['value'] ?? $order->invoice_discount_value ?? 0);
+    $groups = collect($discountEditorState['product_groups'] ?? [])->keyBy('product_id');
+    $indices = $order->items->values()->mapWithKeys(fn($item,$index) => [$item->id => $index]);
 @endphp
-@push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
-
+@push('styles')<link rel="stylesheet" href="{{ asset('css/finance-review.css') }}?v=20261026a">@endpush
 @section('content')
-	<style>
-		.finance-edit-row-zero{border:2px solid #dc3545}.finance-edit-table input{min-width:110px}.line-preview{font-weight:700;white-space:nowrap}@media(max-width:767.98px){.finance-edit-actions .btn{width:100%}.finance-edit-table{font-size:.82rem}}
-	</style>
-	<div class="container py-4" dir="rtl">
-		<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-3">
-			<div><h4 class="mb-1">ویرایش مالی پیش‌فاکتور {{ $order->uuid }}</h4><div class="text-muted small">ویرایش امن تعداد، قیمت snapshot، تخفیف محصول و تخفیف کلی قبل از تأیید نهایی</div></div>
-			<a class="btn btn-outline-secondary" href="{{ route('preinvoice.draft.index') }}">بازگشت به صف مالی</a>
-		</div>
-		@foreach(['success'=>'success','warning'=>'warning','error'=>'danger'] as $key=>$type) @if(session($key))<div class="alert alert-{{ $type }}">{{ session($key) }}</div>@endif @endforeach
-		@php($summaryErrors = collect($errors->getMessages())->reject(fn($messages, $key) => $key === 'edit_reason' || str_starts_with($key, 'items.'))->flatten())
-		@if($summaryErrors->isNotEmpty())<div class="alert alert-danger"><strong>خطاها:</strong><ul class="mb-0">@foreach($summaryErrors as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
-		@if($legacyDiscount)<div class="alert alert-info">{{ $discountEditorState['legacy_message'] ?? 'این سند تخفیف قدیمی بدون جزئیات تفکیکی دارد. در این صفحه بدون ذخیره، دیتابیس تغییر نمی‌کند؛ پس از اولین ذخیره معتبر، ساختار تفکیکی کامل ثبت می‌شود.' }}</div>@endif
-		@if($firstZero)<div class="alert alert-warning d-flex justify-content-between flex-wrap gap-2"><span>برای تأیید مالی، قیمت تمام اقلام باید بیشتر از صفر باشد.</span><a class="btn btn-sm btn-danger" href="#item-row-{{ $firstZero->id }}">رفتن به اولین ردیف مشکل‌دار</a></div>@endif
-
-		<div class="card mb-3"><div class="card-body"><div class="row g-3 small">
-					<div class="col-md-3"><span class="text-muted">شماره:</span> <strong>{{ $order->uuid }}</strong></div><div class="col-md-3"><span class="text-muted">مشتری:</span> {{ $order->customer_name ?: '—' }}</div><div class="col-md-3"><span class="text-muted">فروشنده:</span> {{ $order->creator?->name ?? '—' }}</div><div class="col-md-3"><span class="text-muted">تاریخ:</span> {{ $fmtDate($order->display_document_date) }}</div>
-					<div class="col-md-3"><span class="text-muted">وضعیت:</span> {{ $order->status_label }}</div><div class="col-md-3"><span class="text-muted">ارسال:</span> {{ $order->shippingMethod?->name ?? '—' }}</div><div class="col-md-3"><span class="text-muted">شرایط پرداخت:</span> {{ $order->payment_terms_note ?: '—' }}</div><div class="col-md-3"><span class="text-muted">توضیحات:</span> {{ $order->description ?: '—' }}</div>
-				</div></div></div>
-
-		<a class="btn btn-primary mb-3" href="{{ route('preinvoice.collaborative', $order->uuid) }}">ویرایش هم‌زمان اقلام، افزودن و حذف کالا</a>
-		<form method="POST" action="{{ route('preinvoice.draft.finance.update',$order->uuid) }}" id="financeEditForm">@csrf @method('PUT')
-            <input type="hidden" name="finance_version" value="{{ old('finance_version', \App\Support\FinanceDocumentVersion::token($order)) }}">
-			<div class="card"><div class="table-responsive"><table class="table table-sm align-middle finance-edit-table mb-0"><thead class="table-light"><tr><th>کالا</th><th>تنوع/SKU</th><th>موجودی مرجع</th><th>تعداد</th><th>قیمت واحد</th><th>قیمت مرجع</th><th>تخفیف تخصیص‌یافته ردیف</th><th>ناخالص</th><th>خالص</th></tr></thead><tbody>
-						@foreach($order->items as $idx=>$it) @php($isZero=(int)$it->price<=0) @php($gross=(int)$it->quantity*(int)$it->price) @php($net=SalesDocumentTotals::lineTotal($it))
-						<tr id="item-row-{{ $it->id }}" class="{{ $isZero ? 'table-warning finance-edit-row-zero' : '' }}" data-finance-item-row data-product-id="{{ (int)$it->product_id }}" data-item-id="{{ (int)$it->id }}">
-							<td>{{ $it->product?->name ?? '#'.$it->product_id }} @include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'variantId' => $it->variant_id, 'bundleQuantity' => $it->quantity]) @if($isZero)<span class="badge text-bg-danger">قیمت صفر</span>@endif<input type="hidden" name="items[{{ $idx }}][id]" value="{{ $it->id }}"></td>
-							<td>{{ $it->variant?->variant_name ?? $it->variant?->variety_name ?? '—' }}<div class="text-muted small">{{ $it->variant?->sku ?? $it->variant?->variant_code ?? '—' }}</div></td>
-							<td>{{ number_format((int)($it->variant?->available_stock ?? $it->variant?->stock ?? 0)) }}</td>
-							<td><input class="form-control form-control-sm js-qty @error('items.'.$idx.'.quantity') is-invalid @enderror" type="number" min="1" name="items[{{ $idx }}][quantity]" value="{{ old('items.'.$idx.'.quantity',(int)$it->quantity) }}">@error('items.'.$idx.'.quantity')<div class="invalid-feedback">{{ $message }}</div>@enderror</td>
-							<td><input class="form-control form-control-sm js-price @error('items.'.$idx.'.price') is-invalid @enderror" type="text" inputmode="numeric" name="items[{{ $idx }}][price]" value="{{ $fmtMoney(old('items.'.$idx.'.price',(int)$it->price)) }}" {{ $isZero ? 'autofocus' : '' }}>@error('items.'.$idx.'.price')<div class="invalid-feedback">{{ $message }}</div>@enderror</td>
-							<td>{{ $rial($it->variant?->sell_price ?? 0) }}</td>
-							<td><span class="js-discount line-preview" data-line-discount data-value="{{ (int)($it->line_discount_amount ?? 0) }}">{{ $rial($it->line_discount_amount ?? 0) }}</span><div class="text-muted small">خروجی تخصیص تخفیف محصول</div></td>
-							<td class="js-gross line-preview" data-line-gross>{{ $rial($gross) }}</td><td class="js-net line-preview" data-line-net>{{ $rial($net) }}</td>
-						</tr>@endforeach
-						</tbody></table></div><div class="card-body border-top"><div class="mb-3"><h6>تخفیف محصول / گروه محصول</h6><div class="row g-3">@foreach($productGroups as $productId=>$groupItems) @php($g=$breakdownGroups->get((int)$productId, [])) @php($groupGross=$groupItems->sum(fn($item)=>(int)$item->quantity*(int)$item->price))<div class="col-md-6 col-xl-4"><div class="border rounded p-2 h-100" data-product-discount-group data-product-id="{{ (int)$productId }}"><strong>{{ $groupItems->first()?->product?->name ?? ('#'.$productId) }}</strong><div class="small text-muted">ناخالص گروه: <strong data-group-gross>{{ $rial($groupGross) }}</strong></div><input type="hidden" name="product_discounts[{{ $loop->index }}][product_id]" value="{{ (int)$productId }}"><label class="form-label small mt-2">نوع تخفیف محصول</label><select class="form-select form-select-sm" name="product_discounts[{{ $loop->index }}][type]" data-product-discount-type><option value="amount" @selected(old('product_discounts.'.$loop->index.'.type', $g['discount_type'] ?? 'amount')==='amount')>مبلغ</option><option value="percent" @selected(old('product_discounts.'.$loop->index.'.type', $g['discount_type'] ?? 'amount')==='percent')>درصد</option></select><label class="form-label small mt-2" data-product-discount-value-label>مقدار تخفیف محصول</label><input type="text" inputmode="decimal" class="form-control form-control-sm js-money" name="product_discounts[{{ $loop->index }}][value]" value="{{ $fmtDiscount(old('product_discounts.'.$loop->index.'.type', $g['discount_type'] ?? 'amount'), old('product_discounts.'.$loop->index.'.value', $g['discount_value'] ?? 0)) }}" data-product-discount-value><div class="small text-muted" data-product-discount-hint>برای مبلغ، جداکننده سه‌رقمی فعال است؛ برای درصد، مقدار حداکثر ۱۰۰ است.</div><div class="small mt-2">نوع: <strong data-group-discount-type>—</strong></div><div class="small">مقدار ورودی: <strong data-group-discount-value>0</strong></div><div class="small">مبلغ تخفیف: <strong data-group-discount-amount>{{ $rial($groupItems->sum(fn($item)=>(int)($item->line_discount_amount ?? 0))) }}</strong></div><div class="small">مبلغ نهایی گروه: <strong data-group-final>{{ $rial(max($groupGross - $groupItems->sum(fn($item)=>(int)($item->line_discount_amount ?? 0)), 0)) }}</strong></div></div></div>@endforeach</div></div><div class="row g-3 mb-3"><div class="col-md-4"><label class="form-label">نوع تخفیف کلی</label><select name="invoice_discount_type" class="form-select" data-invoice-discount-type><option value="none" @selected($currentInvoiceDiscountType==='none')>بدون تخفیف</option><option value="amount" @selected($currentInvoiceDiscountType==='amount')>مبلغ ثابت</option><option value="percent" @selected($currentInvoiceDiscountType==='percent')>درصدی</option></select></div><div class="col-md-4"><label class="form-label" data-invoice-discount-value-label>مقدار تخفیف کلی</label><input type="text" inputmode="decimal" name="invoice_discount_value" class="form-control js-money" value="{{ $fmtDiscount($currentInvoiceDiscountType,$currentInvoiceDiscountValue) }}" data-invoice-discount-value><div class="small text-muted" data-invoice-discount-hint>تخفیف کلی پس از تخفیف محصول محاسبه می‌شود.</div></div><div class="col-md-4 small"><div>جمع ناخالص: <strong data-summary-gross>{{ $rial($totals['subtotal_before_discount'] ?? 0) }}</strong></div><div>تخفیف محصول: <strong data-summary-product-discount>{{ $rial($totals['items_discount'] ?? 0) }}</strong></div><div>تخفیف کلی: <strong data-summary-invoice-discount>{{ $rial($discountEditorState['invoice_discount']['amount'] ?? $order->invoice_discount_amount ?? 0) }}</strong></div><div>مجموع کل تخفیف: <strong data-summary-total-discount>{{ $rial($totals['total_discount'] ?? 0) }}</strong></div><div>هزینه ارسال: <strong data-summary-shipping data-value="{{ (int)($totals['shipping'] ?? 0) }}">{{ $rial($totals['shipping'] ?? 0) }}</strong></div><div>مبلغ قابل پرداخت: <strong data-summary-grand-total>{{ $rial($totals['grand_total'] ?? 0) }}</strong></div></div></div><label for="edit_reason" class="form-label">دلیل ویرایش <span class="text-danger">*</span></label><textarea id="edit_reason" name="edit_reason" rows="3" class="form-control {{ $errors->has('edit_reason') ? 'is-invalid' : '' }}" required minlength="3" maxlength="1000" placeholder="مثلاً: اصلاح قیمت گارد تدی طبق اعلام واحد مالی">{{ old('edit_reason') }}</textarea>@error('edit_reason')<div class="invalid-feedback">{{ $message }}</div>@enderror</div>
-				<div class="card-footer d-flex gap-2 justify-content-end flex-wrap finance-edit-actions"><button class="btn btn-primary" name="intent" value="save">ذخیره تغییرات</button><button class="btn btn-success" name="intent" value="save_and_finalize" formmethod="POST" formaction="{{ route('preinvoice.draft.finance.save-and-finalize',$order->uuid) }}" onclick="return confirm('ابتدا تغییرات ذخیره و سپس تأیید مالی انجام شود؟')" {{ $firstZero ? 'disabled' : '' }}>ذخیره و تأیید مالی</button></div></div>
-		</form>
-	</div>
-	<script>
-		const financeEditForm=document.querySelector('#financeEditForm');
-		const digits=s=>String(s||'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^0-9]/g,'');
-		const numberValue=v=>Number(digits(v)||0);
-		const fmtPlain=n=>Number(numberValue(n)).toLocaleString('en-US');
-		const fmt=n=>Number(Math.max(0,Number(n)||0)).toLocaleString('en-US')+' ریال';
-		const setText=(selector,value,root=document)=>{const el=root.querySelector(selector); if(el) el.textContent=value;};
-		const syncDiscountInputMode=(typeEl,valueEl,labelEl,hintEl)=>{if(!typeEl||!valueEl)return; const isPercent=typeEl.value==='percent'; valueEl.classList.toggle('js-money',!isPercent); valueEl.dataset.percentInput=isPercent?'1':'0'; if(isPercent){const clamped=SalesDiscountMath.percentValue(valueEl.value); if(Number(SalesDiscountMath.input(valueEl.value))>100)valueEl.value='100'; if(labelEl)labelEl.textContent='درصد تخفیف محصول'; if(hintEl)hintEl.textContent='درصد بدون ریال و حداکثر ۱۰۰ است.';}else{valueEl.value=fmtPlain(valueEl.value); if(labelEl)labelEl.textContent='مبلغ تخفیف محصول'; if(hintEl)hintEl.textContent='مبلغ با جداکننده سه‌رقمی وارد می‌شود و در Backend به ناخالص گروه Clamp می‌شود.';}};
-		function allocatedDiscounts(rows,discountAmount,groupGross){const shares=SalesDiscountMath.allocate(rows.map(row=>row.gross),discountAmount);rows.forEach((row,index)=>row.discount=shares[index]);}
-		function recalculateFinanceEditor(){if(!financeEditForm)return;const rows=[...financeEditForm.querySelectorAll('[data-finance-item-row]')].map(row=>{const quantity=numberValue(row.querySelector('.js-qty')?.value);const price=numberValue(row.querySelector('.js-price')?.value);return{row,productId:String(row.dataset.productId||''),gross:quantity*price,discount:0};});const groups=new Map();rows.forEach(r=>{if(!groups.has(r.productId))groups.set(r.productId,[]);groups.get(r.productId).push(r);});let grossSubtotal=0,productDiscount=0;groups.forEach((groupRows,productId)=>{const groupGross=groupRows.reduce((sum,r)=>sum+r.gross,0);grossSubtotal+=groupGross;const card=financeEditForm.querySelector(`[data-product-discount-group][data-product-id="${CSS.escape(productId)}"]`);const typeEl=card?.querySelector('[data-product-discount-type]');const valueEl=card?.querySelector('[data-product-discount-value]');syncDiscountInputMode(typeEl,valueEl,card?.querySelector('[data-product-discount-value-label]'),card?.querySelector('[data-product-discount-hint]'));const type=typeEl?.value==='percent'?'percent':'amount';const rawValue=type==='percent'?SalesDiscountMath.percentValue(valueEl?.value):numberValue(valueEl?.value);const value=type==='percent'?Math.min(rawValue,100):rawValue;let amount=SalesDiscountMath.amount(groupGross,type,value);amount=Math.min(Math.max(amount,0),groupGross);allocatedDiscounts(groupRows,amount,groupGross);const allocated=groupRows.reduce((sum,r)=>sum+r.discount,0);productDiscount+=allocated;if(card){setText('[data-group-gross]',fmt(groupGross),card);setText('[data-group-discount-type]',type==='percent'?'درصد':'مبلغ',card);setText('[data-group-discount-value]',type==='percent'?String(value):fmt(value),card);setText('[data-group-discount-amount]',fmt(allocated),card);setText('[data-group-final]',fmt(Math.max(groupGross-allocated,0)),card);}});rows.forEach(({row,gross,discount})=>{const lineDiscount=row.querySelector('[data-line-discount]'); if(lineDiscount){lineDiscount.textContent=fmt(discount); lineDiscount.dataset.value=String(discount);} setText('[data-line-gross]',fmt(gross),row); setText('[data-line-net]',fmt(Math.max(gross-discount,0)),row);});const invoiceTypeEl=financeEditForm.querySelector('[data-invoice-discount-type]');const invoiceValueEl=financeEditForm.querySelector('[data-invoice-discount-value]');const invoiceType=invoiceTypeEl?.value||'none';invoiceValueEl?.classList.toggle('js-money',invoiceType!=='percent');const subtotalAfterProductDiscount=Math.max(grossSubtotal-productDiscount,0);let invoiceValue=invoiceType==='percent'?SalesDiscountMath.percentValue(invoiceValueEl?.value):numberValue(invoiceValueEl?.value);if(invoiceType==='percent'){invoiceValue=Math.min(invoiceValue,100); if(invoiceValueEl&&Number(SalesDiscountMath.input(invoiceValueEl.value))>100)invoiceValueEl.value='100';}else if(invoiceValueEl){invoiceValueEl.value=invoiceType==='none'?'':fmtPlain(invoiceValueEl.value);}let invoiceDiscount=0;if(invoiceType==='amount') invoiceDiscount=Math.min(invoiceValue,subtotalAfterProductDiscount);if(invoiceType==='percent') invoiceDiscount=SalesDiscountMath.amount(subtotalAfterProductDiscount,'percent',invoiceValue);const shipping=numberValue(financeEditForm.querySelector('[data-summary-shipping]')?.dataset.value);const totalDiscount=productDiscount+invoiceDiscount;const grandTotal=Math.max(grossSubtotal-totalDiscount,0)+shipping;setText('[data-summary-gross]',fmt(grossSubtotal),financeEditForm);setText('[data-summary-product-discount]',fmt(productDiscount),financeEditForm);setText('[data-summary-invoice-discount]',fmt(invoiceDiscount),financeEditForm);setText('[data-summary-total-discount]',fmt(totalDiscount),financeEditForm);setText('[data-summary-shipping]',fmt(shipping),financeEditForm);setText('[data-summary-grand-total]',fmt(grandTotal),financeEditForm);}
-		financeEditForm?.addEventListener('input',e=>{if(e.target.matches('.js-money,.js-price'))e.target.value=fmtPlain(e.target.value);recalculateFinanceEditor();});
-		financeEditForm?.addEventListener('change',recalculateFinanceEditor);
-		recalculateFinanceEditor();
-		@if($errors->has('edit_reason'))document.getElementById('edit_reason')?.focus();@endif
-
-	</script>
+<div class="finance-review" dir="rtl">
+    <header class="fr-heading"><div><span class="fr-eyebrow">مالی / بررسی اولیه</span><h1>بررسی پیش‌فاکتور <b>{{ $order->uuid }}</b></h1><p>اقلام و تخفیف‌ها را بررسی کنید؛ سپس ذخیره یا تأیید کنید.</p></div><a class="btn btn-outline-secondary" href="{{ route('preinvoice.draft.index') }}">بازگشت به صف مالی</a></header>
+    @foreach(['success'=>'success','warning'=>'warning','error'=>'danger'] as $key=>$type)
+        @if(session($key))<div class="alert alert-{{ $type }}" role="status">{{ session($key) }}</div>@endif
+    @endforeach
+    @if($errors->any())<div class="alert alert-danger" role="alert"><strong>ذخیره انجام نشد؛ موارد زیر را بررسی کنید.</strong><ul class="mb-0">@foreach(collect($errors->getMessages())->except('edit_reason')->flatten() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+    @if($discountEditorState['is_legacy_unstructured'] ?? false)<div class="alert alert-info">{{ $discountEditorState['legacy_message'] ?? 'تخفیف سند قدیمی است؛ پس از ذخیره، جزئیات تفکیکی ثبت می‌شود.' }}</div>@endif
+    <section class="fr-card fr-customer" aria-label="اطلاعات مشتری">
+        <div><span>مشتری</span><h2>{{ $order->customer_name ?: '—' }}</h2><small dir="ltr">{{ $order->customer_mobile }}</small></div>
+        <div><span>مانده حساب فعلی</span><strong class="{{ ($customerBalance ?? 0)>0 ? 'fr-danger' : 'fr-success' }}">{{ $rial(abs($customerBalance ?? 0)) }}</strong><small>{{ ($customerBalance ?? 0)>0 ? 'بدهکار' : (($customerBalance ?? 0)<0 ? 'بستانکار' : 'تسویه') }}</small></div>
+        <div><span>فروشنده</span><strong>{{ $order->creator?->name ?? '—' }}</strong><small>{{ $date($order->display_document_date) }}</small></div>
+        <div><span>وضعیت سند</span><strong>{{ $order->status_label }}</strong><small>مهلت رزرو: {{ $date($order->stock_frozen_until) }}</small></div>
+        <details class="fr-metadata"><summary>توضیحات و اطلاعات ارسال</summary><p>روش ارسال: {{ $order->shippingMethod?->name ?? '—' }} · شرایط پرداخت: {{ $order->payment_terms_note ?: '—' }}</p><p>{{ $order->description ?: 'توضیحی ثبت نشده است.' }}</p></details>
+    </section>
+    <form method="POST" action="{{ route('preinvoice.draft.finance.update',$order->uuid) }}" id="financeEditForm">
+        @csrf @method('PUT')
+        <input type="hidden" name="finance_version" value="{{ old('finance_version', \App\Support\FinanceDocumentVersion::token($order)) }}">
+        <div class="fr-workspace"><main class="fr-items">
+            <div class="fr-section-heading"><div><h2>کالاها و تخفیف محصول</h2><p>{{ $order->items->groupBy('product_id')->count() }} کالا · {{ $order->items->count() }} ردیف تنوع · مبالغ به ریال</p></div><a class="btn btn-outline-primary" data-collaborative-link href="{{ route('preinvoice.collaborative', $order->uuid) }}">افزودن / حذف کالا</a></div>
+            <div class="fr-notice" id="financeInputError" role="alert" hidden></div>
+            @if(count($zeroPriceItems))<div class="alert alert-warning">قیمت برخی اقلام صفر است؛ پیش از تأیید، قیمت آن‌ها را اصلاح کنید.</div>@endif
+            @foreach($order->items->groupBy('product_id') as $productId=>$groupItems)
+                @php
+                    $group = $groups->get($productId, []); $groupIndex = $loop->index;
+                    $type = old('product_discounts.'.$groupIndex.'.type', $group['discount_type'] ?? 'amount');
+                    $value = old('product_discounts.'.$groupIndex.'.value', $group['discount_value'] ?? 0);
+                @endphp
+                <section class="fr-card fr-product" data-product-discount-group data-product-id="{{ $productId }}">
+                    <header><div><span class="fr-product-icon" aria-hidden="true">{{ $loop->iteration }}</span><h3>{{ $groupItems->first()->product?->name ?? '#'.$productId }}</h3></div><span>{{ $groupItems->count() }} تنوع · <b data-group-quantity>{{ $groupItems->sum('quantity') }}</b> عدد</span></header>
+                    <div class="fr-product-totals"><span>جمع قبل از تخفیف <strong data-group-gross>—</strong></span><span>تخفیف این کالا <strong class="fr-discount" data-group-discount-amount>—</strong></span><span>بعد از تخفیف محصول <strong class="fr-success" data-group-final>—</strong></span></div>
+                    <div class="fr-discount-editor"><label for="product-discount-{{ $productId }}">تخفیف روی مجموع این کالا<small>روی مجموع تعداد × قیمت واحد محاسبه می‌شود.</small></label><div class="fr-input-pair"><select class="form-select" aria-label="نوع تخفیف کالا {{ $loop->iteration }}" name="product_discounts[{{ $groupIndex }}][type]" data-product-discount-type><option value="amount" @selected($type==='amount')>مبلغ (ریال)</option><option value="percent" @selected($type==='percent')>درصد</option></select><input id="product-discount-{{ $productId }}" type="text" inputmode="decimal" autocomplete="off" class="form-control" data-finance-number data-product-discount-value name="product_discounts[{{ $groupIndex }}][value]" value="{{ $type==='percent' ? $value : $money($value) }}"></div><input type="hidden" name="product_discounts[{{ $groupIndex }}][product_id]" value="{{ $productId }}"></div>
+                    <details class="fr-variants" @if($groupItems->contains(fn($item)=>(int)$item->price<=0) || $errors->has('items.*')) open @endif><summary>مشاهده و ویرایش {{ $groupItems->count() }} تنوع <small>تعداد، قیمت واحد و جزئیات تخفیف</small></summary>
+                    @foreach($groupItems as $item)
+                        @php($idx=$indices[$item->id])
+                        <article id="item-row-{{ $item->id }}" class="fr-variant" data-finance-item-row data-product-id="{{ $productId }}" data-item-id="{{ $item->id }}">
+                            <div class="fr-variant-title"><strong>{{ $item->variant?->variant_name ?? $item->variant?->variety_name ?? 'تنوع پیش‌فرض' }}</strong><small>کد: {{ $item->variant?->sku ?? $item->variant?->variant_code ?? '—' }} · موجودی مرجع: {{ number_format((int)($item->variant?->available_stock ?? $item->variant?->stock ?? 0)) }}</small></div>
+                            @include('partials.bundle-contents', ['productIsBundle'=>$item->product?->is_bundle,'variantId'=>$item->variant_id,'productId'=>$item->product_id,'bundleQuantity'=>$item->quantity])
+                            <input type="hidden" name="items[{{ $idx }}][id]" value="{{ $item->id }}">
+                            <div class="fr-variant-inputs"><label>تعداد<input type="text" inputmode="numeric" autocomplete="off" data-finance-number class="form-control js-qty" name="items[{{ $idx }}][quantity]" value="{{ old('items.'.$idx.'.quantity', $item->quantity) }}"></label><label>قیمت واحد (ریال)<input type="text" inputmode="numeric" autocomplete="off" data-finance-number class="form-control js-price" name="items[{{ $idx }}][price]" value="{{ $money(old('items.'.$idx.'.price', $item->price)) }}"><small>قیمت مرجع: {{ $rial($item->variant?->sell_price ?? 0) }}</small></label></div>
+                            <div class="fr-line-totals"><span>ناخالص <b data-line-gross>—</b></span><span>سهم تخفیف محصول <b data-line-discount>—</b></span><span>خالص ردیف <b data-line-net>—</b></span></div>
+                        </article>
+                    @endforeach
+                    </details>
+                </section>
+            @endforeach
+            <section class="fr-card"><div class="fr-section-heading"><div><h2>دریافت از مشتری <span class="fr-tag">اختیاری</span></h2><p>پرداخت‌ها فقط با «ذخیره و تأیید مالی» ثبت می‌شوند.</p></div><button type="button" class="btn btn-outline-primary" id="addPaymentRow">＋ افزودن پرداخت</button></div><div id="paymentRows" class="fr-payment-list"></div><p id="paymentGuide" class="fr-empty">هنوز پرداختی آماده نشده است.</p><div class="fr-line-totals"><span>نقدی <b id="cashTotalLabel">۰ ریال</b></span><span>چک <b id="chequeTotalLabel">۰ ریال</b></span></div></section>
+            <section class="fr-card"><label for="edit_reason" class="fr-label">دلیل بررسی / ویرایش مالی <span class="fr-danger">*</span></label><textarea id="edit_reason" name="edit_reason" rows="2" class="form-control @error('edit_reason') is-invalid @enderror" required minlength="3" maxlength="1000" placeholder="مثلاً تأیید تخفیف طبق توافق با مشتری">{{ old('edit_reason') }}</textarea>@error('edit_reason')<div class="invalid-feedback">{{ $message }}</div>@enderror</section>
+        </main><aside class="fr-summary fr-card" aria-label="جمع‌بندی فاکتور">
+            <h2>جمع‌بندی مالی</h2><p class="fr-unit">تمام مبالغ به ریال</p>
+            <div class="fr-summary-row"><span>جمع قبل از تخفیف</span><strong data-summary-gross>—</strong></div><div class="fr-summary-row fr-discount"><span>تخفیف کالاها</span><strong data-summary-product-discount>—</strong></div>
+            <div class="fr-global-discount"><label for="invoice-discount-value" class="fr-label">تخفیف کلی فاکتور</label><div class="fr-input-pair"><select name="invoice_discount_type" class="form-select" data-invoice-discount-type aria-label="نوع تخفیف کلی"><option value="none" @selected($invoiceType==='none')>بدون تخفیف</option><option value="amount" @selected($invoiceType==='amount')>مبلغ (ریال)</option><option value="percent" @selected($invoiceType==='percent')>درصد</option></select><input id="invoice-discount-value" type="text" inputmode="decimal" autocomplete="off" data-finance-number name="invoice_discount_value" class="form-control" value="{{ $invoiceType==='percent' ? $invoiceValue : $money($invoiceValue) }}" data-invoice-discount-value></div><small>پس از تخفیف کالاها: <b data-summary-invoice-discount>—</b></small></div>
+            <div class="fr-summary-row"><span>هزینه ارسال</span><strong data-summary-shipping data-value="{{ (int)$order->shipping_price }}">{{ $rial($order->shipping_price) }}</strong></div><div class="fr-summary-row fr-discount"><span>مجموع تخفیف</span><strong data-summary-total-discount>—</strong></div><div class="fr-grand"><span>مبلغ نهایی فاکتور</span><strong data-summary-grand-total>—</strong></div><div class="fr-summary-row"><span>پرداخت آماده ثبت</span><strong id="allTotalLabel">۰ ریال</strong></div><div class="fr-summary-row"><span>مانده این فاکتور</span><strong data-summary-remaining>—</strong></div>
+            <div class="fr-actions"><button type="submit" class="btn btn-success" name="intent" value="save_and_finalize" formaction="{{ route('preinvoice.draft.finance.save-and-finalize',$order->uuid) }}" formmethod="POST" onclick="return confirm('تغییرات و پرداخت‌های آماده‌شده ثبت و فاکتور برای جمع‌آوری ارسال شود؟')">ذخیره و تأیید مالی ←</button><button type="submit" class="btn btn-outline-primary" name="intent" value="save">فقط ذخیره تغییرات</button></div><p class="fr-unit">تأیید مالی، سند را به صف جمع‌آوری انبار می‌فرستد.</p>
+        </aside></div>
+    </form>
+    <details class="fr-card"><summary>ارجاع به فروشنده یا لغو پیش‌فاکتور</summary><div class="fr-secondary-forms"><form method="POST" action="{{ route('preinvoice.draft.return',$order->uuid) }}" onsubmit="return confirm('به فروشنده ارجاع شود؟')">@csrf<label>دلیل ارجاع<input name="reason" class="form-control" required maxlength="1000"></label><button class="btn btn-outline-warning">ارجاع به فروشنده</button></form><form method="POST" action="{{ route('preinvoice.draft.cancel',$order->uuid) }}" onsubmit="return confirm('پیش‌فاکتور لغو شود؟')">@csrf<label>دلیل لغو<input name="reason" class="form-control" required maxlength="1000"></label><button class="btn btn-outline-danger">لغو پیش‌فاکتور</button></form></div></details>
+    @include('preinvoice.partials.finance-payment-modal')
+    <script type="application/json" id="financeStagedPayments">@json(old('payments', []))</script>
+</div>
 @endsection
-
 @push('scripts')
-<script src="{{ asset('js/finance-preinvoice-payload.js') }}?v=1"></script>
+<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>
+<script src="{{ asset('js/finance-review.js') }}?v=20261026a"></script>
+<script src="{{ asset('js/finance-review-payments.js') }}?v=20261026a"></script>
+<script src="{{ asset('js/finance-preinvoice-payload.js') }}?v=20261026a"></script>
 @endpush

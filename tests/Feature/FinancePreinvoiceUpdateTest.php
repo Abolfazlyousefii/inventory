@@ -18,6 +18,40 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+it('rolls back financial edits when a staged payment fails validation during approval', function () {
+    ['product' => $product, 'variant' => $variant, 'order' => $order, 'item' => $item] = financeEditableOrderFixture();
+    $this->mock(\App\Services\PreinvoiceReservationService::class, function ($mock) {
+        $mock->shouldReceive('assertFinanceApprovable')->andReturnNull();
+    });
+    $before = $item->getAttributes();
+    $response = $this->actingAs(financeEditorUser())->post(route('preinvoice.draft.finance.save-and-finalize', $order->uuid), [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 11_000_000]],
+        'product_discounts' => [['product_id' => $product->id, 'type' => 'amount', 'value' => 0]],
+        'invoice_discount_type' => 'none', 'invoice_discount_value' => 0,
+        'edit_reason' => 'اصلاح قیمت و دریافت', 'intent' => 'save_and_finalize',
+        'payments' => [['method' => 'cash', 'amount' => 1000, 'paid_at' => 'invalid-date']],
+    ]);
+    $response->assertSessionHasErrors('payments.0.paid_at');
+    expect($item->fresh()->price)->toBe((int) $before['price'])
+        ->and($order->fresh()->total_price)->toBe(19_500_000)
+        ->and($variant->fresh()->stock)->toBe(50)
+        ->and($product->fresh()->price)->toBe(12_000_000)
+        ->and(Invoice::count())->toBe(0)
+        ->and(CustomerLedger::count())->toBe(0)
+        ->and(PreinvoiceOrderReview::count())->toBe(0);
+});
+
+it('opens the unified initial finance review with accessible numeric fields and staged payments', function () {
+    ['order' => $order] = financeEditableOrderFixture();
+    $response = $this->actingAs(financeEditorUser())->get(route('preinvoice.draft.finance', $order->uuid))
+        ->assertOk()->assertSee('financeEditForm', false)->assertSee('financePaymentComposer', false)
+        ->assertSee('تخفیف روی مجموع این کالا')->assertDontSee('type="number"', false);
+    if (getenv('FINANCE_UI_QA_RENDER')) {
+        file_put_contents(storage_path('app/finance-review-qa.html'), $response->getContent());
+    }
+});
+
 beforeEach(function () {
     $this->withoutMiddleware(RoutePermissionMiddleware::class);
 });
@@ -139,4 +173,20 @@ it('keeps request intent and action contracts aligned with save and save_and_fin
 
     expect($rules['intent'])->toContain('in:save,save_and_finalize')
         ->and($rules['action'])->toContain('in:save,save_and_finalize');
+});
+
+it('preserves staged payments after saving only without posting them or changing catalog prices', function () {
+    ['product'=>$product,'variant'=>$variant,'order'=>$order,'item'=>$item] = financeEditableOrderFixture();
+    $payments = [['method'=>'cash','amount'=>1000,'paid_at'=>'2026-10-26']];
+    $payload = ['finance_version'=>\App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items'=>[['id'=>$item->id,'quantity'=>2,'price'=>11_000_000]],'product_discounts'=>[],
+        'invoice_discount_type'=>'none','invoice_discount_value'=>0,'edit_reason'=>'ذخیره بدون تأیید',
+        'intent'=>'save','payments'=>$payments];
+    $this->actingAs(financeEditorUser())->put(route('preinvoice.draft.finance.update',$order->uuid),[
+        'finance_payload'=>json_encode($payload),'finance_payload_item_count'=>1,
+    ])->assertSessionHasNoErrors()->assertSessionHasInput('payments',$payments);
+    expect(\App\Models\InvoicePayment::count())->toBe(0)
+        ->and($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
+        ->and($product->fresh()->price)->toBe(12_000_000)
+        ->and($variant->fresh()->sell_price)->toBe(12_000_000);
 });

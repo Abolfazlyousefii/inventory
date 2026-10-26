@@ -2900,8 +2900,10 @@ class PreinvoiceController extends Controller
         $discountEditorState = $this->preinvoiceDiscountHydrator->hydrateForEditing($order);
         $invoiceDiscount = (int) ($discountEditorState['invoice_discount']['amount'] ?? 0);
         $totals = SalesDocumentTotals::calculate($order->items, $invoiceDiscount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $customerBalance = $order->customer_id
+            ? (int) (Customer::query()->withBalance()->find($order->customer_id)?->balance ?? 0) : 0;
 
-        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals', 'discountEditorState'));
+        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals', 'discountEditorState', 'customerBalance'));
     }
 
     public function financeUpdate(string $uuid, FinanceUpdatePreinvoiceRequest $request)
@@ -2918,7 +2920,9 @@ class PreinvoiceController extends Controller
             return back()->withErrors(['finance_update' => 'ذخیره تغییرات انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
 
-        return redirect()->route('preinvoice.draft.finance.edit', $uuid)->with('success', 'تغییرات مالی با موفقیت ذخیره شد. پیش‌فاکتور همچنان در صف مالی قرار دارد.');
+        return redirect()->route('preinvoice.draft.finance.edit', $uuid)
+            ->withInput(['payments' => $request->input('payments', [])])
+            ->with('success', 'تغییرات مالی ذخیره شد. پرداخت‌های آماده‌شده فقط همراه تأیید مالی ثبت می‌شوند.');
     }
 
     public function financeSaveAndFinalize(string $uuid, FinanceUpdatePreinvoiceRequest $request)
@@ -2928,17 +2932,33 @@ class PreinvoiceController extends Controller
         $validated['intent'] = 'save_and_finalize';
 
         try {
-            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
-            $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
-            // Approve the version this request just saved, not a later concurrent edit.
-            $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
+            return ReservationSideEffects::transaction(function () use ($uuid, $validated, $request) {
+                $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->with('invoice')->firstOrFail();
+                // Retried approvals and expired reservations retain the existing finalizer behavior.
+                if ($order->invoice || $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE
+                    || $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+                    || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
+                    return $this->finalize($uuid, $request);
+                }
+                $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
+                $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
+                $response = $this->finalize($uuid, $request);
+                if (! $updated->invoice()->exists()) {
+                    throw ValidationException::withMessages(['finance_update' => 'تأیید کامل نشد؛ هیچ تغییری ثبت نشد. صفحه را تازه کنید و دوباره بررسی کنید.']);
+                }
+                return $response;
+            });
+        } catch (ValidationException $exception) {
+            // The saved version was rolled back with the transaction. Preserve the
+            // original version in old input so correcting a payment remains retryable.
+            $request->merge(['finance_version' => $validated['finance_version']]);
+            throw $exception;
         } catch (QueryException $exception) {
+            $request->merge(['finance_version' => $validated['finance_version']]);
             Log::error('Finance preinvoice save-and-finalize update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, 'save_and_finalize'));
 
             return back()->withErrors(['finance_update' => 'ذخیره و تأیید انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
-
-        return $this->finalize($uuid, $request);
     }
 
     private function financeQueryExceptionContext(QueryException $exception, string $uuid, array $validated, Request $request, string $intent): array
@@ -2967,6 +2987,9 @@ class PreinvoiceController extends Controller
         $order = PreinvoiceOrder::with(['items.product', 'items.variant', 'creator:id,name', 'customer:id,crm_customer_id,reservation_tier'])
             ->where('uuid', $uuid)
             ->firstOrFail();
+        if ($order->status === PreinvoiceOrder::STATUS_PENDING_FINANCE && ! $order->invoice()->exists()) {
+            return $this->financeEdit($uuid);
+        }
         abort_if(! in_array($order->status, [
             PreinvoiceOrder::STATUS_PENDING_FINANCE,
             PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,

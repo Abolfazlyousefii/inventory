@@ -68,7 +68,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             || $count === false || $count < 1 || $count > 3000 || count($data['items']) !== $count) {
             throw \Illuminate\Validation\ValidationException::withMessages(['finance_payload' => $message]);
         }
-        $this->merge(array_intersect_key($data, array_flip($fields)));
+        $this->merge(array_intersect_key($data, array_flip([...$fields, 'payments'])));
     }
 
     public function rules(): array
@@ -88,6 +88,8 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
             'intent' => ['nullable', 'in:save,save_and_finalize'],
             'action' => ['nullable', 'in:save,save_and_finalize'],
+            'payments' => ['nullable', 'array', 'max:100'],
+            'payments.*' => ['array'],
         ];
     }
 

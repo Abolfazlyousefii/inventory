@@ -20,6 +20,68 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+it('saves and approves finance discounts and cash plus cheque once without decrementing stock twice', function (int $quantity) {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory);
+    $item = $order->items()->sole();
+    $customer = \App\Models\Customer::create(['first_name'=>'تست','last_name'=>'مالی','mobile'=>'09129998877','is_active'=>true]);
+    $order->update(['customer_id'=>$customer->id]);
+    $payload = [
+        'finance_version'=>\App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items'=>[['id'=>$item->id,'quantity'=>$quantity,'price'=>200_000]],
+        'product_discounts'=>[['product_id'=>$item->product_id,'type'=>'percent','value'=>'10']],
+        'invoice_discount_type'=>'percent','invoice_discount_value'=>'5','edit_reason'=>'بررسی مالی و پرداخت تستی','intent'=>'save_and_finalize',
+        'payments'=>[
+            ['method'=>'cash','amount'=>100_000,'paid_at'=>'2026-10-26','note'=>'دریافت نقدی'],
+            ['method'=>'cheque','amount'=>200_000,'paid_at'=>'2026-10-26','cheque_received_at'=>'2026-10-26','cheque_due_date'=>'2026-11-26','cheque_number'=>'TEST-123','cheque_bank_name'=>'بانک تست','cheque_status'=>'unregistered'],
+        ],
+    ];
+    $beforeStock = $inventory['warehouseStock']->fresh()->quantity;
+    for ($attempt=0; $attempt<2; $attempt++) {
+        $this->actingAs($finance)->post(route('preinvoice.draft.finance.save-and-finalize',$order->uuid),[
+            'finance_payload'=>json_encode($payload,JSON_UNESCAPED_UNICODE),'finance_payload_item_count'=>1,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+    }
+    $invoice = Invoice::where('preinvoice_order_id',$order->id)->sole();
+    expect((int)$invoice->total)->toBe($quantity*171_000)
+        ->and((int)$invoice->discount_amount)->toBe($quantity*29_000)
+        ->and($invoice->payments()->count())->toBe(2)
+        ->and((int)$invoice->payments()->sum('amount'))->toBe(300_000)
+        ->and(\App\Models\Cheque::where('cheque_number','TEST-123')->count())->toBe(1)
+        ->and((int)$customer->ledgers()->where('type','debit')->sum('amount'))->toBe($quantity*171_000)
+        ->and((int)$customer->ledgers()->where('type','credit')->sum('amount'))->toBe(300_000)
+        ->and($inventory['warehouseStock']->fresh()->quantity)->toBe($beforeStock-($quantity-4))
+        ->and($inventory['variant']->fresh()->sell_price)->toBe(100_000)
+        ->and($inventory['product']->fresh()->price)->toBe(100_000)
+        ->and($inventory['variant']->fresh()->reserved)->toBe(0)
+        ->and($reservation->fresh()->release_reason)->toBe('consumed');
+})->with([4,5,3]);
+
+it('rolls back stock quantity changes and invoice creation when payment posting fails after validation', function () {
+    $seller = fullLifecycleSeller(); $finance = fullLifecycleFinanceUser(); $inventory = fullLifecycleInventory();
+    ['reservation'=>$reservation,'order'=>$order] = fullLifecycleSubmitPreinvoice($this,$seller,$inventory);
+    $item = $order->items()->sole();
+    $version = \App\Support\FinanceDocumentVersion::token($order->fresh('items'));
+    $this->mock(\App\Services\PaymentRegistrationService::class,function ($mock) {
+        $mock->shouldReceive('registerForInvoice')->once()->andThrow(\Illuminate\Validation\ValidationException::withMessages(['payments'=>'ثبت پرداخت تستی ناموفق بود']));
+    });
+    $beforeStock = $inventory['warehouseStock']->fresh()->quantity;
+    $this->actingAs($finance)->post(route('preinvoice.draft.finance.save-and-finalize',$order->uuid),[
+        'finance_version'=>$version,'items'=>[['id'=>$item->id,'quantity'=>5,'price'=>200_000]],
+        'product_discounts'=>[],'invoice_discount_type'=>'none','invoice_discount_value'=>0,
+        'edit_reason'=>'تست بازگشت کامل عملیات','intent'=>'save_and_finalize',
+        'payments'=>[['method'=>'cash','amount'=>1000,'paid_at'=>'2026-10-26']],
+    ])->assertSessionHasErrors('payments')->assertSessionHasInput('finance_version',$version);
+    expect($inventory['warehouseStock']->fresh()->quantity)->toBe($beforeStock)
+        ->and($inventory['variant']->fresh()->reserved)->toBe(4)
+        ->and($item->fresh()->quantity)->toBe(4)
+        ->and($item->fresh()->price)->toBe(100_000)
+        ->and($reservation->fresh()->released_at)->toBeNull()
+        ->and(Invoice::where('preinvoice_order_id',$order->id)->count())->toBe(0);
+});
+
 function fullLifecycleUser(array $permissions): User
 {
     $role = Role::findOrCreate('full-lifecycle-'.Str::random(10), 'web');
