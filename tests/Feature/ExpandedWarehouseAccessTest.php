@@ -29,6 +29,19 @@ it('does not grant financial invoice reapproval through payment entry access', f
         ->and(PageAccessCatalog::userCanRoute($user, 'finance.invoices.return-to-sales'))->toBeFalse();
 });
 
+it('removes old global preinvoice listing access from ordinary sellers', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole(Role::findOrCreate('Admin', 'web'));
+    $finance = User::factory()->create();
+    $warehouse = User::factory()->create();
+    $seller = User::factory()->create();
+    $seller->permissions()->attach(DB::table('permissions')->where('key', 'preinvoices.all.view')->value('id'));
+    app(ScopedPageAccessService::class)->replace(['sales.preinvoice_finance_review' => [$finance->id], 'sales.preinvoice_warehouse_review' => [$warehouse->id]], $admin);
+    expect(PageAccessCatalog::userCanRoute($seller->fresh(), 'preinvoice.all.index'))->toBeFalse()
+        ->and(PageAccessCatalog::userCanRoute($finance->fresh(), 'preinvoice.all.index'))->toBeTrue()
+        ->and(PageAccessCatalog::userCanRoute($warehouse->fresh(), 'preinvoice.all.index'))->toBeTrue();
+});
+
 it('removes the selected administrator identity atomically and preserves ordinary roles', function () {
     $admin = User::factory()->create();
     $admin->assignRole(Role::findOrCreate('Admin', 'web'));

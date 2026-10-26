@@ -16,6 +16,8 @@ class PageAccessCatalog
     ];
 
     private const PAGE_ACTION_PERMISSIONS = [
+        'sales.preinvoice_finance_review' => ['preinvoices.all.view'],
+        'sales.preinvoice_warehouse_review' => ['preinvoices.all.view'],
         'warehouse.reservations' => [
             'warehouse_reservations.view',
             'warehouse_reservations.release',
