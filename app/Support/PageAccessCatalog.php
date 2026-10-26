@@ -75,8 +75,8 @@ class PageAccessCatalog
         'products.index' => ['products'],
         'products.selected-export' => ['products'],
         'products.data' => ['products'],
-        'products.create' => ['products'],
-        'products.store' => ['products'],
+        'products.create' => ['products.definition'],
+        'products.store' => ['products.definition'],
         'products.price-changes.index' => ['products.price_changes'],
         'products.price-changes.create' => ['products.price_changes'],
         'products.price-changes.categories.root' => ['products.price_changes'],
@@ -508,6 +508,11 @@ class PageAccessCatalog
      * @var array<string, array<int, string>>
      */
     private const LINKED_ROUTE_ACCESS = [
+        // Defining a product is separate from browsing the product catalogue.
+        'products.definition' => [
+            'products.bundle.search', 'products.variants',
+            'categories.quickStore', 'model-lists.quick-store',
+        ],
         // Received-return corrections belong to the warehouse, never to warranty alone.
         'warehouse.inbound_queue' => [
             'vouchers.return-from-sale.show', 'vouchers.return-from-sale.applied.edit',
@@ -581,6 +586,7 @@ class PageAccessCatalog
             'warehouse.reservations' => ['انبارداری', 'رزرو موجودی', ['warehouse.reservations']],
             'dashboard' => ['داشبورد', 'داشبورد', ['dashboard', 'notifications']],
             'products' => ['کالاهای آریا', 'کالاها', ['products']],
+            'products.definition' => ['کالاهای آریا', 'تعریف کالا', []],
             'products.price_changes' => ['کالاهای آریا', 'تغییر قیمت کالا', ['products.price_changes']],
             'categories' => ['پیکربندی', 'دسته‌بندی کالا', ['categories']],
             'brands_models' => ['پیکربندی', 'برندها و مدل‌ها', ['brands', 'model_lists']],
@@ -624,6 +630,7 @@ class PageAccessCatalog
             $permission = 'page.'.$key;
             $legacy = collect(PermissionCatalog::groups())->flatMap(fn (array $permissions) => array_keys($permissions))
                 ->filter(fn (string $name) => self::matchesAnyPrefix($name, $legacyPrefixes))
+                ->reject(fn (string $name) => $key === 'products' && $name === 'products.create')
                 ->values()->all();
             $pageRoutes = collect(self::ROUTE_OWNERS)
                 ->filter(fn (array $owners) => in_array($key, $owners, true))
@@ -708,6 +715,9 @@ class PageAccessCatalog
 
     public static function pagePermissionForLegacy(string $legacyPermission): ?string
     {
+        if ($legacyPermission === 'products.create') {
+            return 'page.products.definition';
+        }
         if (in_array($legacyPermission, [
             'sales_returns.override_invoice_status',
             'sales_returns.override_destination',
