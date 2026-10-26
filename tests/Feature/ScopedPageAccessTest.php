@@ -53,7 +53,8 @@ it('grants warehouse operations only to the selected warehouse staff', function 
     $pages = ['products.definition', 'warehouse.purchases', 'warehouse.stocktake', 'warehouse.inbound_queue', 'warehouse.reservations'];
     $grants = array_fill_keys($pages, [$staff->id]);
     app(ScopedPageAccessService::class)->replace($grants, $admin);
-    foreach (['products.create', 'products.store', 'purchases.index', 'purchases.store', 'stock-count-documents.finalize', 'warehouse.inbound.receive', 'warehouse-reservations.bulk-release'] as $route) {
+    foreach (['products.create', 'products.store', 'purchases.index', 'purchases.store', 'stock-count-documents.finalize', 'warehouse.inbound.receive', 'warehouse-reservations.index'] as $route) {
+        expect(app('router')->getRoutes()->getByName($route), $route)->not->toBeNull();
         expect(PageAccessCatalog::userCanRoute($staff->fresh(), $route), $route)->toBeTrue()
             ->and(PageAccessCatalog::userCanRoute($seller->fresh(), $route), $route)->toBeFalse();
     }
