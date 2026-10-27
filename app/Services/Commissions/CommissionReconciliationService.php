@@ -87,6 +87,14 @@ class CommissionReconciliationService
 
             $targetPeriod = $this->periods->firstEligibleAfter($audit->changed_at);
             $entries = CommissionLedgerEntry::query()->where('commission_period_id', $sourcePeriod->id)->where('invoice_id', $invoice->id)->where('status', CommissionLedgerEntry::STATUS_ACTIVE)->get();
+            $priorOwnerBalances = CommissionCorrectionEntry::query()
+                ->where('event_type', 'seller_reassignment_correction')
+                ->whereIn('source_ledger_entry_id', $entries->pluck('id')->all())
+                ->selectRaw('source_ledger_entry_id, seller_id, SUM(total_commission_amount) AS balance')
+                ->groupBy('source_ledger_entry_id', 'seller_id')
+                ->get()
+                ->keyBy(fn ($row) => $row->source_ledger_entry_id.':'.$row->seller_id);
+
             foreach ($entries as $entry) {
                 $previousOwnerId = (int) $audit->old_seller_id;
                 // Historical ledger snapshots are immutable. Determine whether
@@ -94,11 +102,7 @@ class CommissionReconciliationService
                 // earlier reassignments, including hops through non-sellers.
                 $previousOwnerBalance = $previousOwnerId
                     ? (int) ((int) $entry->seller_id === $previousOwnerId ? $entry->total_commission_amount : 0)
-                        + (int) CommissionCorrectionEntry::query()
-                            ->where('event_type', 'seller_reassignment_correction')
-                            ->where('source_ledger_entry_id', $entry->id)
-                            ->where('seller_id', $previousOwnerId)
-                            ->sum('total_commission_amount')
+                        + (int) ($priorOwnerBalances->get($entry->id.':'.$previousOwnerId)?->balance ?? 0)
                     : 0;
 
                 $sides = [];
