@@ -14,7 +14,11 @@ function fixture(fetchImpl) {
         disabled: false,
         children: [],
         classList: {toggle() {}},
-        appendChild(node) { this.children.push(node); },
+        appendChild(node) {
+            // A real DOM transfers a DocumentFragment's children to its parent.
+            if (node.isFragment) this.children.push(...node.children);
+            else this.children.push(node);
+        },
         replaceChildren() { this.children = []; },
         addEventListener(name, fn) { this['on_' + name] = fn; },
     });
@@ -36,7 +40,7 @@ function fixture(fetchImpl) {
         getElementById(id) { return nodes[id]; },
         querySelector() { return {content: 'csrf'}; },
         createElement() { return makeNode(); },
-        createDocumentFragment() { return makeNode(); },
+        createDocumentFragment() { return Object.assign(makeNode(), {isFragment: true}); },
     };
     const context = {
         document,
