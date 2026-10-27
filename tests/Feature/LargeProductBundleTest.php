@@ -148,7 +148,16 @@ class LargeProductBundleTest extends TestCase
         $this->assertCount(300, array_unique(array_column($all, 'variant_id')));
         $this->assertSame('Variant 1', $all[0]['variant_name']);
         $this->assertSame(2, $all[0]['quantity_per_bundle']);
-        $this->assertSame(300, $all[0]['count_limit'] ?? 300); // one recipe row per variant, no duplicates
+
+        $this->getJson(route('products.bundle-components', $bundle) . '?q=Variant%20299')
+            ->assertOk()->assertJsonPath('meta.total.items', 1)
+            ->assertJsonPath('data.0.variant_name', 'Variant 299')
+            ->assertJsonPath('data.0.quantity_per_bundle', 2)
+            ->assertJsonPath('meta.has_more', false);
+        $this->getJson(route('products.bundle-components', $bundle) . '?cursor=-1')
+            ->assertUnprocessable();
+        $this->getJson(route('products.bundle-components', $bundle) . '?limit=300')
+            ->assertUnprocessable();
 
         $this->getJson(route('products.bundle-components', $source))->assertNotFound();
         $this->assertSame(300, DB::table('product_bundle_components')->where('bundle_variant_id', $finished->id)->count());
