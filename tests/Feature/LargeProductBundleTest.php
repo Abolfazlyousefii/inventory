@@ -99,6 +99,70 @@ class LargeProductBundleTest extends TestCase
         $this->assertSame(300,DB::table('product_bundle_components')->where('bundle_variant_id',$variantId)->count());
     }
 
+
+    public function test_bundle_details_load_on_demand_in_bounded_pages_without_polluting_product_list(): void
+    {
+        [$category, $source,, $rows] = $this->catalog();
+        $bundle = Product::withoutEvents(fn () => Product::create([
+            'name' => 'Bundle with 300 items', 'category_id' => $category->id,
+            'sku' => 'BUNDLE-DRAWER', 'is_bundle' => true, 'bundle_stock_mode' => 'physical',
+            'is_sellable' => true, 'price' => 300000,
+        ]));
+        $finished = ProductVariant::withoutEvents(fn () => ProductVariant::create([
+            'product_id' => $bundle->id, 'variant_name' => 'Finished package',
+            'variant_code' => 'FINISHED-BUNDLE', 'sell_price' => 300000,
+            'stock' => 1, 'is_active' => true, 'sales_enabled' => true,
+        ]));
+        $records = [];
+        foreach ($rows as $row) {
+            $records[] = [
+                'bundle_variant_id' => $finished->id,
+                'component_variant_id' => $row['variant_id'],
+                'quantity' => 2,
+                'discount_type' => 'percent', 'discount_value' => 0,
+                'created_at' => now(), 'updated_at' => now(),
+            ];
+        }
+        DB::table('product_bundle_components')->insert($records);
+
+        $sql = [];
+        DB::listen(function ($query) use (&$sql) { $sql[] = $query->sql; });
+        $catalog = $this->getJson(route('products.data', ['product_type' => 'bundle']))->assertOk();
+        $product = collect($catalog->json('data'))->firstWhere('id', $bundle->id);
+        $this->assertTrue($product['is_bundle']);
+        $this->assertSame([], $product['bundle_contents'] ?? []);
+        $this->assertSame(0, count(array_filter($sql, fn ($query) => str_contains($query, 'product_bundle_components'))));
+
+        $all = [];
+        $cursor = 0;
+        for ($page = 0; $page < 4; $page++) {
+            $response = $this->getJson(route('products.bundle-components', $bundle) . '?cursor=' . $cursor . '&limit=80')
+                ->assertOk()->assertJsonPath('product.id', $bundle->id)
+                ->assertJsonPath('product.stock_mode', 'physical');
+            $all = [...$all, ...$response->json('data')];
+            $cursor = $response->json('meta.next_cursor') ?? 0;
+            if ($page < 3) $response->assertJsonPath('meta.has_more', true);
+            else $response->assertJsonPath('meta.has_more', false);
+        }
+        $this->assertCount(300, $all);
+        $this->assertCount(300, array_unique(array_column($all, 'variant_id')));
+        $this->assertSame('Variant 1', $all[0]['variant_name']);
+        $this->assertSame(2, $all[0]['quantity_per_bundle']);
+        $this->assertSame(300, $all[0]['count_limit'] ?? 300); // one recipe row per variant, no duplicates
+
+        $this->getJson(route('products.bundle-components', $source))->assertNotFound();
+        $this->assertSame(300, DB::table('product_bundle_components')->where('bundle_variant_id', $finished->id)->count());
+    }
+
+    public function test_product_page_exposes_a_dedicated_accessible_bundle_drawer(): void
+    {
+        $this->catalog();
+        $this->get(route('products.index'))->assertOk()
+            ->assertSee('id="bundleComponentsDrawer"', false)
+            ->assertSee('product-bundle-drawer.js', false)
+            ->assertSee('مشاهده اقلام بسته', false);
+    }
+
     public function test_truncated_payload_is_rejected_before_creating_any_product(): void
     {
         $user=User::factory()->create(['is_active'=>true,'can_access_erp'=>true]);
