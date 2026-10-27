@@ -1,0 +1,43 @@
+name: Invoice reassignment regression checks
+
+on:
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/CommercialInvoiceReassignmentController.php'
+      - 'app/Services/SalesDocumentSellerReassignmentService.php'
+      - 'app/Services/Commissions/CommissionReconciliationService.php'
+      - 'resources/views/commercial/invoice-reassignments/index.blade.php'
+      - 'tests/Feature/InvoiceReassignmentAnyActiveErpUserTest.php'
+      - 'tests/Feature/InvoiceSellerReassignmentTest.php'
+      - 'tests/Feature/CommissionReconciliationPhaseFourTest.php'
+      - '.github/workflows/invoice-reassignment-targeted.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transfer-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Set up test application
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Verify invoice transfer and commission integrity
+        run: |
+          php artisan test tests/Feature/InvoiceReassignmentAnyActiveErpUserTest.php tests/Feature/InvoiceSellerReassignmentTest.php tests/Feature/CommissionReconciliationPhaseFourTest.php
