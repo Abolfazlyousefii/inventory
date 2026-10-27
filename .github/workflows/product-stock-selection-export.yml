@@ -7,6 +7,7 @@ on:
       - 'app/Http/Controllers/ProductSelectionExportController.php'
       - 'app/Services/ProductSelectedStockExportService.php'
       - 'public/js/product-selection-export.js'
+      - 'public/js/product-stock-csv.js'
       - 'resources/views/products/index.blade.php'
       - 'routes/web.php'
       - 'tests/Feature/ProductSelectedStockRowsExportTest.php'
