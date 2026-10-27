@@ -84,6 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         controller = null;
         loading = false;
         drawer.classList.remove('is-open');
+        drawer.hidden = true;
         drawer.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = previousOverflow;
         returnFocus?.focus();
@@ -97,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         returnFocus = row?.querySelector('[data-product-actions]') || null;
         previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
+        drawer.hidden = false;
         drawer.classList.add('is-open');
         drawer.setAttribute('aria-hidden', 'false');
         title.textContent = 'اقلام بسته ترکیبی';
