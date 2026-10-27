@@ -36,13 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         tr.appendChild(td(persian(index), 'numeric'));
         tr.appendChild(td(row.product_name || 'کالا', 'product-name'));
-        tr.appendChild(td([row.product_code, row.product_sku].filter(Boolean).join(' / ') || '—', 'code'));
-        tr.appendChild(td([row.variant_name, row.variant_code].filter(Boolean).join(' — ') || 'کالای بدون تنوع'));
-        tr.appendChild(td([row.brand_name, row.model_name, row.color_name, row.variety_name].filter(Boolean).join(' / ') || '—'));
+        tr.appendChild(td([row.model_name, row.color_name, row.variety_name].filter(Boolean).join(' / ') || '—'));
         tr.appendChild(td(persian(row.stock), 'numeric'));
-        tr.appendChild(td(persian(row.reserved), 'numeric'));
         tr.appendChild(td(persian(row.sell_price_rial), 'price'));
-        tr.appendChild(td(row.sales_enabled ? 'مجاز' : 'غیرفعال'));
         return tr;
     }
 
