@@ -9,6 +9,7 @@ on:
       - 'public/js/finance-review.js'
       - 'tests/Feature/FinancePreinvoiceUpdateTest.php'
       - 'tests/Feature/FinancePreinvoiceUpdateValidationTest.php'
+      - 'tests/Feature/WarehouseReservationFullLifecycleTest.php'
       - '.github/workflows/finance-review-reason-targeted.yml'
   workflow_dispatch:
 
@@ -43,3 +44,5 @@ jobs:
           php -l app/Services/FinancePreinvoiceEditorService.php
       - name: Finance review regression tests
         run: php artisan test tests/Feature/FinancePreinvoiceUpdateTest.php tests/Feature/FinancePreinvoiceUpdateValidationTest.php
+      - name: Verify unchanged approval through full inventory lifecycle
+        run: php artisan test tests/Feature/WarehouseReservationFullLifecycleTest.php --filter="approves an unchanged finance preinvoice without a reason"
