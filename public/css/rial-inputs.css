@@ -1,0 +1,5 @@
+/* Give grouped amounts enough room; existing responsive table wrappers handle narrow screens. */
+table input.form-control[data-rial]:not([type="hidden"]) {
+    min-width: 150px;
+    font-variant-numeric: tabular-nums;
+}

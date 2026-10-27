@@ -59,6 +59,7 @@
     <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v=20261011">
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
+    <link rel="stylesheet" href="{{ asset('css/rial-inputs.css') }}?v=20261027a">
     <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025d">
     <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025c" defer></script>
 </head>
