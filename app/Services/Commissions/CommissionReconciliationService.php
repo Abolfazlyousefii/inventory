@@ -88,10 +88,28 @@ class CommissionReconciliationService
             $targetPeriod = $this->periods->firstEligibleAfter($audit->changed_at);
             $entries = CommissionLedgerEntry::query()->where('commission_period_id', $sourcePeriod->id)->where('invoice_id', $invoice->id)->where('status', CommissionLedgerEntry::STATUS_ACTIVE)->get();
             foreach ($entries as $entry) {
-                foreach ([['seller' => (int) $audit->old_seller_id, 'sign' => -1, 'side' => 'debit'], ['seller' => $newSeller->id, 'sign' => 1, 'side' => 'credit']] as $side) {
-                    if (! $side['seller']) {
-                        continue;
-                    }
+                $previousOwnerId = (int) $audit->old_seller_id;
+                // Historical ledger snapshots are immutable. Determine whether
+                // the previous owner still holds a commission balance after
+                // earlier reassignments, including hops through non-sellers.
+                $previousOwnerBalance = $previousOwnerId
+                    ? (int) ($entry->seller_id === $previousOwnerId ? $entry->total_commission_amount : 0)
+                        + (int) CommissionCorrectionEntry::query()
+                            ->where('event_type', 'seller_reassignment_correction')
+                            ->where('source_ledger_entry_id', $entry->id)
+                            ->where('seller_id', $previousOwnerId)
+                            ->sum('total_commission_amount')
+                    : 0;
+
+                $sides = [];
+                if ($previousOwnerBalance > 0) {
+                    $sides[] = ['seller' => $previousOwnerId, 'sign' => -1, 'side' => 'debit'];
+                }
+                // Ownership of a sale is not a commission entitlement.
+                if ($newSeller->is_seller) {
+                    $sides[] = ['seller' => $newSeller->id, 'sign' => 1, 'side' => 'credit'];
+                }
+                foreach ($sides as $side) {
                     CommissionCorrectionEntry::query()->firstOrCreate(['identity_key' => "reassignment:{$audit->id}:{$entry->id}:{$side['side']}"], [
                         'event_type' => 'seller_reassignment_correction', 'commission_period_id' => $targetPeriod?->id,
                         'source_period_id' => $sourcePeriod->id, 'seller_id' => $side['seller'], 'source_seller_id' => $audit->old_seller_id,
