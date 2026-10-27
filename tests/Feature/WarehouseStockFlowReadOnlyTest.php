@@ -132,8 +132,12 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
     public function test_missing_central_warehouse_fails_closed_without_creating_one(): void
     {
         $this->owner();
+        // The standard test migration already seeds a central warehouse.
+        Warehouse::query()->where('type', 'central')->update(['type' => 'detached']);
+        $before = Warehouse::count();
         $this->getJson(route('warehouse.stock-flow.rows'))->assertStatus(503);
-        $this->assertSame(0, Warehouse::count());
+        $this->assertSame($before, Warehouse::count());
+        $this->assertSame(0, Warehouse::query()->where('type', 'central')->count());
     }
 
     public function test_unauthenticated_or_unauthorized_requests_are_denied(): void
