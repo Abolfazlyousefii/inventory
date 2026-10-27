@@ -6,8 +6,21 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>پیش‌نمایش چاپ موجودی کالاهای انتخاب‌شده | آریا گستر</title>
+    {{-- The open-source Vazirmatn font is already shipped with the ERP. --}}
+    <link rel="preload" href="{{ asset('fonts/vazirmatn/Vazirmatn-Regular.woff2') }}" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="{{ asset('fonts/vazirmatn/Vazirmatn-Bold.woff2') }}" as="font" type="font/woff2" crossorigin>
     <style>
-        :root{color-scheme:light;font-family:Tahoma,"Segoe UI",Arial,sans-serif;color:#1c3445}
+        @font-face{
+            font-family: Vazirmatn;
+            src: url("{{ asset('fonts/vazirmatn/Vazirmatn-Regular.woff2') }}") format("woff2");
+            font-weight:400;font-style:normal;font-display:swap
+        }
+        @font-face{
+            font-family: Vazirmatn;
+            src: url("{{ asset('fonts/vazirmatn/Vazirmatn-Bold.woff2') }}") format("woff2");
+            font-weight:700 900;font-style:normal;font-display:swap
+        }
+        :root{color-scheme:light;font-family: Vazirmatn, Tahoma, Arial, sans-serif;color:#1c3445}
         *,*::before,*::after{box-sizing:border-box}
         html{background:#f1f5f9}
         body{margin:0;line-height:1.8;font-size:12px}
@@ -42,7 +55,7 @@
         thead th{background:#eaf3f4;color:#244b5e;font-weight:800;white-space:normal}
         tbody tr:nth-child(even){background:#f8fafc}
         .product-name{font-weight:800;color:#183e57}
-        .code{direction:ltr;unicode-bidi:plaintext;text-align:right;font-family:Tahoma,Arial,sans-serif}
+        .code{direction:ltr;unicode-bidi:plaintext;text-align:right;font-family:inherit}
         .numeric{text-align:center;direction:ltr;unicode-bidi:plaintext;font-variant-numeric:tabular-nums}
         .price{text-align:left;direction:ltr;unicode-bidi:plaintext;font-weight:700}
         .muted{color:#64748b}
@@ -89,8 +102,7 @@
         data-product-ids='@json($productIds)'
         data-start-url="{{ route('products.selected-stock-export.start') }}"
         data-batch-url="{{ route('products.selected-stock-export.batch') }}"
-        data-max-rows="{{ $maxPrintableRows }}"
-        data-error="{{ $errorMessage ?? '' }}">
+>
         <header class="header">
             <div>
                 <div class="eyebrow">نرم‌افزار داخلی آریا گستر · گزارش کالا</div>
