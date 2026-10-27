@@ -11,6 +11,7 @@ it('reports a legacy Site invoice collision even when the invoice has no preinvo
         'uuid' => '02187',
         'status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,
         'customer_name' => 'Example',
+        'customer_mobile' => '09120000000',
         'total_price' => 100_000,
     ]);
     Invoice::query()->create([
