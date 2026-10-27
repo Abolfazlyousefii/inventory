@@ -122,7 +122,7 @@ test('full 2696-row print remains available without the old 2000-row cap', async
     });
     await tickUntil(() => nodes.printNow.disabled === false);
     assert.equal(nodes.printProgress.value, 100);
-    assert.equal(calls.requests.length, 11); // 1 count + 10 batches
+    assert.equal(calls.requests.length, 10); // 1 count + 9 batches (8 × 300 + 296)
     assert.match(nodes.printLoadedRows.textContent, /۲٬۶۹۶/);
     nodes.printNow.on_click();
     assert.equal(calls.prints, 1);
