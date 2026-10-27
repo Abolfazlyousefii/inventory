@@ -26,6 +26,7 @@ final class WarehouseStockFlowReportService
         // Never use centralWarehouseId() here: it may create a warehouse.
         $warehouseId = (int) (Warehouse::query()
             ->where('type', 'central')->where('name', 'انبار مرکزی')->value('id') ?? 0);
+        abort_if($warehouseId < 1, 503, 'انبار مرکزی تعریف نشده است؛ گزارش موجودی قابل اتکا نیست.');
 
         $query = DB::table('product_variants as v')
             ->join('products as p', 'p.id', '=', 'v.product_id')
