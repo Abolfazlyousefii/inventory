@@ -156,7 +156,7 @@ class ProductSelectedStockRowsExportTest extends TestCase
                 'updated_at' => $now,
             ];
         }
-        foreach (array_chunk($rows, 400) as $chunk) {
+        foreach (array_chunk($rows, 80) as $chunk) {
             \Illuminate\Support\Facades\DB::table('product_variants')->insert($chunk);
         }
 
