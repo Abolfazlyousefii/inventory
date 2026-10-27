@@ -1,0 +1,39 @@
+name: Legacy Site invoice number collision
+
+on:
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/PreinvoiceController.php'
+      - 'app/Console/Commands/InvoiceNumberAuditCommand.php'
+      - 'tests/Feature/WarehouseReservationFullLifecycleTest.php'
+      - 'tests/Feature/InvoiceNumberAuditLegacySiteCollisionTest.php'
+      - '.github/workflows/legacy-invoice-number-collision.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collision-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Prepare test environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Check PHP syntax
+        run: |
+          php -l app/Http/Controllers/PreinvoiceController.php
+          php -l app/Console/Commands/InvoiceNumberAuditCommand.php
+      - name: Legacy collision and canceled order regression
+        run: php artisan test tests/Feature/WarehouseReservationFullLifecycleTest.php --filter="issues a fresh official invoice number|does not allocate or modify a number"
+      - name: Audit and document sequence regression
+        run: php artisan test tests/Feature/InvoiceNumberAuditLegacySiteCollisionTest.php tests/Feature/DocumentCodeGeneratorSequenceTest.php
