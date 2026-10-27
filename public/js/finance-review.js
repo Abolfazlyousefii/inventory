@@ -46,6 +46,10 @@
         const reason = form.querySelector('#edit_reason');
         reason.required = changed;
         reason.setAttribute('aria-required', String(changed));
+        const approve = form.querySelector('button[value="save_and_finalize"]');
+        if (approve && form.dataset.submitting !== '1') {
+            approve.textContent = changed ? 'ذخیره و تأیید مالی ←' : 'تأیید مالی ←';
+        }
         const marker = form.querySelector('#financeReasonRequiredMark');
         if (marker) marker.hidden = !changed;
         const hint = form.querySelector('#financeReasonHint');
