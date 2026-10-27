@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) {
             const retry = create('button', 'bundle-detail-retry', 'تلاش مجدد');
             retry.type = 'button';
-            retry.addEventListener('click', () => load(false));
+            retry.addEventListener('click', () => load(displayed === 0 && cursor === null));
             status.appendChild(retry);
         }
     }
