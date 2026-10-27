@@ -101,6 +101,51 @@ class ProductSelectedStockRowsExportTest extends TestCase
         $this->assertSame((int) end($allIds), $second['next_cursor']);
     }
 
+    public function test_print_preview_uses_a_lightweight_html_shell_for_multiple_products_without_generating_pdf(): void
+    {
+        $this->login();
+        $products = [];
+        foreach (range(1, 7) as $index) {
+            $products[] = $this->product('چاپ کالا '.$index, 5)->id;
+        }
+
+        $response = $this->post(route('products.selected-stock-print'), ['product_ids' => $products]);
+        $response->assertOk()->assertViewIs('products.stock-print')
+            ->assertViewHas('productIds', $products)
+            ->assertSee('چاپ / ذخیره PDF')
+            ->assertSee('در حال دریافت اقلام')
+            ->assertSee('products.selected-stock-export.start', false);
+        $this->assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
+        $this->assertSame('private, no-store', $response->headers->get('Cache-Control'));
+        $this->assertDatabaseCount('products', count($products));
+    }
+
+    public function test_print_preview_denies_unauthorized_users_and_bad_or_duplicate_selections(): void
+    {
+        $p = $this->product('محافظت چاپ', 4);
+        $this->login(false);
+        $this->post(route('products.selected-stock-print'), ['product_ids' => [$p->id]])->assertForbidden();
+
+        $this->login();
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => []])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => [$p->id, $p->id]])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids.1');
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => [900000]])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
+    }
+
+    public function test_catalog_offers_print_pdf_button_instead_of_excel_or_heavy_pdf_actions(): void
+    {
+        $this->login();
+        $this->get(route('products.index'))->assertOk()
+            ->assertSee('id="downloadSelectedProducts"', false)
+            ->assertSee('چاپ / ذخیره PDF')
+            ->assertDontSee('خروجی ریز موجودی (Excel)')
+            ->assertDontSee('id="downloadSelectedProductsPdf"', false)
+            ->assertSee('class="product-select"', false);
+    }
+
     public function test_export_requires_permission_and_rejects_bad_selection(): void
     {
         $product = $this->product('مجاز');
