@@ -59,7 +59,7 @@ test('PDF remains disabled until every queue batch is complete',async()=>{
         };
         return later;
     });
-    dom.stockFlowPrint.onClick();
+    dom.stockFlowPrint.onclick();
     assert.equal(calls.prints,0);
     await poll(()=>calls.queries.length===2);
     assert.equal(dom.stockFlowPrint.disabled,true);
@@ -69,7 +69,7 @@ test('PDF remains disabled until every queue batch is complete',async()=>{
     assert.equal(dom.stockFlowRows.children.length,2);
     assert.equal(dom.stockFlowRows.children[0].children.length,9);
     assert.equal(dom.stockFlowRows.children[0].children[5].textContent,'۱۰۰');
-    dom.stockFlowPrint.onClick();
+    dom.stockFlowPrint.onclick();
     assert.equal(calls.prints,1);
 });
 
@@ -79,7 +79,7 @@ test('invalid pagination disables print without using incomplete data',async()=>
     }));
     await poll(()=>dom.stockFlowMessage.classList !== undefined &&
         dom.stockFlowMessage.textContent.includes('صفحه‌بندی'));
-    dom.stockFlowPrint.onClick();
+    dom.stockFlowPrint.onclick();
     assert.equal(calls.prints,0);
     assert.equal(dom.stockFlowPrint.disabled,true);
 });
