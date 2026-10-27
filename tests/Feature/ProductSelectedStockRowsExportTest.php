@@ -136,6 +136,39 @@ class ProductSelectedStockRowsExportTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
     }
 
+    public function test_print_preview_refuses_more_than_two_thousand_rows_before_loading_heavy_content(): void
+    {
+        $this->login();
+        $product = $this->product('بسته بزرگ برای تست سقف چاپ');
+        $now = now();
+        $rows = [];
+        foreach (range(1, 2001) as $i) {
+            $rows[] = [
+                'product_id' => $product->id,
+                'variant_name' => 'چاپ '.$i,
+                'variant_code' => 'PRINT-LIMIT-'.$i,
+                'sell_price' => 1000,
+                'stock' => 1,
+                'reserved' => 0,
+                'is_active' => true,
+                'sales_enabled' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        foreach (array_chunk($rows, 400) as $chunk) {
+            \Illuminate\Support\Facades\DB::table('product_variants')->insert($chunk);
+        }
+
+        $response = $this->post(route('products.selected-stock-print'), [
+            'product_ids' => [$product->id],
+        ]);
+        $response->assertStatus(422)->assertViewIs('products.stock-print')
+            ->assertSee('حداکثر 2000 ردیف')
+            ->assertViewHas('errorMessage', fn ($message) => is_string($message) && str_contains($message, '2001'));
+        $this->assertSame(2001, ProductVariant::query()->where('product_id', $product->id)->count());
+    }
+
     public function test_catalog_offers_print_pdf_button_instead_of_excel_or_heavy_pdf_actions(): void
     {
         $this->login();
