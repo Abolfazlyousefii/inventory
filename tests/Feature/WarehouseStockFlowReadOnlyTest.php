@@ -22,7 +22,7 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
 
     private function stock(string $name = 'قاب آیفون', int $quantity = 200): array
     {
-        $category = Category::withoutEvents(fn () => Category::create(['name'=>'Stock-flow tests']));
+        $category = Category::withoutEvents(fn () => Category::create(['name'=>'Stock-flow '.Str::uuid()]));
         $product = Product::withoutEvents(fn () => Product::create([
             'category_id' => $category->id,
             'name' => $name, 'sku' => 'FLOW-'.Str::random(10),
@@ -86,7 +86,7 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
         $seller=User::factory()->create();
         $order=PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::create([
             'uuid'=>'PI-'.Str::random(8),'status'=>PreinvoiceOrder::STATUS_PENDING_FINANCE,
-            'created_by'=>$seller->id,'customer_name'=>'Test','total_price'=>1000,
+            'created_by'=>$seller->id,'customer_name'=>'Test','customer_mobile'=>'09120000000','total_price'=>1000,
         ]));
         PreinvoiceDraftReservation::create([
             'token'=>(string)Str::uuid(), 'user_id'=>$seller->id,
