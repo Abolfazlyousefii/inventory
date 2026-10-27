@@ -15,7 +15,6 @@ use Illuminate\Validation\ValidationException;
 final class ProductSelectedStockExportService
 {
     public const BATCH_SIZE = 300;
-    public const MAX_ROWS = 50_000;
 
     /** @param array<int,int> $productIds */
     public function validateProducts(array $productIds): void
