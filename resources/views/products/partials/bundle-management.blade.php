@@ -270,12 +270,12 @@
                             const discountType=document.createElement('select');discountType.className='form-select form-select-sm';discountType.style.width='94px';discountType.name=`components[${index}][discount_type]`;
                             for(const [value,label] of [['percent','درصد ٪'],['fixed','ریال']]){const option=document.createElement('option');option.value=value;option.textContent=label;discountType.append(option);}
                             discountType.value=item.discount_type||'percent';
-                            const discountValue=document.createElement('input');discountValue.type='number';discountValue.min='0';discountValue.step='1';discountValue.required=true;discountValue.className='form-control form-control-sm';discountValue.style.width='105px';discountValue.dir='ltr';
+                            const discountValue=document.createElement('input');discountValue.type='text';discountValue.dataset.rial='';discountWrap.dataset.rialDiscount='';discountValue.min='0';discountValue.step='1';discountValue.required=true;discountValue.className='form-control form-control-sm';discountValue.style.width='105px';discountValue.dir='ltr';
                             discountValue.value=item.discount_value??0;discountValue.name=`components[${index}][discount_value]`;
                             discountValue.setAttribute('aria-label',`تخفیف هر عدد ${item.name}`);
                             const limit=()=>{discountValue.max=discountType.value==='percent'?'99':String(Math.max(0,Number(item.sell_price||0)-1));};
                             discountType.addEventListener('change',()=>{item.discount_type=discountType.value;item.discount_value=0;discountValue.value='0';limit();});
-                            discountValue.addEventListener('input',()=>{item.discount_value=discountValue.value;});
+                            discountValue.addEventListener('input',()=>{item.discount_value=RialInput.raw(discountValue.value);});
                             limit();discountWrap.append(discountLabel,discountType,discountValue);
                             const less = document.createElement('button');
                             less.type = 'button'; less.className = 'btn btn-sm btn-outline-secondary'; less.textContent = '−';

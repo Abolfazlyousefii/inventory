@@ -24,7 +24,7 @@
         <input type="hidden" name="version" value="{{ old('version', $version) }}">
         <div class="pm-grid">
             <label>روش پرداخت<select name="method" class="form-select" data-payment-method>@foreach($methods as $key=>$label)<option value="{{ $key }}" @selected($value('method',$payment->method)===$key)>{{ $label }}</option>@endforeach</select></label>
-            <label>مبلغ پرداخت (ریال)<input class="form-control" name="amount" inputmode="numeric" required value="{{ $value('amount',$payment->amount) }}" data-payment-amount></label>
+            <label>مبلغ پرداخت (ریال)<input data-rial class="form-control" name="amount" inputmode="numeric" required value="{{ $value('amount',$payment->amount) }}" data-payment-amount></label>
             <label>بانک<input class="form-control" name="bank_name" maxlength="255" value="{{ $value('bank_name',$cheque?->bank_name ?? $payment->bank_name) }}"></label>
             <div data-payment-cash class="pm-fields">
                 <label>تاریخ پرداخت (شمسی)<input class="form-control" name="payment_date" placeholder="1405/07/19" dir="ltr" required value="{{ $value('payment_date',$date($payment->paid_at)) }}"></label>
@@ -56,4 +56,4 @@
     </details>
 </div>
 @endsection
-@push('scripts')<script src="{{ asset('js/payment-management.js') }}?v=20261011" defer></script>@endpush
+@push('scripts')<script src="{{ asset('js/payment-management.js') }}?v=20261027a" defer></script>@endpush

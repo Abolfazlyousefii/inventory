@@ -13,5 +13,5 @@
 		<div class="card mt-3"><div class="card-body"><label for="live-search">افزودن کالا</label><input id="live-search" class="form-control" placeholder="نام کالا یا تنوع (حداقل دو حرف)"><div id="live-results" class="list-group mt-2"></div></div></div>
 		<p class="text-muted mt-3">افزودن، حذف و تغییر تعداد همراه با بررسی موجودی و رزرو انجام می‌شود. سند تبدیل‌شده از مسیر اصلاح فاکتور ویرایش می‌شود.</p>
 	</div>
-	<script src="{{ asset('js/preinvoice-collaborative.js') }}"></script>
+	<script src="{{ asset('js/preinvoice-collaborative.js') }}?v=20261027a"></script>
 @endsection

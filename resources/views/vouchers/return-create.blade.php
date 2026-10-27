@@ -1248,8 +1248,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="col-md-4"><input name="items[${index}][new_product_name]" class="form-control form-control-sm new-product-required" placeholder="نام کالای جدید" value="${escapeHtml(rowData.new_product_name || '')}"></div>
                     <div class="col-md-4"><select name="items[${index}][new_category_id]" class="form-select form-select-sm new-product-required">${categoryOptions(rowData.new_category_id)}</select></div>
                     <div class="col-md-4"><input name="items[${index}][new_variant_name]" class="form-control form-control-sm" placeholder="نام تنوع (اختیاری)" value="${escapeHtml(rowData.new_variant_name || '')}"></div>
-                    <div class="col-md-6"><input name="items[${index}][new_buy_price]" inputmode="numeric" class="form-control form-control-sm quick-money" placeholder="قیمت خرید" value="${escapeHtml(rowData.new_buy_price || '')}"></div>
-                    <div class="col-md-6"><input name="items[${index}][new_sell_price]" inputmode="numeric" class="form-control form-control-sm quick-money" placeholder="قیمت فروش" value="${escapeHtml(rowData.new_sell_price || '')}"></div>
+                    <div class="col-md-6"><input data-rial name="items[${index}][new_buy_price]" inputmode="numeric" class="form-control form-control-sm quick-money" placeholder="قیمت خرید" value="${escapeHtml(rowData.new_buy_price || '')}"></div>
+                    <div class="col-md-6"><input data-rial name="items[${index}][new_sell_price]" inputmode="numeric" class="form-control form-control-sm quick-money" placeholder="قیمت فروش" value="${escapeHtml(rowData.new_sell_price || '')}"></div>
                 </div>
             </div>`;
     }
@@ -1404,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><select name="items[${index}][destination_warehouse_id]" class="form-select form-select-sm destination-warehouse-select">${warehouseOptions(selectedWarehouseId)}</select></td>
             <td><span class="badge text-bg-light manual-unit-cell">${escapeHtml(rowData.unit || 'عدد')}</span></td>
             <td>
-                <input type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
+                <input data-rial type="text" inputmode="numeric" autocomplete="off" class="form-control manual-price-display" value="${escapeHtml(unitPrice.toLocaleString('en-US'))}">
                 <input type="hidden" name="items[${index}][unit_price]" class="manual-price" value="${escapeHtml(unitPrice)}">
             </td>
             <td><span class="manual-line-total">۰ ریال</span></td>

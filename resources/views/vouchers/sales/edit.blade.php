@@ -174,11 +174,11 @@
 									<input type="number" min="0" name="items[{{ $loop->index }}][quantity]" value="{{ (int)$it->quantity }}" data-original="{{ (int)$it->quantity }}" class="form-control js-item-field js-item-quantity" @disabled(!$canEditItems)>
 								</td>
 								<td>
-									<input type="number" min="1" name="items[{{ $loop->index }}][price]" value="{{ (int)$it->price }}" data-original="{{ (int)$it->price }}" class="form-control form-control-sm js-item-field js-price" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)>
+									<input data-rial type="text" inputmode="numeric" min="1" name="items[{{ $loop->index }}][price]" value="{{ (int)$it->price }}" data-original="{{ (int)$it->price }}" class="form-control form-control-sm js-item-field js-price" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)>
 									@if($isChangedRevision && $latestRevision->old_price !== null && (int)$latestRevision->old_price !== (int)$latestRevision->new_price)<span class="revision-meta"><span class="revision-old">{{ number_format((int)$latestRevision->old_price) }}</span><span class="revision-arrow">←</span>{{ number_format((int)$latestRevision->new_price) }}</span>@endif
 								</td>
 								<td>
-									<input type="number" min="0" name="items[{{ $loop->index }}][line_discount_amount]" value="{{ (int)($it->line_discount_amount ?? 0) }}" data-original="{{ (int)($it->line_discount_amount ?? 0) }}" class="form-control form-control-sm js-item-field js-discount" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)>
+									<input data-rial type="text" inputmode="numeric" min="0" name="items[{{ $loop->index }}][line_discount_amount]" value="{{ (int)($it->line_discount_amount ?? 0) }}" data-original="{{ (int)($it->line_discount_amount ?? 0) }}" class="form-control form-control-sm js-item-field js-discount" @readonly(!$canAdjustPrice) @disabled(!$canEditItems)>
 									@if($isChangedRevision && $latestRevision->old_discount !== null && (int)$latestRevision->old_discount !== (int)$latestRevision->new_discount)<span class="revision-meta"><span class="revision-old">{{ number_format((int)$latestRevision->old_discount) }}</span><span class="revision-arrow">←</span>{{ number_format((int)$latestRevision->new_discount) }}</span>@endif
 								</td>
 								<td class="js-line-total text-nowrap">
@@ -282,12 +282,12 @@
 
 		function itemFields() { return document.querySelectorAll('.js-item-field'); }
 		function syncChangeReasonRequired() {
-			const changed = Array.from(itemFields()).some((field) => String(field.value || '') !== String(field.dataset.original || ''));
+			const changed = Array.from(itemFields()).some((field) => RialInput.raw(field.value || '') !== RialInput.raw(field.dataset.original || ''));
 			if (reasonSelect) reasonSelect.required = changed;
 			window.onbeforeunload = changed ? () => 'تغییرات ذخیره‌نشده دارید.' : null;
 			recalcTotals();
 		}
-		function recalcTotals(){let total=0, edited=0;document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])').forEach((row)=>{const q=Number(row.querySelector('.js-item-quantity')?.value||0),p=Number(row.querySelector('.js-price')?.value||0),d=Number(row.querySelector('.js-discount')?.value||0);const line=Math.max(q*p-d,0);total+=line; if(row.querySelector('.js-line-total')) row.querySelector('.js-line-total').textContent=line.toLocaleString(); if(row.classList.contains('table-danger')||Array.from(row.querySelectorAll('.js-item-field')).some(f=>String(f.value)!==String(f.dataset.original||''))) edited++;}); const el=document.getElementById('changesSummary'); if(el) el.textContent=`ردیف‌های تغییرکرده: ${edited} | مبلغ جدید تقریبی: ${total.toLocaleString()} ریال`;}
+		function recalcTotals(){let total=0, edited=0;document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])').forEach((row)=>{const q=Number(row.querySelector('.js-item-quantity')?.value||0),p=RialInput.number(row.querySelector('.js-price')?.value||0),d=RialInput.number(row.querySelector('.js-discount')?.value||0);const line=Math.max(q*p-d,0);total+=line; if(row.querySelector('.js-line-total')) row.querySelector('.js-line-total').textContent=line.toLocaleString(); if(row.classList.contains('table-danger')||Array.from(row.querySelectorAll('.js-item-field')).some(f=>RialInput.raw(f.value)!==RialInput.raw(f.dataset.original||''))) edited++;}); const el=document.getElementById('changesSummary'); if(el) el.textContent=`ردیف‌های تغییرکرده: ${edited} | مبلغ جدید تقریبی: ${total.toLocaleString()} ریال`;}
 		function rowInput(row, suffix) { return row.querySelector(`input[name^="items["][name$="[${suffix}]"]`); }
 		function buildItemsPayload() {
 			return Array.from(document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])')).map((row) => {
@@ -299,8 +299,8 @@
 					product_id: rowInput(row, 'product_id')?.value || null,
 					variant_id: rowInput(row, 'variant_id')?.value || null,
 					quantity: deleteFlag ? 0 : Number(rowInput(row, 'quantity')?.value || 0),
-					price: Number(rowInput(row, 'price')?.value || 0),
-					line_discount_amount: Number(rowInput(row, 'line_discount_amount')?.value || 0),
+					price: RialInput.number(rowInput(row, 'price')?.value || 0),
+					line_discount_amount: RialInput.number(rowInput(row, 'line_discount_amount')?.value || 0),
 					_delete: deleteFlag,
 				};
 			});
@@ -368,7 +368,7 @@
 			const existing = document.querySelector(`#invoiceItemsBody tr[data-variant-id="${variant.id}"]:not([data-removed-history="1"])`);
 			if (existing) { const input = existing.querySelector('input[name$="[quantity]"]'); input.value = Number(input.value || 0) + qty; existing.classList.add('table-warning'); return; }
 			const idx = nextItemIndex++;
-			document.getElementById('invoiceItemsBody').insertAdjacentHTML('beforeend', `<tr data-variant-id="${variant.id}" data-new-row="1" class="table-success"><td>جدید</td><td>${selectedProduct.name}<span class="badge text-bg-primary">جدید</span><input type="hidden" name="items[${idx}][product_id]" value="${variant.product_id}"></td><td>${variant.title}<input type="hidden" name="items[${idx}][variant_id]" value="${variant.id}"></td><td>${variant.sku || '—'}</td><td>${variant.available_stock}</td><td>0</td><td><input type="number" min="0" name="items[${idx}][quantity]" value="${qty}" data-original="0" class="form-control form-control-sm js-item-field js-item-quantity"></td><td><input type="number" min="1" name="items[${idx}][price]" value="${variant.sell_price}" data-original="${variant.sell_price}" class="form-control form-control-sm js-item-field js-price" ${@json($canAdjustPrice) ? '' : 'readonly'}></td><td><input type="number" min="0" name="items[${idx}][line_discount_amount]" value="0" data-original="0" class="form-control form-control-sm js-item-field js-discount" ${@json($canAdjustPrice) ? '' : 'readonly'}></td><td class="js-line-total text-nowrap">${(qty * Number(variant.sell_price)).toLocaleString()}</td><td><button type="button" class="btn btn-outline-danger btn-sm js-zero-item">حذف</button><button type="button" class="btn btn-outline-secondary btn-sm js-restore-item d-none">بازگرداندن</button></td></tr>`);
+			document.getElementById('invoiceItemsBody').insertAdjacentHTML('beforeend', `<tr data-variant-id="${variant.id}" data-new-row="1" class="table-success"><td>جدید</td><td>${selectedProduct.name}<span class="badge text-bg-primary">جدید</span><input type="hidden" name="items[${idx}][product_id]" value="${variant.product_id}"></td><td>${variant.title}<input type="hidden" name="items[${idx}][variant_id]" value="${variant.id}"></td><td>${variant.sku || '—'}</td><td>${variant.available_stock}</td><td>0</td><td><input type="number" min="0" name="items[${idx}][quantity]" value="${qty}" data-original="0" class="form-control form-control-sm js-item-field js-item-quantity"></td><td><input data-rial type="text" inputmode="numeric" min="1" name="items[${idx}][price]" value="${variant.sell_price}" data-original="${variant.sell_price}" class="form-control form-control-sm js-item-field js-price" ${@json($canAdjustPrice) ? '' : 'readonly'}></td><td><input data-rial type="text" inputmode="numeric" min="0" name="items[${idx}][line_discount_amount]" value="0" data-original="0" class="form-control form-control-sm js-item-field js-discount" ${@json($canAdjustPrice) ? '' : 'readonly'}></td><td class="js-line-total text-nowrap">${(qty * Number(variant.sell_price)).toLocaleString()}</td><td><button type="button" class="btn btn-outline-danger btn-sm js-zero-item">حذف</button><button type="button" class="btn btn-outline-secondary btn-sm js-restore-item d-none">بازگرداندن</button></td></tr>`);
 			bindRowButtons(document.getElementById('invoiceItemsBody'));
 		}
 		modalEl?.addEventListener('shown.bs.modal', () => { if (canEditItems) loadCategories().catch(e => mainCategorySelect.innerHTML = `<option value="">${e.message}</option>`); });

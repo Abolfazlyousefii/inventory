@@ -18,7 +18,7 @@
           <div class="row g-2">
             <div class="col-md-4">
               <label class="form-label" for="cashAmountInput">مبلغ</label>
-              <input type="text" inputmode="numeric" id="cashAmountInput" class="form-control" data-finance-number placeholder="مثلاً 5,000,000">
+              <input data-rial type="text" inputmode="numeric" id="cashAmountInput" class="form-control" data-finance-number placeholder="مثلاً 5,000,000">
             </div>
             <div class="col-md-4">
               <label class="form-label" for="cashPaidAtInput">تاریخ پرداخت</label>
@@ -39,7 +39,7 @@
           <div class="row g-2">
             <div class="col-md-6">
               <label class="form-label" for="chequeAmountInput">مبلغ چک</label>
-              <input type="text" inputmode="numeric" id="chequeAmountInput" class="form-control" data-finance-number placeholder="مثلاً 5,000,000">
+              <input data-rial type="text" inputmode="numeric" id="chequeAmountInput" class="form-control" data-finance-number placeholder="مثلاً 5,000,000">
             </div>
             <div class="col-md-6">
               <label class="form-label" for="chequeNumberInput">شماره سریال چک</label>

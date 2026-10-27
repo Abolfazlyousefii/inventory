@@ -268,7 +268,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">مبلغ (منفی مجاز است)</label>
-                        <input type="number" name="amount" class="form-control form-control-sm" placeholder="-500000" required>
+                        <input data-rial type="text" inputmode="numeric" name="amount" class="form-control form-control-sm" placeholder="-500000" required>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label small">دلیل</label>
@@ -291,7 +291,7 @@
                     @csrf @method('PUT')
                     <div class="col-md-3">
                         <label class="form-label small">مبلغ</label>
-                        <input type="number" name="bonus_amount" class="form-control form-control-sm" value="{{ $document->bonus_amount }}">
+                        <input data-rial type="text" inputmode="numeric" name="bonus_amount" class="form-control form-control-sm" value="{{ $document->bonus_amount }}">
                     </div>
                     <div class="col-md-7">
                         <label class="form-label small">دلیل</label>

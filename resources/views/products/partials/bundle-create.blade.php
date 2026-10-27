@@ -84,7 +84,7 @@
             </select>
           </div>
           <div class="col-md-6"><label class="form-label fw-semibold" for="bundleDiscountValue" id="bundleDiscountValueLabel">درصد تخفیف (۰ تا ۹۹)</label>
-            <div class="input-group" dir="ltr"><input id="bundleDiscountValue" type="text" class="form-control" inputmode="numeric" autocomplete="off" value="{{ old('bundle_discount_value', 0) }}" aria-describedby="bundleDiscountHelp bundleDiscountCheck"><span class="input-group-text" id="bundleDiscountUnit">٪</span></div>
+            <div class="input-group" dir="ltr"><input data-rial data-rial-kind-source="#bundleDiscountType" id="bundleDiscountValue" type="text" class="form-control" inputmode="numeric" autocomplete="off" value="{{ old('bundle_discount_value', 0) }}" aria-describedby="bundleDiscountHelp bundleDiscountCheck"><span class="input-group-text" id="bundleDiscountUnit">٪</span></div>
             <input type="hidden" name="bundle_discount_value" id="bundleDiscountValueRaw" value="{{ old('bundle_discount_value', 0) }}">
             <div id="bundleDiscountCheck" class="small mt-1" role="status" aria-live="polite"></div>
             <div id="bundleDiscountHelp" class="form-text">مثال: ۲۰ یعنی ۲۰٪ کمتر از مجموع قیمت اقلام.</div>
@@ -94,7 +94,7 @@
           </div>
         </div>
         <input id="bundleSellPrice" type="hidden" name="sell_price" value="{{ old('sell_price') }}">
-        <div class="mt-3"><label for="bundleBuyPrice" class="form-label">هزینه خرید بسته (اختیاری)</label><input id="bundleBuyPrice" class="form-control" style="max-width:230px" type="text" inputmode="numeric" autocomplete="off" name="buy_price" value="{{ old('buy_price') }}"></div>
+        <div class="mt-3"><label for="bundleBuyPrice" class="form-label">هزینه خرید بسته (اختیاری)</label><input data-rial id="bundleBuyPrice" class="form-control" style="max-width:230px" type="text" inputmode="numeric" autocomplete="off" name="buy_price" value="{{ old('buy_price') }}"></div>
       </div>
       <div class="kit-preview mt-3"><strong>خلاصه نهایی</strong><div id="bundleCreateReview" class="small text-muted mt-2"></div></div>
       <p class="text-muted small mt-3 mb-0">این فرم موجودی جدید نمی‌سازد. هنگام تأیید، مقدار مشخص‌شده از موجودی آزاد هر تنوع برای بسته رزرو و از فروش تکی کنار گذاشته می‌شود.</p>
@@ -183,12 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const dType=document.createElement('select');dType.className='form-select form-select-sm';dType.name=`components[${idx}][discount_type]`;
       for(const [v,t] of [['percent','درصد ٪'],['fixed','ریال']]){const option=document.createElement('option');option.value=v;option.textContent=t;dType.append(option);}
       dType.value=i.discount_type||'percent';
-      const dValue=document.createElement('input');dValue.className='form-control form-control-sm';dValue.type='number';dValue.inputMode='numeric';dValue.min='0';dValue.step='1';dValue.required=true;
+      const dValue=document.createElement('input');dValue.className='form-control form-control-sm';dValue.type='text';dValue.dataset.rial='';discount.dataset.rialDiscount='';dValue.inputMode='numeric';dValue.min='0';dValue.step='1';dValue.required=true;
       dValue.name=`components[${idx}][discount_value]`;dValue.value=i.discount_value??0;dValue.dir='ltr';
       dValue.setAttribute('aria-label',`تخفیف هر عدد ${i.name}`);
       const setLimit=()=>{dValue.max=dType.value==='percent'?'99':String(Math.max(0,Number(i.sell_price)-1));};
       dType.addEventListener('change',()=>{i.discount_type=dType.value;i.discount_value=0;dValue.value='0';setLimit();updateTotals();});
-      dValue.addEventListener('input',()=>{i.discount_value=dValue.value;updateTotals();});
+      dValue.addEventListener('input',()=>{i.discount_value=RialInput.raw(dValue.value);updateTotals();});
       setLimit();discount.append(dLabel,dType,dValue);
       const rm=document.createElement('button');rm.className='btn btn-sm btn-outline-danger';rm.type='button';rm.textContent='حذف';rm.addEventListener('click',()=>{selected.delete(Number(i.id));refresh();});
       row.append(details,hidden,qWrap,discount,rm);list.append(row);

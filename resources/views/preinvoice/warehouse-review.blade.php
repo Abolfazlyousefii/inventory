@@ -246,7 +246,7 @@
                 <input type="number" class="form-control qty" min="1" max="${data.quantity || 1}" value="${data.quantity || 1}" required>
             </td>
             <td>
-                <input type="number" class="form-control price" min="0" value="${data.price || 0}" required readonly>
+                <input data-rial type="text" inputmode="numeric" class="form-control price" min="0" value="${data.price || 0}" required readonly>
             </td>
             <td>
                 <select class="form-select change-reason">${reasonOptions(data.change_reason || '')}</select>
@@ -358,7 +358,7 @@
 
             variantStockCell.textContent = variant ? (variant.stock ?? 0) : 0;
 
-            if (variant && (!priceInput.value || Number(priceInput.value) === 0)) {
+            if (variant && (!priceInput.value || RialInput.number(priceInput.value) === 0)) {
                 priceInput.value = variant.price ?? 0;
             }
         };
@@ -375,7 +375,7 @@
             const productId = tr.querySelector('.product').value;
             const variantId = tr.querySelector('.variant').value;
             const quantity = tr.querySelector('.qty').value;
-            const price = tr.querySelector('.price').value;
+            const price = RialInput.raw(tr.querySelector('.price').value);
             const reason = tr.querySelector('.change-reason').value;
             const note = tr.querySelector('.change-note').value;
 

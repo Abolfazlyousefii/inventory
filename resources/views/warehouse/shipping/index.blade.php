@@ -78,7 +78,7 @@
 							<div class="modal-body">
 								<div class="alert alert-info small">هزینه ارسال در این مرحله فقط روی فاکتور ثبت می‌شود و فعلاً وارد حساب مشتری نمی‌شود.</div>
 								<div class="mb-3"><label class="form-label">روش ارسال</label><select name="shipping_method_id" class="form-select js-shipping-method" required><option value="">انتخاب روش ارسال...</option>@foreach($shippingMethods as $method)<option value="{{ $method->id }}" data-price="{{ (int) $method->price }}">{{ $method->name }} @if((int)$method->price > 0)- {{ $rial($method->price) }}@endif</option>@endforeach</select></div>
-								<div class="mb-3"><label class="form-label">هزینه ارسال</label><input name="shipping_cost" class="form-control js-shipping-cost" inputmode="numeric" value="0" placeholder="0"></div>
+								<div class="mb-3"><label class="form-label">هزینه ارسال</label><input data-rial name="shipping_cost" class="form-control js-shipping-cost" inputmode="numeric" value="0" placeholder="0"></div>
 								<div class="mb-0"><label class="form-label">توضیحات ارسال</label><textarea name="shipping_note" class="form-control" rows="4" maxlength="2000" placeholder="توضیحات اختیاری ارسال..."></textarea></div>
 							</div>
 							<div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button class="btn btn-primary">ثبت ارسال</button></div>

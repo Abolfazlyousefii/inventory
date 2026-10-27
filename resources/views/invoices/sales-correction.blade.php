@@ -190,7 +190,7 @@
                             <option value="amount" @selected($discountType === 'amount')>ریال</option>
                             <option value="percent" @selected($discountType === 'percent')>درصد</option>
                         </select>
-                        <input id="correctionDiscountValueView" type="text" inputmode="numeric" class="form-control form-control-sm" dir="ltr" value="{{ $discountValue }}">
+                        <input data-rial data-rial-kind-source="#correctionDiscountType" id="correctionDiscountValueView" type="text" inputmode="numeric" class="form-control form-control-sm" dir="ltr" value="{{ $discountValue }}">
                     </div>
                     <input id="correctionDiscountValue" name="invoice_discount_value" type="hidden" value="{{ $discountValue }}">
                     <div class="discount-line" id="correctionDiscountHint"></div>
@@ -263,7 +263,7 @@
                             <option value="amount">ریال</option>
                             <option value="percent">درصد</option>
                         </select>
-                        <input type="text" id="modalGroupDiscountValue" class="form-control form-control-sm" inputmode="numeric" dir="ltr" value="0">
+                        <input data-rial data-rial-kind-source="#modalGroupDiscountType" type="text" id="modalGroupDiscountValue" class="form-control form-control-sm" inputmode="numeric" dir="ltr" value="0">
                     </div>
                     <div class="discount-line">تخفیف: <strong id="modalGroupDiscountPreview">0 ریال</strong></div>
                     <div class="hint" style="font-size:.7rem">با تغییر این مقدار، تخفیف بین تنوع‌های این محصول به نسبت مبلغ تقسیم می‌شود.</div>
@@ -370,8 +370,8 @@
                 </div>
             </div>
             <div><span class="cell-label">تعداد</span><input type="text" inputmode="numeric" class="form-control" data-field="quantity" aria-label="تعداد"><div class="c-was d-none" data-was="quantity"></div></div>
-            <div><span class="cell-label">قیمت واحد (ریال)</span><input type="text" inputmode="numeric" class="form-control" data-field="price" aria-label="قیمت واحد"><div class="c-was d-none" data-was="price"></div></div>
-            <div><span class="cell-label">تخفیف ردیف (ریال)</span><input type="text" inputmode="numeric" class="form-control" data-field="line_discount_amount" aria-label="تخفیف ردیف"><div class="c-was d-none" data-was="line_discount_amount"></div></div>
+            <div><span class="cell-label">قیمت واحد (ریال)</span><input data-rial type="text" inputmode="numeric" class="form-control" data-field="price" aria-label="قیمت واحد"><div class="c-was d-none" data-was="price"></div></div>
+            <div><span class="cell-label">تخفیف ردیف (ریال)</span><input data-rial type="text" inputmode="numeric" class="form-control" data-field="line_discount_amount" aria-label="تخفیف ردیف"><div class="c-was d-none" data-was="line_discount_amount"></div></div>
             <div><span class="cell-label">مبلغ ردیف</span><div class="c-total" data-total>—</div></div>
             <div class="c-cell-actions">
                 <button type="button" class="btn btn-sm btn-outline-danger rounded-3 w-100" data-action="remove-row">حذف</button>

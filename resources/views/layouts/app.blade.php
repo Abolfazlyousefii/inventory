@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="{{ asset('js/app-theme.js') }}?v=20261025d"></script>
+    <script src="{{ asset('js/rial-inputs.js') }}?v=20261027a"></script>
 
     @if(session('preinvoice_submit_succeeded'))
         <script>
@@ -254,7 +255,7 @@
     </div>
 </div>
 
-<script src="{{ asset('js/app-shell.js') }}"></script>
+<script src="{{ asset('js/app-shell.js') }}?v=20261027a"></script>
 @stack('scripts')
 </body>
 </html>

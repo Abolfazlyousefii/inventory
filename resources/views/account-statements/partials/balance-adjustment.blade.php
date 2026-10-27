@@ -32,12 +32,12 @@
                 <input type="hidden" name="_balance_adjustment" value="yes">
                 <input type="hidden" name="expected_balance" value="{{ $restoreBalance ? old('expected_balance', $netBalance) : $netBalance }}">
                 <div class="col-12"><label class="form-label">وضعیت نهایی موردنظر</label><select name="balance_type" class="form-select" required>@foreach(['debit'=>'بدهکار','credit'=>'بستانکار','settled'=>'تسویه'] as $value=>$label)<option value="{{ $value }}" @selected(($restoreBalance ? old('balance_type') : ($netBalance > 0 ? 'debit' : ($netBalance < 0 ? 'credit' : 'settled'))) === $value)>{{ $label }}</option>@endforeach</select></div>
-                <div class="col-12"><label class="form-label">مبلغ نهایی مانده (ریال)</label><input name="target_amount" type="text" inputmode="numeric" autocomplete="off" class="form-control" value="{{ $restoreBalance ? old('target_amount') : abs($netBalance) }}" required></div>
+                <div class="col-12"><label class="form-label">مبلغ نهایی مانده (ریال)</label><input data-rial name="target_amount" type="text" inputmode="numeric" autocomplete="off" class="form-control" value="{{ $restoreBalance ? old('target_amount') : abs($netBalance) }}" required></div>
                 <div class="col-12"><label class="form-label">علت اصلاح (الزامی)</label><textarea name="reason" rows="3" class="form-control" minlength="10" maxlength="1000" required>{{ $restoreBalance ? old('reason') : '' }}</textarea><div class="form-text">علت، کاربر، زمان و ماندهٔ قبل و بعد در سوابق ثبت می‌شود.</div></div>
                 <div class="col-12 d-flex justify-content-end gap-2"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button type="submit" class="btn btn-success">ثبت سند اصلاحی</button></div>
             </form>
         </div>
     </div></div>
 </div>
-<script src="{{ asset('js/account-balance-adjustment.js') }}?v=20261007" defer></script>
+<script src="{{ asset('js/account-balance-adjustment.js') }}?v=20261027a" defer></script>
 @endif

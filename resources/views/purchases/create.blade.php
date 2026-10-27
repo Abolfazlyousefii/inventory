@@ -292,7 +292,7 @@ $productsPayload = $products->map(function ($p) {
 						</div>
 						<div class="col-md-2">
 							<label class="form-label small mb-1">مقدار تخفیف</label>
-							<input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" id="invoiceDiscountValue" name="invoice_discount_value" value="{{ old('invoice_discount_value', ($purchase->discount_type ?? null) === 'amount' ? \App\Support\Currency::toRial($purchase->discount_value ?? 0) : ($purchase->discount_value ?? 0)) }}">
+							<input data-rial data-rial-kind-source="#invoiceDiscountType" type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" id="invoiceDiscountValue" name="invoice_discount_value" value="{{ old('invoice_discount_value', ($purchase->discount_type ?? null) === 'amount' ? \App\Support\Currency::toRial($purchase->discount_value ?? 0) : ($purchase->discount_value ?? 0)) }}">
 						</div>
 						<div class="col-md-2 text-end">
 							<div class="small text-muted">جمع تخفیف: <span id="totalDiscountAmount">0</span> ریال</div>
@@ -649,8 +649,8 @@ $productsPayload = $products->map(function ($p) {
                 <td class="mono small">${escapeHtml(variant.code || '—')}</td>
                 <td>${formatFa(variant.stock || 0)}</td>
                 <td><input type="number" min="0" class="form-control form-control-sm qty-input" data-qty value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
-                <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-buy value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
-                <td><input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-sell value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
+                <td><input data-rial type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-buy value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
+                <td><input data-rial type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-sell value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
                 <td><span class="current-sale-price ${Number(variant.sell_price || 0) > 0 ? '' : 'missing'}" data-current-sale-price data-sale-price="${Number(variant.sell_price || 0)}">${escapeHtml(currentSalePriceMessage(variant.sell_price))}</span></td>
                 <td><span class="badge text-bg-warning d-none" data-price-badge>قیمت اختصاصی</span></td>
                 <td><button type="button" class="btn btn-sm btn-outline-secondary" data-clear-row ${variant.purchase_blocked ? 'disabled' : ''}>خالی</button></td>
