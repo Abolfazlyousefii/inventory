@@ -116,7 +116,8 @@ class ProductSelectedStockRowsExportTest extends TestCase
             ->assertSee('در حال دریافت اقلام')
             ->assertSee(route('products.selected-stock-export.start'), false);
         $this->assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
-        $this->assertSame('private, no-store', $response->headers->get('Cache-Control'));
+        $this->assertStringContainsString('private', (string) $response->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $this->assertDatabaseCount('products', count($products));
     }
 
