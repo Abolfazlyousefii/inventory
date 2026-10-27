@@ -9,6 +9,25 @@ use Illuminate\Validation\ValidationException;
 
 final class ProductSelectedStockExportController extends Controller
 {
+    /**
+     * A browser-native print preview. Data rows are still fetched in bounded
+     * batches; no mPDF rendering or server-side PDF memory cost.
+     */
+    public function printPreview(Request $request, ProductSelectedStockExportService $export)
+    {
+        $ids = $this->selectedIds($request, $export);
+        $total = $export->countRows($ids);
+        $maxPrintableRows = 2000;
+
+        return response()->view('products.stock-print', [
+            'productIds' => $ids,
+            'maxPrintableRows' => $maxPrintableRows,
+            'errorMessage' => $total > $maxPrintableRows
+                ? "این انتخاب {$total} ردیف موجود دارد؛ برای چاپ روان، هر نوبت حداکثر {$maxPrintableRows} ردیف را انتخاب کنید."
+                : null,
+        ], $total > $maxPrintableRows ? 422 : 200)->header('Cache-Control', 'private, no-store');
+    }
+
     public function start(Request $request, ProductSelectedStockExportService $export): JsonResponse
     {
         $ids = $this->selectedIds($request, $export);

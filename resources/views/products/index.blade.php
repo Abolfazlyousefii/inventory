@@ -26,7 +26,7 @@
 
 <div class="products-shell" id="productsApp"
      data-products-url="{{ route('products.data') }}"
-     @if(auth()->user()?->hasPermission('products.export'))data-selection-export-url="{{ route('products.selected-export') }}" data-stock-export-start-url="{{ route('products.selected-stock-export.start') }}" data-stock-export-batch-url="{{ route('products.selected-stock-export.batch') }}"@endif
+     @if(auth()->user()?->hasPermission('products.export'))data-selection-export-url="{{ route('products.selected-export') }}" data-stock-print-url="{{ route('products.selected-stock-print') }}"@endif
      data-initial-filters='@json($filters, JSON_UNESCAPED_UNICODE)'
      data-categories='@json($categoryTree, JSON_UNESCAPED_UNICODE)'>
     <div class="products-header">
@@ -39,13 +39,8 @@
         <span class="selection-count" id="selectedProductsCount">کالایی انتخاب نشده است.</span>
         <button type="button" class="btn btn-outline-success btn-sm" id="selectVisibleProducts" disabled>انتخاب همهٔ بارگذاری‌شده‌ها</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="clearProductSelection" disabled>پاک‌کردن انتخاب‌ها</button>
-        <button type="button" class="btn btn-success btn-sm" id="downloadSelectedProducts" disabled>خروجی ریز موجودی (Excel)</button>
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="downloadSelectedProductsPdf" disabled title="PDF سبک تا ۵ کالا">PDF تا ۵ کالا</button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="cancelStockExport" hidden>لغو خروجی</button>
-        <div id="productExportProgressWrap" hidden style="width:100%; margin-top:6px" aria-live="polite">
-            <label for="productExportProgress" id="productExportProgressLabel" class="selection-count">۰٪</label>
-            <progress id="productExportProgress" max="100" value="0" style="display:block;width:100%;height:12px"></progress>
-        </div>
+        <button type="button" class="btn btn-success btn-sm" id="downloadSelectedProducts" disabled>چاپ / ذخیره PDF</button>
+        <span class="selection-count">پیش‌نمایش در صفحه جدید باز می‌شود؛ پس از آماده‌شدن، Save as PDF را انتخاب کنید.</span>
         <span class="export-error" id="productExportError" role="alert" hidden></span>
     </div>
     @endif
@@ -119,7 +114,6 @@ let variantDebounceTimer;let variant={productId:null,next:null,hasMore:false,loa
     public/ assets are not exposed at their expected URL. --}}
 <script>{!! file_get_contents(public_path('js/product-bundle-drawer.js')) !!}</script>
 @if(auth()->user()?->hasPermission('products.export'))
-<script>{!! file_get_contents(public_path('js/product-stock-csv.js')) !!}</script>
 <script>{!! file_get_contents(public_path('js/product-selection-export.js')) !!}</script>
 @endif
 @endsection

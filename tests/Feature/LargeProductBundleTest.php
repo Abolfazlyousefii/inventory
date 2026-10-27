@@ -195,9 +195,11 @@ class LargeProductBundleTest extends TestCase
         $this->assertStringContainsString('drawer.hidden = false', $html);
         $this->assertStringContainsString('drawer.hidden = true', $html);
 
-        // Export handlers and CSV support must actually be present in the
-        // rendered HTML, instead of relying on a public asset URL.
-        $this->assertStringContainsString('ProductStockCsv', $html);
+        // The selection behavior must be embedded, while print navigation
+        // replaces the Excel UI without changing bundle or selection behavior.
+        $this->assertStringContainsString('data-stock-print-url', $html);
+        $this->assertStringContainsString('چاپ / ذخیره PDF', $html);
+        $this->assertStringNotContainsString('id="downloadSelectedProductsPdf"', $html);
         $this->assertStringContainsString('function syncControls()', $html);
         $this->assertStringContainsString('bundle-detail-item', $html);
         $this->assertStringNotContainsString(

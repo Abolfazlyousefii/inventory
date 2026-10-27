@@ -172,6 +172,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
     Route::post('/products/selected-export', ProductSelectionExportController::class)
         ->middleware('route.permission:products.export')->name('products.selected-export');
+    Route::post('/products/selected-stock-print', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'printPreview'])
+        ->middleware('route.permission:products.export')->name('products.selected-stock-print');
     Route::post('/products/selected-stock-export/start', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'start'])
         ->middleware('route.permission:products.export')->name('products.selected-stock-export.start');
     Route::post('/products/selected-stock-export/batch', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'batch'])

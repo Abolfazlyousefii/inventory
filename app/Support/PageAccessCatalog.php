@@ -80,6 +80,7 @@ class PageAccessCatalog
         'commercial.commissions.settlements.payments.void' => ['commercial.commissions'],
         'products.index' => ['products'],
         'products.selected-export' => ['products'],
+        'products.selected-stock-print' => ['products'],
         'products.selected-stock-export.start' => ['products'],
         'products.selected-stock-export.batch' => ['products'],
         'products.data' => ['products'],

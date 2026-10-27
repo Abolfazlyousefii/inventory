@@ -101,6 +101,85 @@ class ProductSelectedStockRowsExportTest extends TestCase
         $this->assertSame((int) end($allIds), $second['next_cursor']);
     }
 
+    public function test_print_preview_uses_a_lightweight_html_shell_for_multiple_products_without_generating_pdf(): void
+    {
+        $this->login();
+        $products = [];
+        foreach (range(1, 7) as $index) {
+            $products[] = $this->product('چاپ کالا '.$index, 5)->id;
+        }
+
+        $response = $this->post(route('products.selected-stock-print'), ['product_ids' => $products]);
+        $response->assertOk()->assertViewIs('products.stock-print')
+            ->assertViewHas('productIds', $products)
+            ->assertSee('چاپ / ذخیره PDF')
+            ->assertSee('در حال دریافت اقلام')
+            ->assertSee(route('products.selected-stock-export.start'), false);
+        $this->assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('private', (string) $response->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->assertDatabaseCount('products', count($products));
+    }
+
+    public function test_print_preview_denies_unauthorized_users_and_bad_or_duplicate_selections(): void
+    {
+        $p = $this->product('محافظت چاپ', 4);
+        $this->login(false);
+        $this->post(route('products.selected-stock-print'), ['product_ids' => [$p->id]])->assertForbidden();
+
+        $this->login();
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => []])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => [$p->id, $p->id]])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids.1');
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => [900000]])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
+    }
+
+    public function test_print_preview_refuses_more_than_two_thousand_rows_before_loading_heavy_content(): void
+    {
+        $this->login();
+        $product = $this->product('بسته بزرگ برای تست سقف چاپ');
+        $now = now();
+        $rows = [];
+        foreach (range(1, 2001) as $i) {
+            $rows[] = [
+                'product_id' => $product->id,
+                'variant_name' => 'چاپ '.$i,
+                'variant_code' => 'PRINT-LIMIT-'.$i,
+                'sell_price' => 1000,
+                'stock' => 1,
+                'reserved' => 0,
+                'is_active' => true,
+                'sales_enabled' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        foreach (array_chunk($rows, 80) as $chunk) {
+            \Illuminate\Support\Facades\DB::table('product_variants')->insert($chunk);
+        }
+
+        $response = $this->post(route('products.selected-stock-print'), [
+            'product_ids' => [$product->id],
+        ]);
+        $response->assertStatus(422)->assertViewIs('products.stock-print')
+            ->assertSee('حداکثر 2000 ردیف')
+            ->assertViewHas('errorMessage', fn ($message) => is_string($message) && str_contains($message, '2001'));
+        $this->assertSame(2001, ProductVariant::query()->where('product_id', $product->id)->count());
+    }
+
+    public function test_catalog_offers_print_pdf_button_instead_of_excel_or_heavy_pdf_actions(): void
+    {
+        $this->login();
+        $this->get(route('products.index'))->assertOk()
+            ->assertSee('id="downloadSelectedProducts"', false)
+            ->assertSee('چاپ / ذخیره PDF')
+            ->assertDontSee('خروجی ریز موجودی (Excel)')
+            ->assertDontSee('id="downloadSelectedProductsPdf"', false)
+            ->assertSee('class="product-select"', false);
+    }
+
     public function test_export_requires_permission_and_rejects_bad_selection(): void
     {
         $product = $this->product('مجاز');
