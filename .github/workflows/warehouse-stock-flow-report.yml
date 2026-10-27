@@ -10,6 +10,7 @@ on:
       - 'resources/views/stocktake/**'
       - 'public/js/warehouse-stock-flow.js'
       - 'tests/Feature/WarehouseStockFlowReadOnlyTest.php'
+      - 'tests/Js/warehouse-stock-flow.test.cjs'
       - '.github/workflows/warehouse-stock-flow-report.yml'
   workflow_dispatch:
 
@@ -44,3 +45,5 @@ jobs:
           node --check public/js/warehouse-stock-flow.js
       - name: Stock-flow report safety
         run: php artisan test tests/Feature/WarehouseStockFlowReadOnlyTest.php
+      - name: Complete-only browser print behavior
+        run: node --test tests/Js/warehouse-stock-flow.test.cjs
