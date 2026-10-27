@@ -93,7 +93,7 @@ class CommissionReconciliationService
                 // the previous owner still holds a commission balance after
                 // earlier reassignments, including hops through non-sellers.
                 $previousOwnerBalance = $previousOwnerId
-                    ? (int) ($entry->seller_id === $previousOwnerId ? $entry->total_commission_amount : 0)
+                    ? (int) ((int) $entry->seller_id === $previousOwnerId ? $entry->total_commission_amount : 0)
                         + (int) CommissionCorrectionEntry::query()
                             ->where('event_type', 'seller_reassignment_correction')
                             ->where('source_ledger_entry_id', $entry->id)
