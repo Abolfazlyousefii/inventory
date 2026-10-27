@@ -95,3 +95,42 @@ it('allows a non-seller ERP manager in transfer preview but rejects inactive des
     $this->expectException(ValidationException::class);
     $controller->preview($makeRequest($inactive));
 });
+
+
+it('completes preview-token protected transfer to a non-seller ERP user', function () {
+    $actor = User::factory()->create();
+    $old = User::factory()->create(['is_active' => true, 'can_access_erp' => true, 'is_seller' => true]);
+    $manager = User::factory()->create([
+        'name' => 'سعیدیان', 'is_active' => true, 'can_access_erp' => true,
+        'is_seller' => false, 'crm_user_id' => '59', 'sync_source' => 'crm',
+    ]);
+    $invoice = Invoice::query()->create([
+        'uuid' => fake()->uuid(), 'seller_id' => $old->id,
+        'subtotal' => 1500, 'total' => 1500,
+    ]);
+    $form = [
+        'invoice_ids' => [$invoice->id],
+        'seller_id' => $manager->id,
+        'reason' => 'تصحیح مالک فاکتور',
+        'sync_preinvoice' => false,
+    ];
+    $controller = app(CommercialInvoiceReassignmentController::class);
+    $request = Request::create('/commercial/invoice-reassignments/preview', 'POST', $form);
+    $request->setUserResolver(fn () => $actor);
+    $token = $controller->preview($request)->getData(true)['preview_token'];
+
+    $storeRequest = Request::create('/commercial/invoice-reassignments', 'POST', $form + ['preview_token' => $token]);
+    $storeRequest->setUserResolver(fn () => $actor);
+    $response = $controller->store($storeRequest);
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($invoice->fresh()->seller_id)->toBe($manager->id)
+        ->and($invoice->fresh()->total)->toBe(1500)
+        ->and($manager->fresh()->is_seller)->toBeFalse();
+
+    $this->assertDatabaseHas('seller_reassignment_audits', [
+        'invoice_id' => $invoice->id,
+        'old_seller_id' => $old->id,
+        'new_seller_id' => $manager->id,
+    ]);
+});
