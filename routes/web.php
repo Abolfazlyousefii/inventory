@@ -193,6 +193,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/{document}/cancel', [PriceChangeDocumentController::class, 'cancel'])->name('cancel');
     });
 
+    Route::get('/products/{product}/bundle-components', [ProductController::class, 'bundleComponents'])->whereNumber('product')->name('products.bundle-components');
     Route::get('/products/{product}/variants', [ProductController::class, 'variants'])->whereNumber('product')->name('products.variants');
     Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->name('products.edit');
     Route::match(['put', 'patch'], '/products/{product}', [ProductController::class, 'update'])

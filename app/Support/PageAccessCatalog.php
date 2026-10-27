@@ -97,6 +97,7 @@ class PageAccessCatalog
         'products.price-changes.show' => ['products.price_changes'],
         'products.price-changes.apply' => ['products.price_changes'],
         'products.price-changes.cancel' => ['products.price_changes'],
+        'products.bundle-components' => ['products'],
         'products.variants' => ['products'],
         'products.edit' => ['products'],
         'products.update' => ['products'],
