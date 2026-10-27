@@ -1,0 +1,46 @@
+name: Warehouse stock flow read-only report
+
+on:
+  pull_request:
+    paths:
+      - 'app/Services/WarehouseStockFlowReportService.php'
+      - 'app/Http/Controllers/WarehouseStockFlowController.php'
+      - 'app/Support/PageAccessCatalog.php'
+      - 'routes/web.php'
+      - 'resources/views/stocktake/**'
+      - 'public/js/warehouse-stock-flow.js'
+      - 'tests/Feature/WarehouseStockFlowReadOnlyTest.php'
+      - '.github/workflows/warehouse-stock-flow-report.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Build Vite for rendered HTML
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Syntax checks
+        run: |
+          php -l app/Services/WarehouseStockFlowReportService.php
+          php -l app/Http/Controllers/WarehouseStockFlowController.php
+          php -l app/Support/PageAccessCatalog.php
+          php -l routes/web.php
+          node --check public/js/warehouse-stock-flow.js
+      - name: Stock-flow report safety
+        run: php artisan test tests/Feature/WarehouseStockFlowReadOnlyTest.php
