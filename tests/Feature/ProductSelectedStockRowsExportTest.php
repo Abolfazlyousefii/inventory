@@ -136,7 +136,7 @@ class ProductSelectedStockRowsExportTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
     }
 
-    public function test_print_preview_refuses_more_than_two_thousand_rows_before_loading_heavy_content(): void
+    public function test_print_preview_allows_more_than_two_thousand_rows_without_server_side_pdf_generation(): void
     {
         $this->login();
         $product = $this->product('بسته بزرگ برای تست سقف چاپ');
@@ -163,10 +163,26 @@ class ProductSelectedStockRowsExportTest extends TestCase
         $response = $this->post(route('products.selected-stock-print'), [
             'product_ids' => [$product->id],
         ]);
-        $response->assertStatus(422)->assertViewIs('products.stock-print')
-            ->assertSee('حداکثر 2000 ردیف')
-            ->assertViewHas('errorMessage', fn ($message) => is_string($message) && str_contains($message, '2001'));
+        $response->assertOk()->assertViewIs('products.stock-print')
+            ->assertViewHas('productIds', [$product->id])
+            ->assertSee('چاپ / ذخیره PDF')
+            ->assertDontSee('حداکثر 2000 ردیف')
+            ->assertDontSee('data-max-rows=', false);
+        $this->postJson(route('products.selected-stock-export.start'), [
+            'product_ids' => [$product->id],
+        ])->assertOk()->assertJsonPath('total_rows', 2001);
         $this->assertSame(2001, ProductVariant::query()->where('product_id', $product->id)->count());
+    }
+
+    public function test_print_uses_existing_local_vazirmatn_woff2_for_screen_and_print(): void
+    {
+        $this->login();
+        $product = $this->product('فونت وزیرمتن', 5);
+        $this->post(route('products.selected-stock-print'), ['product_ids' => [$product->id]])
+            ->assertOk()
+            ->assertSee('font-family: Vazirmatn', false)
+            ->assertSee('fonts/vazirmatn/Vazirmatn-Regular.woff2', false)
+            ->assertSee('fonts/vazirmatn/Vazirmatn-Bold.woff2', false);
     }
 
     public function test_catalog_offers_print_pdf_button_instead_of_excel_or_heavy_pdf_actions(): void
