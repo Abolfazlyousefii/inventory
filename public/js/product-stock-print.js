@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = document.getElementById('printTableBody');
 
     const productIds = JSON.parse(app.dataset.productIds || '[]');
-    const maxRows = Number(app.dataset.maxRows || 2000);
     const persian = value => Number(value || 0).toLocaleString('fa-IR');
     let currentController = null;
     let running = false;
@@ -105,8 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const init = await request(app.dataset.startUrl, {product_ids: productIds});
             const total = Number(init.total_rows);
-            if (!Number.isSafeInteger(total) || total < 0 || total > maxRows) {
-                throw new Error('حجم گزارش برای چاپ زیاد است؛ تعداد کالاهای انتخابی را کمتر کنید.');
+            if (!Number.isSafeInteger(total) || total < 0) {
+                throw new Error('تعداد ردیف‌های گزارش معتبر نیست؛ دریافت اطلاعات متوقف شد.');
             }
             totalEl.textContent = persian(total);
             if (total === 0) {
@@ -122,9 +121,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await request(app.dataset.batchUrl, {product_ids: productIds, after_id: cursor});
                 if (!Array.isArray(data.rows) || (data.has_more && data.rows.length === 0)) {
                     throw new Error('دریافت ردیف‌ها ناقص است؛ دوباره تلاش کنید.');
-                }
-                if (loaded + data.rows.length > maxRows) {
-                    throw new Error('تعداد ردیف‌ها از سقف مجاز چاپ بیشتر شد؛ تعداد کالاها را کاهش دهید.');
                 }
                 await renderRows(data.rows, loaded);
                 loaded += data.rows.length;
@@ -174,10 +170,5 @@ document.addEventListener('DOMContentLoaded', () => {
         load();
     });
 
-    if (app.dataset.error) {
-        state(app.dataset.error, true);
-        retryButton.hidden = true;
-    } else {
-        load();
-    }
+    load();
 });
