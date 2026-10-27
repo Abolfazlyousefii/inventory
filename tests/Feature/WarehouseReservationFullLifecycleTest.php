@@ -59,6 +59,36 @@ it('saves and approves finance discounts and cash plus cheque once without decre
         ->and($reservation->fresh()->release_reason)->toBe('consumed');
 })->with([4]);
 
+it('approves an unchanged finance preinvoice without a reason and without fake discount history', function () {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory);
+    $item = $order->items()->sole();
+    $state = app(\App\Services\PreinvoiceDiscountHydrator::class)
+        ->hydrateForEditing($order->fresh(['items.product', 'items.variant']));
+    $originalProductDiscounts = collect($state['product_groups'])->map(fn ($group) => [
+        'product_id' => $group['product_id'],
+        'type' => $group['discount_type'],
+        'value' => $group['discount_value'],
+    ])->values()->all();
+
+    $this->actingAs($finance)->post(route('preinvoice.draft.finance.save-and-finalize', $order->uuid), [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items' => [['id' => $item->id, 'quantity' => 4, 'price' => 100_000]],
+        'product_discounts' => $originalProductDiscounts,
+        'invoice_discount_type' => $state['invoice_discount']['type'],
+        'invoice_discount_value' => $state['invoice_discount']['value'],
+        'intent' => 'save_and_finalize',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $invoice = Invoice::where('preinvoice_order_id', $order->id)->sole();
+    expect((int) $invoice->total)->toBe((int) $order->fresh()->total_price)
+        ->and($invoice->status)->toBe(Invoice::STATUS_PENDING_COLLECTION)
+        ->and($order->reviews()->where('action', 'finance_edited')->count())->toBe(0)
+        ->and($reservation->fresh()->release_reason)->toBe('consumed');
+});
+
 it('rolls back discount changes and invoice creation when payment posting fails after validation', function () {
     $seller = fullLifecycleSeller(); $finance = fullLifecycleFinanceUser(); $inventory = fullLifecycleInventory();
     ['reservation'=>$reservation,'order'=>$order] = fullLifecycleSubmitPreinvoice($this,$seller,$inventory);

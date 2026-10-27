@@ -219,3 +219,82 @@ it('preserves staged payments after saving only without posting them or changing
         ->and($product->fresh()->price)->toBe(12_000_000)
         ->and($variant->fresh()->sell_price)->toBe(12_000_000);
 });
+
+it('approves unchanged discount inputs without requiring a reason or creating a fake financial edit', function () {
+    ['product' => $product, 'order' => $order, 'item' => $item] = financeEditableOrderFixture();
+    $before = \App\Support\FinanceDocumentVersion::token($order->fresh('items'));
+    $this->actingAs(financeEditorUser())->put(route('preinvoice.draft.finance.update', $order->uuid), [
+        'finance_version' => $before,
+        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 10_000_000]],
+        'product_discounts' => [['product_id' => $product->id, 'type' => 'amount', 'value' => '500,000']],
+        'invoice_discount_type' => 'none', 'invoice_discount_value' => 0, 'intent' => 'save',
+    ])->assertSessionHasNoErrors();
+
+    expect(\App\Support\FinanceDocumentVersion::token($order->fresh('items')))->toBe($before)
+        ->and($order->fresh()->total_price)->toBe(19_500_000)
+        ->and($item->fresh()->line_discount_amount)->toBe(500_000)
+        ->and(PreinvoiceOrderReview::query()->where('preinvoice_order_id', $order->id)->count())->toBe(0);
+});
+
+it('requires an explanation for a real product discount change and does not save it without a reason', function () {
+    ['product' => $product, 'order' => $order, 'item' => $item] = financeEditableOrderFixture();
+    $this->actingAs(financeEditorUser())->put(route('preinvoice.draft.finance.update', $order->uuid), [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 10_000_000]],
+        'product_discounts' => [['product_id' => $product->id, 'type' => 'amount', 'value' => 400_000]],
+        'invoice_discount_type' => 'none', 'invoice_discount_value' => 0, 'intent' => 'save',
+    ])->assertSessionHasErrors('edit_reason');
+
+    expect($order->fresh()->total_price)->toBe(19_500_000)
+        ->and($item->fresh()->line_discount_amount)->toBe(500_000)
+        ->and(PreinvoiceOrderReview::query()->where('preinvoice_order_id', $order->id)->count())->toBe(0);
+});
+
+it('stores the reason and before and after values of real discount changes in financial history', function () {
+    ['product' => $product, 'order' => $order, 'item' => $item] = financeEditableOrderFixture();
+    $user = financeEditorUser();
+    $reason = 'اصلاح تخفیف با تایید واحد مالی';
+
+    $this->actingAs($user)->put(route('preinvoice.draft.finance.update', $order->uuid), [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 10_000_000]],
+        'product_discounts' => [['product_id' => $product->id, 'type' => 'amount', 'value' => 400_000]],
+        'invoice_discount_type' => 'none', 'invoice_discount_value' => 0,
+        'edit_reason' => $reason, 'intent' => 'save',
+    ])->assertSessionHasNoErrors();
+
+    $review = PreinvoiceOrderReview::query()->where('preinvoice_order_id', $order->id)
+        ->where('action', 'finance_edited')->sole();
+    expect($review->user_id)->toBe($user->id)
+        ->and($review->reason)->toBe($reason)
+        ->and($review->before_items[0]['line_discount_amount'])->toBe(500_000)
+        ->and($review->after_items[0]['line_discount_amount'])->toBe(400_000)
+        ->and($order->fresh()->total_price)->toBe(19_600_000);
+});
+
+it('treats equivalent percent formatting as unchanged after a previously recorded edit', function () {
+    ['product' => $product, 'order' => $order, 'item' => $item] = financeEditableOrderFixture();
+    $user = financeEditorUser();
+    $payload = [
+        'items' => [['id' => $item->id, 'quantity' => 2, 'price' => 10_000_000]],
+        'product_discounts' => [['product_id' => $product->id, 'type' => 'percent', 'value' => '10']],
+        'invoice_discount_type' => 'percent', 'invoice_discount_value' => '5',
+        'intent' => 'save',
+    ];
+
+    $this->actingAs($user)->put(route('preinvoice.draft.finance.update', $order->uuid), [
+        ...$payload, 'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'edit_reason' => 'ثبت تخفیف درصدی',
+    ])->assertSessionHasNoErrors();
+
+    $version = \App\Support\FinanceDocumentVersion::token($order->fresh('items'));
+    $payload['product_discounts'][0]['value'] = '10.00';
+    $payload['invoice_discount_value'] = '5.00';
+    $this->actingAs($user)->put(route('preinvoice.draft.finance.update', $order->uuid), [
+        ...$payload, 'finance_version' => $version,
+    ])->assertSessionHasNoErrors();
+
+    expect(\App\Support\FinanceDocumentVersion::token($order->fresh('items')))->toBe($version)
+        ->and(PreinvoiceOrderReview::query()->where('preinvoice_order_id', $order->id)
+            ->where('action', 'finance_edited')->count())->toBe(1);
+});

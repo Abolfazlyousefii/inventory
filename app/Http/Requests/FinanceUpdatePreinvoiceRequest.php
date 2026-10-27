@@ -85,7 +85,7 @@ class FinanceUpdatePreinvoiceRequest extends FormRequest
             'product_discounts.*.value' => ['required_with:product_discounts', 'numeric', 'min:0', 'decimal:0,2'],
             'invoice_discount_type' => ['required', 'in:none,amount,percent'],
             'invoice_discount_value' => ['required_unless:invoice_discount_type,none', 'nullable', 'numeric', 'min:0', 'decimal:0,2'],
-            'edit_reason' => ['required', 'string', 'min:3', 'max:1000'],
+            'edit_reason' => ['nullable', 'string', 'min:3', 'max:1000'],
             'intent' => ['nullable', 'in:save,save_and_finalize'],
             'action' => ['nullable', 'in:save,save_and_finalize'],
             'payments' => ['nullable', 'array', 'max:100'],

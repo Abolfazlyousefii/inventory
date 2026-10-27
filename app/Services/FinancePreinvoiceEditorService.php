@@ -60,13 +60,29 @@ class FinancePreinvoiceEditorService
                 throw ValidationException::withMessages(['items' => 'اقلام ارسالی باید دقیقاً با اقلام پیش‌فاکتور برابر باشند؛ افزودن یا حذف ردیف مجاز نیست.']);
             }
 
-            $beforeItems = $this->snapshot($lockedOrder->fresh(['items.product', 'items.variant']));
             $productIds = $items->pluck('product_id')->map(fn ($id) => (int) $id)->all();
             foreach ($data['product_discounts'] ?? [] as $discount) {
                 if (! in_array((int) ($discount['product_id'] ?? 0), $productIds, true)) {
                     throw ValidationException::withMessages(['product_discounts' => 'کالای تخفیف باید در اقلام همین پیش‌فاکتور باشد.']);
                 }
             }
+            // Compare against the persisted, hydrated discount contract under the same row lock.
+            // A review without an actual discount change must neither require a reason
+            // nor manufacture a finance_edited event or rewrite the version token.
+            $discountState = app(PreinvoiceDiscountHydrator::class)->hydrateForEditing($lockedOrder);
+            $hasDiscountChanges = $this->discountInputsChanged($discountState, $data);
+            $reason = trim((string) ($data['edit_reason'] ?? ''));
+            if ($hasDiscountChanges && mb_strlen($reason) < 3) {
+                throw ValidationException::withMessages(['edit_reason' => 'لطفاً برای تغییر تخفیف، دلیل حداقل ۳ کاراکتری وارد کنید.']);
+            }
+            if (! $hasDiscountChanges) {
+                return $lockedOrder->fresh(['items.product', 'items.variant', 'invoice']);
+            }
+
+            $beforeItems = $this->snapshot($lockedOrder->fresh(['items.product', 'items.variant']));
+            $beforeInvoiceType = (string) ($discountState['invoice_discount']['type'] ?? 'none');
+            $beforeInvoiceValue = $discountState['invoice_discount']['value'] ?? 0;
+            $beforeProductGroups = array_values($discountState['product_groups'] ?? []);
             $beforeTotal = (int) $lockedOrder->total_price;
             $beforeInvoiceDiscount = (int) ($lockedOrder->invoice_discount_amount ?? 0);
             // Missing optional groups must preserve legacy discounts, not clear them.
@@ -147,13 +163,20 @@ class FinancePreinvoiceEditorService
             $lockedOrder->reviews()->create([
                 'user_id' => $actor->id,
                 'action' => 'finance_edited',
-                'reason' => $data['edit_reason'],
+                'reason' => $reason,
                 'before_items' => $beforeItems,
                 'after_items' => $afterItems,
             ]);
             ActivityLogger::log('finance_edited', $lockedOrder->fresh(), 'ویرایش مالی پیش‌فاکتور ثبت شد.', [
                 'user_id' => $actor->id,
                 'preinvoice_id' => $lockedOrder->id,
+                'reason' => $reason,
+                'old_invoice_discount_type' => $beforeInvoiceType,
+                'old_invoice_discount_value' => $beforeInvoiceValue,
+                'new_invoice_discount_type' => $invoiceDiscountType,
+                'new_invoice_discount_value' => $invoiceDiscountValue,
+                'old_product_discount_groups' => $beforeProductGroups,
+                'new_product_discount_groups' => array_values($productDiscounts['groups']),
                 'old_total' => $beforeTotal,
                 'new_total' => (int) $totals['grand_total'],
                 'old_invoice_discount' => $beforeInvoiceDiscount,
@@ -166,6 +189,46 @@ class FinancePreinvoiceEditorService
         });
     }
 
+
+    /**
+     * Compare the original editor inputs, not only the resulting total:
+     * changing discount type also requires an explanation even if rounding
+     * currently produces the same monetary discount.
+     */
+    private function discountInputsChanged(array $original, array $data): bool
+    {
+        $submitted = array_key_exists('product_discounts', $data)
+            ? collect((array) $data['product_discounts'])->keyBy(fn ($row) => (int) ($row['product_id'] ?? 0))
+            : null;
+
+        foreach (($original['product_groups'] ?? []) as $productId => $group) {
+            $previousType = (string) ($group['discount_type'] ?? 'amount');
+            $previousValue = DiscountMath::value($previousType, $group['discount_value'] ?? 0);
+            $incoming = $submitted === null
+                ? ['type' => $previousType, 'value' => $previousValue]
+                : ($submitted->get((int) $productId) ?? ['type' => 'amount', 'value' => 0]);
+            $newType = (string) ($incoming['type'] ?? 'amount');
+            $newValue = DiscountMath::value($newType, $incoming['value'] ?? 0);
+
+            if ($previousType !== $newType || (string) $previousValue !== (string) $newValue) {
+                return true;
+            }
+        }
+
+        $originalInvoice = (array) ($original['invoice_discount'] ?? []);
+        $previousType = (string) ($originalInvoice['type'] ?? 'none');
+        $newType = (string) ($data['invoice_discount_type'] ?? $previousType);
+        if ($previousType !== $newType) {
+            return true;
+        }
+
+        $previousValue = $previousType === 'none' ? 0 : DiscountMath::value($previousType, $originalInvoice['value'] ?? 0);
+        $newValue = $newType === 'none'
+            ? 0
+            : DiscountMath::value($newType, $data['invoice_discount_value'] ?? $originalInvoice['value'] ?? 0);
+
+        return (string) $previousValue !== (string) $newValue;
+    }
 
     private function productDiscountInputsFromBreakdown(PreinvoiceOrder $order): array
     {

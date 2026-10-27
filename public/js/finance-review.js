@@ -18,6 +18,45 @@
         input.setAttribute('aria-invalid', valid ? 'false' : 'true');
         return valid;
     }
+    // Compare displayed inputs to the original persisted discount state.
+    // The server independently validates under a database lock on submission.
+    const normalizedDiscountValue = raw => {
+        const input = String(math.input(raw ?? '0')).trim();
+        if (!/^\d+(?:\.\d{0,2})?$/.test(input)) return input;
+        const parts = input.split('.');
+        const whole = parts[0].replace(/^0+(?=\d)/, '') || '0';
+        const fraction = (parts[1] || '').replace(/0+$/, '');
+        return whole + (fraction ? '.' + fraction : '');
+    };
+    function syncReasonRequired() {
+        const groupsChanged = [...form.querySelectorAll('[data-product-discount-group]')].some(group => {
+            const originalType = group.dataset.originalDiscountType || 'amount';
+            const currentType = group.querySelector('[data-product-discount-type]').value;
+            return originalType !== currentType
+                || normalizedDiscountValue(group.dataset.originalDiscountValue) !== normalizedDiscountValue(group.querySelector('[data-product-discount-value]').value);
+        });
+        const invoiceTypeInput = form.querySelector('[data-invoice-discount-type]');
+        const invoiceValueInput = form.querySelector('[data-invoice-discount-value]');
+        const originalType = invoiceTypeInput.dataset.originalInvoiceType || 'none';
+        const currentType = invoiceTypeInput.value;
+        const invoiceChanged = originalType !== currentType
+            || (currentType !== 'none'
+                && normalizedDiscountValue(invoiceValueInput.dataset.originalInvoiceValue) !== normalizedDiscountValue(invoiceValueInput.value));
+        const changed = groupsChanged || invoiceChanged;
+        const reason = form.querySelector('#edit_reason');
+        reason.required = changed;
+        reason.setAttribute('aria-required', String(changed));
+        const approve = form.querySelector('button[value="save_and_finalize"]');
+        if (approve && form.dataset.submitting !== '1') {
+            approve.textContent = changed ? 'ذخیره و تأیید مالی ←' : 'تأیید مالی ←';
+        }
+        const marker = form.querySelector('#financeReasonRequiredMark');
+        if (marker) marker.hidden = !changed;
+        const hint = form.querySelector('#financeReasonHint');
+        if (hint) hint.textContent = changed
+            ? 'چون تخفیف تغییر کرده است، برای ذخیره یا تأیید دلیل حداقل ۳ کاراکتری لازم است.'
+            : 'اگر تخفیف‌ها تغییر نکرده‌اند، می‌توانید مستقیم تأیید کنید.';
+    }
     function recalculate() {
         let gross = 0, discount = 0;
         form.querySelectorAll('[data-product-discount-group]').forEach(group => {
@@ -60,7 +99,7 @@
     document.querySelector('.finance-review').addEventListener('keydown', event => {
         if (event.target.matches('[data-finance-number]') && ['ArrowUp','ArrowDown','Enter'].includes(event.key)) event.preventDefault();
     });
-    form.addEventListener('input', event => { if (event.target.matches('[data-finance-number]')) validate(event.target); recalculate(); });
+    form.addEventListener('input', event => { if (event.target.matches('[data-finance-number]')) validate(event.target); recalculate(); syncReasonRequired(); });
     form.addEventListener('change', event => {
         const group = event.target.closest('[data-product-discount-group]');
         if (event.target.matches('[data-product-discount-type],[data-invoice-discount-type]')) {
@@ -68,6 +107,7 @@
             validate(input);
         }
         recalculate();
+        syncReasonRequired();
     });
     document.querySelector('.finance-review').addEventListener('focusout', event => {
         const input = event.target;
@@ -87,4 +127,5 @@
     }, true);
     document.addEventListener('finance:payments-changed', updateRemaining);
     recalculate();
+    syncReasonRequired();
 })();
