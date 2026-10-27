@@ -56,7 +56,7 @@
                 <input type="search" class="form-control" id="invoiceReassignmentSearch" autocomplete="off" placeholder="مثلاً 00657، نام مشتری یا فروشنده">
             </div>
             <div>
-                <label for="invoiceCurrentSellerFilter">فروشنده فعلی</label>
+                <label for="invoiceCurrentSellerFilter">مالک فعلی فاکتور</label>
                 <select class="form-select" id="invoiceCurrentSellerFilter">
                     <option value="">همه فروشندگان</option>
                     @foreach($sellers as $seller)
@@ -101,16 +101,16 @@
         <div class="invoice-reassignment-card__head">
             <div>
                 <h2>۲. مقصد و دلیل انتقال</h2>
-                <p>انتقال فقط از همین فرآیند مرکزی انجام می‌شود تا مالک فروش و پورسانت همزمان اصلاح شوند.</p>
+                <p>انتقال به همه کاربران فعال دارای دسترسی ERP مجاز است؛ استحقاق پورسانت مستقل از مالکیت فاکتور بررسی می‌شود.</p>
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSelectedInvoices">لغو انتخاب‌ها</button>
         </div>
 
         <div class="invoice-transfer-grid">
             <div>
-                <label for="destinationSeller">فروشنده مقصد <span class="text-danger">*</span></label>
+                <label for="destinationSeller">کاربر مقصد <span class="text-danger">*</span></label>
                 <select class="form-select" id="destinationSeller" name="seller_id" required>
-                    <option value="">انتخاب فروشنده</option>
+                    <option value="">انتخاب کاربر فعال</option>
                     @foreach($sellers as $seller)
                         <option value="{{ $seller->id }}" @selected((string) old('seller_id') === (string) $seller->id)>{{ $seller->name }}</option>
                     @endforeach
