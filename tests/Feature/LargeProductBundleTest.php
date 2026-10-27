@@ -168,7 +168,7 @@ class LargeProductBundleTest extends TestCase
         $this->catalog();
         $this->get(route('products.index'))->assertOk()
             ->assertSee('id="bundleComponentsDrawer"', false)
-            ->assertSee('product-bundle-drawer.js', false)
+            ->assertSee("document.getElementById('bundleComponentsDrawer')", false)
             ->assertSee('مشاهده اقلام بسته', false);
     }
 
