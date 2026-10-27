@@ -89,6 +89,87 @@ it('approves an unchanged finance preinvoice without a reason and without fake d
         ->and($reservation->fresh()->release_reason)->toBe('consumed');
 });
 
+it('issues a fresh official invoice number for a legacy site collision without changing the paid site invoice', function () {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['reservation' => $reservation, 'order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory);
+
+    $oldNumber = (string) $order->uuid;
+    $siteInvoice = Invoice::query()->create([
+        'uuid' => $oldNumber,
+        'external_order_id' => 88,
+        'subtotal' => 20_000,
+        'total' => 20_000,
+        'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+    ]);
+    $sequenceBefore = (int) DB::table('document_sequences')->where('type', 'invoice')->value('last_number');
+
+    $item = $order->items()->sole();
+    $state = app(\App\Services\PreinvoiceDiscountHydrator::class)
+        ->hydrateForEditing($order->fresh(['items.product', 'items.variant']));
+    $discounts = collect($state['product_groups'])->map(fn ($group) => [
+        'product_id' => $group['product_id'],
+        'type' => $group['discount_type'],
+        'value' => $group['discount_value'],
+    ])->values()->all();
+    $payload = [
+        'finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items')),
+        'items' => [['id' => $item->id, 'quantity' => 4, 'price' => 100_000]],
+        'product_discounts' => $discounts,
+        'invoice_discount_type' => $state['invoice_discount']['type'],
+        'invoice_discount_value' => $state['invoice_discount']['value'],
+        'intent' => 'save_and_finalize',
+    ];
+
+    $this->actingAs($finance)
+        ->post(route('preinvoice.draft.finance.save-and-finalize', $oldNumber), $payload)
+        ->assertRedirect()->assertSessionHasNoErrors();
+
+    $newInvoice = Invoice::query()->where('preinvoice_order_id', $order->id)->sole();
+    expect($newInvoice->uuid)->not->toBe($oldNumber)
+        ->and(preg_match('/^\d{5}$/', (string) $newInvoice->uuid))->toBe(1)
+        ->and((int) $newInvoice->uuid)->toBeGreaterThan($sequenceBefore)
+        ->and($newInvoice->status)->toBe(Invoice::STATUS_PENDING_COLLECTION)
+        ->and($siteInvoice->fresh()->uuid)->toBe($oldNumber)
+        ->and($siteInvoice->fresh()->external_order_id)->toBe(88)
+        ->and($siteInvoice->fresh()->preinvoice_order_id)->toBeNull()
+        ->and((int) $siteInvoice->fresh()->total)->toBe(20_000)
+        ->and($order->fresh()->uuid)->toBe($oldNumber)
+        ->and($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE)
+        ->and($reservation->fresh()->release_reason)->toBe('consumed')
+        ->and(Invoice::query()->where('uuid', $oldNumber)->count())->toBe(1)
+        ->and(ActivityLog::query()->where('subject_type', Invoice::class)
+            ->where('subject_id', $newInvoice->id)
+            ->where('action', 'invoice_number_collision_resolved')->exists())->toBeTrue();
+
+    // Retrying a completed conversion must not issue a third invoice or consume stock again.
+    $this->actingAs($finance)
+        ->post(route('preinvoice.draft.finance.save-and-finalize', $oldNumber), $payload)
+        ->assertRedirect(route('invoices.show', $newInvoice->uuid));
+    expect(Invoice::query()->where('preinvoice_order_id', $order->id)->count())->toBe(1)
+        ->and(Invoice::query()->where('external_order_id', 88)->count())->toBe(1);
+});
+
+it('does not allocate or modify a number for a cancelled preinvoice', function () {
+    $seller = fullLifecycleSeller();
+    $finance = fullLifecycleFinanceUser();
+    $inventory = fullLifecycleInventory();
+    ['order' => $order] = fullLifecycleSubmitPreinvoice($this, $seller, $inventory);
+    $order->forceFill(['status' => PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE])->save();
+
+    $before = (int) DB::table('document_sequences')->where('type', 'invoice')->value('last_number');
+    $response = $this->actingAs($finance)->post(
+        route('preinvoice.draft.finance.save-and-finalize', $order->uuid),
+        ['finance_version' => \App\Support\FinanceDocumentVersion::token($order->fresh('items'))]
+    );
+
+    expect($response->isSuccessful())->toBeFalse()
+        ->and(Invoice::query()->where('preinvoice_order_id', $order->id)->exists())->toBeFalse()
+        ->and((int) DB::table('document_sequences')->where('type', 'invoice')->value('last_number'))->toBe($before)
+        ->and($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE);
+});
+
 it('rolls back discount changes and invoice creation when payment posting fails after validation', function () {
     $seller = fullLifecycleSeller(); $finance = fullLifecycleFinanceUser(); $inventory = fullLifecycleInventory();
     ['reservation'=>$reservation,'order'=>$order] = fullLifecycleSubmitPreinvoice($this,$seller,$inventory);

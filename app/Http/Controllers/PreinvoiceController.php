@@ -3074,19 +3074,12 @@ class PreinvoiceController extends Controller
                     $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
                     throw ValidationException::withMessages(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
                 }
-                $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
+                // Only an invoice explicitly linked to this preinvoice may be reused.
+                // A matching number alone can belong to a separate Site invoice.
                 $existingInvoice = Invoice::query()
                     ->where('preinvoice_order_id', $order->id)
-                    ->orWhere('uuid', $officialInvoiceUuid)
                     ->lockForUpdate()
                     ->first();
-
-
-                if ($existingInvoice && (int) $existingInvoice->preinvoice_order_id !== (int) $order->id) {
-                    throw ValidationException::withMessages([
-                        'invoice' => "شماره فاکتور {$officialInvoiceUuid} قبلاً برای پیش‌فاکتور دیگری ثبت شده است. لطفاً با مدیر سیستم تماس بگیرید.",
-                    ]);
-                }
 
                 if ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
                     if ($existingInvoice) {
@@ -3104,6 +3097,23 @@ class PreinvoiceController extends Controller
                     PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
                 ], true)) {
                     abort(403);
+                }
+
+                $officialInvoiceUuid = $existingInvoice?->uuid;
+                $conflictingInvoice = null;
+                if (! $existingInvoice) {
+                    $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
+                    $conflictingInvoice = Invoice::query()
+                        ->where('uuid', $officialInvoiceUuid)
+                        ->lockForUpdate()
+                        ->first(['id', 'uuid', 'preinvoice_order_id', 'external_order_id']);
+
+                    if ($conflictingInvoice) {
+                        // Do not rewrite previously issued invoice numbers. Older
+                        // site imports can overlap with reserved preinvoice numbers.
+                        // The shared sequence allocates a fresh number under a row lock.
+                        $officialInvoiceUuid = DocumentCodeGenerator::nextInvoiceCode();
+                    }
                 }
 
                 foreach ($order->items as $it) {
@@ -3185,6 +3195,21 @@ class PreinvoiceController extends Controller
                         'total' => (int) $total,
                         'status' => Invoice::STATUS_PENDING_COLLECTION,
                     ]);
+                }
+
+                if ($conflictingInvoice) {
+                    ActivityLogger::log(
+                        'invoice_number_collision_resolved',
+                        $invoice,
+                        'تداخل شماره قدیمی پیش‌فاکتور و فاکتور سایت برطرف شد؛ فاکتور جدید با شماره آزاد صادر شد.',
+                        [
+                            'preinvoice_id' => (int) $order->id,
+                            'original_preinvoice_number' => (string) $order->uuid,
+                            'new_invoice_number' => (string) $invoice->uuid,
+                            'occupied_invoice_id' => (int) $conflictingInvoice->id,
+                            'occupied_external_order_id' => $conflictingInvoice->external_order_id,
+                        ]
+                    );
                 }
 
                 $supportsBundleSnapshots = Schema::hasColumn('invoice_items', 'bundle_components_snapshot');
