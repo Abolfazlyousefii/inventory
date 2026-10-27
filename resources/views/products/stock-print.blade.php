@@ -49,8 +49,9 @@
         .progress{width:100%;height:10px;margin:9px 0 3px;accent-color:#187d62}
         .table-wrap{width:100%;overflow-x:auto}
         table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:10px;color:#263e4f}
-        col.col-no{width:4%}col.col-name{width:19%}col.col-code{width:12%}col.col-variant{width:19%}
-        col.col-detail{width:15%}col.col-stock{width:7%}col.col-reserved{width:7%}col.col-price{width:12%}col.col-sell{width:5%}
+        /* Five public-facing columns: no internal item codes or reservation data. */
+        col.col-no{width:5%}col.col-name{width:34%}col.col-detail{width:38%}
+        col.col-stock{width:10%}col.col-price{width:13%}
         th,td{border:1px solid #dae4ea;padding:8px 6px;vertical-align:middle;text-align:right;overflow-wrap:anywhere}
         thead th{background:#eaf3f4;color:#244b5e;font-weight:800;white-space:normal}
         tbody tr:nth-child(even){background:#f8fafc}
@@ -68,21 +69,20 @@
             .summary{gap:5px}
             .summary>div{padding:8px}
             .summary strong{font-size:13px}
-            table{min-width:970px}
+            table{min-width:660px}
         }
-        @page{size:A4 landscape;margin:10mm}
+        @page{size:A4 landscape;margin:9mm}
         @media print{
             html,body{background:#fff!important;margin:0!important;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
             .toolbar,.status,.progress,.no-print{display:none!important}
             .paper{padding:0!important;margin:0!important;max-width:none;border:0;box-shadow:none;border-radius:0}
             .header{margin:0 0 10px;padding-bottom:10px}
             h1{font-size:15px}
-            .summary{margin:8px 0 12px}
-            .summary>div{padding:5px 8px}
-            .summary strong{font-size:12px}
+            /* Counters are for on-screen progress, not the customer PDF. */
+            .summary,.footer-note{display:none!important}
             .table-wrap{overflow:visible}
-            table{width:100%;font-size:8px;table-layout:fixed}
-            th,td{padding:4px 5px;line-height:1.5;border-color:#c8d2d9}
+            table{width:100%;font-size:9px;table-layout:fixed}
+            th,td{padding:4px 7px;line-height:1.55;border-color:#c8d2d9}
             thead{display:table-header-group}
             tbody tr{break-inside:avoid;page-break-inside:avoid}
             .footer-note{font-size:8px}
@@ -105,9 +105,9 @@
 >
         <header class="header">
             <div>
-                <div class="eyebrow">نرم‌افزار داخلی آریا گستر · گزارش کالا</div>
-                <h1>ریز موجودی کالاها و تنوع‌های موجود</h1>
-                <div class="sub">هر ردیف متعلق به یک تنوع فعال و موجود است؛ کالاهای ساده دارای موجودی نیز درج می‌شوند.</div>
+                <div class="eyebrow">آریا گستر | فهرست کالا</div>
+                <h1>لیست موجودی و قیمت کالاها</h1>
+                <div class="sub">نام کالا، مدل، رنگ، طرح، موجودی و قیمت فروش به ریال</div>
             </div>
             <div class="print-meta">
                 <span>تاریخ تهیه: {{ now()->format('Y/m/d H:i') }}</span>
@@ -125,20 +125,17 @@
         <div class="table-wrap">
             <table aria-label="ریز موجودی تنوع‌های انتخاب‌شده">
                 <colgroup>
-                    <col class="col-no"><col class="col-name"><col class="col-code"><col class="col-variant">
-                    <col class="col-detail"><col class="col-stock"><col class="col-reserved">
-                    <col class="col-price"><col class="col-sell">
+                    <col class="col-no"><col class="col-name"><col class="col-detail">
+                    <col class="col-stock"><col class="col-price">
                 </colgroup>
                 <thead><tr>
-                    <th>ردیف</th><th>نام کالا</th><th>کد کالا / SKU</th><th>نام و کد تنوع</th>
-                    <th>مدل / رنگ / طرح</th><th>موجودی</th><th>رزرو</th><th>قیمت فروش (ریال)</th><th>فروش</th>
+                    <th>ردیف</th><th>نام کالا</th><th>مدل / رنگ / طرح</th><th>موجودی</th><th>قیمت فروش (ریال)</th>
                 </tr></thead>
                 <tbody id="printTableBody"></tbody>
             </table>
         </div>
         <div class="footer-note">
-            <span>گزارش بر اساس موجودی هنگام دریافت ردیف‌ها تهیه شده است.</span>
-            <span>صرفاً جهت بررسی و چاپ؛ بدون تغییر موجودی یا قیمت کالاها</span>
+            <span>موجودی و قیمت‌ها بر اساس اطلاعات زمان تهیه گزارش هستند.</span>
         </div>
     </main>
     <script>{!! file_get_contents(public_path('js/product-stock-print.js')) !!}</script>
