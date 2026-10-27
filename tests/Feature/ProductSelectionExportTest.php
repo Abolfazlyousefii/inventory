@@ -69,6 +69,23 @@ class ProductSelectionExportTest extends TestCase
         $this->assertStringContainsString('attachment;', $response->headers->get('Content-Disposition'));
     }
 
+    public function test_large_pdf_selection_is_rejected_before_rendering_and_can_use_stock_export_instead(): void
+    {
+        $this->signIn(true);
+        $category = Category::create(['name' => 'PDF limit']);
+        $ids = [];
+        foreach (range(1, 6) as $i) {
+            $ids[] = Product::create([
+                'name' => 'Product '.$i, 'sku' => 'PDF-BULK-'.$i,
+                'category_id' => $category->id, 'stock' => 1, 'price' => 1000,
+            ])->id;
+        }
+        $this->postJson(route('products.selected-export'), ['product_ids' => $ids])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
+        $this->postJson(route('products.selected-stock-export.start'), ['product_ids' => $ids])
+            ->assertOk()->assertJsonPath('total_rows', 6);
+    }
+
     public function test_view_only_user_cannot_export_and_empty_selection_is_rejected(): void
     {
         $category = Category::create(['name' => 'آزمایش خروجی']);

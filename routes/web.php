@@ -172,6 +172,10 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
     Route::post('/products/selected-export', ProductSelectionExportController::class)
         ->middleware('route.permission:products.export')->name('products.selected-export');
+    Route::post('/products/selected-stock-export/start', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'start'])
+        ->middleware('route.permission:products.export')->name('products.selected-stock-export.start');
+    Route::post('/products/selected-stock-export/batch', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'batch'])
+        ->middleware('route.permission:products.export')->name('products.selected-stock-export.batch');
     Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
