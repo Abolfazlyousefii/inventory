@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const csv = require('../../public/js/product-stock-csv.js');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const context = {window: {}};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../public/js/product-stock-csv.js'), 'utf8'), context);
+const csv = context.window.ProductStockCsv;
 
 test('Excel CSV has UTF-8 BOM, explicit comma delimiter and row-level stock columns', () => {
     const header = csv.header();
