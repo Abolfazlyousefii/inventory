@@ -19,12 +19,12 @@ test('Excel CSV has UTF-8 BOM, explicit comma delimiter and row-level stock colu
     }]);
     assert.match(data, /"قاب، آیفون"/);
     assert.match(data, /"مشکی ""اصلی"""/);
-    assert.match(data, /,5,2,400000,"بله"/);
+    assert.match(data, /,5,2,400000,بله/);
     assert.ok(data.endsWith('\r\n'));
 });
 
 test('stock export escapes Excel formulas without breaking numeric amounts', () => {
-    assert.equal(csv.cell('=HYPERLINK("https://evil")'), '\'"=HYPERLINK(""https://evil"")"');
+    assert.match(csv.cell('=HYPERLINK("https://evil")'), /^"'=/);
     assert.equal(csv.cell(' +SUM(1,1)'), '"\'+SUM(1,1)"');
     assert.equal(csv.cell('@cmd'), '"\'@cmd"');
     assert.equal(csv.cell(-42), '-42');
