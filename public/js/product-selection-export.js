@@ -43,32 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelButton.hidden = !downloading;
     }
 
-    function decorateRows() {
-        for (const row of body.querySelectorAll('tr[data-product-id]')) {
-            if (row.querySelector('.product-select')) continue;
-            const id = Number(row.dataset.productId);
-            if (!Number.isSafeInteger(id) || id <= 0) continue;
-            const cell = document.createElement('td');
-            cell.className = 'select-col';
-            const label = document.createElement('label');
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'product-select';
-            checkbox.value = String(id);
-            checkbox.setAttribute('aria-label', 'انتخاب کالا برای خروجی');
-            label.append(checkbox);
-            const mobileLabel = document.createElement('span');
-            mobileLabel.className = 'desktop-label';
-            mobileLabel.textContent = ' انتخاب برای خروجی';
-            label.append(mobileLabel);
-            cell.append(label);
-            row.prepend(cell);
-        }
-        syncControls();
-    }
-
-    new MutationObserver(decorateRows).observe(body, {childList: true});
-    decorateRows();
+    // Each product row now includes its own checkbox when export is allowed.
+    // Observe newly fetched rows only to sync checked state and counts; avoid
+    // injecting DOM nodes or shifting table columns after initial render.
+    new MutationObserver(syncControls).observe(body, {childList: true});
+    syncControls();
 
     body.addEventListener('change', event => {
         const box = event.target.closest('.product-select');

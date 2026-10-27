@@ -168,8 +168,42 @@ class LargeProductBundleTest extends TestCase
         $this->catalog();
         $this->get(route('products.index'))->assertOk()
             ->assertSee('id="bundleComponentsDrawer"', false)
-            ->assertSee('product-bundle-drawer.js', false)
+            ->assertSee("document.getElementById('bundleComponentsDrawer')", false)
             ->assertSee('مشاهده اقلام بسته', false);
+    }
+
+    public function test_product_list_renders_selectable_rows_and_bundle_drawer_without_external_asset_dependency(): void
+    {
+        $this->catalog();
+
+        $html = $this->get(route('products.index'))->assertOk()->getContent();
+
+        // Product rows are streamed into the table by the existing inline loader:
+        // the checkbox markup must live in the row template itself, not depend
+        // on a separately loaded JS file to inject another table cell.
+        $this->assertStringContainsString('class="product-select"', $html);
+        $this->assertStringContainsString('class="select-col"', $html);
+        $this->assertStringContainsString('id="selectLoadedProducts"', $html);
+        $this->assertStringContainsString('id="downloadSelectedProducts"', $html);
+
+        // Default state must be hidden even with missing external CSS.
+        $this->assertMatchesRegularExpression(
+            '/<div[^>]*id="bundleComponentsDrawer"[^>]*hidden/',
+            $html
+        );
+        $this->assertStringContainsString('.bundle-detail-drawer.is-open', $html);
+        $this->assertStringContainsString('drawer.hidden = false', $html);
+        $this->assertStringContainsString('drawer.hidden = true', $html);
+
+        // Export handlers and CSV support must actually be present in the
+        // rendered HTML, instead of relying on a public asset URL.
+        $this->assertStringContainsString('ProductStockCsv', $html);
+        $this->assertStringContainsString('function syncControls()', $html);
+        $this->assertStringContainsString('bundle-detail-item', $html);
+        $this->assertStringNotContainsString(
+            '<script src="' . asset('js/product-selection-export.js'),
+            $html
+        );
     }
 
     public function test_truncated_payload_is_rejected_before_creating_any_product(): void
