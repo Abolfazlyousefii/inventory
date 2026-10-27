@@ -114,7 +114,7 @@ class ProductSelectedStockRowsExportTest extends TestCase
             ->assertViewHas('productIds', $products)
             ->assertSee('چاپ / ذخیره PDF')
             ->assertSee('در حال دریافت اقلام')
-            ->assertSee('products.selected-stock-export.start', false);
+            ->assertSee(route('products.selected-stock-export.start'), false);
         $this->assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
         $this->assertSame('private, no-store', $response->headers->get('Cache-Control'));
         $this->assertDatabaseCount('products', count($products));
