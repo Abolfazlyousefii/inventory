@@ -33,13 +33,11 @@ class ProductController extends Controller {
     public function data( Request $request, ProductSearchService $searchService ) {
         $products = $searchService->products($request);
 
-        $bundleParts = \App\Support\BundleContentsDisplay::forProducts(
-            $products->getCollection()->filter(fn ($product) => (bool) $product->is_bundle)->pluck('id')->all()
-        );
-
+        // Keep catalog rows small: bundle recipes are fetched only when
+        // their dedicated drawer is opened (never per catalog page).
         return response()->json([
             'data' => $products->getCollection()
-                ->map(fn( $product ) => $searchService->productPayload($product, $bundleParts[(int) $product->id] ?? []))
+                ->map(fn( $product ) => $searchService->productPayload($product))
                 ->values(),
             'meta' => [
                 'returned'    => $products->count(),
@@ -47,6 +45,82 @@ class ProductController extends Controller {
                 'next_cursor' => optional($products->nextCursor())->encode(),
             ],
         ]);
+    }
+
+    /**
+     * Read-only bill of materials for a single bundle, fetched by the detail drawer.
+     * The recipe may have thousands of rows: never load it into the product list.
+     */
+    public function bundleComponents(Product $product, Request $request)
+    {
+        abort_unless((bool) $product->is_bundle, 404);
+
+        $validated = $request->validate([
+            'cursor' => ['nullable', 'integer', 'min:0'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:80'],
+            'q' => ['nullable', 'string', 'max:80'],
+        ]);
+        $cursor = (int) ($validated['cursor'] ?? 0);
+        $limit = (int) ($validated['limit'] ?? 60);
+        $term = trim((string) ($validated['q'] ?? ''));
+
+        // Recipes are defined for the single selling variant of a bundle.
+        $sellingVariantId = (int) $product->variants()->orderBy('id')->value('id');
+        $query = \Illuminate\Support\Facades\DB::table('product_bundle_components as c')
+            ->join('product_variants as v', 'v.id', '=', 'c.component_variant_id')
+            ->join('products as p', 'p.id', '=', 'v.product_id')
+            ->where('c.bundle_variant_id', $sellingVariantId)
+            ->where('c.quantity', '>', 0);
+
+        if (mb_strlen($term) >= 2) {
+            $like = '%' . addcslashes($term, '%_\\') . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('p.name', 'like', $like)
+                    ->orWhere('v.variant_name', 'like', $like)
+                    ->orWhere('v.variant_code', 'like', $like);
+            });
+        }
+
+        $total = null;
+        if ($cursor === 0) {
+            $stats = (clone $query)->selectRaw('COUNT(*) as rows_count, COALESCE(SUM(c.quantity), 0) as units_count')->first();
+            $total = ['items' => (int) $stats->rows_count, 'units' => (int) $stats->units_count];
+        }
+
+        $rows = $query->where('c.id', '>', $cursor)
+            ->orderBy('c.id')->limit($limit + 1)
+            ->get([
+                'c.id as cursor_id', 'v.id as variant_id', 'p.id as product_id',
+                'p.name as product_name', 'p.code as product_code',
+                'v.variant_name', 'v.variant_code', 'c.quantity as quantity_per_bundle',
+            ]);
+        $hasMore = $rows->count() > $limit;
+        $page = $rows->take($limit);
+        $next = $hasMore ? (int) $page->last()->cursor_id : null;
+
+        return response()->json([
+            'product' => [
+                'id' => (int) $product->id,
+                'name' => (string) $product->name,
+                'short_code' => (string) ($product->short_barcode ?: $product->code ?: $product->sku ?: ''),
+                'stock_mode' => (string) ($product->bundle_stock_mode ?: 'physical'),
+            ],
+            'data' => $page->map(static fn ($row) => [
+                'product_id' => (int) $row->product_id,
+                'variant_id' => (int) $row->variant_id,
+                'product_name' => (string) $row->product_name,
+                'product_code' => (string) ($row->product_code ?? ''),
+                'variant_name' => (string) ($row->variant_name ?? ''),
+                'variant_code' => (string) ($row->variant_code ?? ''),
+                'quantity_per_bundle' => (int) $row->quantity_per_bundle,
+            ])->values(),
+            'meta' => [
+                'returned' => $page->count(),
+                'has_more' => $hasMore,
+                'next_cursor' => $next,
+                'total' => $total,
+            ],
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     public function variants( Product $product, Request $request, ProductSearchService $searchService ) {
