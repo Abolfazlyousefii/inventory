@@ -584,6 +584,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/suppliers', [SupplierController::class, 'store'])->name('suppliers.store');
 
     // Stocktake / Stock Count Documents
+    Route::get('/inventory-stock-flow', [\App\Http\Controllers\WarehouseStockFlowController::class, 'index'])->name('warehouse.stock-flow.index');
+    Route::get('/inventory-stock-flow/rows', [\App\Http\Controllers\WarehouseStockFlowController::class, 'rows'])->name('warehouse.stock-flow.rows');
     Route::get('/stocktake', [StocktakeController::class, 'index'])->name('stocktake.index');
     Route::get('/stock-count-documents', [StocktakeController::class, 'index'])->name('stock-count-documents.index');
     Route::get('/stock-count-documents/create', [StocktakeController::class, 'create'])->name('stock-count-documents.create');
