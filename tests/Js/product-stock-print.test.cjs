@@ -102,3 +102,28 @@ test('a server failure keeps print disabled and shows an error instead of a part
     assert.equal(calls.prints, 0);
     assert.match(nodes.printStatus.textContent, /Server down/);
 });
+
+
+test('full 2696-row print remains available without the old 2000-row cap', async () => {
+    const total = 2696;
+    const {nodes, calls} = fixture(async (url, options) => {
+        if (url.endsWith('/start')) return {total_rows: total};
+        const afterId = JSON.parse(options.body).after_id;
+        const batchCount = Math.min(300, total - afterId);
+        return {
+            rows: Array.from({length: batchCount}, (_, i) => ({
+                product_name: 'گارد آیفون',
+                variant_name: 'تنوع ' + (afterId + i + 1),
+                stock: 1, reserved: 0, sell_price_rial: 1000, sales_enabled: true,
+            })),
+            has_more: afterId + batchCount < total,
+            next_cursor: afterId + batchCount,
+        };
+    });
+    await tickUntil(() => nodes.printNow.disabled === false);
+    assert.equal(nodes.printProgress.value, 100);
+    assert.equal(calls.requests.length, 10); // 1 count + 9 batches (8 × 300 + 296)
+    assert.match(nodes.printLoadedRows.textContent, /۲٬۶۹۶/);
+    nodes.printNow.on_click();
+    assert.equal(calls.prints, 1);
+});

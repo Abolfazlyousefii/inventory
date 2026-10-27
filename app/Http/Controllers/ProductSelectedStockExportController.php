@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Services\ProductSelectedStockExportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 final class ProductSelectedStockExportController extends Controller
 {
@@ -15,17 +14,14 @@ final class ProductSelectedStockExportController extends Controller
      */
     public function printPreview(Request $request, ProductSelectedStockExportService $export)
     {
+        // Only verify the selected products here; the lightweight HTML shell
+        // does not count or materialize any variants. The browser uses the
+        // existing read-only cursor endpoint in bounded batches.
         $ids = $this->selectedIds($request, $export);
-        $total = $export->countRows($ids);
-        $maxPrintableRows = 2000;
 
         return response()->view('products.stock-print', [
             'productIds' => $ids,
-            'maxPrintableRows' => $maxPrintableRows,
-            'errorMessage' => $total > $maxPrintableRows
-                ? "این انتخاب {$total} ردیف موجود دارد؛ برای چاپ روان، هر نوبت حداکثر {$maxPrintableRows} ردیف را انتخاب کنید."
-                : null,
-        ], $total > $maxPrintableRows ? 422 : 200)->header('Cache-Control', 'private, no-store');
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     public function start(Request $request, ProductSelectedStockExportService $export): JsonResponse
@@ -33,16 +29,9 @@ final class ProductSelectedStockExportController extends Controller
         $ids = $this->selectedIds($request, $export);
         $total = $export->countRows($ids);
 
-        if ($total > ProductSelectedStockExportService::MAX_ROWS) {
-            throw ValidationException::withMessages([
-                'product_ids' => 'تعداد تنوع‌های موجود بیش از سقف خروجی است. لطفاً کالاهای کمتری انتخاب کنید.',
-            ]);
-        }
-
         return response()->json([
             'total_rows' => $total,
             'batch_size' => ProductSelectedStockExportService::BATCH_SIZE,
-            'max_rows' => ProductSelectedStockExportService::MAX_ROWS,
         ])->header('Cache-Control', 'private, no-store');
     }
 
