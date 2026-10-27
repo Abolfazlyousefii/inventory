@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Invoice, InvoiceItem, PreinvoiceDraftReservation, PreinvoiceOrder, Product, ProductVariant, User, Warehouse, WarehouseStock};
+use App\Models\{Category, Invoice, InvoiceItem, PreinvoiceDraftReservation, PreinvoiceOrder, Product, ProductVariant, User, Warehouse, WarehouseStock};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -22,7 +22,9 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
 
     private function stock(string $name = 'قاب آیفون', int $quantity = 200): array
     {
+        $category = Category::withoutEvents(fn () => Category::create(['name'=>'Stock-flow tests']));
         $product = Product::withoutEvents(fn () => Product::create([
+            'category_id' => $category->id,
             'name' => $name, 'sku' => 'FLOW-'.Str::random(10),
             'price' => 300000, 'stock' => $quantity, 'is_sellable' => true,
         ]));
