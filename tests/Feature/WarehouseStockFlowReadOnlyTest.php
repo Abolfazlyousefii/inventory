@@ -124,7 +124,7 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
         $this->get(route('warehouse.stock-flow.index',['print'=>1]))->assertOk()
             ->assertSee('موجودی در جریان',false)
             ->assertSee('چاپ / ذخیره PDF')
-            ->assertSee('در انتظار جمع‌آوری')
+            ->assertSee('صف جمع‌آوری')
             ->assertSee('در حال جمع‌آوری');
         $this->assertSame(2,Product::count());
     }
