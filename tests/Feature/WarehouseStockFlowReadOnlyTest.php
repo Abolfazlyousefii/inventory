@@ -129,6 +129,13 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
         $this->assertSame(2,Product::count());
     }
 
+    public function test_missing_central_warehouse_fails_closed_without_creating_one(): void
+    {
+        $this->owner();
+        $this->getJson(route('warehouse.stock-flow.rows'))->assertStatus(503);
+        $this->assertSame(0, Warehouse::count());
+    }
+
     public function test_unauthenticated_or_unauthorized_requests_are_denied(): void
     {
         $this->get(route('warehouse.stock-flow.index'))->assertRedirect();
