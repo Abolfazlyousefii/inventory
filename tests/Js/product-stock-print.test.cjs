@@ -87,6 +87,13 @@ test('native print is locked until both stock batches are rendered and each vari
     resolveSecond({rows: [row(2)], has_more: false, next_cursor: 12});
     await tickUntil(() => nodes.printNow.disabled === false);
     assert.equal(nodes.printTableBody.children.length, 2);
+    // Customer print is intentionally only five columns. No internal SKU,
+    // variant code, reserved quantity or sales permission should be shown.
+    const printed = nodes.printTableBody.children[0].children;
+    assert.equal(printed.length, 5);
+    assert.deepEqual(printed.map(cell => cell.textContent), [
+        '۱', 'کالا', '—', '۳', '۵٬۰۰۰'
+    ]);
     assert.equal(nodes.printProgress.value, 100);
     nodes.printNow.on_click();
     assert.equal(calls.prints, 1);
@@ -126,4 +133,24 @@ test('full 2696-row print remains available without the old 2000-row cap', async
     assert.match(nodes.printLoadedRows.textContent, /۲٬۶۹۶/);
     nodes.printNow.on_click();
     assert.equal(calls.prints, 1);
+});
+
+
+test('customer row contains model/color/design but omits SKU, reservation, variant code and sales status', async () => {
+    const {nodes} = fixture(async url => url.endsWith('/start')
+        ? {total_rows: 1}
+        : {rows: [{
+            product_name: 'قاب سامسونگ', product_code: 'PRIVATE-12', product_sku: 'INTERNAL-SKU',
+            variant_code: 'V-SECRET', variant_name: 'توضیح داخلی',
+            model_name: 'Galaxy A05', color_name: 'مشکی', variety_name: 'مات',
+            brand_name: 'InternalBrand', stock: 17, reserved: 9,
+            sell_price_rial: 325000, sales_enabled: false,
+        }], has_more: false, next_cursor: 100});
+    await tickUntil(() => nodes.printNow.disabled === false);
+    const cols = nodes.printTableBody.children[0].children.map(x => x.textContent);
+    assert.equal(cols.length, 5);
+    assert.deepEqual(cols, ['۱', 'قاب سامسونگ', 'Galaxy A05 / مشکی / مات', '۱۷', '۳۲۵٬۰۰۰']);
+    for (const hidden of ['PRIVATE-12', 'INTERNAL-SKU', 'V-SECRET', 'توضیح داخلی', 'InternalBrand', '۹', 'غیرفعال']) {
+        assert.ok(!cols.includes(hidden), 'exposed private field: ' + hidden);
+    }
 });
