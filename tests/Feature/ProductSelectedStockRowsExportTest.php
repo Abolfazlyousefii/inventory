@@ -121,6 +121,24 @@ class ProductSelectedStockRowsExportTest extends TestCase
         $this->assertDatabaseCount('products', count($products));
     }
 
+    public function test_print_preview_has_only_five_customer_facing_headers(): void
+    {
+        $this->login();
+        $product = $this->product('گارد آیفون', 4);
+        $response = $this->post(route('products.selected-stock-print'), [
+            'product_ids' => [$product->id],
+        ])->assertOk();
+
+        $html = $response->getContent();
+        $this->assertSame(1, preg_match('~<thead[^>]*>(.*?)</thead>~su', $html, $match));
+        preg_match_all('~<th[^>]*>(.*?)</th>~su', $match[1], $columns);
+        $this->assertSame(
+            ['ردیف', 'نام کالا', 'مدل / رنگ / طرح', 'موجودی', 'قیمت فروش (ریال)'],
+            array_map('trim', array_map('strip_tags', $columns[1]))
+        );
+        $this->assertSame(5, preg_match_all('~<col\\s+class="col-~', $html));
+    }
+
     public function test_print_preview_denies_unauthorized_users_and_bad_or_duplicate_selections(): void
     {
         $p = $this->product('محافظت چاپ', 4);
