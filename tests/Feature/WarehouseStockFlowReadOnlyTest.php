@@ -173,6 +173,31 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
         $this->assertSame($moves,DB::table('stock_movements')->count());
     }
 
+    public function test_existing_draft_shows_current_collection_queue_but_keeps_saved_stock_snapshot(): void
+    {
+        $this->owner();
+        [$product,$variant] = $this->stock('کالای شمارش موجود',200);
+
+        $document = app(\App\Services\StockCountDocumentService::class)->createProductDraft([
+            'product_id' => $product->id,
+            'document_date' => now()->toDateString(),
+            'actual_quantities' => [$variant->id => 200],
+        ], (int) auth()->id());
+        $this->invoice($product,$variant,Invoice::STATUS_PENDING_COLLECTION,17);
+
+        $this->get(route('stock-count-documents.edit', $document))->assertOk()
+            ->assertSee('موجودی در صف جمع‌آوری');
+        $this->getJson(route('stock-count-documents.variants', [
+            'product'=>$product->id,'document_id'=>$document->id,
+        ]))->assertOk()
+            ->assertJsonPath('data.0.queue_total',17)
+            ->assertJsonPath('data.0.expected_physical',200)
+            ->assertJsonPath('data.0.actual_physical',200);
+
+        $this->assertSame('draft', $document->fresh()->status);
+        $this->assertSame(200,(int)$document->items()->first()->actual_quantity);
+    }
+
     public function test_stocktake_inline_queue_is_zero_for_an_unrelated_variant_and_does_not_expose_other_products(): void
     {
         $this->owner();
