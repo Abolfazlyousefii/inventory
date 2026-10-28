@@ -25,6 +25,7 @@
 
         <div class="voucher-scroll">
             <div class="voucher-row">
+                @if(\App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'vouchers.sales.index'))
                 <a class="voucher-card" href="{{ route('vouchers.sales.index') }}">
                     <div class="voucher-icon">🧾</div>
                     <div class="voucher-title">حواله فروش</div>
@@ -38,6 +39,7 @@
                     </div>
                 </a>
 
+                @endif
                 <a class="voucher-card" href="{{ route('vouchers.return-from-sale.index') }}">
                     <div class="voucher-icon">🔁</div>
                     <div class="voucher-title">برگشت از فروش</div>
@@ -89,11 +91,13 @@
                         <span class="tag">مقصد</span>
                     </div>
                 </a>
+                @unless(\App\Support\WarehouseVoucherAccess::restricted(auth()->user()))
                 <a class="voucher-card" href="{{ route('vouchers.section.index','showroom') }}">
                     <div class="voucher-icon">🏬</div><div class="voucher-title">حواله شوروم</div>
                     <div class="voucher-desc">انتقال کالا از انبار مرکزی به انبار شوروم، با موجودی و سابقهٔ مستقل.</div>
                     <div class="tags"><span class="tag">شوروم</span><span class="tag">انتقال</span><span class="tag">موجودی مستقل</span></div>
                 </a>
+                @endunless
             </div>
         </div>
     </div>

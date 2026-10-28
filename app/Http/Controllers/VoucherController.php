@@ -2471,7 +2471,7 @@ class VoucherController extends Controller
 
     private function combinedReasonLabels(): array
     {
-        return [
+        $labels = [
             WarehouseTransfer::TYPE_SALE => 'فروش',
             WarehouseTransfer::TYPE_BETWEEN_WAREHOUSES => 'انتقال بین انبارها',
             WarehouseTransfer::TYPE_PERSONNEL_ASSET => 'تحویل به پرسنل',
@@ -2479,6 +2479,9 @@ class VoucherController extends Controller
             WarehouseTransfer::TYPE_SHOWROOM => 'انتقال به شوروم',
             WarehouseTransfer::TYPE_CUSTOMER_RETURN => 'برگشت از مشتری',
         ];
+        return \App\Support\WarehouseVoucherAccess::restricted(auth()->user())
+            ? array_intersect_key($labels, array_flip(\App\Support\WarehouseVoucherAccess::TYPES))
+            : $labels;
     }
 
     private function outputDestinationLabel(WarehouseTransfer $voucher): string

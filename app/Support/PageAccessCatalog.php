@@ -834,7 +834,7 @@ class PageAccessCatalog
             return true;
         }
 
-        if (AccountStatementAccess::deniesRoute($user, $routeName)) {
+        if (AccountStatementAccess::deniesRoute($user, $routeName) || WarehouseVoucherAccess::deniesRoute($user, $routeName)) {
             return false;
         }
 
