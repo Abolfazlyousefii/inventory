@@ -150,4 +150,80 @@ final class WarehouseStockFlowReportService
             'has_more'=>$hasMore,
         ];
     }
+
+    /**
+     * Identifies the specific documents contributing to the visible stock-flow
+     * buckets. This query only runs after a user opens the detail drawer.
+     * Document ID cursor prevents scanning/loading the whole invoice archive.
+     *
+     * @return array{rows: array<int,array<string,mixed>>, next_cursor:int, has_more:bool}
+     */
+    public function documentDetails(int $variantId, string $kind, int $afterId, int $limit = 50): array
+    {
+        abort_unless(DB::table('product_variants')->where('id', $variantId)->exists(), 404);
+
+        if ($kind === 'queue') {
+            $query = DB::table('invoice_items as ii')
+                ->join('invoices as i', 'i.id', '=', 'ii.invoice_id')
+                ->leftJoin('preinvoice_orders as o', 'o.id', '=', 'i.preinvoice_order_id')
+                ->leftJoin('users as seller', 'seller.id', '=', DB::raw('COALESCE(i.seller_id, o.seller_id, o.created_by)'))
+                ->where('ii.variant_id', $variantId)
+                ->where('ii.quantity', '>', 0)
+                ->whereIn('i.status', self::COLLECTION_STATUSES)
+                ->where('i.id', '>', $afterId)
+                ->groupBy('i.id', 'i.uuid', 'i.customer_name', 'i.status', 'seller.name')
+                ->select([
+                    'i.id as document_id', 'i.uuid as document_number',
+                    'i.customer_name', 'i.status',
+                    'seller.name as seller_name',
+                ])
+                ->selectRaw('SUM(ii.quantity) as quantity')
+                ->orderBy('i.id');
+            $labels = Invoice::statusLabels();
+            $routeName = 'invoices.show';
+        } else {
+            // Mirror the exact official-hold predicates of rows(), including the
+            // NOT EXISTS invoice guard. These are not counted again as queue.
+            $query = DB::table('preinvoice_draft_reservations as r')
+                ->join('preinvoice_orders as o', 'o.id', '=', 'r.preinvoice_order_id')
+                ->leftJoin('users as seller', 'seller.id', '=', DB::raw('COALESCE(o.seller_id, o.created_by)'))
+                ->where('r.variant_id', $variantId)
+                ->where('r.reservation_scope', 'official')
+                ->whereNull('r.converted_at')->whereNull('r.released_at')
+                ->whereNull('r.release_reason')->where('r.quantity', '>', 0)
+                ->whereIn('o.status', PreinvoiceOrder::reservationHoldingStatuses())
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')
+                    ->from('invoices as linked_invoice')
+                    ->whereColumn('linked_invoice.preinvoice_order_id', 'o.id'))
+                ->where('o.id', '>', $afterId)
+                ->groupBy('o.id', 'o.uuid', 'o.customer_name', 'o.status', 'seller.name')
+                ->select([
+                    'o.id as document_id', 'o.uuid as document_number',
+                    'o.customer_name', 'o.status',
+                    'seller.name as seller_name',
+                ])
+                ->selectRaw('SUM(r.quantity) as quantity')
+                ->orderBy('o.id');
+            $labels = PreinvoiceOrder::statusLabels();
+            $routeName = 'archive.preinvoices.show';
+        }
+
+        $documents = $query->limit($limit + 1)->get();
+        $hasMore = $documents->count() > $limit;
+        $page = $documents->take($limit);
+        return [
+            'rows' => $page->map(static fn ($document) => [
+                'document_id' => (int) $document->document_id,
+                'document_number' => (string) $document->document_number,
+                'document_url' => route($routeName, (string) $document->document_number),
+                'customer_name' => (string) ($document->customer_name ?: 'نام ثبت نشده'),
+                'seller_name' => (string) ($document->seller_name ?: 'ثبت نشده'),
+                'status_label' => (string) ($labels[$document->status] ?? $document->status),
+                'quantity' => (int) $document->quantity,
+            ])->values()->all(),
+            'next_cursor' => (int) ($page->last()?->document_id ?? $afterId),
+            'has_more' => $hasMore,
+        ];
+    }
+
 }
