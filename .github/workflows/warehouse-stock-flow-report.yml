@@ -5,6 +5,7 @@ on:
     paths:
       - 'app/Services/WarehouseStockFlowReportService.php'
       - 'app/Http/Controllers/WarehouseStockFlowController.php'
+      - 'app/Http/Controllers/StocktakeController.php'
       - 'app/Support/PageAccessCatalog.php'
       - 'routes/web.php'
       - 'resources/views/stocktake/**'
@@ -40,6 +41,7 @@ jobs:
         run: |
           php -l app/Services/WarehouseStockFlowReportService.php
           php -l app/Http/Controllers/WarehouseStockFlowController.php
+          php -l app/Http/Controllers/StocktakeController.php
           php -l app/Support/PageAccessCatalog.php
           php -l routes/web.php
           node --check public/js/warehouse-stock-flow.js
