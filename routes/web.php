@@ -314,6 +314,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->name('vouchers.sales.queue.data');
     Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->name('vouchers.sales.shipped');
     Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->name('warehouse.shipping.index');
+    Route::get('/warehouse/shipping/incoming', [WarehouseShippingController::class, 'incoming'])->name('warehouse.shipping.incoming');
     Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->name('warehouse.shipping.ship');
     Route::prefix('warehouse/inbound-queue')->name('warehouse.inbound.')->group(function () {
         Route::get('/', [WarehouseInboundController::class, 'index'])->name('index');

@@ -191,6 +191,7 @@ class PageAccessCatalog
         'vouchers.sales.queue.data' => ['warehouse.collection'],
         'vouchers.sales.shipped' => ['warehouse.shipping'],
         'warehouse.shipping.index' => ['warehouse.shipping'],
+        'warehouse.shipping.incoming' => ['warehouse.shipping'],
         'warehouse.shipping.ship' => ['warehouse.shipping'],
         'warehouse.daily-sales.index' => ['warehouse.daily_sales'],
         'warehouse.daily-sales.data' => ['warehouse.daily_sales'],
