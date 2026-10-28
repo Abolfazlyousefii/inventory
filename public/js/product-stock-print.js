@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function printRow(row, index) {
         const tr = document.createElement('tr');
+        tr.dataset.productId = String(row.product_id);
         tr.appendChild(td(persian(index), 'numeric'));
         tr.appendChild(td(row.product_name || 'کالا', 'product-name'));
         tr.appendChild(td([row.model_name, row.color_name, row.variety_name].filter(Boolean).join(' / ') || '—'));
@@ -136,6 +137,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 state('موجودی هنگام تهیه گزارش تغییر کرده است (' + persian(loaded) + ' ردیف دریافت شد). برای چاپ دقیق، گزارش را مجدداً بارگیری کنید.', true);
                 retryButton.textContent = 'بارگیری مجدد';
                 return;
+            }
+            // Keep ID-based batch cursors unchanged; apply the list's product
+            // order only once every batch has arrived, including simple items.
+            const rank = new Map(productIds.map((id, index) => [Number(id), index]));
+            const ordered = [...tbody.children].sort((a, b) =>
+                (rank.get(Number(a.dataset.productId)) ?? Infinity) - (rank.get(Number(b.dataset.productId)) ?? Infinity));
+            for (let offset = 0; offset < ordered.length; offset += 150) {
+                if (stopped) throw new Error('بارگیری متوقف شد.');
+                const fragment = document.createDocumentFragment();
+                ordered.slice(offset, offset + 150).forEach((row, index) => {
+                    row.firstElementChild.textContent = persian(offset + index + 1);
+                    fragment.appendChild(row);
+                });
+                tbody.appendChild(fragment);
+                await new Promise(resolve => requestAnimationFrame(resolve));
             }
             progress.value = 100;
             state('گزارش کامل آماده چاپ است؛ روی «چاپ / ذخیره PDF» کلیک کنید.');

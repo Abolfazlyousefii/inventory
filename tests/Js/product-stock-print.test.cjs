@@ -6,18 +6,26 @@ const path = require('node:path');
 
 const code = fs.readFileSync(path.join(__dirname, '../../public/js/product-stock-print.js'), 'utf8');
 
-function fixture(fetchImpl) {
+function fixture(fetchImpl, productIds = [11]) {
     const events = {};
     const makeNode = () => ({
         textContent: '',
         hidden: false,
         disabled: false,
         children: [],
+        dataset: {},
+        parentNode: null,
+        get firstElementChild() { return this.children[0] || null; },
         classList: {toggle() {}},
         appendChild(node) {
             // A real DOM transfers a DocumentFragment's children to its parent.
-            if (node.isFragment) this.children.push(...node.children);
-            else this.children.push(node);
+            if (node.isFragment) {
+                [...node.children].forEach(child => this.appendChild(child));
+            } else {
+                if (node.parentNode) node.parentNode.children = node.parentNode.children.filter(child => child !== node);
+                node.parentNode = this;
+                this.children.push(node);
+            }
         },
         replaceChildren() { this.children = []; },
         addEventListener(name, fn) { this['on_' + name] = fn; },
@@ -28,7 +36,7 @@ function fixture(fetchImpl) {
     nodes.printNow.disabled = true;
     nodes.stockPrintApp = {
         dataset: {
-            productIds: '[11]',
+            productIds: JSON.stringify(productIds),
             startUrl: '/products/selected-stock-export/start',
             batchUrl: '/products/selected-stock-export/batch',
             maxRows: '2000',
@@ -157,4 +165,21 @@ test('customer row contains model/color/design but omits SKU, reservation, varia
     for (const hidden of ['PRIVATE-12', 'INTERNAL-SKU', 'V-SECRET', 'توضیح داخلی', 'InternalBrand', '۹', 'غیرفعال']) {
         assert.ok(!cols.includes(hidden), 'exposed private field: ' + hidden);
     }
+});
+
+test('product order is preserved across interleaved cursor batches without duplicate rows', async () => {
+    const row=(product_id,model_name)=>({product_id,product_name:'Product '+product_id,model_name,stock:1,sell_price_rial:100});
+    let batch=0;
+    const {nodes}=fixture(async url=>{
+        if(url.endsWith('/start'))return {total_rows:4};
+        batch++;
+        return batch===1 ? {rows:[row(11,'A'),row(22,'B')],has_more:true,next_cursor:2}
+            : {rows:[row(11,'C'),row(22,'D')],has_more:false,next_cursor:4};
+    },[22,11]);
+    await tickUntil(()=>nodes.printNow.disabled===false);
+    const rows=nodes.printTableBody.children;
+    assert.equal(rows.length,4);
+    assert.deepEqual(rows.map(row=>row.children[1].textContent),['Product 22','Product 22','Product 11','Product 11']);
+    assert.deepEqual(rows.map(row=>row.children[0].textContent),['۱','۲','۳','۴']);
+    assert.deepEqual(rows.map(row=>row.children[2].textContent),['B','D','A','C']);
 });

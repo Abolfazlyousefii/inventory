@@ -25,6 +25,12 @@ class ProductSearchService
     public function products(Request $request)
     {
         $limit = min(100, max(1, (int) $request->integer('limit', 50)));
+        return $this->productQuery($request)->cursorPaginate($limit)->withQueryString();
+    }
+
+    /** Shared product filters/order for the list and selected-product print. */
+    public function productQuery(Request $request): Builder
+    {
         $variantAgg = DB::table('product_variants')
             ->select('product_id')
             ->selectRaw('COUNT(*) variants_count')
@@ -52,7 +58,7 @@ class ProductSearchService
         $this->applyFilters($query, $request);
         $this->applySort($query, $request);
 
-        return $query->cursorPaginate($limit)->withQueryString();
+        return $query;
     }
 
     public function variants(Product $product, Request $request)

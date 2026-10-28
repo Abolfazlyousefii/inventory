@@ -15,6 +15,55 @@ class ProductSelectedStockRowsExportTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Production bundle columns are provisioned outside the recovered baseline.
+        \Illuminate\Support\Facades\Schema::table('products', function (\Illuminate\Database\Schema\Blueprint $table) {
+            $table->boolean('is_bundle')->default(false);
+            $table->string('bundle_stock_mode')->default('physical');
+        });
+    }
+
+    public function test_print_applies_current_filters_and_product_sort_to_the_selection(): void
+    {
+        $this->login();
+        $z = $this->product('Z case', 5);
+        $a = $this->product('A case', 4);
+        $other = $this->product('Other', 3);
+        $ids = [$z->id, $other->id, $a->id];
+        $this->post(route('products.selected-stock-print'), ['product_ids' => $ids, 'filters' => ['q' => 'case', 'sort' => 'name', 'direction' => 'asc']])
+            ->assertOk()->assertViewHas('productIds', [$a->id, $z->id]);
+        $this->post(route('products.selected-stock-print'), ['product_ids' => $ids, 'filters' => ['q' => 'case', 'sort' => 'stock', 'direction' => 'desc']])
+            ->assertOk()->assertViewHas('productIds', [$z->id, $a->id]);
+    }
+
+    public function test_print_rejects_a_selection_with_no_matches_in_current_filters(): void
+    {
+        $this->login();
+        $p = $this->product('Selected', 5);
+        $this->postJson(route('products.selected-stock-print'), ['product_ids' => [$p->id], 'filters' => ['q' => 'missing']])
+            ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
+    }
+
+    public function test_print_reuses_category_stock_and_price_filters_without_changing_inventory(): void
+    {
+        $this->login();
+        $p = $this->product('Included', 5);
+        $empty = $this->product('Empty', 0);
+        $expensive = $this->product('Expensive', 8);
+        $expensive->update(['price' => 900_000]);
+        $category = Category::create(['name' => 'Other category']);
+        $other = $this->product('Other category product', 6);
+        $other->update(['category_id' => $category->id]);
+        $this->post(route('products.selected-stock-print'), [
+            'product_ids' => [$other->id, $empty->id, $expensive->id, $p->id],
+            'filters' => ['category_id' => $p->category_id, 'stock_status' => 'in_stock', 'max_price' => 200_000, 'sort' => 'price', 'direction' => 'asc'],
+        ])->assertOk()->assertViewHas('productIds', [$p->id]);
+        $this->assertSame(5, (int) $p->fresh()->stock);
+        $this->assertSame(8, (int) $expensive->fresh()->stock);
+    }
+
     private function login(bool $canExport = true): void
     {
         $role = Role::findOrCreate($canExport ? 'stock-exporter' : 'stock-viewer', 'web');

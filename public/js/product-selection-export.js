@@ -109,6 +109,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             append('_token', csrf());
             for (const id of selected) append('product_ids[]', id);
+            const filterControls = {q:'productSearch',category_id:'categoryFilter',subcategory_id:'subcategoryFilter',stock_status:'stockFilter',sellable_status:'sellableFilter',product_type:'productTypeFilter',min_price:'minPrice',max_price:'maxPrice',has_variants:'hasVariants',without_price:'withoutPrice',sort:'sortFilter',direction:'directionFilter'};
+            for (const [key, controlId] of Object.entries(filterControls)) {
+                let value = document.getElementById(controlId)?.value.trim() || '';
+                if (key === 'min_price' || key === 'max_price') value = window.RialInput?.raw(value) || value;
+                if (value !== '') append(`filters[${key}]`, value);
+            }
             document.body.appendChild(form);
             try {
                 form.submit();
