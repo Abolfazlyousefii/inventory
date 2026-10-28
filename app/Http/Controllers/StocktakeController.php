@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\StockCountDocument;
 use App\Exceptions\StockCountFinalizeValidationException;
 use App\Services\StockCountDocumentService;
+use App\Services\WarehouseStockFlowReportService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -145,7 +146,27 @@ class StocktakeController extends Controller
     {
         $data = $request->validate(['page'=>['nullable','integer','min:1'],'limit'=>['nullable','integer','min:1','max:200'],'q'=>['nullable','string'],'document_id'=>['nullable','integer','exists:stock_count_documents,id']]);
         $document = !empty($data['document_id']) ? StockCountDocument::query()->find((int)$data['document_id']) : null;
-        return response()->json($this->service->variantsPage($product->id, $document, (int)($data['page'] ?? 1), (int)($data['limit'] ?? 100), $data['q'] ?? null));
+        $payload = $this->service->variantsPage($product->id, $document, (int)($data['page'] ?? 1), (int)($data['limit'] ?? 100), $data['q'] ?? null);
+
+        // Display-only figures. Do not alter expected_physical, active_reserved
+        // or actual_physical: final stock count calculations remain unchanged.
+        $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds(
+            array_column($payload['data']->all(), 'variant_id')
+        );
+        $payload['data'] = $payload['data']->map(static function (array $row) use ($queue): array {
+            $amount = $queue->get($row['variant_id']);
+            $pending = (int) ($amount->pending_collection ?? 0);
+            $received = (int) ($amount->warehouse_received ?? 0);
+            $collecting = (int) ($amount->collecting ?? 0);
+            return $row + [
+                'pending_collection' => $pending,
+                'warehouse_received' => $received,
+                'collecting' => $collecting,
+                'queue_total' => $pending + $received + $collecting,
+            ];
+        });
+
+        return response()->json($payload)->header('Cache-Control','private, no-store');
     }
 
     public function systemQuantity(Request $request) { abort(410, 'برای انبارگردانی محصولی از endpoint دریافت تنوع‌ها استفاده کنید.'); }
