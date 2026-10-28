@@ -25,6 +25,7 @@
                             @case('central') انبار مرکزی @break
                             @case('return') انبار مرجوعی @break
                             @case('scrap') انبار ضایعات @break
+                            @case('showroom') انبار شوروم @break
                             @default انبار پرسنل
                         @endswitch
                     </td>

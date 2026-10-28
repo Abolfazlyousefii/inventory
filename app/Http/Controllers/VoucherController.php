@@ -36,6 +36,7 @@ class VoucherController extends Controller
             'scrap' => WarehouseTransfer::TYPE_SCRAP,
             'personnel' => WarehouseTransfer::TYPE_PERSONNEL_ASSET,
             'transfer' => WarehouseTransfer::TYPE_BETWEEN_WAREHOUSES,
+            'showroom' => WarehouseTransfer::TYPE_SHOWROOM,
             'sale' => WarehouseTransfer::TYPE_SALE,
         ];
     }
@@ -339,6 +340,7 @@ class VoucherController extends Controller
             'scrap' => 'vouchers.scrap.index',
             'personnel' => 'vouchers.personnel.index',
             'transfer' => 'vouchers.transfer.index',
+            'showroom' => 'vouchers.transfer.index',
             'sale' => 'vouchers.sale.index',
             default => 'vouchers.section',
         };
@@ -355,7 +357,16 @@ class VoucherController extends Controller
                 ->withQueryString();
         }
 
+        $showroomStock=null;
+        $showroomQuantity=0;
+        if($type==='showroom'){
+            $showroomIds=Warehouse::where('type','showroom')->pluck('id');
+            $showroomQuantity=(int)\App\Models\WarehouseStock::whereIn('warehouse_id',$showroomIds)->whereNotNull('product_variant_id')->sum('quantity');
+            $showroomStock=\App\Models\WarehouseStock::whereIn('warehouse_id',$showroomIds)->whereNotNull('product_variant_id')->where('quantity','>',0)->with(['product:id,name','variant:id,variant_name,variant_code'])->orderBy('product_id')->paginate(20,['*'],'stock_page')->withQueryString();
+        }
+
         return view($view, compact(
+            'showroomStock','showroomQuantity',
             'vouchers',
             'salesInvoices',
             'type',
@@ -531,6 +542,7 @@ class VoucherController extends Controller
             'scrap' => $this->scrapCreate(),
             'personnel' => $this->personnelCreate(),
             'transfer' => $this->transferCreate(),
+            'showroom' => $this->showroomCreate(),
             default => abort(404),
         };
     }
@@ -552,9 +564,14 @@ class VoucherController extends Controller
         $data = $this->validateTransfer($request);
         $transferredAt = $this->resolveTransferredAtFromRequest($request);
 
-        DB::transaction(function () use ($data, $transferredAt) {
-            $this->createTransfer($data, $transferredAt);
-        });
+        if($type==='showroom'){
+            $request->validate(['request_token'=>'required|uuid']);
+            $this->storeShowroomTransfer($data,$transferredAt,(string)$request->input('request_token'));
+        }else{
+            DB::transaction(function () use ($data, $transferredAt) {
+                $this->createTransfer($data, $transferredAt);
+            });
+        }
 
         $message = $type === 'personnel' ? 'حواله پرسنل ثبت شد.' : 'سند حواله ثبت شد.';
 
@@ -1629,6 +1646,30 @@ class VoucherController extends Controller
         return $rule;
     }
 
+    private function showroomCreate()
+    {
+        $centralWarehouse=Warehouse::findOrFail(WarehouseStockService::centralWarehouseId());
+        $showroomWarehouse=Warehouse::where('type','showroom')->where('is_active',true)->orderBy('id')->firstOrFail();
+        $categories=Category::with('parent:id,name')->orderBy('name')->get();
+        return view('vouchers.showroom.create',compact('centralWarehouse','showroomWarehouse','categories'));
+    }
+
+    private function storeShowroomTransfer(array $data,$at,string $token): void
+    {
+        $fingerprint=hash('sha256',json_encode(['from'=>(int)$data['from_warehouse_id'],'to'=>(int)$data['to_warehouse_id'],'reference'=>$data['reference']??'','note'=>$data['note']??'','items'=>array_map(fn($r)=>[(int)$r['product_id'],(int)$r['variant_id'],(int)$r['quantity']],$data['items'])],JSON_THROW_ON_ERROR));
+        DB::transaction(function()use($data,$at,$token,$fingerprint){
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            User::whereKey(auth()->id())->lockForUpdate()->firstOrFail();
+            $existing=DB::table('warehouse_transfer_submissions')->where('token',$token)->first();
+            if($existing){
+                abort_unless((int)$existing->user_id===(int)auth()->id()&&hash_equals($existing->fingerprint,$fingerprint)&&$existing->warehouse_transfer_id!==null,409,'این درخواست قبلاً ثبت یا تغییر کرده است؛ فرم جدید باز کنید.');
+                return;
+            }
+            $transfer=$this->createTransfer($data,$at);
+            DB::table('warehouse_transfer_submissions')->insert(['token'=>$token,'user_id'=>auth()->id(),'warehouse_transfer_id'=>$transfer->id,'fingerprint'=>$fingerprint,'created_at'=>now(),'updated_at'=>now()]);
+        },3);
+    }
+
     private function transferCreate()
     {
         $categories = Category::orderBy('name')->get();
@@ -1802,6 +1843,7 @@ class VoucherController extends Controller
 
     public function store(Request $request)
     {
+        if((string)$request->input('voucher_type')===WarehouseTransfer::TYPE_SHOWROOM)return $this->sectionStore('showroom',$request);
         if ((string) $request->input('voucher_type') === WarehouseTransfer::TYPE_PERSONNEL_ASSET) {
             $this->normalizePersonnelTransferRequest($request);
         }
@@ -1967,6 +2009,10 @@ class VoucherController extends Controller
         $voucherType = (string) ($data['voucher_type'] ?? '');
         $fromWarehouse = Warehouse::findOrFail((int) $data['from_warehouse_id']);
         $toWarehouse = Warehouse::findOrFail((int) $data['to_warehouse_id']);
+
+        if($voucherType===WarehouseTransfer::TYPE_SHOWROOM){
+            abort_unless((int)$fromWarehouse->id===WarehouseStockService::centralWarehouseId()&&$toWarehouse->type==='showroom'&&$fromWarehouse->is_active&&$toWarehouse->is_active,422,'حواله شوروم باید از انبار مرکزی فعال به انبار شوروم فعال باشد.');
+        }
 
         if ($voucherType === WarehouseTransfer::TYPE_SCRAP) {
             $scrapWarehouse = $this->scrapWarehouse();

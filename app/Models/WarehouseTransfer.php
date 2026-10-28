@@ -26,7 +26,7 @@ class WarehouseTransfer extends Model
             self::TYPE_BETWEEN_WAREHOUSES => 'حواله بین انبار',
             self::TYPE_SCRAP => 'حواله ضایعات',
             self::TYPE_CUSTOMER_RETURN => 'حواله مرجوعی مشتری',
-            self::TYPE_SHOWROOM => 'حواله شوروم سالن',
+            self::TYPE_SHOWROOM => 'حواله شوروم',
             self::TYPE_PERSONNEL_ASSET => 'حواله اموال پرسنل',
         ];
     }

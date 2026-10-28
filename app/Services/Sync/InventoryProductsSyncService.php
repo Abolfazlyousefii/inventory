@@ -157,6 +157,7 @@ class InventoryProductsSyncService {
         $stockMap = $variantIds === []
             ? []
             : WarehouseStock::query()
+                ->where('warehouse_id', \App\Services\WarehouseStockService::centralWarehouseId())
                 ->whereIn('product_variant_id', $variantIds)
                 ->groupBy('product_variant_id')
                 ->select('product_variant_id', DB::raw('SUM(quantity) as total_stock'))

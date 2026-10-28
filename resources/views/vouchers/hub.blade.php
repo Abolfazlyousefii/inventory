@@ -89,6 +89,11 @@
                         <span class="tag">مقصد</span>
                     </div>
                 </a>
+                <a class="voucher-card" href="{{ route('vouchers.section.index','showroom') }}">
+                    <div class="voucher-icon">🏬</div><div class="voucher-title">حواله شوروم</div>
+                    <div class="voucher-desc">انتقال کالا از انبار مرکزی به انبار شوروم، با موجودی و سابقهٔ مستقل.</div>
+                    <div class="tags"><span class="tag">شوروم</span><span class="tag">انتقال</span><span class="tag">موجودی مستقل</span></div>
+                </a>
             </div>
         </div>
     </div>

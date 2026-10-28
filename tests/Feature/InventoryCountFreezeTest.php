@@ -112,7 +112,7 @@ it('leaves unrelated categories and noncentral warehouses operational', function
     $service->activate([$a['category']->id], false, $a['admin']);
     expect($service->blocked($b['product']->id))->toBeFalse();
     WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $b['product']->id, -2, $b['variant']->id);
-    $warehouse = Warehouse::create(['name' => 'مرجوعی', 'type' => 'returns', 'is_active' => true]);
+    $warehouse = Warehouse::create(['name' => 'مرجوعی', 'type' => 'return', 'is_active' => true]);
     WarehouseStockService::change($warehouse->id, $a['product']->id, 2, $a['variant']->id);
     expect($a['variant']->fresh()->stock)->toBe(10)->and($b['variant']->fresh()->stock)->toBe(8);
 });

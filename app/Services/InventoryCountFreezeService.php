@@ -86,6 +86,9 @@ class InventoryCountFreezeService
         if ($this->internalDepth || $this->stocktakeDepth) {
             return;
         }
+        if (! $this->state()?->enabled) {
+            return;
+        }
         if ($warehouseId !== null && $warehouseId !== WarehouseStockService::centralWarehouseId()) {
             return;
         }
