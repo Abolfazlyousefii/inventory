@@ -121,7 +121,7 @@ class SalesReturnLookupController extends Controller
     public function categories(Request $request)
     {
         $parentId = $request->query('parent_id');
-        $query = Category::query()->withCount('products')->orderBy('name');
+        $query = Category::query()->withCount(['products', 'children'])->orderBy('name');
         $parentId === null || $parentId === '' ? $query->whereNull('parent_id') : $query->where('parent_id', (int) $parentId);
         return ['data' => $query->limit(100)->get(['id', 'name', 'code', 'parent_id'])->map(fn ($category) => [
             'id' => $category->id,
@@ -129,15 +129,16 @@ class SalesReturnLookupController extends Controller
             'code' => $category->code,
             'parent_id' => $category->parent_id,
             'products_count' => $category->products_count,
+            'children_count' => $category->children_count,
         ])->values()];
     }
 
     public function categoryProducts(Category $category, Request $request)
     {
         $q = trim((string) $request->query('q', ''));
-        $products = Product::query()->with(['category:id,name', 'variants:id,product_id,variant_name,variant_code,is_active,sales_enabled,buy_price,sell_price,stock,reserved,model_list_id,variety_name,variety_code'])
+        $products = Product::query()->with('category:id,name')
             ->withCount('variants')
-            ->where('category_id', $category->id)
+            ->whereIn('category_id', Category::selfAndDescendantIds((int) $category->id))
             ->when($q !== '', fn ($query) => $query->where(fn ($inner) => $inner->where('name', 'like', "%{$q}%")->orWhere('code', 'like', "%{$q}%")->orWhere('sku', 'like', "%{$q}%")->orWhere('barcode', 'like', "%{$q}%")))
             ->orderByDesc('id')
             ->limit(50)
@@ -219,7 +220,7 @@ class SalesReturnLookupController extends Controller
                 'is_active' => (bool) $v->is_active,
                 'sales_enabled' => (bool) $v->sales_enabled,
                 'buy_price' => (int) $v->buy_price,
-                'sell_price' => (int) $v->sell_price,
+                'catalog_sell_price' => ($v->product ? \App\Services\SalesReturnSellingPriceService::catalogPrice($v->product) : 0), 'sell_price' => (int) $v->sell_price,
             ])->values()->all(),
             'meta' => [
                 'page' => $variants->currentPage(),
@@ -231,7 +232,8 @@ class SalesReturnLookupController extends Controller
     public function variants(\App\Models\Product $product)
     {
         $product->load('variants.warehouseStocks.warehouse');
-        return ['product' => ['id' => $product->id, 'name' => $product->name, 'code' => $product->code ?: $product->sku], 'variants' => $product->variants->map(fn ($v) => ['id' => $v->id, 'name' => $v->variant_name, 'variety_name' => $v->variety_name, 'variety_code' => $v->variety_code, 'sku' => $v->variant_code, 'barcode' => $v->barcode, 'stock' => (int) $v->stock, 'reserved' => (int) $v->reserved, 'buy_price' => (int) $v->buy_price, 'sell_price' => (int) $v->sell_price, 'is_active' => (bool) $v->is_active, 'sales_enabled' => (bool) $v->sales_enabled, 'stocks' => $v->warehouseStocks->map(fn ($s) => ['warehouse' => $s->warehouse?->name, 'quantity' => (int) $s->quantity])])];
+        $product->variants->each(fn ($variant) => $variant->setRelation('product', $product));
+        return ['product' => ['id' => $product->id, 'name' => $product->name, 'code' => $product->code ?: $product->sku], 'variants' => $product->variants->map(fn ($v) => ['id' => $v->id, 'name' => $v->variant_name, 'variety_name' => $v->variety_name, 'variety_code' => $v->variety_code, 'sku' => $v->variant_code, 'barcode' => $v->barcode, 'stock' => (int) $v->stock, 'reserved' => (int) $v->reserved, 'buy_price' => (int) $v->buy_price, 'catalog_sell_price' => ($v->product ? \App\Services\SalesReturnSellingPriceService::catalogPrice($v->product) : 0), 'sell_price' => (int) $v->sell_price, 'is_active' => (bool) $v->is_active, 'sales_enabled' => (bool) $v->sales_enabled, 'stocks' => $v->warehouseStocks->map(fn ($s) => ['warehouse' => $s->warehouse?->name, 'quantity' => (int) $s->quantity])])];
     }
 
     public function preview(Request $request)

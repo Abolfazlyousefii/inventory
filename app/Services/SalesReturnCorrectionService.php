@@ -141,8 +141,11 @@ class SalesReturnCorrectionService
                     CustomerLedger::create(['customer_id' => $doc->customer_id, 'reference_type' => SalesReturnCorrection::class, 'reference_id' => $correction->id, 'type' => 'debit', 'amount' => (int) $before['total_refund_amount'], 'note' => 'بازگردانی بستانکاری برای دریافت مجدد برگشت '.$doc->document_number]);
                 }
                 $doc->update(['status' => SalesReturnDocument::STATUS_DRAFT, 'applied_at' => null, 'applied_by' => null]);
-                $doc = $this->returns->apply($doc, $actor);
+                $doc = $this->returns->apply($doc, $actor, false);
                 WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $doc->id)->where('status', 'pending')->update(['operation_key' => 'revision-direct-'.$correction->id]);
+            }
+            if (! $void && ! $requeue) {
+                app(SalesReturnSellingPriceService::class)->finalize($doc->fresh('items'), $actor);
             }
             if ($void) {
                 $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actor, 'cancelled_at' => now(), 'cancel_reason' => trim($reason)]);

@@ -216,6 +216,7 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $user = \Mockery::mock(User::class)->makePartial();
         $user->id = 1;
         $user->shouldReceive('isAdministrator')->andReturn(false);
+        $user->shouldReceive('hasRole')->andReturn(false);
         $user->shouldReceive('hasPermission')->andReturnUsing(fn ($p) => in_array($p, ['page.sales.returns', 'sales_returns.edit_applied'], true));
         auth()->setUser($user);
         try {

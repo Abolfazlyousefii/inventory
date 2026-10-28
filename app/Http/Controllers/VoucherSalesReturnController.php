@@ -118,7 +118,7 @@ class VoucherSalesReturnController extends Controller
     {
         if (! $document->isDraft() && ! $document->isPendingWarehouse()) {
             abort(403);
-        } $document->load('items', 'customer', 'invoice');
+        } $document->load('items.product', 'items.variant', 'customer', 'invoice');
 
         return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document]);
     }
@@ -135,7 +135,7 @@ class VoucherSalesReturnController extends Controller
         if (SalesReturnCorrection::where('document_id', $document->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->exists()) {
             return redirect()->route('sales-return-corrections.index', ['document_id' => $document->id, 'status' => 'all'])->with('error', 'این سند یک درخواست اصلاح در انتظار بررسی دارد؛ ابتدا همان درخواست تعیین تکلیف شود.');
         }
-        $document->load('items', 'customer', 'invoice');
+        $document->load('items.product', 'items.variant', 'customer', 'invoice');
 
         return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document, 'isAppliedEdit' => true, 'warehouseMode' => $warehouseMode]);
     }

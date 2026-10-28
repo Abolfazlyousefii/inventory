@@ -524,6 +524,8 @@ class WarehouseInboundService
                 ]);
             }
 
+            app(SalesReturnSellingPriceService::class)->finalize($doc, $actorId);
+
             // A return moved to central and then back to return-only has already
             // reversed its original credit. Keep that history and post a new credit.
             $requeuedReceipt=WarehouseInboundReceipt::where('source_type','sales_return')->where('source_id',$doc->id)->where('operation_key','like','revision-direct-%')->where('status','cancelled')->where('accepted_quantity',0)->latest('id')->first();
@@ -644,6 +646,8 @@ class WarehouseInboundService
             ]);
             return;
         }
+
+        app(SalesReturnSellingPriceService::class)->finalize($document, $actorId);
 
         if ($totalAmount > 0) {
             $ledgerReferenceType = str_starts_with((string) $receipt->operation_key, 'revision-')

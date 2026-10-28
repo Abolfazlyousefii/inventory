@@ -123,6 +123,7 @@ class SalesReturnService
                 $this->assertInternalReturnablesStillValid($doc);
             }
             if ($doc->isSazehHesab()) {
+                app(SalesReturnSellingPriceService::class)->validateForSubmission($doc, false);
                 $this->materializeNewProductGroups($doc);
                 $doc = $doc->fresh('items');
             }
@@ -219,9 +220,9 @@ class SalesReturnService
         });
     }
 
-    public function apply(SalesReturnDocument $document, ?int $actorId): SalesReturnDocument
+    public function apply(SalesReturnDocument $document, ?int $actorId, bool $requireSellingPrice = true): SalesReturnDocument
     {
-        return DB::transaction(function () use ($document, $actorId) {
+        return DB::transaction(function () use ($document, $actorId, $requireSellingPrice) {
             $doc = SalesReturnDocument::query()->whereKey($document->id)->lockForUpdate()->firstOrFail();
             if ($doc->isApplied() || $doc->isPendingWarehouse()) {
                 return $doc;
@@ -240,6 +241,7 @@ class SalesReturnService
                 $this->assertInternalReturnablesStillValid($doc);
             }
             if ($doc->isSazehHesab()) {
+                app(SalesReturnSellingPriceService::class)->validateForSubmission($doc, $requireSellingPrice);
                 $this->materializeNewProductGroups($doc);
                 $doc->load('items');
             }
@@ -309,7 +311,7 @@ class SalesReturnService
             $attrs = ['item_source' => $source, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'return_quantity' => $qty, 'refund_unit_price' => $unit, 'refund_amount' => $qty * $unit];
             if ($source === SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT) {
                 $variant = ProductVariant::with('product')->findOrFail((int) $row['product_variant_id']);
-                $attrs += ['product_id' => $variant->product_id, 'product_variant_id' => $variant->id, 'product_name_snapshot' => $variant->product?->name, 'variant_name_snapshot' => $variant->variant_name, 'sku_snapshot' => $variant->variant_code, 'barcode_snapshot' => $variant->variant_code];
+                $attrs += ['sell_price' => (isset($row['sell_price']) && (int) $row['sell_price'] > 0) ? (int) $row['sell_price'] : null, 'product_id' => $variant->product_id, 'product_variant_id' => $variant->id, 'product_name_snapshot' => $variant->product?->name, 'variant_name_snapshot' => $variant->variant_name, 'sku_snapshot' => $variant->variant_code, 'barcode_snapshot' => $variant->variant_code];
             } else {
                 $payload = $this->normalizer->normalize($row['new_product_payload'] ?? []);
                 $attrs += ['product_name_snapshot' => $payload['name'] ?? $payload['product_name'] ?? null, 'variant_name_snapshot' => $payload['variant_name'] ?? ($payload['selected_variants'][0]['display_name'] ?? null), 'sku_snapshot' => $payload['selected_variants'][0]['preview_code'] ?? ($payload['sku'] ?? null), 'barcode_snapshot' => $payload['barcode'] ?? null, 'purchase_price' => (int) ($payload['purchase_price'] ?? $row['purchase_price'] ?? 0), 'sell_price' => (int) ($payload['sell_price'] ?? $row['sell_price'] ?? 0), 'new_product_payload' => $payload];
