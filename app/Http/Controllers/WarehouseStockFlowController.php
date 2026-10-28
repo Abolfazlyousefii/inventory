@@ -24,6 +24,23 @@ final class WarehouseStockFlowController extends Controller
         ]);
     }
 
+    /** Paginated, on-demand provenance for the quantity in a queue or an official hold. */
+    public function details(Request $request, int $variant, WarehouseStockFlowReportService $report): JsonResponse
+    {
+        $filters = $request->validate([
+            'kind' => ['required', 'in:queue,official'],
+            'after_id' => ['nullable', 'integer', 'min:0'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        return response()->json($report->documentDetails(
+            $variant,
+            $filters['kind'],
+            (int) ($filters['after_id'] ?? 0),
+            (int) ($filters['limit'] ?? 50),
+        ))->header('Cache-Control', 'private, no-store');
+    }
+
     public function rows(Request $request, WarehouseStockFlowReportService $report): JsonResponse
     {
         $filters = $request->validate([
