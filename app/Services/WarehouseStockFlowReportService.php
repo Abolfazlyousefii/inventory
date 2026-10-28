@@ -215,7 +215,12 @@ final class WarehouseStockFlowReportService
             'rows' => $page->map(static fn ($document) => [
                 'document_id' => (int) $document->document_id,
                 'document_number' => (string) $document->document_number,
-                'document_url' => route($routeName, (string) $document->document_number),
+                'document_url' => $kind === 'queue'
+                    ? route('invoices.show', (string) $document->document_number)
+                    : route('archive.preinvoices.show', [
+                        'uuid' => (string) $document->document_number,
+                        'print' => 'warehouse',
+                    ]),
                 'customer_name' => (string) ($document->customer_name ?: 'نام ثبت نشده'),
                 'seller_name' => (string) ($document->seller_name ?: 'ثبت نشده'),
                 'status_label' => (string) ($labels[$document->status] ?? $document->status),
