@@ -21,6 +21,37 @@ final class WarehouseStockFlowReportService
         Invoice::STATUS_COLLECTING,
     ];
 
+    /**
+     * Read-only queue totals for precisely the variants on the current
+     * stocktaking page. One grouped query, irrespective of variant count.
+     * These numbers are informational and MUST NOT feed stocktake deltas.
+     *
+     * @param array<int,int> $variantIds
+     * @return \Illuminate\Support\Collection<int,object>
+     */
+    public function collectionQueueByVariantIds(array $variantIds): \Illuminate\Support\Collection
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $variantIds), static fn (int $id) => $id > 0)));
+        if ($ids === []) {
+            return collect();
+        }
+
+        return DB::table('invoice_items as ii')
+            ->join('invoices as i','i.id','=','ii.invoice_id')
+            ->whereIn('ii.variant_id',$ids)
+            ->whereIn('i.status',self::COLLECTION_STATUSES)
+            ->where('ii.quantity','>',0)
+            ->groupBy('ii.variant_id')
+            ->select('ii.variant_id')
+            ->selectRaw('SUM(CASE WHEN i.status = ? THEN ii.quantity ELSE 0 END) AS pending_collection',
+                [Invoice::STATUS_PENDING_COLLECTION])
+            ->selectRaw('SUM(CASE WHEN i.status = ? THEN ii.quantity ELSE 0 END) AS warehouse_received',
+                [Invoice::STATUS_WAREHOUSE_RECEIVED])
+            ->selectRaw('SUM(CASE WHEN i.status = ? THEN ii.quantity ELSE 0 END) AS collecting',
+                [Invoice::STATUS_COLLECTING])
+            ->get()->keyBy('variant_id');
+    }
+
     public function rows(int $afterId, int $limit, string $search, bool $onlyInFlow): array
     {
         // Never use centralWarehouseId() here: it may create a warehouse.
@@ -108,20 +139,7 @@ final class WarehouseStockFlowReportService
             ->selectRaw('SUM(r.quantity) as units')
             ->pluck('units','variant_id');
 
-        $queues = DB::table('invoice_items as ii')
-            ->join('invoices as i','i.id','=','ii.invoice_id')
-            ->whereIn('ii.variant_id',$ids)
-            ->whereIn('i.status',self::COLLECTION_STATUSES)
-            ->where('ii.quantity','>',0)
-            ->groupBy('ii.variant_id')
-            ->select('ii.variant_id')
-            ->selectRaw('SUM(CASE WHEN i.status = ? THEN ii.quantity ELSE 0 END) AS pending_collection',
-                [Invoice::STATUS_PENDING_COLLECTION])
-            ->selectRaw('SUM(CASE WHEN i.status = ? THEN ii.quantity ELSE 0 END) AS warehouse_received',
-                [Invoice::STATUS_WAREHOUSE_RECEIVED])
-            ->selectRaw('SUM(CASE WHEN i.status = ? THEN ii.quantity ELSE 0 END) AS collecting',
-                [Invoice::STATUS_COLLECTING])
-            ->get()->keyBy('variant_id');
+        $queues = $this->collectionQueueByVariantIds($ids);
 
         return [
             'rows'=>$page->map(static function ($v) use ($free,$holds,$queues) {
