@@ -14,6 +14,28 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+it('opens invoices from the statement through its authorized read-only document route', function (bool $nonSales) {
+    $user = statementReader(false);
+    if ($nonSales) {
+        $user->assignRole(Role::findOrCreate(\App\Support\WarehouseVoucherAccess::ROLE, 'web'));
+    } else {
+        $shipping = Role::findOrCreate('Org:warehouse.shipping', 'web');
+        $shipping->givePermissionTo(Permission::where('key', 'page.warehouse.shipping')->firstOrFail());
+        $user->assignRole($shipping);
+    }
+    $customer = Customer::factory()->create();
+    $invoice = Invoice::withoutEvents(fn () => Invoice::create(['uuid' => 'STATEMENT-READ', 'customer_id' => $customer->id, 'customer_name' => 'Invoice customer', 'total' => 1000, 'status' => Invoice::STATUS_SHIPPED]));
+    CustomerLedger::create(['customer_id' => $customer->id, 'type' => 'debit', 'amount' => 1000, 'reference_type' => Invoice::class, 'reference_id' => $invoice->id]);
+    $this->actingAs($user->fresh())->get(route('account-statements.show', $customer))->assertOk()
+        ->assertSee(route('account-statements.documents.invoices.show', $invoice->uuid), false);
+    $document = $this->get(route('account-statements.documents.invoices.show', $invoice->uuid))->assertOk()
+        ->assertSee('STATEMENT-READ')->assertSee('Invoice customer');
+    preg_match('~<main\b[^>]*>(.*?)</main>~s', $document->getContent(), $main);
+    $this->assertStringNotContainsString('<form', $main[1]);
+    $this->postJson(route('account-statements.payments.store', $customer), [])->assertForbidden();
+    expect(CustomerLedger::count())->toBe(1);
+})->with([true, false]);
+
 function statementReader(bool $broad = true): User
 {
     $user = User::factory()->create();

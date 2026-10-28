@@ -66,7 +66,7 @@
 						@endphp
 						<tr>
 							<td class="text-nowrap">
-								<a class="invoice-ref text-decoration-none" href="{{ route('vouchers.sales.show', $invoiceRow->uuid) }}">
+								<a class="invoice-ref text-decoration-none" href="{{ route(\App\Support\AccountStatementAccess::readOnly(auth()->user()) ? 'account-statements.documents.invoices.show' : 'vouchers.sales.show', $invoiceRow->uuid) }}">
 									{{ $invoiceRow->uuid }}
 								</a>
 								@if($invoiceRow->external_order_id)

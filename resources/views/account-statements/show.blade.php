@@ -49,7 +49,8 @@
                         if ($invoice) {
                             $reference = $invoice->uuid;
                             $description = 'فاکتور فروش';
-                            $url = route('vouchers.sales.show', $invoice->uuid);
+                            $url = route(\App\Support\AccountStatementAccess::readOnly(auth()->user())
+                                ? 'account-statements.documents.invoices.show' : 'vouchers.sales.show', $invoice->uuid);
                             $invoiceCustomerName = trim((string) ($invoice->customer_name ?? ''));
                             if ($invoiceCustomerName === '') {
                                 $invoiceCustomerName = trim((string) ($invoice->customer?->display_name ?? ''));
