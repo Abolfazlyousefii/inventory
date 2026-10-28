@@ -205,6 +205,10 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
             ->assertJsonPath('rows.0.quantity',9)
             ->assertJsonPath('rows.0.document_number',$order->uuid)
             ->assertJsonPath('rows.0.seller_name','فروشنده پیش‌فاکتور');
+        $this->assertStringContainsString(
+            'print=warehouse',
+            $this->getJson($url)->assertOk()->json('rows.0.document_url')
+        );
 
         $this->invoice($product,$variant,Invoice::STATUS_PENDING_COLLECTION,9);
         Invoice::latest('id')->firstOrFail()->forceFill([
