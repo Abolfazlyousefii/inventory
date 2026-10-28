@@ -140,6 +140,57 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
         $this->assertSame(0, Warehouse::query()->where('type', 'central')->count());
     }
 
+
+    public function test_stocktake_registration_shows_queue_breakdown_per_variant_without_changing_saved_stock(): void
+    {
+        $this->owner();
+        [$product,$variant] = $this->stock('قاب شمارش',200);
+        $this->invoice($product,$variant,Invoice::STATUS_PENDING_COLLECTION,100);
+        $this->invoice($product,$variant,Invoice::STATUS_WAREHOUSE_RECEIVED,7);
+        $this->invoice($product,$variant,Invoice::STATUS_COLLECTING,3);
+        $this->invoice($product,$variant,Invoice::STATUS_READY_TO_SHIP,33);
+        $this->invoice($product,$variant,Invoice::STATUS_SHIPPED,44);
+        $before = WarehouseStock::query()->where('product_variant_id',$variant->id)->value('quantity');
+        $moves = DB::table('stock_movements')->count();
+
+        $this->get(route('stock-count-documents.create'))->assertOk()
+            ->assertSee('موجودی در صف جمع‌آوری')
+            ->assertSee('اطلاع‌رسانی فقط‌خواندنی');
+
+        $response = $this->getJson(route('stock-count-documents.variants', ['product'=>$product->id,'limit'=>100]))
+            ->assertOk()
+            ->assertJsonPath('data.0.variant_id',$variant->id)
+            ->assertJsonPath('data.0.system_available',200)
+            ->assertJsonPath('data.0.pending_collection',100)
+            ->assertJsonPath('data.0.warehouse_received',7)
+            ->assertJsonPath('data.0.collecting',3)
+            ->assertJsonPath('data.0.queue_total',110);
+
+        // Existing stocktaking arithmetic must remain untouched:
+        // flow is displayed separately, never silently added to expected_physical.
+        $this->assertSame(200,$response->json('data.0.expected_physical'));
+        $this->assertSame($before,WarehouseStock::query()->where('product_variant_id',$variant->id)->value('quantity'));
+        $this->assertSame($moves,DB::table('stock_movements')->count());
+    }
+
+    public function test_stocktake_inline_queue_is_zero_for_an_unrelated_variant_and_does_not_expose_other_products(): void
+    {
+        $this->owner();
+        [$first,$v1] = $this->stock('محصول یکم',10);
+        [$second,$v2] = $this->stock('محصول دوم',10);
+        $this->invoice($second,$v2,Invoice::STATUS_PENDING_COLLECTION,15);
+
+        $this->getJson(route('stock-count-documents.variants',['product'=>$first->id]))
+            ->assertOk()
+            ->assertJsonCount(1,'data')
+            ->assertJsonPath('data.0.variant_id',$v1->id)
+            ->assertJsonPath('data.0.queue_total',0);
+
+        $this->getJson(route('stock-count-documents.variants',['product'=>$second->id]))
+            ->assertOk()
+            ->assertJsonPath('data.0.queue_total',15);
+    }
+
     public function test_unauthenticated_or_unauthorized_requests_are_denied(): void
     {
         $this->get(route('warehouse.stock-flow.index'))->assertRedirect();
