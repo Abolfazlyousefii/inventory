@@ -129,6 +129,114 @@ class WarehouseStockFlowReadOnlyTest extends TestCase
         $this->assertSame(2,Product::count());
     }
 
+    public function test_queue_document_details_show_invoice_customer_seller_status_and_quantity_without_shipped(): void
+    {
+        $this->owner();
+        [$product, $variant] = $this->stock();
+        $seller = User::factory()->create(['name' => 'فروشنده آزمایشی']);
+        $this->invoice($product, $variant, Invoice::STATUS_PENDING_COLLECTION, 60);
+        $invoice = Invoice::query()->latest('id')->firstOrFail();
+        $invoice->forceFill([
+            'customer_name' => 'مشتری آزمایشی',
+            'seller_id' => $seller->id,
+        ])->saveQuietly();
+        $this->invoice($product, $variant, Invoice::STATUS_READY_TO_SHIP, 25);
+        $this->invoice($product, $variant, Invoice::STATUS_SHIPPED, 15);
+
+        $before = WarehouseStock::query()->where('product_variant_id', $variant->id)->value('quantity');
+        $response = $this->getJson(route('warehouse.stock-flow.details', [
+            'variant' => $variant->id, 'kind' => 'queue',
+        ]))->assertOk()->assertJsonCount(1, 'rows');
+
+        $response->assertJsonPath('rows.0.document_number', $invoice->uuid)
+            ->assertJsonPath('rows.0.customer_name', 'مشتری آزمایشی')
+            ->assertJsonPath('rows.0.seller_name', 'فروشنده آزمایشی')
+            ->assertJsonPath('rows.0.quantity', 60)
+            ->assertJsonPath('rows.0.status_label', 'در صف جمع‌آوری')
+            ->assertJsonPath('has_more', false);
+        $this->assertSame($before, WarehouseStock::query()->where('product_variant_id', $variant->id)->value('quantity'));
+        $this->assertSame(0, DB::table('stock_movements')->count());
+    }
+
+    public function test_details_group_duplicate_invoice_lines_and_paginate_by_document(): void
+    {
+        $this->owner();
+        [$product, $variant] = $this->stock();
+        $this->invoice($product, $variant, Invoice::STATUS_COLLECTING, 4);
+        $invoice = Invoice::query()->latest('id')->firstOrFail();
+        InvoiceItem::withoutEvents(fn () => InvoiceItem::create([
+            'invoice_id'=>$invoice->id,'product_id'=>$product->id,
+            'variant_id'=>$variant->id,'quantity'=>6,'price'=>300000,
+        ]));
+        $this->invoice($product, $variant, Invoice::STATUS_WAREHOUSE_RECEIVED, 3);
+        $first = $this->getJson(route('warehouse.stock-flow.details', [
+            'variant'=>$variant->id,'kind'=>'queue','limit'=>1,
+        ]))->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.quantity', 10)
+            ->assertJsonPath('has_more', true);
+        $second = $this->getJson(route('warehouse.stock-flow.details', [
+            'variant'=>$variant->id,'kind'=>'queue','limit'=>1,'after_id'=>$first->json('next_cursor'),
+        ]))->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.quantity', 3)
+            ->assertJsonPath('has_more', false);
+    }
+
+    public function test_official_reservation_details_link_to_preinvoice_and_exclude_converted_holds(): void
+    {
+        $this->owner();
+        [$product, $variant] = $this->stock();
+        $seller = User::factory()->create(['name'=>'فروشنده پیش‌فاکتور']);
+        $order = PreinvoiceOrder::withoutEvents(fn () => PreinvoiceOrder::create([
+            'uuid' => 'PI-'.Str::random(10),
+            'status' => PreinvoiceOrder::STATUS_PENDING_FINANCE,
+            'seller_id' => $seller->id, 'created_by' => $seller->id,
+            'customer_name' => 'مشتری پیش‌فاکتور',
+            'customer_mobile' => '09120000000',
+            'total_price' => 1000,
+        ]));
+        $reservation = PreinvoiceDraftReservation::create([
+            'token' => (string) Str::uuid(), 'user_id'=>$seller->id,
+            'preinvoice_order_id'=>$order->id, 'reservation_scope'=>'official',
+            'product_id'=>$product->id, 'variant_id'=>$variant->id,
+            'quantity'=>9,'expires_at'=>now()->addDay(),
+        ]);
+        $url = route('warehouse.stock-flow.details', [
+            'variant'=>$variant->id,'kind'=>'official',
+        ]);
+        $this->getJson($url)->assertOk()->assertJsonCount(1,'rows')
+            ->assertJsonPath('rows.0.quantity',9)
+            ->assertJsonPath('rows.0.document_number',$order->uuid)
+            ->assertJsonPath('rows.0.seller_name','فروشنده پیش‌فاکتور');
+        $this->assertStringContainsString(
+            'print=warehouse',
+            $this->getJson($url)->assertOk()->json('rows.0.document_url')
+        );
+
+        $this->invoice($product,$variant,Invoice::STATUS_PENDING_COLLECTION,9);
+        Invoice::latest('id')->firstOrFail()->forceFill([
+            'preinvoice_order_id'=>$order->id,
+        ])->saveQuietly();
+        $this->getJson($url)->assertOk()->assertJsonCount(0,'rows');
+        $this->assertNull($reservation->fresh()->released_at);
+    }
+
+    public function test_details_validate_input_and_protect_access(): void
+    {
+        [$product,$variant] = $this->stock();
+        $url = route('warehouse.stock-flow.details', ['variant'=>$variant->id,'kind'=>'queue']);
+        $this->getJson($url)->assertUnauthorized();
+        $this->actingAs(User::factory()->create(['is_active'=>true,'can_access_erp'=>true]))
+            ->getJson($url)->assertForbidden();
+        $this->owner();
+        $this->getJson(route('warehouse.stock-flow.details',[
+            'variant'=>$variant->id,'kind'=>'all',
+        ]))->assertUnprocessable();
+        $this->getJson(route('warehouse.stock-flow.details',[
+            'variant'=>$variant->id,'kind'=>'queue','limit'=>1000,
+        ]))->assertUnprocessable();
+        $this->getJson(route('warehouse.stock-flow.details',[
+            'variant'=>9999999,'kind'=>'queue',
+        ]))->assertNotFound();
+    }
+
     public function test_missing_central_warehouse_fails_closed_without_creating_one(): void
     {
         $this->owner();

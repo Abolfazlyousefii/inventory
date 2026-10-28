@@ -37,6 +37,21 @@
     col.n{width:4%}col.name{width:23%}col.variant{width:21%}col.stock{width:9%}
     col.reserve{width:9%}col.stage{width:8%}col.total{width:10%}
     .footer{margin-top:12px;display:flex;gap:15px;justify-content:space-between;flex-wrap:wrap;font-size:10px;color:#687d8f}
+
+    .source-button{display:block;margin:3px auto 0;padding:2px 6px;border:1px solid #c3d8e7;background:#f2f8fc;color:#245f82;border-radius:7px;cursor:pointer;font-size:9px;font-weight:700}
+    .source-button:hover,.source-button:focus-visible{background:#dceef9;outline:1px solid #629bbd}
+    .detail-backdrop{position:fixed;inset:0;z-index:1000;background:#132f42a8;display:flex;justify-content:flex-start;align-items:stretch}
+    .detail-panel{height:100%;width:min(640px,100%);background:#fff;box-shadow:0 0 40px #0003;padding:22px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+    .detail-head{display:flex;justify-content:space-between;align-items:center;gap:14px}
+    .detail-head strong{font-size:17px}
+    .detail-note{background:#fff9ec;border:1px solid #f0dfb1;border-radius:9px;padding:10px;color:#785c28;line-height:2}
+    .detail-table{width:100%;table-layout:auto;font-size:11px}
+    .detail-table th,.detail-table td{padding:9px 8px}
+    .detail-table a{color:#176f91;font-weight:700;text-decoration:underline}
+    .detail-doc{direction:ltr;unicode-bidi:isolate;display:inline-block}
+    .detail-actions{display:flex;justify-content:center;padding:8px}
+    @media(max-width:750px){.detail-panel{padding:14px}}
+
     [hidden]{display:none!important}
     @media(max-width:750px){.toolbar{padding:10px}.toolbar .buttons{width:100%}main{margin:9px;padding:12px}.table-scroll table{min-width:900px}.filters label{min-width:100%}}
     @page{size:A4 landscape;margin:9mm}
@@ -70,6 +85,7 @@
   </div>
   <main id="stockFlowApp"
       data-rows-url="{{ route('warehouse.stock-flow.rows') }}"
+      data-details-url="{{ route('warehouse.stock-flow.details', ['variant' => '__VARIANT__']) }}"
       data-q="{{ $q }}"
       data-only-in-flow="{{ $onlyInFlow ? '1':'0' }}"
       data-print="{{ $printMode ? '1':'0' }}">
@@ -88,6 +104,7 @@
     </form>
     @endunless
     <div id="stockFlowMessage" class="message" role="status" aria-live="polite">در حال دریافت اقلام موجودی و صف جمع‌آوری...</div>
+    <p class="hint no-print">برای دیدن اینکه موجودی صف مربوط به کدام مشتری، فروشنده و شماره فاکتور است، روی «مشاهده اسناد» مقابل جمع صف یا رزرو رسمی هر کالا بزنید.</p>
     <div class="table-scroll">
       <table aria-label="موجودی در جریان به تفکیک تنوع">
         <colgroup>
@@ -107,6 +124,30 @@
     </div>
     <div class="footer"><span id="stockFlowLoaded">ردیف‌های دریافت‌شده: ۰</span><span>صرفاً گزارش؛ هیچ تغییر موجودی یا رزروی انجام نمی‌شود.</span></div>
   </main>
-  <script>{!! file_get_contents(public_path('js/warehouse-stock-flow.js')) !!}</script>
+
+  @unless($printMode)
+  <div id="flowDetailBackdrop" class="detail-backdrop no-print" hidden>
+    <section id="flowDetailPanel" class="detail-panel" role="dialog" aria-modal="true"
+             aria-labelledby="flowDetailHeading" tabindex="-1">
+      <div class="detail-head">
+        <strong id="flowDetailHeading">اسناد مرتبط با موجودی در جریان</strong>
+        <button type="button" class="btn" id="flowDetailClose" aria-label="بستن جزئیات">بستن</button>
+      </div>
+      <p class="hint" id="flowDetailDescription"></p>
+      <div class="detail-note">جزئیات بر اساس آخرین وضعیت ثبت‌شده فاکتورها است؛ ممکن است پس از بازشدن گزارش اصلی تغییر کرده باشد. وضعیت صف، اثبات حضور فیزیکی کالا در قفسه نیست.</div>
+      <div id="flowDetailMessage" class="message" role="status" aria-live="polite">در حال دریافت اسناد...</div>
+      <div class="table-scroll">
+        <table class="detail-table" aria-label="فاکتورها و پیش‌فاکتورهای مرتبط">
+          <thead><tr><th>شماره سند</th><th>مشتری</th><th>فروشنده</th><th>وضعیت</th><th>تعداد</th><th>پیگیری</th></tr></thead>
+          <tbody id="flowDetailRows"></tbody>
+        </table>
+      </div>
+      <div class="detail-actions">
+        <button type="button" class="btn" id="flowDetailMore" hidden>نمایش اسناد بیشتر</button>
+      </div>
+    </section>
+  </div>
+  @endunless
+    <script>{!! file_get_contents(public_path('js/warehouse-stock-flow.js')) !!}</script>
 </body>
 </html>
