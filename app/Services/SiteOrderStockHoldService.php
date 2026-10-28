@@ -50,6 +50,7 @@ class SiteOrderStockHoldService
         }
         try {
             return DB::transaction(function () use ($siteOrderId, $physicalPlan, $normalPlan, $bundleRequirements, $plan, $hash, $ttlMinutes) {
+                foreach(ProductVariant::whereIn('id',array_keys($physicalPlan))->pluck('product_id')->unique()as$id)app(InventoryCountFreezeService::class)->assertProduct((int)$id);
                 $existing = SiteStockHold::query()->where('site_order_id', $siteOrderId)->lockForUpdate()->first();
                 if ($existing) return $this->sameReservation($existing, $hash);
 
@@ -177,6 +178,7 @@ class SiteOrderStockHoldService
     {
         return DB::transaction(function () use ($siteOrderId, $holdId, $expired) {
             $hold = $this->locked($siteOrderId, $holdId);
+            foreach($hold->lines()->pluck('product_id')->unique()as$id)app(InventoryCountFreezeService::class)->assertProduct((int)$id);
             if (in_array($hold->status, ['released', 'expired'], true)) return $hold;
             if ($hold->status !== 'held') {
                 throw ValidationException::withMessages(['hold' => 'Paid/consumed stock cannot be released.']);
@@ -213,6 +215,7 @@ class SiteOrderStockHoldService
     /** Must run inside the same transaction as creating the paid Inventory invoice. */
     public function consumeForPaidInvoice(int $siteOrderId, int $holdId, array $resolvedItems, Invoice $invoice): void
     {
+        foreach($resolvedItems as$row)app(InventoryCountFreezeService::class)->assertProduct((int)$row['variant']->product_id);
         $hold = $this->locked($siteOrderId, $holdId);
         if ($hold->status === 'consumed' && (int) $hold->invoice_id === (int) $invoice->id) return;
         if (!in_array($hold->status, ['held', 'payment_confirmed'], true)) {

@@ -9,6 +9,17 @@ use App\Support\ReservationSideEffects;
 
 class WarehouseStockObserver
 {
+    public function saving(WarehouseStock $stock): void
+    {
+        if($stock->isDirty(['quantity','warehouse_id','product_id','product_variant_id'])) {
+            app(\App\Services\InventoryCountFreezeService::class)->assertProduct((int)$stock->product_id,(int)$stock->warehouse_id);
+            if($stock->exists)app(\App\Services\InventoryCountFreezeService::class)->assertProduct((int)$stock->getOriginal('product_id'),(int)$stock->getOriginal('warehouse_id'));
+        }
+    }
+    public function deleting(WarehouseStock $stock): void
+    {
+        app(\App\Services\InventoryCountFreezeService::class)->assertProduct((int)$stock->product_id,(int)$stock->warehouse_id);
+    }
     public function created(WarehouseStock $stock): void
     {
         SiteStockChangeMarker::mark((int) $stock->product_id, (int) ($stock->product_variant_id ?? 0));

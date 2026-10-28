@@ -54,6 +54,7 @@ final class PreinvoiceBundleStockService
 
     public function reserve(int $productId, int $variantId, int $quantity): void
     {
+        app(InventoryCountFreezeService::class)->assertProduct($productId);
         if ($quantity <= 0) return;
         if (! $this->isAutomatic($productId, $variantId)) {
             WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, -$quantity, $variantId);

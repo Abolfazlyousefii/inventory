@@ -35,6 +35,7 @@ class WarehouseStockService
     {
         self::reclaimExpiredSiteHolds();
         return DB::transaction(function () use ($warehouseId, $productId, $variantId, $delta) {
+            app(InventoryCountFreezeService::class)->assertProduct($productId,$warehouseId);
             self::assertVariantBelongsToProduct($productId, $variantId);
 
             $stock = self::lockOrCreateStock($warehouseId, $productId, $variantId);
@@ -67,6 +68,7 @@ class WarehouseStockService
     {
         self::reclaimExpiredSiteHolds();
         return DB::transaction(function () use ($warehouseId, $productId, $variantId, $quantity) {
+            app(InventoryCountFreezeService::class)->assertProduct($productId,$warehouseId);
             if ($quantity < 0) {
                 abort(422, 'موجودی نمی‌تواند منفی باشد.');
             }

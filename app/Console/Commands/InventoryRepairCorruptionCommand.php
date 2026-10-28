@@ -171,6 +171,7 @@ class InventoryRepairCorruptionCommand extends Command
 
     private function setWarehouseStock(int $warehouseId, int $productId, ?int $variantId, int $quantity): void
     {
+        app(\App\Services\InventoryCountFreezeService::class)->assertProduct($productId,$warehouseId);
         $query = DB::table('warehouse_stocks')
             ->where('warehouse_id', $warehouseId)
             ->where('product_id', $productId);

@@ -37,7 +37,8 @@ class StockCountDocumentService
 
     public function createProductDraft(array $payload, int $userId): StockCountDocument
     {
-        return DB::transaction(function () use ($payload, $userId) {
+        return app(InventoryCountFreezeService::class)->forStocktake(fn()=>DB::transaction(function () use ($payload, $userId) {
+            app(InventoryCountFreezeService::class)->fence();
             $warehouse = $this->centralWarehouse();
             $product = Product::query()->findOrFail((int) $payload['product_id']);
             $document = StockCountDocument::create([
@@ -62,7 +63,7 @@ class StockCountDocumentService
             $this->refreshSummary($document);
             $this->addHistory($document->id, 'created', null, ['status' => 'draft', 'type' => 'product'], 'ایجاد پیش‌نویس انبارگردانی محصولی', $userId);
             return $document->fresh(['warehouse','product','items.variant']);
-        });
+        }));
     }
 
     public function updateProductDraft(StockCountDocument $document, array $payload, int $userId): StockCountDocument
@@ -88,7 +89,8 @@ class StockCountDocumentService
     public function finalize(StockCountDocument $document, int $userId, bool $confirmEmptyAsZero = false, array $payload = []): StockCountDocument
     {
         if (! $confirmEmptyAsZero) throw ValidationException::withMessages(['confirm_empty_as_zero' => 'تأیید صفرشدن مقدارهای خالی الزامی است.']);
-        return DB::transaction(function () use ($document, $userId, $payload) {
+        return app(InventoryCountFreezeService::class)->forStocktake(fn()=>DB::transaction(function () use ($document, $userId, $payload) {
+            app(InventoryCountFreezeService::class)->fence();
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
             if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
@@ -147,7 +149,7 @@ class StockCountDocumentService
             $this->addHistory($document->id, 'finalized', null, ['status'=>'finalized'], 'اعمال انبارگردانی محصولی در انبار مرکزی', $userId);
             DB::afterCommit(fn() => logger()->info('سند انبارگردانی اعمال شد', ['document_id'=>$document->id,'document_number'=>$document->document_number]));
             return $document->fresh(['warehouse','product','items.variant','creator','finalizer']);
-        });
+        }));
     }
 
     public function cancel(StockCountDocument $document, int $userId, ?string $reason = null): StockCountDocument

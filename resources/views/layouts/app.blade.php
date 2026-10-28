@@ -222,6 +222,7 @@
         </section>
 
         <main class="app-content @yield('content_class')">
+            @include('inventory-count-freeze.banner')
             @if(session('success'))
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     {{ session('success') }}

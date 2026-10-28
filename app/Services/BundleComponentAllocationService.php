@@ -20,6 +20,7 @@ final class BundleComponentAllocationService
     public function setAllocations(int $bundleVariantId, array $requested): void
     {
         DB::transaction(function () use ($bundleVariantId, $requested): void {
+            $this->assertCountOpen([$bundleVariantId=>array_fill_keys(array_keys($requested),1)]);
             $bundle = ProductVariant::query()->with('product')->findOrFail($bundleVariantId);
             if (!$bundle->product?->is_bundle || $bundle->product->bundle_stock_mode !== 'automatic') {
                 throw ValidationException::withMessages(['allocations' => 'این تنظیم فقط برای بسته خودکار مجاز است.']);
@@ -86,6 +87,7 @@ final class BundleComponentAllocationService
      */
     public function reserve(array $bundleRequirements): array
     {
+        $this->assertCountOpen($bundleRequirements);
         $consumed = [];
         ksort($bundleRequirements, SORT_NUMERIC);
         // Lock bundle product rows in a stable order, consistent with admin allocation changes.
@@ -115,6 +117,7 @@ final class BundleComponentAllocationService
     /** @param array<int,array<int,int>> $bundleRequirements bundle SKU => component => reserved units */
     public function restoreByBundle(array $bundleRequirements): void
     {
+        $this->assertCountOpen($bundleRequirements);
         ksort($bundleRequirements, SORT_NUMERIC);
         $bundleProductMap = ProductVariant::query()->whereIn('id', array_keys($bundleRequirements))->pluck('product_id', 'id');
         $productIds = $bundleProductMap->values()->all();
@@ -134,5 +137,11 @@ final class BundleComponentAllocationService
             }
             SiteStockChangeMarker::mark((int) ($bundleProductMap[$bundleVariantId] ?? 0), (int) $bundleVariantId);
         }
+    }
+    private function assertCountOpen(array $requirements): void
+    {
+        $ids=array_keys($requirements);
+        foreach($requirements as$parts)$ids=array_merge($ids,array_keys($parts));
+        foreach(ProductVariant::whereIn('id',$ids)->pluck('product_id')->unique()as$id)app(InventoryCountFreezeService::class)->assertProduct((int)$id);
     }
 }

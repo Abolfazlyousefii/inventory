@@ -400,6 +400,7 @@ class PreinvoiceReservationService
 
     public function assertFinanceApprovable(PreinvoiceOrder $order, ?User $actor = null, bool $allowReviewing = false): void
     {
+        foreach($order->items()->pluck('product_id')->unique() as $id)app(InventoryCountFreezeService::class)->assertProduct((int)$id);
         if (in_array($order->status, [
             PreinvoiceOrder::STATUS_RESERVATION_EXPIRED,
             PreinvoiceOrder::STATUS_CANCELLED_BY_FINANCE,

@@ -1,0 +1,39 @@
+name: Inventory count freeze regression checks
+on:
+  pull_request:
+    paths:
+      - 'app/Services/InventoryCountFreezeService.php'
+      - 'app/Http/Controllers/InventoryCountFreezeController.php'
+      - 'app/Observers/*Stock*'
+      - 'app/Observers/InventoryCountFreezeObserver.php'
+      - 'app/Services/*Reservation*'
+      - 'app/Services/*Bundle*Stock*'
+      - 'app/Services/BundleComponentAllocationService.php'
+      - 'app/Services/SiteOrderStockHoldService.php'
+      - 'app/Services/StockCountDocumentService.php'
+      - 'app/Services/WarehouseStockService.php'
+      - 'app/Support/ReservationSideEffects.php'
+      - 'resources/views/inventory-count-freeze/**'
+      - 'routes/inventory-count-freeze.php'
+      - 'database/migrations/*inventory_count_freeze*'
+      - 'tests/Feature/InventoryCountFreezeTest.php'
+      - '.github/workflows/inventory-count-freeze-targeted.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  count-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Freeze, reservation, stocktake, bundle and finance boundaries
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/InventoryCountFreezeTest.php tests/Feature/PreinvoiceScopedReservationSyncTest.php tests/Feature/FinancePreinvoiceUpdateTest.php tests/Feature/AccountStatementReadOnlyAccessTest.php tests/Feature/StockCountLifecycleSafetyTest.php tests/Feature/LargeProductBundleTest.php tests/Unit/ReservationSideEffectsTest.php
