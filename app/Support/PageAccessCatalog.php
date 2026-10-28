@@ -395,6 +395,7 @@ class PageAccessCatalog
         'suppliers.store' => ['suppliers'],
         'warehouse.stock-flow.index' => ['warehouse.stocktake'],
         'warehouse.stock-flow.rows' => ['warehouse.stocktake'],
+        'warehouse.stock-flow.details' => ['warehouse.stocktake'],
         'stocktake.index' => ['warehouse.stocktake'],
         'stock-count-documents.index' => ['warehouse.stocktake'],
         'stock-count-documents.create' => ['warehouse.stocktake'],
