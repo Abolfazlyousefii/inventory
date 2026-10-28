@@ -78,6 +78,56 @@ it('freezes descendants and rejects central movements but permits other products
     expect($variant->fresh()->stock)->toBe(7);
 });
 
+it('blocks both central stock additions and direct quantity setting during a category count', function () {
+    extract(freezeFixture());
+    app(InventoryCountFreezeService::class)->activate([$category->id], false, $admin);
+    foreach ([
+        fn () => WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $product->id, 3, $variant->id),
+        fn () => WarehouseStockService::set(WarehouseStockService::centralWarehouseId(), $product->id, $variant->id, 13),
+    ] as $operation) {
+        try {
+            $operation();
+            test()->fail('A central stock increase bypassed the freeze');
+        } catch (ValidationException $error) {
+            expect($error->errors())->toHaveKey('stocktake');
+        }
+        expect($variant->fresh()->stock)->toBe(10)
+            ->and((int) WarehouseStock::where('product_variant_id', $variant->id)->value('quantity'))->toBe(10);
+    }
+});
+
+it('keeps a sales return receipt pending and posts no stock or customer credit when central counting is active', function () {
+    extract(freezeFixture());
+    $customer = \App\Models\Customer::factory()->create();
+    $document = \App\Models\SalesReturnDocument::create([
+        'document_number' => 'FREEZE-RETURN', 'source_type' => 'sazeh_hesab', 'status' => 'pending_warehouse',
+        'customer_id' => $customer->id, 'default_destination_warehouse_id' => WarehouseStockService::centralWarehouseId(),
+        'total_quantity' => 2, 'total_refund_amount' => 2000, 'items_count' => 1,
+    ]);
+    $document->items()->create([
+        'product_id' => $product->id, 'product_variant_id' => $variant->id,
+        'item_source' => 'existing_product', 'item_condition' => 'healthy',
+        'destination_warehouse_id' => WarehouseStockService::centralWarehouseId(),
+        'return_quantity' => 2, 'refund_unit_price' => 1000, 'refund_amount' => 2000,
+    ]);
+    $inbound = app(\App\Services\WarehouseInboundService::class);
+    $receipt = $inbound->queueSalesReturn($document->fresh('items'), $admin->id);
+    app(InventoryCountFreezeService::class)->activate([$category->id], false, $admin);
+    try {
+        $inbound->receive($receipt, $receipt->items->map(fn ($row) => [
+            'id' => $row->id, 'accepted_quantity' => 2, 'received_warehouse_id' => WarehouseStockService::centralWarehouseId(),
+        ])->all(), $admin->id, null, \App\Support\InboundReviewVersion::token($receipt));
+        test()->fail('Warehouse accepted a counted product');
+    } catch (ValidationException $error) {
+        expect($error->errors())->toHaveKey('stocktake');
+    }
+    expect($receipt->fresh()->status)->toBe('pending')
+        ->and($document->fresh()->status)->toBe('pending_warehouse')
+        ->and($variant->fresh()->stock)->toBe(10)
+        ->and(\App\Models\StockMovement::count())->toBe(0)
+        ->and(\App\Models\CustomerLedger::count())->toBe(0);
+});
+
 it('releases temporary reservations exactly once and prevents late heartbeat reserving again', function () {
     extract(freezeFixture());
     $seller = User::factory()->create();
