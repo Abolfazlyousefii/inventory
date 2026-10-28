@@ -15,6 +15,18 @@ class ProductSelectedStockRowsExportTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_print_includes_the_site_synced_product_photo_through_the_existing_image_route(): void
+    {
+        $this->login();
+        $p = $this->product('Photo product', 5);
+        $p->update(['image_path' => 'https://cdn.example.com/product.webp']);
+        $this->post(route('products.selected-stock-print'), ['product_ids' => [$p->id]])
+            ->assertOk()->assertViewHas('productImages', function ($images) use ($p) {
+                return $images[$p->id]['url'] === route('products.image', $p)
+                    && $images[$p->id]['name'] === $p->name;
+            });
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

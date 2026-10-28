@@ -47,6 +47,11 @@ final class ProductSelectedStockExportController extends Controller
 
         return response()->view('products.stock-print', [
             'productIds' => $ids,
+            'productImages' => \App\Models\Product::whereIn('id', $ids)->get(['id', 'name', 'image_path'])
+                ->mapWithKeys(fn ($product) => [$product->id => [
+                    'name' => $product->name,
+                    'url' => trim((string) $product->image_path) !== '' ? route('products.image', $product->id) : null,
+                ]])->all(),
         ])->header('Cache-Control', 'private, no-store');
     }
 

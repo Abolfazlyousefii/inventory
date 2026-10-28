@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = document.getElementById('printTableBody');
 
     const productIds = JSON.parse(app.dataset.productIds || '[]');
+    const productImages = JSON.parse(app.dataset.productImages || '{}');
     const persian = value => Number(value || 0).toLocaleString('fa-IR');
     let currentController = null;
     let running = false;
@@ -41,6 +42,64 @@ document.addEventListener('DOMContentLoaded', () => {
         tr.appendChild(td(persian(row.stock), 'numeric'));
         tr.appendChild(td(persian(row.sell_price_rial), 'price'));
         return tr;
+    }
+
+    function photoHeading(productId, photos) {
+        const product = productImages[productId];
+        if (!product) return null;
+        const tr = document.createElement('tr');
+        tr.className = 'product-photo-row';
+        const cell = document.createElement('td');
+        cell.colSpan = 5;
+        const heading = document.createElement('div');
+        heading.className = 'product-photo-heading';
+        const frame = document.createElement('div');
+        frame.className = 'product-photo-frame';
+        const fallback = document.createElement('span');
+        fallback.textContent = product.url ? 'در حال دریافت تصویر…' : 'تصویر ثبت نشده';
+        frame.appendChild(fallback);
+        if (product.url) {
+            const image = document.createElement('img');
+            image.alt = product.name || 'تصویر محصول';
+            image.width = 96;
+            image.height = 96;
+            image.loading = 'eager';
+            image.decoding = 'async';
+            image.referrerPolicy = 'no-referrer';
+            image.hidden = true;
+            image.src = product.url;
+            frame.appendChild(image);
+            photos.push({image, fallback});
+        }
+        heading.appendChild(frame);
+        const name = document.createElement('strong');
+        name.textContent = product.name || 'کالا';
+        heading.appendChild(name);
+        cell.appendChild(heading);
+        tr.appendChild(cell);
+        return tr;
+    }
+
+    async function preparePhotos(photos) {
+        if (!photos.length) return 0;
+        state('در حال آماده‌سازی تصاویر محصولات برای چاپ…');
+        const deadline = Date.now() + 15000;
+        while (!stopped && Date.now() < deadline && photos.some(({image}) => !image.complete)) {
+            await new Promise(resolve => setTimeout(resolve, 80));
+        }
+        if (stopped) throw new Error('بارگیری متوقف شد.');
+        let missing = 0;
+        for (const {image, fallback} of photos) {
+            const ready = image.complete && image.naturalWidth > 0;
+            image.hidden = !ready;
+            fallback.hidden = ready;
+            if (!ready) {
+                missing++;
+                fallback.textContent = 'تصویر دریافت نشد';
+                image.removeAttribute('src');
+            }
+        }
+        return missing;
     }
 
     async function request(url, body) {
@@ -143,20 +202,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const rank = new Map(productIds.map((id, index) => [Number(id), index]));
             const ordered = [...tbody.children].sort((a, b) =>
                 (rank.get(Number(a.dataset.productId)) ?? Infinity) - (rank.get(Number(b.dataset.productId)) ?? Infinity));
+            const photos = [];
+            let previousProduct = null;
             for (let offset = 0; offset < ordered.length; offset += 150) {
                 if (stopped) throw new Error('بارگیری متوقف شد.');
                 const fragment = document.createDocumentFragment();
                 ordered.slice(offset, offset + 150).forEach((row, index) => {
+                    if (row.dataset.productId !== previousProduct) {
+                        const header = photoHeading(row.dataset.productId, photos);
+                        if (header) fragment.appendChild(header);
+                        previousProduct = row.dataset.productId;
+                    }
                     row.firstElementChild.textContent = persian(offset + index + 1);
                     fragment.appendChild(row);
                 });
                 tbody.appendChild(fragment);
                 await new Promise(resolve => requestAnimationFrame(resolve));
             }
+            const missingPhotos = await preparePhotos(photos);
             progress.value = 100;
-            state('گزارش کامل آماده چاپ است؛ روی «چاپ / ذخیره PDF» کلیک کنید.');
+            state('گزارش کامل آماده چاپ است؛ روی «چاپ / ذخیره PDF» کلیک کنید.' +
+                (missingPhotos ? ` تصویر ${persian(missingPhotos)} کالا دریافت نشد؛ می‌توانید دوباره بارگیری کنید.` : ''));
             printButton.disabled = false;
-            retryButton.hidden = true;
+            retryButton.hidden = !missingPhotos;
+            if (missingPhotos) retryButton.textContent = 'بارگیری مجدد';
         } catch (error) {
             if (stopped) state('دریافت اطلاعات متوقف شد. برای ادامه، بارگیری را مجدداً انجام دهید.', true);
             else state(error.name === 'AbortError'

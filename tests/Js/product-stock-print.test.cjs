@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const code = fs.readFileSync(path.join(__dirname, '../../public/js/product-stock-print.js'), 'utf8');
 
-function fixture(fetchImpl, productIds = [11]) {
+function fixture(fetchImpl, productIds = [11], productImages = {}) {
     const events = {};
     const makeNode = () => ({
         textContent: '',
@@ -14,6 +14,7 @@ function fixture(fetchImpl, productIds = [11]) {
         disabled: false,
         children: [],
         dataset: {},
+        removeAttribute(name) { delete this[name]; },
         parentNode: null,
         get firstElementChild() { return this.children[0] || null; },
         classList: {toggle() {}},
@@ -37,17 +38,22 @@ function fixture(fetchImpl, productIds = [11]) {
     nodes.stockPrintApp = {
         dataset: {
             productIds: JSON.stringify(productIds),
+            productImages: JSON.stringify(productImages),
             startUrl: '/products/selected-stock-export/start',
             batchUrl: '/products/selected-stock-export/batch',
             maxRows: '2000',
         },
     };
-    const calls = {prints: 0, requests: []};
+    const calls = {prints: 0, requests: [], images: []};
     const document = {
         addEventListener(name, fn) { events[name] = fn; },
         getElementById(id) { return nodes[id]; },
         querySelector() { return {content: 'csrf'}; },
-        createElement() { return makeNode(); },
+        createElement(tag) {
+            const node = makeNode();
+            if (tag === 'img') calls.images.push(node);
+            return node;
+        },
         createDocumentFragment() { return Object.assign(makeNode(), {isFragment: true}); },
     };
     const context = {
@@ -182,4 +188,33 @@ test('product order is preserved across interleaved cursor batches without dupli
     assert.deepEqual(rows.map(row=>row.children[1].textContent),['Product 22','Product 22','Product 11','Product 11']);
     assert.deepEqual(rows.map(row=>row.children[0].textContent),['۱','۲','۳','۴']);
     assert.deepEqual(rows.map(row=>row.children[2].textContent),['B','D','A','C']);
+});
+
+test('one site photo per product is loaded before print is enabled without repeating it for variants', async () => {
+    const {nodes,calls}=fixture(async url=>url.endsWith('/start')?{total_rows:2}:{rows:[1,2].map(id=>({product_id:11,product_name:'Case',model_name:'Model '+id,stock:1,sell_price_rial:100})),has_more:false,next_cursor:2},[11],{11:{name:'Case',url:'/products/11/image'}});
+    await tickUntil(()=>calls.images.length===1);
+    assert.equal(nodes.printNow.disabled,true);
+    assert.equal(calls.images[0].src,'/products/11/image');
+    calls.images[0].complete=true;calls.images[0].naturalWidth=800;
+    await new Promise(resolve=>setTimeout(resolve,100));
+    await tickUntil(()=>!nodes.printNow.disabled);
+    assert.equal(calls.images.length,1);
+    assert.equal(calls.images[0].hidden,false);
+    assert.equal(nodes.printTableBody.children.length,3);
+    assert.equal(nodes.printTableBody.children[0].className,'product-photo-row');
+    assert.equal(nodes.printTableBody.children[0].children[0].colSpan,5);
+    assert.equal(nodes.printTableBody.children[1].children[0].textContent,'۱');
+    assert.equal(nodes.printTableBody.children[2].children[0].textContent,'۲');
+});
+
+test('a missing photo has a clear fallback and does not discard stock rows or block printing',async()=>{
+    const {nodes,calls}=fixture(async url=>url.endsWith('/start')?{total_rows:1}:{rows:[{product_id:11,product_name:'Case',stock:1,sell_price_rial:100}],has_more:false,next_cursor:1},[11],{11:{name:'Case',url:'/products/11/image'}});
+    await tickUntil(()=>calls.images.length===1);
+    calls.images[0].complete=true;calls.images[0].naturalWidth=0;
+    await new Promise(resolve=>setTimeout(resolve,100));
+    await tickUntil(()=>!nodes.printNow.disabled);
+    assert.equal(calls.images[0].hidden,true);
+    assert.match(nodes.printStatus.textContent,/تصویر.*دریافت نشد/);
+    assert.equal(nodes.printTableBody.children.length,2);
+    assert.equal(nodes.cancelPrintLoad.hidden,false);
 });

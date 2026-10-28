@@ -56,6 +56,13 @@
         thead th{background:#eaf3f4;color:#244b5e;font-weight:800;white-space:normal}
         tbody tr:nth-child(even){background:#f8fafc}
         .product-name{font-weight:800;color:#183e57}
+        .product-photo-row td{background:#f1f7f8;border-top:2px solid #bed8dc;padding:10px}
+        .product-photo-heading{display:flex;align-items:center;gap:16px;min-height:98px;break-inside:avoid}
+        .product-photo-frame{width:98px;height:98px;flex-shrink:0;border:1px solid #d6e2e7;border-radius:8px;background:#fff;display:grid;place-items:center;overflow:hidden}
+        .product-photo-frame img{display:block;width:96px;height:96px;object-fit:contain}
+        .product-photo-frame span{font-size:10px;color:#64748b;text-align:center;padding:6px}
+        .product-photo-heading strong{font-size:14px;color:#173d56}
+        .product-photo-row{break-after:avoid;page-break-after:avoid}
         .code{direction:ltr;unicode-bidi:plaintext;text-align:right;font-family:inherit}
         .numeric{text-align:center;direction:ltr;unicode-bidi:plaintext;font-variant-numeric:tabular-nums}
         .price{text-align:left;direction:ltr;unicode-bidi:plaintext;font-weight:700}
@@ -100,6 +107,7 @@
     </div>
     <main class="paper" id="stockPrintApp"
         data-product-ids='@json($productIds)'
+        data-product-images='@json($productImages)'
         data-start-url="{{ route('products.selected-stock-export.start') }}"
         data-batch-url="{{ route('products.selected-stock-export.batch') }}"
 >
