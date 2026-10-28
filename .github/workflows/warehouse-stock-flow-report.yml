@@ -12,6 +12,7 @@ on:
       - 'public/js/warehouse-stock-flow.js'
       - 'tests/Feature/WarehouseStockFlowReadOnlyTest.php'
       - 'tests/Js/warehouse-stock-flow.test.cjs'
+      - 'tests/Js/stocktake-inline-flow.test.cjs'
       - '.github/workflows/warehouse-stock-flow-report.yml'
   workflow_dispatch:
 
@@ -49,3 +50,5 @@ jobs:
         run: php artisan test tests/Feature/WarehouseStockFlowReadOnlyTest.php
       - name: Complete-only browser print behavior
         run: node --test tests/Js/warehouse-stock-flow.test.cjs
+      - name: Stocktake in-row queue JavaScript
+        run: node --test tests/Js/stocktake-inline-flow.test.cjs
