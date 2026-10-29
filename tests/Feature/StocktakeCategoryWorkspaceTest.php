@@ -302,6 +302,27 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(0,StockMovement::count());
     }
 
+    public function test_invalid_category_draft_counts_are_rejected_without_creating_a_document_or_mutating_central_stock(): void
+    {
+        $this->signIn();
+        [, , , [$product, $variant]] = $this->fixture();
+
+        foreach (['not-a-number', -1, 2147483648] as $invalid) {
+            $this->postJson(route('stock-count-documents.store'), [
+                'product_id' => $product->id,
+                'document_date' => '2026-10-29',
+                'actual_quantities' => [$variant->id => $invalid],
+            ])->assertUnprocessable()
+                ->assertJsonValidationErrors("actual_quantities.{$variant->id}");
+        }
+
+        $this->assertSame(0, StockCountDocument::count());
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(8, (int) WarehouseStock::where(
+            'product_variant_id', $variant->id
+        )->value('quantity'));
+    }
+
     public function test_unauthorized_access_is_rejected(): void
     {
         $this->getJson(route('stock-count-documents.category-variants',['category_id'=>1]))->assertUnauthorized();

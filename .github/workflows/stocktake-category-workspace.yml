@@ -15,6 +15,7 @@ on:
       - 'tests/Feature/StocktakeCategoryWorkspaceTest.php'
       - 'tests/Js/stocktake-category-workspace.test.cjs'
       - 'tests/Js/stocktake-category-layout.test.cjs'
+      - 'tests/Js/stocktake-category-safety.test.cjs'
       - '.github/workflows/stocktake-category-workspace.yml'
   workflow_dispatch:
 
@@ -53,4 +54,4 @@ jobs:
       - name: Inventory count freeze and stock mutation guards
         run: php artisan test tests/Feature/InventoryCountFreezeTest.php
       - name: Existing stocktake inline behaviors
-        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs tests/Js/stocktake-live-search.test.cjs tests/Js/stocktake-category-layout.test.cjs
+        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs tests/Js/stocktake-live-search.test.cjs tests/Js/stocktake-category-layout.test.cjs tests/Js/stocktake-category-safety.test.cjs
