@@ -4,10 +4,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = document.getElementById('stocktakeCategoryApp');
     if (!app) return;
 
-    const category = document.getElementById('scCategory');
-    const subcategory = document.getElementById('scSubcategory');
+    const embedded = app.dataset.embedded === '1';
+    const category = document.getElementById(embedded ? 'category' : 'scCategory');
+    const subcategory = document.getElementById(embedded ? 'subcategory' : 'scSubcategory');
     const show = document.getElementById('scShow');
-    const date = document.getElementById('scDate');
+    const date = embedded ? document.querySelector('[name="document_date"]') : document.getElementById('scDate');
     const more = document.getElementById('scMore');
     const statusNode = document.getElementById('scStatus');
     const productsNode = document.getElementById('scProducts');
@@ -70,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const table = make('table');
         const head = make('thead');
         const trHead = make('tr');
-        ['تنوع / کد','موجودی آزاد','رزرو فعال','در صف جمع‌آوری','شمارش واقعی'].forEach(label =>
+        ['تنوع کالا','موجودی انبار مرکزی','رزرو فعال','موجودی در صف جمع‌آوری','موجودی واقعی','اختلاف'].forEach(label =>
             trHead.append(make('th','',label)));
         head.append(trHead);
         const tbody = make('tbody');
@@ -107,6 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
         tr.append(make('td','sc-number',fa(row.active_reserved)));
         const queue = make('td','sc-number');
         queue.append(make('span',Number(row.queue_total)>0?'sc-badge':'sc-muted',fa(row.queue_total)));
+        if (Number(row.queue_total) > 0) {
+            queue.append(make('small','sc-flow-details','انتظار: '+fa(row.pending_collection)+
+                ' · تحویل انبار: '+fa(row.warehouse_received)+' · جمع‌آوری: '+fa(row.collecting)));
+        }
         tr.append(queue);
         const actualCell = make('td');
         const input = make('input','sc-actual');
@@ -120,8 +125,28 @@ document.addEventListener('DOMContentLoaded', () => {
         input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
         actualCell.append(input);
         tr.append(actualCell);
+        const diff = make('td','sc-number sc-difference','—');
+        diff.dataset.differenceFor = String(id);
+        tr.append(diff);
         group.tbody.append(tr);
         group.flag.textContent = fa(group.rows.size) + ' تنوع';
+    }
+
+    function updateDifference(group, variantId) {
+        const variant = group.rows.get(variantId);
+        const actual = group.quantities.get(variantId);
+        const cell = [...group.tbody.querySelectorAll('[data-difference-for]')]
+            .find(x => x.dataset.differenceFor === String(variantId));
+        if (!cell || !variant) return;
+        if (actual === undefined || actual === '') {
+            cell.textContent = '—';
+            cell.classList.remove('sc-diff-up','sc-diff-down');
+            return;
+        }
+        const difference = Number(actual) - Number(variant.expected_physical);
+        cell.textContent = (difference > 0 ? '+' : '') + fa(difference);
+        cell.classList.toggle('sc-diff-up',difference > 0);
+        cell.classList.toggle('sc-diff-down',difference < 0);
     }
 
     function updateButtons() {
@@ -196,12 +221,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (containsUnsavedCounts() &&
             !window.confirm('شمارش‌های ذخیره‌نشده این دسته از بین می‌روند. دسته جدید نمایش داده شود؟')) return;
         reset();
+        if (embedded) {
+            app.hidden = false;
+            document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden = true; });
+            document.getElementById('stocktakeForm').dataset.categoryMode = '1';
+        }
         selectionId = selected;
         hasMore = true;
         await requestPage();
     }
 
-    category.addEventListener('change',async () => {
+    if (!embedded) category.addEventListener('change',async () => {
         subcategory.replaceChildren(new Option('همه زیردسته‌ها',''));
         subcategory.disabled = !category.value;
         if (!category.value) return;
@@ -230,6 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!valid) { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; return; }
         field.value = normalized;
         group.quantities.set(Number(field.dataset.variant),normalized);
+        updateDifference(group,Number(field.dataset.variant));
         updateButtons();
     });
 
@@ -288,6 +319,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     show.addEventListener('click',begin);
     more.addEventListener('click',requestPage);
+
+    if (embedded) {
+        const originalForm = document.getElementById('stocktakeForm');
+        originalForm.addEventListener('submit', event => {
+            if (originalForm.dataset.categoryMode !== '1') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            notice('برای ذخیره، دکمه «ذخیره پیش‌نویس این محصول» را بزنید. ثبت نهایی دسته‌ای مجاز نیست.', true);
+        }, true);
+        document.getElementById('scClose').addEventListener('click', () => {
+            if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
+            reset();
+            app.hidden = true;
+            document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden = false; });
+            delete originalForm.dataset.categoryMode;
+            show.focus();
+        });
+    }
 
     window.addEventListener('beforeunload',event => {
         if (!containsUnsavedCounts()) return;

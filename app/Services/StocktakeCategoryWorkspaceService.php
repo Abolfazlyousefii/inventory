@@ -69,6 +69,9 @@ final class StocktakeCategoryWorkspaceService
                 'system_available' => $available,
                 'active_reserved' => $held,
                 'expected_physical' => $available + $held,
+                'pending_collection' => (int) ($flow->pending_collection ?? 0),
+                'warehouse_received' => (int) ($flow->warehouse_received ?? 0),
+                'collecting' => (int) ($flow->collecting ?? 0),
                 'queue_total' => (int) ($flow->pending_collection ?? 0)
                     + (int) ($flow->warehouse_received ?? 0)
                     + (int) ($flow->collecting ?? 0),

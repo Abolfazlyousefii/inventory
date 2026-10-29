@@ -25,3 +25,28 @@ test('group save uses a single product draft with only its non-empty quantities'
     assert.match(blade, /نمایش محصولات دسته/);
     assert.match(blade, /ذخیره پیش‌نویس/);
 });
+
+
+const form = fs.readFileSync(path.join(__dirname, '../../resources/views/stocktake/form.blade.php'), 'utf8');
+
+test('category workspace integrates into the original form without nested forms or a separate page', () => {
+    assert.match(form, /id="scShow"/);
+    assert.match(form, /id="stocktakeCategoryApp"[^>]*data-embedded="1"/s);
+    assert.match(form, /id="scClose"/);
+    assert.match(form, /id="scProducts"/);
+    assert.match(form, /data-stocktake-single/);
+    assert.doesNotMatch(form, /href="\{\{ route\('stock-count-documents.category-workspace'\) \}\}"/);
+    assert.match(source, /getElementById\(embedded \? 'category' : 'scCategory'\)/);
+    assert.match(source, /getElementById\(embedded \? 'subcategory' : 'scSubcategory'\)/);
+    assert.match(source, /document\.querySelector\('\[name="document_date"\]'\)/);
+    assert.match(source, /'موجودی انبار مرکزی','رزرو فعال','موجودی در صف جمع‌آوری','موجودی واقعی','اختلاف'/);
+    assert.match(source, /variant\.expected_physical/);
+    assert.match(source, /row\.pending_collection/);
+    assert.match(source, /row\.warehouse_received/);
+    assert.match(source, /row\.collecting/);
+    assert.match(source, /updateDifference\(group,Number\(field\.dataset\.variant\)\)/);
+    assert.match(source, /if \(!embedded\) category\.addEventListener/);
+    assert.match(source, /if \(embedded\) \{/);
+    assert.match(source, /originalForm\.addEventListener\('submit'/);
+    assert.doesNotMatch(source, /\/finalize|stock-count-documents\.finalize/);
+});
