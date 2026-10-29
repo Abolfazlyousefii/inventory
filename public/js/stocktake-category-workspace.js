@@ -4,10 +4,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = document.getElementById('stocktakeCategoryApp');
     if (!app) return;
 
-    const category = document.getElementById('scCategory');
-    const subcategory = document.getElementById('scSubcategory');
+    const embedded = app.dataset.embedded === '1';
+    const category = document.getElementById(embedded ? 'category' : 'scCategory');
+    const subcategory = document.getElementById(embedded ? 'subcategory' : 'scSubcategory');
     const show = document.getElementById('scShow');
-    const date = document.getElementById('scDate');
+    const date = embedded ? document.querySelector('[name="document_date"]') : document.getElementById('scDate');
     const more = document.getElementById('scMore');
     const statusNode = document.getElementById('scStatus');
     const productsNode = document.getElementById('scProducts');
@@ -196,12 +197,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (containsUnsavedCounts() &&
             !window.confirm('شمارش‌های ذخیره‌نشده این دسته از بین می‌روند. دسته جدید نمایش داده شود؟')) return;
         reset();
+        if (embedded) {
+            app.hidden = false;
+            document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden = true; });
+            document.getElementById('stocktakeForm').dataset.categoryMode = '1';
+        }
         selectionId = selected;
         hasMore = true;
         await requestPage();
     }
 
-    category.addEventListener('change',async () => {
+    if (!embedded) category.addEventListener('change',async () => {
         subcategory.replaceChildren(new Option('همه زیردسته‌ها',''));
         subcategory.disabled = !category.value;
         if (!category.value) return;
@@ -288,6 +294,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     show.addEventListener('click',begin);
     more.addEventListener('click',requestPage);
+
+    if (embedded) {
+        const originalForm = document.getElementById('stocktakeForm');
+        originalForm.addEventListener('submit', event => {
+            if (originalForm.dataset.categoryMode !== '1') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            notice('برای ذخیره، دکمه «ذخیره پیش‌نویس این محصول» را بزنید. ثبت نهایی دسته‌ای مجاز نیست.', true);
+        }, true);
+        document.getElementById('scClose').addEventListener('click', () => {
+            if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
+            reset();
+            app.hidden = true;
+            document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden = false; });
+            delete originalForm.dataset.categoryMode;
+            show.focus();
+        });
+    }
 
     window.addEventListener('beforeunload',event => {
         if (!containsUnsavedCounts()) return;
