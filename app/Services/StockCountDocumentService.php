@@ -14,6 +14,7 @@ use App\Models\Warehouse;
 use App\Models\WarehouseStock;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\ValidationException;
 
 class StockCountDocumentService
@@ -155,6 +156,54 @@ class StockCountDocumentService
         }));
     }
 
+    /**
+     * A review grant binds the final approval to the exact SAVED counts.
+     * It carries no permission of its own; the controller still checks admin.
+     */
+    public function categoryReviewToken(StockCountDocument $document, int $userId): string
+    {
+        abort_unless($document->type === 'category' && $document->status === 'draft', 422);
+        $items = $document->items()->orderBy('product_variant_id')->get();
+        abort_if($items->isEmpty() || $items->contains(fn ($item) => $item->actual_quantity === null),
+            422, 'تمام تنوع‌ها باید پیش از تأیید شمارش شده باشند.');
+        return Crypt::encryptString(json_encode([
+            'document_id' => (int) $document->id,
+            'user_id' => $userId,
+            'valid_until' => now()->addMinutes(20)->timestamp,
+            'digest' => $this->categoryReviewDigest($items),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private function categoryReviewDigest(Collection $items): string
+    {
+        return hash('sha256', json_encode($items->map(fn ($item) => [
+            (int) $item->id,
+            (int) $item->product_variant_id,
+            $item->actual_quantity === null ? null : (int) $item->actual_quantity,
+            (int) $item->system_available_at_start,
+            (int) $item->reserved_at_start,
+        ])->values()->all(), JSON_THROW_ON_ERROR));
+    }
+
+    private function assertCategoryReviewToken(StockCountDocument $document, Collection $items, int $userId, ?string $token): void
+    {
+        try {
+            $grant = json_decode(Crypt::decryptString((string) $token), true, 512, JSON_THROW_ON_ERROR);
+            $valid = is_array($grant)
+                && ($grant['document_id'] ?? null) === (int) $document->id
+                && ($grant['user_id'] ?? null) === $userId
+                && (int) ($grant['valid_until'] ?? 0) >= now()->timestamp
+                && hash_equals($this->categoryReviewDigest($items), (string) ($grant['digest'] ?? ''));
+        } catch (\Throwable) {
+            $valid = false;
+        }
+        if (!$valid) {
+            throw new StockCountFinalizeValidationException(
+                'پیش‌نویس تغییر کرده یا تأیید قبلی منقضی شده است؛ گزارش بررسی را دوباره باز کنید.', []
+            );
+        }
+    }
+
     public function updateCategoryDraft(StockCountDocument $document, array $payload, int $userId): StockCountDocument
     {
         return DB::transaction(function () use ($document, $payload, $userId) {
@@ -230,6 +279,13 @@ class StockCountDocumentService
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
+            if ($document->type === 'category') {
+                // Do not accept new browser-supplied counts at approval time:
+                // only values previously persisted and independently reviewed.
+                abort_if(array_key_exists('actual_quantities', $payload), 422,
+                    'شمارش جدید را ابتدا در پیش‌نویس ذخیره و سپس بررسی کنید.');
+                $this->assertCategoryReviewToken($document, $items, $userId, $payload['review_token'] ?? null);
+            }
             $actuals = $payload['actual_quantities'] ?? [];
             $notes = $payload['notes'] ?? [];
             foreach ($items as $item) {
