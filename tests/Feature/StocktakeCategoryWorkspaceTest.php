@@ -276,6 +276,13 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
     {
         $this->signIn();
         [, $airpods, , [$product, $variant]]=$this->fixture();
+        // The original SQLite legacy migration predates the nullable
+        // actual_quantity schema used for product-level draft counting.
+        // Recreate the nullable shape applied by the production upgrade.
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) =>
+                $table->integer('actual_quantity')->nullable()->change()
+        );
         $draftResponse=$this->postJson(route('stock-count-documents.store'), [
             'product_id'=>$product->id,
             'document_date'=>'2026-10-29',
