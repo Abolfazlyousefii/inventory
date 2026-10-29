@@ -41,6 +41,6 @@ test('category workspace integrates into the original form without nested forms 
     assert.match(source, /document\.querySelector\('\[name="document_date"\]'\)/);
     assert.match(source, /if \(!embedded\) category\.addEventListener/);
     assert.match(source, /if \(embedded\) \{/);
-    assert.match(source, /document\.getElementById\('stocktakeForm'\)\.addEventListener\('submit'/);
+    assert.match(source, /originalForm\.addEventListener\('submit'/);
     assert.doesNotMatch(source, /\/finalize|stock-count-documents\.finalize/);
 });
