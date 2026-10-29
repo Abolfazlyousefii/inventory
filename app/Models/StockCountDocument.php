@@ -11,6 +11,8 @@ class StockCountDocument extends Model
         'type',
         'warehouse_id',
         'product_id',
+        'category_id',
+        'request_key',
         'document_date',
         'status',
         'description',
