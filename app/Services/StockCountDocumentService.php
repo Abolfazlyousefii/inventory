@@ -113,7 +113,9 @@ class StockCountDocumentService
             $stocks = $stocks->keyBy('product_variant_id');
             $reserves = collect();
             foreach (array_chunk($variantIds, 100) as $chunk) {
-                $reserves = $reserves->merge($this->reservations->quantitiesByVariant(variantIds: $chunk));
+                foreach ($this->reservations->quantitiesByVariant(variantIds: $chunk) as $variantId => $quantity) {
+                    $reserves->put((int)$variantId, (int)$quantity);
+                }
             }
             $rows = [];
             foreach ($variants as $variant) {
