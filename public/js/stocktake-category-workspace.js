@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const table = make('table');
         const head = make('thead');
         const trHead = make('tr');
-        ['تنوع / کد','موجودی آزاد','رزرو فعال','در صف جمع‌آوری','شمارش واقعی'].forEach(label =>
+        ['تنوع کالا','موجودی انبار مرکزی','رزرو فعال','موجودی در صف جمع‌آوری','موجودی واقعی','اختلاف'].forEach(label =>
             trHead.append(make('th','',label)));
         head.append(trHead);
         const tbody = make('tbody');
@@ -108,6 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
         tr.append(make('td','sc-number',fa(row.active_reserved)));
         const queue = make('td','sc-number');
         queue.append(make('span',Number(row.queue_total)>0?'sc-badge':'sc-muted',fa(row.queue_total)));
+        if (Number(row.queue_total) > 0) {
+            queue.append(make('small','sc-flow-details','انتظار: '+fa(row.pending_collection)+
+                ' · تحویل انبار: '+fa(row.warehouse_received)+' · جمع‌آوری: '+fa(row.collecting)));
+        }
         tr.append(queue);
         const actualCell = make('td');
         const input = make('input','sc-actual');
@@ -121,8 +125,28 @@ document.addEventListener('DOMContentLoaded', () => {
         input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
         actualCell.append(input);
         tr.append(actualCell);
+        const diff = make('td','sc-number sc-difference','—');
+        diff.dataset.differenceFor = String(id);
+        tr.append(diff);
         group.tbody.append(tr);
         group.flag.textContent = fa(group.rows.size) + ' تنوع';
+    }
+
+    function updateDifference(group, variantId) {
+        const variant = group.rows.get(variantId);
+        const actual = group.quantities.get(variantId);
+        const cell = [...group.tbody.querySelectorAll('[data-difference-for]')]
+            .find(x => x.dataset.differenceFor === String(variantId));
+        if (!cell || !variant) return;
+        if (actual === undefined || actual === '') {
+            cell.textContent = '—';
+            cell.classList.remove('sc-diff-up','sc-diff-down');
+            return;
+        }
+        const difference = Number(actual) - Number(variant.expected_physical);
+        cell.textContent = (difference > 0 ? '+' : '') + fa(difference);
+        cell.classList.toggle('sc-diff-up',difference > 0);
+        cell.classList.toggle('sc-diff-down',difference < 0);
     }
 
     function updateButtons() {
@@ -236,6 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!valid) { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; return; }
         field.value = normalized;
         group.quantities.set(Number(field.dataset.variant),normalized);
+        updateDifference(group,Number(field.dataset.variant));
         updateButtons();
     });
 
