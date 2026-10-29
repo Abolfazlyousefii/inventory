@@ -62,6 +62,37 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$v1->id)->value('quantity'));
     }
 
+    public function test_live_search_matches_product_or_variant_within_selected_category_and_keeps_counts_read_only(): void
+    {
+        $this->signIn();
+        [, $airpods, , [$first,$v1], [$second,$v2], [$unrelated]] = $this->fixture();
+
+        $response = $this->getJson(route('stock-count-documents.category-variants', [
+            'category_id'=>$airpods->id,'q'=>'پرو',
+        ]))->assertOk()->assertJsonCount(1,'rows')
+            ->assertJsonPath('rows.0.variant_id',$v2->id);
+        $byVariant=$this->getJson(route('stock-count-documents.category-variants', [
+            'category_id'=>$airpods->id,'q'=>$v1->variant_code,
+        ]))->assertOk()->assertJsonCount(1,'rows')->assertJsonPath('rows.0.variant_id',$v1->id);
+        $this->getJson(route('stock-count-documents.category-variants', [
+            'category_id'=>$airpods->id,'q'=>str_repeat('X',81),
+        ]))->assertUnprocessable();
+        $this->assertSame(0,StockCountDocument::count());
+        $this->assertSame(0,StockMovement::count());
+        $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$v1->id)->value('quantity'));
+        $this->assertSame(4,(int)WarehouseStock::where('product_variant_id',$v2->id)->value('quantity'));
+    }
+
+    public function test_stocktake_form_explains_explicit_zero_and_embeds_live_search_in_same_page(): void
+    {
+        $this->signIn();
+        $this->fixture();
+        $html=$this->get(route('stock-count-documents.create'))->assertOk()->getContent();
+        $this->assertStringContainsString('id="scLiveSearch"',$html);
+        $this->assertStringContainsString('عدد ۰ را صریحاً', $html);
+        $this->assertStringNotContainsString('name="confirm_empty_as_zero"',$html);
+    }
+
     public function test_category_pagination_is_cursor_based_and_rejects_invalid_filters(): void
     {
         $this->signIn();
@@ -239,6 +270,36 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertDontSee('id="scShow"', false)
             ->assertSee('id="stocktakeForm"', false);
 
+    }
+
+    public function test_empty_draft_is_valid_but_http_finalization_returns_conflicts_and_preserves_stock(): void
+    {
+        $this->signIn();
+        [, $airpods, , [$product, $variant]]=$this->fixture();
+        // The original SQLite legacy migration predates the nullable
+        // actual_quantity schema used for product-level draft counting.
+        // Recreate the nullable shape applied by the production upgrade.
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) =>
+                $table->integer('actual_quantity')->nullable()->change()
+        );
+        $draftResponse=$this->postJson(route('stock-count-documents.store'), [
+            'product_id'=>$product->id,
+            'document_date'=>'2026-10-29',
+            'actual_quantities'=>[],
+        ])->assertCreated();
+        $draft=StockCountDocument::findOrFail($draftResponse->json('document_id'));
+        $this->assertSame('draft',$draft->status);
+        $this->assertNull($draft->items()->where('product_variant_id',$variant->id)->value('actual_quantity'));
+
+        $this->patchJson(route('stock-count-documents.finalize',$draft), [
+            'product_id'=>$product->id,'document_date'=>'2026-10-29',
+            'confirm_empty_as_zero'=>1, // An old client must not bypass the new safety rule.
+        ])->assertUnprocessable()
+            ->assertJsonPath('conflicts.0.reason_code','uncounted_variant');
+        $this->assertSame('draft',$draft->fresh()->status);
+        $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$variant->id)->value('quantity'));
+        $this->assertSame(0,StockMovement::count());
     }
 
     public function test_unauthorized_access_is_rejected(): void

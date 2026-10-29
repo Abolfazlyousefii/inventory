@@ -16,7 +16,7 @@ final class StocktakeCategoryWorkspaceService
     public const MAX_PAGE_SIZE = 100;
 
     /** @return array{rows:array,next_cursor:int,has_more:bool} */
-    public function rows(int $categoryId, int $afterId, int $limit): array
+    public function rows(int $categoryId, int $afterId, int $limit, string $search = ''): array
     {
         $categories = Category::selfAndDescendantIds($categoryId);
 
@@ -25,11 +25,26 @@ final class StocktakeCategoryWorkspaceService
             ->where('type', 'central')->where('name', 'انبار مرکزی')->value('id') ?? 0);
         abort_if($warehouseId < 1, 503, 'انبار مرکزی یافت نشد؛ گزارش موجودی قابل اتکا نیست.');
 
-        $variants = DB::table('product_variants as v')
+        $variantsQuery = DB::table('product_variants as v')
             ->join('products as p', 'p.id', '=', 'v.product_id')
             ->whereIn('p.category_id', $categories)
-            ->where('v.id', '>', $afterId)
-            ->orderBy('v.id')
+            ->where('v.id', '>', $afterId);
+
+        if ($search !== '') {
+            // Search is restricted to the selected category and descendants.
+            // Never load all matching variants into memory.
+            $like = '%'.addcslashes($search, '%_\\').'%';
+            $variantsQuery->where(function ($query) use ($like) {
+                $query->where('p.name', 'like', $like)
+                    ->orWhere('p.sku', 'like', $like)
+                    ->orWhere('v.variant_name', 'like', $like)
+                    ->orWhere('v.variety_name', 'like', $like)
+                    ->orWhere('v.variant_code', 'like', $like)
+                    ->orWhere('v.variety_code', 'like', $like);
+            });
+        }
+
+        $variants = $variantsQuery->orderBy('v.id')
             ->limit($limit + 1)
             ->get([
                 'v.id as variant_id', 'v.product_id', 'p.name as product_name',

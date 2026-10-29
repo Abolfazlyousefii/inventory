@@ -82,12 +82,14 @@ class StocktakeController extends Controller
             'category_id' => ['required','integer','exists:categories,id'],
             'after_id' => ['nullable','integer','min:0'],
             'limit' => ['nullable','integer','min:1','max:100'],
+            'q' => ['nullable','string','max:80'],
         ]);
 
         return response()->json($browser->rows(
             (int) $validated['category_id'],
             (int) ($validated['after_id'] ?? 0),
             (int) ($validated['limit'] ?? \App\Services\StocktakeCategoryWorkspaceService::PAGE_SIZE),
+            trim((string) ($validated['q'] ?? '')),
         ))->header('Cache-Control', 'private, no-store');
     }
 
@@ -129,8 +131,6 @@ class StocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
-        $request->validate(['confirm_empty_as_zero'=>['accepted']]);
-
         try {
             $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true, $this->validatedPayload($request, true));
         } catch (StockCountFinalizeValidationException $exception) {
@@ -138,7 +138,7 @@ class StocktakeController extends Controller
                 return response()->json([
                     'message' => 'امکان ثبت نهایی سند وجود ندارد.',
                     'errors' => [
-                        'finalize' => ['موجودی واقعی برخی تنوع‌ها کمتر از رزرو فعال است.'],
+                        'finalize' => [$exception->getMessage()],
                     ],
                     'conflicts' => $exception->conflicts(),
                 ], 422);
@@ -148,7 +148,7 @@ class StocktakeController extends Controller
                 ->back()
                 ->withInput()
                 ->withErrors([
-                    'finalize' => 'امکان ثبت نهایی سند وجود ندارد. موارد مشخص‌شده را اصلاح کنید.',
+                    'finalize' => $exception->getMessage(),
                 ], 'stock_count_finalize')
                 ->with('stock_count_conflicts', $exception->conflicts());
         }
