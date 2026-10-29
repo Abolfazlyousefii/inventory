@@ -1,0 +1,297 @@
+document.addEventListener('DOMContentLoaded', () => {
+    'use strict';
+
+    const app = document.getElementById('stocktakeCategoryApp');
+    if (!app) return;
+
+    const category = document.getElementById('scCategory');
+    const subcategory = document.getElementById('scSubcategory');
+    const show = document.getElementById('scShow');
+    const date = document.getElementById('scDate');
+    const more = document.getElementById('scMore');
+    const statusNode = document.getElementById('scStatus');
+    const productsNode = document.getElementById('scProducts');
+
+    const groups = new Map();
+    let selectionId = 0;
+    let afterId = 0;
+    let hasMore = false;
+    let loading = false;
+    let loadingController = null;
+    let sequence = 0;
+
+    const fa = n => Number(n || 0).toLocaleString('fa-IR');
+    const make = (tag, className, value) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (value !== undefined && value !== null) node.textContent = String(value);
+        return node;
+    };
+    const notice = (message, error = false) => {
+        statusNode.textContent = message;
+        statusNode.classList.toggle('is-error', error);
+    };
+
+    function containsUnsavedCounts() {
+        return [...groups.values()].some(g => !g.saved &&
+            [...g.quantities.values()].some(v => v !== ''));
+    }
+
+    function reset() {
+        sequence++;
+        loadingController?.abort();
+        loadingController = null;
+        loading = false;
+        afterId = 0;
+        hasMore = false;
+        groups.clear();
+        productsNode.replaceChildren();
+        more.hidden = true;
+        more.disabled = false;
+        selectionId = 0;
+    }
+
+    function groupFor(row) {
+        const id = Number(row.product_id);
+        if (groups.has(id)) return groups.get(id);
+
+        const card = make('section','sc-product');
+        const header = make('header','sc-product-head');
+        const headerTitle = make('div');
+        headerTitle.append(make('strong','',row.product_name));
+        const meta = make('div','sc-product-meta','محصول شماره ' + fa(id));
+        headerTitle.append(meta);
+        header.append(headerTitle);
+        const flag = make('span','sc-muted','در انتظار شمارش');
+        header.append(flag);
+        card.append(header);
+
+        const wrap = make('div','sc-table-wrap');
+        const table = make('table');
+        const head = make('thead');
+        const trHead = make('tr');
+        ['تنوع / کد','موجودی آزاد','رزرو فعال','در صف جمع‌آوری','شمارش واقعی'].forEach(label =>
+            trHead.append(make('th','',label)));
+        head.append(trHead);
+        const tbody = make('tbody');
+        table.append(head,tbody);
+        wrap.append(table);
+        card.append(wrap);
+
+        const footer = make('div','sc-footer');
+        const feedback = make('div','sc-feedback','هنوز پیش‌نویسی ذخیره نشده است.');
+        const button = make('button','btn btn-sm btn-success','ذخیره پیش‌نویس این محصول');
+        button.type = 'button';
+        button.dataset.saveProduct = String(id);
+        button.disabled = true;
+        footer.append(feedback,button);
+        card.append(footer);
+        productsNode.append(card);
+
+        const group = {id,name:row.product_name,rows:new Map(),quantities:new Map(),
+            tbody,button,feedback,flag,saved:false,saving:false};
+        groups.set(id,group);
+        return group;
+    }
+
+    function addRow(row) {
+        const group = groupFor(row);
+        const id = Number(row.variant_id);
+        if (group.rows.has(id)) return;
+        group.rows.set(id,row);
+        const tr = make('tr');
+        const description = make('td','sc-variant',row.name || 'تنوع بدون نام');
+        description.append(make('small','',row.sku || ''));
+        tr.append(description);
+        tr.append(make('td','sc-number',fa(row.system_available)));
+        tr.append(make('td','sc-number',fa(row.active_reserved)));
+        const queue = make('td','sc-number');
+        queue.append(make('span',Number(row.queue_total)>0?'sc-badge':'sc-muted',fa(row.queue_total)));
+        tr.append(queue);
+        const actualCell = make('td');
+        const input = make('input','sc-actual');
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.autocomplete = 'off';
+        input.placeholder = 'شمارش نشده';
+        input.maxLength = 12;
+        input.dataset.product = String(group.id);
+        input.dataset.variant = String(id);
+        input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
+        actualCell.append(input);
+        tr.append(actualCell);
+        group.tbody.append(tr);
+        group.flag.textContent = fa(group.rows.size) + ' تنوع';
+    }
+
+    function updateButtons() {
+        for (const group of groups.values()) {
+            const counted = [...group.quantities.values()].filter(v => v !== '').length;
+            group.button.disabled = group.saved || group.saving || loading || hasMore || counted === 0;
+            if (!group.saved) group.feedback.textContent = fa(counted) + ' از ' + fa(group.rows.size)
+                + ' تنوع شمارش شده · ' + (hasMore || loading ? 'ابتدا همه ردیف‌های دسته را دریافت کنید.' :
+                'مقادیر خالی فقط در مرحله تأیید نهایی سند تعیین تکلیف می‌شوند.');
+        }
+        more.hidden = !hasMore;
+        more.disabled = loading;
+    }
+
+    async function requestPage() {
+        if (loading || !hasMore || !selectionId) return;
+        loading = true;
+        const current = sequence;
+        const controller = new AbortController();
+        loadingController = controller;
+        show.disabled = true;
+        updateButtons();
+        notice('در حال دریافت تنوع‌های دسته... (هر درخواست حداکثر ۶۰ ردیف)');
+        try {
+            const url = new URL(app.dataset.rowsUrl, location.origin);
+            url.searchParams.set('category_id',String(selectionId));
+            url.searchParams.set('after_id',String(afterId));
+            url.searchParams.set('limit','60');
+            const response = await fetch(url, {
+                method:'GET',credentials:'same-origin',
+                headers:{'Accept':'application/json'},signal:controller.signal,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.message || 'دریافت محصولات دسته ناموفق بود.');
+            if (!Array.isArray(payload.rows) || (payload.has_more && payload.rows.length === 0)) {
+                throw new Error('صفحه‌بندی دسته معتبر نیست.');
+            }
+            const next = Number(payload.next_cursor);
+            if (payload.has_more && (!Number.isSafeInteger(next) || next <= afterId)) {
+                throw new Error('شناسه ادامه دریافت کالاها نامعتبر است.');
+            }
+            if (current !== sequence) return;
+
+            payload.rows.forEach(addRow);
+            afterId = next;
+            hasMore = Boolean(payload.has_more);
+            notice(hasMore
+                ? fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0)) + ' تنوع دریافت شد. برای ادامه «نمایش تنوع‌های بیشتر» را بزنید.'
+                : 'همه تنوع‌های دسته دریافت شدند. می‌توانید شمارش هر محصول را جداگانه به‌عنوان پیش‌نویس ذخیره کنید.');
+        } catch(error) {
+            if (current===sequence && error.name !== 'AbortError') {
+                notice(error.message || 'دریافت ناموفق بود؛ برای تلاش مجدد روی نمایش بیشتر کلیک کنید.',true);
+                // Preserve cursor and already loaded inputs.
+                hasMore = true;
+            }
+        } finally {
+            if (current===sequence) {
+                loading = false;
+                loadingController = null;
+                show.disabled = false;
+                updateButtons();
+            }
+        }
+    }
+
+    async function begin() {
+        const selected = Number(subcategory.value || category.value);
+        if (!Number.isSafeInteger(selected) || selected < 1) {
+            notice('ابتدا دسته‌بندی یا زیردسته‌بندی را انتخاب کنید.',true);
+            return;
+        }
+        if (containsUnsavedCounts() &&
+            !window.confirm('شمارش‌های ذخیره‌نشده این دسته از بین می‌روند. دسته جدید نمایش داده شود؟')) return;
+        reset();
+        selectionId = selected;
+        hasMore = true;
+        await requestPage();
+    }
+
+    category.addEventListener('change',async () => {
+        subcategory.replaceChildren(new Option('همه زیردسته‌ها',''));
+        subcategory.disabled = !category.value;
+        if (!category.value) return;
+        const id = category.value;
+        try {
+            const url = new URL(app.dataset.subcategoriesUrl,location.origin);
+            url.searchParams.set('category_id',id);
+            const response = await fetch(url,{credentials:'same-origin',headers:{'Accept':'application/json'}});
+            if (!response.ok) throw new Error('بارگذاری زیردسته‌ها ممکن نشد.');
+            const entries = await response.json();
+            if (category.value !== id) return;
+            for(const child of entries) subcategory.add(new Option(child.name,child.id));
+        } catch(error) { notice(error.message,true); }
+    });
+
+    productsNode.addEventListener('input', event => {
+        const field = event.target.closest('.sc-actual');
+        if (!field) return;
+        const group = groups.get(Number(field.dataset.product));
+        if (!group || group.saved) return;
+        const normalized = field.value.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+            .replace(/[٠-٩]/g,d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
+        const valid = normalized === '' || (/^\d+$/.test(normalized) &&
+            Number.isSafeInteger(Number(normalized)) && Number(normalized) <= 2147483647);
+        field.setCustomValidity(valid?'':'فقط عدد صحیح نامنفی مجاز است.');
+        if (!valid) { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; return; }
+        field.value = normalized;
+        group.quantities.set(Number(field.dataset.variant),normalized);
+        updateButtons();
+    });
+
+    async function saveProduct(id) {
+        const group = groups.get(id);
+        if (!group || group.saved || group.saving || loading || hasMore) return;
+        if (!date.value) { notice('تاریخ سند را مشخص کنید.',true); date.focus(); return; }
+        const counted = [...group.quantities.values()].filter(v=>v!=='').length;
+        if (counted === 0) return;
+        const missing = group.rows.size - counted;
+        if (!window.confirm('برای «' + group.name + '» پیش‌نویس جداگانه ساخته شود؟ ' +
+            (missing?'تعداد '+fa(missing)+' تنوع هنوز وارد نشده و در مرحله نهایی نیاز به بررسی دارد. ':'') +
+            'این کار موجودی انبار را تغییر نمی‌دهد.')) return;
+
+        group.saving = true;
+        updateButtons();
+        group.feedback.textContent = 'در حال ذخیره پیش‌نویس...';
+        const payload = {
+            product_id:id,document_date:date.value,
+            description:'انبارگردانی از نمای دسته‌ای',
+            actual_quantities:Object.fromEntries([...group.quantities].filter(([,v])=>v!=='')),
+        };
+        try {
+            const response = await fetch(app.dataset.storeUrl,{
+                method:'POST',credentials:'same-origin',
+                headers:{'Accept':'application/json','Content-Type':'application/json',
+                    'X-CSRF-TOKEN':document.querySelector('meta[name=csrf-token]')?.content||''},
+                body:JSON.stringify(payload),
+            });
+            const result = await response.json().catch(()=>({}));
+            if (!response.ok) {
+                const validation = result.errors && Object.values(result.errors).flat().join('، ');
+                throw new Error(validation || result.message || 'ذخیره پیش‌نویس ناموفق بود.');
+            }
+            if (!result.document_id || !result.edit_url) throw new Error('پاسخ ثبت سند معتبر نبود.');
+            group.saved = true;
+            group.tbody.querySelectorAll('.sc-actual').forEach(input=>input.disabled=true);
+            group.flag.textContent = 'پیش‌نویس ذخیره شد';
+            group.feedback.replaceChildren();
+            const link = make('a','sc-success','مشاهده و بررسی سند شماره ' + fa(result.document_id));
+            link.href=result.edit_url;
+            group.feedback.append(link);
+            group.button.textContent = 'ذخیره شد';
+        } catch(error) {
+            group.feedback.textContent = error.message || 'ذخیره پیش‌نویس ناموفق بود؛ دوباره تلاش کنید.';
+            group.feedback.classList.add('is-error');
+        } finally {
+            group.saving = false;
+            updateButtons();
+        }
+    }
+
+    productsNode.addEventListener('click', event => {
+        const button = event.target.closest('[data-save-product]');
+        if (button) saveProduct(Number(button.dataset.saveProduct));
+    });
+    show.addEventListener('click',begin);
+    more.addEventListener('click',requestPage);
+
+    window.addEventListener('beforeunload',event => {
+        if (!containsUnsavedCounts()) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
+});

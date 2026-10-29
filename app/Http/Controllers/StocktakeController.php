@@ -62,10 +62,47 @@ class StocktakeController extends Controller
         return view('stocktake.form', ['mode'=>'create','document'=>null,'centralWarehouse'=>$this->service->centralWarehouse(),'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get()]);
     }
 
+    /**
+     * Category-wide counting workspace. No stock writes are performed here:
+     * each product gets its own existing draft document upon explicit save.
+     */
+    public function categoryWorkspace()
+    {
+        return view('stocktake.category-workspace', [
+            'rootCategories' => Category::query()
+                ->whereNull('parent_id')->orderBy('name')->get(['id','name']),
+        ]);
+    }
+
+    public function categoryVariants(
+        Request $request,
+        \App\Services\StocktakeCategoryWorkspaceService $browser
+    ) {
+        $validated = $request->validate([
+            'category_id' => ['required','integer','exists:categories,id'],
+            'after_id' => ['nullable','integer','min:0'],
+            'limit' => ['nullable','integer','min:1','max:100'],
+        ]);
+
+        return response()->json($browser->rows(
+            (int) $validated['category_id'],
+            (int) ($validated['after_id'] ?? 0),
+            (int) ($validated['limit'] ?? \App\Services\StocktakeCategoryWorkspaceService::PAGE_SIZE),
+        ))->header('Cache-Control', 'private, no-store');
+    }
+
     public function store(Request $request)
     {
         $data = $this->validatedPayload($request, false);
         $document = $this->service->createProductDraft($data, (int) auth()->id());
+        if ($request->expectsJson()) {
+            return response()->json([
+                'document_id' => (int) $document->id,
+                'edit_url' => route('stock-count-documents.edit', $document),
+                'message' => 'پیش‌نویس محصول ذخیره شد؛ موجودی مرکزی تغییری نکرد.',
+            ], 201)->header('Cache-Control', 'private, no-store');
+        }
+
         return redirect()->route('stock-count-documents.edit', $document)->with('success', 'پیش‌نویس سند انبارگردانی محصولی ذخیره شد.');
     }
 

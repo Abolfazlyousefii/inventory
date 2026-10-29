@@ -1,0 +1,47 @@
+name: Stocktake category workspace
+
+on:
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/StocktakeController.php'
+      - 'app/Services/StocktakeCategoryWorkspaceService.php'
+      - 'app/Support/PageAccessCatalog.php'
+      - 'routes/web.php'
+      - 'resources/views/stocktake/**'
+      - 'public/js/stocktake-category-workspace.js'
+      - 'tests/Feature/StocktakeCategoryWorkspaceTest.php'
+      - 'tests/Js/stocktake-category-workspace.test.cjs'
+      - '.github/workflows/stocktake-category-workspace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  category-workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: |
+          cp .env.example .env
+          php artisan key:generate
+      - run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: PHP and JS syntax
+        run: |
+          php -l app/Services/StocktakeCategoryWorkspaceService.php
+          php -l app/Http/Controllers/StocktakeController.php
+          php -l app/Support/PageAccessCatalog.php
+          php -l routes/web.php
+          node --check public/js/stocktake-category-workspace.js
+      - name: Category nested products and safety
+        run: php artisan test tests/Feature/StocktakeCategoryWorkspaceTest.php
+      - name: Existing stocktake inline behaviors
+        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs
