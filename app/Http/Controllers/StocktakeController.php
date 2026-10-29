@@ -213,7 +213,7 @@ class StocktakeController extends Controller
         return $request->validate([
             'product_id' => [$editing ? 'nullable' : 'required', 'integer', 'exists:products,id'],
             'document_date' => ['required', 'date'], 'description' => ['nullable','string','max:2000'],
-            'actual_quantities' => ['nullable','array'], 'actual_quantities.*' => ['nullable','integer','min:0'],
+            'actual_quantities' => ['nullable','array'], 'actual_quantities.*' => ['nullable','integer','min:0','max:2147483647'],
             'notes' => ['nullable','array'], 'notes.*' => ['nullable','string','max:1000'],
         ]);
     }
