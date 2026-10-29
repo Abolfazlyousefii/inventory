@@ -203,7 +203,9 @@ document.addEventListener('DOMContentLoaded', () => {
             bulkSave.disabled = !ready;
             // The server always validates the whole saved category snapshot,
             // including variants hidden by a search.
-            bulkFinalize.disabled = !ready || !bulkDocId || counted < total || Boolean(activeQuery) || app.dataset.canFinalize !== '1';
+            // Review is always separate from mutation. Incomplete drafts can be
+            // inspected, but the review page refuses to enable final approval.
+            bulkFinalize.disabled = !ready || !bulkDocId || bulkDirty;
             bulkStatus.textContent = bulkBusy ? 'در حال ثبت عملیات؛ صفحه را نبندید.' :
                 ('شمارش ' + fa(counted) + ' تنوع' +
                  (bulkDocId ? ' · سند شماره ' + fa(bulkDocId) + ' ذخیره شده' : ' · هنوز پیش‌نویس کلی ذخیره نشده') +
@@ -466,34 +468,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function finalizeAll() {
-        if (!embedded || !bulkDocId || bulkBusy || hasMore || loading || activeQuery) return;
-        if ([...productsNode.querySelectorAll('.sc-actual')].some(input => !input.checkValidity())) {
-            notice('بعضی مقدارهای شمارش معتبر نیستند.',true); return;
-        }
-        const missing = [...groups.values()].reduce((n,g) =>
-            n + [...g.rows.keys()].filter(id => !g.quantities.has(id) || g.quantities.get(id) === '').length, 0);
-        if (missing) {
-            notice(fa(missing)+' تنوع هنوز شمارش نشده است. خالی‌ها صفر محسوب نمی‌شوند.',true);
+    function reviewAll() {
+        if (!embedded || !bulkDocId || bulkBusy || loading || hasMore) return;
+        if (bulkDirty) {
+            notice('شمارش‌های جدید هنوز ذخیره نشده‌اند؛ ابتدا «ذخیره پیش‌نویس کلی» را بزنید.',true);
             return;
         }
-        if (!window.confirm('تأیید نهایی تمام کالاهای این دسته؟ پس از تأیید، موجودی انبار مرکزی به‌صورت یکجا اصلاح می‌شود و دیگر امکان ویرایش سند وجود ندارد.')) return;
-        bulkBusy = true; updateButtons();
-        try {
-            const result = await categoryRequest(docUrl(app.dataset.bulkFinalizeTemplate),
-                'PATCH',{actual_quantities:categoryActuals()});
-            bulkDirty = false;
-            notice('انبارگردانی تمام کالاهای این دسته نهایی شد.');
-            location.assign(app.dataset.indexUrl);
-        } catch(error) {
-            notice(error.message || 'تأیید نهایی ناموفق بود؛ هیچ اصلاحی اعمال نشد.',true);
-        } finally {
-            bulkBusy = false; updateButtons();
-        }
+        // The server reads the saved document, not unsaved browser fields.
+        // This step never adjusts inventory.
+        const url = docUrl(app.dataset.bulkReviewTemplate);
+        window.location.assign(url);
     }
 
     bulkSave?.addEventListener('click',saveAll);
-    bulkFinalize?.addEventListener('click',finalizeAll);
+    bulkFinalize?.addEventListener('click',reviewAll);
 
     productsNode.addEventListener('click', event => {
         const button = event.target.closest('[data-save-product]');
