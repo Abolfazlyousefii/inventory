@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\StockCountFinalizeValidationException;
 use App\Models\Category;
+use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockCountDocument;
@@ -337,6 +338,43 @@ class StockCountDocumentService
                     'reserved_quantity' => null,
                     'current_quantity' => null,
                 ];
+            }
+            // A queue item may have already been deducted from free stock while
+            // physically remaining in the counting zone. Until the counting
+            // convention has been reconciled, applying an increase would
+            // double-count that item. Fail closed; this is a data safety rule.
+            if ($document->type === 'category') {
+                $queued = DB::table('invoice_items as ii')
+                    ->join('invoices as inv', 'inv.id', '=', 'ii.invoice_id')
+                    ->whereIn('ii.variant_id', $variantIds)
+                    ->whereIn('inv.status', [
+                        Invoice::STATUS_PENDING_COLLECTION,
+                        Invoice::STATUS_WAREHOUSE_RECEIVED,
+                        Invoice::STATUS_COLLECTING,
+                    ])
+                    ->where('ii.quantity', '>', 0)
+                    ->groupBy('ii.variant_id')
+                    ->select('ii.variant_id')
+                    ->selectRaw('SUM(ii.quantity) AS queued_quantity')
+                    ->get();
+                if ($queued->isNotEmpty()) {
+                    $names = $items->keyBy('product_variant_id');
+                    $conflicts = $queued->map(static function ($row) use ($names) {
+                        $item = $names->get($row->variant_id);
+                        return [
+                            'variant_id' => (int) $row->variant_id,
+                            'variant_name' => $item?->variant_name_snapshot ?? ('#'.$row->variant_id),
+                            'reason_code' => 'collection_queue_unresolved',
+                            'reason' => 'این تنوع '.(int)$row->queued_quantity
+                                .' عدد در صف جمع‌آوری دارد؛ پیش از اعمال موجودی باید محل و شیوه شمارش آن تعیین تکلیف شود.',
+                            'queued_quantity' => (int) $row->queued_quantity,
+                        ];
+                    })->values()->all();
+                    throw new StockCountFinalizeValidationException(
+                        'موجودی اقلام صف جمع‌آوری هنوز قابل تطبیق قطعی نیست؛ برای جلوگیری از دوباره‌شماری، اعمال سند متوقف شد.',
+                        $conflicts
+                    );
+                }
             }
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->lockForUpdate()->get()->keyBy('id');
             $stocks = WarehouseStock::query()->where('warehouse_id', $warehouse->id)->whereIn('product_variant_id', $variantIds)->lockForUpdate()->get()->keyBy('product_variant_id');
