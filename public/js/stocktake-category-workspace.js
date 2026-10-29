@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateButtons() {
         for (const group of groups.values()) {
             const counted = [...group.quantities.values()].filter(v => v !== '').length;
-            group.button.disabled = group.saved || group.saving || loading || hasMore || counted === 0;
+            group.button.disabled = group.saved || group.saving || loading || hasMore;
             if (!group.saved) group.feedback.textContent = fa(counted) + ' از ' + fa(group.rows.size)
                 + ' تنوع شمارش شده · ' + (hasMore || loading ? 'ابتدا همه ردیف‌های دسته را دریافت کنید.' :
                 'مقادیر خالی فقط در مرحله تأیید نهایی سند تعیین تکلیف می‌شوند.');
@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!group || group.saved || group.saving || loading || hasMore) return;
         if (!date.value) { notice('تاریخ سند را مشخص کنید.',true); date.focus(); return; }
         const counted = [...group.quantities.values()].filter(v=>v!=='').length;
-        if (counted === 0) return;
+        // A completely blank draft is also valid; no stock changes on draft save.
         const missing = group.rows.size - counted;
         if (!window.confirm('برای «' + group.name + '» پیش‌نویس جداگانه ساخته شود؟ ' +
             (missing || activeQuery ? 'مقادیر واردنشده در سند پیش‌نویس «شمارش‌نشده» می‌مانند و برای ثبت نهایی باید تعیین تکلیف شوند. ':'') +
