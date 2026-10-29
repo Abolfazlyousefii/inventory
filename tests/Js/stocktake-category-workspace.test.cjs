@@ -50,3 +50,24 @@ test('category workspace integrates into the original form without nested forms 
     assert.match(source, /originalForm\.addEventListener\('submit'/);
     assert.doesNotMatch(source, /\/finalize|stock-count-documents\.finalize/);
 });
+
+test('debounced search queries the selected category while retaining unsaved zero and other counts', () => {
+    assert.match(form, /id="scLiveSearch"/);
+    assert.match(source, /liveSearch\.addEventListener\('input'/);
+    assert.match(source, /setTimeout\(\(\) => \{/);
+    assert.match(source, /searchParams\.set\('q',activeQuery\)/);
+    assert.match(source, /const entered = new Map\(\)/);
+    assert.match(source, /clearListing\(\)/);
+    assert.match(source, /quantities:entered\.get\(id\) \|\| new Map\(\)/);
+    assert.match(source, /const remembered = group\.quantities\.get\(id\)/);
+    assert.match(source, /if \(remembered !== undefined\) input\.value = remembered/);
+    assert.match(source, /saved\.set\(id,result\.edit_url\)/);
+    assert.match(source, /entered\.set\(group\.id,group\.quantities\)/);
+    assert.doesNotMatch(source, /confirm_empty_as_zero/);
+});
+
+test('single-product finalization cannot implicitly turn blank into zero', () => {
+    assert.doesNotMatch(form, /name="confirm_empty_as_zero"/);
+    assert.match(form, /s\.empty===0&&s\.err===0&&s\.total>0&&!state\.hasMore&&!state\.loading/);
+    assert.match(form, /صفر را صریحاً/);
+});
