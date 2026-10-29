@@ -272,6 +272,29 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
 
     }
 
+    public function test_empty_draft_is_valid_but_http_finalization_returns_conflicts_and_preserves_stock(): void
+    {
+        $this->signIn();
+        [, $airpods, , [$product, $variant]]=$this->fixture();
+        $draftResponse=$this->postJson(route('stock-count-documents.store'), [
+            'product_id'=>$product->id,
+            'document_date'=>'2026-10-29',
+            'actual_quantities'=>[],
+        ])->assertCreated();
+        $draft=StockCountDocument::findOrFail($draftResponse->json('document_id'));
+        $this->assertSame('draft',$draft->status);
+        $this->assertNull($draft->items()->where('product_variant_id',$variant->id)->value('actual_quantity'));
+
+        $this->patchJson(route('stock-count-documents.finalize',$draft), [
+            'product_id'=>$product->id,'document_date'=>'2026-10-29',
+            'confirm_empty_as_zero'=>1, // An old client must not bypass the new safety rule.
+        ])->assertUnprocessable()
+            ->assertJsonPath('conflicts.0.reason_code','uncounted_variant');
+        $this->assertSame('draft',$draft->fresh()->status);
+        $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$variant->id)->value('quantity'));
+        $this->assertSame(0,StockMovement::count());
+    }
+
     public function test_unauthorized_access_is_rejected(): void
     {
         $this->getJson(route('stock-count-documents.category-variants',['category_id'=>1]))->assertUnauthorized();
