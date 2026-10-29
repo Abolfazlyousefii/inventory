@@ -390,6 +390,71 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertStringContainsString('data-bulk-store-url', $html);
     }
 
+    public function test_category_bulk_draft_can_resume_and_clear_a_previously_saved_count(): void
+    {
+        $this->signIn();
+        [, $category, , [$p1,$v1], [$p2,$v2]] = $this->fixture();
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) => $table->integer('actual_quantity')->nullable()->change()
+        );
+        $docId=$this->postJson(route('stock-count-documents.category-bulk.store'),[
+            'category_id'=>$category->id,'document_date'=>'2026-10-29',
+            'request_key'=>'df8654d9-e2f7-4456-ad1d-449b8a593cb5',
+            'actual_quantities'=>[$v1->id=>0,$v2->id=>4],
+        ])->assertCreated()->json('document_id');
+        $this->get(route('stock-count-documents.category-bulk.resume',$docId))->assertOk()
+            ->assertSee('id="scBulkActions"',false)->assertSee('data-bulk-document-id="'.$docId.'"',false);
+        $this->putJson(route('stock-count-documents.category-bulk.update',$docId),[
+            'actual_quantities'=>[$v2->id=>null],
+        ])->assertOk()->assertJsonPath('status','draft');
+        $doc=StockCountDocument::findOrFail($docId);
+        $this->assertSame(0,$doc->items()->where('product_variant_id',$v1->id)->value('actual_quantity'));
+        $this->assertNull($doc->items()->where('product_variant_id',$v2->id)->value('actual_quantity'));
+        $this->assertSame(0,StockMovement::count());
+        $this->patchJson(route('stock-count-documents.category-bulk.finalize',$docId),[])
+            ->assertUnprocessable()->assertJsonPath('conflicts.0.reason_code','uncounted_variant');
+    }
+
+    public function test_bulk_category_cannot_use_legacy_product_finalize_endpoint(): void
+    {
+        $this->signIn();
+        [, $category,,[$p,$v]]=$this->fixture();
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) => $table->integer('actual_quantity')->nullable()->change()
+        );
+        $docId=$this->postJson(route('stock-count-documents.category-bulk.store'),[
+            'category_id'=>$category->id,'document_date'=>'2026-10-29',
+            'request_key'=>'33a0bbc6-1cc1-4b2c-bc10-cff14379e3a8',
+            'actual_quantities'=>[$v->id=>8],
+        ])->assertCreated()->json('document_id');
+        $this->patchJson(route('stock-count-documents.finalize',$docId),[
+            'document_date'=>'2026-10-29',
+        ])->assertUnprocessable();
+        $this->assertSame('draft',StockCountDocument::findOrFail($docId)->status);
+        $this->assertSame(0,StockMovement::count());
+    }
+
+    public function test_bulk_category_rolls_back_all_adjustments_when_one_variant_stock_changes(): void
+    {
+        $this->signIn();
+        [, $category,,[$p1,$v1],[$p2,$v2]]=$this->fixture();
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) => $table->integer('actual_quantity')->nullable()->change()
+        );
+        $id=$this->postJson(route('stock-count-documents.category-bulk.store'),[
+            'category_id'=>$category->id,'document_date'=>'2026-10-29',
+            'request_key'=>'da877e9a-73ec-4211-8d31-9c3efb4ce291',
+            'actual_quantities'=>[$v1->id=>7,$v2->id=>2],
+        ])->assertCreated()->json('document_id');
+        WarehouseStock::where('product_variant_id',$v2->id)->update(['quantity'=>9]);
+        $this->patchJson(route('stock-count-documents.category-bulk.finalize',$id),[])
+            ->assertUnprocessable()->assertJsonPath('conflicts.0.reason_code','stock_changed');
+        $this->assertSame('draft',StockCountDocument::findOrFail($id)->status);
+        $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$v1->id)->value('quantity'));
+        $this->assertSame(9,(int)WarehouseStock::where('product_variant_id',$v2->id)->value('quantity'));
+        $this->assertSame(0,StockMovement::count());
+    }
+
     public function test_unauthorized_access_is_rejected(): void
     {
         $this->getJson(route('stock-count-documents.category-variants',['category_id'=>1]))->assertUnauthorized();
