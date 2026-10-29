@@ -81,7 +81,7 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertUnprocessable();
     }
 
-    public function test_group_page_is_linked_from_product_stocktake_and_does_not_auto_finalize(): void
+    public function test_original_legacy_group_page_remains_accessible_but_new_form_is_inline(): void
     {
         $this->signIn();
         $this->fixture();
@@ -92,8 +92,9 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertSee('هر محصول سند جداگانه')
             ->assertSee('id="stocktakeCategoryApp"',false);
         $this->get(route('stock-count-documents.create'))->assertOk()
-            ->assertSee('انبارگردانی با انتخاب دسته‌بندی')
-            ->assertSee(route('stock-count-documents.category-workspace'),false);
+            ->assertSee('نمایش کالاهای دسته در همین صفحه')
+            ->assertSee('data-embedded="1"', false)
+            ->assertDontSee(route('stock-count-documents.category-workspace'),false);
     }
 
     public function test_category_view_matches_the_original_single_product_stock_count_numbers(): void
