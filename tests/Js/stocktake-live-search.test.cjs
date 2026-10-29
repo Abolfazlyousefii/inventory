@@ -97,7 +97,7 @@ test('zero count is not lost when live search filters out then restores an item'
 
     nodes.scLiveSearch.value='گارد';
     nodes.scLiveSearch.on_input();
-    await until(()=>requests.some(u=>u.includes('q=%DA%AF%D8%A7%D8%B1%D8%AF')));
+    await until(()=>requests.some(u=>String(u).includes('q=%DA%AF%D8%A7%D8%B1%D8%AF')));
     await until(()=>nodes.scProducts.children.length===1);
     assert.equal(findField().dataset.product,'2');
 
