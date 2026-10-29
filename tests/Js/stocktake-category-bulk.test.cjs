@@ -16,7 +16,8 @@ function createNode(tag='div') {
         appendChild(element){children.push(element)},
         replaceChildren(...elements){children.splice(0,children.length,...elements)},
         setAttribute(){},
-        checkValidity(){return true},
+        setCustomValidity(message){this.validationMessage=message},
+        checkValidity(){return !this.validationMessage},
         addEventListener(name,cb){this['on_'+name]=cb},
         querySelectorAll(selector){
             const found=[];
