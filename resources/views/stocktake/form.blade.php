@@ -84,6 +84,7 @@
  .stocktake-category .sc-footer{align-items:stretch}
  .stocktake-category .sc-footer button{width:100%}
 }
+.stocktake-page .stocktake-category:has(#scBulkActions){padding-bottom:160px}
 .stocktake-category .sc-bulk-actions{position:fixed;bottom:16px;right:max(18px,calc((100vw - 1120px)/2));left:max(18px,calc((100vw - 1120px)/2));z-index:1080;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:rgba(255,255,255,.98);border:1px solid #d5e4ed;box-shadow:0 15px 40px rgba(15,39,58,.18);border-radius:16px;padding:12px 16px;backdrop-filter:blur(8px)}
 .stocktake-category .sc-bulk-actions .sc-bulk-meta{font-size:.82rem;color:#426279;line-height:1.8;flex:1;min-width:180px}
 .stocktake-category .sc-bulk-actions .sc-bulk-buttons{display:flex;gap:10px;flex-wrap:wrap}
@@ -129,11 +130,14 @@
     data-bulk-finalize-template="{{ route('stock-count-documents.category-bulk.finalize', ['stockCountDocument' => '__DOC__']) }}"
     data-bulk-document-id="{{ $categoryDraft?->id }}"
     data-bulk-category-id="{{ $categoryDraft?->category_id }}"
+    data-bulk-category-name="{{ $categoryDraft?->category?->name }}"
+    data-can-finalize="{{ auth()->user()?->isAdministrator() ? '1' : '0' }}"
     data-index-url="{{ route('stock-count-documents.index') }}">
     <div class="sc-panel"><div class="sc-top mb-2">
       <div><h5 class="mb-1">شمارش کالاهای دسته انتخابی</h5><p class="sc-subtitle mb-0">کالاهای دسته یا زیردسته انتخابی همراه تنوع‌ها در همین فرم نمایش داده می‌شوند.</p></div>
       <button type="button" id="scClose" class="btn btn-sm btn-outline-secondary">بازگشت به شمارش یک محصول</button>
     </div>
+    @if($categoryDraft)<div class="alert alert-info py-2">در حال ادامه پیش‌نویس دسته «{{ $categoryDraft->category?->name }}» به شماره {{ $categoryDraft->document_number }} هستید. شمارش‌های قبلی بارگذاری می‌شوند.</div>@endif
     <div class="sc-warning mb-2">این دسته‌بندی <strong>فقط یک سند پیش‌نویس کلی</strong> دارد. ذخیره، موجودی انبار را تغییر نمی‌دهد. تأیید نهایی فقط پس از شمارش همه تنوع‌ها و بررسی مجدد موجودی و رزرو انجام می‌شود؛ مقدار خالی هرگز صفر محسوب نمی‌شود.</div>
     <div class="sc-live-search mb-3"><label for="scLiveSearch" class="form-label fw-bold">جستجوی لایو کالا و تنوع در همین دسته</label><input id="scLiveSearch" class="form-control" type="search" maxlength="80" autocomplete="off" placeholder="نام کالا، مدل، SKU یا کد تنوع..." aria-describedby="scSearchHint"><div id="scSearchHint" class="small text-muted mt-1">جستجو بعد از مکث کوتاه انجام می‌شود؛ شمارش‌های واردشده با تغییر جستجو حفظ می‌شوند. برای موجودی صفر، عدد ۰ را صریحاً وارد کنید.</div></div>
      <div id="scStatus" class="sc-status" role="status" aria-live="polite">برای نمایش کالاها دکمه کنار زیردسته‌بندی را بزنید.</div>
