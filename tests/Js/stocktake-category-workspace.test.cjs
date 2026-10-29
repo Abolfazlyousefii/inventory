@@ -36,8 +36,8 @@ test('category workspace integrates into the original form without nested forms 
     assert.match(form, /id="scProducts"/);
     assert.match(form, /data-stocktake-single/);
     assert.doesNotMatch(form, /href="\{\{ route\('stock-count-documents.category-workspace'\) \}\}"/);
-    assert.match(source, /document\.getElementById\('category'\)/);
-    assert.match(source, /document\.getElementById\('subcategory'\)/);
+    assert.match(source, /getElementById\(embedded \? 'category' : 'scCategory'\)/);
+    assert.match(source, /getElementById\(embedded \? 'subcategory' : 'scSubcategory'\)/);
     assert.match(source, /document\.querySelector\('\[name="document_date"\]'\)/);
     assert.match(source, /if \(!embedded\) category\.addEventListener/);
     assert.match(source, /if \(embedded\) \{/);
