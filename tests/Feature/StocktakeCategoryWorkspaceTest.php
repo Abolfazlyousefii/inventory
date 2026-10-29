@@ -89,7 +89,7 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->fixture();
         $html=$this->get(route('stock-count-documents.create'))->assertOk()->getContent();
         $this->assertStringContainsString('id="scLiveSearch"',$html);
-        $this->assertStringContainsString('صفر را صریحاً', $html);
+        $this->assertStringContainsString('عدد ۰ را صریحاً', $html);
         $this->assertStringNotContainsString('name="confirm_empty_as_zero"',$html);
     }
 
