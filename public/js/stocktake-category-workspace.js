@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(searchTimer);
         entered.clear();
         saved.clear();
-        liveSearch.value = '';
+        if (liveSearch) liveSearch.value = '';
         activeQuery = '';
         clearListing();
         selectionId = 0;
