@@ -14,6 +14,7 @@ function node(tag = 'div') {
         appendChild(item) {children.push(item);},
         replaceChildren(...nodes) {children.splice(0,children.length,...nodes);},
         setAttribute() {},
+        setCustomValidity(message) {this.validationMessage=message;},
         addEventListener(name,cb) {this['on_'+name] = cb;},
         querySelectorAll(selector) {
             const matches=[];
