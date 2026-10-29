@@ -166,6 +166,36 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(8, (int) WarehouseStock::where('product_variant_id', $variant->id)->value('quantity'));
     }
 
+    public function test_stocktake_form_header_and_form_are_siblings_at_full_page_width(): void
+    {
+        $this->signIn();
+        $this->fixture();
+        $response = $this->get(route('stock-count-documents.create'))->assertOk();
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $prior = libxml_use_internal_errors(true);
+        try {
+            $this->assertTrue($dom->loadHTML('<?xml encoding="UTF-8"?>'.$response->getContent()));
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($prior);
+        }
+        $xpath = new \DOMXPath($dom);
+
+        // The missing closing div in the title toolbar previously trapped
+        // the *entire form* in a horizontal flex row (squeezed to one side).
+        $this->assertSame(1, $xpath->query('//*[@id="stocktakeApp"]/form[@id="stocktakeForm"]')->length,
+            'The stocktake form must be a direct block child of its page, not inside the flex heading.');
+        $this->assertSame(1, $xpath->query(
+            '//*[@id="stocktakeApp"]/*[contains(concat(" ", normalize-space(@class), " "), " stocktake-page__header ")]'
+        )->length, 'The heading must be a separate full-width block.');
+        $this->assertSame(0, $xpath->query(
+            '//*[@id="stocktakeApp"]/*[contains(concat(" ", normalize-space(@class), " "), " stocktake-page__header ")]//form'
+        )->length, 'The title toolbar cannot contain the stocktake form.');
+        $this->assertSame(1, $xpath->query(
+            '//*[@id="stocktakeForm"]/*[@id="stocktakeCategoryApp"]'
+        )->length, 'Category counting remains embedded in the existing form.');
+    }
+
     public function test_create_form_has_inline_category_button_and_same_page_counter_not_a_separate_link(): void
     {
         $this->signIn();

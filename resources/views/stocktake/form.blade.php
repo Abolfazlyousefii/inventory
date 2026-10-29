@@ -54,10 +54,44 @@
 @media(max-width:500px){.stocktake-category .sc-controls{grid-template-columns:1fr}.stocktake-category .sc-product-head,.stocktake-category .sc-footer{padding:11px}}
 
 .stocktake-page .stocktake-category{max-width:none;padding:0;margin:0 0 16px}
+/* Page header and counting form must remain separate full-width blocks. */
+.stocktake-page > #stocktakeForm{display:block;width:100%;min-width:0;max-width:100%}
+.stocktake-page__header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-width:0;width:100%;padding:4px 0}
+.stocktake-page__heading{min-width:0;flex:1 1 290px}
+.stocktake-page__heading h4{font-weight:800;font-size:1.16rem;line-height:1.6;color:#15344a;overflow-wrap:anywhere}
+.stocktake-page__intro{font-size:.8rem;line-height:1.75;color:#64748b}
+.stocktake-page__back{flex:0 0 auto;white-space:nowrap}
+.stocktake-page .card,.stocktake-page .card-body,.stocktake-page .stocktake-category,.stocktake-category .sc-panel{min-width:0}
+.stocktake-category .sc-product-head>div{min-width:0;flex:1 1 220px}
+.stocktake-category .sc-product-head strong{overflow-wrap:anywhere;line-height:1.6}
+.stocktake-category .sc-table-wrap{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.stocktake-category table{min-width:700px}
+.stocktake-category td,.stocktake-category th{overflow-wrap:anywhere}
+.stocktake-category .sc-actual{min-width:0}
+.stocktake-category .sc-footer>*{min-width:0}
+@media(max-width:800px){
+ .stocktake-page__header{align-items:flex-start}
+ .stocktake-category table{min-width:780px}
+ .stocktake-category .sc-product{margin-bottom:10px}
+ .stocktake-category .sc-panel{padding:12px}
+}
+@media(max-width:500px){
+ .stocktake-page__heading{flex-basis:100%}
+ .stocktake-page__heading h4{font-size:1.05rem}
+ .stocktake-page__back{width:100%;justify-content:center}
+ .stocktake-category .sc-footer{align-items:stretch}
+ .stocktake-category .sc-footer button{width:100%}
+}
 [hidden]{display:none!important}
 </style>
 <div class="stocktake-page" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
- <div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0">ثبت سند انبارگردانی محصولی</h4><div class="d-flex gap-2 flex-wrap"><a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary">بازگشت</a></div>
+ <header class="stocktake-page__header mb-3">
+   <div class="stocktake-page__heading">
+     <h4 class="mb-1">ثبت سند انبارگردانی محصولی</h4>
+     <p class="stocktake-page__intro mb-0">شمارش یک محصول یا انتخاب دسته‌بندی، در همین فرم</p>
+   </div>
+   <a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary stocktake-page__back">بازگشت به انبارگردانی</a>
+ </header>
  @if($errors->stock_count_finalize->any())
   <div class="alert alert-danger" id="stockCountFinalizeAlert">
    <div class="fw-bold mb-1">ثبت نهایی سند انجام نشد</div>
