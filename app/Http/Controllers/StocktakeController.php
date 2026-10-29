@@ -132,6 +132,32 @@ class StocktakeController extends Controller
         ]);
     }
 
+    public function categoryBulkReview(StockCountDocument $stockCountDocument)
+    {
+        abort_unless($stockCountDocument->type === 'category', 404);
+        abort_unless($stockCountDocument->status === 'draft', 422,
+            'سند قبلاً نهایی شده یا لغو شده است.');
+        abort_unless((int)$stockCountDocument->created_by === (int)auth()->id()
+            || auth()->user()?->isAdministrator(), 403);
+
+        $stockCountDocument->load(['category','items']);
+        $items = $stockCountDocument->items->sortBy('product_variant_id')->values();
+        $missingCount = $items->filter(fn ($item) => $item->actual_quantity === null)->count();
+        $belowReserved = $items->filter(fn ($item) => $item->actual_quantity !== null
+            && (int)$item->actual_quantity < (int)$item->reserved_at_start)->count();
+        $canFinalize = auth()->user()?->isAdministrator() && $missingCount === 0
+            && $belowReserved === 0 && $items->isNotEmpty();
+        $reviewToken = $canFinalize
+            ? $this->service->categoryReviewToken($stockCountDocument, (int) auth()->id())
+            : null;
+
+        return response()->view('stocktake.category-bulk-review', [
+            'document'=>$stockCountDocument, 'items'=>$items,
+            'missingCount'=>$missingCount, 'belowReserved'=>$belowReserved,
+            'reviewToken'=>$reviewToken, 'canFinalize'=>$canFinalize,
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
     public function categoryBulkUpdate(Request $request, StockCountDocument $stockCountDocument)
     {
         abort_unless((int)$stockCountDocument->created_by === (int)auth()->id()
@@ -153,17 +179,23 @@ class StocktakeController extends Controller
             'ثبت نهایی کلی فقط توسط مدیر مجاز است.');
         abort_unless($stockCountDocument->type === 'category', 404);
         $data = $request->validate([
-            'actual_quantities' => ['nullable','array'],
-            'actual_quantities.*' => ['nullable','integer','min:0','max:2147483647'],
+            'review_token' => ['required','string','max:5000'],
         ]);
         try {
-            // All validation and quantity updates happen within one transaction.
+            // Only previously saved counts can be applied after independent review.
             $finalized = $this->service->finalize($stockCountDocument,
                 (int)auth()->id(), false, $data);
         } catch (StockCountFinalizeValidationException $e) {
+            if (!$request->expectsJson()) {
+                return redirect()->back()->withErrors(['finalize'=>$e->getMessage()]);
+            }
             return response()->json([
                 'message'=>$e->getMessage(), 'conflicts'=>$e->conflicts(),
             ], 422)->header('Cache-Control','private, no-store');
+        }
+        if (!$request->expectsJson()) {
+            return redirect()->route('stock-count-documents.view', $finalized)
+                ->with('success', 'تمام اقلام سند دسته‌ای به‌صورت یکجا اعمال شدند.');
         }
         return response()->json([
             'document_id'=>(int)$finalized->id,
