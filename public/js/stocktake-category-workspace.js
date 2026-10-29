@@ -479,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // The server reads the saved document, not unsaved browser fields.
         // This step never adjusts inventory.
         const url = docUrl(app.dataset.bulkReviewTemplate);
-        window.location.assign(url);
+        location.assign(url);
     }
 
     bulkSave?.addEventListener('click',saveAll);
