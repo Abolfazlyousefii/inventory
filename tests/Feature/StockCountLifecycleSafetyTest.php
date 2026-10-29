@@ -81,6 +81,29 @@ class StockCountLifecycleSafetyTest extends TestCase
         $this->assertSame(0,(int)DB::table('warehouse_stocks')->where('product_variant_id',2)->value('quantity'));
     }
 
+    public function test_partial_draft_update_does_not_clear_counted_variant_missing_from_filtered_request(): void
+    {
+        DB::table('product_variants')->insert([
+            'id'=>2,'product_id'=>1,'variant_name'=>'Blue','variant_code'=>'BLUE-2','stock'=>4,
+        ]);
+        DB::table('warehouse_stocks')->insert([
+            'warehouse_id'=>1,'product_id'=>1,'product_variant_id'=>2,'quantity'=>4,
+        ]);
+        $service=app(StockCountDocumentService::class);
+        $draft=$service->createProductDraft([
+            'product_id'=>1,'document_date'=>'2026-10-29',
+            'actual_quantities'=>[1=>8,2=>3],
+        ],1);
+        $updated=$service->updateProductDraft($draft,[
+            'document_date'=>'2026-10-29','actual_quantities'=>[1=>7],
+        ],1);
+        $this->assertSame(7,(int)$updated->items()->where('product_variant_id',1)->value('actual_quantity'));
+        $this->assertSame(3,(int)$updated->items()->where('product_variant_id',2)->value('actual_quantity'));
+        $this->assertSame('draft',$updated->status);
+        $this->assertSame(0,StockMovement::count());
+        $this->unchangedStock(10);
+    }
+
     public function test_stale_cancel_cannot_relabel_an_applied_stocktake(): void
     {
         $stale=$this->draft();$service=app(StockCountDocumentService::class);
