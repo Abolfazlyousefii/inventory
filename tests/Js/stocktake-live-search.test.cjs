@@ -32,7 +32,8 @@ function node(tag = 'div') {
 function fixture() {
     const nodes = {};
     for(const id of ['stocktakeCategoryApp','category','subcategory','scShow','scMore','scStatus',
-        'scProducts','scLiveSearch','scClose','stocktakeForm']) nodes[id] = node();
+        'scProducts','scLiveSearch','scClose','stocktakeForm',
+        'scSaveAll','scFinalizeAll','scBulkStatus']) nodes[id] = node();
     nodes.stocktakeCategoryApp.dataset.embedded = '1';
     nodes.category.value = '3';
     nodes.subcategory.value = '';

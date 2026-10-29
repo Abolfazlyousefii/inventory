@@ -4,6 +4,8 @@
     $stockCountConflicts = collect(session('stock_count_conflicts', []));
     $stockCountConflictCount = $stockCountConflicts->count();
     $oldActualQuantities = old('actual_quantities', []);
+    $categoryDraft = $categoryDraft ?? null;
+    $categoryDraftCounts = $categoryDraftCounts ?? [];
 @endphp
 <style>
 .stocktake-page{width:100%;max-width:1600px;margin:0 auto;padding:0 18px 96px;overflow-x:hidden}.stocktake-card{border:1px solid #e9edf3;border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.04)}.stocktake-compact .form-label{font-size:.78rem;color:#64748b;margin-bottom:.35rem}.stocktake-tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}.stocktake-tools .variant-search{min-width:280px;flex:1 1 340px}.stocktake-table-wrap{max-height:60vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.stocktake-table{table-layout:fixed;width:100%;margin:0}.stocktake-table th{position:sticky;top:0;z-index:2;background:#f8fafc;font-size:.8rem;color:#475569;white-space:nowrap}.stocktake-table td{vertical-align:middle;background:#fff}.stocktake-table tbody tr:hover td{background:#fcfcfd}.col-variant{width:auto}.col-central{width:140px}.col-reserved{width:110px}.col-flow{width:154px}.flow-badge{display:inline-flex;align-items:center;justify-content:center;min-width:42px;border-radius:999px;padding:.16rem .5rem;background:#f1f5f9;color:#64748b;font-size:.84rem;font-weight:800}.flow-badge.has-flow{background:#fff3d6;color:#9a5609}.flow-breakdown{margin-top:.28rem;font-size:.66rem;line-height:1.8;color:#68758a}.flow-breakdown b{color:#92500b}.col-actual{width:190px}.col-diff{width:100px}.variant-title{font-weight:700;color:#0f172a;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.variant-meta{font-size:.76rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sales-badge{display:inline-flex;margin-top:.25rem;padding:.1rem .45rem;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.7rem}.sales-badge.is-on{background:#ecfdf5;color:#047857}.central-qty{text-align:center;font-weight:800;font-size:1rem;color:#1e293b}.central-help{display:block;font-size:.68rem;color:#94a3b8}.reserved-badge{display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:.2rem .5rem;border-radius:999px;background:#f8fafc;color:#475569}.reserved-badge.has-reserve{background:#fef9c3;color:#92400e}.stock-count-stepper{display:grid;grid-template-columns:42px minmax(72px,1fr) 42px;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;background:#fff}.stock-count-stepper button{border:0;background:#f8fafc;color:#0f172a;font-weight:900;font-size:1.05rem;min-height:40px}.stock-count-stepper button:hover{background:#eef2f7}.stock-count-stepper input{border:0;border-inline:1px solid #dbe3ef;text-align:center;font-weight:800;min-width:0;outline:0}.stock-count-stepper.has-error{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.08)}.has-stock-count-error td{background:#fff7f7!important}.has-stock-count-error{border-inline-start:4px solid #fca5a5}.stock-count-row-message{margin-top:.3rem;font-size:.74rem;color:#dc2626}.stock-count-row-message.is-warning{color:#b45309}.stock-count-refresh{display:inline-flex;margin-top:.35rem}.summary-pill.error-pill{cursor:pointer}.summary-pill.error-pill.has-errors{border-color:#fecaca;background:#fee2e2;color:#991b1b}.summary-pill.error-pill.no-errors{background:#f0fdf4;color:#166534}.server-conflict-note{display:block;margin-top:.25rem;color:#b91c1c;font-size:.72rem}.diff-badge{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:.22rem .55rem;border-radius:999px;font-weight:800;font-size:.82rem;background:#eef2ff;color:#3730a3}.diff-badge.diff-empty{background:#f8fafc;color:#64748b}.diff-badge.diff-up{background:#dcfce7;color:#166534}.diff-badge.diff-down{background:#fee2e2;color:#991b1b}.diff-badge.diff-zero{background:#f1f5f9;color:#334155}.reserve-error-text{display:block;margin-top:.25rem;color:#dc2626;font-size:.72rem}.summary-line{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}.summary-pill{border:1px solid #e2e8f0;border-radius:999px;padding:.35rem .75rem;background:#fff;font-size:.86rem}.summary-pill b{font-weight:900}.summary-details{font-size:.78rem;color:#64748b;margin-top:.5rem}.stocktake-actions{position:sticky;bottom:0;z-index:5;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border:1px solid #e2e8f0;border-radius:16px;padding:.75rem;margin-top:1rem;display:flex;gap:.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap}.stocktake-mobile-label{display:none}@media(max-width:768px){.stocktake-page{padding:0 12px 110px}.stocktake-table-wrap{max-height:none;overflow:visible}.stocktake-table,.stocktake-table thead,.stocktake-table tbody,.stocktake-table tr,.stocktake-table td{display:block;width:100%}.stocktake-table thead{display:none}.stocktake-table tr{border:1px solid #e2e8f0;border-radius:14px;margin-bottom:.75rem;padding:.75rem;background:#fff}.stocktake-table td{border:0!important;padding:.35rem 0;background:transparent!important}.stocktake-mobile-label{display:block;font-size:.72rem;color:#64748b;margin-bottom:.15rem}.stocktake-row-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}.stock-count-stepper{grid-template-columns:48px 1fr 48px}.stock-count-stepper button{min-height:44px}.col-central,.col-reserved,.col-flow,.col-actual,.col-diff{width:auto}.stocktake-actions{left:12px;right:12px}}
@@ -82,67 +84,20 @@
  .stocktake-category .sc-footer{align-items:stretch}
  .stocktake-category .sc-footer button{width:100%}
 }
-
-/* Inline category counting: stable full-width desktop and accessible mobile cards. */
-.stocktake-page{width:100%;max-width:1600px;min-width:0;overflow:visible}
-.stocktake-page__header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-width:0}
-.stocktake-page__heading{min-width:0;max-width:100%}
-.stocktake-page__back{justify-self:end;max-width:100%;white-space:normal}
-.stocktake-page #stocktakeForm{display:block;width:100%;min-width:0;max-width:100%;margin:0}
-.stocktake-page #stocktakeCategoryApp{display:block;width:100%;min-width:0;max-width:none;margin:0 0 18px;padding:0}
-.stocktake-page .sc-panel,.stocktake-page .sc-product{width:100%;min-width:0;max-width:100%}
-.stocktake-page .sc-panel{padding:16px}
-.stocktake-page .sc-product{box-shadow:0 4px 16px rgba(20,43,62,.045)}
-.stocktake-page .sc-product-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;gap:12px;padding:13px 16px}
-.stocktake-page .sc-product-head>div{min-width:0;max-width:100%}
-.stocktake-page .sc-product-head strong{line-height:1.7;overflow-wrap:anywhere}
-.stocktake-page .sc-product-head>.sc-muted{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:5px 10px;border-radius:999px;border:1px solid #d8e8f0;background:#eef7fa;white-space:nowrap;color:#315771;font-weight:700;font-size:.75rem}
-.stocktake-page .sc-table-wrap{display:block;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-.stocktake-page .sc-table-wrap table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse}
-.stocktake-page .sc-table-wrap td,.stocktake-page .sc-table-wrap th{padding:10px 11px;line-height:1.8;vertical-align:middle;overflow-wrap:anywhere}
-.stocktake-page .sc-table-wrap th{background:#f4f8fb;font-size:.76rem;white-space:normal}
-.stocktake-page .sc-table-wrap th:nth-child(1){width:29%}
-.stocktake-page .sc-table-wrap th:nth-child(2){width:12%}
-.stocktake-page .sc-table-wrap th:nth-child(3){width:10%}
-.stocktake-page .sc-table-wrap th:nth-child(4){width:21%}
-.stocktake-page .sc-table-wrap th:nth-child(5){width:18%}
-.stocktake-page .sc-table-wrap th:nth-child(6){width:10%}
-.stocktake-page .sc-variant{min-width:0;overflow-wrap:anywhere}
-.stocktake-page .sc-variant small{max-width:100%;overflow-wrap:anywhere}
-.stocktake-page .sc-actual{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:185px;min-height:42px;margin-inline:auto}
-.stocktake-page .sc-flow-details{line-height:1.9;overflow-wrap:anywhere}
-.stocktake-page .sc-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px}
-.stocktake-page .sc-feedback{min-width:0;overflow-wrap:anywhere;line-height:1.9}
-.stocktake-page .sc-footer .btn{justify-self:end;white-space:normal}
-.stocktake-page .sc-status,.stocktake-page .sc-warning,.stocktake-page .sc-live-search{min-width:0;max-width:100%;overflow-wrap:anywhere}
-@media(max-width:900px){.stocktake-page{padding-inline:12px}.stocktake-page .sc-table-wrap table{min-width:800px}}
-@media(max-width:720px){
-.stocktake-page{padding-inline:10px}
-.stocktake-page__header{grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch}
-.stocktake-page__heading{width:100%}
-.stocktake-page__back{justify-self:stretch;width:100%;text-align:center}
-.stocktake-page .sc-panel{padding:11px}
-.stocktake-page .sc-product-head{grid-template-columns:minmax(0,1fr);gap:7px;padding:12px}
-.stocktake-page .sc-product-head>.sc-muted{justify-self:start;white-space:normal}
-.stocktake-page .sc-product .sc-table-wrap{overflow:visible;max-width:100%}
-.stocktake-page .sc-product table,.stocktake-page .sc-product thead,.stocktake-page .sc-product tbody{display:block;width:100%;min-width:0;max-width:100%}
-.stocktake-page .sc-product thead{display:none}
-.stocktake-page .sc-product tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:12px;border-bottom:1px solid #e6edf3}
-.stocktake-page .sc-product tbody tr:last-child{border-bottom:0}
-.stocktake-page .sc-product tbody td{display:flex;flex-direction:column;gap:4px;justify-content:center;align-items:stretch;min-width:0;width:100%;padding:9px 11px;border:1px solid #e8eef5;border-radius:10px;background:#fbfdff;text-align:right}
-.stocktake-page .sc-product tbody td::before{content:attr(data-label);display:block;color:#6b7f91;font-size:.73rem;font-weight:700;line-height:1.65}
-.stocktake-page .sc-product tbody td:first-child,.stocktake-page .sc-product tbody td:nth-child(4),.stocktake-page .sc-product tbody td:nth-child(5),.stocktake-page .sc-product tbody td:nth-child(6){grid-column:1/-1}
-.stocktake-page .sc-product tbody td.sc-number{text-align:right}
-.stocktake-page .sc-product .sc-actual{max-width:none;min-height:44px;margin:0}
-.stocktake-page .sc-footer{grid-template-columns:minmax(0,1fr);padding:12px}
-.stocktake-page .sc-footer .btn{justify-self:stretch;width:100%;min-height:43px}
-}
+.stocktake-page .stocktake-category:has(#scBulkActions){padding-bottom:160px}
+.stocktake-category .sc-bulk-actions{position:fixed;bottom:16px;right:max(18px,calc((100vw - 1120px)/2));left:max(18px,calc((100vw - 1120px)/2));z-index:1080;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:rgba(255,255,255,.98);border:1px solid #d5e4ed;box-shadow:0 15px 40px rgba(15,39,58,.18);border-radius:16px;padding:12px 16px;backdrop-filter:blur(8px)}
+.stocktake-category .sc-bulk-actions .sc-bulk-meta{font-size:.82rem;color:#426279;line-height:1.8;flex:1;min-width:180px}
+.stocktake-category .sc-bulk-actions .sc-bulk-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.stocktake-category .sc-bulk-actions button{min-height:42px;font-weight:750}
+.stocktake-category .sc-bulk-actions .sc-bulk-final{background:#147b58;border-color:#147b58;color:#fff}
+.stocktake-category .sc-bulk-actions .sc-bulk-error{color:#b42330;font-weight:700}
+@media(max-width:650px){.stocktake-category .sc-bulk-actions{bottom:6px;left:6px;right:6px;padding:10px}.stocktake-category .sc-bulk-buttons{width:100%}.stocktake-category .sc-bulk-buttons button{flex:1;font-size:.8rem}}
 [hidden]{display:none!important}
 </style>
 <div class="stocktake-page" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
  <header class="stocktake-page__header mb-3">
    <div class="stocktake-page__heading">
-     <h4 class="mb-1">ثبت سند انبارگردانی محصولی</h4>
+     <h4 class="mb-1">{{ $categoryDraft ? 'ادامه انبارگردانی دسته‌ای' : 'ثبت سند انبارگردانی محصولی' }}</h4>
      <p class="stocktake-page__intro mb-0">شمارش یک محصول یا انتخاب دسته‌بندی، در همین فرم</p>
    </div>
    <a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary stocktake-page__back">بازگشت به انبارگردانی</a>
@@ -163,24 +118,42 @@
  @elseif($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
  <form id="stocktakeForm" method="post" action="{{ $mode==='edit' ? route('stock-count-documents.update',$document) : route('stock-count-documents.store') }}">@csrf @if($mode==='edit') @method('PUT') @endif
   <div id="actualHiddenInputs"></div>
-  <div class="card stocktake-card stocktake-compact mb-3"><div class="card-body row g-2 align-items-end"><div class="col-6 col-lg"><label class="form-label">نوع سند</label><input class="form-control form-control-sm" value="انبارگردانی محصولی" readonly></div><div class="col-6 col-lg"><label class="form-label">انبار مرکزی</label><input class="form-control form-control-sm" value="{{ $centralWarehouse->name }}" readonly></div><div class="col-6 col-lg"><label class="form-label">شماره سند</label><input class="form-control form-control-sm" value="{{ $document?->document_number ?? 'پس از ذخیره ایجاد می‌شود' }}" readonly></div><div class="col-6 col-lg"><label class="form-label">تاریخ سند</label><input type="date" name="document_date" class="form-control form-control-sm" value="{{ old('document_date', optional($document?->document_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" required></div><div class="col-6 col-lg"><label class="form-label">وضعیت</label><input class="form-control form-control-sm" value="پیش‌نویس" readonly></div></div></div>
+  <div class="card stocktake-card stocktake-compact mb-3"><div class="card-body row g-2 align-items-end"><div class="col-6 col-lg"><label class="form-label">نوع سند</label><input class="form-control form-control-sm" value="انبارگردانی محصولی" readonly></div><div class="col-6 col-lg"><label class="form-label">انبار مرکزی</label><input class="form-control form-control-sm" value="{{ $centralWarehouse->name }}" readonly></div><div class="col-6 col-lg"><label class="form-label">شماره سند</label><input class="form-control form-control-sm" value="{{ $document?->document_number ?? 'پس از ذخیره ایجاد می‌شود' }}" readonly></div><div class="col-6 col-lg"><label class="form-label">تاریخ سند</label><input type="date" name="document_date" class="form-control form-control-sm" value="{{ old('document_date', optional($categoryDraft?->document_date ?? $document?->document_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" required></div><div class="col-6 col-lg"><label class="form-label">وضعیت</label><input class="form-control form-control-sm" value="پیش‌نویس" readonly></div></div></div>
   <div class="card stocktake-card mb-3"><div class="card-header bg-white">انتخاب کالا</div><div class="card-body row g-3"><div class="col-md-4"><label class="form-label">دسته‌بندی اصلی</label><select id="category" class="form-select" {{ $mode==='edit'?'disabled':'' }}><option value="">انتخاب دسته‌بندی اصلی</option>@foreach($rootCategories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select></div><div class="col-md-4"><label class="form-label">زیر‌دسته‌بندی</label><select id="subcategory" class="form-select" disabled><option value="">انتخاب زیر‌دسته‌بندی</option></select>@if($mode==='create')<button type="button" id="scShow" class="btn btn-sm btn-outline-primary mt-2 w-100">نمایش کالاهای دسته در همین صفحه</button>@endif</div><div class="col-md-4"><label class="form-label">محصول</label><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select><input id="productSearch" class="form-control mt-2" placeholder="جستجوی نام، کد، SKU یا بارکد" {{ $mode==='edit'?'disabled':'' }}></div></div></div>
   @if($mode==='create')
   <section class="stocktake-category" id="stocktakeCategoryApp" data-embedded="1" hidden
     data-rows-url="{{ route('stock-count-documents.category-variants') }}"
     data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
-    data-store-url="{{ route('stock-count-documents.store') }}">
+    data-store-url="{{ route('stock-count-documents.store') }}"
+    data-bulk-store-url="{{ route('stock-count-documents.category-bulk.store') }}"
+    data-bulk-update-template="{{ route('stock-count-documents.category-bulk.update', ['stockCountDocument' => '__DOC__']) }}"
+    data-bulk-review-template="{{ route('stock-count-documents.category-bulk.review', ['stockCountDocument' => '__DOC__']) }}"
+    data-bulk-finalize-template="{{ route('stock-count-documents.category-bulk.finalize', ['stockCountDocument' => '__DOC__']) }}"
+    data-bulk-document-id="{{ $categoryDraft?->id }}"
+    data-bulk-category-id="{{ $categoryDraft?->category_id }}"
+    data-bulk-category-name="{{ $categoryDraft?->category?->name }}"
+    data-can-finalize="{{ auth()->user()?->isAdministrator() ? '1' : '0' }}"
+    data-index-url="{{ route('stock-count-documents.index') }}">
     <div class="sc-panel"><div class="sc-top mb-2">
       <div><h5 class="mb-1">شمارش کالاهای دسته انتخابی</h5><p class="sc-subtitle mb-0">کالاهای دسته یا زیردسته انتخابی همراه تنوع‌ها در همین فرم نمایش داده می‌شوند.</p></div>
       <button type="button" id="scClose" class="btn btn-sm btn-outline-secondary">بازگشت به شمارش یک محصول</button>
     </div>
-    <div class="sc-warning mb-2">هر محصول <strong>پیش‌نویس مستقل</strong> دارد. نمایش و ذخیره پیش‌نویس موجودی مرکزی را تغییر نمی‌دهد؛ تنوع‌های شمارش‌نشده را پیش از ثبت نهایی بررسی کنید.</div>
+    @if($categoryDraft)<div class="alert alert-info py-2">در حال ادامه پیش‌نویس دسته «{{ $categoryDraft->category?->name }}» به شماره {{ $categoryDraft->document_number }} هستید. شمارش‌های قبلی بارگذاری می‌شوند.</div>@endif
+    <div class="sc-warning mb-2">این دسته‌بندی <strong>فقط یک سند پیش‌نویس کلی</strong> دارد. ذخیره، موجودی انبار را تغییر نمی‌دهد. تأیید نهایی فقط پس از شمارش همه تنوع‌ها و بررسی مجدد موجودی و رزرو انجام می‌شود؛ مقدار خالی هرگز صفر محسوب نمی‌شود.</div>
     <div class="sc-live-search mb-3"><label for="scLiveSearch" class="form-label fw-bold">جستجوی لایو کالا و تنوع در همین دسته</label><input id="scLiveSearch" class="form-control" type="search" maxlength="80" autocomplete="off" placeholder="نام کالا، مدل، SKU یا کد تنوع..." aria-describedby="scSearchHint"><div id="scSearchHint" class="small text-muted mt-1">جستجو بعد از مکث کوتاه انجام می‌شود؛ شمارش‌های واردشده با تغییر جستجو حفظ می‌شوند. برای موجودی صفر، عدد ۰ را صریحاً وارد کنید.</div></div>
      <div id="scStatus" class="sc-status" role="status" aria-live="polite">برای نمایش کالاها دکمه کنار زیردسته‌بندی را بزنید.</div>
     <div id="scProducts"></div>
     <button type="button" id="scMore" class="btn btn-outline-primary sc-more" hidden>نمایش تنوع‌های بیشتر</button>
     <p class="sc-subtitle">موجودی مرکزی، رزرو و صف جمع‌آوری بر اساس اطلاعات فعلی سیستم است، نه Snapshot ثابت.</p>
     </div>
+    <div id="scBulkActions" class="sc-bulk-actions" role="region" aria-label="عملیات کلی انبارگردانی">
+      <div class="sc-bulk-meta" id="scBulkStatus" role="status" aria-live="polite">همه شمارش‌ها را وارد و ذخیره کنید؛ سپس لیست مغایرت‌ها را بررسی کنید و در صفحه بعد فقط مدیر موجودی را اعمال می‌کند.</div>
+      <div class="sc-bulk-buttons">
+        <button type="button" id="scSaveAll" class="btn btn-primary" disabled>ذخیره پیش‌نویس کلی</button>
+        <button type="button" id="scFinalizeAll" class="btn sc-bulk-final" disabled>بررسی و تطبیق لیست</button>
+      </div>
+    </div>
+    <script type="application/json" id="scResumeCounts">@json($categoryDraftCounts)</script>
   </section>
   @endif
   <div data-stocktake-single class="alert alert-warning py-2">پیش‌نویس با شمارش ناقص قابل ذخیره است؛ ثبت نهایی فقط پس از تعیین تکلیف همه تنوع‌ها مجاز است. اگر موجودی یک تنوع صفر است، عدد <strong>۰</strong> را صریحاً وارد کنید. مقدار خالی به معنی «شمارش‌نشده» است.</div>

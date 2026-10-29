@@ -93,6 +93,130 @@ class StocktakeController extends Controller
         ))->header('Cache-Control', 'private, no-store');
     }
 
+    public function categoryBulkStore(Request $request)
+    {
+        $data = $request->validate([
+            'category_id' => ['required','integer','exists:categories,id'],
+            'document_date' => ['required','date'],
+            'request_key' => ['required','uuid'],
+            'description' => ['nullable','string','max:2000'],
+            'actual_quantities' => ['nullable','array'],
+            'actual_quantities.*' => ['nullable','integer','min:0','max:2147483647'],
+        ]);
+        $existing = StockCountDocument::query()->where('request_key', $data['request_key'])->first();
+        $doc = $this->service->createCategoryDraft($data, (int) auth()->id());
+        return response()->json([
+            'document_id'=>(int)$doc->id,
+            'status'=>$doc->status,
+            'edit_url'=>route('stock-count-documents.category-bulk.resume', $doc),
+            'message'=>'پیش‌نویس کلی ذخیره شد؛ موجودی تغییر نکرد.',
+        ], $existing ? 200 : 201)->header('Cache-Control','private, no-store');
+    }
+
+    public function categoryBulkResume(StockCountDocument $stockCountDocument)
+    {
+        abort_unless($stockCountDocument->type === 'category', 404);
+        abort_unless($stockCountDocument->status === 'draft', 422, 'سند نهایی‌شده قابل ویرایش نیست.');
+        abort_unless((int)$stockCountDocument->created_by === (int)auth()->id()
+            || auth()->user()?->isAdministrator(), 403);
+        $draftCounts = $stockCountDocument->items()->get(['product_id','product_variant_id','actual_quantity'])
+            ->groupBy('product_id')->map(fn ($rows) => $rows->mapWithKeys(
+                fn ($row) => [(string)$row->product_variant_id => $row->actual_quantity === null ? '' : (string)$row->actual_quantity]
+            ))->all();
+        return view('stocktake.form', [
+            'mode'=>'create', 'document'=>null,
+            'centralWarehouse'=>$this->service->centralWarehouse(),
+            'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get(),
+            'categoryDraft'=>$stockCountDocument,
+            'categoryDraftCounts'=>$draftCounts,
+        ]);
+    }
+
+    public function categoryBulkReview(StockCountDocument $stockCountDocument)
+    {
+        abort_unless($stockCountDocument->type === 'category', 404);
+        abort_unless($stockCountDocument->status === 'draft', 422,
+            'سند قبلاً نهایی شده یا لغو شده است.');
+        abort_unless((int)$stockCountDocument->created_by === (int)auth()->id()
+            || auth()->user()?->isAdministrator(), 403);
+
+        $stockCountDocument->load(['category','items']);
+        $items = $stockCountDocument->items->sortBy('product_variant_id')->values();
+        $missingCount = $items->filter(fn ($item) => $item->actual_quantity === null)->count();
+        $belowReserved = $items->filter(fn ($item) => $item->actual_quantity !== null
+            && (int)$item->actual_quantity < (int)$item->reserved_at_start)->count();
+        $queuedTotals = \Illuminate\Support\Facades\DB::table('invoice_items as ii')
+            ->join('invoices as inv', 'inv.id','=','ii.invoice_id')
+            ->whereIn('ii.variant_id', $items->pluck('product_variant_id')->all())
+            ->whereIn('inv.status', [
+                \App\Models\Invoice::STATUS_PENDING_COLLECTION,
+                \App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED,
+                \App\Models\Invoice::STATUS_COLLECTING,
+            ])
+            ->where('ii.quantity','>',0)->groupBy('ii.variant_id')
+            ->select('ii.variant_id')->selectRaw('SUM(ii.quantity) AS qty')
+            ->pluck('qty','variant_id');
+        $queuedCount = $queuedTotals->filter(fn ($qty) => (int)$qty > 0)->count();
+        $canFinalize = auth()->user()?->isAdministrator() && $missingCount === 0
+            && $belowReserved === 0 && $queuedCount === 0 && $items->isNotEmpty();
+        $reviewToken = $canFinalize
+            ? $this->service->categoryReviewToken($stockCountDocument, (int) auth()->id())
+            : null;
+
+        return response()->view('stocktake.category-bulk-review', [
+            'document'=>$stockCountDocument, 'items'=>$items,
+            'missingCount'=>$missingCount, 'belowReserved'=>$belowReserved,
+            'queuedCount'=>$queuedCount, 'queuedTotals'=>$queuedTotals,
+            'reviewToken'=>$reviewToken, 'canFinalize'=>$canFinalize,
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function categoryBulkUpdate(Request $request, StockCountDocument $stockCountDocument)
+    {
+        abort_unless((int)$stockCountDocument->created_by === (int)auth()->id()
+            || auth()->user()?->isAdministrator(), 403);
+        $data = $request->validate([
+            'actual_quantities' => ['nullable','array'],
+            'actual_quantities.*' => ['nullable','integer','min:0','max:2147483647'],
+        ]);
+        $updated = $this->service->updateCategoryDraft($stockCountDocument, $data, (int)auth()->id());
+        return response()->json([
+            'document_id'=>(int)$updated->id, 'status'=>$updated->status,
+            'message'=>'پیش‌نویس کلی ذخیره شد؛ موجودی مرکزی تغییر نکرد.',
+        ])->header('Cache-Control','private, no-store');
+    }
+
+    public function categoryBulkFinalize(Request $request, StockCountDocument $stockCountDocument)
+    {
+        abort_unless(auth()->user()?->isAdministrator(), 403,
+            'ثبت نهایی کلی فقط توسط مدیر مجاز است.');
+        abort_unless($stockCountDocument->type === 'category', 404);
+        $data = $request->validate([
+            'review_token' => ['required','string','max:5000'],
+        ]);
+        try {
+            // Only previously saved counts can be applied after independent review.
+            $finalized = $this->service->finalize($stockCountDocument,
+                (int)auth()->id(), false, $data);
+        } catch (StockCountFinalizeValidationException $e) {
+            if (!$request->expectsJson()) {
+                return redirect()->back()->withErrors(['finalize'=>$e->getMessage()]);
+            }
+            return response()->json([
+                'message'=>$e->getMessage(), 'conflicts'=>$e->conflicts(),
+            ], 422)->header('Cache-Control','private, no-store');
+        }
+        if (!$request->expectsJson()) {
+            return redirect()->route('stock-count-documents.view', $finalized)
+                ->with('success', 'تمام اقلام سند دسته‌ای به‌صورت یکجا اعمال شدند.');
+        }
+        return response()->json([
+            'document_id'=>(int)$finalized->id,
+            'status'=>'finalized',
+            'message'=>'تمام اقلام سند دسته‌ای با موفقیت اعمال شدند.',
+        ])->header('Cache-Control','private, no-store');
+    }
+
     public function store(Request $request)
     {
         $data = $this->validatedPayload($request, false);
@@ -110,6 +234,10 @@ class StocktakeController extends Controller
 
     public function show(Request $request, StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->type === 'category' && $stockCountDocument->status === 'draft'
+            && !$request->expectsJson()) {
+            return redirect()->route('stock-count-documents.category-bulk.resume', $stockCountDocument);
+        }
         $stockCountDocument->load(['warehouse','product','items.variant','creator','updater','finalizer','canceller','history.doer']);
         return $request->expectsJson() ? response()->json($stockCountDocument) : view('stocktake.show', ['document'=>$stockCountDocument]);
     }
@@ -117,6 +245,9 @@ class StocktakeController extends Controller
 
     public function edit(StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->type === 'category' && $stockCountDocument->status === 'draft') {
+            return redirect()->route('stock-count-documents.category-bulk.resume', $stockCountDocument);
+        }
         if ($stockCountDocument->status !== 'draft') return redirect()->route('stock-count-documents.view', $stockCountDocument);
         $stockCountDocument->load(['warehouse','product']);
         return view('stocktake.form', ['mode'=>'edit','document'=>$stockCountDocument,'centralWarehouse'=>$this->service->centralWarehouse(),'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get()]);
@@ -124,6 +255,8 @@ class StocktakeController extends Controller
 
     public function update(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_unless($stockCountDocument->type === 'product', 422,
+            'برای سند دسته‌ای از ذخیره کلی استفاده کنید.');
         $data = $this->validatedPayload($request, true);
         $updated = $this->service->updateProductDraft($stockCountDocument, $data, (int) auth()->id());
         return redirect()->route('stock-count-documents.edit', $updated)->with('success', 'پیش‌نویس ذخیره شد.');
@@ -131,6 +264,8 @@ class StocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_unless($stockCountDocument->type === 'product', 422,
+            'برای سند دسته‌ای از تأیید نهایی کلی استفاده کنید.');
         try {
             $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true, $this->validatedPayload($request, true));
         } catch (StockCountFinalizeValidationException $exception) {

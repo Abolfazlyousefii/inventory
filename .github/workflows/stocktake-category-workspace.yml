@@ -6,6 +6,8 @@ on:
       - 'app/Http/Controllers/StocktakeController.php'
       - 'app/Services/StocktakeCategoryWorkspaceService.php'
       - 'app/Services/StockCountDocumentService.php'
+      - 'app/Models/StockCountDocument.php'
+      - 'database/migrations/2026_10_29_120000_add_category_bulk_fields_to_stock_count_documents.php'
       - 'tests/Feature/StockCountLifecycleSafetyTest.php'
       - 'tests/Js/stocktake-live-search.test.cjs'
       - 'app/Support/PageAccessCatalog.php'
@@ -14,7 +16,7 @@ on:
       - 'public/js/stocktake-category-workspace.js'
       - 'tests/Feature/StocktakeCategoryWorkspaceTest.php'
       - 'tests/Js/stocktake-category-workspace.test.cjs'
-      - 'tests/Js/stocktake-category-layout.test.cjs'
+      - 'tests/Js/stocktake-category-bulk.test.cjs'
       - 'tests/Js/stocktake-category-safety.test.cjs'
       - '.github/workflows/stocktake-category-workspace.yml'
   workflow_dispatch:
@@ -41,6 +43,8 @@ jobs:
           npm run build
       - name: PHP and JS syntax
         run: |
+          php -l database/migrations/2026_10_29_120000_add_category_bulk_fields_to_stock_count_documents.php
+          php -l app/Models/StockCountDocument.php
           php -l app/Services/StocktakeCategoryWorkspaceService.php
           php -l app/Services/StockCountDocumentService.php
           php -l app/Http/Controllers/StocktakeController.php
@@ -54,4 +58,4 @@ jobs:
       - name: Inventory count freeze and stock mutation guards
         run: php artisan test tests/Feature/InventoryCountFreezeTest.php
       - name: Existing stocktake inline behaviors
-        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs tests/Js/stocktake-live-search.test.cjs tests/Js/stocktake-category-layout.test.cjs tests/Js/stocktake-category-safety.test.cjs
+        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs tests/Js/stocktake-live-search.test.cjs tests/Js/stocktake-category-bulk.test.cjs tests/Js/stocktake-category-safety.test.cjs

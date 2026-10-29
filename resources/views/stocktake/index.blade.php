@@ -8,7 +8,7 @@
     $statuses = ['draft'=>'پیش‌نویس','finalized'=>'اعمال‌شده','cancelled'=>'لغوشده'];
 @endphp
 <div class="stocktake-archive" dir="rtl">
-    <header class="sa-header"><div class="sa-heading"><span class="sa-icon" aria-hidden="true">▤</span><div><span class="sa-eyebrow">کنترل و تطبیق موجودی انبار</span><h1>آرشیو انبارگردانی</h1><p>سوابق شمارش و تغییرات موجودی کالاها</p></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-outline-primary" href="{{ route('stock-count-documents.category-workspace') }}">انبارگردانی دسته‌ای</a><a class="btn btn-outline-primary" href="{{ route('warehouse.stock-flow.index') }}">موجودی در جریان / چاپ گزارش</a><a class="btn btn-primary" href="{{ route('stock-count-documents.create') }}">+ ثبت سند انبارگردانی محصولی</a></div></header>
+    <header class="sa-header"><div class="sa-heading"><span class="sa-icon" aria-hidden="true">▤</span><div><span class="sa-eyebrow">کنترل و تطبیق موجودی انبار</span><h1>آرشیو انبارگردانی</h1><p>سوابق شمارش و تغییرات موجودی کالاها</p></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-outline-primary" href="{{ route('stock-count-documents.create') }}">انبارگردانی دسته‌ای</a><a class="btn btn-outline-primary" href="{{ route('warehouse.stock-flow.index') }}">موجودی در جریان / چاپ گزارش</a><a class="btn btn-primary" href="{{ route('stock-count-documents.create') }}">+ ثبت سند انبارگردانی محصولی</a></div></header>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
     <div class="sa-stats">
@@ -31,7 +31,7 @@
             @foreach($documents as $doc)
             <tr>
                 <td data-label="سند"><a class="sa-code" href="{{ route('stock-count-documents.view',$doc) }}"><bdi>{{ $fa($doc->document_number) }}</bdi></a><time class="sa-subtitle" dir="ltr">{{ $fa(\App\Support\JalaliDate::date($doc->document_date)) }}</time></td>
-                <td data-label="محصول / محدوده"><strong class="sa-product">{{ $doc->product?->name ?? '—' }}</strong><span class="sa-subtitle">{{ ($doc->type ?? 'product') === 'product' ? 'انبارگردانی محصولی' : 'انبارگردانی نقشه‌ای' }}</span></td>
+                <td data-label="محصول / محدوده"><strong class="sa-product">{{ ($doc->type ?? 'product') === 'category' ? ($doc->category?->name ?? 'دسته‌بندی') : ($doc->product?->name ?? '—') }}</strong><span class="sa-subtitle">{{ ($doc->type ?? 'product') === 'category' ? 'انبارگردانی دسته‌ای' : (($doc->type ?? 'product') === 'product' ? 'انبارگردانی محصولی' : 'انبارگردانی نقشه‌ای') }}</span></td>
                 <td data-label="انبار / ثبت‌کننده"><span>{{ $doc->warehouse?->name ?? '—' }}</span><span class="sa-subtitle">{{ $doc->creator?->name ?? '—' }}</span></td>
                 <td data-label="شمارش"><strong>{{ $number($doc->variants_count ?: $doc->items_count) }} تنوع</strong><span class="sa-subtitle">{{ $number($doc->zeroed_count) }} صفرشده</span></td>
                 <td data-label="افزایش"><span class="sa-delta positive">{{ $doc->total_increase > 0 ? '+' : '' }}{{ $number($doc->total_increase) }}</span></td>
