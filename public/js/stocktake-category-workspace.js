@@ -18,6 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Retain unsaved counts and saved draft links between searches.
     const entered = new Map();
     const saved = new Map();
+    const bulkSave = document.getElementById('scSaveAll');
+    const bulkFinalize = document.getElementById('scFinalizeAll');
+    const bulkStatus = document.getElementById('scBulkStatus');
+    let bulkDocId = Number(app.dataset.bulkDocumentId || 0);
+    let bulkDirty = false;
+    let bulkBusy = false;
+    const newRequestKey = () => crypto.randomUUID();
+    let requestKey = newRequestKey();
     let activeQuery = '';
     let searchTimer = null;
     let selectionId = 0;
@@ -40,6 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function containsUnsavedCounts() {
+        if (embedded) return bulkDirty || (!bulkDocId && [...entered.values()].some(values =>
+            [...values.values()].some(v => v !== '')));
         return [...entered].some(([productId, values]) => !saved.has(productId) &&
             [...values.values()].some(v => v !== ''));
     }
@@ -48,6 +58,9 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(searchTimer);
         entered.clear();
         saved.clear();
+        bulkDocId = 0;
+        bulkDirty = false;
+        requestKey = newRequestKey();
         if (liveSearch) liveSearch.value = '';
         activeQuery = '';
         clearListing();
@@ -100,8 +113,10 @@ document.addEventListener('DOMContentLoaded', () => {
         button.type = 'button';
         button.dataset.saveProduct = String(id);
         button.disabled = true;
-        footer.append(feedback,button);
-        card.append(footer);
+        if (!embedded) {
+            footer.append(feedback,button);
+            card.append(footer);
+        }
         productsNode.append(card);
 
         const stored = saved.get(id);
@@ -151,14 +166,14 @@ document.addEventListener('DOMContentLoaded', () => {
         input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
         const remembered = group.quantities.get(id);
         if (remembered !== undefined) input.value = remembered;
-        if (group.saved) input.disabled = true;
+        if (group.saved && !embedded) input.disabled = true;
         actualCell.append(input);
         tr.append(actualCell);
         const diff = make('td','sc-number sc-difference','—');
         diff.dataset.differenceFor = String(id);
         tr.append(diff);
         group.tbody.append(tr);
-        if (!group.saved) group.flag.textContent = fa(group.rows.size) + ' تنوع';
+        if (!group.saved || embedded) group.flag.textContent = fa(group.rows.size) + ' تنوع';
         updateDifference(group,id);
     }
 
@@ -180,6 +195,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateButtons() {
+        if (embedded) {
+            const total = [...groups.values()].reduce((n, g) => n + g.rows.size, 0);
+            const counted = [...entered.values()].reduce((n, vals) =>
+                n + [...vals.values()].filter(v => v !== '').length, 0);
+            const ready = selectionId > 0 && !loading && !hasMore && !bulkBusy;
+            bulkSave.disabled = !ready;
+            // The server always validates the whole saved category snapshot,
+            // including variants hidden by a search.
+            bulkFinalize.disabled = !ready || !bulkDocId || counted < total || Boolean(activeQuery);
+            bulkStatus.textContent = bulkBusy ? 'در حال ثبت عملیات؛ صفحه را نبندید.' :
+                ('شمارش ' + fa(counted) + ' تنوع' +
+                 (bulkDocId ? ' · سند شماره ' + fa(bulkDocId) + ' ذخیره شده' : ' · هنوز پیش‌نویس کلی ذخیره نشده') +
+                 (bulkDirty ? ' · تغییرات ذخیره‌نشده' : ''));
+            more.hidden = !hasMore;
+            more.disabled = loading;
+            return;
+        }
         for (const group of groups.values()) {
             const counted = [...group.quantities.values()].filter(v => v !== '').length;
             group.button.disabled = group.saved || group.saving || loading || hasMore;
@@ -227,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
             notice(hasMore
                 ? fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0)) + ' تنوع دریافت شد. برای ادامه «نمایش تنوع‌های بیشتر» را بزنید.'
                 : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
-                    'همه تنوع‌های دسته دریافت شدند. می‌توانید شمارش هر محصول را جداگانه به‌عنوان پیش‌نویس ذخیره کنید.'));
+                    'همه تنوع‌های دسته دریافت شدند. از نوار پایین صفحه پیش‌نویس کلی را ذخیره کنید.'));
         } catch(error) {
             if (current===sequence && error.name !== 'AbortError') {
                 notice(error.message || 'دریافت ناموفق بود؛ برای تلاش مجدد روی نمایش بیشتر کلیک کنید.',true);
@@ -250,8 +282,8 @@ document.addEventListener('DOMContentLoaded', () => {
             notice('ابتدا دسته‌بندی یا زیردسته‌بندی را انتخاب کنید.',true);
             return;
         }
-        if (containsUnsavedCounts() &&
-            !window.confirm('شمارش‌های ذخیره‌نشده این دسته از بین می‌روند. دسته جدید نمایش داده شود؟')) return;
+        if ((containsUnsavedCounts() || (embedded && bulkDocId)) &&
+            !window.confirm('با تغییر دسته، اطلاعات واردشده در این صفحه کنار گذاشته می‌شود. ادامه می‌دهید؟')) return;
         reset();
         if (embedded) {
             app.hidden = false;
@@ -296,16 +328,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const field = event.target.closest('.sc-actual');
         if (!field) return;
         const group = groups.get(Number(field.dataset.product));
-        if (!group || group.saved) return;
+        if (!group || (group.saved && !embedded)) return;
         const normalized = field.value.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
             .replace(/[٠-٩]/g,d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
         const valid = normalized === '' || (/^\d+$/.test(normalized) &&
             Number.isSafeInteger(Number(normalized)) && Number(normalized) <= 2147483647);
         field.setCustomValidity(valid?'':'فقط عدد صحیح نامنفی مجاز است.');
-        if (!valid) { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; return; }
+        if (!valid) {
+            if (embedded) { bulkSave.disabled = true; bulkFinalize.disabled = true; notice('مقدار شمارش معتبر نیست.', true); }
+            else { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; }
+            return;
+        }
         field.value = normalized;
         group.quantities.set(Number(field.dataset.variant),normalized);
         entered.set(group.id,group.quantities);
+        if (embedded) bulkDirty = true;
         updateDifference(group,Number(field.dataset.variant));
         updateButtons();
     });
@@ -360,6 +397,101 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function categoryActuals() {
+        const quantities = {};
+        for (const values of entered.values()) {
+            for (const [id, raw] of values.entries()) {
+                if (raw !== '') quantities[id] = Number(raw);
+            }
+        }
+        return quantities;
+    }
+
+    async function categoryRequest(url, method, payload) {
+        const response = await fetch(url,{
+            method,credentials:'same-origin',
+            headers:{
+                'Accept':'application/json','Content-Type':'application/json',
+                'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content||'',
+            },
+            body:JSON.stringify(payload),
+        });
+        const json = await response.json().catch(()=>({}));
+        if (!response.ok) {
+            const details = json.errors && Object.values(json.errors).flat().join('، ');
+            const conflict = json.conflicts?.[0];
+            throw new Error((details || json.message || 'عملیات ناموفق بود.') +
+                (conflict ? ' · ' + (conflict.variant_name || '') + ': ' + conflict.reason : ''));
+        }
+        return json;
+    }
+
+    function docUrl(template) {
+        return template.replace('__DOC__',String(bulkDocId));
+    }
+
+    async function saveAll() {
+        if (!embedded || bulkBusy || !selectionId || hasMore || loading) return;
+        if (!date?.value) { notice('تاریخ سند را مشخص کنید.',true); date?.focus(); return; }
+        if ([...productsNode.querySelectorAll('.sc-actual')].some(input => !input.checkValidity())) {
+            notice('بعضی مقدارهای شمارش معتبر نیستند.',true); return;
+        }
+        if (!window.confirm('تمام شمارش‌های این دسته در یک پیش‌نویس ذخیره شود؟ این عملیات موجودی را تغییر نمی‌دهد.')) return;
+
+        bulkBusy = true; updateButtons();
+        try {
+            const isUpdate = bulkDocId > 0;
+            const result = await categoryRequest(
+                isUpdate ? docUrl(app.dataset.bulkUpdateTemplate) : app.dataset.bulkStoreUrl,
+                isUpdate ? 'PUT' : 'POST',
+                isUpdate
+                    ? {actual_quantities:categoryActuals()}
+                    : {category_id:selectionId,document_date:date.value,request_key:requestKey,
+                       actual_quantities:categoryActuals()}
+            );
+            bulkDocId = Number(result.document_id);
+            bulkDirty = false;
+            if (result.edit_url) {
+                history.replaceState(null,'',result.edit_url);
+            }
+            notice('پیش‌نویس کلی ذخیره شد. هیچ موجودی تغییر نکرده است.');
+        } catch(error) {
+            notice(error.message || 'ذخیره کلی ناموفق بود.',true);
+        } finally {
+            bulkBusy = false; updateButtons();
+        }
+    }
+
+    async function finalizeAll() {
+        if (!embedded || !bulkDocId || bulkBusy || hasMore || loading || activeQuery) return;
+        if ([...productsNode.querySelectorAll('.sc-actual')].some(input => !input.checkValidity())) {
+            notice('بعضی مقدارهای شمارش معتبر نیستند.',true); return;
+        }
+        const missing = [...groups.values()].reduce((n,g) =>
+            n + [...g.rows.keys()].filter(id => !g.quantities.has(id) || g.quantities.get(id) === '').length, 0);
+        if (missing) {
+            notice(fa(missing)+' تنوع هنوز شمارش نشده است. خالی‌ها صفر محسوب نمی‌شوند.',true);
+            return;
+        }
+        if (!window.confirm('تأیید نهایی تمام کالاهای این دسته؟ پس از تأیید، موجودی انبار مرکزی به‌صورت یکجا اصلاح می‌شود و دیگر امکان ویرایش سند وجود ندارد.')) return;
+        bulkBusy = true; updateButtons();
+        try {
+            const result = await categoryRequest(docUrl(app.dataset.bulkFinalizeTemplate),
+                'PATCH',{actual_quantities:categoryActuals()});
+            bulkDirty = false;
+            window.removeEventListener('beforeunload', function () {});
+            notice('انبارگردانی تمام کالاهای این دسته نهایی شد.');
+            location.assign(app.dataset.indexUrl);
+        } catch(error) {
+            notice(error.message || 'تأیید نهایی ناموفق بود؛ هیچ اصلاحی اعمال نشد.',true);
+        } finally {
+            bulkBusy = false; updateButtons();
+        }
+    }
+
+    bulkSave?.addEventListener('click',saveAll);
+    bulkFinalize?.addEventListener('click',finalizeAll);
+
     productsNode.addEventListener('click', event => {
         const button = event.target.closest('[data-save-product]');
         if (button) saveProduct(Number(button.dataset.saveProduct));
@@ -373,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (originalForm.dataset.categoryMode !== '1') return;
             event.preventDefault();
             event.stopImmediatePropagation();
-            notice('برای ذخیره، دکمه «ذخیره پیش‌نویس این محصول» را بزنید. ثبت نهایی دسته‌ای مجاز نیست.', true);
+            notice('برای ذخیره یا تأیید نهایی دسته‌ای از نوار شناور پایین همین صفحه استفاده کنید.', true);
         }, true);
         document.getElementById('scClose').addEventListener('click', () => {
             if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
@@ -383,6 +515,24 @@ document.addEventListener('DOMContentLoaded', () => {
             delete originalForm.dataset.categoryMode;
             show.focus();
         });
+    }
+
+    if (embedded && bulkDocId > 0 && Number(app.dataset.bulkCategoryId)>0) {
+        const initial = JSON.parse(document.getElementById('scResumeCounts')?.textContent || '{}');
+        for (const [productId, values] of Object.entries(initial)) {
+            entered.set(Number(productId),new Map(
+                Object.entries(values).map(([variantId,value])=>[Number(variantId),String(value)])
+            ));
+        }
+        selectionId = Number(app.dataset.bulkCategoryId);
+        app.hidden = false;
+        document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden=true; });
+        document.getElementById('stocktakeForm').dataset.categoryMode = '1';
+        category.disabled = true;
+        subcategory.disabled = true;
+        show.disabled = true;
+        hasMore = true;
+        requestPage();
     }
 
     window.addEventListener('beforeunload',event => {
