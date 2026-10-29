@@ -77,8 +77,15 @@ class StockCountDocumentService
             $document->update(['document_date' => $payload['document_date'], 'description' => $payload['description'] ?? null, 'updated_by' => $userId]);
             foreach ($document->items()->lockForUpdate()->get() as $item) {
                 $vid = (int) $item->product_variant_id;
-                $actual = array_key_exists($vid, $actuals) && $actuals[$vid] !== '' ? (int) $actuals[$vid] : null;
-                $item->update(['actual_quantity' => $actual, 'description' => $notes[$vid] ?? null]);
+                // A paginated or filtered form must not erase quantities that
+                // were saved previously but were not included in this request.
+                $updates = [];
+                if (array_key_exists($vid, $actuals)) {
+                    $updates['actual_quantity'] = $actuals[$vid] === '' || $actuals[$vid] === null
+                        ? null : (int) $actuals[$vid];
+                }
+                if (array_key_exists($vid, $notes)) $updates['description'] = $notes[$vid];
+                if ($updates !== []) $item->update($updates);
             }
             $this->refreshSummary($document);
             $this->addHistory($document->id, 'updated', null, ['status' => 'draft'], 'ذخیره پیش‌نویس انبارگردانی محصولی', $userId);
