@@ -7,6 +7,7 @@ on:
       - 'app/Services/StocktakeCategoryWorkspaceService.php'
       - 'app/Services/StockCountDocumentService.php'
       - 'tests/Feature/StockCountLifecycleSafetyTest.php'
+      - 'tests/Js/stocktake-live-search.test.cjs'
       - 'app/Support/PageAccessCatalog.php'
       - 'routes/web.php'
       - 'resources/views/stocktake/**'
@@ -49,4 +50,4 @@ jobs:
       - name: Stocktake completion gate and stale-count rollback
         run: php artisan test tests/Feature/StockCountLifecycleSafetyTest.php
       - name: Existing stocktake inline behaviors
-        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs
+        run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs tests/Js/stocktake-live-search.test.cjs
