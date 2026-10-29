@@ -23,6 +23,16 @@ cleanup() {
 trap cleanup EXIT
 
 git -C "$ROOT" archive "$COMMIT" | tar -xf - -C "$SNAPSHOT"
+# The Vite build directory is intentionally gitignored. Blade HTTP tests
+# still need its manifest even though no browser assets are executed here.
+if [ ! -f "$ROOT/public/build/manifest.json" ]; then
+  echo "STOP: missing Vite manifest in the project root" >&2
+  echo "Build frontend assets in a safe environment before running HTTP tests." >&2
+  exit 1
+fi
+mkdir -p "$SNAPSHOT/public/build"
+cp -a "$ROOT/public/build/." "$SNAPSHOT/public/build/"
+test -f "$SNAPSHOT/public/build/manifest.json"
 test -f "$SNAPSHOT/tests/run.php"
 test -f "$SNAPSHOT/phpunit.xml"
 
