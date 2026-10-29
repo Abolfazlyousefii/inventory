@@ -127,6 +127,7 @@
     data-store-url="{{ route('stock-count-documents.store') }}"
     data-bulk-store-url="{{ route('stock-count-documents.category-bulk.store') }}"
     data-bulk-update-template="{{ route('stock-count-documents.category-bulk.update', ['stockCountDocument' => '__DOC__']) }}"
+    data-bulk-review-template="{{ route('stock-count-documents.category-bulk.review', ['stockCountDocument' => '__DOC__']) }}"
     data-bulk-finalize-template="{{ route('stock-count-documents.category-bulk.finalize', ['stockCountDocument' => '__DOC__']) }}"
     data-bulk-document-id="{{ $categoryDraft?->id }}"
     data-bulk-category-id="{{ $categoryDraft?->category_id }}"
