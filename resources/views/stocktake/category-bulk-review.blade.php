@@ -5,7 +5,7 @@
 .sc-review .sc-card{background:#fff;border:1px solid #dce6ef;border-radius:15px;padding:18px;margin-bottom:14px;box-shadow:0 5px 20px #21374a0a}
 .sc-review .sc-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .sc-review .sc-muted{font-size:.83rem;color:#64748b}
-.sc-review .sc-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.sc-review .sc-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}
 .sc-review .sc-metric{background:#f7fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px}
 .sc-review .sc-metric strong{display:block;font-size:1.15rem}
 .sc-review .sc-table{width:100%;border-collapse:collapse;font-size:.84rem}
@@ -36,16 +36,17 @@
    <div class="sc-metric"><div>شمارش‌شده</div><strong>{{ $items->count()-$missingCount }}</strong></div>
    <div class="sc-metric"><div>شمارش‌نشده</div><strong class="{{ $missingCount ? 'sc-warning':'' }}">{{ $missingCount }}</strong></div>
    <div class="sc-metric"><div>واقعی کمتر از رزرو</div><strong class="{{ $belowReserved ? 'sc-warning':'' }}">{{ $belowReserved }}</strong></div>
+   <div class="sc-metric"><div>تنوع در صف جمع‌آوری</div><strong class="{{ $queuedCount ? 'sc-warning':'' }}">{{ $queuedCount }}</strong></div>
   </div>
   <p class="sc-muted mt-3 mb-0">این مقایسه از <strong>پیش‌نویس ذخیره‌شده</strong> خوانده می‌شود. موجودی سیستم و رزرو مربوط به شروع سند است؛ هنگام اعمال، وضعیت جاری دوباره زیر قفل تراکنش بررسی می‌شود.</p>
  </div>
  @if($errors->has('finalize'))<div class="alert alert-danger" role="alert">{{ $errors->first('finalize') }}</div>@endif
- @if($missingCount || $belowReserved)
-  <div class="alert alert-warning" role="alert">تأیید نهایی مجاز نیست. {{ $missingCount }} تنوع هنوز شمارش نشده و {{ $belowReserved }} تنوع موجودی واقعی کمتر از رزرو دارد. به فرم برگردید و شمارش‌ها را اصلاح کنید.</div>
+ @if($missingCount || $belowReserved || $queuedCount)
+  <div class="alert alert-warning" role="alert">تأیید نهایی مجاز نیست. {{ $missingCount }} تنوع هنوز شمارش نشده و {{ $belowReserved }} تنوع موجودی واقعی کمتر از رزرو دارد و {{ $queuedCount }} تنوع در صف جمع‌آوری نیازمند تطبیق فیزیکی است. به فرم برگردید و شمارش‌ها را اصلاح کنید.</div>
  @endif
  <div class="sc-card sc-table-wrap">
   <table class="sc-table" aria-label="لیست تطبیق تمام تنوع‌های انبارگردانی">
-   <thead><tr><th>ردیف</th><th>نام کالا</th><th>تنوع / کد</th><th>آزاد اولیه</th><th>رزرو اولیه</th><th>فیزیکی مورد انتظار</th><th>شمارش واقعی</th><th>اختلاف</th><th>آزاد پس از اعمال</th></tr></thead>
+   <thead><tr><th>ردیف</th><th>نام کالا</th><th>تنوع / کد</th><th>آزاد اولیه</th><th>رزرو اولیه</th><th>فیزیکی مورد انتظار</th><th>صف جمع‌آوری</th><th>شمارش واقعی</th><th>اختلاف</th><th>آزاد پس از اعمال</th></tr></thead>
    <tbody>
     @foreach($items as $item)
     @php
@@ -60,6 +61,7 @@
      <td class="sc-n">{{ $item->system_available_at_start }}</td>
      <td class="sc-n">{{ $item->reserved_at_start }}</td>
      <td class="sc-n">{{ $item->expected_physical_at_start }}</td>
+     <td class="sc-n {{ (int)$queuedTotals->get($item->product_variant_id,0) > 0 ? 'sc-warning':'' }}">{{ (int)$queuedTotals->get($item->product_variant_id,0) }}</td>
      <td class="sc-n {{ !$counted ? 'sc-warning':'' }}">{{ $counted ? $item->actual_quantity : 'شمارش نشده' }}</td>
      <td class="sc-n {{ $delta === null ? '' : ($delta < 0 ? 'sc-warning': ($delta > 0 ? 'sc-success' : '')) }}">{{ $delta === null ? '—' : ($delta > 0 ? '+' : '').$delta }}</td>
      <td class="sc-n {{ $newAvailable !== null && $newAvailable < 0 ? 'sc-warning':'' }}">{{ $newAvailable ?? '—' }}</td>
