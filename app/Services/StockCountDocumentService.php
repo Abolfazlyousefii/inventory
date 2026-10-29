@@ -86,9 +86,9 @@ class StockCountDocumentService
             $ids = \App\Models\Category::selfAndDescendantIds((int) $category->id);
             $variants = ProductVariant::query()->with('product')
                 ->whereHas('product', fn ($q) => $q->whereIn('category_id', $ids))
-                ->orderBy('id')->limit(1201)->get();
+                ->orderBy('id')->limit(501)->get();
             abort_if($variants->isEmpty(), 422, 'این دسته‌بندی تنوعی برای شمارش ندارد.');
-            abort_if($variants->count() > 1200, 422, 'این دسته بیش از ۱۲۰۰ تنوع دارد؛ برای ثبت ایمن، زیردسته کوچک‌تری انتخاب کنید.');
+            abort_if($variants->count() > 500, 422, 'این دسته بیش از ۵۰۰ تنوع دارد؛ برای ثبت ایمن و جلوگیری از فشار روی سرور، زیردسته کوچک‌تری انتخاب کنید.');
 
             $actuals = $payload['actual_quantities'] ?? [];
             $variantIds = $variants->pluck('id')->map(fn ($id) => (int) $id)->all();
