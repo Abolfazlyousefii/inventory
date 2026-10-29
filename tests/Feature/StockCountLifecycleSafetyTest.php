@@ -44,6 +44,43 @@ class StockCountLifecycleSafetyTest extends TestCase
         $this->assertSame($expected,(int)DB::table('products')->value('stock'));
     }
 
+    public function test_partial_draft_stays_editable_but_blank_variant_cannot_be_finalized_as_zero(): void
+    {
+        DB::table('product_variants')->insert([
+            'id'=>2,'product_id'=>1,'variant_name'=>'Blue',
+            'variant_code'=>'BLUE-2','stock'=>4,'reserved'=>0,
+        ]);
+        DB::table('warehouse_stocks')->insert([
+            'warehouse_id'=>1,'product_id'=>1,'product_variant_id'=>2,'quantity'=>4,
+        ]);
+        $draft=app(StockCountDocumentService::class)->createProductDraft([
+            'product_id'=>1,'document_date'=>'2026-10-29',
+            'actual_quantities'=>[1=>8],
+        ],1);
+        $this->assertSame('draft',$draft->status);
+        $this->assertNull($draft->items()->where('product_variant_id',2)->value('actual_quantity'));
+        $this->assertSame(4, (int)DB::table('warehouse_stocks')->where('product_variant_id',2)->value('quantity'));
+        try {
+            // Even the old "confirm empty as zero" flag cannot bypass the gate.
+            app(StockCountDocumentService::class)->finalize($draft,1,true);
+            $this->fail('Incomplete count must never finalize');
+        } catch (StockCountFinalizeValidationException $e) {
+            $this->assertContains('uncounted_variant',array_column($e->conflicts(),'reason_code'));
+        }
+        $this->assertSame('draft',$draft->fresh()->status);
+        $this->assertSame(0,StockMovement::count());
+        $this->unchangedStock(10);
+        $this->assertSame(4,(int)DB::table('warehouse_stocks')->where('product_variant_id',2)->value('quantity'));
+
+        $edited=app(StockCountDocumentService::class)->updateProductDraft($draft,[
+            'document_date'=>'2026-10-29','actual_quantities'=>[1=>8,2=>0],
+        ],1);
+        $this->assertSame(0, $edited->items()->where('product_variant_id',2)->value('actual_quantity'));
+        $final=app(StockCountDocumentService::class)->finalize($edited,1,false);
+        $this->assertSame('finalized',$final->status);
+        $this->assertSame(0,(int)DB::table('warehouse_stocks')->where('product_variant_id',2)->value('quantity'));
+    }
+
     public function test_stale_cancel_cannot_relabel_an_applied_stocktake(): void
     {
         $stale=$this->draft();$service=app(StockCountDocumentService::class);
