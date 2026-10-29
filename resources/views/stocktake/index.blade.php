@@ -31,7 +31,7 @@
             @foreach($documents as $doc)
             <tr>
                 <td data-label="سند"><a class="sa-code" href="{{ route('stock-count-documents.view',$doc) }}"><bdi>{{ $fa($doc->document_number) }}</bdi></a><time class="sa-subtitle" dir="ltr">{{ $fa(\App\Support\JalaliDate::date($doc->document_date)) }}</time></td>
-                <td data-label="محصول / محدوده"><strong class="sa-product">{{ $doc->product?->name ?? '—' }}</strong><span class="sa-subtitle">{{ ($doc->type ?? 'product') === 'product' ? 'انبارگردانی محصولی' : 'انبارگردانی نقشه‌ای' }}</span></td>
+                <td data-label="محصول / محدوده"><strong class="sa-product">{{ ($doc->type ?? 'product') === 'category' ? ($doc->category?->name ?? 'دسته‌بندی') : ($doc->product?->name ?? '—') }}</strong><span class="sa-subtitle">{{ ($doc->type ?? 'product') === 'category' ? 'انبارگردانی دسته‌ای' : (($doc->type ?? 'product') === 'product' ? 'انبارگردانی محصولی' : 'انبارگردانی نقشه‌ای') }}</span></td>
                 <td data-label="انبار / ثبت‌کننده"><span>{{ $doc->warehouse?->name ?? '—' }}</span><span class="sa-subtitle">{{ $doc->creator?->name ?? '—' }}</span></td>
                 <td data-label="شمارش"><strong>{{ $number($doc->variants_count ?: $doc->items_count) }} تنوع</strong><span class="sa-subtitle">{{ $number($doc->zeroed_count) }} صفرشده</span></td>
                 <td data-label="افزایش"><span class="sa-delta positive">{{ $doc->total_increase > 0 ? '+' : '' }}{{ $number($doc->total_increase) }}</span></td>
