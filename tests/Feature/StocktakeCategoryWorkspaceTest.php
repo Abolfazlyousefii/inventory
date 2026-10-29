@@ -155,7 +155,10 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(3, $group['active_reserved']);
         $this->assertSame(11, $group['expected_physical']);
         $this->assertSame(2, $group['queue_total']);
-        foreach (['system_available', 'active_reserved', 'expected_physical', 'queue_total'] as $key) {
+        $this->assertSame(2, $group['pending_collection']);
+        $this->assertSame(0, $group['warehouse_received']);
+        $this->assertSame(0, $group['collecting']);
+        foreach (['system_available', 'active_reserved', 'expected_physical', 'pending_collection', 'warehouse_received', 'collecting', 'queue_total'] as $key) {
             $this->assertSame($single[$key], $group[$key], 'Inconsistent counting figure: '.$key);
         }
         $this->assertSame(0, StockCountDocument::count());
@@ -200,6 +203,12 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(0, StockMovement::count());
         $this->assertSame(8, (int) WarehouseStock::query()->where('product_variant_id', $v1->id)->value('quantity'));
         $this->assertSame(4, (int) WarehouseStock::query()->where('product_variant_id', $v2->id)->value('quantity'));
+        // Existing per-product edit workflow stays unchanged; inline category
+        // controls never appear when editing a saved draft.
+        $this->get(route('stock-count-documents.edit', $doc))->assertOk()
+            ->assertDontSee('id="scShow"', false)
+            ->assertSee('id="stocktakeForm"', false);
+
     }
 
     public function test_unauthorized_access_is_rejected(): void
