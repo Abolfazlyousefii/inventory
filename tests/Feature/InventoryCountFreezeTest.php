@@ -25,7 +25,7 @@ use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
-uses(RefreshDatabase::class);
+uses(\Tests\TestCase::class, RefreshDatabase::class);
 beforeEach(function () {
     Schema::table('products', function (Blueprint $t) {
         $t->boolean('is_bundle')->default(false);
