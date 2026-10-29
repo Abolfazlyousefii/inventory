@@ -20,9 +20,15 @@
 .stocktake-category th{background:#f8fafc;color:#536879;font-weight:800;font-size:.75rem;padding:9px 10px;border-bottom:1px solid #e2e8f0;text-align:right}
 .stocktake-category td{padding:9px 10px;border-bottom:1px solid #edf2f6;vertical-align:middle}
 .stocktake-category tr:last-child td{border-bottom:0}
-.stocktake-category th:nth-child(1){width:37%}
-.stocktake-category th:nth-child(2),.stocktake-category th:nth-child(3),.stocktake-category th:nth-child(4){width:13%}
-.stocktake-category th:nth-child(5){width:24%}
+.stocktake-category th:nth-child(1){width:30%}
+.stocktake-category th:nth-child(2){width:12%}
+.stocktake-category th:nth-child(3){width:11%}
+.stocktake-category th:nth-child(4){width:18%}
+.stocktake-category th:nth-child(5){width:19%}
+.stocktake-category th:nth-child(6){width:10%}
+.stocktake-category .sc-flow-details{display:block;font-size:.68rem;line-height:1.8;color:#9a5609;margin-top:3px}
+.stocktake-category .sc-diff-up{color:#166534;font-weight:800}
+.stocktake-category .sc-diff-down{color:#991b1b;font-weight:800}
 .stocktake-category .sc-number{text-align:center;font-variant-numeric:tabular-nums}
 .stocktake-category .sc-variant{font-weight:750;color:#203c50}
 .stocktake-category .sc-variant small{display:block;color:#8292a2;font-weight:400;direction:ltr;text-align:right}
@@ -35,7 +41,7 @@
 .stocktake-category .sc-success{font-size:.81rem;color:#0b805c;font-weight:700}
 .stocktake-category .sc-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 15px;border-top:1px solid #e4eaf0}
 .stocktake-category .sc-more{display:block;margin:18px auto}
-@media(max-width:800px){.stocktake-category .sc-controls{grid-template-columns:1fr 1fr}.stocktake-category .sc-panel{padding:12px}.stocktake-category table{min-width:720px}}
+@media(max-width:800px){.stocktake-category .sc-controls{grid-template-columns:1fr 1fr}.stocktake-category .sc-panel{padding:12px}.stocktake-category table{min-width:850px}}
 @media(max-width:500px){.stocktake-category .sc-controls{grid-template-columns:1fr}.stocktake-category .sc-product-head,.stocktake-category .sc-footer{padding:11px}}
 </style>
 <div class="stocktake-category" id="stocktakeCategoryApp"
