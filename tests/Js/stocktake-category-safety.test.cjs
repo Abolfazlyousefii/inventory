@@ -41,12 +41,15 @@ function element(tag = 'div') {
 function fixture({allowConfirm = true, customRows} = {}) {
     const nodes = Object.fromEntries(
         ['stocktakeCategoryApp', 'category', 'subcategory', 'scShow', 'scMore',
-            'scStatus', 'scProducts', 'scLiveSearch', 'scClose', 'stocktakeForm']
+            'scStatus', 'scProducts', 'scLiveSearch', 'scClose', 'stocktakeForm',
+            'scSaveAll', 'scFinalizeAll', 'scBulkStatus']
             .map(id => [id, element()])
     );
     nodes.stocktakeCategoryApp.dataset = {
         embedded: '1', rowsUrl: '/stock-count-documents/category/variants',
         storeUrl: '/stock-count-documents',
+        bulkStoreUrl: '/category-bulk', bulkUpdateTemplate: '/category/__DOC__',
+        bulkReviewTemplate:'/category/__DOC__/review', canFinalize:'1',
     };
     nodes.category.value = '3';
     nodes.subcategory.value = '';
@@ -75,12 +78,13 @@ function fixture({allowConfirm = true, customRows} = {}) {
     };
     const context = {
         document, location: {origin: 'https://erp.example.test'},
+        history: {replaceState() {}}, crypto: {randomUUID() {return 'c7b0ba09-805c-4a4c-8e1b-a76d702e47b1'}},
         URL, AbortController, Number, Intl, setTimeout, clearTimeout,
         window: {addEventListener() {}, confirm() {return allowConfirm;}},
         fetch: async (url, options = {}) => {
             if (options.method === 'POST') {
                 requests.push({method: 'POST', payload: JSON.parse(options.body)});
-                return {ok: true, async json() {return {document_id: 55, edit_url: '/stock-count-documents/55/edit'};}};
+                return {ok: true, async json() {return {document_id: 55, edit_url: '/stock-count-documents/55/category-resume'};}};
             }
             requests.push({method: 'GET', url: String(url)});
             return {ok: true, async json() {return {
@@ -124,12 +128,12 @@ test('invalid quantity remains blocked when another variant is edited', async ()
     const [first, second] = ui.inputs();
     ui.enter(first, 'نامعتبر');
     assert.notEqual(first.validationMessage, '');
-    assert.equal(ui.button().disabled, true);
+    assert.equal(ui.nodes.scSaveAll.disabled, true);
 
     ui.enter(second, '2');
     assert.equal(ui.button().disabled, true, 'invalid first input must prevent draft submission');
 
-    ui.nodes.scProducts.on_click({target: ui.button()});
+    await ui.nodes.scSaveAll.on_click();
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(ui.requests.filter(x => x.method === 'POST').length, 0);
 });
@@ -143,15 +147,15 @@ test('Persian zero is sent as explicit 0 while blank remains missing; draft neve
     assert.equal(first.value, '0');
     assert.equal(second.value, '');
 
-    ui.nodes.scProducts.on_click({target: ui.button()});
+    await ui.nodes.scSaveAll.on_click();
     await until(() => ui.requests.some(x => x.method === 'POST'));
     const writes = ui.requests.filter(x => x.method === 'POST');
     assert.equal(writes.length, 1);
-    assert.equal(writes[0].payload.product_id, 7);
-    assert.equal(writes[0].payload.actual_quantities['101'], '0');
+    assert.equal(writes[0].payload.category_id, 3);
+    assert.equal(writes[0].payload.actual_quantities['101'], 0);
     assert.equal(Object.hasOwn(writes[0].payload.actual_quantities, '102'), false);
     assert.ok(!ui.requests.some(x => x.method === 'POST' && x.url?.includes('finalize')));
-    await until(() => ui.inputs().every(x => x.disabled));
+    assert.equal(ui.nodes.scSaveAll.disabled, false);
 });
 
 test('declined category switch preserves unsaved count and does not fetch a different category', async () => {
