@@ -25,3 +25,22 @@ test('group save uses a single product draft with only its non-empty quantities'
     assert.match(blade, /نمایش محصولات دسته/);
     assert.match(blade, /ذخیره پیش‌نویس/);
 });
+
+
+const form = fs.readFileSync(path.join(__dirname, '../../resources/views/stocktake/form.blade.php'), 'utf8');
+
+test('category workspace integrates into the original form without nested forms or a separate page', () => {
+    assert.match(form, /id="scShow"/);
+    assert.match(form, /id="stocktakeCategoryApp"[^>]*data-embedded="1"/s);
+    assert.match(form, /id="scClose"/);
+    assert.match(form, /id="scProducts"/);
+    assert.match(form, /data-stocktake-single/);
+    assert.doesNotMatch(form, /href="\{\{ route\('stock-count-documents.category-workspace'\) \}\}"/);
+    assert.match(source, /document\.getElementById\('category'\)/);
+    assert.match(source, /document\.getElementById\('subcategory'\)/);
+    assert.match(source, /document\.querySelector\('\[name="document_date"\]'\)/);
+    assert.match(source, /if \(!embedded\) category\.addEventListener/);
+    assert.match(source, /if \(embedded\) \{/);
+    assert.match(source, /document\.getElementById\('stocktakeForm'\)\.addEventListener\('submit'/);
+    assert.doesNotMatch(source, /\/finalize|stock-count-documents\.finalize/);
+});
