@@ -82,6 +82,61 @@
  .stocktake-category .sc-footer{align-items:stretch}
  .stocktake-category .sc-footer button{width:100%}
 }
+
+/* Inline category counting: stable full-width desktop and accessible mobile cards. */
+.stocktake-page{width:100%;max-width:1600px;min-width:0;overflow:visible}
+.stocktake-page__header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-width:0}
+.stocktake-page__heading{min-width:0;max-width:100%}
+.stocktake-page__back{justify-self:end;max-width:100%;white-space:normal}
+.stocktake-page #stocktakeForm{display:block;width:100%;min-width:0;max-width:100%;margin:0}
+.stocktake-page #stocktakeCategoryApp{display:block;width:100%;min-width:0;max-width:none;margin:0 0 18px;padding:0}
+.stocktake-page .sc-panel,.stocktake-page .sc-product{width:100%;min-width:0;max-width:100%}
+.stocktake-page .sc-panel{padding:16px}
+.stocktake-page .sc-product{box-shadow:0 4px 16px rgba(20,43,62,.045)}
+.stocktake-page .sc-product-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;gap:12px;padding:13px 16px}
+.stocktake-page .sc-product-head>div{min-width:0;max-width:100%}
+.stocktake-page .sc-product-head strong{line-height:1.7;overflow-wrap:anywhere}
+.stocktake-page .sc-product-head>.sc-muted{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:5px 10px;border-radius:999px;border:1px solid #d8e8f0;background:#eef7fa;white-space:nowrap;color:#315771;font-weight:700;font-size:.75rem}
+.stocktake-page .sc-table-wrap{display:block;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.stocktake-page .sc-table-wrap table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse}
+.stocktake-page .sc-table-wrap td,.stocktake-page .sc-table-wrap th{padding:10px 11px;line-height:1.8;vertical-align:middle;overflow-wrap:anywhere}
+.stocktake-page .sc-table-wrap th{background:#f4f8fb;font-size:.76rem;white-space:normal}
+.stocktake-page .sc-table-wrap th:nth-child(1){width:29%}
+.stocktake-page .sc-table-wrap th:nth-child(2){width:12%}
+.stocktake-page .sc-table-wrap th:nth-child(3){width:10%}
+.stocktake-page .sc-table-wrap th:nth-child(4){width:21%}
+.stocktake-page .sc-table-wrap th:nth-child(5){width:18%}
+.stocktake-page .sc-table-wrap th:nth-child(6){width:10%}
+.stocktake-page .sc-variant{min-width:0;overflow-wrap:anywhere}
+.stocktake-page .sc-variant small{max-width:100%;overflow-wrap:anywhere}
+.stocktake-page .sc-actual{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:185px;min-height:42px;margin-inline:auto}
+.stocktake-page .sc-flow-details{line-height:1.9;overflow-wrap:anywhere}
+.stocktake-page .sc-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px}
+.stocktake-page .sc-feedback{min-width:0;overflow-wrap:anywhere;line-height:1.9}
+.stocktake-page .sc-footer .btn{justify-self:end;white-space:normal}
+.stocktake-page .sc-status,.stocktake-page .sc-warning,.stocktake-page .sc-live-search{min-width:0;max-width:100%;overflow-wrap:anywhere}
+@media(max-width:900px){.stocktake-page{padding-inline:12px}.stocktake-page .sc-table-wrap table{min-width:800px}}
+@media(max-width:720px){
+.stocktake-page{padding-inline:10px}
+.stocktake-page__header{grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch}
+.stocktake-page__heading{width:100%}
+.stocktake-page__back{justify-self:stretch;width:100%;text-align:center}
+.stocktake-page .sc-panel{padding:11px}
+.stocktake-page .sc-product-head{grid-template-columns:minmax(0,1fr);gap:7px;padding:12px}
+.stocktake-page .sc-product-head>.sc-muted{justify-self:start;white-space:normal}
+.stocktake-page .sc-product .sc-table-wrap{overflow:visible;max-width:100%}
+.stocktake-page .sc-product table,.stocktake-page .sc-product thead,.stocktake-page .sc-product tbody{display:block;width:100%;min-width:0;max-width:100%}
+.stocktake-page .sc-product thead{display:none}
+.stocktake-page .sc-product tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:12px;border-bottom:1px solid #e6edf3}
+.stocktake-page .sc-product tbody tr:last-child{border-bottom:0}
+.stocktake-page .sc-product tbody td{display:flex;flex-direction:column;gap:4px;justify-content:center;align-items:stretch;min-width:0;width:100%;padding:9px 11px;border:1px solid #e8eef5;border-radius:10px;background:#fbfdff;text-align:right}
+.stocktake-page .sc-product tbody td::before{content:attr(data-label);display:block;color:#6b7f91;font-size:.73rem;font-weight:700;line-height:1.65}
+.stocktake-page .sc-product tbody td:first-child,.stocktake-page .sc-product tbody td:nth-child(4),.stocktake-page .sc-product tbody td:nth-child(5),.stocktake-page .sc-product tbody td:nth-child(6){grid-column:1/-1}
+.stocktake-page .sc-product tbody td.sc-number{text-align:right}
+.stocktake-page .sc-product .sc-actual{max-width:none;min-height:44px;margin:0}
+.stocktake-page .sc-footer{grid-template-columns:minmax(0,1fr);padding:12px}
+.stocktake-page .sc-footer .btn{justify-self:stretch;width:100%;min-height:43px}
+}
 [hidden]{display:none!important}
 </style>
 <div class="stocktake-page" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
