@@ -189,6 +189,10 @@ class StocktakeController extends Controller
 
     public function show(Request $request, StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->type === 'category' && $stockCountDocument->status === 'draft'
+            && !$request->expectsJson()) {
+            return redirect()->route('stock-count-documents.category-bulk.resume', $stockCountDocument);
+        }
         $stockCountDocument->load(['warehouse','product','items.variant','creator','updater','finalizer','canceller','history.doer']);
         return $request->expectsJson() ? response()->json($stockCountDocument) : view('stocktake.show', ['document'=>$stockCountDocument]);
     }
@@ -196,6 +200,9 @@ class StocktakeController extends Controller
 
     public function edit(StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->type === 'category' && $stockCountDocument->status === 'draft') {
+            return redirect()->route('stock-count-documents.category-bulk.resume', $stockCountDocument);
+        }
         if ($stockCountDocument->status !== 'draft') return redirect()->route('stock-count-documents.view', $stockCountDocument);
         $stockCountDocument->load(['warehouse','product']);
         return view('stocktake.form', ['mode'=>'edit','document'=>$stockCountDocument,'centralWarehouse'=>$this->service->centralWarehouse(),'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get()]);
