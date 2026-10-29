@@ -6,6 +6,8 @@ on:
       - 'app/Http/Controllers/StocktakeController.php'
       - 'app/Services/StocktakeCategoryWorkspaceService.php'
       - 'app/Services/StockCountDocumentService.php'
+      - 'app/Models/StockCountDocument.php'
+      - 'database/migrations/2026_10_29_120000_add_category_bulk_fields_to_stock_count_documents.php'
       - 'tests/Feature/StockCountLifecycleSafetyTest.php'
       - 'tests/Js/stocktake-live-search.test.cjs'
       - 'app/Support/PageAccessCatalog.php'
@@ -39,6 +41,8 @@ jobs:
           npm run build
       - name: PHP and JS syntax
         run: |
+          php -l database/migrations/2026_10_29_120000_add_category_bulk_fields_to_stock_count_documents.php
+          php -l app/Models/StockCountDocument.php
           php -l app/Services/StocktakeCategoryWorkspaceService.php
           php -l app/Services/StockCountDocumentService.php
           php -l app/Http/Controllers/StocktakeController.php
