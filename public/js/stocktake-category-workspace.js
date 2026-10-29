@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bulkSave.disabled = !ready;
             // The server always validates the whole saved category snapshot,
             // including variants hidden by a search.
-            bulkFinalize.disabled = !ready || !bulkDocId || counted < total || Boolean(activeQuery);
+            bulkFinalize.disabled = !ready || !bulkDocId || counted < total || Boolean(activeQuery) || app.dataset.canFinalize !== '1';
             bulkStatus.textContent = bulkBusy ? 'در حال ثبت عملیات؛ صفحه را نبندید.' :
                 ('شمارش ' + fa(counted) + ' تنوع' +
                  (bulkDocId ? ' · سند شماره ' + fa(bulkDocId) + ' ذخیره شده' : ' · هنوز پیش‌نویس کلی ذخیره نشده') +
@@ -528,6 +528,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ));
         }
         selectionId = Number(app.dataset.bulkCategoryId);
+        category.replaceChildren(new Option('دسته سند: ' + (app.dataset.bulkCategoryName || selectionId),
+            String(selectionId),true,true));
         app.hidden = false;
         document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden=true; });
         document.getElementById('stocktakeForm').dataset.categoryMode = '1';
