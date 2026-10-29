@@ -49,5 +49,7 @@ jobs:
         run: php artisan test tests/Feature/StocktakeCategoryWorkspaceTest.php
       - name: Stocktake completion gate and stale-count rollback
         run: php artisan test tests/Feature/StockCountLifecycleSafetyTest.php
+      - name: Inventory count freeze and stock mutation guards
+        run: php artisan test tests/Feature/InventoryCountFreezeTest.php
       - name: Existing stocktake inline behaviors
         run: node --test tests/Js/stocktake-inline-flow.test.cjs tests/Js/stocktake-category-workspace.test.cjs tests/Js/stocktake-live-search.test.cjs
