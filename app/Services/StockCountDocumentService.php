@@ -66,6 +66,129 @@ class StockCountDocumentService
         }));
     }
 
+    /**
+     * One durable category document, containing each product variant in its
+     * descendant categories. Saving it never adjusts existing quantities.
+     */
+    public function createCategoryDraft(array $payload, int $userId): StockCountDocument
+    {
+        $existing = StockCountDocument::query()->where('request_key', $payload['request_key'])->first();
+        if ($existing) {
+            abort_unless($existing->type === 'category' && (int) $existing->created_by === $userId
+                && (int) $existing->category_id === (int) $payload['category_id'], 409,
+                'کلید درخواست قبلاً برای سند دیگری استفاده شده است.');
+            return $existing;
+        }
+
+        return app(InventoryCountFreezeService::class)->forStocktake(fn () => DB::transaction(function () use ($payload, $userId) {
+            app(InventoryCountFreezeService::class)->fence();
+            $category = \App\Models\Category::query()->findOrFail((int) $payload['category_id']);
+            $ids = \App\Models\Category::selfAndDescendantIds((int) $category->id);
+            $variants = ProductVariant::query()->with('product')
+                ->whereHas('product', fn ($q) => $q->whereIn('category_id', $ids))
+                ->orderBy('id')->limit(1201)->get();
+            abort_if($variants->isEmpty(), 422, 'این دسته‌بندی تنوعی برای شمارش ندارد.');
+            abort_if($variants->count() > 1200, 422, 'این دسته بیش از ۱۲۰۰ تنوع دارد؛ برای ثبت ایمن، زیردسته کوچک‌تری انتخاب کنید.');
+
+            $actuals = $payload['actual_quantities'] ?? [];
+            $variantIds = $variants->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $this->validateCategoryActualIds($actuals, $variantIds);
+
+            $warehouse = $this->centralWarehouse();
+            $doc = StockCountDocument::create([
+                'document_number' => $this->nextDocumentNumber(), 'type' => 'category',
+                'category_id' => $category->id, 'request_key' => $payload['request_key'],
+                'warehouse_id' => $warehouse->id, 'product_id' => null,
+                'document_date' => $payload['document_date'], 'status' => 'draft',
+                'description' => $payload['description'] ?? ('انبارگردانی دسته «'.$category->name.'»'),
+                'created_by' => $userId, 'updated_by' => $userId,
+            ]);
+
+            $stocks = collect();
+            foreach (array_chunk($variantIds, 100) as $chunk) {
+                $part = WarehouseStock::query()->where('warehouse_id', $warehouse->id)
+                    ->whereIn('product_variant_id', $chunk)->get();
+                $stocks = $stocks->concat($part);
+            }
+            $stocks = $stocks->keyBy('product_variant_id');
+            $reserves = collect();
+            foreach (array_chunk($variantIds, 100) as $chunk) {
+                $reserves = $reserves->merge($this->reservations->quantitiesByVariant(variantIds: $chunk));
+            }
+            $rows = [];
+            foreach ($variants as $variant) {
+                $vid = (int) $variant->id;
+                $product = $variant->product;
+                $stock = $stocks->get($vid);
+                $available = (int) ($stock?->quantity ?? 0);
+                $reserved = (int) ($reserves->get($vid) ?? 0);
+                $raw = $actuals[$vid] ?? null;
+                $actual = $raw === '' || $raw === null ? null : (int) $raw;
+                $rows[] = [
+                    'document_id' => $doc->id, 'warehouse_id' => $warehouse->id,
+                    'product_id' => $product->id, 'product_variant_id' => $vid,
+                    'warehouse_stock_id' => $stock?->id,
+                    'product_name_snapshot' => $product->name,
+                    'variant_name_snapshot' => $variant->variant_name ?: $variant->variety_name ?: '#'.$vid,
+                    'sku_snapshot' => $variant->variant_code ?: $variant->variety_code,
+                    'system_quantity' => $available, 'system_available_at_start' => $available,
+                    'reserved_at_start' => $reserved, 'expected_physical_at_start' => $available + $reserved,
+                    'actual_quantity' => $actual, 'new_available' => null,
+                    'difference_quantity' => $actual === null ? 0 : $actual - $available - $reserved,
+                    'warehouse_stock_updated_at_start' => $stock?->updated_at,
+                    'stock_updated_at_start' => $variant->updated_at,
+                    'description' => null, 'created_at' => now(), 'updated_at' => now(),
+                ];
+                if (count($rows) >= 100) {
+                    StockCountDocumentItem::insert($rows);
+                    $rows = [];
+                }
+            }
+            if ($rows) StockCountDocumentItem::insert($rows);
+            $this->refreshSummary($doc);
+            $this->addHistory($doc->id, 'created', null,
+                ['type' => 'category', 'category_id' => $category->id],
+                'ایجاد یک پیش‌نویس دسته‌ای؛ موجودی مرکزی تغییر نکرد', $userId);
+            return $doc;
+        }));
+    }
+
+    public function updateCategoryDraft(StockCountDocument $document, array $payload, int $userId): StockCountDocument
+    {
+        return DB::transaction(function () use ($document, $payload, $userId) {
+            $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
+            abort_unless($document->type === 'category' && $document->status === 'draft', 422,
+                'فقط پیش‌نویس دسته‌ای قابل ویرایش است.');
+            $actuals = $payload['actual_quantities'] ?? [];
+            $items = $document->items()->lockForUpdate()->get();
+            $this->validateCategoryActualIds($actuals,
+                $items->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all());
+            foreach ($items as $item) {
+                $vid = (int) $item->product_variant_id;
+                if (!array_key_exists($vid, $actuals)) continue;
+                $raw = $actuals[$vid];
+                $item->update(['actual_quantity' => $raw === '' || $raw === null ? null : (int) $raw]);
+            }
+            $this->refreshSummary($document);
+            $document->update(['updated_by' => $userId]);
+            $this->addHistory($document->id, 'updated', null, ['type' => 'category'],
+                'ذخیره کلی پیش‌نویس دسته‌ای', $userId);
+            return $document->fresh();
+        });
+    }
+
+    private function validateCategoryActualIds(array $actuals, array $allowedIds): void
+    {
+        $allowed = array_fill_keys($allowedIds, true);
+        foreach (array_keys($actuals) as $key) {
+            if (!ctype_digit((string) $key) || !isset($allowed[(int) $key])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'actual_quantities' => 'تنوع نامعتبر یا خارج از محدوده دسته‌بندی ارسال شده است.',
+                ]);
+            }
+        }
+    }
+
     public function updateProductDraft(StockCountDocument $document, array $payload, int $userId): StockCountDocument
     {
         if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
@@ -101,7 +224,7 @@ class StockCountDocumentService
             app(InventoryCountFreezeService::class)->fence();
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
-            if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
+            if (!in_array(($document->type ?? 'product'), ['product','category'], true)) abort(422, 'نوع سند انبارگردانی پشتیبانی نمی‌شود.');
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -138,7 +261,12 @@ class StockCountDocumentService
                 );
             }
             $variantIds = $items->pluck('product_variant_id')->map(fn($v)=>(int)$v)->all();
-            $currentIds = ProductVariant::query()->where('product_id', (int) $document->product_id)->orderBy('id')->pluck('id')->map(fn($v)=>(int)$v)->all();
+            $currentIds = $document->type === 'category'
+                ? ProductVariant::query()->whereHas('product', fn ($q) => $q->whereIn('category_id',
+                    \App\Models\Category::selfAndDescendantIds((int) $document->category_id)))
+                    ->orderBy('id')->pluck('id')->map(fn ($v) => (int) $v)->all()
+                : ProductVariant::query()->where('product_id', (int) $document->product_id)
+                    ->orderBy('id')->pluck('id')->map(fn ($v) => (int) $v)->all();
             $conflicts = [];
             if ($currentIds !== $variantIds) {
                 $conflicts[] = [
@@ -154,7 +282,7 @@ class StockCountDocumentService
             }
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->lockForUpdate()->get()->keyBy('id');
             $stocks = WarehouseStock::query()->where('warehouse_id', $warehouse->id)->whereIn('product_variant_id', $variantIds)->lockForUpdate()->get()->keyBy('product_variant_id');
-            foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$document->product_id, (int)$item->product_variant_id, true);
+            foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$item->product_id, (int)$item->product_variant_id, true);
             foreach ($items as $item) {
                 $variant = $variants[(int)$item->product_variant_id] ?? null; $stock = $stocks[(int)$item->product_variant_id];
                 $reserved = $variant ? $this->activeReserved($variant) : 0; $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
@@ -171,7 +299,12 @@ class StockCountDocumentService
                 $item->update(['actual_quantity'=>$actual, 'new_available'=>$newAvailable, 'difference_quantity'=>$diff, 'system_quantity'=>(int)$item->system_available_at_start]);
                 if ($diff !== 0) StockMovement::create(['product_id'=>(int)$item->product_id,'product_variant_id'=>(int)$item->product_variant_id,'warehouse_id'=>(int)$warehouse->id,'user_id'=>$userId,'type'=>$diff>0?'in':'out','reason'=>'adjustment','transaction_type'=>'stocktake_adjustment','quantity'=>abs($newAvailable-$before),'stock_before'=>$before,'stock_after'=>$newAvailable,'note'=>'تعدیل ناشی از انبارگردانی سند '.$document->document_number,'reference'=>$document->document_number,'reference_type'=>'stock_count_document','reference_id'=>$document->id]);
             }
-            WarehouseStockService::syncProductStockFromCentral((int)$document->product_id);
+            $affectedProducts = $document->type === 'category'
+                ? $items->pluck('product_id')->unique()->map(fn ($id) => (int) $id)->all()
+                : [(int) $document->product_id];
+            foreach ($affectedProducts as $productId) {
+                WarehouseStockService::syncProductStockFromCentral($productId);
+            }
             $this->refreshSummary($document);
             $document->update(['status'=>'finalized','finalized_by'=>$userId,'finalized_at'=>now(),'updated_by'=>$userId]);
             $this->addHistory($document->id, 'finalized', null, ['status'=>'finalized'], 'اعمال انبارگردانی محصولی در انبار مرکزی', $userId);
