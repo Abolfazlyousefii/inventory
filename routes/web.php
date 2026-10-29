@@ -595,6 +595,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/stock-count-documents', [StocktakeController::class, 'store'])->name('stock-count-documents.store');
     Route::post('/stock-count-documents/category-bulk', [StocktakeController::class, 'categoryBulkStore'])->name('stock-count-documents.category-bulk.store');
     Route::get('/stock-count-documents/{stockCountDocument}/category-resume', [StocktakeController::class, 'categoryBulkResume'])->name('stock-count-documents.category-bulk.resume');
+    Route::get('/stock-count-documents/{stockCountDocument}/category-bulk/review', [StocktakeController::class, 'categoryBulkReview'])->name('stock-count-documents.category-bulk.review');
     Route::put('/stock-count-documents/{stockCountDocument}/category-bulk', [StocktakeController::class, 'categoryBulkUpdate'])->name('stock-count-documents.category-bulk.update');
     Route::patch('/stock-count-documents/{stockCountDocument}/category-bulk/finalize', [StocktakeController::class, 'categoryBulkFinalize'])->name('stock-count-documents.category-bulk.finalize');
     Route::get('/stock-count-documents/subcategories', [StocktakeController::class, 'subcategories'])->name('stock-count-documents.subcategories');
