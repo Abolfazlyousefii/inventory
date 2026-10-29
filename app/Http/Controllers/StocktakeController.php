@@ -210,6 +210,8 @@ class StocktakeController extends Controller
 
     public function update(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_unless($stockCountDocument->type === 'product', 422,
+            'برای سند دسته‌ای از ذخیره کلی استفاده کنید.');
         $data = $this->validatedPayload($request, true);
         $updated = $this->service->updateProductDraft($stockCountDocument, $data, (int) auth()->id());
         return redirect()->route('stock-count-documents.edit', $updated)->with('success', 'پیش‌نویس ذخیره شد.');
@@ -217,6 +219,8 @@ class StocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_unless($stockCountDocument->type === 'product', 422,
+            'برای سند دسته‌ای از تأیید نهایی کلی استفاده کنید.');
         try {
             $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true, $this->validatedPayload($request, true));
         } catch (StockCountFinalizeValidationException $exception) {
