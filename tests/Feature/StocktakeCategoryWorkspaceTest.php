@@ -357,7 +357,20 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(4,(int)WarehouseStock::where('product_variant_id',$v2->id)->value('quantity'));
         $this->assertSame(0, StockMovement::count());
 
+        // Stock changes require a separate review of the persisted draft.
         $this->patchJson($route, ['actual_quantities'=>[$v1->id=>7,$v2->id=>0]])
+            ->assertUnprocessable();
+        $this->putJson(route('stock-count-documents.category-bulk.update',$docId), [
+            'actual_quantities'=>[$v2->id=>0],
+        ])->assertOk();
+        $review=$this->get(route('stock-count-documents.category-bulk.review',$docId))->assertOk()
+            ->assertSee('بررسی مغایرت‌های انبارگردانی')
+            ->assertSee('ایرپاد نسل ۲');
+        $dom=new \DOMDocument();
+        @$dom->loadHTML($review->getContent());
+        $token=(new \DOMXPath($dom))->query('//input[@name="review_token"]')->item(0)?->getAttribute('value');
+        $this->assertNotEmpty($token);
+        $this->patchJson($route, ['review_token'=>$token])
             ->assertOk()->assertJsonPath('status','finalized');
         $this->assertSame(7,(int)WarehouseStock::where('product_variant_id',$v1->id)->value('quantity'));
         $this->assertSame(0,(int)WarehouseStock::where('product_variant_id',$v2->id)->value('quantity'));
@@ -413,6 +426,31 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(0,StockMovement::count());
         $this->patchJson(route('stock-count-documents.category-bulk.finalize',$docId),[])
             ->assertUnprocessable()->assertJsonPath('conflicts.0.reason_code','uncounted_variant');
+    }
+
+    public function test_category_review_token_is_invalidated_after_draft_is_edited(): void
+    {
+        $this->signIn();
+        [, $category,,[$p,$v]]=$this->fixture();
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) => $table->integer('actual_quantity')->nullable()->change());
+        $docId=$this->postJson(route('stock-count-documents.category-bulk.store'), [
+            'category_id'=>$category->id,'document_date'=>'2026-10-29',
+            'request_key'=>'21abed66-ebed-4a01-89ba-1e664aacbb98',
+            'actual_quantities'=>[$v->id=>8],
+        ])->assertCreated()->json('document_id');
+        $review=$this->get(route('stock-count-documents.category-bulk.review',$docId))->assertOk();
+        $dom=new \DOMDocument();
+        @$dom->loadHTML($review->getContent());
+        $token=(new \DOMXPath($dom))->query('//input[@name="review_token"]')->item(0)?->getAttribute('value');
+        $this->assertNotEmpty($token);
+        $this->putJson(route('stock-count-documents.category-bulk.update',$docId), [
+            'actual_quantities'=>[$v->id=>5],
+        ])->assertOk();
+        $this->patchJson(route('stock-count-documents.category-bulk.finalize',$docId),
+            ['review_token'=>$token])->assertUnprocessable();
+        $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$v->id)->value('quantity'));
+        $this->assertSame(0,StockMovement::count());
     }
 
     public function test_bulk_category_cannot_use_legacy_product_finalize_endpoint(): void
