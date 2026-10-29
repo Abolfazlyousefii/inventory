@@ -12,8 +12,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const more = document.getElementById('scMore');
     const statusNode = document.getElementById('scStatus');
     const productsNode = document.getElementById('scProducts');
+    const liveSearch = document.getElementById('scLiveSearch');
 
     const groups = new Map();
+    // Retain unsaved counts and saved draft links between searches.
+    const entered = new Map();
+    const saved = new Map();
+    let activeQuery = '';
+    let searchTimer = null;
     let selectionId = 0;
     let afterId = 0;
     let hasMore = false;
@@ -34,11 +40,21 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function containsUnsavedCounts() {
-        return [...groups.values()].some(g => !g.saved &&
-            [...g.quantities.values()].some(v => v !== ''));
+        return [...entered].some(([productId, values]) => !saved.has(productId) &&
+            [...values.values()].some(v => v !== ''));
     }
 
     function reset() {
+        clearTimeout(searchTimer);
+        entered.clear();
+        saved.clear();
+        liveSearch.value = '';
+        activeQuery = '';
+        clearListing();
+        selectionId = 0;
+    }
+
+    function clearListing() {
         sequence++;
         loadingController?.abort();
         loadingController = null;
@@ -49,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
         productsNode.replaceChildren();
         more.hidden = true;
         more.disabled = false;
-        selectionId = 0;
     }
 
     function groupFor(row) {
@@ -89,8 +104,19 @@ document.addEventListener('DOMContentLoaded', () => {
         card.append(footer);
         productsNode.append(card);
 
-        const group = {id,name:row.product_name,rows:new Map(),quantities:new Map(),
-            tbody,button,feedback,flag,saved:false,saving:false};
+        const stored = saved.get(id);
+        const group = {id,name:row.product_name,rows:new Map(),quantities:entered.get(id) || new Map(),
+            tbody,button,feedback,flag,saved:Boolean(stored),saving:false};
+        if (!entered.has(id)) entered.set(id,group.quantities);
+        if (stored) {
+            button.disabled = true;
+            button.textContent = 'ذخیره شده';
+            flag.textContent = 'پیش‌نویس ذخیره شد';
+            feedback.replaceChildren();
+            const link = make('a','sc-success','بازکردن پیش‌نویس این محصول');
+            link.href = stored;
+            feedback.append(link);
+        }
         groups.set(id,group);
         return group;
     }
@@ -123,13 +149,17 @@ document.addEventListener('DOMContentLoaded', () => {
         input.dataset.product = String(group.id);
         input.dataset.variant = String(id);
         input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
+        const remembered = group.quantities.get(id);
+        if (remembered !== undefined) input.value = remembered;
+        if (group.saved) input.disabled = true;
         actualCell.append(input);
         tr.append(actualCell);
         const diff = make('td','sc-number sc-difference','—');
         diff.dataset.differenceFor = String(id);
         tr.append(diff);
         group.tbody.append(tr);
-        group.flag.textContent = fa(group.rows.size) + ' تنوع';
+        if (!group.saved) group.flag.textContent = fa(group.rows.size) + ' تنوع';
+        updateDifference(group,id);
     }
 
     function updateDifference(group, variantId) {
@@ -175,6 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             url.searchParams.set('category_id',String(selectionId));
             url.searchParams.set('after_id',String(afterId));
             url.searchParams.set('limit','60');
+        if (activeQuery) url.searchParams.set('q',activeQuery);
             const response = await fetch(url, {
                 method:'GET',credentials:'same-origin',
                 headers:{'Accept':'application/json'},signal:controller.signal,
@@ -195,7 +226,8 @@ document.addEventListener('DOMContentLoaded', () => {
             hasMore = Boolean(payload.has_more);
             notice(hasMore
                 ? fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0)) + ' تنوع دریافت شد. برای ادامه «نمایش تنوع‌های بیشتر» را بزنید.'
-                : 'همه تنوع‌های دسته دریافت شدند. می‌توانید شمارش هر محصول را جداگانه به‌عنوان پیش‌نویس ذخیره کنید.');
+                : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
+                    'همه تنوع‌های دسته دریافت شدند. می‌توانید شمارش هر محصول را جداگانه به‌عنوان پیش‌نویس ذخیره کنید.'));
         } catch(error) {
             if (current===sequence && error.name !== 'AbortError') {
                 notice(error.message || 'دریافت ناموفق بود؛ برای تلاش مجدد روی نمایش بیشتر کلیک کنید.',true);
@@ -231,6 +263,19 @@ document.addEventListener('DOMContentLoaded', () => {
         await requestPage();
     }
 
+    if (liveSearch) liveSearch.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            if (!selectionId) return;
+            const next = liveSearch.value.trim();
+            if (next === activeQuery) return;
+            activeQuery = next;
+            clearListing();
+            hasMore = true;
+            requestPage();
+        }, 320);
+    });
+
     if (!embedded) category.addEventListener('change',async () => {
         subcategory.replaceChildren(new Option('همه زیردسته‌ها',''));
         subcategory.disabled = !category.value;
@@ -260,6 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!valid) { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; return; }
         field.value = normalized;
         group.quantities.set(Number(field.dataset.variant),normalized);
+        entered.set(group.id,group.quantities);
         updateDifference(group,Number(field.dataset.variant));
         updateButtons();
     });
@@ -272,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (counted === 0) return;
         const missing = group.rows.size - counted;
         if (!window.confirm('برای «' + group.name + '» پیش‌نویس جداگانه ساخته شود؟ ' +
-            (missing?'تعداد '+fa(missing)+' تنوع هنوز وارد نشده و در مرحله نهایی نیاز به بررسی دارد. ':'') +
+            (missing || activeQuery ? 'مقادیر واردنشده در سند پیش‌نویس «شمارش‌نشده» می‌مانند و برای ثبت نهایی باید تعیین تکلیف شوند. ':'') +
             'این کار موجودی انبار را تغییر نمی‌دهد.')) return;
 
         group.saving = true;
@@ -297,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (!result.document_id || !result.edit_url) throw new Error('پاسخ ثبت سند معتبر نبود.');
             group.saved = true;
+            saved.set(id,result.edit_url);
             group.tbody.querySelectorAll('.sc-actual').forEach(input=>input.disabled=true);
             group.flag.textContent = 'پیش‌نویس ذخیره شد';
             group.feedback.replaceChildren();
