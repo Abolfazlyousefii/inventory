@@ -145,8 +145,20 @@ class StocktakeController extends Controller
         $missingCount = $items->filter(fn ($item) => $item->actual_quantity === null)->count();
         $belowReserved = $items->filter(fn ($item) => $item->actual_quantity !== null
             && (int)$item->actual_quantity < (int)$item->reserved_at_start)->count();
+        $queuedTotals = \Illuminate\Support\Facades\DB::table('invoice_items as ii')
+            ->join('invoices as inv', 'inv.id','=','ii.invoice_id')
+            ->whereIn('ii.variant_id', $items->pluck('product_variant_id')->all())
+            ->whereIn('inv.status', [
+                \App\Models\Invoice::STATUS_PENDING_COLLECTION,
+                \App\Models\Invoice::STATUS_WAREHOUSE_RECEIVED,
+                \App\Models\Invoice::STATUS_COLLECTING,
+            ])
+            ->where('ii.quantity','>',0)->groupBy('ii.variant_id')
+            ->select('ii.variant_id')->selectRaw('SUM(ii.quantity) AS qty')
+            ->pluck('qty','variant_id');
+        $queuedCount = $queuedTotals->filter(fn ($qty) => (int)$qty > 0)->count();
         $canFinalize = auth()->user()?->isAdministrator() && $missingCount === 0
-            && $belowReserved === 0 && $items->isNotEmpty();
+            && $belowReserved === 0 && $queuedCount === 0 && $items->isNotEmpty();
         $reviewToken = $canFinalize
             ? $this->service->categoryReviewToken($stockCountDocument, (int) auth()->id())
             : null;
@@ -154,6 +166,7 @@ class StocktakeController extends Controller
         return response()->view('stocktake.category-bulk-review', [
             'document'=>$stockCountDocument, 'items'=>$items,
             'missingCount'=>$missingCount, 'belowReserved'=>$belowReserved,
+            'queuedCount'=>$queuedCount, 'queuedTotals'=>$queuedTotals,
             'reviewToken'=>$reviewToken, 'canFinalize'=>$canFinalize,
         ])->header('Cache-Control', 'private, no-store');
     }
