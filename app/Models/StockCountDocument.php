@@ -50,6 +50,11 @@ class StockCountDocument extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
     public function items()
     {
         return $this->hasMany(StockCountDocumentItem::class, 'document_id');
