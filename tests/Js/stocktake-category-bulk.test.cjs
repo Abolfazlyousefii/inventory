@@ -41,6 +41,7 @@ function setup() {
     app.dataset.bulkStoreUrl='/category-bulk';
     app.dataset.bulkUpdateTemplate='/category/__DOC__';
     app.dataset.bulkFinalizeTemplate='/category/__DOC__/finalize';
+    app.dataset.bulkReviewTemplate='/category/__DOC__/review';
     app.dataset.indexUrl='/stock-count-documents';
     app.dataset.rowsUrl='/category-rows';
     app.dataset.canFinalize='1';
@@ -95,7 +96,7 @@ async function waitFor(predicate) {
     assert.ok(predicate(),'state did not reach expected value');
 }
 
-test('one bulk draft request and one final confirmation cover two distinct products',async()=>{
+test('one bulk draft request leads to the independent review page without browser-side stock mutation',async()=>{
     const {nodes,requests,navigations}=setup();
     assert.equal(nodes.scSaveAll.disabled,false); // state changes after list loads
     await nodes.scShow.on_click();
@@ -117,11 +118,8 @@ test('one bulk draft request and one final confirmation cover two distinct produ
     assert.equal(requests.filter(r=>r.method==='POST').length,1);
     assert.equal(nodes.scFinalizeAll.disabled,false);
     await nodes.scFinalizeAll.on_click();
-    await waitFor(()=>requests.some(r=>r.method==='PATCH'));
-    const finalized=requests.find(r=>r.method==='PATCH');
-    assert.equal(finalized.url,'/category/123/finalize');
-    assert.equal(finalized.data.actual_quantities[22],0);
-    assert.ok(navigations.includes('/stock-count-documents'));
+    assert.ok(navigations.includes('/category/123/review'));
+    assert.equal(requests.filter(r=>r.method==='PATCH').length,0);
     assert.equal(requests.filter(r=>r.method==='POST').length,1);
 });
 
