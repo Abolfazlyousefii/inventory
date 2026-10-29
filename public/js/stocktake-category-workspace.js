@@ -401,7 +401,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const quantities = {};
         for (const values of entered.values()) {
             for (const [id, raw] of values.entries()) {
-                if (raw !== '') quantities[id] = Number(raw);
+                // Send explicit null when a saved count was cleared; never
+                // silently preserve an old number that the operator removed.
+                quantities[id] = raw === '' ? null : Number(raw);
             }
         }
         return quantities;
@@ -479,7 +481,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await categoryRequest(docUrl(app.dataset.bulkFinalizeTemplate),
                 'PATCH',{actual_quantities:categoryActuals()});
             bulkDirty = false;
-            window.removeEventListener('beforeunload', function () {});
             notice('انبارگردانی تمام کالاهای این دسته نهایی شد.');
             location.assign(app.dataset.indexUrl);
         } catch(error) {
