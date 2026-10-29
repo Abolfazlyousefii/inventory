@@ -525,6 +525,10 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             'variant_id'=>$variant->id, 'quantity'=>2,
             'price'=>1000, 'line_total'=>2000,
         ]));
+        $this->get(route('stock-count-documents.category-bulk.review',$id))
+            ->assertOk()->assertSee('تنوع در صف جمع‌آوری')
+            ->assertSee('نیازمند تطبیق فیزیکی')
+            ->assertDontSee('name="review_token"', false);
         $this->patchJson(route('stock-count-documents.category-bulk.finalize',$id),[
             'review_token'=>$token,
         ])->assertUnprocessable()->assertJsonPath('conflicts.0.reason_code','collection_queue_unresolved');
