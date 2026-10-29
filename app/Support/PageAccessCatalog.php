@@ -398,6 +398,8 @@ class PageAccessCatalog
         'warehouse.stock-flow.rows' => ['warehouse.stocktake'],
         'stocktake.index' => ['warehouse.stocktake'],
         'stock-count-documents.index' => ['warehouse.stocktake'],
+        'stock-count-documents.category-workspace' => ['warehouse.stocktake'],
+        'stock-count-documents.category-variants' => ['warehouse.stocktake'],
         'stock-count-documents.create' => ['warehouse.stocktake'],
         'stock-count-documents.store' => ['warehouse.stocktake'],
         'stock-count-documents.subcategories' => ['warehouse.stocktake'],
