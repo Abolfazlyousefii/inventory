@@ -90,7 +90,7 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertSee('ذخیره پیش‌نویس')
             ->assertSee('نمایش محصولات دسته')
             ->assertSee('هر محصول سند جداگانه')
-            ->assertSee('stocktake-category-workspace.js',false);
+            ->assertSee('id="stocktakeCategoryApp"',false);
         $this->get(route('stock-count-documents.create'))->assertOk()
             ->assertSee('انبارگردانی با انتخاب دسته‌بندی')
             ->assertSee(route('stock-count-documents.category-workspace'),false);
