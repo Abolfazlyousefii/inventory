@@ -128,11 +128,17 @@ document.addEventListener('DOMContentLoaded', () => {
         group.rows.set(id,row);
         const tr = make('tr');
         const description = make('td','sc-variant',row.name || 'تنوع بدون نام');
+        description.dataset.label = 'تنوع کالا';
         description.append(make('small','',row.sku || ''));
         tr.append(description);
-        tr.append(make('td','sc-number',fa(row.system_available)));
-        tr.append(make('td','sc-number',fa(row.active_reserved)));
+        const centralCell = make('td','sc-number',fa(row.system_available));
+        centralCell.dataset.label = 'موجودی انبار مرکزی';
+        tr.append(centralCell);
+        const reservedCell = make('td','sc-number',fa(row.active_reserved));
+        reservedCell.dataset.label = 'رزرو فعال';
+        tr.append(reservedCell);
         const queue = make('td','sc-number');
+        queue.dataset.label = 'موجودی در صف جمع‌آوری';
         queue.append(make('span',Number(row.queue_total)>0?'sc-badge':'sc-muted',fa(row.queue_total)));
         if (Number(row.queue_total) > 0) {
             queue.append(make('small','sc-flow-details','انتظار: '+fa(row.pending_collection)+
@@ -140,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tr.append(queue);
         const actualCell = make('td');
+        actualCell.dataset.label = 'موجودی واقعی';
         const input = make('input','sc-actual');
         input.type = 'text';
         input.inputMode = 'numeric';
@@ -155,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         actualCell.append(input);
         tr.append(actualCell);
         const diff = make('td','sc-number sc-difference','—');
+        diff.dataset.label = 'اختلاف';
         diff.dataset.differenceFor = String(id);
         tr.append(diff);
         group.tbody.append(tr);
