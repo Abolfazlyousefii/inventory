@@ -96,6 +96,29 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertSee(route('stock-count-documents.category-workspace'),false);
     }
 
+    public function test_saving_one_category_product_creates_only_its_draft_and_never_applies_stock(): void
+    {
+        $this->signIn();
+        [, $airpods, , [$first, $v1], [$second, $v2]] = $this->fixture();
+
+        $response = $this->postJson(route('stock-count-documents.store'), [
+            'product_id' => $first->id,
+            'document_date' => '2026-10-29',
+            'actual_quantities' => [$v1->id => 7],
+            'description' => 'انبارگردانی از نمای دسته‌ای',
+        ])->assertCreated()->assertJsonStructure(['document_id','edit_url','message']);
+
+        $doc = StockCountDocument::query()->findOrFail((int) $response->json('document_id'));
+        $this->assertSame('draft', $doc->status);
+        $this->assertSame($first->id, $doc->product_id);
+        $this->assertSame(7, (int) $doc->items()->where('product_variant_id', $v1->id)->value('actual_quantity'));
+        $this->assertSame(0, $doc->items()->where('product_variant_id', $v2->id)->count());
+        $this->assertSame(1, StockCountDocument::count());
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(8, (int) WarehouseStock::query()->where('product_variant_id', $v1->id)->value('quantity'));
+        $this->assertSame(4, (int) WarehouseStock::query()->where('product_variant_id', $v2->id)->value('quantity'));
+    }
+
     public function test_unauthorized_access_is_rejected(): void
     {
         $this->getJson(route('stock-count-documents.category-variants',['category_id'=>1]))->assertUnauthorized();
