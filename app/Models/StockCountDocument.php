@@ -11,6 +11,8 @@ class StockCountDocument extends Model
         'type',
         'warehouse_id',
         'product_id',
+        'category_id',
+        'request_key',
         'document_date',
         'status',
         'description',
@@ -46,6 +48,11 @@ class StockCountDocument extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
     }
 
     public function items()
