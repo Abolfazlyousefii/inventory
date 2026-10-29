@@ -96,6 +96,44 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertSee(route('stock-count-documents.category-workspace'),false);
     }
 
+    public function test_category_view_matches_the_original_single_product_stock_count_numbers(): void
+    {
+        $this->signIn();
+        [, $airpods, , [$product, $variant]] = $this->fixture();
+
+        $inline = $this->getJson(route('stock-count-documents.category-variants', [
+            'category_id' => $airpods->id,
+        ]))->assertOk();
+        $single = $this->getJson(route('stock-count-documents.variants', $product))->assertOk();
+
+        $categoryRow = collect($inline->json('rows'))->firstWhere('variant_id', $variant->id);
+        $originalRow = collect($single->json('data'))->firstWhere('variant_id', $variant->id);
+        $this->assertNotNull($categoryRow);
+        $this->assertNotNull($originalRow);
+        foreach (['system_available', 'active_reserved', 'expected_physical', 'sales_enabled'] as $key) {
+            $this->assertSame($originalRow[$key], $categoryRow[$key], 'Stock count mismatch: '.$key);
+        }
+        $this->assertSame(0, StockCountDocument::count());
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(8, (int) WarehouseStock::where('product_variant_id', $variant->id)->value('quantity'));
+    }
+
+    public function test_create_form_has_inline_category_button_and_same_page_counter_not_a_separate_link(): void
+    {
+        $this->signIn();
+        $this->fixture();
+        $html = $this->get(route('stock-count-documents.create'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('id="scShow"', $html);
+        $this->assertStringContainsString('id="stocktakeCategoryApp"', $html);
+        $this->assertStringContainsString('id="scProducts"', $html);
+        $this->assertStringContainsString('id="scClose"', $html);
+        $this->assertStringContainsString('data-embedded="1"', $html);
+        $this->assertStringNotContainsString('href="'.route('stock-count-documents.category-workspace').'"', $html);
+        $this->assertStringContainsString('class="stock-count-stepper', $html);
+        $this->assertStringContainsString('id="stocktakeForm"', $html);
+    }
+
     public function test_saving_one_category_product_creates_only_its_draft_and_never_applies_stock(): void
     {
         $this->signIn();
