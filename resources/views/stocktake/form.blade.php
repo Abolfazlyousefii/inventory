@@ -147,10 +147,10 @@
     <p class="sc-subtitle">موجودی مرکزی، رزرو و صف جمع‌آوری بر اساس اطلاعات فعلی سیستم است، نه Snapshot ثابت.</p>
     </div>
     <div id="scBulkActions" class="sc-bulk-actions" role="region" aria-label="عملیات کلی انبارگردانی">
-      <div class="sc-bulk-meta" id="scBulkStatus" role="status" aria-live="polite">شمارش‌ها را وارد کنید؛ پیش‌نویس را با یک دکمه ذخیره کنید.</div>
+      <div class="sc-bulk-meta" id="scBulkStatus" role="status" aria-live="polite">همه شمارش‌ها را وارد و ذخیره کنید؛ سپس لیست مغایرت‌ها را بررسی کنید و در صفحه بعد فقط مدیر موجودی را اعمال می‌کند.</div>
       <div class="sc-bulk-buttons">
         <button type="button" id="scSaveAll" class="btn btn-primary" disabled>ذخیره پیش‌نویس کلی</button>
-        <button type="button" id="scFinalizeAll" class="btn sc-bulk-final" disabled>تأیید نهایی همه کالاها</button>
+        <button type="button" id="scFinalizeAll" class="btn sc-bulk-final" disabled>بررسی و تطبیق لیست</button>
       </div>
     </div>
     <script type="application/json" id="scResumeCounts">@json($categoryDraftCounts)</script>
