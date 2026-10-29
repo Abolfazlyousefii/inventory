@@ -24,8 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let bulkDocId = Number(app.dataset.bulkDocumentId || 0);
     let bulkDirty = false;
     let bulkBusy = false;
-    const newRequestKey = () => crypto.randomUUID();
-    let requestKey = newRequestKey();
+    const newRequestKey = () => globalThis.crypto?.randomUUID?.() || null;
+    let requestKey = null;
     let activeQuery = '';
     let searchTimer = null;
     let selectionId = 0;
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         saved.clear();
         bulkDocId = 0;
         bulkDirty = false;
-        requestKey = newRequestKey();
+        requestKey = null;
         if (liveSearch) liveSearch.value = '';
         activeQuery = '';
         clearListing();
@@ -442,6 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         bulkBusy = true; updateButtons();
         try {
+            if (!bulkDocId && !requestKey) requestKey = newRequestKey();
+            if (!bulkDocId && !requestKey) throw new Error('مرورگر امکان ساخت شناسه امن درخواست را ندارد.');
             const isUpdate = bulkDocId > 0;
             const result = await categoryRequest(
                 isUpdate ? docUrl(app.dataset.bulkUpdateTemplate) : app.dataset.bulkStoreUrl,
