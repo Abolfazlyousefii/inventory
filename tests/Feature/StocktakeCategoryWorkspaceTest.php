@@ -500,6 +500,39 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(0,StockMovement::count());
     }
 
+    public function test_category_finalize_refuses_unresolved_collection_queue_to_prevent_double_counting(): void
+    {
+        $this->signIn();
+        [, $category,,[$product,$variant],[$product2,$variant2]]=$this->fixture();
+        \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
+            fn (\Illuminate\Database\Schema\Blueprint $table) => $table->integer('actual_quantity')->nullable()->change());
+        $id=$this->postJson(route('stock-count-documents.category-bulk.store'),[
+            'category_id'=>$category->id,'document_date'=>'2026-10-29',
+            'request_key'=>'f7e11a0b-2ce8-4c1b-8a6e-4bc2ea149985',
+            'actual_quantities'=>[$variant->id=>10,$variant2->id=>4],
+        ])->assertCreated()->json('document_id');
+        $review=$this->get(route('stock-count-documents.category-bulk.review',$id))->assertOk();
+        $dom=new \DOMDocument();
+        @$dom->loadHTML($review->getContent());
+        $token=(new \DOMXPath($dom))->query('//input[@name="review_token"]')->item(0)?->getAttribute('value');
+        $this->assertNotEmpty($token);
+        $invoice=Invoice::withoutEvents(fn () => Invoice::create([
+            'uuid'=>'CT-'.Str::random(10), 'status'=>Invoice::STATUS_PENDING_COLLECTION,
+            'customer_name'=>'مشتری','subtotal'=>1000,'total'=>1000,
+        ]));
+        InvoiceItem::withoutEvents(fn () => InvoiceItem::create([
+            'invoice_id'=>$invoice->id, 'product_id'=>$product->id,
+            'variant_id'=>$variant->id, 'quantity'=>2,
+            'price'=>1000, 'line_total'=>2000,
+        ]));
+        $this->patchJson(route('stock-count-documents.category-bulk.finalize',$id),[
+            'review_token'=>$token,
+        ])->assertUnprocessable()->assertJsonPath('conflicts.0.reason_code','collection_queue_unresolved');
+        $this->assertSame(0,StockMovement::count());
+        $this->assertSame(8,(int)WarehouseStock::where('product_variant_id',$variant->id)->value('quantity'));
+        $this->assertSame('draft',StockCountDocument::findOrFail($id)->status);
+    }
+
     public function test_invalid_product_count_rejected_before_stocktake_created(): void
     {
         $this->signIn();
