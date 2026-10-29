@@ -29,7 +29,7 @@ test('category cards use a bounded responsive layout without clipping the centra
 test('every mobile counting cell has a label, including live queue and entered physical count', () => {
     assert.match(source, /description\.dataset\.label\s*=\s*'تنوع کالا'/);
     for (const label of ['موجودی انبار مرکزی', 'رزرو فعال', 'موجودی در صف جمع‌آوری', 'موجودی واقعی', 'اختلاف']) {
-        assert.match(source, new RegExp('dataset\\\\.label\\\\s*=\\\\s*[\\'"]' + label + '[\\'"]'));
+        assert.ok(source.includes("dataset.label = '" + label + "'"), "missing mobile label: " + label);
     }
     assert.doesNotThrow(() => new vm.Script(source));
 });
