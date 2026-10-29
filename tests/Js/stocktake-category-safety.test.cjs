@@ -17,6 +17,7 @@ function element(tag = 'div') {
         replaceChildren(...items) { children.splice(0, children.length, ...items); },
         setAttribute() {},
         setCustomValidity(message) { this.validationMessage = message; },
+        checkValidity() { return !this.validationMessage; },
         addEventListener(name, callback) { this['on_' + name] = callback; },
         focus() {},
         closest(selector) {
@@ -131,7 +132,7 @@ test('invalid quantity remains blocked when another variant is edited', async ()
     assert.equal(ui.nodes.scSaveAll.disabled, true);
 
     ui.enter(second, '2');
-    assert.equal(ui.button().disabled, true, 'invalid first input must prevent draft submission');
+    assert.equal(ui.nodes.scSaveAll.disabled, true, 'invalid first input must prevent draft submission');
 
     await ui.nodes.scSaveAll.on_click();
     await new Promise(resolve => setImmediate(resolve));
