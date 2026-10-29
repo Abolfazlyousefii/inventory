@@ -54,8 +54,8 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $response = $this->getJson(route('stock-count-documents.category-variants',[
             'category_id'=>$airpods->id,
         ]))->assertOk()->assertJsonCount(2,'rows')->assertJsonPath('has_more',false);
-        $this->assertSameCanonicalizing([$first->id,$second->id],array_column($response->json('rows'),'product_id'));
-        $this->assertSameCanonicalizing([$v1->id,$v2->id],array_column($response->json('rows'),'variant_id'));
+        $this->assertEqualsCanonicalizing([$first->id,$second->id],array_column($response->json('rows'),'product_id'));
+        $this->assertEqualsCanonicalizing([$v1->id,$v2->id],array_column($response->json('rows'),'variant_id'));
         $this->assertNotContains($unrelated->id,array_column($response->json('rows'),'product_id'));
         $this->assertSame(0,StockCountDocument::count());
         $this->assertSame(0,StockMovement::count());
