@@ -190,7 +190,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateButtons() {
         for (const group of groups.values()) {
             const counted = [...group.quantities.values()].filter(v => v !== '').length;
-            group.button.disabled = group.saved || group.saving || loading || hasMore;
+            group.button.disabled = group.saved || group.saving || loading || hasMore ||
+                [...group.tbody.querySelectorAll('.sc-actual')].some(input => Boolean(input.validationMessage));
             if (!group.saved) group.feedback.textContent = fa(counted) + ' از ' + fa(group.rows.size)
                 + ' تنوع شمارش شده · ' + (hasMore || loading ? 'ابتدا همه ردیف‌های دسته را دریافت کنید.' :
                 'مقادیر خالی فقط در مرحله تأیید نهایی سند تعیین تکلیف می‌شوند.');
@@ -320,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveProduct(id) {
         const group = groups.get(id);
-        if (!group || group.saved || group.saving || loading || hasMore) return;
+        if (!group || group.button.disabled || group.saved || group.saving || loading || hasMore) return;
         if (!date.value) { notice('تاریخ سند را مشخص کنید.',true); date.focus(); return; }
         const counted = [...group.quantities.values()].filter(v=>v!=='').length;
         // A completely blank draft is also valid; no stock changes on draft save.
