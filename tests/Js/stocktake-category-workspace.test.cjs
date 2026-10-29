@@ -40,7 +40,7 @@ test('category workspace integrates into the original form without nested forms 
     assert.match(source, /getElementById\(embedded \? 'subcategory' : 'scSubcategory'\)/);
     assert.match(source, /document\.querySelector\('\[name="document_date"\]'\)/);
     assert.match(source, /'موجودی انبار مرکزی','رزرو فعال','موجودی در صف جمع‌آوری','موجودی واقعی','اختلاف'/);
-    assert.match(source, /row\.expected_physical/);
+    assert.match(source, /variant\.expected_physical/);
     assert.match(source, /row\.pending_collection/);
     assert.match(source, /row\.warehouse_received/);
     assert.match(source, /row\.collecting/);
