@@ -52,7 +52,7 @@
 @media(max-width:1199px){.stocktake-category .sc-bulk-toolbar{left:16px;right:16px}}
 @media(max-width:600px){.stocktake-category .sc-bulk-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom))}.stocktake-category .sc-toolbar-status{grid-column:1/-1;font-size:.72rem}.stocktake-category .sc-bulk-toolbar button{font-size:.77rem;padding:7px}.stocktake-category{padding-bottom:240px!important}}
 </style>
-<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030">
+<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030-2">
 <div class="stocktake-category stocktake-workspace" id="stocktakeCategoryApp"
      data-rows-url="{{ route('stock-count-documents.category-variants') }}"
      data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"

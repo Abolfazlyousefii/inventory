@@ -147,7 +147,7 @@
 }
 [hidden]{display:none!important}
 </style>
-<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030">
+<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030-2">
 <div class="stocktake-page stocktake-workspace" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
  <header class="stocktake-page__header mb-3">
    <div class="stocktake-page__heading">
@@ -190,7 +190,7 @@
         @if($mode==='create')<button type="button" id="scShow" class="btn stocktake-category-button"><span>نمایش کالاهای دسته در همین صفحه</span><span aria-hidden="true">←</span></button>@endif
         <p class="stocktake-selector__hint">بدون انتخاب زیردسته، تمام کالاهای دسته و زیردسته‌هایش نمایش داده می‌شوند.</p>
       </div>
-      <div class="stocktake-selector__alternative">
+      <div class="stocktake-selector__alternative" data-stocktake-single>
         <div class="stocktake-selector__alternative-title"><span></span>یا شمارش یک محصول</div>
         <label class="stocktake-field" for="product"><span>انتخاب محصول</span><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select></label>
         <label class="stocktake-search" for="productSearch"><span aria-hidden="true">⌕</span><input id="productSearch" class="form-control" placeholder="جستجوی نام، کد، SKU یا بارکد" aria-label="جستجوی محصول" {{ $mode==='edit'?'disabled':'' }}></label>

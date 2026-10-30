@@ -40,6 +40,8 @@ html[data-app-theme="dark"] .stocktake-workspace {
 .stocktake-workspace .stocktake-selector__icon {display: grid; place-items: center; flex: 0 0 46px; height: 46px; border-radius: 13px; color: var(--st-accent); background: var(--st-accent-soft);}
 .stocktake-workspace .stocktake-selector__tag {margin-inline-start: auto; display: inline-flex; flex: 0 0 auto; font-size: .73rem; font-weight: 800; color: var(--st-accent); background: var(--st-accent-soft); border: 1px solid color-mix(in srgb, var(--st-accent) 20%, transparent); padding: 6px 11px; border-radius: 999px;}
 .stocktake-workspace .stocktake-selector__body {display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr);}
+.stocktake-workspace .stocktake-selector__body:has(> .stocktake-selector__alternative[hidden]) {grid-template-columns: minmax(0,1fr);}
+.stocktake-workspace .stocktake-selector__alternative[hidden] {display: none !important;}
 .stocktake-workspace .stocktake-selector__primary {padding: 24px; min-width: 0;}
 .stocktake-workspace .stocktake-selector__fields {display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 17px; margin-bottom: 17px;}
 .stocktake-workspace .stocktake-field {display: flex; flex-direction: column; gap: 9px; min-width: 0; margin: 0; font-size: .82rem; font-weight: 800; color: var(--st-ink);}
@@ -48,6 +50,7 @@ html[data-app-theme="dark"] .stocktake-workspace {
 .stocktake-workspace .stocktake-field .form-select,
 .stocktake-workspace .stocktake-field select {width: 100%; min-height: 49px; min-width: 0; border: 1px solid var(--st-border); border-radius: 11px; background-color: var(--st-surface); color: var(--st-ink); font-size: .86rem; font-weight: 650; padding-block: 10px; padding-inline-start: 13px;}
 .stocktake-workspace .stocktake-field select:disabled {background-color: var(--st-soft); color: var(--st-muted); opacity: .8;}
+.stocktake-workspace .stocktake-field select {appearance: none; padding-inline-end: 36px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371808c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: left 12px center; background-size: 16px;}
 .stocktake-workspace :is(select,input,textarea):focus {border-color: var(--st-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-accent) 14%, transparent); outline: none;}
 .stocktake-workspace .stocktake-category-button {display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 11px 16px; border: 1px solid #087f83; border-radius: 11px; background: linear-gradient(110deg,#087f83,#116a7c); color: #fff; font-size: .86rem; font-weight: 800; box-shadow: 0 5px 13px rgb(8 127 131 / 15%);}
 .stocktake-workspace .stocktake-category-button:hover {background: #09696e; color: #fff; transform: translateY(-1px);}
