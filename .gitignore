@@ -83,3 +83,10 @@ error_log
 /*.sql
 *.sql.gz
 *.sql.zip
+
+# Local assistant files, demos and root diagnostic notes.
+/.claude/
+/.superpowers/
+/public/reach-demo/
+/ariya-debug*/
+/*.txt
