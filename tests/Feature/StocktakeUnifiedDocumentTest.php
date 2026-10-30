@@ -250,4 +250,54 @@ final class StocktakeUnifiedDocumentTest extends TestCase
         $this->finalize($saved)->assertForbidden();
         $this->assertSame($before, $this->snapshot());
     }
+
+    public static function netCountCases(): array
+    {
+        return [
+            'gross shortage partly offset by surplus'=>[0,15,-1,'۱ عدد کاهش خالص'],
+            'net increase'=>[10,9,3,'۳ عدد افزایش خالص'],
+            'offsetting rows still need individual reconciliation'=>[0,16,0,'بدون تغییر خالص'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('netCountCases')]
+    public function test_review_shows_net_category_change_separately_from_gross_row_differences(int $a,int $b,int $net,string $label): void
+    {
+        [$root,$first,$second]=$this->fixture();
+        $saved=$this->save(['request_id'=>(string)Str::uuid(),'category_id'=>$root->id,
+            'actual_quantities'=>[$first[1]->id=>$a,$second[1]->id=>$b]])->assertSuccessful()->json('document');
+        $this->assertSame($net,$saved['total_increase']-$saved['total_decrease']);
+        $this->get($saved['review_url'])->assertOk()->assertSee('data-net-change="'.$net.'"',false)
+            ->assertSee($label)->assertSee('موجودی موردانتظار پیش از شمارش')->assertSee('در صورت ثبت نهایی');
+        $this->assertSame(0,StockMovement::count());
+    }
+
+    public function test_mixed_zero_and_positive_count_applies_only_to_central_warehouse_and_matches_ledger_net_once(): void
+    {
+        [$root,$first,$second,$outside]=$this->fixture();
+        $central=Warehouse::where('type','central')->firstOrFail();
+        $other=Warehouse::withoutEvents(fn()=>Warehouse::create(['name'=>'Other isolated warehouse','type'=>'personnel','is_active'=>true]));
+        foreach([[$first,40],[$second,60]] as [$pair,$qty]) WarehouseStock::withoutEvents(fn()=>WarehouseStock::create([
+            'warehouse_id'=>$other->id,'product_id'=>$pair[0]->id,'product_variant_id'=>$pair[1]->id,'quantity'=>$qty,
+        ]));
+        $saved=$this->save(['request_id'=>(string)Str::uuid(),'category_id'=>$root->id,
+            'actual_quantities'=>[$first[1]->id=>0,$second[1]->id=>15]])->assertSuccessful()->json('document');
+        $this->assertSame(16,$saved['total_before']);
+        $this->assertSame(0,StockMovement::count());
+        $requestId=(string)Str::uuid();
+        $this->finalize($saved,$requestId)->assertSuccessful();
+        $moves=StockMovement::where('reference_type','stock_count_document')->where('reference_id',$saved['id'])->get();
+        $this->assertCount(2,$moves);
+        $this->assertSame(-1,(int)$moves->sum(fn($m)=>$m->type==='in'?(int)$m->quantity:-(int)$m->quantity));
+        $this->assertSame(0,(int)WarehouseStock::where('warehouse_id',$central->id)->where('product_variant_id',$first[1]->id)->value('quantity'));
+        $this->assertSame(15,(int)WarehouseStock::where('warehouse_id',$central->id)->where('product_variant_id',$second[1]->id)->value('quantity'));
+        $this->assertSame(100,(int)WarehouseStock::where('warehouse_id',$other->id)->sum('quantity'));
+        $this->assertSame(8,(int)WarehouseStock::where('warehouse_id',$central->id)->where('product_variant_id',$outside[1]->id)->value('quantity'));
+        $this->assertSame(0,(int)$first[0]->fresh()->stock);$this->assertSame(0,(int)$first[1]->fresh()->stock);
+        $this->assertSame(15,(int)$second[0]->fresh()->stock);$this->assertSame(15,(int)$second[1]->fresh()->stock);
+        $before=$this->snapshot();
+        $this->finalize($saved,$requestId)->assertSuccessful();
+        $this->assertSame($before,$this->snapshot());
+        $this->get($saved['review_url'])->assertOk()->assertSee('۱ عدد کاهش خالص')->assertDontSee('در صورت ثبت نهایی');
+    }
 }
