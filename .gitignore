@@ -71,3 +71,5 @@ error_log
 *.backup-*
 *.before-*
 *.orig
+
+*.repaired
