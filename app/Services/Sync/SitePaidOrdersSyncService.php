@@ -59,7 +59,9 @@ class SitePaidOrdersSyncService
                     ->where('site_orders.status', 'paid')
                     ->when($heldOnly, fn ($q) => $q->where('site_orders.inventory_stock_hold_id', '>', 0))
                     ->where('site_orders.id', '>', $afterId)
-                    ->whereNull('inventory_invoices.id');
+                    ->where(fn ($q) => $q->whereNull('inventory_invoices.id')
+                        ->orWhereNull('site_orders.inventory_synced_at')
+                        ->orWhereNull('site_orders.inventory_document_id'));
                 if ($exclude !== []) {
                     $query->whereNotIn('site_orders.id', $exclude);
                 }
