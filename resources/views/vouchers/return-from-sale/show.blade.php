@@ -4,19 +4,21 @@
 	<div class="container-fluid" dir="rtl">
         @php
             $protectedReturn=$document->isApplied() && app(\App\Services\SalesReturnCorrectionService::class)->requiresWarehouse($document);
-            $canDirectReturn=$document->isApplied() && auth()->user() && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),$protectedReturn?'warehouse.inbound.receive':'vouchers.return-from-sale.applied.update');
+            $canDirectReturn=$document->isApplied() && auth()->user() && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),'vouchers.return-from-sale.applied.update');
+            $requestMode=$protectedReturn && ! \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),'warehouse.inbound.receive');
+            $canDirectReturn=$canDirectReturn || ($protectedReturn && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),'warehouse.inbound.receive'));
         @endphp
         @if($document->isApplied())
         <div class="alert alert-info">
-            <div>{{ $protectedReturn ? 'دریافت انباری این سند ثبت شده است؛ تغییر تعداد و ابطال فقط توسط مسئول مجاز انبار انجام می‌شود.' : 'این سند مرجوعی قابل ویرایش و ابطال با حفظ سابقه است؛ موجودی مرکزی بدون تأیید دریافت افزایش نمی‌یابد.' }}</div>
+            <div>{{ $protectedReturn ? ($requestMode ? 'این سند وارد انبار مرکزی شده است؛ درخواست اصلاح یا ابطال پس از بررسی انبار و تأیید مالی اعمال می‌شود.' : 'دریافت انباری ثبت شده است؛ اصلاح مجاز انبار فقط اختلاف موجودی و حساب را اعمال می‌کند.') : 'این سند مرجوعی قابل ویرایش و ابطال با حفظ سابقه است؛ موجودی مرکزی بدون تأیید دریافت افزایش نمی‌یابد.' }}</div>
             @if($pendingCorrection ?? null)
                 <strong>درخواست قبلی {{ $pendingCorrection->id }}: {{ \App\Models\SalesReturnCorrection::statusLabels()[$pendingCorrection->status] }} — ابتدا این درخواست تعیین تکلیف شود.</strong>
             @elseif($canDirectReturn)
-                <a class="btn btn-sm btn-primary mt-2" href="{{ route('vouchers.return-from-sale.applied.edit',$document) }}">{{ $protectedReturn ? 'اصلاح دریافت' : 'ویرایش مرجوعی' }}</a>
-                <details class="mt-3"><summary>ابطال سند با حفظ سابقه</summary><form method="POST" action="{{ route('vouchers.return-from-sale.applied.void',$document) }}" class="mt-2">@csrf
+                <a class="btn btn-sm btn-primary mt-2" href="{{ route('vouchers.return-from-sale.applied.edit',$document) }}">{{ $requestMode ? 'درخواست اصلاح' : ($protectedReturn ? 'اصلاح دریافت' : 'ویرایش مرجوعی') }}</a>
+                <details class="mt-3"><summary>{{ $requestMode ? 'درخواست ابطال سند' : 'ابطال سند با حفظ سابقه' }}</summary><form method="POST" action="{{ route('vouchers.return-from-sale.applied.void',$document) }}" class="mt-2">@csrf
                     <input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}">
                     <label class="form-label">دلیل ابطال</label><textarea name="reason" class="form-control" required minlength="3" maxlength="1000"></textarea>
-                    <p class="small mt-2">فقط اثر ثبت‌شدهٔ همین سند برمی‌گردد. کمبود موجودی آزاد، کل عملیات را متوقف می‌کند.</p><button class="btn btn-sm btn-danger">تأیید ابطال</button>
+                    <p class="small mt-2">{{ $requestMode ? 'ثبت درخواست اثری بر موجودی و حساب ندارد؛ پس از بررسی انبار و تأیید مالی، آثار همین سند برمی‌گردد.' : 'فقط اثر ثبت‌شدهٔ همین سند برمی‌گردد. کمبود موجودی آزاد، کل عملیات را متوقف می‌کند.' }}</p><button class="btn btn-sm btn-danger">{{ $requestMode ? 'ارسال درخواست ابطال' : 'تأیید ابطال' }}</button>
                 </form></details>
             @endif
             <a class="d-inline-block mt-2" href="{{ route('sales-return-corrections.index',['document_id'=>$document->id,'status'=>'all']) }}">سوابق اصلاح و درخواست‌های قبلی</a>

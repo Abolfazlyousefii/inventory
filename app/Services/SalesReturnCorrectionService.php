@@ -160,6 +160,18 @@ class SalesReturnCorrectionService
 
     public function request(SalesReturnDocument $document, array $data, int $actor, string $reason): SalesReturnCorrection
     {
+        unset($data['void_document']);
+
+        return $this->queueRequest($document, $data, $actor, $reason);
+    }
+
+    public function requestVoid(SalesReturnDocument $document, int $actor, string $reason, string $version): SalesReturnCorrection
+    {
+        return $this->queueRequest($document, ['document_version' => $version, 'void_document' => true], $actor, $reason);
+    }
+
+    private function queueRequest(SalesReturnDocument $document, array $data, int $actor, string $reason): SalesReturnCorrection
+    {
         return DB::transaction(function () use ($document, $data, $actor, $reason) {
             $doc = $this->lockDocument($document->id);
             $this->assertVersion($doc, (string) ($data['document_version'] ?? ''));
@@ -167,9 +179,9 @@ class SalesReturnCorrectionService
                 $this->fail('correction', 'این سند یک درخواست اصلاح در انتظار بررسی دارد. ابتدا همان درخواست تعیین تکلیف شود.');
             }
             $this->assertReason($reason);
-            $proposal = $this->prepare($doc, $data);
+            $proposal = $this->queuedProposal($doc, $data);
             $before = $this->snapshot($doc);
-            if ($proposal['items'] === [] || $this->comparable($before) === $this->comparable($proposal)) {
+            if ((! ($data['void_document'] ?? false) && $proposal['items'] === []) || $this->comparable($before) === $this->comparable($proposal)) {
                 $this->fail('correction', 'درخواست باید حداقل یک قلم و یک تغییر واقعی داشته باشد.');
             }
             $request = SalesReturnCorrection::create(['document_id' => $doc->id, 'base_version' => InboundReviewVersion::token($doc), 'payload' => $data, 'before_snapshot' => $before, 'proposed_snapshot' => $proposal, 'reason' => trim($reason), 'requested_by' => $actor, 'status' => 'pending_warehouse']);
@@ -183,11 +195,12 @@ class SalesReturnCorrectionService
     {
         return DB::transaction(function () use ($request, $stage, $actor, $note) {
             // Same lock order as inbound receiving and pending editing: document, customer, invoice.
-            $doc = $this->lockDocument($request->document_id);
+            $doc = SalesReturnDocument::whereKey($request->document_id)->lockForUpdate()->firstOrFail();
             $correction = SalesReturnCorrection::whereKey($request->id)->lockForUpdate()->firstOrFail();
             if ($correction->status === 'applied') {
                 return $correction;
             }
+            $doc = $this->lockDocument($doc->id);
             if (! in_array($stage, ['warehouse', 'finance'], true) || (int) $correction->requested_by === $actor || ($stage === 'finance' && (int) $correction->warehouse_approved_by === $actor)) {
                 $this->fail('correction', 'ثبت‌کننده درخواست نمی‌تواند آن را تأیید کند؛ تأیید انبار و مالی نیز باید توسط دو کاربر مستقل باشد.');
             }
@@ -197,14 +210,22 @@ class SalesReturnCorrectionService
             }
             $this->assertReason($note);
             $this->assertVersion($doc, $correction->base_version);
-            $proposal = $this->prepare($doc, $correction->payload);
+            $proposal = $this->queuedProposal($doc, $correction->payload);
             if ($this->comparable($proposal) !== $this->comparable($correction->proposed_snapshot)) {
                 $this->fail('correction', 'سقف برگشت یا محاسبات مرجع تغییر کرده است؛ این درخواست را رد و درخواست تازه ثبت کنید.');
             }
             if ($stage === 'warehouse') {
                 $correction->update(['status' => 'pending_finance', 'warehouse_approved_by' => $actor, 'warehouse_approved_at' => now(), 'warehouse_note' => trim($note)]);
             } else {
-                $this->applyDelta($doc, $correction, $proposal, $actor);
+                $void = (bool) ($correction->payload['void_document'] ?? false);
+                $stockGroups = $void ? $this->directStockGroups($doc, $proposal, false) : null;
+                if ($void && (int) app(SalesReturnQueryService::class)->appliedHealthCheck($doc)['ledger_amount'] !== (int) $doc->total_refund_amount) {
+                    $this->fail('document', 'اثر مالی این سند با مبلغ فعلی همخوان نیست؛ ابتدا سابقه بررسی شود.');
+                }
+                $this->applyDelta($doc, $correction, $proposal, $actor, $stockGroups);
+                if ($void) {
+                    $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actor, 'cancelled_at' => now(), 'cancel_reason' => $correction->reason]);
+                }
                 $correction->update(['status' => 'applied', 'finance_approved_by' => $actor, 'finance_approved_at' => now(), 'finance_note' => trim($note), 'after_snapshot' => $this->snapshot($doc->fresh('items'))]);
                 $this->outbox->stage((int) $doc->id, $actor);
             }
@@ -245,6 +266,15 @@ class SalesReturnCorrectionService
         }
 
         return $doc->load('items');
+    }
+
+    private function queuedProposal(SalesReturnDocument $doc, array $data): array
+    {
+        if ($data['void_document'] ?? false) {
+            return ['document' => $doc->getAttributes(), 'items' => [], 'total_quantity' => 0, 'total_refund_amount' => 0];
+        }
+
+        return $this->prepare($doc, $data);
     }
 
     private function prepare(SalesReturnDocument $doc, array $data): array

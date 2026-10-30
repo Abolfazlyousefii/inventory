@@ -137,13 +137,18 @@ class VoucherSalesReturnController extends Controller
         }
         $document->load('items.product', 'items.variant', 'customer', 'invoice');
 
-        return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document, 'isAppliedEdit' => true, 'warehouseMode' => $warehouseMode]);
+        return view('vouchers.return-from-sale.create', $this->formData() + ['document' => $document, 'isAppliedEdit' => true, 'warehouseMode' => $warehouseMode, 'requestMode' => ! $warehouseMode && app(SalesReturnCorrectionService::class)->requiresWarehouse($document)]);
     }
 
     public function updateApplied(UpdateAppliedSalesReturnRequest $request, SalesReturnDocument $document)
     {
         $data = $request->validated();
         $warehouseMode = $this->appliedAccess($document);
+        if (! $warehouseMode && app(SalesReturnCorrectionService::class)->requiresWarehouse($document)) {
+            $correction = app(SalesReturnCorrectionService::class)->request($document, $this->enrich($request) + $data, (int) auth()->id(), $data['adjustment_reason']);
+
+            return $this->correctionResponse($request, $correction);
+        }
         $doc = app(SalesReturnCorrectionService::class)->updateDirect($document, $this->enrich($request) + $data, (int) auth()->id(), $data['adjustment_reason'], $warehouseMode);
 
         return $this->savedResponse($request, $doc, $doc->isPendingWarehouse() ? 'تغییرات ذخیره شد؛ کالای سالم پس از تأیید دریافت وارد موجودی مرکزی می‌شود.' : 'اصلاح ثبت شد؛ فقط اختلاف لازم در موجودی و حساب مشتری اعمال شد.');
@@ -152,6 +157,11 @@ class VoucherSalesReturnController extends Controller
     public function voidApplied(VoidAppliedSalesReturnRequest $request, SalesReturnDocument $document)
     {
         $warehouseMode = $this->appliedAccess($document);
+        if (! $warehouseMode && app(SalesReturnCorrectionService::class)->requiresWarehouse($document)) {
+            $correction = app(SalesReturnCorrectionService::class)->requestVoid($document, (int) auth()->id(), $request->validated('reason'), $request->validated('document_version'));
+
+            return $this->correctionResponse($request, $correction);
+        }
         $doc = app(SalesReturnCorrectionService::class)->voidDirect($document, (int) auth()->id(), $request->validated('reason'), $request->validated('document_version'), $warehouseMode);
 
         return redirect()->route('vouchers.return-from-sale.index')->with('success', 'سند ابطال شد و آثار آن برگشت خورد.');
@@ -191,14 +201,19 @@ class VoucherSalesReturnController extends Controller
     private function appliedAccess(SalesReturnDocument $document): bool
     {
         $user = auth()->user();
-        $protected = app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
-        if ($protected) {
-            abort_unless($user && PageAccessCatalog::userCanRoute($user, 'warehouse.inbound.receive'), 403, 'اصلاح سند دریافت‌شدهٔ مرکزی فقط برای مسئول مجاز انبار امکان‌پذیر است.');
-        } else {
-            abort_unless($user && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index'), 403);
-        }
+        $warehouseMode = app(SalesReturnCorrectionService::class)->requiresWarehouse($document)
+            && $user && PageAccessCatalog::userCanRoute($user, 'warehouse.inbound.receive');
+        abort_unless($warehouseMode || ($user && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index')), 403);
 
-        return $protected;
+        return (bool) $warehouseMode;
+    }
+
+    private function correctionResponse(Request $request, SalesReturnCorrection $correction)
+    {
+        $url = route('sales-return-corrections.index', ['document_id' => $correction->document_id, 'status' => 'all']);
+        $message = 'درخواست ثبت شد و برای بررسی انبار و تأیید مالی به صف رفت؛ تا تأیید نهایی، سند، موجودی و حساب مشتری تغییر نمی‌کند.';
+
+        return $request->expectsJson() ? response()->json(['ok' => true, 'message' => $message, 'redirect_url' => $url]) : redirect($url)->with('success', $message);
     }
 
     public function print(SalesReturnDocument $document)

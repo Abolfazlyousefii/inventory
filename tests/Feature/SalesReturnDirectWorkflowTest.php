@@ -210,7 +210,7 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $this->assertSame(1, StockMovement::count());
     }
 
-    public function test_central_edit_page_denies_warranty_even_if_the_return_page_is_allowed(): void
+    public function test_central_edit_page_allows_returns_operator_to_prepare_a_queued_correction(): void
     {
         $doc = $this->document(true);
         $user = \Mockery::mock(User::class)->makePartial();
@@ -219,12 +219,13 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $user->shouldReceive('hasRole')->andReturn(false);
         $user->shouldReceive('hasPermission')->andReturnUsing(fn ($p) => in_array($p, ['page.sales.returns', 'sales_returns.edit_applied'], true));
         auth()->setUser($user);
-        try {
-            app(VoucherSalesReturnController::class)->editApplied($doc);
-            $this->fail('Warranty opened central editor');
-        } catch (HttpException $e) {
-            $this->assertSame(403, $e->getStatusCode());
-        }
+        $view = app(VoucherSalesReturnController::class)->editApplied($doc);
+        $this->assertSame('vouchers.return-from-sale.create', $view->name());
+        $this->assertTrue($view->getData()['isAppliedEdit']);
+        $this->assertSame('applied', $doc->fresh()->status);
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
     }
 
     public function test_reclassification_after_central_receiving_never_unlocks_warranty_editing(): void
