@@ -13,6 +13,7 @@ use App\Services\PreinvoiceDraftReservationService;
 use App\Services\PreinvoiceBundleStockService;
 use App\Services\PreinvoiceProductFinderService;
 use App\Services\WarehouseStockService;
+use App\Services\InventoryCountFreezeService;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +51,7 @@ class PreinvoiceApiController extends Controller
         $products = Product::query()
             ->select(['id', 'name', 'is_bundle', 'sku', 'short_barcode', 'code', 'price'])
             ->where('is_sellable', true)
+            ->tap(fn ($query) => app(InventoryCountFreezeService::class)->excludeBlockedProducts($query))
             ->whereHas('variants', fn ($q) => $bundleStock->constrainAvailableVariants($q))
             ->when($q !== '', function ($query) use ($q, $isPureNumeric) {
 
@@ -156,6 +158,11 @@ class PreinvoiceApiController extends Controller
         }
 
         abort_unless((bool) $product->is_sellable || ! empty($currentPreinvoiceItemVariantIds), 404);
+        $countFreeze = app(InventoryCountFreezeService::class);
+        $stocktakeBlocked = $countFreeze->blocked((int) $product->id);
+        if ($stocktakeBlocked && empty($currentPreinvoiceItemVariantIds)) {
+            throw ValidationException::withMessages(['stocktake' => $countFreeze->productMessage((int) $product->id)]);
+        }
 
         $reservationToken = (string) $request->query('reservation_token', '');
         $reservedByVariant = $this->activeReservationQuantities($reservationToken);
@@ -205,6 +212,8 @@ class PreinvoiceApiController extends Controller
         $payload = [
             'id' => $product->id,
             'title' => $product->name,
+            'stocktake_blocked' => $stocktakeBlocked,
+            'stocktake_message' => $stocktakeBlocked ? $countFreeze->productMessage((int) $product->id) : null,
             'bundle_contents' => (bool) $product->is_bundle ? \App\Support\BundleContentsDisplay::fromProduct((int) $product->id) : [],
 
             // ✅ کد سریع 4 رقمی برای UI
@@ -213,11 +222,11 @@ class PreinvoiceApiController extends Controller
             'code' => $product->code,
 
             'price' => (int) ($product->price ?? 0),
-            'quantity' => (bool) $product->is_bundle && $product->bundle_stock_mode === 'automatic'
-                ? $product->variants->sum(fn ($variant) => $bundleStock->free((int) $product->id, (int) $variant->id)) : $centralStock,
+            'quantity' => $stocktakeBlocked ? 0 : ((bool) $product->is_bundle && $product->bundle_stock_mode === 'automatic'
+                ? $product->variants->sum(fn ($variant) => $bundleStock->free((int) $product->id, (int) $variant->id)) : $centralStock),
 
-            'varieties' => $product->variants->map(function ($v) use ($product, $bundleStock, $reservedByVariant, $currentPreinvoiceItemVariantIds) {
-                $isSellableVariant = (bool) ($v->is_active ?? false) && (bool) ($v->sales_enabled ?? false);
+            'varieties' => $product->variants->map(function ($v) use ($product, $bundleStock, $reservedByVariant, $currentPreinvoiceItemVariantIds, $stocktakeBlocked) {
+                $isSellableVariant = ! $stocktakeBlocked && (bool) ($v->is_active ?? false) && (bool) ($v->sales_enabled ?? false);
                 $freeStock = $isSellableVariant ? $bundleStock->free((int) $product->id, (int) $v->id) : 0;
                 $totalReservedIncludingCurrent = max(0, (int) ($v->reserved ?? 0));
                 $currentTokenReserved = max(0, (int) ($reservedByVariant[(int) $v->id] ?? 0));
@@ -244,7 +253,8 @@ class PreinvoiceApiController extends Controller
 
                     'is_current_preinvoice_item' => in_array((int) $v->id, $currentPreinvoiceItemVariantIds, true),
                     'is_active' => (bool) ($v->is_active ?? false),
-                    'sales_enabled' => (bool) ($v->sales_enabled ?? false),
+                    'sales_enabled' => ! $stocktakeBlocked && (bool) ($v->sales_enabled ?? false),
+                    'stocktake_blocked' => $stocktakeBlocked,
                     'variant_name' => (string) ($v->variant_name ?? ''),
                     'variety_name' => (string) ($v->variety_name ?? ''),
                     'variety_code' => (string) ($v->variety_code ?? ''),

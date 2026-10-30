@@ -619,6 +619,7 @@ class InvoiceController extends Controller
 
         $categoryIds = Category::selfAndDescendantIds((int) $data['category_id']);
         $query       = Product::query()
+            ->tap(fn ($query) => app(\App\Services\InventoryCountFreezeService::class)->excludeBlockedProducts($query))
             ->withCount([ 'variants as active_variants_count' => fn( $q ) => $q->where('is_active', true) ])
             ->whereIn('category_id', $categoryIds)
             ->whereHas('variants', fn( $q ) => $q->where('is_active', true))
@@ -647,6 +648,7 @@ class InvoiceController extends Controller
     }
 
     public function salesProductVariants( Product $product ) {
+        app(\App\Services\InventoryCountFreezeService::class)->assertProduct((int) $product->id);
         $variants = $product->variants()
             ->where('is_active', true)
             ->orderBy('variant_name')

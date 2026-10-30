@@ -329,7 +329,7 @@ it('previews and activates through the administrator form and returns a readable
     expect(app(InventoryCountFreezeService::class)->blocked($product->id))->toBeFalse();
 });
 
-it('saves a real draft without reserving counted products and rejects submission', function () {
+it('saves counted products as a draft with a category warning until explicit reopening permits submission', function () {
     extract(freezeFixture());
     app(InventoryCountFreezeService::class)->activate([$category->id], false, $admin);
     $this->actingAs($admin);
@@ -340,8 +340,16 @@ it('saves a real draft without reserving counted products and rejects submission
     expect($order->status)->toBe('draft')->and($order->items()->count())->toBe(1)->and($variant->fresh()->stock)->toBe(10)->and(PreinvoiceDraftReservation::whereNull('released_at')->count())->toBe(0);
     $payload['intent'] = 'submit';
     $payload['autosave_uuid'] = $order->uuid;
-    $this->postJson(route('preinvoice.draft.save'), $payload)->assertStatus(422);
-    expect($variant->fresh()->stock)->toBe(10)->and($order->fresh()->status)->toBe('draft');
+    $this->post(route('preinvoice.draft.save'), $payload)
+        ->assertRedirect(route('preinvoice.draft.edit', $order->uuid))
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('warning', fn ($message) => str_contains($message, $category->name));
+    expect($variant->fresh()->stock)->toBe(10)->and($order->fresh()->status)->toBe('draft')
+        ->and($order->items()->count())->toBe(1)
+        ->and((int) $order->items()->sole()->quantity)->toBe(2)
+        ->and(PreinvoiceOrder::where('created_by', $admin->id)->count())->toBe(1)
+        ->and(PreinvoiceDraftReservation::whereNull('released_at')->count())->toBe(0)
+        ->and(\App\Models\SystemNotification::where('type', 'preinvoice_submitted')->count())->toBe(0);
     app(InventoryCountFreezeService::class)->deactivate($admin);
     $this->post(route('preinvoice.draft.save'), $payload)->assertSessionHasNoErrors();
     expect($variant->fresh()->stock)->toBe(8)->and($order->fresh()->status)->toBe('pending_finance');

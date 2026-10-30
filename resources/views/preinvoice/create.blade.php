@@ -3,6 +3,7 @@
 @push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
 
 @section('content')
+    @include('preinvoice.partials.count-freeze-notice', ['order' => $order ?? null])
 	@php
 		$order = $order ?? null;
 $customersPageUrl = $customersPageUrl ?? '/customers';
@@ -1380,6 +1381,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
 		@if(session('success'))
 			<div class="alert alert-success border-0 shadow-sm rounded-4 fw-bold py-2">✅ {{ session('success') }}</div>
+		@endif
+
+		@if(session('warning'))
+			<div class="alert alert-warning border-0 shadow-sm rounded-4 fw-bold py-2" role="status">{{ session('warning') }}</div>
 		@endif
 		@if(session('error'))
 			<div class="alert alert-danger border-0 shadow-sm rounded-4 fw-bold py-2" style="white-space:pre-wrap">{!! session('error') !!}</div>

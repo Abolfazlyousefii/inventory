@@ -30,7 +30,7 @@ class InventoryCountFreezeController extends Controller
         if ($request->boolean('enabled')) {
             $request->validate(['acknowledge' => 'accepted', 'version' => 'required|integer|min:0']);
             $result = $service->activate($data['category_ids'] ?? [], $request->boolean('all_products'), $request->user(), (int) $request->input('version'));
-            $message = 'انبارگردانی فعال شد؛ '.$result['released_rows'].' رزرو آزاد و '.$result['archived_rows'].' ردیف تاریخی بدون تغییر موجودی بایگانی شد. اسناد درگیر به پیش‌نویس برگشتند.';
+            $message = 'دستهٔ «'.$service->scopeLabel().'» بسته شد؛ '.$result['released_rows'].' رزرو آزاد و '.$result['archived_rows'].' ردیف تاریخی بدون تغییر موجودی بایگانی شد. اسناد درگیر به پیش‌نویس برگشتند. فروش فقط با بازکردن صریح دسته دوباره فعال می‌شود.';
         } else {
             $request->validate(['version' => 'required|integer|min:0']);
             $service->deactivate($request->user(), (int) $request->input('version'));
