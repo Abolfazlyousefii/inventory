@@ -69,5 +69,5 @@ test('debounced search queries the selected category while retaining unsaved zer
 test('single-product finalization cannot implicitly turn blank into zero', () => {
     assert.doesNotMatch(form, /name="confirm_empty_as_zero"/);
     assert.match(form, /s\.empty===0&&s\.err===0&&s\.total>0&&!state\.hasMore&&!state\.loading/);
-    assert.match(form, /عدد ۰ را صریحاً/);
+    assert.match(form, /مقدار اولیه صفر/);
 });

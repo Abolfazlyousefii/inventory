@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const productsNode = document.getElementById('scProducts');
     const liveSearch = document.getElementById('scLiveSearch');
     const saveAll = document.getElementById('scSaveAll');
+    const zeroUncounted = document.getElementById('scZeroUncounted');
     const draftList = document.getElementById('scDraftList');
     const finalizeAll = document.getElementById('scFinalizeAll');
     const reviewSummary = document.getElementById('scReviewSummary');
@@ -245,6 +246,10 @@ document.addEventListener('DOMContentLoaded', () => {
         input.dataset.product = String(group.id);
         input.dataset.variant = String(id);
         input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
+        if (!group.quantities.has(id) && !finalized.has(group.id)) {
+            group.quantities.set(id,'0');
+            if (group.saved) dirtyProducts.add(group.id);
+        }
         const remembered = group.quantities.get(id);
         if (remembered !== undefined) input.value = remembered;
         if (invalidCounts.has(id)) {
@@ -300,6 +305,9 @@ document.addEventListener('DOMContentLoaded', () => {
             finalizeAll.textContent = pendingOperation?.operation === 'finalize' ? 'بازیابی نتیجه ثبت نهایی' : 'ثبت نهایی همه';
         }
         if (reviewButton) reviewButton.disabled = savedMetadata.size === 0 || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        if (zeroUncounted) zeroUncounted.disabled = !allCategoryLoaded || loading || hasMore || bulkSaving || bulkFinalizing || Boolean(pendingOperation) ||
+            ![...loadedRows.values()].some(row => !finalized.has(Number(row.product_id)) && !invalidCounts.has(Number(row.variant_id)) &&
+                (entered.get(Number(row.product_id))?.get(Number(row.variant_id)) ?? '') === '');
         if (toolbar) toolbar.hidden = !selectionId;
     }
 
@@ -549,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bulkSaving || bulkFinalizing || (pendingOperation && pendingOperation.operation !== 'finalize')) return;
         if (!pendingOperation && !canFinalize()) return;
         if (!pendingOperation && !window.confirm('جمع‌بندی شمارش و اختلاف‌ها را بررسی کرده‌اید؟ همه ' + fa(savedMetadata.size) +
-            ' پیش‌نویس با یک عملیات ثبت نهایی می‌شوند و موجودی مرکزی تغییر می‌کند. دستهٔ بسته‌شده همچنان تا بازگشایی صریح بسته می‌ماند.')) return;
+            ' پیش‌نویس با یک عملیات ثبت نهایی می‌شوند و موجودی مرکزی تغییر می‌کند. ردیف‌هایی که مقدارشان صفر مانده، موجودی صفر محسوب می‌شوند. دستهٔ بسته‌شده همچنان تا بازگشایی صریح بسته می‌ماند.')) return;
         bulkFinalizing = true;
         try {
             if (!pendingOperation) pendingOperation = {operation:'finalize', payload:{request_id:requestId(),category_id:selectionId,
@@ -738,6 +746,33 @@ document.addEventListener('DOMContentLoaded', () => {
         await requestPage();
     });
     saveAll?.addEventListener('click',saveAllDrafts);
+    zeroUncounted?.addEventListener('click',() => {
+        if (zeroUncounted.disabled || loading || bulkSaving || bulkFinalizing || pendingOperation) return;
+        let count = 0;
+        for (const row of loadedRows.values()) {
+            const pid = Number(row.product_id), vid = Number(row.variant_id);
+            if (finalized.has(pid) || invalidCounts.has(vid)) continue;
+            const values = entered.get(pid);
+            if (!values || (values.get(vid) ?? '') !== '') continue;
+            values.set(vid,'0');
+            dirtyProducts.add(pid);
+            count++;
+        }
+        for (const group of groups.values()) {
+            if (dirtyProducts.has(group.id)) group.flag.textContent = 'تغییرات ذخیره‌نشده';
+            for (const input of group.tbody.querySelectorAll('.sc-actual')) {
+                const vid = Number(input.dataset.variant);
+                if (invalidCounts.has(vid) || finalized.has(group.id)) continue;
+                input.value = group.quantities.get(vid) ?? '';
+                updateDifference(group,vid);
+            }
+        }
+        reviewAcknowledged = false;
+        updateButtons();
+        renderDraftList();
+        checkpointWorkspace();
+        notice(fa(count) + ' ردیف شمارش‌نشده صفر شد؛ عددهای واردشده حفظ شدند. برای ثبت، پیش‌نویس‌ها را ذخیره و جمع‌بندی را بررسی کنید.');
+    });
     date.addEventListener('change',() => {
         if (bulkSaving || bulkFinalizing || pendingOperation) return;
         reviewAcknowledged = false;

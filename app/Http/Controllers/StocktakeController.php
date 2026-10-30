@@ -23,7 +23,7 @@ class StocktakeController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'finalized', 'cancelled'])],
             'date_from' => ['nullable', 'string', 'max:10'], 'date_to' => ['nullable', 'string', 'max:10'],
         ]);
-        $query = StockCountDocument::query()->with(['warehouse','product','creator'])->withCount('items');
+        $query = StockCountDocument::query()->whereNull('superseded_by_id')->with(['warehouse','product','category','creator'])->withCount('items');
         if (! empty($filters['status'])) $query->where('status', $filters['status']);
         if (! empty($filters['warehouse_id'])) $query->where('warehouse_id', $filters['warehouse_id']);
         $normalize = fn ($value) => strtr(trim($value), ['ي'=>'ی','ك'=>'ک','۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
@@ -34,6 +34,7 @@ class StocktakeController extends Controller
                 $search->where('document_number', 'like', $term)
                     ->orWhereRaw("REPLACE(REPLACE(description, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$term])
                     ->orWhereHas('product', fn ($q) => $q->whereRaw("REPLACE(REPLACE(name, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$term]))
+                    ->orWhere('scope_name','like',$term)
                     ->orWhereHas('creator', fn ($q) => $q->whereRaw("REPLACE(REPLACE(name, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$term]));
             });
         }
@@ -66,12 +67,9 @@ class StocktakeController extends Controller
      * Category-wide counting workspace. No stock writes are performed here:
      * each product gets its own existing draft document upon explicit save.
      */
-    public function categoryWorkspace()
+    public function categoryWorkspace(Request $request)
     {
-        return view('stocktake.category-workspace', [
-            'rootCategories' => Category::query()
-                ->whereNull('parent_id')->orderBy('name')->get(['id','name']),
-        ]);
+        return app(CategoryStocktakeController::class)->create($request);
     }
 
     public function categoryVariants(
@@ -260,6 +258,8 @@ class StocktakeController extends Controller
 
     public function show(Request $request, StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->superseded_by_id) return redirect()->route('stock-count-documents.view',$stockCountDocument->superseded_by_id);
+        if ($stockCountDocument->type === 'category') return app(CategoryStocktakeController::class)->review($stockCountDocument);
         $stockCountDocument->load(['warehouse','product','items.variant','creator','updater','finalizer','canceller','history.doer']);
         return $request->expectsJson() ? response()->json($stockCountDocument) : view('stocktake.show', ['document'=>$stockCountDocument]);
     }
@@ -267,6 +267,8 @@ class StocktakeController extends Controller
 
     public function edit(StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->superseded_by_id) return redirect()->route('stock-count-documents.edit',$stockCountDocument->superseded_by_id);
+        if ($stockCountDocument->type === 'category') return app(CategoryStocktakeController::class)->edit($stockCountDocument);
         if ($stockCountDocument->status !== 'draft') return redirect()->route('stock-count-documents.view', $stockCountDocument);
         $stockCountDocument->load(['warehouse','product']);
         return view('stocktake.form', ['mode'=>'edit','document'=>$stockCountDocument,'centralWarehouse'=>$this->service->centralWarehouse(),'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get()]);

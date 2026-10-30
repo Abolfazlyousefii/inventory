@@ -77,7 +77,7 @@
   <div class="sc-warning">
     <strong>مهم:</strong> هر محصول سند جداگانه انبارگردانی دارد. شمارش همه کالاها را یکجا ذخیره کنید؛
     سپس جمع‌بندی را بررسی و با «ثبت نهایی همه» یکجا تأیید کنید. ذخیره پیش‌نویس موجودی را تغییر نمی‌دهد.
-    برای ثبت نهایی باید تمام تنوع‌ها شمارش شوند؛ مقدار خالی خودکار صفر نمی‌شود.
+    موجودی واقعی در شمارش جدید از صفر شروع می‌شود؛ فقط تعداد کالاهای موجود را تغییر دهید. صفرهای باقی‌مانده در ثبت نهایی موجودی صفر محسوب می‌شوند. مقدار پاک‌شده شمارش‌نشده می‌ماند.
   </div>
 
   <input type="hidden" id="scDate" value="{{ now('Asia/Tehran')->format('Y-m-d') }}">
@@ -104,6 +104,7 @@
     <div id="scBulkToolbar" class="sc-bulk-toolbar" role="toolbar" aria-label="عملیات دسته‌ای شمارش" hidden>
       <div id="scToolbarStatus" class="sc-toolbar-status" role="status" aria-live="polite">ابتدا همه کالاهای دسته را دریافت کنید؛ سپس شمارش‌ها را یکجا ذخیره کنید.</div>
       <button type="button" id="scMore" class="btn btn-outline-primary" hidden>دریافت ادامه کالاها</button>
+      <button type="button" id="scZeroUncounted" class="btn btn-outline-secondary" disabled>صفرکردن شمارش‌نشده‌ها</button>
       <button type="button" id="scSaveAll" class="btn btn-success" disabled>ذخیره یکجای پیش‌نویس‌ها</button>
       <button type="button" id="scReview" class="btn btn-outline-secondary" disabled>بررسی جمع‌بندی</button>
       <button type="button" id="scFinalizeAll" class="btn btn-primary" disabled>ثبت نهایی همه</button>

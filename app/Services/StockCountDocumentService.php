@@ -91,6 +91,7 @@ class StockCountDocumentService
         return DB::transaction(function () use ($document, $payload, $userId) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
+            $this->assertNotSuperseded($document);
             $this->assertExpectedReview($document, $payload);
             $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
             $this->validateCounts((int) $document->product_id, $payload);
@@ -120,6 +121,144 @@ class StockCountDocumentService
         });
     }
 
+    /** One durable document contains the entire category snapshot, including explicit zero rows. */
+    public function saveCategoryDraft(array $payload, int $userId): StockCountDocument
+    {
+        return app(InventoryCountFreezeService::class)->forStocktake(fn () => DB::transaction(function () use ($payload, $userId) {
+            app(InventoryCountFreezeService::class)->fence();
+            $warehouse = $this->centralWarehouse();
+            Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
+            $category = Category::query()->findOrFail($payload['category_id']);
+            $document = !empty($payload['document_id'])
+                ? StockCountDocument::query()->lockForUpdate()->findOrFail($payload['document_id']) : null;
+            if (!$document && ($existing = StockCountDocument::query()->where('type','category')->where('category_id',$category->id)
+                ->where('status','draft')->whereNull('superseded_by_id')->lockForUpdate()->first())) {
+                abort(409,'برای این دسته پیش‌نویس '.$existing->document_number.' وجود دارد؛ همان سند را از آرشیو ادامه دهید. هیچ سند دیگری ساخته نشد.');
+            }
+            if ($document) {
+                abort_unless($document->type === 'category' && $document->status === 'draft'
+                    && (int) $document->category_id === (int) $category->id, 422, 'فقط پیش‌نویس همین دسته قابل ادامه است.');
+                abort_unless(!empty($payload['expected_review_token']), 409, 'نسخهٔ پیش‌نویس مشخص نیست؛ سند را دوباره باز کنید.');
+                $this->assertExpectedReview($document, $payload);
+            }
+            $variants = $this->categoryVariantsQuery((int) $category->id)->lockForUpdate()->get();
+            abort_if($variants->isEmpty(), 422, 'این دسته کالای قابل انبارگردانی ندارد.');
+            abort_if($variants->count() > 50000, 422, 'برای این تعداد تنوع، زیردستهٔ کوچک‌تری انتخاب کنید.');
+            $ids = $variants->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $payload = $this->validateCategoryCounts($ids, $payload);
+            if ($document && $document->items()->orderBy('product_variant_id')->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all() !== $ids) {
+                throw ValidationException::withMessages(['stocktake'=>'فهرست کالاهای دسته پس از شروع شمارش تغییر کرده است؛ شمارش قبلی حفظ شد. برای محدودهٔ جدید سند تازه بسازید.']);
+            }
+            $productIds = $variants->pluck('product_id')->unique()->values()->all();
+            $this->assertNoSiteHoldsForProducts($productIds);
+            if (!$document) {
+                $document = StockCountDocument::create([
+                    'document_number'=>$this->nextDocumentNumber(), 'type'=>'category', 'product_id'=>null,
+                    'category_id'=>$category->id, 'scope_name'=>$category->name, 'warehouse_id'=>$warehouse->id,
+                    'document_date'=>now('Asia/Tehran')->toDateString(), 'status'=>'draft',
+                    'description'=>'انبارگردانی یکپارچهٔ دسته '.$category->name, 'created_by'=>$userId, 'updated_by'=>$userId,
+                ]);
+                $products = Product::query()->whereIn('id', $productIds)->get()->keyBy('id');
+                $reservedByVariant = $this->reservations->quantitiesByVariant(variantIds: $ids);
+                $stocks = WarehouseStock::query()->where('warehouse_id',$warehouse->id)->whereIn('product_variant_id',$ids)
+                    ->orderBy('product_variant_id')->lockForUpdate()->get()->keyBy('product_variant_id');
+                $rows = [];
+                foreach ($variants as $variant) {
+                    $stock = $stocks->get($variant->id) ?? $this->lockOrCreateStock((int) $warehouse->id, (int) $variant->product_id, (int) $variant->id, true);
+                    $rows[] = $this->itemPayload($document, $warehouse, $products[$variant->product_id], $variant, $stock,
+                        (int) $stock->quantity, (int) $reservedByVariant->get($variant->id,0),
+                        (int) ($payload['actual_quantities'][$variant->id] ?? 0), $payload['notes'][$variant->id] ?? null);
+                    if (count($rows) >= 500) { StockCountDocumentItem::insert($rows); $rows = []; }
+                }
+                if ($rows) StockCountDocumentItem::insert($rows);
+                $action = 'created';
+            } else {
+                foreach ($document->items()->lockForUpdate()->get() as $item) {
+                    $updates = [];
+                    if (array_key_exists($item->product_variant_id, $payload['actual_quantities'] ?? [])) $updates['actual_quantity'] = (int) $payload['actual_quantities'][$item->product_variant_id];
+                    if (array_key_exists($item->product_variant_id, $payload['notes'] ?? [])) $updates['description'] = $payload['notes'][$item->product_variant_id];
+                    if ($updates) $item->update($updates);
+                }
+                $document->update(['updated_by'=>$userId]);
+                $action = 'updated';
+            }
+            $this->refreshSummary($document);
+            $this->addHistory($document->id, $action, null, ['status'=>'draft','type'=>'category'], 'ذخیرهٔ سند واحد انبارگردانی دسته', $userId);
+            return $document->fresh(['warehouse','category','items.variant']);
+        }, 3));
+    }
+
+    /** Preserve every source record and link it to the one resumable category document. */
+    public function consolidateCategoryDrafts(array $sourceIds, int $categoryId, int $userId, array $expectedTokens): StockCountDocument
+    {
+        return app(InventoryCountFreezeService::class)->forStocktake(fn () => DB::transaction(function () use ($sourceIds,$categoryId,$userId,$expectedTokens) {
+            app(InventoryCountFreezeService::class)->fence();
+            $warehouse = $this->centralWarehouse();
+            Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
+            $ids = array_values(array_unique(array_map('intval',$sourceIds)));sort($ids,SORT_NUMERIC);
+            abort_if(!$ids || count($ids)!==count($sourceIds) || min($ids)<1,422,'فهرست پیش‌نویس‌ها معتبر نیست.');
+            $sources = StockCountDocument::query()->whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get();
+            abort_unless($sources->count()===count($ids),422,'یکی از پیش‌نویس‌ها یافت نشد.');
+            $categories = Category::selfAndDescendantIds($categoryId);
+            $products = []; $actuals = []; $notes = [];
+            foreach ($sources as $source) {
+                $this->assertNotSuperseded($source);
+                abort_unless($source->type==='product' && $source->status==='draft'
+                    && (int)$source->warehouse_id===(int)$warehouse->id && $source->product
+                    && in_array((int)$source->product->category_id,$categories,true),422,'همهٔ اسناد باید پیش‌نویس همین دسته و انبار باشند.');
+                abort_if(in_array((int)$source->product_id,$products,true),422,'برای یک محصول چند پیش‌نویس وجود دارد؛ ابتدا مشخص کنید کدام شمارش معتبر است.');
+                abort_unless(hash_equals($this->reviewToken($source),(string)($expectedTokens[$source->id]??'')),409,'پیش‌نویس‌ها پس از بررسی تغییر کرده‌اند؛ ابتدا دوباره بررسی کنید.');
+                $products[] = (int)$source->product_id;
+                foreach ($source->items()->lockForUpdate()->get() as $item) {
+                    $actuals[$item->product_variant_id] = (int)($item->actual_quantity ?? 0);
+                    $notes[$item->product_variant_id] = $item->description;
+                }
+            }
+            $document = $this->saveCategoryDraft(['category_id'=>$categoryId,'actual_quantities'=>$actuals,'notes'=>$notes],$userId);
+            $items = $document->items()->get()->keyBy('product_variant_id');
+            foreach ($sources as $source) {
+                foreach ($source->items()->get() as $old) {
+                    $fresh = $items->get($old->product_variant_id);
+                    if (!$fresh || (int)$old->system_available_at_start!==(int)$fresh->system_available_at_start
+                        || (int)$old->reserved_at_start!==(int)$fresh->reserved_at_start
+                        || ($old->warehouse_stock_updated_at_start && $fresh->warehouse_stock_updated_at_start
+                            && !$old->warehouse_stock_updated_at_start->equalTo($fresh->warehouse_stock_updated_at_start))) {
+                        throw ValidationException::withMessages(['stocktake'=>'موجودی یا رزرو یکی از پیش‌نویس‌های قبلی تغییر کرده است؛ هیچ سندی تجمیع نشد و شمارش‌ها حفظ شدند.']);
+                    }
+                }
+                $source->update(['superseded_by_id'=>$document->id,'updated_by'=>$userId]);
+                $this->addHistory($source->id,'consolidated',null,['document_id'=>$document->id], 'ادامهٔ شمارش در سند واحد '.$document->document_number,$userId);
+            }
+            $this->addHistory($document->id,'consolidated',null,['source_document_ids'=>$ids], 'تجمیع پیش‌نویس‌های قبلی با حفظ کامل سابقه و شمارش',$userId);
+            return $document->fresh(['items.variant','category','warehouse']);
+        },3));
+    }
+
+    private function categoryVariantsQuery(int $categoryId): \Illuminate\Database\Eloquent\Builder
+    {
+        $products = Product::query()->select('id')->whereIn('category_id', Category::selfAndDescendantIds($categoryId));
+        if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'is_bundle') && \Illuminate\Support\Facades\Schema::hasColumn('products', 'bundle_stock_mode')) {
+            $products->where(fn ($q) => $q->where('is_bundle', false)->orWhereNull('is_bundle')->orWhere('bundle_stock_mode','<>','automatic')->orWhereNull('bundle_stock_mode'));
+        }
+        return ProductVariant::query()->whereIn('product_id', $products)->orderBy('id');
+    }
+
+    private function validateCategoryCounts(array $allowedIds, array $payload): array
+    {
+        foreach ($payload['actual_quantities'] ?? [] as $id => $value) if ($value === null || $value === '') $payload['actual_quantities'][$id] = 0;
+        \Illuminate\Support\Facades\Validator::make($payload, [
+            'actual_quantities'=>['sometimes','array','max:50000'], 'actual_quantities.*'=>['integer','min:0','max:2147483647'],
+            'notes'=>['sometimes','array','max:50000'], 'notes.*'=>['nullable','string','max:1000'],
+        ])->validate();
+        $allowed = array_fill_keys($allowedIds, true);
+        foreach (array_unique(array_merge(array_keys($payload['actual_quantities'] ?? []), array_keys($payload['notes'] ?? []))) as $id) {
+            if (!ctype_digit((string) $id) || (string) (int) $id !== (string) $id || !isset($allowed[(int) $id])) {
+                throw ValidationException::withMessages(['actual_quantities'=>'تنوع واردشده خارج از محدودهٔ سند است؛ هیچ تغییری ذخیره نشد.']);
+            }
+        }
+        return $payload;
+    }
+
     public function finalize(StockCountDocument $document, int $userId, bool $confirmEmptyAsZero = false, array $payload = []): StockCountDocument
     {
         // Explicit zero is a valid count; an empty value is always unresolved.
@@ -128,11 +267,15 @@ class StockCountDocumentService
             app(InventoryCountFreezeService::class)->fence();
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
-            if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
+            $this->assertNotSuperseded($document);
+            if (!in_array($document->type ?? 'product', ['product','category'], true)) abort(422, 'نوع سند قابل اعمال نیست.');
             $this->assertExpectedReview($document, $payload);
-            $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
-            $this->validateCounts((int) $document->product_id, $payload);
-            $this->assertNoSiteHolds((int) $document->product_id);
+            $categoryDocument = $document->type === 'category';
+            $productIds = $categoryDocument ? $document->items()->pluck('product_id')->unique()->values()->all() : [(int) $document->product_id];
+            foreach (Product::query()->whereIn('id', $productIds)->get() as $product) $this->assertCountableProduct($product);
+            if ($categoryDocument) $payload = $this->validateCategoryCounts($document->items()->pluck('product_variant_id')->all(), $payload);
+            else $this->validateCounts((int) $document->product_id, $payload);
+            $this->assertNoSiteHoldsForProducts($productIds);
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -169,7 +312,7 @@ class StockCountDocumentService
                 );
             }
             $variantIds = $items->pluck('product_variant_id')->map(fn($v)=>(int)$v)->all();
-            $currentIds = ProductVariant::query()->where('product_id', (int) $document->product_id)->orderBy('id')->pluck('id')->map(fn($v)=>(int)$v)->all();
+            $currentIds = ($categoryDocument ? $this->categoryVariantsQuery((int) $document->category_id) : ProductVariant::query()->where('product_id', (int) $document->product_id)->orderBy('id'))->pluck('id')->map(fn($v)=>(int)$v)->all();
             $conflicts = [];
             if ($currentIds !== $variantIds) {
                 $conflicts[] = [
@@ -185,10 +328,11 @@ class StockCountDocumentService
             }
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->lockForUpdate()->get()->keyBy('id');
             $stocks = WarehouseStock::query()->where('warehouse_id', $warehouse->id)->whereIn('product_variant_id', $variantIds)->lockForUpdate()->get()->keyBy('product_variant_id');
-            foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$document->product_id, (int)$item->product_variant_id, true);
+            $categoryReservations = $categoryDocument ? $this->reservations->quantitiesByVariant(variantIds: $variantIds) : null;
+            foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$item->product_id, (int)$item->product_variant_id, true);
             foreach ($items as $item) {
                 $variant = $variants[(int)$item->product_variant_id] ?? null; $stock = $stocks[(int)$item->product_variant_id];
-                $reserved = $variant ? $this->activeReserved($variant) : 0; $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
+                $reserved = $categoryDocument ? (int) $categoryReservations->get($item->product_variant_id,0) : ($variant ? $this->activeReserved($variant) : 0); $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
                 if ($available !== (int)$item->system_available_at_start) $conflicts[] = $this->finalizeConflict($item, 'stock_changed', 'موجودی این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
                 if ($item->warehouse_stock_updated_at_start && $stock->updated_at && ! $item->warehouse_stock_updated_at_start->equalTo($stock->updated_at)) {
                     $conflicts[] = $this->finalizeConflict($item, 'stock_changed_since_snapshot', 'موجودی این تنوع پس از شروع شمارش جابه‌جا شده است؛ حتی اگر دوباره به همان عدد برگشته باشد، شمارش باید بازبینی شود.', $actual, $reserved, $available);
@@ -205,7 +349,7 @@ class StockCountDocumentService
                 $item->update(['actual_quantity'=>$actual, 'new_available'=>$newAvailable, 'difference_quantity'=>$diff, 'system_quantity'=>(int)$item->system_available_at_start]);
                 if ($diff !== 0) StockMovement::create(['product_id'=>(int)$item->product_id,'product_variant_id'=>(int)$item->product_variant_id,'warehouse_id'=>(int)$warehouse->id,'user_id'=>$userId,'type'=>$diff>0?'in':'out','reason'=>'adjustment','transaction_type'=>'stocktake_adjustment','quantity'=>abs($newAvailable-$before),'stock_before'=>$before,'stock_after'=>$newAvailable,'note'=>'تعدیل ناشی از انبارگردانی سند '.$document->document_number,'reference'=>$document->document_number,'reference_type'=>'stock_count_document','reference_id'=>$document->id]);
             }
-            WarehouseStockService::syncProductStockFromCentral((int)$document->product_id);
+            foreach ($productIds as $productId) WarehouseStockService::syncProductStockFromCentral((int) $productId);
             $this->refreshSummary($document);
             $document->update(['status'=>'finalized','finalized_by'=>$userId,'finalized_at'=>now(),'updated_by'=>$userId]);
             $this->addHistory($document->id, 'finalized', null, ['status'=>'finalized'], 'اعمال انبارگردانی محصولی در انبار مرکزی', $userId);
@@ -218,6 +362,7 @@ class StockCountDocumentService
     {
         return DB::transaction(function () use ($document, $userId, $reason) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
+            $this->assertNotSuperseded($document);
             if ($document->status === 'cancelled') return $document;
             if ($document->status !== 'draft') abort(422, 'لغو سند اعمال‌شده مجاز نیست.');
             $document->update(['status'=>'cancelled','cancelled_by'=>$userId,'cancelled_at'=>now(),'cancel_reason'=>$reason,'updated_by'=>$userId]);
@@ -282,6 +427,11 @@ class StockCountDocumentService
         }
     }
 
+    private function assertNotSuperseded(StockCountDocument $document): void
+    {
+        abort_if((bool) $document->superseded_by_id, 409, 'این پیش‌نویس در سند واحد شمارهٔ '.$document->superseded_by_id.' تجمیع شده است؛ شمارش را از همان سند ادامه دهید.');
+    }
+
     private function assertCountableProduct(Product $product): void
     {
         if ($product->is_bundle && $product->bundle_stock_mode === 'automatic') {
@@ -291,10 +441,15 @@ class StockCountDocumentService
 
     private function assertNoSiteHolds(int $productId): void
     {
+        $this->assertNoSiteHoldsForProducts([$productId]);
+    }
+
+    private function assertNoSiteHoldsForProducts(array $productIds): void
+    {
         if (! \Illuminate\Support\Facades\Schema::hasTable('site_stock_holds')
             || ! \Illuminate\Support\Facades\Schema::hasTable('site_stock_hold_lines')) return;
         $hold = \App\Models\SiteStockHold::query()->whereIn('status', ['held', 'payment_confirmed'])
-            ->whereHas('lines', fn ($query) => $query->where('product_id', $productId))
+            ->whereHas('lines', fn ($query) => $query->whereIn('product_id', $productIds))
             ->lockForUpdate()->first(['id', 'site_order_id']);
         if ($hold) throw ValidationException::withMessages(['stocktake' => 'این کالا رزرو فعال سفارش سایت شمارهٔ '.$hold->site_order_id.' دارد؛ ابتدا سفارش سایت را تعیین تکلیف کنید. شمارش اعمال نشد.']);
     }

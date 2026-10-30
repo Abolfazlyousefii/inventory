@@ -44,7 +44,7 @@ function fixture({allowConfirm = true, customRows, rejectBulk = false, rejectFin
         ['stocktakeCategoryApp', 'category', 'subcategory', 'scShow', 'scMore',
             'scStatus', 'scProducts', 'scLiveSearch', 'scClose', 'stocktakeForm', 'scSaveAll', 'scDraftList',
             'scFinalizeAll', 'scReviewSummary', 'scToolbarStatus', 'scReview', 'scBulkToolbar',
-            'scRecovery', 'scRestore', 'scDiscardRecovery']
+            'scRecovery', 'scRestore', 'scDiscardRecovery', 'scZeroUncounted']
             .map(id => [id, element()])
     );
     nodes.stocktakeCategoryApp.dataset = {
@@ -150,6 +150,54 @@ async function until(predicate) {
     assert.ok(predicate(), 'expected stocktake UI state not reached');
 }
 
+test('new category rows start at explicit zero including later pages, without writing until save', async () => {
+    const ui = fixture({paged:true});
+    await ui.nodes.scShow.on_click();
+    assert.equal(ui.inputs()[0].value, '0');
+    ui.enter(ui.inputs()[0], '12');
+    await ui.nodes.scMore.on_click();
+    assert.deepEqual(ui.inputs().map(input=>input.value), ['12','0']);
+    assert.equal(ui.requests.filter(r=>r.method==='POST').length, 0);
+    await ui.nodes.scSaveAll.on_click();
+    const body=ui.requests.find(r=>r.method==='POST').payload;
+    assert.equal(body.products[0].actual_quantities['101'], '12');
+    assert.equal(body.products[1].actual_quantities['102'], '0');
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true, 'explicit review still required');
+});
+
+test('zero uncounted fills saved blank rows hidden by search and preserves entered positive counts', async () => {
+    const ui = fixture();
+    await ui.nodes.scShow.on_click();
+    ui.enter(ui.inputs()[0], ''); ui.enter(ui.inputs()[1], '9');
+    await ui.nodes.scSaveAll.on_click();
+    ui.nodes.scLiveSearch.value='filter'; ui.nodes.scLiveSearch.on_input();
+    await new Promise(resolve=>setTimeout(resolve,350));
+    await until(()=>ui.inputs().length===1);
+    await ui.nodes.scZeroUncounted.on_click();
+    assert.equal(ui.inputs()[0].value,'9');
+    assert.equal(ui.nodes.scSaveAll.disabled,false);
+    await ui.nodes.scSaveAll.on_click();
+    const body=ui.requests.filter(r=>r.method==='POST').at(-1).payload;
+    assert.equal(body.products.length,1);
+    assert.equal(body.products[0].document_id,57);
+    assert.equal(body.products[0].actual_quantities['101'],'0');
+    assert.equal(ui.requests.filter(r=>r.url.endsWith('category-finalize')).length,0);
+});
+
+test('zero uncounted waits for all category pages and does not hide invalid quantities', async () => {
+    const ui = fixture({paged:true});
+    await ui.nodes.scShow.on_click();
+    ui.enter(ui.inputs()[0],'');
+    assert.equal(ui.nodes.scZeroUncounted.disabled,true);
+    await ui.nodes.scMore.on_click();
+    ui.enter(ui.inputs()[1],'bad');
+    await ui.nodes.scZeroUncounted.on_click();
+    assert.equal(ui.inputs()[0].value,'0');
+    assert.equal(ui.inputs()[1].value,'bad');
+    assert.equal(ui.nodes.scSaveAll.disabled,true);
+    assert.equal(ui.requests.filter(r=>r.method==='POST').length,0);
+});
+
 test('one bulk save submits both products, preserves explicit zero and lists review links', async () => {
     const ui = fixture();
     await ui.nodes.scShow.on_click();
@@ -174,6 +222,7 @@ test('bulk save includes counts hidden by live search and never fills blank quan
     const ui = fixture();
     await ui.nodes.scShow.on_click();
     ui.enter(ui.inputs()[0], '5');
+    ui.enter(ui.inputs()[1], '');
     ui.nodes.scLiveSearch.value = 'filter';
     ui.nodes.scLiveSearch.on_input();
     await new Promise(resolve => setTimeout(resolve, 350));
@@ -182,7 +231,7 @@ test('bulk save includes counts hidden by live search and never fills blank quan
     const payload = ui.requests.find(x => x.method === 'POST').payload;
     assert.equal(payload.products.length, 2);
     assert.equal(payload.products[0].actual_quantities['101'], '5');
-    assert.deepEqual(Object.keys(payload.products[1].actual_quantities), []);
+    assert.equal(payload.products[1].actual_quantities['102'], null);
 });
 
 test('an invalid count hidden by live search blocks every bulk write', async () => {

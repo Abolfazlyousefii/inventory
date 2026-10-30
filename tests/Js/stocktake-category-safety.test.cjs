@@ -132,6 +132,7 @@ test('Persian zero is sent as explicit 0 while blank remains missing; draft neve
     await until(() => ui.inputs().length === 2);
     const [first, second] = ui.inputs();
     ui.enter(first, '۰');
+    ui.enter(second, '');
     assert.equal(first.value, '0');
     assert.equal(second.value, '');
 
@@ -141,7 +142,7 @@ test('Persian zero is sent as explicit 0 while blank remains missing; draft neve
     assert.equal(writes.length, 1);
     assert.equal(writes[0].payload.products[0].product_id, 7);
     assert.equal(writes[0].payload.products[0].actual_quantities['101'], '0');
-    assert.equal(Object.hasOwn(writes[0].payload.products[0].actual_quantities, '102'), false);
+    assert.equal(writes[0].payload.products[0].actual_quantities['102'], null);
     assert.ok(!ui.requests.some(x => x.method === 'POST' && x.url?.includes('finalize')));
     assert.ok(ui.inputs().every(x => !x.disabled), 'drafts remain editable until explicit finalization');
     assert.equal(ui.nodes.scFinalizeAll.disabled, true, 'blank variant still blocks finalization');

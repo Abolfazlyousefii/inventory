@@ -51,5 +51,5 @@ test('layout preserves reviewed complete-only explicit bulk finalization', () =>
     assert.match(source, /if \(!pendingOperation && !window\.confirm\(/);
     assert.match(source, /value === '' \? null : value/);
     assert.doesNotMatch(source, /confirm_empty_as_zero|data-save-product/);
-    assert.match(form, /عدد ۰ را صریحاً/);
+    assert.match(form, /مقدار اولیه صفر/);
 });

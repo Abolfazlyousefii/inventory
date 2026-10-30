@@ -18,6 +18,28 @@ test('stocktaking form JavaScript remains syntactically valid', () => {
     assert.doesNotThrow(() => new vm.Script(js));
 });
 
+test('new single-product counts default to zero while existing draft blanks and explicit edits are retained', () => {
+    const snippet = js.match(/function initialActual\(r\)\{[^\n]+\}/);
+    assert.ok(snippet);
+    const context = {docId:0,oldActuals:{}}; vm.createContext(context); vm.runInContext(snippet[0],context);
+    assert.equal(context.initialActual({variant_id:1,actual_physical:null}),'0');
+    context.docId=208;
+    assert.equal(context.initialActual({variant_id:1,actual_physical:null}),'');
+    assert.equal(context.initialActual({variant_id:1,actual_physical:7}),'7');
+    context.oldActuals={1:''};
+    assert.equal(context.initialActual({variant_id:1,actual_physical:7}),'');
+});
+
+test('single-product zero-uncounted preserves existing positive and zero values in every loaded page', () => {
+    const snippet = js.match(/function zeroUncountedValues\(\)\{[^\n]+\}/);
+    assert.ok(snippet);
+    const context = {state:{rows:[{variant_id:1},{variant_id:2},{variant_id:3},{variant_id:4}],actual:{1:'7',2:'0',3:''}}};
+    vm.createContext(context); vm.runInContext(snippet[0],context); context.zeroUncountedValues();
+    assert.deepEqual(context.state.actual,{1:'7',2:'0',3:'0',4:'0'});
+    assert.match(js,/await ensureAllLoaded\(\)/);
+    assert.match(blade,/data-tool="zeroUncounted"/);
+});
+
 test('queue indicator shows each stage but never changes actual input', () => {
     const snippet = js.match(/function flowHtml\(r\)\{[^\n]+\}/);
     assert.ok(snippet, 'queue row formatter exists');

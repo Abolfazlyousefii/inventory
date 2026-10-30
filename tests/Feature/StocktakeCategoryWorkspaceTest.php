@@ -83,13 +83,14 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
         $this->assertSame(4,(int)WarehouseStock::where('product_variant_id',$v2->id)->value('quantity'));
     }
 
-    public function test_stocktake_form_explains_explicit_zero_and_embeds_live_search_in_same_page(): void
+    public function test_stocktake_form_explains_initial_zero_and_embeds_live_search_in_same_page(): void
     {
         $this->signIn();
         $this->fixture();
         $html=$this->get(route('stock-count-documents.create'))->assertOk()->getContent();
         $this->assertStringContainsString('id="scLiveSearch"',$html);
-        $this->assertStringContainsString('عدد ۰ را صریحاً', $html);
+        $this->assertStringContainsString('مقدار اولیه صفر', $html);
+        $this->assertStringContainsString('id="scZeroUncounted"', $html);
         $this->assertStringNotContainsString('name="confirm_empty_as_zero"',$html);
     }
 
@@ -112,20 +113,19 @@ final class StocktakeCategoryWorkspaceTest extends TestCase
             ->assertUnprocessable();
     }
 
-    public function test_original_legacy_group_page_remains_accessible_but_new_form_is_inline(): void
+    public function test_category_entry_opens_one_resumable_document_and_original_form_links_to_it(): void
     {
         $this->signIn();
         $this->fixture();
         $this->get(route('stock-count-documents.category-workspace'))->assertOk()
             ->assertSee('انبارگردانی دسته‌ای')
-            ->assertSee('ذخیره پیش‌نویس')
-            ->assertSee('نمایش محصولات دسته')
-            ->assertSee('هر محصول سند جداگانه')
-            ->assertSee('id="stocktakeCategoryApp"',false);
+            ->assertSee('ذخیره یک سند و بررسی شمارش')
+            ->assertSee('همه کالاهای محدوده، یک سند انبارگردانی')
+            ->assertDontSee('هر محصول سند جداگانه')
+            ->assertSee('id="categoryCountApp"',false);
         $this->get(route('stock-count-documents.create'))->assertOk()
-            ->assertSee('نمایش کالاهای دسته در همین صفحه')
-            ->assertSee('data-embedded="1"', false)
-            ->assertDontSee(route('stock-count-documents.category-workspace'),false);
+            ->assertSee('شروع شمارش با یک سند دسته‌ای')
+            ->assertSee(route('stock-count-documents.category-workspace'),false);
     }
 
     public function test_category_view_matches_the_original_single_product_stock_count_numbers(): void

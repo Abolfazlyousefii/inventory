@@ -17,6 +17,7 @@ class StocktakeArchiveFiltersTest extends TestCase
         Schema::create('stock_count_documents', function (Blueprint $t) {
             $t->id(); $t->string('document_number'); $t->date('document_date'); $t->string('status'); $t->string('description')->nullable();
             $t->integer('product_id'); $t->integer('warehouse_id'); $t->integer('created_by');
+            $t->integer('category_id')->nullable(); $t->string('scope_name')->nullable(); $t->integer('superseded_by_id')->nullable();
             $t->integer('total_increase')->default(0); $t->integer('total_decrease')->default(0); $t->timestamps();
         });
         Schema::create('stock_count_document_items', function (Blueprint $t) { $t->id(); $t->integer('document_id'); });

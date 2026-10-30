@@ -48,7 +48,7 @@ final class StocktakeRequestService
     public function status(Request $request, string $id): JsonResponse
     {
         $data = Validator::make(['request_id' => $id, 'operation' => $request->query('operation')], [
-            'request_id' => 'required|uuid', 'operation' => 'required|in:drafts,finalize',
+            'request_id' => 'required|uuid', 'operation' => 'required|in:drafts,finalize,unified_save,unified_finalize',
         ])->validate();
         $row = DB::table('stocktake_requests')->where('user_id', $request->user()->id)
             ->where('operation', $data['operation'])->where('request_id', $id)->whereNotNull('response')->first();
