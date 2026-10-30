@@ -42,10 +42,11 @@ class StockCountDocumentService
             (int) $item->product_variant_id,
             $item->actual_quantity === null ? null : (int) $item->actual_quantity,
             (int) $item->system_available_at_start, (int) $item->reserved_at_start,
+            $item->description,
         ])->all();
         return hash('sha256', json_encode([
             (int) $document->id, (int) $document->product_id,
-            $document->document_date?->format('Y-m-d'), $rows,
+            $document->document_date?->format('Y-m-d'), $document->description, $rows,
         ], JSON_THROW_ON_ERROR));
     }
 
@@ -55,6 +56,10 @@ class StockCountDocumentService
             app(InventoryCountFreezeService::class)->fence();
             $warehouse = $this->centralWarehouse();
             $product = Product::query()->findOrFail((int) $payload['product_id']);
+            $this->assertCountableProduct($product);
+            $this->validateCounts((int) $product->id, $payload);
+            $this->assertNoSiteHolds((int) $product->id);
+            Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
             $document = StockCountDocument::create([
                 'document_number' => $this->nextDocumentNumber(), 'type' => 'product', 'warehouse_id' => $warehouse->id,
                 'product_id' => $product->id, 'document_date' => $payload['document_date'], 'status' => 'draft',
@@ -86,6 +91,14 @@ class StockCountDocumentService
         return DB::transaction(function () use ($document, $payload, $userId) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
+            $this->assertExpectedReview($document, $payload);
+            $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
+            $this->validateCounts((int) $document->product_id, $payload);
+            $currentVariantIds = ProductVariant::query()->where('product_id', $document->product_id)->orderBy('id')->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $savedVariantIds = $document->items()->orderBy('product_variant_id')->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all();
+            if ($currentVariantIds !== $savedVariantIds) {
+                throw ValidationException::withMessages(['actual_quantities' => 'تنوع‌های این محصول پس از ایجاد سند تغییر کرده‌اند؛ شمارش‌های قبلی حفظ شد. برای فهرست جدید سند تازه بسازید.']);
+            }
             $actuals = $payload['actual_quantities'] ?? [];
             $notes = $payload['notes'] ?? [];
             $document->update(['document_date' => $payload['document_date'], 'description' => $payload['description'] ?? null, 'updated_by' => $userId]);
@@ -116,6 +129,10 @@ class StockCountDocumentService
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
             if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
+            $this->assertExpectedReview($document, $payload);
+            $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
+            $this->validateCounts((int) $document->product_id, $payload);
+            $this->assertNoSiteHolds((int) $document->product_id);
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -173,6 +190,9 @@ class StockCountDocumentService
                 $variant = $variants[(int)$item->product_variant_id] ?? null; $stock = $stocks[(int)$item->product_variant_id];
                 $reserved = $variant ? $this->activeReserved($variant) : 0; $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
                 if ($available !== (int)$item->system_available_at_start) $conflicts[] = $this->finalizeConflict($item, 'stock_changed', 'موجودی این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
+                if ($item->warehouse_stock_updated_at_start && $stock->updated_at && ! $item->warehouse_stock_updated_at_start->equalTo($stock->updated_at)) {
+                    $conflicts[] = $this->finalizeConflict($item, 'stock_changed_since_snapshot', 'موجودی این تنوع پس از شروع شمارش جابه‌جا شده است؛ حتی اگر دوباره به همان عدد برگشته باشد، شمارش باید بازبینی شود.', $actual, $reserved, $available);
+                }
                 if ($reserved !== (int)$item->reserved_at_start) $conflicts[] = $this->finalizeConflict($item, 'reservation_changed', 'رزرو فعال این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
                 if ($actual < $reserved) $conflicts[] = $this->finalizeConflict($item, 'actual_below_reserved', 'موجودی واقعی کمتر از رزرو فعال است.', $actual, $reserved, $available);
             }
@@ -237,11 +257,62 @@ class StockCountDocumentService
         ];
     }
 
+    private function validateCounts(int $productId, array $payload): void
+    {
+        \Illuminate\Support\Facades\Validator::make($payload, [
+            'actual_quantities' => ['nullable', 'array'],
+            'actual_quantities.*' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'notes' => ['nullable', 'array'], 'notes.*' => ['nullable', 'string', 'max:1000'],
+        ])->validate();
+        $keys = array_unique(array_merge(array_keys($payload['actual_quantities'] ?? []), array_keys($payload['notes'] ?? [])));
+        if ($keys === []) return;
+        $allowed = ProductVariant::query()->where('product_id', $productId)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        foreach ($keys as $key) {
+            if (! ctype_digit((string) $key) || (string) (int) $key !== (string) $key || ! in_array((int) $key, $allowed, true)) {
+                throw ValidationException::withMessages(['actual_quantities' => 'تنوع واردشده متعلق به این کالا نیست؛ هیچ تغییری اعمال نشد.']);
+            }
+        }
+    }
+
+    private function assertExpectedReview(StockCountDocument $document, array $payload): void
+    {
+        if (array_key_exists('expected_review_token', $payload)
+            && ! hash_equals($this->reviewToken($document), (string) $payload['expected_review_token'])) {
+            abort(409, 'این پیش‌نویس در صفحهٔ دیگری تغییر کرده است؛ نسخهٔ جدید را باز کنید. هیچ شمارشی بازنویسی یا اعمال نشد.');
+        }
+    }
+
+    private function assertCountableProduct(Product $product): void
+    {
+        if ($product->is_bundle && $product->bundle_stock_mode === 'automatic') {
+            throw ValidationException::withMessages(['product_id' => 'موجودی بستهٔ خودکار از قطعات آن محاسبه می‌شود؛ قطعات را انبارگردانی کنید.']);
+        }
+    }
+
+    private function assertNoSiteHolds(int $productId): void
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('site_stock_holds')
+            || ! \Illuminate\Support\Facades\Schema::hasTable('site_stock_hold_lines')) return;
+        $hold = \App\Models\SiteStockHold::query()->whereIn('status', ['held', 'payment_confirmed'])
+            ->whereHas('lines', fn ($query) => $query->where('product_id', $productId))
+            ->lockForUpdate()->first(['id', 'site_order_id']);
+        if ($hold) throw ValidationException::withMessages(['stocktake' => 'این کالا رزرو فعال سفارش سایت شمارهٔ '.$hold->site_order_id.' دارد؛ ابتدا سفارش سایت را تعیین تکلیف کنید. شمارش اعمال نشد.']);
+    }
+
     private function itemPayload($document,$warehouse,$product,$variant,$stock,int $available,int $reserved,?int $actual,?string $note): array
     { $expected=$available+$reserved; return ['document_id'=>$document->id,'warehouse_id'=>$warehouse->id,'product_id'=>$product->id,'product_variant_id'=>$variant->id,'warehouse_stock_id'=>$stock->id,'product_name_snapshot'=>$product->name,'variant_name_snapshot'=>$variant->variant_name ?: $variant->variety_name ?: ('#'.$variant->id),'sku_snapshot'=>$variant->variant_code ?: $variant->variety_code,'system_quantity'=>$available,'system_available_at_start'=>$available,'reserved_at_start'=>$reserved,'expected_physical_at_start'=>$expected,'actual_quantity'=>$actual,'new_available'=>null,'difference_quantity'=>$actual===null?0:$actual-$expected,'warehouse_stock_updated_at_start'=>$stock->updated_at,'stock_updated_at_start'=>$variant->updated_at,'description'=>$note,'created_at'=>now(),'updated_at'=>now()]; }
     private function itemResource($item): array { $actual=$item->actual_quantity; return ['variant_id'=>(int)$item->product_variant_id,'name'=>$item->variant_name_snapshot,'sku'=>$item->sku_snapshot,'barcode'=>$item->sku_snapshot,'sales_enabled'=>(bool)($item->variant?->sales_enabled && $item->variant?->is_active),'system_available'=>(int)$item->system_available_at_start,'active_reserved'=>(int)$item->reserved_at_start,'expected_physical'=>(int)$item->expected_physical_at_start,'stock_updated_at'=>$item->warehouse_stock_updated_at_start?->toDateTimeString(),'actual_physical'=>$actual,'new_available'=>$actual===null?null:$actual-(int)$item->reserved_at_start,'difference'=>$actual===null?null:$actual-(int)$item->expected_physical_at_start,'note'=>$item->description]; }
     private function lockOrCreateStock(int $warehouseId,int $productId,int $variantId,bool $lock): WarehouseStock { $q=WarehouseStock::query()->where('warehouse_id',$warehouseId)->where('product_id',$productId)->where('product_variant_id',$variantId); if($lock)$q->lockForUpdate(); $s=$q->first(); return $s ?: WarehouseStock::create(['warehouse_id'=>$warehouseId,'product_id'=>$productId,'product_variant_id'=>$variantId,'quantity'=>0]); }
     private function refreshSummary(StockCountDocument $document): void { $items=$document->items()->get(); $actualTotal=0;$inc=0;$dec=0;$counted=0;$zero=0;$incC=0;$decC=0; foreach($items as $i){$a=$i->actual_quantity; if($a===null)continue; $counted++; $final=(int)$a; if($final===0)$zero++; $actualTotal+=$final; $d=$final-(int)$i->expected_physical_at_start; if($d>0){$inc+=$d;$incC++;} if($d<0){$dec+=abs($d);$decC++;}} $document->update(['variants_count'=>$items->count(),'counted_count'=>$counted,'zeroed_count'=>$zero,'increased_count'=>$incC,'decreased_count'=>$decC,'total_before'=>(int)$items->sum('expected_physical_at_start'),'total_actual'=>$actualTotal,'total_increase'=>$inc,'total_decrease'=>$dec]); }
     private function addHistory(int $documentId,string $actionType,mixed $oldValue,mixed $newValue,?string $description,int $userId): void { StockCountDocumentHistory::create(['document_id'=>$documentId,'action_type'=>$actionType,'old_value'=>$oldValue,'new_value'=>$newValue,'description'=>$description,'done_by'=>$userId,'done_at'=>now()]); }
-    private function nextDocumentNumber(): string { $prefix='STC-'.now()->format('Ymd').'-'; $last=StockCountDocument::query()->where('document_number','like',$prefix.'%')->orderByDesc('id')->value('document_number'); return $prefix.str_pad((string)(($last?(int)substr($last,-4):0)+1),4,'0',STR_PAD_LEFT); }
+    private function nextDocumentNumber(): string
+    {
+        $prefix = 'STC-'.now('Asia/Tehran')->format('Ymd').'-';
+        // The warehouse row is the sequence mutex. A locking read is essential:
+        // MySQL REPEATABLE READ may already hold an older snapshot before waiting.
+        $last = StockCountDocument::query()->where('document_number', 'like', $prefix.'%')
+            ->orderByDesc('id')->lockForUpdate()->value('document_number');
+        $sequence = $last ? (int) substr($last, strlen($prefix)) : 0;
+        return $prefix.str_pad((string) ($sequence + 1), 4, '0', STR_PAD_LEFT);
+    }
 }

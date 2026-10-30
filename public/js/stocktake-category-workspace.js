@@ -20,6 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const toolbarStatus = document.getElementById('scToolbarStatus');
     const reviewButton = document.getElementById('scReview');
     const toolbar = document.getElementById('scBulkToolbar');
+    const recoveryPanel = document.getElementById('scRecovery');
+    const restoreButton = document.getElementById('scRestore');
+    const discardRecovery = document.getElementById('scDiscardRecovery');
+    const ownerId = String(app.dataset.userId || '');
+    const storageKey = ownerId ? 'inventory.stocktake.workspace.v1:' + ownerId : '';
 
     const groups = new Map();
     // Retain unsaved counts and saved draft links between searches.
@@ -32,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedMetadata = new Map();
     const finalized = new Set();
     const loadedRows = new Map();
+    const knownVariantCounts = new Map();
     let bulkSaving = false;
     let bulkFinalizing = false;
     let allCategoryLoaded = false;
@@ -44,6 +50,55 @@ document.addEventListener('DOMContentLoaded', () => {
     let loading = false;
     let loadingController = null;
     let sequence = 0;
+    let pendingOperation = null;
+    let scopeCategory = '';
+    let scopeSubcategory = '';
+    let recoveredSnapshot = readWorkspace();
+
+    function readWorkspace() {
+        if (!storageKey) return null;
+        try {
+            const value = JSON.parse(globalThis.sessionStorage.getItem(storageKey) || 'null');
+            return value && value.version === 1 && value.ownerId === ownerId &&
+                Number.isSafeInteger(value.selectionId) && value.selectionId > 0 &&
+                Array.isArray(value.rows) && value.rows.length <= 20000 && Array.isArray(value.entered) &&
+                Array.isArray(value.metadata) ? value : null;
+        } catch (_) { return null; }
+    }
+
+    function persistWorkspace() {
+        if (!storageKey || !selectionId) return true;
+        try {
+            globalThis.sessionStorage.setItem(storageKey, JSON.stringify({
+                version:1, ownerId, selectionId, scopeCategory, scopeSubcategory, date:date.value,
+                rows:[...loadedRows.values()], entered:[...entered].map(([id, values]) => [id,[...values]]),
+                metadata:[...savedMetadata], knownProducts:[...knownProducts], invalidCounts:[...invalidCounts],
+                dirtyProducts:[...dirtyProducts], finalized:[...finalized], saved:[...saved],
+                pendingOperation,
+            }));
+            return true;
+        } catch (_) { return false; }
+    }
+
+    function clearRecovery() {
+        if (storageKey) {
+            try { globalThis.sessionStorage.removeItem(storageKey); } catch (_) {}
+        }
+        recoveredSnapshot = null;
+        if (recoveryPanel) recoveryPanel.hidden = true;
+    }
+
+    function checkpointWorkspace() {
+        if (!persistWorkspace()) {
+            notice('نسخه بازیابی شمارش در مرورگر حفظ نشد؛ فضای ذخیره این مرورگر را بررسی کنید و فعلاً صفحه را نبندید.',true);
+        }
+    }
+
+    function requestId() {
+        const value = globalThis.crypto?.randomUUID?.();
+        if (!value) throw new Error('ایجاد شناسه امن درخواست ممکن نشد؛ صفحه را در اتصال امن باز کنید.');
+        return value;
+    }
 
     const fa = n => Number(n || 0).toLocaleString('fa-IR');
     const make = (tag, className, value) => {
@@ -59,11 +114,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function containsUnsavedCounts() {
-        return dirtyProducts.size > 0 || invalidCounts.size > 0 || [...entered].some(([productId, values]) => !saved.has(productId) &&
+        return Boolean(pendingOperation) || dirtyProducts.size > 0 || invalidCounts.size > 0 || [...entered].some(([productId, values]) => !saved.has(productId) &&
             [...values.values()].some(v => v !== ''));
     }
 
     function reset() {
+        clearRecovery();
         clearTimeout(searchTimer);
         entered.clear();
         saved.clear();
@@ -74,6 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
         savedMetadata.clear();
         finalized.clear();
         loadedRows.clear();
+        knownVariantCounts.clear();
+        pendingOperation = null;
         allCategoryLoaded = false;
         reviewAcknowledged = false;
         date.disabled = false;
@@ -136,9 +194,9 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody,feedback,flag,saved:Boolean(stored),saving:false};
         if (!entered.has(id)) entered.set(id,group.quantities);
         if (stored) {
-            flag.textContent = 'پیش‌نویس ذخیره شد';
+            flag.textContent = finalized.has(id) ? 'نهایی شد' : 'پیش‌نویس ذخیره شد';
             feedback.replaceChildren();
-            const link = make('a','sc-success','بازکردن پیش‌نویس این محصول');
+            const link = make('a','sc-success',finalized.has(id) ? 'مشاهده سند نهایی این محصول' : 'بازکردن پیش‌نویس این محصول');
             link.href = stored;
             feedback.append(link);
         }
@@ -151,7 +209,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = Number(row.variant_id);
         if (group.rows.has(id)) return;
         group.rows.set(id,row);
-        if (!loadedRows.has(id)) reviewAcknowledged = false;
+        if (!loadedRows.has(id)) {
+            reviewAcknowledged = false;
+            knownVariantCounts.set(group.id,(knownVariantCounts.get(group.id) || 0) + 1);
+            if (saved.has(group.id) && !finalized.has(group.id)) dirtyProducts.add(group.id);
+        }
         loadedRows.set(id,row);
         const tr = make('tr');
         const description = make('td','sc-variant',row.name || 'تنوع بدون نام');
@@ -227,12 +289,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         more.hidden = !hasMore && allCategoryLoaded;
         more.textContent = hasMore ? 'دریافت ادامه کالاها' : 'دریافت ادامه کل دسته';
-        more.disabled = loading || bulkSaving || bulkFinalizing;
-        if (saveAll) saveAll.disabled = !selectionId || loading || hasMore || bulkSaving || bulkFinalizing ||
+        more.disabled = loading || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        if (saveAll) saveAll.disabled = pendingOperation?.operation === 'drafts'
+            ? bulkSaving || bulkFinalizing : !selectionId || loading || hasMore || bulkSaving || bulkFinalizing || Boolean(pendingOperation) ||
             invalidCounts.size > 0 ||
             pendingProducts().length === 0 || pendingProducts().length > 500;
-        if (finalizeAll) finalizeAll.disabled = !canFinalize();
-        if (reviewButton) reviewButton.disabled = savedMetadata.size === 0 || bulkSaving || bulkFinalizing;
+        if (saveAll) saveAll.textContent = pendingOperation?.operation === 'drafts' ? 'بازیابی نتیجه ذخیره' : 'ذخیره یکجای پیش‌نویس‌ها';
+        if (finalizeAll) {
+            finalizeAll.disabled = pendingOperation?.operation === 'finalize' ? bulkSaving || bulkFinalizing : !canFinalize();
+            finalizeAll.textContent = pendingOperation?.operation === 'finalize' ? 'بازیابی نتیجه ثبت نهایی' : 'ثبت نهایی همه';
+        }
+        if (reviewButton) reviewButton.disabled = savedMetadata.size === 0 || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
         if (toolbar) toolbar.hidden = !selectionId;
     }
 
@@ -242,7 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function completeDraft(meta) {
         return Number.isInteger(Number(meta?.variants_count)) && Number(meta.variants_count) > 0 &&
-            Number(meta.counted_count) === Number(meta.variants_count) && Boolean(meta.review_token);
+            Number(meta.counted_count) === Number(meta.variants_count) && Boolean(meta.review_token) &&
+            (!allCategoryLoaded || Number(meta.variants_count) === (knownVariantCounts.get(Number(meta.product_id)) || 0));
     }
 
     function canFinalize() {
@@ -273,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
             totals.increase += Number(meta.total_increase || 0);
             totals.decrease += Number(meta.total_decrease || 0);
         }
-        if (reviewSummary) reviewSummary.textContent = fa(saved.size) + ' پیش‌نویس · ' + fa(totals.counted) +
+        if (reviewSummary) reviewSummary.textContent = fa(saved.size) + (finalized.size ? ' سند · ' : ' پیش‌نویس · ') + fa(totals.counted) +
             ' از ' + fa(totals.variants) + ' تنوع شمارش شده · موجودی قبل: ' + fa(totals.before) +
             ' · شمارش واقعی: ' + fa(totals.actual) + ' · افزایش: ' + fa(totals.increase) + ' · کاهش: ' + fa(totals.decrease) +
             (allCategoryLoaded ? '' : ' · دریافت کل دسته هنوز کامل نیست.') +
@@ -297,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setBulkControls(disabled) {
+        disabled = disabled || Boolean(pendingOperation);
         [show, more, category, subcategory, date, liveSearch, document.getElementById('scClose')]
             .filter(Boolean).forEach(node => { node.disabled = disabled; });
         date.disabled = disabled || (knownProducts.size > 0 && finalized.size === knownProducts.size);
@@ -307,96 +376,214 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function acceptDraftResult(result, ids) {
+        if (!Array.isArray(result.documents) || result.documents.length !== ids.length ||
+            new Set(result.documents.map(item => Number(item.product_id))).size !== ids.length ||
+            result.documents.some(item => !ids.includes(Number(item.product_id)) ||
+                !item.document_id || !item.edit_url)) throw new Error('پاسخ ثبت پیش‌نویس‌ها معتبر نبود.');
+        result.documents.forEach(item => markSaved(Number(item.product_id), item));
+        reviewAcknowledged = false;
+    }
+
+    function acceptFinalResult(result) {
+        if (!Array.isArray(result.documents) || result.documents.length !== savedMetadata.size ||
+            new Set(result.documents.map(item => Number(item.product_id))).size !== savedMetadata.size ||
+            result.documents.some(item => !savedMetadata.has(Number(item.product_id)) || !item.view_url ||
+                Number(savedMetadata.get(Number(item.product_id)).document_id) !== Number(item.document_id))) {
+            throw new Error('پاسخ ثبت نهایی معتبر نیست؛ وضعیت اسناد را در آرشیو بررسی کنید.');
+        }
+        result.documents.forEach(item => {
+            const id = Number(item.product_id);
+            finalized.add(id);
+            saved.set(id,item.view_url);
+            const group = groups.get(id);
+            if (group) {
+                group.flag.textContent = 'نهایی شد';
+                const link = make('a','sc-success','مشاهده سند نهایی این محصول');
+                link.href = item.view_url;
+                group.feedback.replaceChildren(link);
+            }
+        });
+    }
+
+    async function recoverPendingResult() {
+        if (!pendingOperation) return;
+        const operation = pendingOperation;
+        const url = new URL('/stock-count-documents/requests/' + encodeURIComponent(operation.payload.request_id),location.origin);
+        url.searchParams.set('operation',operation.operation);
+        const response = await fetch(url,{credentials:'same-origin',headers:{'Accept':'application/json'}});
+        if (response.status === 404) {
+            notice('هنوز نتیجه‌ای برای درخواست قبلی ثبت نشده است؛ برای ادامه فقط دکمه بازیابی نتیجه را بزنید. مقادیر قفل می‌مانند.');
+            return;
+        }
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || 'دریافت نتیجه درخواست قبلی ممکن نشد؛ مقادیر قفل می‌مانند.');
+        if (operation.operation === 'drafts') acceptDraftResult(result,operation.ids);
+        else acceptFinalResult(result);
+        pendingOperation = null;
+        renderDraftList();
+        notice(operation.operation === 'drafts' ? 'نتیجه ذخیره قبلی بازیابی شد؛ جمع‌بندی را دوباره بررسی کنید.' : 'ثبت نهایی قبلاً انجام شده بود؛ نتیجه بدون تغییر دوباره موجودی بازیابی شد.');
+    }
+
+    async function restoreWorkspace() {
+        const snapshot = recoveredSnapshot;
+        if (!snapshot || bulkSaving || bulkFinalizing || pendingOperation) return;
+        try {
+            const restoredEntered = snapshot.entered.map(([id, values]) => [Number(id),new Map(values)]);
+            const restoredMeta = snapshot.metadata.map(([id, meta]) => [Number(id),meta]);
+            const restoredRows = snapshot.rows;
+            if (restoredRows.some(row => !Number.isSafeInteger(Number(row.variant_id)) || !Number.isSafeInteger(Number(row.product_id)))) throw new Error('نسخه بازیابی معتبر نیست.');
+            const pending = snapshot.pendingOperation;
+            if (pending && (!['drafts','finalize'].includes(pending.operation) ||
+                !/^[0-9a-f-]{36}$/i.test(pending.payload?.request_id || '') ||
+                Number(pending.payload?.category_id) !== snapshot.selectionId)) throw new Error('شناسه درخواست ذخیره‌شده معتبر نیست.');
+            reset();
+            selectionId = snapshot.selectionId;
+            scopeCategory = String(snapshot.scopeCategory || '');
+            scopeSubcategory = String(snapshot.scopeSubcategory || '');
+            category.value = scopeCategory;
+            if (scopeSubcategory) {
+                const option = make('option','', 'زیردسته بازیابی‌شده');
+                option.value = scopeSubcategory;
+                subcategory.append(option);
+            }
+            subcategory.value = scopeSubcategory;
+            for (const [id, values] of restoredEntered) entered.set(id,values);
+            for (const [id, name] of snapshot.knownProducts || []) knownProducts.set(Number(id),String(name));
+            for (const [id, meta] of restoredMeta) {
+                const url = new URL(meta.edit_url,location.origin);
+                if (url.origin !== location.origin || !['http:','https:'].includes(url.protocol)) continue;
+                savedMetadata.set(id,meta);
+                documentIds.set(id,Number(meta.document_id));
+                saved.set(id,url.href);
+            }
+            for (const id of snapshot.dirtyProducts || []) dirtyProducts.add(Number(id));
+            for (const [id, value] of snapshot.invalidCounts || []) invalidCounts.set(Number(id),value);
+            for (const id of snapshot.finalized || []) finalized.add(Number(id));
+            for (const [id, url] of snapshot.saved || []) {
+                const target = new URL(url,location.origin);
+                if (target.origin === location.origin && ['http:','https:'].includes(target.protocol)) saved.set(Number(id),target.href);
+            }
+            restoredRows.forEach(row => {
+                loadedRows.set(Number(row.variant_id),row);
+                const id = Number(row.product_id);
+                knownVariantCounts.set(id,(knownVariantCounts.get(id) || 0) + 1);
+            });
+            restoredRows.forEach(addRow);
+            pendingOperation = pending || null;
+            reviewAcknowledged = false;
+            allCategoryLoaded = false;
+            app.hidden = false;
+            if (embedded) {
+                document.querySelectorAll('[data-stocktake-single]').forEach(node => {node.hidden = true;});
+                document.getElementById('stocktakeForm').dataset.categoryMode = '1';
+            }
+            renderDraftList();
+            persistWorkspace();
+            setBulkControls(false);
+            updateButtons();
+            if (pendingOperation) await recoverPendingResult();
+            if (!pendingOperation) {
+                hasMore = true;
+                notice('شمارش قبلی بازیابی شد؛ فهرست دسته دوباره دریافت می‌شود. پیش از ثبت نهایی جمع‌بندی را بررسی کنید.');
+                await requestPage();
+            }
+        } catch (error) {
+            notice(error.message || 'بازیابی انجام نشد؛ هیچ درخواستی برای تغییر موجودی ارسال نشد.',true);
+        } finally {
+            setBulkControls(false);
+            updateButtons();
+            renderDraftList();
+            persistWorkspace();
+        }
+    }
+
     async function saveAllDrafts() {
         if (!saveAll || saveAll.disabled || bulkSaving || bulkFinalizing) return;
-        if (!date.value) { notice('تاریخ سند را مشخص کنید.', true); date.focus(); return; }
-        const ids = pendingProducts();
-        if (!ids.length || ids.length > 500 || invalidCounts.size) return;
+        if (pendingOperation && pendingOperation.operation !== 'drafts') return;
+        const ids = pendingOperation?.ids || pendingProducts();
+        if (!pendingOperation && (!ids.length || ids.length > 500 || invalidCounts.size)) return;
         bulkSaving = true;
-        setBulkControls(true);
-        updateButtons();
-        notice('در حال ذخیره یکجای پیش‌نویس‌ها؛ این صفحه را نبندید...');
         try {
+            if (!pendingOperation) pendingOperation = {operation:'drafts', ids,
+                payload:{request_id:requestId(), category_id:selectionId, document_date:date.value,
+                    products:ids.map(id => ({product_id:id,
+                        ...(documentIds.has(id) ? {document_id:documentIds.get(id),
+                            expected_review_token:savedMetadata.get(id)?.review_token} : {}),
+                        actual_quantities:Object.fromEntries([...(entered.get(id) || [])]
+                            .map(([variant,value]) => [variant,value === '' ? null : value]))})),
+                }};
+            setBulkControls(true);
+            updateButtons();
+            if (!persistWorkspace()) throw new Error('حفظ نسخه بازیابی در مرورگر ممکن نشد؛ قبل از ارسال، فضای ذخیره این مرورگر را بررسی کنید.');
+            notice('در حال ذخیره یکجای پیش‌نویس‌ها؛ این صفحه را نبندید...');
             const response = await fetch(app.dataset.bulkStoreUrl, {
                 method: 'POST', credentials: 'same-origin',
                 headers: {'Accept': 'application/json', 'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || ''},
-                body: JSON.stringify({
-                    category_id: selectionId, document_date: date.value,
-                    products: ids.map(id => ({product_id: id,
-                        ...(documentIds.has(id) ? {document_id: documentIds.get(id)} : {}),
-                        actual_quantities: Object.fromEntries([...(entered.get(id) || [])]
-                            .map(([variant, value]) => [variant, value === '' ? null : value]))})),
-                }),
+                body:JSON.stringify(pendingOperation.payload),
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok) {
+                if (response.status >= 400 && response.status < 500) pendingOperation = null;
                 throw new Error(result.errors && Object.values(result.errors).flat().join('، ') ||
                     result.message || 'ذخیره یکجای پیش‌نویس‌ها ناموفق بود. مقادیر واردشده حفظ شده‌اند.');
             }
-            if (!Array.isArray(result.documents) || result.documents.length !== ids.length ||
-                new Set(result.documents.map(item => Number(item.product_id))).size !== ids.length ||
-                result.documents.some(item => !ids.includes(Number(item.product_id)) ||
-                    !item.document_id || !item.edit_url)) throw new Error('پاسخ ثبت پیش‌نویس‌ها معتبر نبود.');
-            result.documents.forEach(item => markSaved(Number(item.product_id), item));
+            acceptDraftResult(result,ids);
+            pendingOperation = null;
             reviewAcknowledged = false;
             renderDraftList();
             notice(fa(result.documents.length) + ' پیش‌نویس یکجا ذخیره شد. جمع‌بندی را بررسی کنید؛ سپس با «ثبت نهایی همه» تأیید کنید.');
         } catch (error) {
-            notice(error.message || 'ذخیره ناموفق بود؛ مقادیر شمارش حفظ شده‌اند.', true);
+            notice((error.message || 'پاسخ ذخیره دریافت نشد.') + (pendingOperation ? ' نتیجه درخواست هنوز مشخص نیست؛ برای جلوگیری از سند تکراری، «بازیابی نتیجه ذخیره» را بزنید.' : ''), true);
         } finally {
             bulkSaving = false;
             setBulkControls(false);
             if (!embedded) subcategory.disabled = !category.value;
             updateButtons();
+            persistWorkspace();
         }
     }
 
     async function finalizeAllDrafts() {
-        if (!canFinalize()) return;
-        if (!window.confirm('جمع‌بندی شمارش و اختلاف‌ها را بررسی کرده‌اید؟ همه ' + fa(savedMetadata.size) +
+        if (bulkSaving || bulkFinalizing || (pendingOperation && pendingOperation.operation !== 'finalize')) return;
+        if (!pendingOperation && !canFinalize()) return;
+        if (!pendingOperation && !window.confirm('جمع‌بندی شمارش و اختلاف‌ها را بررسی کرده‌اید؟ همه ' + fa(savedMetadata.size) +
             ' پیش‌نویس با یک عملیات ثبت نهایی می‌شوند و موجودی مرکزی تغییر می‌کند. دستهٔ بسته‌شده همچنان تا بازگشایی صریح بسته می‌ماند.')) return;
         bulkFinalizing = true;
-        setBulkControls(true);
-        updateButtons();
-        notice('در حال ثبت نهایی همه پیش‌نویس‌ها؛ صفحه را نبندید...');
         try {
+            if (!pendingOperation) pendingOperation = {operation:'finalize', payload:{request_id:requestId(),category_id:selectionId,
+                document_ids:[...savedMetadata.values()].map(meta => Number(meta.document_id)),
+                review_tokens:Object.fromEntries([...savedMetadata.values()].map(meta => [String(meta.document_id),meta.review_token])),
+            }};
+            setBulkControls(true);
+            updateButtons();
+            if (!persistWorkspace()) throw new Error('حفظ نسخه بازیابی در مرورگر ممکن نشد؛ ثبت نهایی ارسال نشد.');
+            notice('در حال ثبت نهایی همه پیش‌نویس‌ها؛ صفحه را نبندید...');
             const response = await fetch(app.dataset.bulkFinalizeUrl, {
                 method:'POST', credentials:'same-origin',
                 headers:{'Accept':'application/json','Content-Type':'application/json',
                     'X-CSRF-TOKEN':document.querySelector('meta[name=csrf-token]')?.content || ''},
-                body:JSON.stringify({category_id:selectionId,
-                    document_ids:[...savedMetadata.values()].map(meta => Number(meta.document_id)),
-                    review_tokens:Object.fromEntries([...savedMetadata.values()].map(meta => [String(meta.document_id),meta.review_token])),
-                }),
+                body:JSON.stringify(pendingOperation.payload),
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok) {
+                if (response.status >= 400 && response.status < 500) pendingOperation = null;
                 const conflicts = Array.isArray(result.conflicts) ? result.conflicts.map(item => item.reason || item.message || '').filter(Boolean).join('، ') : '';
                 throw new Error([result.message, result.errors && Object.values(result.errors).flat().join('، '), conflicts]
                     .filter(Boolean).join(' · ') || 'ثبت نهایی انجام نشد؛ پیش‌نویس‌ها حفظ شده‌اند.');
             }
-            if (!Array.isArray(result.documents) || result.documents.length !== savedMetadata.size ||
-                new Set(result.documents.map(item => Number(item.product_id))).size !== savedMetadata.size ||
-                result.documents.some(item => !savedMetadata.has(Number(item.product_id)) || !item.view_url ||
-                    Number(savedMetadata.get(Number(item.product_id)).document_id) !== Number(item.document_id))) {
-                throw new Error('پاسخ ثبت نهایی معتبر نیست؛ وضعیت اسناد را در آرشیو بررسی کنید.');
-            }
-            result.documents.forEach(item => {
-                const id = Number(item.product_id);
-                finalized.add(id);
-                saved.set(id,item.view_url);
-                const group = groups.get(id);
-                if (group) group.flag.textContent = 'نهایی شد';
-            });
+            acceptFinalResult(result);
+            pendingOperation = null;
             renderDraftList();
             notice('همه ' + fa(result.documents.length) + ' سند یکجا ثبت نهایی شدند. دسته‌های بسته‌شده تا بازگشایی صریح همچنان بسته‌اند.');
         } catch (error) {
-            notice(error.message || 'ثبت نهایی انجام نشد؛ دوباره بررسی کنید.',true);
+            notice((error.message || 'پاسخ ثبت نهایی دریافت نشد.') + (pendingOperation ? ' ممکن است ثبت نهایی انجام شده باشد؛ فقط «بازیابی نتیجه ثبت نهایی» را بزنید.' : ''),true);
         } finally {
             bulkFinalizing = false;
             setBulkControls(false);
             updateButtons();
+            persistWorkspace();
         }
     }
 
@@ -451,12 +638,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 show.disabled = false;
                 updateButtons();
                 renderDraftList();
+                persistWorkspace();
             }
         }
     }
 
     async function begin() {
-        if (bulkSaving || bulkFinalizing) return;
+        if (bulkSaving || bulkFinalizing || pendingOperation) return;
         const selected = Number(subcategory.value || category.value);
         if (!Number.isSafeInteger(selected) || selected < 1) {
             notice('ابتدا دسته‌بندی یا زیردسته‌بندی را انتخاب کنید.',true);
@@ -464,6 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (containsUnsavedCounts() &&
             !window.confirm('شمارش‌های ذخیره‌نشده این دسته از بین می‌روند. دسته جدید نمایش داده شود؟')) return;
+        if (recoveredSnapshot && !window.confirm('یک شمارش قبلی برای بازیابی وجود دارد. شروع شمارش جدید و کنارگذاشتن نسخه مرورگر؟ اسناد ذخیره‌شده در آرشیو باقی می‌مانند.')) return;
         reset();
         if (embedded) {
             app.hidden = false;
@@ -471,6 +660,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('stocktakeForm').dataset.categoryMode = '1';
         }
         selectionId = selected;
+        scopeCategory = String(category.value || '');
+        scopeSubcategory = String(subcategory.value || '');
         hasMore = true;
         await requestPage();
     }
@@ -478,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (liveSearch) liveSearch.addEventListener('input', () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => {
-            if (!selectionId || bulkSaving || bulkFinalizing) return;
+            if (!selectionId || bulkSaving || bulkFinalizing || pendingOperation) return;
             const next = liveSearch.value.trim();
             if (next === activeQuery) return;
             activeQuery = next;
@@ -508,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const field = event.target.closest('.sc-actual');
         if (!field) return;
         const group = groups.get(Number(field.dataset.product));
-        if (!group || finalized.has(group.id) || bulkSaving || bulkFinalizing) return;
+        if (!group || finalized.has(group.id) || bulkSaving || bulkFinalizing || pendingOperation) return;
         const normalized = field.value.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
             .replace(/[٠-٩]/g,d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
         const valid = normalized === '' || (/^\d+$/.test(normalized) &&
@@ -519,6 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
             invalidCounts.set(Number(field.dataset.variant), {value: field.value, productId: group.id});
             group.feedback.textContent = 'مقدار شمارش معتبر نیست.';
             updateButtons();
+            checkpointWorkspace();
             return;
         }
         invalidCounts.delete(Number(field.dataset.variant));
@@ -530,11 +722,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateDifference(group,Number(field.dataset.variant));
         updateButtons();
         renderDraftList();
+        checkpointWorkspace();
     });
 
     show.addEventListener('click',begin);
     more.addEventListener('click',async () => {
-        if (loading || bulkSaving || bulkFinalizing) return;
+        if (loading || bulkSaving || bulkFinalizing || pendingOperation) return;
         if (!hasMore && !allCategoryLoaded) {
             clearTimeout(searchTimer);
             if (liveSearch) liveSearch.value = '';
@@ -546,22 +739,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     saveAll?.addEventListener('click',saveAllDrafts);
     date.addEventListener('change',() => {
-        if (bulkSaving || bulkFinalizing) return;
+        if (bulkSaving || bulkFinalizing || pendingOperation) return;
         reviewAcknowledged = false;
         for (const id of knownProducts.keys()) {
             if (!finalized.has(id)) dirtyProducts.add(id);
         }
         updateButtons();
         renderDraftList();
+        persistWorkspace();
     });
     finalizeAll?.addEventListener('click',finalizeAllDrafts);
     reviewButton?.addEventListener('click',() => {
-        if (!savedMetadata.size || bulkSaving || bulkFinalizing) return;
+        if (!savedMetadata.size || bulkSaving || bulkFinalizing || pendingOperation) return;
         reviewAcknowledged = true;
         document.getElementById('scReviewPanel')?.scrollIntoView?.({behavior:'smooth',block:'center'});
         updateButtons();
     });
     updateButtons();
+    if (recoveryPanel) recoveryPanel.hidden = !recoveredSnapshot;
+    restoreButton?.addEventListener('click',restoreWorkspace);
+    discardRecovery?.addEventListener('click',() => {
+        if (window.confirm('فقط نسخه بازیابی این مرورگر کنار گذاشته شود؟ اسناد ذخیره‌شده در آرشیو باقی می‌مانند.')) clearRecovery();
+    });
 
     if (embedded) {
         const originalForm = document.getElementById('stocktakeForm');
@@ -572,7 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
             notice('برای ذخیره همه شمارش‌ها، دکمه «ذخیره یکجای پیش‌نویس‌ها» را بزنید؛ سپس جمع‌بندی را بررسی و همه را یکجا ثبت نهایی کنید.', true);
         }, true);
         document.getElementById('scClose').addEventListener('click', () => {
-            if (bulkSaving || bulkFinalizing) return;
+            if (bulkSaving || bulkFinalizing || pendingOperation) return;
             if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
             reset();
             app.hidden = true;

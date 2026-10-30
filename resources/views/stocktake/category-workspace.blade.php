@@ -53,7 +53,13 @@
 @media(max-width:600px){.stocktake-category .sc-bulk-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom))}.stocktake-category .sc-toolbar-status{grid-column:1/-1;font-size:.72rem}.stocktake-category .sc-bulk-toolbar button{font-size:.77rem;padding:7px}.stocktake-category{padding-bottom:240px!important}}
 </style>
 <link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030-2">
+<div id="scRecovery" class="alert alert-info d-flex gap-2 align-items-center flex-wrap" hidden>
+  <span>یک شمارش قبلی در این مرورگر قابل بازیابی است؛ بازیابی به‌تنهایی هیچ سندی را ذخیره یا نهایی نمی‌کند.</span>
+  <button type="button" id="scRestore" class="btn btn-sm btn-primary">بازیابی شمارش قبلی</button>
+  <button type="button" id="scDiscardRecovery" class="btn btn-sm btn-outline-secondary">کنارگذاشتن نسخه مرورگر</button>
+</div>
 <div class="stocktake-category stocktake-workspace" id="stocktakeCategoryApp"
+     data-user-id="{{ auth()->id() }}"
      data-rows-url="{{ route('stock-count-documents.category-variants') }}"
      data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
      data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"

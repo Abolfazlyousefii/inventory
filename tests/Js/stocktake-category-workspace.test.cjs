@@ -16,7 +16,7 @@ test('category counting JavaScript is valid and uses bounded 60-row GET pages', 
 });
 
 test('bulk save retains independent product drafts and explicit incomplete-count state', () => {
-    assert.match(source, /products: ids\.map\(id => \(\{product_id: id/);
+    assert.match(source, /products:\s*ids\.map\(id => \(\{product_id:\s*id/);
     assert.match(source, /value === '' \? null : value/);
     assert.match(source, /group\.saved = true/);
     assert.match(source, /pendingProducts\(\)\.length === 0/);

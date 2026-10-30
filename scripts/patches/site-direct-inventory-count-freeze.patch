@@ -1,0 +1,55 @@
+--- a/app/Services/Inventory/DirectInventoryStockHold.php
++++ b/app/Services/Inventory/DirectInventoryStockHold.php
+@@ -20,0 +21,37 @@
++    /** Shared boundary lock stays held through every stock mutation in this transaction. */
++    private function countState(ConnectionInterface $db): ?object
++    {
++        if (!$db->getSchemaBuilder()->hasTable('inventory_count_freezes')) return null;
++        return $db->table('inventory_count_freezes')->where('id', 1)->sharedLock()->first();
++    }
++
++    private function assertCountOpen(ConnectionInterface $db, ?object $state, array $productIds): void
++    {
++        if (!$state || !$state->enabled || !$productIds) return;
++        $productIds = array_values(array_unique(array_map('intval', $productIds)));
++        $snapshot = array_map('intval', json_decode($state->product_ids ?? '[]', true));
++        $selected = array_map('intval', json_decode($state->category_ids ?? '[]', true));
++        $categories = $selected;
++        $frontier = $selected;
++        while ($frontier) {
++            $children = $db->table('categories')->whereIn('parent_id', $frontier)->pluck('id')->map(fn ($id) => (int) $id)->all();
++            $frontier = array_values(array_diff($children, $categories));
++            $categories = array_values(array_unique(array_merge($categories, $frontier)));
++        }
++        $blocked = (bool) $state->all_products || array_intersect($snapshot, $productIds)
++            || $db->table('products')->whereIn('id', $productIds)->whereIn('category_id', $categories)->exists();
++        // Newly defined or moved bundles cannot bypass a frozen component category.
++        if (!$blocked && $db->getSchemaBuilder()->hasTable('product_bundle_components')) {
++            $blocked = $db->table('product_bundle_components as r')
++                ->join('product_variants as b', 'b.id', '=', 'r.bundle_variant_id')
++                ->join('product_variants as part', 'part.id', '=', 'r.component_variant_id')
++                ->join('products as p', 'p.id', '=', 'part.product_id')
++                ->whereIn('b.product_id', $productIds)
++                ->where(fn ($q) => $q->whereIn('p.id', $snapshot)->orWhereIn('p.category_id', $categories))->exists();
++        }
++        if ($blocked) {
++            $label = $state->all_products ? 'تمام کالاها' : $db->table('categories')->whereIn('id', $selected)->orderBy('name')->pluck('name')->join('، ');
++            $this->invalid('دستهٔ «'.$label.'» برای انبارگردانی بسته است؛ خرید و تغییر رزرو تا بازکردن صریح دسته امکان‌پذیر نیست.');
++        }
++    }
++
+@@ -53,0 +91,2 @@
++            $freeze = $this->countState($db);
++            $this->assertCountOpen($db, $freeze, $db->table('product_variants')->whereIn('id', array_keys($commercial))->pluck('product_id')->all());
+@@ -120,0 +160 @@
++            $this->assertCountOpen($db, $freeze, $components->pluck('product_id')->all());
+@@ -229,0 +270 @@
++            $freeze = $this->countState($db);
+@@ -244,0 +286,4 @@
++            $productIds = $db->table('site_stock_hold_lines')->where('hold_id', $holdId)->pluck('product_id')->all();
++            $productIds = array_merge($productIds, $db->table('product_variants')->whereIn('id', array_keys($requirements))->pluck('product_id')->all());
++            $legacyIds = array_keys(json_decode((string) ($hold->bundle_shared_allocations ?? '[]'), true, 512, JSON_THROW_ON_ERROR));
++            $this->assertCountOpen($db, $freeze, array_merge($productIds, $legacyIds));
+@@ -329,0 +375,2 @@
++                    // Same lock order as Inventory activation: freeze boundary before hold/order rows.
++                    $this->countState($db);

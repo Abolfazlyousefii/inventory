@@ -404,6 +404,7 @@ class PageAccessCatalog
         'stock-count-documents.store' => ['warehouse.stocktake'],
         'stock-count-documents.category-drafts.store' => ['warehouse.stocktake'],
         'stock-count-documents.category-finalize' => ['warehouse.stocktake'],
+        'stock-count-documents.request-status' => ['warehouse.stocktake'],
         'stock-count-documents.subcategories' => ['warehouse.stocktake'],
         'stock-count-documents.products' => ['warehouse.stocktake'],
         'stock-count-documents.variants' => ['warehouse.stocktake'],

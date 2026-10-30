@@ -110,6 +110,16 @@ class StocktakeController extends Controller
 
     public function storeCategoryDrafts(Request $request)
     {
+        return app(\App\Services\StocktakeRequestService::class)->run($request, 'drafts', fn () => $this->performStoreCategoryDrafts($request));
+    }
+
+    public function requestStatus(Request $request, string $requestId)
+    {
+        return app(\App\Services\StocktakeRequestService::class)->status($request, $requestId);
+    }
+
+    private function performStoreCategoryDrafts(Request $request)
+    {
         $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
         $data = $request->validate([
             'category_id' => ['required', 'integer', 'exists:categories,id'],
@@ -117,13 +127,15 @@ class StocktakeController extends Controller
             'products' => ['required', 'array', 'min:1', 'max:500'],
             'products.*.product_id' => ['required', 'integer', 'distinct', 'exists:products,id'],
             'products.*.document_id' => ['nullable', 'integer', 'distinct', 'exists:stock_count_documents,id'],
+            'products.*.expected_review_token' => ['nullable', 'string', 'size:64'],
             'products.*.actual_quantities' => ['nullable', 'array', 'max:5000'],
             'products.*.actual_quantities.*' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
             'products.*.notes' => ['nullable', 'array', 'max:5000'],
             'products.*.notes.*' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $documents = \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+        $modern = $request->filled('request_id') || $request->hasHeader('Idempotency-Key');
+        $documents = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $modern) {
             app(\App\Services\InventoryCountFreezeService::class)->fence();
             $categoryIds = Category::selfAndDescendantIds((int) $data['category_id']);
             $products = Product::query()->whereIn('id', array_column($data['products'], 'product_id'))
@@ -154,6 +166,9 @@ class StocktakeController extends Controller
                             "products.$index.document_id" => 'سند باید پیش‌نویس همین محصول باشد.',
                         ]);
                     }
+                    if ($modern && ! hash_equals($this->service->reviewToken($document), (string) ($entry['expected_review_token'] ?? ''))) {
+                        abort(409, 'شمارش این محصول در صفحهٔ دیگری تغییر کرده است؛ قبل از ذخیره نسخهٔ جدید را بازیابی کنید.');
+                    }
                     $document = $this->service->updateProductDraft($document, $payload, (int) auth()->id());
                 } else {
                     $document = $this->service->createProductDraft($payload, (int) auth()->id());
@@ -169,13 +184,18 @@ class StocktakeController extends Controller
                 ];
             }
             return $result;
-        });
+        }, 3);
 
         return response()->json(['documents' => $documents, 'message' => 'همه پیش‌نویس‌ها ذخیره شدند؛ خلاصه را بررسی و سپس ثبت نهایی یکجا را تأیید کنید.'])
             ->header('Cache-Control', 'private, no-store');
     }
 
     public function finalizeCategory(Request $request)
+    {
+        return app(\App\Services\StocktakeRequestService::class)->run($request, 'finalize', fn () => $this->performFinalizeCategory($request));
+    }
+
+    private function performFinalizeCategory(Request $request)
     {
         $data = $request->validate([
             'category_id' => ['required', 'integer', 'exists:categories,id'],
@@ -348,6 +368,7 @@ class StocktakeController extends Controller
         return $request->validate([
             'product_id' => [$editing ? 'nullable' : 'required', 'integer', 'exists:products,id'],
             'document_date' => ['required', 'date'], 'description' => ['nullable','string','max:2000'],
+            'expected_review_token' => ['sometimes', 'required', 'string', 'size:64'],
             'actual_quantities' => ['nullable','array'], 'actual_quantities.*' => ['nullable','integer','min:0','max:2147483647'],
             'notes' => ['nullable','array'], 'notes.*' => ['nullable','string','max:1000'],
         ]);

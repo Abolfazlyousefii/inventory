@@ -76,7 +76,7 @@ function fixture({allowConfirm = true, customRows} = {}) {
     };
     const context = {
         document, location: {origin: 'https://erp.example.test'},
-        URL, AbortController, Number, Intl, setTimeout, clearTimeout,
+        URL, AbortController, Number, Intl, setTimeout, clearTimeout, crypto:require('node:crypto').webcrypto,
         window: {addEventListener() {}, confirm() {return allowConfirm;}},
         fetch: async (url, options = {}) => {
             if (options.method === 'POST') {

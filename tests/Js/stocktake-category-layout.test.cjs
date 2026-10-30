@@ -47,8 +47,8 @@ test('every mobile counting cell has a label, including live queue and entered p
 });
 
 test('layout preserves reviewed complete-only explicit bulk finalization', () => {
-    assert.match(source, /if \(!canFinalize\(\)\) return/);
-    assert.match(source, /if \(!window\.confirm\(/);
+    assert.match(source, /if \(!pendingOperation && !canFinalize\(\)\) return/);
+    assert.match(source, /if \(!pendingOperation && !window\.confirm\(/);
     assert.match(source, /value === '' \? null : value/);
     assert.doesNotMatch(source, /confirm_empty_as_zero|data-save-product/);
     assert.match(form, /عدد ۰ را صریحاً/);

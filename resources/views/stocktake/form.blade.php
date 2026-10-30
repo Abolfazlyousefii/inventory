@@ -175,6 +175,7 @@
  <form id="stocktakeForm" method="post" action="{{ $mode==='edit' ? route('stock-count-documents.update',$document) : route('stock-count-documents.store') }}">@csrf @if($mode==='edit') @method('PUT') @endif
   <div id="actualHiddenInputs"></div>
   <input type="hidden" name="document_date" value="{{ $document?->document_date?->format('Y-m-d') ?? now('Asia/Tehran')->format('Y-m-d') }}">
+  @if($mode==='edit')<input type="hidden" name="expected_review_token" value="{{ app(\App\Services\StockCountDocumentService::class)->reviewToken($document) }}">@endif
   <section class="stocktake-selector stocktake-card mb-4" aria-labelledby="stocktakeScopeTitle">
     <header class="stocktake-selector__header">
       <span class="stocktake-selector__icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5M3 8v9l9 5 9-5V8M12 13v9"/></svg></span>
@@ -198,7 +199,13 @@
     </div>
   </section>
   @if($mode==='create')
+  <div id="scRecovery" class="alert alert-info d-flex gap-2 align-items-center flex-wrap" hidden>
+    <span>یک شمارش قبلی در این مرورگر قابل بازیابی است؛ بازیابی به‌تنهایی هیچ سندی را ذخیره یا نهایی نمی‌کند.</span>
+    <button type="button" id="scRestore" class="btn btn-sm btn-primary">بازیابی شمارش قبلی</button>
+    <button type="button" id="scDiscardRecovery" class="btn btn-sm btn-outline-secondary">کنارگذاشتن نسخه مرورگر</button>
+  </div>
   <section class="stocktake-category" id="stocktakeCategoryApp" data-embedded="1" hidden
+    data-user-id="{{ auth()->id() }}"
     data-rows-url="{{ route('stock-count-documents.category-variants') }}"
     data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
     data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"
