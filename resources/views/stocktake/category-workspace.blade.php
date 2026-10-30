@@ -47,6 +47,7 @@
 <div class="stocktake-category" id="stocktakeCategoryApp"
      data-rows-url="{{ route('stock-count-documents.category-variants') }}"
      data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
+     data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"
      data-store-url="{{ route('stock-count-documents.store') }}">
   <div class="sc-top mb-3">
     <div>
@@ -85,6 +86,8 @@
   <div id="scStatus" role="status" class="sc-status" aria-live="polite">برای مشاهده محصولات، دسته یا زیردسته را انتخاب کن.</div>
   <div id="scProducts"></div>
   <button type="button" id="scMore" class="btn btn-outline-primary sc-more" hidden>نمایش تنوع‌های بیشتر</button>
+  <div class="sc-footer"><button type="button" id="scSaveAll" class="btn btn-success" disabled>ذخیره یکجای پیش‌نویس‌ها</button><span class="sc-subtitle">تمام کالاهای دریافت‌شده با یک دکمه ذخیره می‌شوند؛ مقادیر خالی شمارش‌نشده می‌مانند.</span></div>
+  <section class="sc-panel mt-3"><h6>فهرست پیش‌نویس‌ها برای بررسی و ثبت نهایی</h6><ul id="scDraftList" class="mb-0" aria-live="polite"></ul></section>
   <p class="sc-subtitle">توجه: ارقام موجودی و رزرو در لحظه بارگذاری خوانده می‌شوند و تا پایان انبارگردانی Snapshot ثابت محسوب نمی‌شوند.</p>
 </div>
 <script>{!! file_get_contents(public_path('js/stocktake-category-workspace.js')) !!}</script>

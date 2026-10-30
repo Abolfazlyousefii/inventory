@@ -293,6 +293,10 @@ it('stops activation on active site holds without cancelling a site order', func
     });
     DB::table('site_stock_holds')->insert(['id' => 1, 'site_order_id' => 123, 'status' => 'payment_confirmed']);
     DB::table('site_stock_hold_lines')->insert(['hold_id' => 1, 'product_id' => $product->id, 'variant_id' => $variant->id, 'quantity' => 2]);
+    $preview = app(InventoryCountFreezeService::class)->preview([$category->id], false);
+    expect($preview['site_hold_count'])->toBe(1)
+        ->and($preview['can_activate'])->toBeFalse()
+        ->and($preview['site_order_ids'])->toBe([123]);
     try {
         app(InventoryCountFreezeService::class)->activate([$category->id], false, $admin);
         test()->fail('Active site hold was discarded');

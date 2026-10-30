@@ -169,6 +169,7 @@
   <section class="stocktake-category" id="stocktakeCategoryApp" data-embedded="1" hidden
     data-rows-url="{{ route('stock-count-documents.category-variants') }}"
     data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
+    data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"
     data-store-url="{{ route('stock-count-documents.store') }}">
     <div class="sc-panel"><div class="sc-top mb-2">
       <div><h5 class="mb-1">شمارش کالاهای دسته انتخابی</h5><p class="sc-subtitle mb-0">کالاهای دسته یا زیردسته انتخابی همراه تنوع‌ها در همین فرم نمایش داده می‌شوند.</p></div>
@@ -179,6 +180,8 @@
      <div id="scStatus" class="sc-status" role="status" aria-live="polite">برای نمایش کالاها دکمه کنار زیردسته‌بندی را بزنید.</div>
     <div id="scProducts"></div>
     <button type="button" id="scMore" class="btn btn-outline-primary sc-more" hidden>نمایش تنوع‌های بیشتر</button>
+    <div class="sc-footer"><button type="button" id="scSaveAll" class="btn btn-success" disabled>ذخیره یکجای پیش‌نویس‌ها</button><span class="sc-subtitle">تمام کالاهای دریافت‌شده با یک دکمه ذخیره می‌شوند؛ مقادیر خالی شمارش‌نشده می‌مانند.</span></div>
+    <div class="sc-panel mt-3"><h6>فهرست پیش‌نویس‌ها برای بررسی و ثبت نهایی</h6><ul id="scDraftList" class="mb-0" aria-live="polite"></ul></div>
     <p class="sc-subtitle">موجودی مرکزی، رزرو و صف جمع‌آوری بر اساس اطلاعات فعلی سیستم است، نه Snapshot ثابت.</p>
     </div>
   </section>

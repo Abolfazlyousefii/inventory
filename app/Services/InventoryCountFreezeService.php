@@ -135,7 +135,13 @@ class InventoryCountFreezeService
         $classificationRows = (clone $releaseRows)->with(['order.invoice', 'activeDrafts'])->get();
         $historical = $classificationRows->filter(fn ($row) => app(ReservationClassificationService::class)->classify($row)['state'] === ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS)->count();
 
-        return ['product_ids' => $ids, 'products' => count($ids), 'reservation_rows' => $classificationRows->count(), 'reservation_quantity' => (int) $classificationRows->sum('quantity'), 'orders' => $orderIds->count(), 'historical_rows' => $historical];
+        $siteOrders = Schema::hasTable('site_stock_holds')
+            ? SiteStockHold::whereIn('status', ['held', 'payment_confirmed'])
+                ->whereHas('lines', fn ($q) => $q->whereIn('product_id', $ids))
+                ->distinct()->orderBy('site_order_id')->pluck('site_order_id')->map(fn ($id) => (int) $id)->all()
+            : [];
+
+        return ['site_hold_count' => count($siteOrders), 'site_order_ids' => $siteOrders, 'can_activate' => $ids !== [] && $siteOrders === [], 'product_ids' => $ids, 'products' => count($ids), 'reservation_rows' => $classificationRows->count(), 'reservation_quantity' => (int) $classificationRows->sum('quantity'), 'orders' => $orderIds->count(), 'historical_rows' => $historical];
     }
 
     public function activate(array $categories, bool $all, User $actor, ?int $expectedVersion = null): array
@@ -158,7 +164,7 @@ class InventoryCountFreezeService
             $ids = $preview['product_ids'];
             // Paid/external orders must never be silently cancelled or refunded by an ERP stocktake switch.
             if (Schema::hasTable('site_stock_holds') && SiteStockHold::whereIn('status', ['held', 'payment_confirmed'])->whereHas('lines', fn ($q) => $q->whereIn('product_id', $ids))->exists()) {
-                throw ValidationException::withMessages(['stocktake' => 'سفارش سایت با رزرو فعال در این گروه وجود دارد؛ ابتدا وضعیت سفارش سایت را تعیین تکلیف کنید. هیچ رزروی آزاد نشد.']);
+                throw ValidationException::withMessages(['stocktake' => 'سفارش سایت با رزرو فعال در این گروه وجود دارد (شماره سفارش: '.implode('، ', $preview['site_order_ids']).'). ابتدا سفارش‌های پرداخت‌شده را به انبار وارد کنید یا محدوده کوچک‌تری انتخاب کنید. هیچ رزروی آزاد نشد.']);
             }
             $rows = PreinvoiceDraftReservation::whereIn('product_id', $ids)->whereNull('released_at')->whereNull('converted_at')->whereNull('release_reason')->where('quantity', '>', 0)->lockForUpdate()->get();
             $orderIds = $rows->pluck('preinvoice_order_id')->filter()->unique();

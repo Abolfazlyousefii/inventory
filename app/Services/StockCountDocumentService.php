@@ -54,7 +54,7 @@ class StockCountDocumentService
                     $stock = $this->lockOrCreateStock((int) $warehouse->id, (int) $product->id, (int) $variant->id, false);
                     $available = (int) $stock->quantity;
                     $reserved = $this->activeReserved($variant);
-                    $actual = array_key_exists($variant->id, $actuals) && $actuals[$variant->id] !== '' ? (int) $actuals[$variant->id] : null;
+                    $actual = array_key_exists($variant->id, $actuals) && $actuals[$variant->id] !== '' && $actuals[$variant->id] !== null ? (int) $actuals[$variant->id] : null;
                     $rows[] = $this->itemPayload($document, $warehouse, $product, $variant, $stock, $available, $reserved, $actual, $notes[$variant->id] ?? null);
                 }
                 if (count($rows) >= 500) { StockCountDocumentItem::insert($rows); $rows = []; }

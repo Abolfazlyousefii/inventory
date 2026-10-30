@@ -108,6 +108,69 @@ class StocktakeController extends Controller
         return redirect()->route('stock-count-documents.edit', $document)->with('success', 'پیش‌نویس سند انبارگردانی محصولی ذخیره شد.');
     }
 
+    public function storeCategoryDrafts(Request $request)
+    {
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'document_date' => ['required', 'date'],
+            'products' => ['required', 'array', 'min:1', 'max:500'],
+            'products.*.product_id' => ['required', 'integer', 'distinct', 'exists:products,id'],
+            'products.*.document_id' => ['nullable', 'integer', 'distinct', 'exists:stock_count_documents,id'],
+            'products.*.actual_quantities' => ['nullable', 'array', 'max:5000'],
+            'products.*.actual_quantities.*' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'products.*.notes' => ['nullable', 'array', 'max:5000'],
+            'products.*.notes.*' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $documents = \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $categoryIds = Category::selfAndDescendantIds((int) $data['category_id']);
+            $products = Product::query()->whereIn('id', array_column($data['products'], 'product_id'))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $result = [];
+            foreach ($data['products'] as $index => $entry) {
+                $product = $products->get((int) $entry['product_id']);
+                if (! $product || ! in_array((int) $product->category_id, $categoryIds, true)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "products.$index.product_id" => 'کالا خارج از دسته انتخابی است؛ هیچ پیش‌نویسی ذخیره نشد.',
+                    ]);
+                }
+                $variantIds = $product->variants()->pluck('id')->map(fn ($id) => (int) $id)->all();
+                foreach (['actual_quantities', 'notes'] as $field) {
+                    foreach (array_keys($entry[$field] ?? []) as $variantId) {
+                        if (! ctype_digit((string) $variantId) || ! in_array((int) $variantId, $variantIds, true)) {
+                            throw \Illuminate\Validation\ValidationException::withMessages([
+                                "products.$index.$field" => 'تنوع واردشده متعلق به این کالا نیست.',
+                            ]);
+                        }
+                    }
+                }
+                $payload = $entry + ['document_date' => $data['document_date'], 'description' => 'انبارگردانی از نمای دسته‌ای'];
+                if (! empty($entry['document_id'])) {
+                    $document = StockCountDocument::query()->lockForUpdate()->findOrFail($entry['document_id']);
+                    if ((int) $document->product_id !== (int) $product->id || $document->type !== 'product' || $document->status !== 'draft') {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            "products.$index.document_id" => 'سند باید پیش‌نویس همین محصول باشد.',
+                        ]);
+                    }
+                    $document = $this->service->updateProductDraft($document, $payload, (int) auth()->id());
+                } else {
+                    $document = $this->service->createProductDraft($payload, (int) auth()->id());
+                }
+                $result[] = [
+                    'product_id' => (int) $product->id, 'product_name' => $product->name,
+                    'document_id' => (int) $document->id, 'document_number' => $document->document_number,
+                    'edit_url' => route('stock-count-documents.edit', $document),
+                    'counted_count' => (int) $document->counted_count, 'variants_count' => (int) $document->variants_count,
+                ];
+            }
+            return $result;
+        });
+
+        return response()->json(['documents' => $documents, 'message' => 'همه پیش‌نویس‌ها ذخیره شدند؛ فهرست را بررسی و سپس هر سند را نهایی کنید.'])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     public function show(Request $request, StockCountDocument $stockCountDocument)
     {
         $stockCountDocument->load(['warehouse','product','items.variant','creator','updater','finalizer','canceller','history.doer']);

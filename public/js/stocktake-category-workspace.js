@@ -13,11 +13,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusNode = document.getElementById('scStatus');
     const productsNode = document.getElementById('scProducts');
     const liveSearch = document.getElementById('scLiveSearch');
+    const saveAll = document.getElementById('scSaveAll');
+    const draftList = document.getElementById('scDraftList');
 
     const groups = new Map();
     // Retain unsaved counts and saved draft links between searches.
     const entered = new Map();
     const saved = new Map();
+    const documentIds = new Map();
+    const knownProducts = new Map();
+    const invalidCounts = new Map();
+    let bulkSaving = false;
     let activeQuery = '';
     let searchTimer = null;
     let selectionId = 0;
@@ -40,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function containsUnsavedCounts() {
-        return [...entered].some(([productId, values]) => !saved.has(productId) &&
+        return invalidCounts.size > 0 || [...entered].some(([productId, values]) => !saved.has(productId) &&
             [...values.values()].some(v => v !== ''));
     }
 
@@ -48,6 +54,10 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(searchTimer);
         entered.clear();
         saved.clear();
+        documentIds.clear();
+        knownProducts.clear();
+        invalidCounts.clear();
+        draftList?.replaceChildren();
         if (liveSearch) liveSearch.value = '';
         activeQuery = '';
         clearListing();
@@ -69,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function groupFor(row) {
         const id = Number(row.product_id);
+        knownProducts.set(id, row.product_name);
         if (groups.has(id)) return groups.get(id);
 
         const card = make('section','sc-product');
@@ -158,6 +169,10 @@ document.addEventListener('DOMContentLoaded', () => {
         input.setAttribute('aria-label','موجودی واقعی ' + group.name + ' - ' + (row.name || 'تنوع'));
         const remembered = group.quantities.get(id);
         if (remembered !== undefined) input.value = remembered;
+        if (invalidCounts.has(id)) {
+            input.value = invalidCounts.get(id).value;
+            input.setCustomValidity('فقط عدد صحیح نامنفی مجاز است.');
+        }
         if (group.saved) input.disabled = true;
         actualCell.append(input);
         tr.append(actualCell);
@@ -191,13 +206,104 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const group of groups.values()) {
             const counted = [...group.quantities.values()].filter(v => v !== '').length;
             group.button.disabled = group.saved || group.saving || loading || hasMore ||
+                bulkSaving ||
+                [...invalidCounts.values()].some(item => item.productId === group.id) ||
                 [...group.tbody.querySelectorAll('.sc-actual')].some(input => Boolean(input.validationMessage));
             if (!group.saved) group.feedback.textContent = fa(counted) + ' از ' + fa(group.rows.size)
                 + ' تنوع شمارش شده · ' + (hasMore || loading ? 'ابتدا همه ردیف‌های دسته را دریافت کنید.' :
                 'مقادیر خالی فقط در مرحله تأیید نهایی سند تعیین تکلیف می‌شوند.');
         }
         more.hidden = !hasMore;
-        more.disabled = loading;
+        more.disabled = loading || bulkSaving;
+        if (saveAll) saveAll.disabled = !selectionId || loading || hasMore || bulkSaving ||
+            [...groups.values()].some(group => group.saving) || invalidCounts.size > 0 ||
+            pendingProducts().length === 0 || pendingProducts().length > 500;
+    }
+
+    function pendingProducts() {
+        return [...knownProducts.keys()].filter(id => !saved.has(id));
+    }
+
+    function renderDraftList() {
+        if (!draftList) return;
+        draftList.replaceChildren();
+        for (const [id, url] of saved) {
+            const item = make('li', 'mb-2');
+            const link = make('a', 'sc-success', (knownProducts.get(id) || 'محصول') +
+                ' — بررسی و ثبت نهایی پیش‌نویس شماره ' + fa(documentIds.get(id)));
+            link.href = url;
+            item.append(link);
+            draftList.append(item);
+        }
+    }
+
+    function markSaved(id, result) {
+        saved.set(id, result.edit_url);
+        documentIds.set(id, Number(result.document_id));
+        const group = groups.get(id);
+        if (!group) return;
+        group.saved = true;
+        group.tbody.querySelectorAll('.sc-actual').forEach(input => { input.disabled = true; });
+        group.flag.textContent = 'پیش‌نویس ذخیره شد';
+        group.feedback.replaceChildren();
+        const link = make('a', 'sc-success', 'مشاهده و بررسی سند شماره ' + fa(result.document_id));
+        link.href = result.edit_url;
+        group.feedback.append(link);
+        group.button.textContent = 'ذخیره شد';
+    }
+
+    function setBulkControls(disabled) {
+        [show, more, category, subcategory, date, liveSearch, document.getElementById('scClose')]
+            .filter(Boolean).forEach(node => { node.disabled = disabled; });
+        for (const group of groups.values()) {
+            group.tbody.querySelectorAll('.sc-actual').forEach(input => {
+                input.disabled = disabled || group.saved;
+            });
+        }
+    }
+
+    async function saveAllDrafts() {
+        if (!saveAll || saveAll.disabled || bulkSaving) return;
+        if (!date.value) { notice('تاریخ سند را مشخص کنید.', true); date.focus(); return; }
+        const ids = pendingProducts();
+        if (!ids.length || ids.length > 500 || invalidCounts.size) return;
+        bulkSaving = true;
+        setBulkControls(true);
+        updateButtons();
+        notice('در حال ذخیره یکجای پیش‌نویس‌ها؛ این صفحه را نبندید...');
+        try {
+            const response = await fetch(app.dataset.bulkStoreUrl, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || ''},
+                body: JSON.stringify({
+                    category_id: selectionId, document_date: date.value,
+                    products: ids.map(id => ({product_id: id,
+                        ...(documentIds.has(id) ? {document_id: documentIds.get(id)} : {}),
+                        actual_quantities: Object.fromEntries([...(entered.get(id) || [])]
+                            .filter(([, value]) => value !== ''))})),
+                }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(result.errors && Object.values(result.errors).flat().join('، ') ||
+                    result.message || 'ذخیره یکجای پیش‌نویس‌ها ناموفق بود. مقادیر واردشده حفظ شده‌اند.');
+            }
+            if (!Array.isArray(result.documents) || result.documents.length !== ids.length ||
+                new Set(result.documents.map(item => Number(item.product_id))).size !== ids.length ||
+                result.documents.some(item => !ids.includes(Number(item.product_id)) ||
+                    !item.document_id || !item.edit_url)) throw new Error('پاسخ ثبت پیش‌نویس‌ها معتبر نبود.');
+            result.documents.forEach(item => markSaved(Number(item.product_id), item));
+            renderDraftList();
+            notice(fa(result.documents.length) + ' پیش‌نویس یکجا ذخیره شد. از فهرست زیر هر سند را بررسی و سپس ثبت نهایی کنید.');
+        } catch (error) {
+            notice(error.message || 'ذخیره ناموفق بود؛ مقادیر شمارش حفظ شده‌اند.', true);
+        } finally {
+            bulkSaving = false;
+            setBulkControls(false);
+            if (!embedded) subcategory.disabled = !category.value;
+            updateButtons();
+        }
     }
 
     async function requestPage() {
@@ -236,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
             notice(hasMore
                 ? fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0)) + ' تنوع دریافت شد. برای ادامه «نمایش تنوع‌های بیشتر» را بزنید.'
                 : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
-                    'همه تنوع‌های دسته دریافت شدند. می‌توانید شمارش هر محصول را جداگانه به‌عنوان پیش‌نویس ذخیره کنید.'));
+                    'همه تنوع‌های دسته دریافت شدند. شمارش‌ها را وارد کنید و در پایان «ذخیره یکجای پیش‌نویس‌ها» را بزنید.'));
         } catch(error) {
             if (current===sequence && error.name !== 'AbortError') {
                 notice(error.message || 'دریافت ناموفق بود؛ برای تلاش مجدد روی نمایش بیشتر کلیک کنید.',true);
@@ -254,6 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function begin() {
+        if (bulkSaving || [...groups.values()].some(group => group.saving)) return;
         const selected = Number(subcategory.value || category.value);
         if (!Number.isSafeInteger(selected) || selected < 1) {
             notice('ابتدا دسته‌بندی یا زیردسته‌بندی را انتخاب کنید.',true);
@@ -275,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (liveSearch) liveSearch.addEventListener('input', () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => {
-            if (!selectionId) return;
+            if (!selectionId || bulkSaving) return;
             const next = liveSearch.value.trim();
             if (next === activeQuery) return;
             activeQuery = next;
@@ -305,13 +412,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const field = event.target.closest('.sc-actual');
         if (!field) return;
         const group = groups.get(Number(field.dataset.product));
-        if (!group || group.saved) return;
+        if (!group || group.saved || bulkSaving) return;
         const normalized = field.value.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
             .replace(/[٠-٩]/g,d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
         const valid = normalized === '' || (/^\d+$/.test(normalized) &&
             Number.isSafeInteger(Number(normalized)) && Number(normalized) <= 2147483647);
         field.setCustomValidity(valid?'':'فقط عدد صحیح نامنفی مجاز است.');
-        if (!valid) { group.button.disabled = true; group.feedback.textContent = 'مقدار شمارش معتبر نیست.'; return; }
+        if (!valid) {
+            invalidCounts.set(Number(field.dataset.variant), {value: field.value, productId: group.id});
+            group.button.disabled = true;
+            group.feedback.textContent = 'مقدار شمارش معتبر نیست.';
+            updateButtons();
+            return;
+        }
+        invalidCounts.delete(Number(field.dataset.variant));
         field.value = normalized;
         group.quantities.set(Number(field.dataset.variant),normalized);
         entered.set(group.id,group.quantities);
@@ -321,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveProduct(id) {
         const group = groups.get(id);
-        if (!group || group.button.disabled || group.saved || group.saving || loading || hasMore) return;
+        if (!group || group.button.disabled || group.saved || group.saving || loading || hasMore || bulkSaving) return;
         if (!date.value) { notice('تاریخ سند را مشخص کنید.',true); date.focus(); return; }
         const counted = [...group.quantities.values()].filter(v=>v!=='').length;
         // A completely blank draft is also valid; no stock changes on draft save.
@@ -353,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!result.document_id || !result.edit_url) throw new Error('پاسخ ثبت سند معتبر نبود.');
             group.saved = true;
             saved.set(id,result.edit_url);
+            documentIds.set(id, Number(result.document_id));
             group.tbody.querySelectorAll('.sc-actual').forEach(input=>input.disabled=true);
             group.flag.textContent = 'پیش‌نویس ذخیره شد';
             group.feedback.replaceChildren();
@@ -360,6 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
             link.href=result.edit_url;
             group.feedback.append(link);
             group.button.textContent = 'ذخیره شد';
+            renderDraftList();
         } catch(error) {
             group.feedback.textContent = error.message || 'ذخیره پیش‌نویس ناموفق بود؛ دوباره تلاش کنید.';
             group.feedback.classList.add('is-error');
@@ -375,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     show.addEventListener('click',begin);
     more.addEventListener('click',requestPage);
+    saveAll?.addEventListener('click',saveAllDrafts);
 
     if (embedded) {
         const originalForm = document.getElementById('stocktakeForm');
@@ -382,9 +499,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (originalForm.dataset.categoryMode !== '1') return;
             event.preventDefault();
             event.stopImmediatePropagation();
-            notice('برای ذخیره، دکمه «ذخیره پیش‌نویس این محصول» را بزنید. ثبت نهایی دسته‌ای مجاز نیست.', true);
+            notice('برای ذخیره همه شمارش‌ها، دکمه «ذخیره یکجای پیش‌نویس‌ها» را بزنید. ثبت نهایی پس از بررسی هر سند انجام می‌شود.', true);
         }, true);
         document.getElementById('scClose').addEventListener('click', () => {
+            if (bulkSaving || [...groups.values()].some(group => group.saving)) return;
             if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
             reset();
             app.hidden = true;
@@ -395,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('beforeunload',event => {
-        if (!containsUnsavedCounts()) return;
+        if (!containsUnsavedCounts() && invalidCounts.size === 0 && !bulkSaving) return;
         event.preventDefault();
         event.returnValue = '';
     });
