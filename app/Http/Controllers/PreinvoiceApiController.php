@@ -314,12 +314,16 @@ class PreinvoiceApiController extends Controller
                 'errors' => $errors,
                 'item_errors' => $itemErrors,
                 'suggested_items' => $suggestedItems,
+                'stocktake_warning' => app(InventoryCountFreezeService::class)
+                    ->salesWarning(array_column($data['items'] ?? [], 'product_id')),
             ], 422);
         }
 
         return response()->json([
             'ok' => true,
             'data' => $payload,
+            'stocktake_warning' => app(InventoryCountFreezeService::class)
+                ->salesWarning(array_column($data['items'] ?? [], 'product_id')),
         ]);
     }
 

@@ -921,6 +921,8 @@ class PreinvoiceController extends Controller
             'version' => $this->autosaveVersion($order),
             'saved_at' => optional($order->auto_saved_at)->toIso8601String(),
             'draft_token' => $order->draft_token,
+            'stocktake_warning' => app(\App\Services\InventoryCountFreezeService::class)
+                ->salesWarning($order->items->pluck('product_id')->all()),
         ]);
     }
 
@@ -1291,8 +1293,9 @@ class PreinvoiceController extends Controller
     {
         $validated = $this->validateDraftPayload($request, false);
 
-        $order = DB::transaction(function () use ($validated, $stocktakeWarning) {
+        $order = DB::transaction(function () use ($validated, &$stocktakeWarning) {
             app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $stocktakeWarning ??= $this->blockedCountSubmissionMessage($validated['products']);
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
 
@@ -1591,14 +1594,8 @@ class PreinvoiceController extends Controller
 
     private function blockedCountSubmissionMessage(array $products): ?string
     {
-        $freeze = app(\App\Services\InventoryCountFreezeService::class);
-        if (! $freeze->state()?->enabled) return null;
-        foreach (array_unique(array_map(fn ($row) => (int) $row['id'], $products)) as $productId) {
-            if ($freeze->blocked($productId)) {
-                return $freeze->productMessage($productId).' همهٔ اقلام سند به‌صورت پیش‌نویس ذخیره شدند؛ پس از بازگشایی دسته، سند را دوباره بررسی و به مالی ارسال کنید.';
-            }
-        }
-        return null;
+        $warning = app(\App\Services\InventoryCountFreezeService::class)->salesWarning(array_column($products, 'id'));
+        return $warning ? $warning['message'].' همهٔ اقلام سند به‌صورت پیش‌نویس حفظ شدند.' : null;
     }
 
 

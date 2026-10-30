@@ -116,7 +116,27 @@ class InventoryCountFreezeService
     {
         $product = Product::with('category')->find($productId);
         $label = $this->scopeLabel();
-        return 'دستهٔ «'.$label.'» برای انبارگردانی بسته است؛ کالای «'.($product?->name ?? $productId).'» فعلاً قابل فروش، رزرو یا تأیید مالی نیست. پیش‌نویس را نگه دارید. ثبت نهایی شمارش فروش را باز نمی‌کند؛ مدیر باید دسته را صریحاً باز کند.';
+        return 'دستهٔ «'.$label.'» برای انبارگردانی بسته است؛ کالای «'.($product?->name ?? $productId).'» فعلاً قابل فروش، رزرو یا تأیید مالی نیست. برای ارسال باقی اقلام به مالی، ردیف‌های دستهٔ بسته را خودتان حذف کنید؛ یا پیش‌نویس را تا بازگشایی نگه دارید. ثبت نهایی شمارش فروش را باز نمی‌کند؛ مدیر باید دسته را صریحاً باز کند.';
+    }
+
+    /** Inspect a cart in one scoped query; open categories remain sellable. */
+    public function salesWarning(array $productIds): ?array
+    {
+        $state = $this->state();
+        $ids = array_values(array_unique(array_filter(array_map('intval', $productIds), fn ($id) => $id > 0)));
+        if (! $state?->enabled || $ids === []) return null;
+        $open = $this->excludeBlockedProducts(Product::query()->select('products.id')->whereIn('products.id', $ids));
+        $blocked = Product::query()->whereIn('products.id', $ids)->whereNotIn('products.id', $open)
+            ->orderBy('name')->get(['id', 'name']);
+        if ($blocked->isEmpty()) return null;
+        $categories = $state->all_products ? ['تمام کالاهای انبار مرکزی']
+            : Category::whereIn('id', json_decode($state->category_ids ?? '[]', true))->orderBy('name')->pluck('name')->all();
+        $names = $blocked->pluck('name')->all();
+        return [
+            'blocked_product_ids' => $blocked->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            'blocked_product_names' => $names, 'category_names' => $categories,
+            'message' => 'دسته‌های «'.implode('، ', $categories).'» برای شمارش بسته‌اند. اقلام بسته‌شدهٔ این سند: '.implode('، ', $names).'. برای ارسال بقیهٔ کالاها به مالی، این ردیف‌ها را خودتان حذف کنید؛ یا سند را تا بازگشایی به‌صورت پیش‌نویس نگه دارید. فروش کالاهای سایر دسته‌ها ادامه دارد.',
+        ];
     }
 
     public function assertProduct(int $productId, ?int $warehouseId = null): void
