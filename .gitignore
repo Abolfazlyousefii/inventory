@@ -2,7 +2,6 @@
 .env
 .DS_Store
 
-*.sql
 *.zip
 .env.backup
 .env.production
@@ -73,3 +72,14 @@ error_log
 *.orig
 
 *.repaired
+
+# Runtime uploads and machine-specific deployment artifacts.
+/public/uploads/
+/public/upload/
+/public/landing-preview/
+/storage/installed
+/.codex/
+/backup-db.bat
+/*.sql
+*.sql.gz
+*.sql.zip
