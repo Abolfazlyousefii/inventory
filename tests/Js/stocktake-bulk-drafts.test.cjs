@@ -38,15 +38,17 @@ function element(tag = 'div') {
     return n;
 }
 
-function fixture({allowConfirm = true, customRows, rejectBulk = false} = {}) {
+function fixture({allowConfirm = true, customRows, rejectBulk = false, rejectFinalize = false, paged = false} = {}) {
     const nodes = Object.fromEntries(
         ['stocktakeCategoryApp', 'category', 'subcategory', 'scShow', 'scMore',
-            'scStatus', 'scProducts', 'scLiveSearch', 'scClose', 'stocktakeForm', 'scSaveAll', 'scDraftList']
+            'scStatus', 'scProducts', 'scLiveSearch', 'scClose', 'stocktakeForm', 'scSaveAll', 'scDraftList',
+            'scFinalizeAll', 'scReviewSummary', 'scToolbarStatus', 'scReview', 'scBulkToolbar']
             .map(id => [id, element()])
     );
     nodes.stocktakeCategoryApp.dataset = {
         embedded: '1', rowsUrl: '/stock-count-documents/category/variants',
         storeUrl: '/stock-count-documents', bulkStoreUrl: '/stock-count-documents/category-drafts',
+        bulkFinalizeUrl: '/stock-count-documents/category-finalize',
     };
     nodes.category.value = '3';
     nodes.subcategory.value = '';
@@ -81,19 +83,29 @@ function fixture({allowConfirm = true, customRows, rejectBulk = false} = {}) {
             if (options.method === 'POST') {
                 const payload = JSON.parse(options.body);
                 requests.push({method: 'POST', url: String(url), payload});
+                if (String(url).endsWith('category-finalize')) {
+                    if (rejectFinalize) return {ok: false, async json() {return {message: 'No changes applied', conflicts: [{reason: 'Reservation changed'}]};}};
+                    return {ok: true, async json() {return {documents: payload.document_ids.map(id => ({document_id: id, product_id: id - 50, view_url: '/view/'+id}))};}};
+                }
                 if (String(url).endsWith('category-drafts')) {
                     if (rejectBulk) return {ok: false, async json() {return {errors: {products: ['Count rejected']}};}};
                     return {ok: true, async json() {return {documents: payload.products.map(p => ({
                         product_id: p.product_id, product_name: 'Product '+p.product_id,
                         document_id: p.product_id+50, edit_url: '/draft/'+p.product_id,
-                        counted_count: Object.keys(p.actual_quantities).length, variants_count: 1,
+                        counted_count: Object.values(p.actual_quantities).filter(value => value !== null).length,
+                        variants_count: rows.filter(row => row.product_id === p.product_id).length,
+                        total_before: 220, total_actual: 100, total_increase: 0, total_decrease: 120,
+                        review_token: 'review-'+p.product_id,
                     }))};}};
                 }
                 return {ok: true, async json() {return {document_id: 55, edit_url: '/stock-count-documents/55/edit'};}};
             }
             requests.push({method: 'GET', url: String(url)});
+            const cursor = Number(new URL(url).searchParams.get('after_id') || 0);
+            const matches = rows.filter(r => (!new URL(url).searchParams.get('q') || r.product_id === 8) && (!paged || r.variant_id > cursor));
+            const page = paged ? matches.slice(0, 1) : matches;
             return {ok: true, async json() {return {
-                rows: rows.filter(r => !new URL(url).searchParams.get('q') || r.product_id === 8), has_more: false, next_cursor: rows.at(-1)?.variant_id || 0,
+                rows: page, has_more: paged && matches.length > 1, next_cursor: page.at(-1)?.variant_id || cursor,
             };}};
         },
     };
@@ -116,7 +128,7 @@ function fixture({allowConfirm = true, customRows, rejectBulk = false} = {}) {
         input.value = value;
         nodes.scProducts.on_input({target: input});
     };
-    return {nodes, requests, inputs, button, enter};
+    return {nodes, requests, inputs, button, enter, date};
 }
 
 async function until(predicate) {
@@ -187,17 +199,119 @@ test('failed atomic bulk save leaves entered counts editable and offers retry', 
     assert.match(ui.nodes.scStatus.textContent, /Count rejected/);
 });
 
-test('a separately saved product is excluded from the subsequent bulk create request', async () => {
+test('saved draft remains editable and resave updates existing document without duplicating it', async () => {
     const ui = fixture();
     await ui.nodes.scShow.on_click();
     ui.enter(ui.inputs()[0], '8');
-    ui.nodes.scProducts.on_click({target: ui.button()});
-    await until(() => ui.inputs()[0].disabled);
     await ui.nodes.scSaveAll.on_click();
-    const bulk = ui.requests.find(x => x.url.endsWith('category-drafts'));
+    ui.enter(ui.inputs()[0], '9');
+    await ui.nodes.scSaveAll.on_click();
+    const bulk = ui.requests.filter(x => x.url.endsWith('category-drafts')).at(-1);
     assert.equal(bulk.payload.products.length, 1);
-    assert.equal(bulk.payload.products[0].product_id, 8);
+    assert.equal(bulk.payload.products[0].product_id, 7);
+    assert.equal(bulk.payload.products[0].document_id, 57);
+    assert.equal(bulk.payload.products[0].actual_quantities['101'], '9');
     assert.equal(ui.nodes.scDraftList.children.length, 2);
+});
+
+test('explicit bulk save then review enables one confirmed atomic finalization with reviewed tokens', async () => {
+    const ui = fixture();
+    await ui.nodes.scShow.on_click();
+    ui.enter(ui.inputs()[0], '0'); ui.enter(ui.inputs()[1], '12');
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    await ui.nodes.scSaveAll.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true, 'review must be opened explicitly before finalization');
+    ui.nodes.scReview.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, false);
+    assert.match(ui.nodes.scReviewSummary.textContent, /پیش‌نویس/);
+    assert.equal(ui.requests.filter(r => r.url.endsWith('category-finalize')).length, 0);
+    await ui.nodes.scFinalizeAll.on_click();
+    const writes = ui.requests.filter(r => r.url.endsWith('category-finalize'));
+    assert.equal(writes.length, 1);
+    assert.deepEqual(writes[0].payload.document_ids, [57, 58]);
+    assert.deepEqual(writes[0].payload.review_tokens, {'57': 'review-7', '58': 'review-8'});
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    assert.ok(ui.inputs().every(input => input.disabled));
+    assert.equal(ui.date.disabled, true);
+    assert.match(ui.nodes.scStatus.textContent, /نهایی/);
+});
+
+test('incomplete saved drafts and edits after review keep bulk finalization blocked', async () => {
+    const ui = fixture();
+    await ui.nodes.scShow.on_click();
+    ui.enter(ui.inputs()[0], '0');
+    await ui.nodes.scSaveAll.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    ui.enter(ui.inputs()[1], '12');
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    await ui.nodes.scSaveAll.on_click();
+    ui.nodes.scReview.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, false);
+    ui.enter(ui.inputs()[0], '');
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    await ui.nodes.scSaveAll.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    assert.equal(ui.requests.filter(r => r.url.endsWith('category-drafts')).at(-1).payload.products[0].actual_quantities['101'], null);
+});
+
+test('changing document date invalidates review and resaves all existing drafts with the new date', async () => {
+    const ui = fixture();
+    await ui.nodes.scShow.on_click();
+    ui.enter(ui.inputs()[0], '1'); ui.enter(ui.inputs()[1], '2');
+    await ui.nodes.scSaveAll.on_click();
+    ui.nodes.scReview.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, false);
+    ui.date.value = '2026-10-30';
+    ui.date.on_change();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true);
+    assert.equal(ui.nodes.scSaveAll.disabled, false);
+    await ui.nodes.scSaveAll.on_click();
+    const payload = ui.requests.filter(r => r.url.endsWith('category-drafts')).at(-1).payload;
+    assert.equal(payload.document_date, '2026-10-30');
+    assert.deepEqual(payload.products.map(p => p.document_id), [57, 58]);
+    assert.equal(ui.nodes.scFinalizeAll.disabled, true, 'date resave requires a fresh review');
+    ui.nodes.scReview.on_click();
+    assert.equal(ui.nodes.scFinalizeAll.disabled, false);
+});
+
+test('declined final confirmation and server conflicts never mark drafts finalized', async () => {
+    for (const options of [{allowConfirm: false}, {rejectFinalize: true}]) {
+        const ui = fixture(options);
+        await ui.nodes.scShow.on_click();
+        ui.enter(ui.inputs()[0], '1'); ui.enter(ui.inputs()[1], '2');
+        await ui.nodes.scSaveAll.on_click();
+        ui.nodes.scReview.on_click();
+        await ui.nodes.scFinalizeAll.on_click();
+        assert.ok(ui.inputs().every(input => !input.disabled));
+        assert.equal(ui.nodes.scFinalizeAll.disabled, false);
+        if (options.rejectFinalize) assert.match(ui.nodes.scStatus.textContent, /Reservation changed/);
+        else assert.equal(ui.requests.filter(r => r.url.endsWith('category-finalize')).length, 0);
+    }
+});
+
+test('toolbar pagination stays accessible and uses bounded cursor requests before saving', async () => {
+    const ui = fixture({paged: true});
+    await ui.nodes.scShow.on_click();
+    assert.equal(ui.nodes.scSaveAll.disabled, true);
+    assert.equal(ui.nodes.scMore.hidden, false);
+    await ui.nodes.scMore.on_click();
+    assert.equal(ui.inputs().length, 2);
+    assert.equal(ui.nodes.scSaveAll.disabled, false);
+    const gets = ui.requests.filter(r => r.method === 'GET');
+    assert.equal(new URL(gets[1].url).searchParams.get('after_id'), '101');
+    assert.ok(gets.every(r => new URL(r.url).searchParams.get('limit') === '60'));
+});
+
+test('category page has one floating toolbar with bulk save, review, finalize and no per-product save controls', () => {
+    for (const name of ['form', 'category-workspace']) {
+        const blade = fs.readFileSync(path.join(__dirname, '../../resources/views/stocktake/'+name+'.blade.php'), 'utf8');
+        assert.match(blade, /id="scBulkToolbar"/);
+        assert.match(blade, /sc-bulk-toolbar[^}]*position:fixed/s);
+        assert.match(blade, /id="scFinalizeAll"/);
+        assert.match(blade, /sc-bulk-toolbar[^}]*background:var\(--app-surface/s);
+        assert.match(blade, /sc-review-summary[^}]*color:var\(--app-text/s);
+    }
+    assert.doesNotMatch(script, /data-save-product|saveProduct\(|ذخیره پیش‌نویس این محصول/);
 });
 
 

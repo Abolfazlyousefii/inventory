@@ -35,6 +35,20 @@ class StockCountDocumentService
         )->get((int) $variant->id, 0));
     }
 
+    /** Bind a batch confirmation to the exact saved counts shown for review. */
+    public function reviewToken(StockCountDocument $document): string
+    {
+        $rows = $document->items()->orderBy('product_variant_id')->get()->map(static fn ($item) => [
+            (int) $item->product_variant_id,
+            $item->actual_quantity === null ? null : (int) $item->actual_quantity,
+            (int) $item->system_available_at_start, (int) $item->reserved_at_start,
+        ])->all();
+        return hash('sha256', json_encode([
+            (int) $document->id, (int) $document->product_id,
+            $document->document_date?->format('Y-m-d'), $rows,
+        ], JSON_THROW_ON_ERROR));
+    }
+
     public function createProductDraft(array $payload, int $userId): StockCountDocument
     {
         return app(InventoryCountFreezeService::class)->forStocktake(fn()=>DB::transaction(function () use ($payload, $userId) {

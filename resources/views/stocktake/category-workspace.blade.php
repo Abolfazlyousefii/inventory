@@ -43,11 +43,20 @@
 .stocktake-category .sc-more{display:block;margin:18px auto}
 @media(max-width:800px){.stocktake-category .sc-controls{grid-template-columns:1fr 1fr}.stocktake-category .sc-panel{padding:12px}.stocktake-category table{min-width:850px}}
 @media(max-width:500px){.stocktake-category .sc-controls{grid-template-columns:1fr}.stocktake-category .sc-product-head,.stocktake-category .sc-footer{padding:11px}}
+.stocktake-category .sc-bulk-toolbar{position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:24px;right:280px;z-index:1035;display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;padding:13px 16px;border:1px solid var(--app-border,#bad5df);border-radius:15px;background:var(--app-surface,#fff);color:var(--app-text,#18364a);box-shadow:0 7px 32px rgba(18,52,72,.2);backdrop-filter:blur(10px)}
+.stocktake-category .sc-bulk-toolbar[hidden],.stocktake-category[hidden] .sc-bulk-toolbar{display:none!important}
+.stocktake-category .sc-toolbar-status{flex:1 1 100%;font-size:.78rem;line-height:1.8;color:var(--app-text,#34566d);max-height:3.6em;overflow:auto}
+.stocktake-category .sc-bulk-toolbar button{min-height:41px;margin:0;white-space:normal;font-weight:700}
+.stocktake-category .sc-review-summary{padding:12px;border-radius:10px;background:var(--app-surface,#f0f8fb);color:var(--app-text,#25485d);border:1px solid var(--app-border,#cbdde8);font-size:.83rem;line-height:2;margin-bottom:12px}
+.stocktake-category{padding-bottom:190px!important}
+@media(max-width:1199px){.stocktake-category .sc-bulk-toolbar{left:16px;right:16px}}
+@media(max-width:600px){.stocktake-category .sc-bulk-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom))}.stocktake-category .sc-toolbar-status{grid-column:1/-1;font-size:.72rem}.stocktake-category .sc-bulk-toolbar button{font-size:.77rem;padding:7px}.stocktake-category{padding-bottom:240px!important}}
 </style>
 <div class="stocktake-category" id="stocktakeCategoryApp"
      data-rows-url="{{ route('stock-count-documents.category-variants') }}"
      data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
      data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"
+    data-bulk-finalize-url="{{ route('stock-count-documents.category-finalize') }}"
      data-store-url="{{ route('stock-count-documents.store') }}">
   <div class="sc-top mb-3">
     <div>
@@ -58,9 +67,9 @@
   </div>
 
   <div class="sc-warning">
-    <strong>مهم:</strong> هر محصول سند جداگانه انبارگردانی دارد. در این صفحه فقط پیش‌نویس همان محصول ذخیره می‌شود؛
-    هیچ موجودی با نمایش یا ذخیره پیش‌نویس تغییر نمی‌کند. مقدارهای خالی نباید بدون شمارش در تأیید نهایی صفر شوند.
-    قبل از اعمال نهایی هر سند، تمام تنوع‌های همان محصول را کنترل کنید.
+    <strong>مهم:</strong> هر محصول سند جداگانه انبارگردانی دارد. شمارش همه کالاها را یکجا ذخیره کنید؛
+    سپس جمع‌بندی را بررسی و با «ثبت نهایی همه» یکجا تأیید کنید. ذخیره پیش‌نویس موجودی را تغییر نمی‌دهد.
+    برای ثبت نهایی باید تمام تنوع‌ها شمارش شوند؛ مقدار خالی خودکار صفر نمی‌شود.
   </div>
 
   <section class="sc-panel">
@@ -85,9 +94,14 @@
 
   <div id="scStatus" role="status" class="sc-status" aria-live="polite">برای مشاهده محصولات، دسته یا زیردسته را انتخاب کن.</div>
   <div id="scProducts"></div>
-  <button type="button" id="scMore" class="btn btn-outline-primary sc-more" hidden>نمایش تنوع‌های بیشتر</button>
-  <div class="sc-footer"><button type="button" id="scSaveAll" class="btn btn-success" disabled>ذخیره یکجای پیش‌نویس‌ها</button><span class="sc-subtitle">تمام کالاهای دریافت‌شده با یک دکمه ذخیره می‌شوند؛ مقادیر خالی شمارش‌نشده می‌مانند.</span></div>
-  <section class="sc-panel mt-3"><h6>فهرست پیش‌نویس‌ها برای بررسی و ثبت نهایی</h6><ul id="scDraftList" class="mb-0" aria-live="polite"></ul></section>
+    <div id="scBulkToolbar" class="sc-bulk-toolbar" role="toolbar" aria-label="عملیات دسته‌ای شمارش" hidden>
+      <div id="scToolbarStatus" class="sc-toolbar-status" role="status" aria-live="polite">ابتدا همه کالاهای دسته را دریافت کنید؛ سپس شمارش‌ها را یکجا ذخیره کنید.</div>
+      <button type="button" id="scMore" class="btn btn-outline-primary" hidden>دریافت ادامه کالاها</button>
+      <button type="button" id="scSaveAll" class="btn btn-success" disabled>ذخیره یکجای پیش‌نویس‌ها</button>
+      <button type="button" id="scReview" class="btn btn-outline-secondary" disabled>بررسی جمع‌بندی</button>
+      <button type="button" id="scFinalizeAll" class="btn btn-primary" disabled>ثبت نهایی همه</button>
+    </div>
+  <section class="sc-panel mt-3" id="scReviewPanel"><h6>جمع‌بندی شمارش و بررسی پیش‌نویس‌ها</h6><div id="scReviewSummary" class="sc-review-summary" aria-live="polite">پس از ذخیره یکجا، جمع‌بندی اینجا نمایش داده می‌شود.</div><ul id="scDraftList" class="mb-0" aria-live="polite"></ul></section>
   <p class="sc-subtitle">توجه: ارقام موجودی و رزرو در لحظه بارگذاری خوانده می‌شوند و تا پایان انبارگردانی Snapshot ثابت محسوب نمی‌شوند.</p>
 </div>
 <script>{!! file_get_contents(public_path('js/stocktake-category-workspace.js')) !!}</script>

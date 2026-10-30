@@ -34,9 +34,10 @@ test('every mobile counting cell has a label, including live queue and entered p
     assert.doesNotThrow(() => new vm.Script(source));
 });
 
-test('layout changes preserve existing draft safety and never call stock finalization', () => {
-    assert.match(source, /group\.button\.disabled = group\.saved \|\| group\.saving \|\| loading \|\| hasMore/);
-    assert.match(source, /actual_quantities:Object\.fromEntries\(\[\.\.\.group\.quantities\]\.filter\(\(\[,v\]\)=>v!==''\)\)/);
-    assert.doesNotMatch(source, /\/finalize|confirm_empty_as_zero/);
+test('layout preserves reviewed complete-only explicit bulk finalization', () => {
+    assert.match(source, /if \(!canFinalize\(\)\) return/);
+    assert.match(source, /if \(!window\.confirm\(/);
+    assert.match(source, /value === '' \? null : value/);
+    assert.doesNotMatch(source, /confirm_empty_as_zero|data-save-product/);
     assert.match(form, /عدد ۰ را صریحاً/);
 });

@@ -15,12 +15,12 @@ test('category counting JavaScript is valid and uses bounded 60-row GET pages', 
     assert.match(source, /new AbortController\(\)/);
 });
 
-test('group save uses a single product draft with only its non-empty quantities', () => {
-    assert.match(source, /product_id:id,document_date:date\.value/);
-    assert.match(source, /actual_quantities:Object\.fromEntries\(\[\.\.\.group\.quantities\]\.filter\(\(\[,v\]\)=>v!==''\)\)/);
+test('bulk save retains independent product drafts and explicit incomplete-count state', () => {
+    assert.match(source, /products: ids\.map\(id => \(\{product_id: id/);
+    assert.match(source, /value === '' \? null : value/);
     assert.match(source, /group\.saved = true/);
-    assert.match(source, /group\.button\.disabled = group\.saved \|\| group\.saving \|\| loading \|\| hasMore/);
-    assert.doesNotMatch(source, /\/finalize|stock-count-documents\.finalize|confirm_empty_as_zero/);
+    assert.match(source, /pendingProducts\(\)\.length === 0/);
+    assert.doesNotMatch(source, /confirm_empty_as_zero|data-save-product/);
     assert.match(blade, /هر محصول سند جداگانه/);
     assert.match(blade, /نمایش محصولات دسته/);
     assert.match(blade, /ذخیره پیش‌نویس/);
@@ -48,7 +48,7 @@ test('category workspace integrates into the original form without nested forms 
     assert.match(source, /if \(!embedded\) category\.addEventListener/);
     assert.match(source, /if \(embedded\) \{/);
     assert.match(source, /originalForm\.addEventListener\('submit'/);
-    assert.doesNotMatch(source, /\/finalize|stock-count-documents\.finalize/);
+    assert.match(source, /finalizeAll\?\.addEventListener\('click',finalizeAllDrafts\)/);
 });
 
 test('debounced search queries the selected category while retaining unsaved zero and other counts', () => {
@@ -61,7 +61,7 @@ test('debounced search queries the selected category while retaining unsaved zer
     assert.match(source, /quantities:entered\.get\(id\) \|\| new Map\(\)/);
     assert.match(source, /const remembered = group\.quantities\.get\(id\)/);
     assert.match(source, /if \(remembered !== undefined\) input\.value = remembered/);
-    assert.match(source, /saved\.set\(id,result\.edit_url\)/);
+    assert.match(source, /saved\.set\(id, result\.edit_url\)/);
     assert.match(source, /entered\.set\(group\.id,group\.quantities\)/);
     assert.doesNotMatch(source, /confirm_empty_as_zero/);
 });

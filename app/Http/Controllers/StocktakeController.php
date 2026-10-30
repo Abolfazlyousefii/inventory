@@ -162,12 +162,78 @@ class StocktakeController extends Controller
                     'document_id' => (int) $document->id, 'document_number' => $document->document_number,
                     'edit_url' => route('stock-count-documents.edit', $document),
                     'counted_count' => (int) $document->counted_count, 'variants_count' => (int) $document->variants_count,
+                    'total_before' => (int) $document->total_before, 'total_actual' => (int) $document->total_actual,
+                    'total_increase' => (int) $document->total_increase, 'total_decrease' => (int) $document->total_decrease,
+                    'review_token' => $this->service->reviewToken($document),
                 ];
             }
             return $result;
         });
 
-        return response()->json(['documents' => $documents, 'message' => 'همه پیش‌نویس‌ها ذخیره شدند؛ فهرست را بررسی و سپس هر سند را نهایی کنید.'])
+        return response()->json(['documents' => $documents, 'message' => 'همه پیش‌نویس‌ها ذخیره شدند؛ خلاصه را بررسی و سپس ثبت نهایی یکجا را تأیید کنید.'])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function finalizeCategory(Request $request)
+    {
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'document_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'document_ids.*' => ['required', 'integer', 'distinct', 'exists:stock_count_documents,id'],
+            'review_tokens' => ['required', 'array', 'min:1', 'max:500'],
+            'review_tokens.*' => ['required', 'string', 'size:64'],
+        ]);
+
+        try {
+            $result = \App\Support\ReservationSideEffects::transaction(function () use ($data) {
+                $categories = Category::selfAndDescendantIds((int) $data['category_id']);
+                $documents = StockCountDocument::query()->whereIn('id', $data['document_ids'])
+                    ->with('product')->orderBy('id')->lockForUpdate()->get();
+                $productIds = [];
+                foreach ($documents as $document) {
+                    if ($document->status !== 'draft' || $document->type !== 'product'
+                        || ! $document->product || ! in_array((int) $document->product->category_id, $categories, true)
+                        || in_array((int) $document->product_id, $productIds, true)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'document_ids' => 'همه اسناد باید پیش‌نویس محصولات متفاوتِ همین دسته باشند؛ هیچ موجودی تغییر نکرد.',
+                        ]);
+                    }
+                    $productIds[] = (int) $document->product_id;
+                    $token = (string) ($data['review_tokens'][$document->id] ?? '');
+                    if ($token === '' || ! hash_equals($this->service->reviewToken($document), $token)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'review_tokens' => 'شمارش ذخیره‌شدهٔ «'.$document->product->name.'» پس از بررسی تغییر کرده است؛ پیش‌نویس‌ها را دوباره بررسی کنید. هیچ موجودی تغییر نکرد.',
+                        ]);
+                    }
+                }
+                if ($documents->count() !== count($data['document_ids'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['document_ids' => 'فهرست اسناد تغییر کرده است؛ دوباره بررسی کنید.']);
+                }
+                $result = [];
+                foreach ($documents as $document) {
+                    try {
+                        $finalized = $this->service->finalize($document, (int) auth()->id(), false);
+                    } catch (StockCountFinalizeValidationException $exception) {
+                        throw new StockCountFinalizeValidationException(
+                            'کالای «'.$document->product->name.'»: '.$exception->getMessage(),
+                            array_map(fn ($conflict) => $conflict + [
+                                'document_id' => (int) $document->id, 'product_name' => $document->product->name,
+                            ], $exception->conflicts()),
+                        );
+                    }
+                    $result[] = ['document_id' => (int) $finalized->id, 'product_id' => (int) $finalized->product_id,
+                        'view_url' => route('stock-count-documents.view', $finalized)];
+                }
+                return $result;
+            });
+        } catch (StockCountFinalizeValidationException $exception) {
+            return response()->json([
+                'message' => 'ثبت نهایی یکجا انجام نشد؛ هیچ‌کدام از اسناد اعمال نشدند.',
+                'errors' => ['finalize' => [$exception->getMessage()]], 'conflicts' => $exception->conflicts(),
+            ], 422)->header('Cache-Control', 'private, no-store');
+        }
+
+        return response()->json(['documents' => $result, 'message' => 'همهٔ اسناد بررسی‌شده یکجا نهایی شدند و موجودی اصلاح شد.'])
             ->header('Cache-Control', 'private, no-store');
     }
 
