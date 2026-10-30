@@ -30,6 +30,7 @@ class PreinvoiceProductFinderService
             ->where('products.is_sellable', true)
             ->withCount(['variants as sellable_variants_count' => fn (Builder $q) => $bundleStock->constrainAvailableVariants($q)])
             ->withSum(['variants as total_available_stock' => fn (Builder $q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0)], 'stock');
+        app(InventoryCountFreezeService::class)->excludeBlockedProducts($query);
 
         if ($categoryId > 0) {
             $query->whereIn('products.category_id', Category::selfAndDescendantIds($categoryId));

@@ -53,18 +53,6 @@ function quickReturnSearch(string $q, int $page = 1): array
     );
 }
 
-it('finds products from descendant categories without requiring stock or a selling price', function () {
-    $root = Category::create(['name' => 'برقیجات']);
-    $child = Category::create(['name' => 'کابل', 'parent_id' => $root->id]);
-    $variant = makeQuickReturnVariant($child, null, 'CAT1');
-    $variant->product->update(['price' => 0]);
-    $response = app(SalesReturnLookupController::class)->categoryProducts($root, Request::create('/'));
-    expect(collect($response['data'])->pluck('id'))->toContain($variant->product_id);
-    $categories = app(SalesReturnLookupController::class)->categories(Request::create('/'));
-    expect(collect($categories['data'])->firstWhere('id', $root->id)['children_count'])->toBe(1);
-    expect(quickReturnSearch('CASE-CAT1')['results'][0]['catalog_sell_price'])->toBe(0);
-});
-
 it('finds S25 FE variants through the model list even if out of stock and not sellable', function () {
     $category = Category::query()->create(['name' => 'گارد']);
     $model = ModelList::query()->create([

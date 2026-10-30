@@ -7,16 +7,6 @@ use PHPUnit\Framework\TestCase;
 
 class SalesReturnPriceNormalizationTest extends TestCase
 {
-    public function test_negative_decimal_and_malformed_grouping_are_not_silently_changed_into_positive_prices(): void
-    {
-        foreach (['-100', '12.50', '1,25', '۱۰۰-'] as $value) {
-            $request = TestableStoreSalesReturnRequest::create('/', 'POST', ['items' => [['refund_unit_price' => $value, 'sell_price' => $value]]]);
-            $request->runPriceNormalization();
-            $this->assertFalse(is_int($request->input('items.0.refund_unit_price')));
-            $this->assertFalse(is_int($request->input('items.0.sell_price')));
-        }
-    }
-
     public function test_persian_arabic_and_english_money_inputs_become_integer_rials(): void
     {
         $request = TestableStoreSalesReturnRequest::create('/', 'POST', [

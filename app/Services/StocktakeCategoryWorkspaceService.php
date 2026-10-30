@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Category;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Read-only category variant browser for stocktaking. The existing
@@ -29,6 +30,17 @@ final class StocktakeCategoryWorkspaceService
             ->join('products as p', 'p.id', '=', 'v.product_id')
             ->whereIn('p.category_id', $categories)
             ->where('v.id', '>', $afterId);
+
+        // Virtual bundle availability is derived from components; counting it
+        // would adjust the same physical goods twice. Filter before pagination.
+        if (Schema::hasColumn('products', 'is_bundle') && Schema::hasColumn('products', 'bundle_stock_mode')) {
+            $variantsQuery->where(function ($query) {
+                $query->where('p.is_bundle', false)
+                    ->orWhereNull('p.is_bundle')
+                    ->orWhere('p.bundle_stock_mode', '<>', 'automatic')
+                    ->orWhereNull('p.bundle_stock_mode');
+            });
+        }
 
         if ($search !== '') {
             // Search is restricted to the selected category and descendants.

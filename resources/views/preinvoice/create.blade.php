@@ -3,6 +3,11 @@
 @push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
 
 @section('content')
+    @include('preinvoice.partials.count-freeze-notice', ['order' => $order ?? null])
+    <div id="preinvoiceStocktakeWarning" class="alert alert-warning" role="status" aria-live="polite" hidden>
+        <div id="preinvoiceStocktakeWarningMessage"></div>
+        <ul id="preinvoiceStocktakeWarningItems" class="mb-0 mt-2"></ul>
+    </div>
 	@php
 		$order = $order ?? null;
 $customersPageUrl = $customersPageUrl ?? '/customers';
@@ -1381,6 +1386,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		@if(session('success'))
 			<div class="alert alert-success border-0 shadow-sm rounded-4 fw-bold py-2">✅ {{ session('success') }}</div>
 		@endif
+
+		@if(session('warning'))
+			<div class="alert alert-warning border-0 shadow-sm rounded-4 fw-bold py-2" role="status">{{ session('warning') }}</div>
+		@endif
 		@if(session('error'))
 			<div class="alert alert-danger border-0 shadow-sm rounded-4 fw-bold py-2" style="white-space:pre-wrap">{!! session('error') !!}</div>
 		@endif
@@ -1630,6 +1639,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 	@endphp
 
 	<script src="{{ asset('js/preinvoice-merge.js') }}"></script>
+	<script src="{{ asset('js/preinvoice-stocktake-warning.js') }}?v=20261030"></script>
 	<script src="{{ asset('js/variant-search.js') }}?v=20261018"></script>
 	<script>
 		window.PREINVOICE_BOOT = {
@@ -1953,6 +1963,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				error.itemErrors = json?.item_errors || [];
 				if (error.itemErrors.length) showReservationItemErrors(error.itemErrors);
 				throw error;
+			}
+			if (Object.prototype.hasOwnProperty.call(json || {}, 'stocktake_warning')) {
+				globalThis.PreinvoiceStocktakeWarning?.render(json.stocktake_warning);
 			}
 			return json;
 		}
@@ -2339,6 +2352,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					updateLocalDraftStatus('نسخه دیگری از این پیش‌نویس تغییر کرده است؛ صفحه را تازه‌سازی کنید.', false);
 				}
 				throw new Error(json?.message || 'ذخیره انجام نشد؛ پیش‌نویس قبلی حفظ شد.');
+			}
+			if (Object.prototype.hasOwnProperty.call(json || {}, 'stocktake_warning')) {
+				globalThis.PreinvoiceStocktakeWarning?.render(json.stocktake_warning);
 			}
 			currentAutosaveUuid = json.uuid || currentAutosaveUuid;
 			currentAutosaveVersion = json.version;

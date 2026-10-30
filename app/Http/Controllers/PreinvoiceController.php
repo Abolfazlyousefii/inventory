@@ -921,6 +921,8 @@ class PreinvoiceController extends Controller
             'version' => $this->autosaveVersion($order),
             'saved_at' => optional($order->auto_saved_at)->toIso8601String(),
             'draft_token' => $order->draft_token,
+            'stocktake_warning' => app(\App\Services\InventoryCountFreezeService::class)
+                ->salesWarning($order->items->pluck('product_id')->all()),
         ]);
     }
 
@@ -1181,7 +1183,8 @@ class PreinvoiceController extends Controller
             ]);
         }
 
-        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated, $submissionToken) {
+        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated, $submissionToken, $request) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
 
             $existingOrder = PreinvoiceOrder::query()
@@ -1189,7 +1192,19 @@ class PreinvoiceController extends Controller
                 ->where('submission_token', $submissionToken)
                 ->first();
             if ($existingOrder) {
+                if ($existingOrder->status === PreinvoiceOrder::STATUS_DRAFT) {
+                    $existingOrder->loadMissing('items');
+                    $existingRows = $existingOrder->items->map(fn ($item) => ['id' => (int) $item->product_id])->all();
+                    $message = $this->blockedCountSubmissionMessage($existingRows)
+                        ?? 'این پیش‌فاکتور در وضعیت پیش‌نویس است؛ همان سند را باز کنید، اقلام را بررسی و دوباره به مالی ارسال کنید.';
+                    return ['stocktake_draft_response' => redirect()->route('preinvoice.draft.edit', $existingOrder->uuid)
+                        ->with('preinvoice_submit_succeeded', true)->with('warning', $message)];
+                }
                 return ['expires_at' => $existingOrder->stock_frozen_until];
+            }
+
+            if ($message = $this->blockedCountSubmissionMessage($validated['products'])) {
+                return ['stocktake_draft_response' => $this->saveTrueDraftFromRequest($request, $message)];
             }
 
             $reservationToken = $validated['reservation_token'] ?? null;
@@ -1267,16 +1282,20 @@ class PreinvoiceController extends Controller
             return $reservationMeta;
         });
 
+        if (isset($reservationMeta['stocktake_draft_response'])) return $reservationMeta['stocktake_draft_response'];
+
         return redirect()->route('preinvoice.create')
             ->with('preinvoice_submit_succeeded', true)
             ->with('success', $this->finalSubmitSuccessMessage($reservationMeta));
     }
 
-    private function saveTrueDraftFromRequest(Request $request)
+    private function saveTrueDraftFromRequest(Request $request, ?string $stocktakeWarning = null)
     {
         $validated = $this->validateDraftPayload($request, false);
 
-        $order = DB::transaction(function () use ($validated) {
+        $order = DB::transaction(function () use ($validated, &$stocktakeWarning) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $stocktakeWarning ??= $this->blockedCountSubmissionMessage($validated['products']);
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
 
@@ -1344,13 +1363,22 @@ class PreinvoiceController extends Controller
                 'preinvoice_uuid' => $order->uuid,
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
             ]);
+            if ($stocktakeWarning !== null) {
+                $order->reviews()->create([
+                    'user_id' => auth()->id(), 'action' => 'stocktake_freeze_submission',
+                    'reason' => $stocktakeWarning,
+                    'before_items' => ['status' => 'submission_requested'],
+                    'after_items' => ['status' => PreinvoiceOrder::STATUS_DRAFT],
+                ]);
+            }
 
             return $order;
         });
 
         return redirect()->route('preinvoice.draft.edit', $order->uuid)
             ->with('preinvoice_submit_succeeded', true)
-            ->with('success', '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
+            ->with($stocktakeWarning !== null ? 'warning' : 'success',
+                $stocktakeWarning ?? '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
     }
 
     public function editDraft(string $uuid)
@@ -1389,6 +1417,9 @@ class PreinvoiceController extends Controller
         $validated = $this->validateDraftPayload($request, false, $order);
 
         $reservationMeta = ReservationSideEffects::transaction(function () use ($order, $validated, $isSubmit) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $stocktakeWarning = $this->blockedCountSubmissionMessage($validated['products']);
+            if ($stocktakeWarning !== null) $isSubmit = false;
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $order = PreinvoiceOrder::query()
                 ->with(['items', 'invoice.items'])
@@ -1538,7 +1569,7 @@ class PreinvoiceController extends Controller
             $order->reviews()->create([
                 'user_id' => auth()->id(),
                 'action' => $isSubmit ? 'seller_submitted_to_finance' : 'preinvoice_draft_updated',
-                'reason' => $isSubmit ? 'پیش‌فاکتور ثبت نهایی شد و به صف تایید مالی رفت.' : 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.',
+                'reason' => $stocktakeWarning ?? ($isSubmit ? 'پیش‌فاکتور ثبت نهایی شد و به صف تایید مالی رفت.' : 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.'),
                 'before_items' => $before,
                 'after_items' => $this->snapshotItems($order->fresh('items.product', 'items.variant')),
             ]);
@@ -1549,12 +1580,22 @@ class PreinvoiceController extends Controller
                 'user_id' => auth()->id(),
             ]);
 
-            return $reservationMeta;
+            return $reservationMeta + ['stocktake_warning' => $stocktakeWarning];
         });
 
+        if (! empty($reservationMeta['stocktake_warning'])) {
+            return back()->with('preinvoice_submit_succeeded', true)->with('warning', $reservationMeta['stocktake_warning']);
+        }
         return back()
             ->with('preinvoice_submit_succeeded', true)
             ->with('success', $isSubmit ? $this->finalSubmitSuccessMessage($reservationMeta) : '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
+    }
+
+
+    private function blockedCountSubmissionMessage(array $products): ?string
+    {
+        $warning = app(\App\Services\InventoryCountFreezeService::class)->salesWarning(array_column($products, 'id'));
+        return $warning ? $warning['message'].' همهٔ اقلام سند به‌صورت پیش‌نویس حفظ شدند.' : null;
     }
 
 

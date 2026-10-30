@@ -238,7 +238,6 @@ class SalesReturnCorrectionWorkflowTest extends PendingSalesReturnEditTest
         $user->id = 1;
         $user->shouldReceive('isSuperAdmin')->andReturn(false);
         $user->shouldReceive('isAdministrator')->andReturn(false);
-        $user->shouldReceive('hasRole')->andReturn(false);
         $user->shouldReceive('hasPermission')->andReturnUsing(fn ($p) => $p === 'page.sales.returns');
         $request = Request::create('/sales-return-corrections/1/warehouse', 'POST', ['note' => 'تأیید انبار']);
         $request->setUserResolver(fn () => $user);

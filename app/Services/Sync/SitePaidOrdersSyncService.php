@@ -27,7 +27,7 @@ class SitePaidOrdersSyncService
     {
         // Rollback safety: installing the files does not silently switch the
         // existing paid-order importer until the direct mode is explicitly on.
-        if (!config('services.request_driven_site_stock', false)) {
+        if (! $this->directEnabled()) {
             return app(LegacyApiSitePaidOrdersSyncService::class)->syncAll();
         }
         $summary = [
@@ -49,13 +49,19 @@ class SitePaidOrdersSyncService
             // New paid orders take priority, even if old paid orders have bad
             // seller/customer mappings. All queries are bounded and omit invoices
             // already created in Inventory (the importer is independently idempotent).
-            $findBatch = static function (int $afterId, int $limit, bool $newestFirst = false, array $exclude = []) use ($inventoryDb) {
+            // The independent rollout handles only the held-order contract.
+            // Historical unheld paid orders remain on their existing recovery path.
+            $heldOnly = ! (bool) config('services.request_driven_site_stock', false);
+            $findBatch = static function (int $afterId, int $limit, bool $newestFirst = false, array $exclude = []) use ($inventoryDb, $heldOnly) {
                 $query = DB::connection('site')->table('orders as site_orders')
                     ->leftJoin($inventoryDb.'.invoices as inventory_invoices',
                         'inventory_invoices.external_order_id', '=', 'site_orders.id')
                     ->where('site_orders.status', 'paid')
+                    ->when($heldOnly, fn ($q) => $q->where('site_orders.inventory_stock_hold_id', '>', 0))
                     ->where('site_orders.id', '>', $afterId)
-                    ->whereNull('inventory_invoices.id');
+                    ->where(fn ($q) => $q->whereNull('inventory_invoices.id')
+                        ->orWhereNull('site_orders.inventory_synced_at')
+                        ->orWhereNull('site_orders.inventory_document_id'));
                 if ($exclude !== []) {
                     $query->whereNotIn('site_orders.id', $exclude);
                 }
@@ -96,7 +102,7 @@ class SitePaidOrdersSyncService
                 $summary['received']++;
                 try {
                     $payload = $this->toImportPayload($order, $provinces, $cities);
-                    $result = $this->orderService->import($payload, false);
+                    $result = $this->importAndRecord($order, $payload);
                     $summary[$result['created'] ? 'created' : 'existing']++;
                 } catch (Throwable $exception) {
                     // Never advance past or mark a failed order: later invocations retry it.
@@ -130,8 +136,8 @@ class SitePaidOrdersSyncService
      */
     public function importOne(int $siteOrderId): array
     {
-        if (! config('services.request_driven_site_stock', false)) {
-            throw new RuntimeException('Enable REQUEST_DRIVEN_SITE_STOCK before direct invoice import.');
+        if (! $this->directEnabled()) {
+            throw new RuntimeException('Enable DIRECT_SITE_PAID_ORDERS before direct invoice import.');
         }
         if ($siteOrderId < 1) {
             throw new RuntimeException('Invalid Site order ID.');
@@ -153,8 +159,8 @@ class SitePaidOrdersSyncService
         $cities = DB::connection('site')->table('cities')
             ->where('id', $order->city_id)->pluck('name', 'id');
 
-        $result = $this->orderService->import(
-            $this->toImportPayload($order, $provinces, $cities), false
+        $result = $this->importAndRecord(
+            $order, $this->toImportPayload($order, $provinces, $cities)
         );
 
         return [
@@ -240,5 +246,38 @@ class SitePaidOrdersSyncService
                 throw new RuntimeException('Site and Inventory databases must be on the same MySQL server.');
             }
         }
+    }
+
+    private function directEnabled(): bool
+    {
+        return (bool) config('services.request_driven_site_stock', false)
+            || (bool) config('services.direct_site_paid_orders', false);
+    }
+
+    /** Use the Inventory connection for both schemas so invoice and Site receipt commit together. */
+    private function importAndRecord(SiteOrder $order, array $payload): array
+    {
+        $siteDb = (string) config('database.connections.site.database');
+        if (! preg_match('/^[A-Za-z0-9_]+$/D', $siteDb)) {
+            throw new RuntimeException('Unsafe Site schema name.');
+        }
+        return DB::transaction(function () use ($order, $payload, $siteDb) {
+            $query = DB::table($siteDb.'.orders')->where('id', $order->id);
+            $current = (clone $query)->lockForUpdate()->first(['status', 'inventory_stock_hold_id']);
+            if (! $current || $current->status !== 'paid'
+                || (int) $current->inventory_stock_hold_id !== (int) $order->inventory_stock_hold_id) {
+                throw new RuntimeException('Paid Site order changed before import; retry after review.');
+            }
+            $result = $this->orderService->import($payload, false);
+            $invoice = $result['invoice'];
+            $query->update([
+                'inventory_document_type' => 'invoice',
+                'inventory_document_id' => $invoice->id,
+                'inventory_document_uuid' => $invoice->uuid,
+                'inventory_sync_status' => 'synced', 'inventory_synced_at' => now(),
+                'inventory_last_error' => null,
+            ]);
+            return $result;
+        }, 3);
     }
 }

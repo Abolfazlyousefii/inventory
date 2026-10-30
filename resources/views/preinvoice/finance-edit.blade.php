@@ -14,6 +14,7 @@
 @push('styles')<link rel="stylesheet" href="{{ asset('css/finance-review.css') }}?v=20261026b">@endpush
 @section('content')
 <div class="finance-review" dir="rtl">
+    @include('preinvoice.partials.count-freeze-notice', ['order' => $order])
     <header class="fr-heading"><div><span class="fr-eyebrow">مالی / بررسی اولیه</span><h1>بررسی پیش‌فاکتور <b>{{ $order->uuid }}</b></h1><p>اقلام و تخفیف‌ها را بررسی کنید؛ سپس ذخیره یا تأیید کنید.</p></div><a class="btn btn-outline-secondary" href="{{ route('preinvoice.draft.index') }}">بازگشت به صف مالی</a></header>
     @foreach(['success'=>'success','warning'=>'warning','error'=>'danger'] as $key=>$type)
         @if(session($key))<div class="alert alert-{{ $type }}" role="status">{{ session($key) }}</div>@endif

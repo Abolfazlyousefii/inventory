@@ -23,7 +23,7 @@ class InventoryCountFreezeService
 
     private int $stocktakeDepth = 0;
 
-    public const MESSAGE = 'انبارگردانی این گروه فعال است؛ تغییر موجودی، رزرو و تأیید مالی تا پایان شمارش بسته است. پیش‌نویس را می‌توانید نگه دارید.';
+    public const MESSAGE = 'انبارگردانی این گروه فعال است؛ فروش، تغییر موجودی، رزرو و تأیید مالی تا بازکردن صریح دسته بسته است. پیش‌نویس را می‌توانید نگه دارید.';
 
     public function state(bool $exclusive = false): ?object
     {
@@ -81,6 +81,64 @@ class InventoryCountFreezeService
         })->exists();
     }
 
+    /** Apply before pagination so a page cannot be filled with unavailable products. */
+    public function excludeBlockedProducts(\Illuminate\Database\Eloquent\Builder $query, string $column = 'products.id'): \Illuminate\Database\Eloquent\Builder
+    {
+        $state = $this->state();
+        if (! $state?->enabled) return $query;
+        if ($state->all_products) return $query->whereRaw('1 = 0');
+        $ids = json_decode($state->product_ids ?? '[]', true);
+        $categories = [];
+        foreach (json_decode($state->category_ids ?? '[]', true) as $id) {
+            $categories = array_merge($categories, Category::selfAndDescendantIds((int) $id));
+        }
+        $query->whereNotIn($column, $ids)
+            ->whereNotIn($column, Product::query()->select('id')->whereIn('category_id', $categories));
+        if (Schema::hasTable('product_bundle_components')) {
+            $query->whereNotIn($column, DB::table('product_bundle_components as freeze_recipe')
+                ->join('product_variants as freeze_bundle', 'freeze_bundle.id', '=', 'freeze_recipe.bundle_variant_id')
+                ->join('product_variants as freeze_part', 'freeze_part.id', '=', 'freeze_recipe.component_variant_id')
+                ->join('products as freeze_product', 'freeze_product.id', '=', 'freeze_part.product_id')
+                ->where(fn ($q) => $q->whereIn('freeze_product.id', $ids)->orWhereIn('freeze_product.category_id', $categories))
+                ->select('freeze_bundle.product_id'));
+        }
+        return $query;
+    }
+
+    public function scopeLabel(): string
+    {
+        $state = $this->state();
+        if (! $state?->enabled) return '';
+        return $state->all_products ? 'تمام کالاهای انبار مرکزی' : Category::whereIn('id', json_decode($state->category_ids ?? '[]', true))->orderBy('name')->pluck('name')->join('، ');
+    }
+
+    public function productMessage(int $productId): string
+    {
+        $product = Product::with('category')->find($productId);
+        $label = $this->scopeLabel();
+        return 'دستهٔ «'.$label.'» برای انبارگردانی بسته است؛ کالای «'.($product?->name ?? $productId).'» فعلاً قابل فروش، رزرو یا تأیید مالی نیست. برای ارسال باقی اقلام به مالی، ردیف‌های دستهٔ بسته را خودتان حذف کنید؛ یا پیش‌نویس را تا بازگشایی نگه دارید. ثبت نهایی شمارش فروش را باز نمی‌کند؛ مدیر باید دسته را صریحاً باز کند.';
+    }
+
+    /** Inspect a cart in one scoped query; open categories remain sellable. */
+    public function salesWarning(array $productIds): ?array
+    {
+        $state = $this->state();
+        $ids = array_values(array_unique(array_filter(array_map('intval', $productIds), fn ($id) => $id > 0)));
+        if (! $state?->enabled || $ids === []) return null;
+        $open = $this->excludeBlockedProducts(Product::query()->select('products.id')->whereIn('products.id', $ids));
+        $blocked = Product::query()->whereIn('products.id', $ids)->whereNotIn('products.id', $open)
+            ->orderBy('name')->get(['id', 'name']);
+        if ($blocked->isEmpty()) return null;
+        $categories = $state->all_products ? ['تمام کالاهای انبار مرکزی']
+            : Category::whereIn('id', json_decode($state->category_ids ?? '[]', true))->orderBy('name')->pluck('name')->all();
+        $names = $blocked->pluck('name')->all();
+        return [
+            'blocked_product_ids' => $blocked->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            'blocked_product_names' => $names, 'category_names' => $categories,
+            'message' => 'دسته‌های «'.implode('، ', $categories).'» برای شمارش بسته‌اند. اقلام بسته‌شدهٔ این سند: '.implode('، ', $names).'. برای ارسال بقیهٔ کالاها به مالی، این ردیف‌ها را خودتان حذف کنید؛ یا سند را تا بازگشایی به‌صورت پیش‌نویس نگه دارید. فروش کالاهای سایر دسته‌ها ادامه دارد.',
+        ];
+    }
+
     public function assertProduct(int $productId, ?int $warehouseId = null): void
     {
         if ($this->internalDepth || $this->stocktakeDepth) {
@@ -93,7 +151,7 @@ class InventoryCountFreezeService
             return;
         }
         if ($this->blocked($productId)) {
-            throw ValidationException::withMessages(['stocktake' => self::MESSAGE]);
+            throw ValidationException::withMessages(['stocktake' => $this->productMessage($productId)]);
         }
     }
 
@@ -117,6 +175,19 @@ class InventoryCountFreezeService
         }
     }
 
+    /** Include submitted documents even when their reservation rows are already absent. */
+    private function submittedOrders(array $productIds): \Illuminate\Database\Eloquent\Builder
+    {
+        return PreinvoiceOrder::query()->whereIn('status', [
+            PreinvoiceOrder::STATUS_RESERVED_WAITING_WAREHOUSE,
+            PreinvoiceOrder::STATUS_WAREHOUSE_REVIEWING,
+            PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
+            PreinvoiceOrder::STATUS_FINANCE_REVIEWING,
+            PreinvoiceOrder::STATUS_PENDING_FINANCE,
+            PreinvoiceOrder::STATUS_RETURNED_TO_WAREHOUSE,
+        ])->whereDoesntHave('invoice')->whereHas('items', fn ($q) => $q->whereIn('product_id', $productIds));
+    }
+
     public function preview(array $categoryIds, bool $all): array
     {
         $categories = [];
@@ -130,12 +201,19 @@ class InventoryCountFreezeService
         sort($ids);
         $rows = PreinvoiceDraftReservation::whereIn('product_id', $ids)->whereNull('released_at')->whereNull('converted_at')->whereNull('release_reason')->where('quantity', '>', 0);
 
-        $orderIds = (clone $rows)->whereNotNull('preinvoice_order_id')->distinct()->pluck('preinvoice_order_id');
+        $orderIds = (clone $rows)->whereNotNull('preinvoice_order_id')->distinct()->pluck('preinvoice_order_id')
+            ->merge($this->submittedOrders($ids)->pluck('id'))->unique();
         $releaseRows = PreinvoiceDraftReservation::where(fn ($q) => $q->whereIn('product_id', $ids)->orWhereIn('preinvoice_order_id', $orderIds))->whereNull('released_at')->whereNull('converted_at')->whereNull('release_reason')->where('quantity', '>', 0);
         $classificationRows = (clone $releaseRows)->with(['order.invoice', 'activeDrafts'])->get();
         $historical = $classificationRows->filter(fn ($row) => app(ReservationClassificationService::class)->classify($row)['state'] === ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS)->count();
 
-        return ['product_ids' => $ids, 'products' => count($ids), 'reservation_rows' => $classificationRows->count(), 'reservation_quantity' => (int) $classificationRows->sum('quantity'), 'orders' => $orderIds->count(), 'historical_rows' => $historical];
+        $siteOrders = Schema::hasTable('site_stock_holds')
+            ? SiteStockHold::whereIn('status', ['held', 'payment_confirmed'])
+                ->whereHas('lines', fn ($q) => $q->whereIn('product_id', $ids))
+                ->distinct()->orderBy('site_order_id')->pluck('site_order_id')->map(fn ($id) => (int) $id)->all()
+            : [];
+
+        return ['site_hold_count' => count($siteOrders), 'site_order_ids' => $siteOrders, 'can_activate' => $ids !== [] && $siteOrders === [], 'product_ids' => $ids, 'products' => count($ids), 'reservation_rows' => $classificationRows->count(), 'reservation_quantity' => (int) $classificationRows->sum('quantity'), 'orders' => $orderIds->count(), 'historical_rows' => $historical];
     }
 
     public function activate(array $categories, bool $all, User $actor, ?int $expectedVersion = null): array
@@ -158,10 +236,11 @@ class InventoryCountFreezeService
             $ids = $preview['product_ids'];
             // Paid/external orders must never be silently cancelled or refunded by an ERP stocktake switch.
             if (Schema::hasTable('site_stock_holds') && SiteStockHold::whereIn('status', ['held', 'payment_confirmed'])->whereHas('lines', fn ($q) => $q->whereIn('product_id', $ids))->exists()) {
-                throw ValidationException::withMessages(['stocktake' => 'سفارش سایت با رزرو فعال در این گروه وجود دارد؛ ابتدا وضعیت سفارش سایت را تعیین تکلیف کنید. هیچ رزروی آزاد نشد.']);
+                throw ValidationException::withMessages(['stocktake' => 'سفارش سایت با رزرو فعال در این گروه وجود دارد (شماره سفارش: '.implode('، ', $preview['site_order_ids']).'). ابتدا سفارش‌های پرداخت‌شده را به انبار وارد کنید یا محدوده کوچک‌تری انتخاب کنید. هیچ رزروی آزاد نشد.']);
             }
             $rows = PreinvoiceDraftReservation::whereIn('product_id', $ids)->whereNull('released_at')->whereNull('converted_at')->whereNull('release_reason')->where('quantity', '>', 0)->lockForUpdate()->get();
-            $orderIds = $rows->pluck('preinvoice_order_id')->filter()->unique();
+            $orderIds = $rows->pluck('preinvoice_order_id')->filter()
+                ->merge($this->submittedOrders($ids)->pluck('id'))->unique();
             $orders = PreinvoiceOrder::whereIn('id', $orderIds)->orderBy('id')->lockForUpdate()->get();
             foreach ($orders as $order) {
                 if ($order->invoice()->exists() || $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
@@ -174,7 +253,8 @@ class InventoryCountFreezeService
             })->whereNull('released_at')->whereNull('converted_at')->whereNull('release_reason')->where('quantity', '>', 0)->orderBy('id')->lockForUpdate()->get();
             $released = 0;
             $archived = 0;
-            $this->internally(function () use ($rows, $orders, $actor, &$released, &$archived) {
+            $scopeLabel = $all ? 'تمام کالاهای انبار مرکزی' : Category::whereIn('id', $categories)->orderBy('name')->pluck('name')->join('، ');
+            $this->internally(function () use ($rows, $orders, $actor, $scopeLabel, $before, &$released, &$archived) {
                 foreach ($rows as $row) {
                     $classification = app(ReservationClassificationService::class)->classify($row, now());
                     if ($classification['state'] === ReservationClassificationService::STATE_HISTORICAL_AMBIGUOUS) {
@@ -198,7 +278,27 @@ class InventoryCountFreezeService
                 foreach ($orders as $order) {
                     $old = $order->status;
                     $order->forceFill(['status' => PreinvoiceOrder::STATUS_DRAFT, 'stock_frozen_until' => null, 'stock_released_at' => now(), 'is_auto_draft' => false, 'items_updated_at' => now(), 'items_updated_by' => $actor->id])->save();
-                    $order->reviews()->create(['user_id' => $actor->id, 'action' => 'stocktake_freeze', 'reason' => 'بازگشت به پیش‌نویس برای انبارگردانی؛ ثبت مجدد پس از پایان شمارش لازم است.', 'before_items' => ['status' => $old], 'after_items' => ['status' => 'draft']]);
+                    $order->reviews()->create(['user_id' => $actor->id, 'action' => 'stocktake_freeze', 'reason' => 'دستهٔ «'.$scopeLabel.'» برای انبارگردانی بسته شد؛ سند به پیش‌نویس برگشت. پس از بازکردن صریح دسته، ثبت و بررسی مجدد لازم است.', 'before_items' => ['status' => $old], 'after_items' => ['status' => 'draft']]);
+                    if (Schema::hasTable('notifications')) {
+                        $notifications = app(NotificationService::class);
+                        $payload = [
+                            'type' => 'inventory_count_freeze', 'level' => 'warning', 'priority' => 'urgent',
+                            'title' => 'بسته‌شدن دسته برای شمارش',
+                            'message' => 'دستهٔ «'.$scopeLabel.'» برای انبارگردانی بسته شد. پیش‌فاکتور '.$order->uuid.' به پیش‌نویس برگشت؛ فروش و تأیید مالی تا بازکردن صریح دسته بسته است.',
+                            'notifiable_type' => PreinvoiceOrder::class, 'notifiable_id' => $order->id,
+                            'data' => ['category_names' => $scopeLabel, 'order_id' => $order->id],
+                        ];
+                        foreach (array_unique(array_filter([(int) $order->seller_id, (int) $order->created_by])) as $userId) {
+                            $notifications->notifyUser($userId, $payload + [
+                                'url' => route('preinvoice.my.show', $order->uuid),
+                                'unique_key' => 'inventory_count_freeze:'.((int) $before->version + 1).':'.$order->id.':seller:'.$userId,
+                            ]);
+                        }
+                        $notifications->notifyRole('finance', $payload + [
+                            'url' => route('preinvoice.draft.index'),
+                            'unique_key' => 'inventory_count_freeze:'.((int) $before->version + 1).':'.$order->id.':finance',
+                        ]);
+                    }
                 }
             });
             // Return remaining, unsold bundle allocations to ordinary stock before physical counting.

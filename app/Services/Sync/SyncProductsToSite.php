@@ -164,16 +164,7 @@ class SyncProductsToSite {
                     ->values()
                     ->all();
 
-                $stockRows = WarehouseStock::query()
-                    ->whereIn('product_variant_id', $variantIds)
-                    ->groupBy('product_variant_id')
-                    ->select([
-                        'product_variant_id',
-                        DB::raw('SUM(quantity) as total_stock'),
-                        DB::raw('MAX(updated_at) as stock_updated_at'),
-                    ])
-                    ->get()
-                    ->keyBy('product_variant_id');
+                $stockRows = $this->stockRowsForVariants($variantIds);
 
                 $sitePrices = SitePrice::withTrashed()
                     ->whereIn('id', $variantIds)
@@ -288,6 +279,32 @@ class SyncProductsToSite {
                     $stats['attributes_synced'] += $this->syncVariantNameAttributes($variantNames);
                 }
             });
+    }
+
+    /**
+     * Customer-visible ordinary stock is sellable central-warehouse stock only.
+     * Return, scrap and personnel warehouses must never be published to Site.
+     *
+     * @param array<int, int> $variantIds
+     */
+    private function stockRowsForVariants(array $variantIds): \Illuminate\Support\Collection
+    {
+        $centralWarehouseIds = DB::table('warehouses')
+            ->where('type', 'central')
+            ->where('is_active', true)
+            ->pluck('id');
+
+        return WarehouseStock::query()
+            ->whereIn('warehouse_id', $centralWarehouseIds)
+            ->whereIn('product_variant_id', $variantIds)
+            ->groupBy('product_variant_id')
+            ->select([
+                'product_variant_id',
+                DB::raw('SUM(quantity) as total_stock'),
+                DB::raw('MAX(updated_at) as stock_updated_at'),
+            ])
+            ->get()
+            ->keyBy('product_variant_id');
     }
 
     /**

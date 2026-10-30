@@ -1,0 +1,129 @@
+/* Scoped counting workspace; every surface follows the application theme. */
+.stocktake-workspace {
+    --st-ink: var(--app-text, #172b3a);
+    --st-muted: var(--app-muted, #71808c);
+    --st-surface: var(--app-surface, #fff);
+    --st-soft: var(--app-surface-soft, #f8fafb);
+    --st-border: var(--app-border, #dce5ea);
+    --st-accent: #087f83;
+    --st-accent-soft: #e8f8f6;
+    --st-violet: #7054b2;
+    --st-violet-soft: #f2edfc;
+    color: var(--st-ink);
+}
+html[data-app-theme="dark"] .stocktake-workspace {
+    --st-accent: #72d9d3;
+    --st-accent-soft: #183c40;
+    --st-violet: #c1a8fa;
+    --st-violet-soft: #302b48;
+}
+.stocktake-workspace .stocktake-page__header,
+.stocktake-workspace > .sc-top {
+    padding: 22px 24px;
+    border: 1px solid var(--st-border);
+    border-radius: 20px;
+    background: linear-gradient(115deg, var(--st-surface) 55%, var(--st-accent-soft));
+    box-shadow: var(--app-shadow-sm, 0 5px 16px #102a430d);
+    margin-bottom: 22px !important;
+}
+.stocktake-workspace .stocktake-eyebrow {font-size: .75rem; font-weight: 800; color: var(--st-accent); margin-bottom: 5px; letter-spacing: -.1px;}
+.stocktake-workspace .stocktake-page__heading h4,
+.stocktake-workspace > .sc-top h4 {color: var(--st-ink); font-size: 1.38rem; font-weight: 900; line-height: 1.7;}
+.stocktake-workspace .stocktake-page__intro,
+.stocktake-workspace .sc-subtitle {color: var(--st-muted); font-size: .8rem; line-height: 1.9;}
+.stocktake-workspace .stocktake-page__back {background: var(--st-surface); border-color: var(--st-border); color: var(--st-ink); border-radius: 11px; padding: 10px 16px; font-size: .8rem;}
+.stocktake-workspace .stocktake-document-tag {display: inline-flex; margin-top: 9px; padding: 4px 10px; color: var(--st-violet); background: var(--st-violet-soft); border-radius: 8px; font-size: .73rem; font-weight: 800;}
+.stocktake-workspace .stocktake-selector {border: 1px solid var(--st-border); border-radius: 18px; background: var(--st-surface); overflow: hidden; box-shadow: var(--app-shadow-sm);}
+.stocktake-workspace .stocktake-selector__header {display: flex; align-items: center; gap: 13px; padding: 19px 22px; border-bottom: 1px solid var(--st-border); background: var(--st-surface);}
+.stocktake-workspace .stocktake-selector__header h5 {font-size: 1rem; font-weight: 850; line-height: 1.8; margin: 0; color: var(--st-ink);}
+.stocktake-workspace .stocktake-selector__header p {font-size: .77rem; color: var(--st-muted); margin: 2px 0 0; line-height: 1.9;}
+.stocktake-workspace .stocktake-selector__icon {display: grid; place-items: center; flex: 0 0 46px; height: 46px; border-radius: 13px; color: var(--st-accent); background: var(--st-accent-soft);}
+.stocktake-workspace .stocktake-selector__tag {margin-inline-start: auto; display: inline-flex; flex: 0 0 auto; font-size: .73rem; font-weight: 800; color: var(--st-accent); background: var(--st-accent-soft); border: 1px solid color-mix(in srgb, var(--st-accent) 20%, transparent); padding: 6px 11px; border-radius: 999px;}
+.stocktake-workspace .stocktake-selector__body {display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr);}
+.stocktake-workspace .stocktake-selector__body:has(> .stocktake-selector__alternative[hidden]) {grid-template-columns: minmax(0,1fr);}
+.stocktake-workspace .stocktake-selector__alternative[hidden] {display: none !important;}
+.stocktake-workspace .stocktake-selector__primary {padding: 24px; min-width: 0;}
+.stocktake-workspace .stocktake-selector__fields {display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 17px; margin-bottom: 17px;}
+.stocktake-workspace .stocktake-field {display: flex; flex-direction: column; gap: 9px; min-width: 0; margin: 0; font-size: .82rem; font-weight: 800; color: var(--st-ink);}
+.stocktake-workspace .stocktake-field > span {display: flex; justify-content: space-between; align-items: center; gap: 7px;}
+.stocktake-workspace .stocktake-field small {font-size: .67rem; font-weight: 600; color: var(--st-muted); padding: 1px 6px; background: var(--st-soft); border-radius: 5px;}
+.stocktake-workspace .stocktake-field .form-select,
+.stocktake-workspace .stocktake-field select {width: 100%; min-height: 49px; min-width: 0; border: 1px solid var(--st-border); border-radius: 11px; background-color: var(--st-surface); color: var(--st-ink); font-size: .86rem; font-weight: 650; padding-block: 10px; padding-inline-start: 13px;}
+.stocktake-workspace .stocktake-field select:disabled {background-color: var(--st-soft); color: var(--st-muted); opacity: .8;}
+.stocktake-workspace .stocktake-field select {appearance: none; padding-inline-end: 36px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371808c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: left 12px center; background-size: 16px;}
+.stocktake-workspace :is(select,input,textarea):focus {border-color: var(--st-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-accent) 14%, transparent); outline: none;}
+.stocktake-workspace .stocktake-category-button {display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 11px 16px; border: 1px solid #087f83; border-radius: 11px; background: linear-gradient(110deg,#087f83,#116a7c); color: #fff; font-size: .86rem; font-weight: 800; box-shadow: 0 5px 13px rgb(8 127 131 / 15%);}
+.stocktake-workspace .stocktake-category-button:hover {background: #09696e; color: #fff; transform: translateY(-1px);}
+.stocktake-workspace .stocktake-category-button:disabled {transform: none; opacity: .55;}
+.stocktake-workspace .stocktake-selector__hint {font-size: .73rem; line-height: 1.9; color: var(--st-muted); margin: 11px 0 0;}
+.stocktake-workspace .stocktake-selector__alternative {padding: 24px; min-width: 0; background: var(--st-soft); border-inline-start: 1px solid var(--st-border);}
+.stocktake-workspace .stocktake-selector__alternative-title {display: flex; align-items: center; gap: 8px; font-size: .77rem; font-weight: 800; color: var(--st-violet); margin-bottom: 14px;}
+.stocktake-workspace .stocktake-selector__alternative-title > span {width: 7px; height: 7px; background: var(--st-violet); border-radius: 50%; box-shadow: 0 0 0 4px var(--st-violet-soft); margin-inline: 4px;}
+.stocktake-workspace .stocktake-search {display: flex; align-items: center; margin-top: 11px; gap: 6px; border: 1px solid var(--st-border); border-radius: 11px; padding-inline-start: 12px; background: var(--st-surface); color: var(--st-muted);}
+.stocktake-workspace .stocktake-search > span {font-size: 1.3rem; line-height: 1;}
+.stocktake-workspace .stocktake-search input {min-width: 0; min-height: 43px; border: 0; background: transparent; color: var(--st-ink); font-size: .75rem; padding-inline-start: 4px;}
+.stocktake-workspace .stocktake-search input:focus {box-shadow: none;}
+.stocktake-workspace .stocktake-search:focus-within {border-color: var(--st-accent);}
+.stocktake-workspace .sc-panel,
+.stocktake-workspace .sc-product {border-color: var(--st-border); background: var(--st-surface); color: var(--st-ink); border-radius: 16px;}
+.stocktake-workspace .sc-panel .sc-top h5 {color: var(--st-ink); font-weight: 850;}
+.stocktake-workspace .sc-product-head {background: var(--st-accent-soft); border-color: var(--st-border);}
+.stocktake-workspace .sc-product-head strong {color: var(--st-ink); font-weight: 850;}
+.stocktake-workspace .sc-product-head > .sc-muted {color: var(--st-accent); border-color: var(--st-border); background: var(--st-surface);}
+.stocktake-workspace .sc-product-meta,
+.stocktake-workspace .sc-muted,
+.stocktake-workspace .sc-feedback,
+.stocktake-workspace .sc-variant small {color: var(--st-muted);}
+.stocktake-workspace .sc-variant {color: var(--st-ink);}
+.stocktake-workspace .sc-table-wrap th {background: var(--st-soft); color: var(--st-muted); border-color: var(--st-border);}
+.stocktake-workspace .sc-table-wrap td {color: var(--st-ink); border-color: var(--st-border);}
+.stocktake-workspace .sc-actual {border-color: var(--st-border); background: var(--st-surface); color: var(--st-accent); font-size: 1.02rem; border-radius: 10px;}
+.stocktake-workspace .sc-badge {background: var(--st-violet-soft); color: var(--st-violet);}
+.stocktake-workspace .sc-flow-details {color: var(--st-violet);}
+.stocktake-workspace .sc-footer {border-color: var(--st-border);}
+.stocktake-workspace .sc-warning {border-color: color-mix(in srgb, var(--st-violet) 25%, transparent); background: var(--st-violet-soft); color: var(--st-violet); line-height: 2; border-radius: 12px;}
+.stocktake-workspace .sc-status {background: var(--st-accent-soft); border-color: color-mix(in srgb, var(--st-accent) 25%, transparent); color: var(--st-accent); border-radius: 12px;}
+.stocktake-workspace .sc-status.is-error {background: var(--app-danger-soft,#fff0f0); border-color: var(--app-danger,#c54b4b); color: var(--app-danger,#c54b4b);}
+.stocktake-workspace .sc-diff-up,
+.stocktake-workspace .sc-success {color: var(--app-success,#16805c);}
+.stocktake-workspace .sc-diff-down,
+.stocktake-workspace .sc-feedback.is-error {color: var(--app-danger,#c54b4b);}
+.stocktake-workspace .sc-live-search {padding: 14px 16px; border: 1px solid var(--st-border); border-radius: 12px; background: var(--st-soft);}
+.stocktake-workspace .sc-live-search .form-label {color: var(--st-ink); font-size: .82rem;}
+.stocktake-workspace .sc-live-search input {border-color: var(--st-border); background: var(--st-surface); color: var(--st-ink); min-height: 43px; border-radius: 9px;}
+.stocktake-workspace .sc-review-summary {background: var(--st-accent-soft); color: var(--st-ink); border-color: color-mix(in srgb,var(--st-accent) 25%,transparent);}
+.stocktake-workspace .sc-bulk-toolbar {border-color: var(--st-border); border-top: 3px solid var(--st-accent); box-shadow: var(--app-shadow-md);}
+.stocktake-workspace .sc-bulk-toolbar #scSaveAll {background: #15795a; color: #fff; border-color: #15795a;}
+.stocktake-workspace .sc-bulk-toolbar #scFinalizeAll {background: #116d86; color: #fff; border-color: #116d86;}
+.stocktake-workspace .stocktake-actions {background: var(--st-surface); border-color: var(--st-border); color: var(--st-ink);}
+.stocktake-workspace.stocktake-category > .stocktake-selector {padding: 0 0 17px;}
+.stocktake-workspace.stocktake-category .sc-controls {grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(210px,1fr); gap: 18px; padding: 21px 22px 0;}
+.stocktake-workspace.stocktake-category .stocktake-selector > .sc-subtitle {padding: 0 22px;}
+@media (max-width: 1000px) {
+    .stocktake-workspace .stocktake-selector__body {grid-template-columns: minmax(0,1.25fr) minmax(0,1fr);}
+    .stocktake-workspace .stocktake-selector__fields {grid-template-columns: minmax(0,1fr); gap: 13px;}
+    .stocktake-workspace .stocktake-selector__tag {display: none;}
+    .stocktake-workspace.stocktake-category .sc-controls {grid-template-columns: repeat(2,minmax(0,1fr));}
+    .stocktake-workspace.stocktake-category .sc-controls #scShow {grid-column: 1/-1;}
+}
+@media (max-width: 720px) {
+    .stocktake-workspace .stocktake-page__header,
+    .stocktake-workspace > .sc-top {padding: 18px; border-radius: 16px; gap: 14px;}
+    .stocktake-workspace .stocktake-selector__body {grid-template-columns: minmax(0,1fr);}
+    .stocktake-workspace .stocktake-selector__primary,
+    .stocktake-workspace .stocktake-selector__alternative {padding: 19px;}
+    .stocktake-workspace .stocktake-selector__alternative {border-inline-start: 0; border-top: 1px solid var(--st-border);}
+    .stocktake-workspace .stocktake-selector__header {padding: 17px 19px;}
+    .stocktake-workspace .stocktake-selector__header p {font-size: .73rem;}
+    .stocktake-workspace .sc-product tbody tr {border-color: var(--st-border);}
+    .stocktake-workspace .sc-product tbody td {background: var(--st-soft); border-color: var(--st-border);}
+    .stocktake-workspace .sc-product tbody td::before {color: var(--st-muted);}
+    .stocktake-workspace .sc-live-search {padding: 12px;}
+}
+@media (max-width: 480px) {
+    .stocktake-workspace .stocktake-selector__header {gap: 10px;}
+    .stocktake-workspace .stocktake-selector__header h5 {font-size: .91rem;}
+    .stocktake-workspace .stocktake-selector__icon {flex-basis: 40px; height: 40px;}
+    .stocktake-workspace.stocktake-category .sc-controls {grid-template-columns: minmax(0,1fr); padding: 18px;}
+    .stocktake-workspace.stocktake-category .sc-controls #scShow {grid-column: auto;}
+}

@@ -85,7 +85,7 @@ function financeValidationOrderFixture(): PreinvoiceOrder
 it('defines Persian edit reason validation messages', function () {
     $request = new FinanceUpdatePreinvoiceRequest();
 
-    expect($request->rules()['edit_reason'])->toContain('nullable', 'string', 'min:3', 'max:1000')->not->toContain('required')
+    expect($request->rules()['edit_reason'])->toContain('required', 'string', 'min:3', 'max:1000')
         ->and($request->messages()['edit_reason.required'])->toBe('لطفاً دلیل ویرایش مالی را وارد کنید.')
         ->and($request->messages()['edit_reason.min'])->toBe('دلیل ویرایش مالی باید حداقل ۳ کاراکتر باشد.')
         ->and($request->attributes()['edit_reason'])->toBe('دلیل ویرایش مالی');
@@ -106,9 +106,7 @@ it('renders edit reason field attributes old input and one validation message', 
     $response->assertOk()
         ->assertSee('id="edit_reason"', false)
         ->assertSee('name="edit_reason"', false)
-        ->assertSee('minlength="3" maxlength="1000"', false)
-        ->assertSee('financeReasonRequiredMark', false)
-        ->assertSee('اگر تخفیف‌ها تغییر نکرده‌اند، می‌توانید مستقیم تأیید کنید.', false)
+        ->assertSee('required minlength="3" maxlength="1000"', false)
         ->assertSee('علت قبلی تست', false)
         ->assertSee('لطفاً دلیل ویرایش مالی را وارد کنید.', false);
 

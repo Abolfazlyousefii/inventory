@@ -593,6 +593,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/stock-count-documents/category-variants', [StocktakeController::class, 'categoryVariants'])->name('stock-count-documents.category-variants');
     Route::get('/stock-count-documents/create', [StocktakeController::class, 'create'])->name('stock-count-documents.create');
     Route::post('/stock-count-documents', [StocktakeController::class, 'store'])->name('stock-count-documents.store');
+    Route::post('/stock-count-documents/category-drafts', [StocktakeController::class, 'storeCategoryDrafts'])->name('stock-count-documents.category-drafts.store');
+    Route::post('/stock-count-documents/category-finalize', [StocktakeController::class, 'finalizeCategory'])->name('stock-count-documents.category-finalize');
+    Route::get('/stock-count-documents/requests/{requestId}', [StocktakeController::class, 'requestStatus'])->name('stock-count-documents.request-status');
     Route::get('/stock-count-documents/subcategories', [StocktakeController::class, 'subcategories'])->name('stock-count-documents.subcategories');
     Route::get('/stock-count-documents/products/search', [StocktakeController::class, 'products'])->name('stock-count-documents.products');
     Route::get('/stock-count-documents/products/{product}/variants', [StocktakeController::class, 'variants'])->name('stock-count-documents.variants');
