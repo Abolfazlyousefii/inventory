@@ -7,6 +7,18 @@ const vm = require('node:vm');
 const form = fs.readFileSync(path.join(__dirname, '../../resources/views/stocktake/form.blade.php'), 'utf8');
 const source = fs.readFileSync(path.join(__dirname, '../../public/js/stocktake-category-workspace.js'), 'utf8');
 
+test('counting form removes document metadata inputs and groups the category-first workflow', () => {
+    assert.doesNotMatch(form, /type="date"|stocktake-compact mb-3|value="انبارگردانی محصولی" readonly/);
+    assert.match(form, /type="hidden" name="document_date"/);
+    assert.match(form, /now\('Asia\/Tehran'\)->format\('Y-m-d'\)/);
+    assert.match(form, /stocktake-selector__primary/);
+    assert.match(form, /stocktake-selector__alternative/);
+    assert.match(form, /stocktake-workspace\.css/);
+    const legacy = fs.readFileSync(path.join(__dirname, '../../resources/views/stocktake/category-workspace.blade.php'), 'utf8');
+    assert.doesNotMatch(legacy, /type="date"/);
+    assert.match(legacy, /type="hidden" id="scDate"/);
+});
+
 test('stocktake still shows category counting INSIDE the original product form', () => {
     assert.match(form, /id="stocktakeForm"/);
     assert.match(form, /id="stocktakeCategoryApp"[^>]*data-embedded="1"[^>]*hidden/s);

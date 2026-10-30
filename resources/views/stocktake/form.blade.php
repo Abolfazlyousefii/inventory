@@ -147,11 +147,14 @@
 }
 [hidden]{display:none!important}
 </style>
-<div class="stocktake-page" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
+<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030">
+<div class="stocktake-page stocktake-workspace" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
  <header class="stocktake-page__header mb-3">
    <div class="stocktake-page__heading">
-     <h4 class="mb-1">ثبت سند انبارگردانی محصولی</h4>
-     <p class="stocktake-page__intro mb-0">شمارش یک محصول یا انتخاب دسته‌بندی، در همین فرم</p>
+     <div class="stocktake-eyebrow">کنترل موجودی انبار مرکزی</div>
+     <h4 class="mb-1">{{ $mode === 'edit' ? 'ویرایش شمارش محصول' : 'انبارگردانی کالاها' }}</h4>
+     <p class="stocktake-page__intro mb-0">انتخاب محدوده، ثبت شمارش، بررسی و تأیید نهایی</p>
+     @if($document)<span class="stocktake-document-tag">سند {{ $document->document_number }}</span>@endif
    </div>
    <a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary stocktake-page__back">بازگشت به انبارگردانی</a>
  </header>
@@ -171,8 +174,29 @@
  @elseif($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
  <form id="stocktakeForm" method="post" action="{{ $mode==='edit' ? route('stock-count-documents.update',$document) : route('stock-count-documents.store') }}">@csrf @if($mode==='edit') @method('PUT') @endif
   <div id="actualHiddenInputs"></div>
-  <div class="card stocktake-card stocktake-compact mb-3"><div class="card-body row g-2 align-items-end"><div class="col-6 col-lg"><label class="form-label">نوع سند</label><input class="form-control form-control-sm" value="انبارگردانی محصولی" readonly></div><div class="col-6 col-lg"><label class="form-label">انبار مرکزی</label><input class="form-control form-control-sm" value="{{ $centralWarehouse->name }}" readonly></div><div class="col-6 col-lg"><label class="form-label">شماره سند</label><input class="form-control form-control-sm" value="{{ $document?->document_number ?? 'پس از ذخیره ایجاد می‌شود' }}" readonly></div><div class="col-6 col-lg"><label class="form-label">تاریخ سند</label><input type="date" name="document_date" class="form-control form-control-sm" value="{{ old('document_date', optional($document?->document_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" required></div><div class="col-6 col-lg"><label class="form-label">وضعیت</label><input class="form-control form-control-sm" value="پیش‌نویس" readonly></div></div></div>
-  <div class="card stocktake-card mb-3"><div class="card-header bg-white">انتخاب کالا</div><div class="card-body row g-3"><div class="col-md-4"><label class="form-label">دسته‌بندی اصلی</label><select id="category" class="form-select" {{ $mode==='edit'?'disabled':'' }}><option value="">انتخاب دسته‌بندی اصلی</option>@foreach($rootCategories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select></div><div class="col-md-4"><label class="form-label">زیر‌دسته‌بندی</label><select id="subcategory" class="form-select" disabled><option value="">انتخاب زیر‌دسته‌بندی</option></select>@if($mode==='create')<button type="button" id="scShow" class="btn btn-sm btn-outline-primary mt-2 w-100">نمایش کالاهای دسته در همین صفحه</button>@endif</div><div class="col-md-4"><label class="form-label">محصول</label><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select><input id="productSearch" class="form-control mt-2" placeholder="جستجوی نام، کد، SKU یا بارکد" {{ $mode==='edit'?'disabled':'' }}></div></div></div>
+  <input type="hidden" name="document_date" value="{{ $document?->document_date?->format('Y-m-d') ?? now('Asia/Tehran')->format('Y-m-d') }}">
+  <section class="stocktake-selector stocktake-card mb-4" aria-labelledby="stocktakeScopeTitle">
+    <header class="stocktake-selector__header">
+      <span class="stocktake-selector__icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5M3 8v9l9 5 9-5V8M12 13v9"/></svg></span>
+      <div><h5 id="stocktakeScopeTitle">محدودهٔ شمارش را انتخاب کنید</h5><p>یک دسته را کامل بشمارید، یا فقط یک محصول را انتخاب کنید.</p></div>
+      <span class="stocktake-selector__tag">۱ · انتخاب محدوده</span>
+    </header>
+    <div class="stocktake-selector__body">
+      <div class="stocktake-selector__primary">
+        <div class="stocktake-selector__fields">
+          <label class="stocktake-field" for="category"><span>دسته‌بندی اصلی</span><select id="category" class="form-select" {{ $mode==='edit'?'disabled':'' }}><option value="">انتخاب دسته‌بندی اصلی</option>@foreach($rootCategories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select></label>
+          <label class="stocktake-field" for="subcategory"><span>زیردسته <small>(اختیاری)</small></span><select id="subcategory" class="form-select" disabled><option value="">همه زیردسته‌ها</option></select></label>
+        </div>
+        @if($mode==='create')<button type="button" id="scShow" class="btn stocktake-category-button"><span>نمایش کالاهای دسته در همین صفحه</span><span aria-hidden="true">←</span></button>@endif
+        <p class="stocktake-selector__hint">بدون انتخاب زیردسته، تمام کالاهای دسته و زیردسته‌هایش نمایش داده می‌شوند.</p>
+      </div>
+      <div class="stocktake-selector__alternative">
+        <div class="stocktake-selector__alternative-title"><span></span>یا شمارش یک محصول</div>
+        <label class="stocktake-field" for="product"><span>انتخاب محصول</span><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select></label>
+        <label class="stocktake-search" for="productSearch"><span aria-hidden="true">⌕</span><input id="productSearch" class="form-control" placeholder="جستجوی نام، کد، SKU یا بارکد" aria-label="جستجوی محصول" {{ $mode==='edit'?'disabled':'' }}></label>
+      </div>
+    </div>
+  </section>
   @if($mode==='create')
   <section class="stocktake-category" id="stocktakeCategoryApp" data-embedded="1" hidden
     data-rows-url="{{ route('stock-count-documents.category-variants') }}"
@@ -238,7 +262,7 @@ document.addEventListener('focusin',e=>{if(e.target.matches('.actual-input'))e.t
 els.search.addEventListener('input',render);document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));render();}));
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',async()=>{await ensureAllLoaded(); if(b.dataset.tool==='zeroAll'&&!confirm('موجودی واقعی تمام تنوع‌های این محصول صفر شود؟'))return; if(b.dataset.tool==='clearAll'&&!confirm('مقدارهای واردشده پاک شوند؟'))return; state.rows.forEach(r=>{if(b.dataset.tool==='fillExpected')state.actual[r.variant_id]=String(r.expected_physical); if(b.dataset.tool==='zeroAll')state.actual[r.variant_id]='0'; if(b.dataset.tool==='clearAll')state.actual[r.variant_id]='';}); render();}));
 document.getElementById('variantScroller').addEventListener('scroll',e=>{if(state.hasMore&&e.target.scrollTop+e.target.clientHeight>e.target.scrollHeight-80)load(false)});
-document.getElementById('category').onchange=async e=>{document.getElementById('subcategory').innerHTML='<option value="">انتخاب زیر‌دسته‌بندی</option>';document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];state.actual={};render(); if(!e.target.value)return; let j=await (await fetch(`/stock-count-documents/subcategories?category_id=${e.target.value}`)).json(); j.forEach(c=>document.getElementById('subcategory').insertAdjacentHTML('beforeend',`<option value="${c.id}">${esc(c.name)}</option>`)); document.getElementById('subcategory').disabled=false; searchProducts();};
+document.getElementById('category').onchange=async e=>{document.getElementById('subcategory').innerHTML='<option value="">همه زیردسته‌ها</option>';document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];state.actual={};render(); if(!e.target.value)return; let j=await (await fetch(`/stock-count-documents/subcategories?category_id=${e.target.value}`)).json(); j.forEach(c=>document.getElementById('subcategory').insertAdjacentHTML('beforeend',`<option value="${c.id}">${esc(c.name)}</option>`)); document.getElementById('subcategory').disabled=false; searchProducts();};
 document.getElementById('subcategory').onchange=()=>{document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];state.actual={};render();searchProducts()}; document.getElementById('productSearch').oninput=()=>setTimeout(searchProducts,250);
 async function searchProducts(){let c=document.getElementById('category').value,sc=document.getElementById('subcategory').value,q=document.getElementById('productSearch').value; if(!c&&!q)return; let j=await (await fetch(`/stock-count-documents/products/search?category_id=${c}&subcategory_id=${sc}&q=${encodeURIComponent(q)}`)).json(); let p=document.getElementById('product'); p.innerHTML='<option value="">انتخاب محصول</option>'; j.forEach(x=>p.insertAdjacentHTML('beforeend',`<option value="${x.id}">${esc(x.name)} - ${esc(x.sku||x.code||'')}</option>`));}
 document.getElementById('product').onchange=()=>{state.rows=[];state.actual={};load(true)};document.getElementById('stocktakeForm').addEventListener('submit',()=>{buildHiddenInputs();state.submitting=true;summary();});document.addEventListener('click',e=>{if(e.target.closest('[data-scroll-error]'))scrollToFirstError();});function scrollToFirstError(){let el=document.querySelector('.has-stock-count-error'); if(!el)return; el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>el.querySelector('.actual-input')?.focus(),350);}function showApplyModal(){summary(); if(els.apply?.disabled)return; if(confirm('تمام تنوع‌ها تعیین تکلیف شده‌اند. پس از ثبت نهایی، موجودی انبار مرکزی براساس این شمارش اصلاح می‌شود و سند دیگر قابل ویرایش نخواهد بود. تأیید نهایی و اعمال موجودی؟')){buildHiddenInputs();state.submitting=true;let f=document.getElementById('stocktakeForm'), apply=document.getElementById('applyBtn'); if(apply){apply.disabled=true;apply.innerHTML='در حال ثبت...';} if(apply&&apply.formAction)f.action=apply.formAction; f.querySelector('input[name=_method]').value='PATCH'; f.submit();}}

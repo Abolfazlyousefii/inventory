@@ -52,7 +52,8 @@
 @media(max-width:1199px){.stocktake-category .sc-bulk-toolbar{left:16px;right:16px}}
 @media(max-width:600px){.stocktake-category .sc-bulk-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom))}.stocktake-category .sc-toolbar-status{grid-column:1/-1;font-size:.72rem}.stocktake-category .sc-bulk-toolbar button{font-size:.77rem;padding:7px}.stocktake-category{padding-bottom:240px!important}}
 </style>
-<div class="stocktake-category" id="stocktakeCategoryApp"
+<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030">
+<div class="stocktake-category stocktake-workspace" id="stocktakeCategoryApp"
      data-rows-url="{{ route('stock-count-documents.category-variants') }}"
      data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
      data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"
@@ -60,6 +61,7 @@
      data-store-url="{{ route('stock-count-documents.store') }}">
   <div class="sc-top mb-3">
     <div>
+      <div class="stocktake-eyebrow">کنترل موجودی انبار مرکزی</div>
       <h4 class="mb-1">انبارگردانی دسته‌ای</h4>
       <div class="sc-subtitle">نمایش کالاها و تنوع‌های یک دسته یا زیردسته، بدون انتخاب جداگانه هر محصول</div>
     </div>
@@ -72,22 +74,21 @@
     برای ثبت نهایی باید تمام تنوع‌ها شمارش شوند؛ مقدار خالی خودکار صفر نمی‌شود.
   </div>
 
-  <section class="sc-panel">
+  <input type="hidden" id="scDate" value="{{ now('Asia/Tehran')->format('Y-m-d') }}">
+  <section class="sc-panel stocktake-selector">
+    <header class="stocktake-selector__header"><div><h5>محدودهٔ شمارش را انتخاب کنید</h5><p>همهٔ کالاهای یک دسته را در همین صفحه بشمارید.</p></div><span class="stocktake-selector__tag">۱ · انتخاب محدوده</span></header>
     <div class="sc-controls">
-      <label class="sc-control">دسته‌بندی اصلی
+      <label class="sc-control stocktake-field" for="scCategory"><span>دسته‌بندی اصلی</span>
         <select id="scCategory"><option value="">انتخاب دسته‌بندی</option>
           @foreach($rootCategories as $category)
           <option value="{{ $category->id }}">{{ $category->name }}</option>
           @endforeach
         </select>
       </label>
-      <label class="sc-control">زیردسته‌بندی
+      <label class="sc-control stocktake-field" for="scSubcategory"><span>زیردسته <small>(اختیاری)</small></span>
         <select id="scSubcategory" disabled><option value="">همه زیردسته‌ها</option></select>
       </label>
-      <label class="sc-control">تاریخ سند
-        <input type="date" id="scDate" value="{{ now()->format('Y-m-d') }}" required>
-      </label>
-      <button type="button" id="scShow" class="btn btn-primary">نمایش محصولات دسته</button>
+      <button type="button" id="scShow" class="btn stocktake-category-button">نمایش محصولات دسته <span aria-hidden="true">←</span></button>
     </div>
     <p class="sc-subtitle mb-0">اگر زیردسته‌ای انتخاب نکنی، تمام کالاهای دسته اصلی و زیردسته‌های آن نمایش داده می‌شوند. اقلام در بسته‌های ۶۰تایی دریافت می‌شوند.</p>
   </section>

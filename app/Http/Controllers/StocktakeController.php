@@ -110,6 +110,7 @@ class StocktakeController extends Controller
 
     public function storeCategoryDrafts(Request $request)
     {
+        $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
         $data = $request->validate([
             'category_id' => ['required', 'integer', 'exists:categories,id'],
             'document_date' => ['required', 'date'],
@@ -253,6 +254,8 @@ class StocktakeController extends Controller
 
     public function update(Request $request, StockCountDocument $stockCountDocument)
     {
+        $request->merge(['document_date' => $stockCountDocument->document_date?->format('Y-m-d')
+            ?? now('Asia/Tehran')->toDateString()]);
         $data = $this->validatedPayload($request, true);
         $updated = $this->service->updateProductDraft($stockCountDocument, $data, (int) auth()->id());
         return redirect()->route('stock-count-documents.edit', $updated)->with('success', 'پیش‌نویس ذخیره شد.');
@@ -260,6 +263,8 @@ class StocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
+        $request->merge(['document_date' => $stockCountDocument->document_date?->format('Y-m-d')
+            ?? now('Asia/Tehran')->toDateString()]);
         try {
             $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true, $this->validatedPayload($request, true));
         } catch (StockCountFinalizeValidationException $exception) {
@@ -339,6 +344,7 @@ class StocktakeController extends Controller
 
     private function validatedPayload(Request $request, bool $editing): array
     {
+        if (! $editing) $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
         return $request->validate([
             'product_id' => [$editing ? 'nullable' : 'required', 'integer', 'exists:products,id'],
             'document_date' => ['required', 'date'], 'description' => ['nullable','string','max:2000'],
