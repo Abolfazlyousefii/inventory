@@ -1,4 +1,4 @@
-export const stageKeys = ['draft', 'finance', 'warehouse', 'shipping'];
+export const stageKeys = ['reserved', 'finance', 'warehouse', 'shipping'];
 
 export function formatDuration(seconds, includeSeconds = true) {
     if (seconds == null || !Number.isFinite(seconds)) return '—';
@@ -38,7 +38,7 @@ export function diffDocuments(previous, current) {
 }
 
 export function normalizeSnapshot(input) {
-    if (!input || input.version !== 1 || !Array.isArray(input.documents) || !Array.isArray(input.stages)
+    if (!input || input.version !== 2 || !Array.isArray(input.documents) || !Array.isArray(input.stages)
         || !Number.isFinite(Date.parse(input.updated_at)) || !input.metrics || typeof input.metrics !== 'object') {
         throw new Error('Invalid hall snapshot');
     }

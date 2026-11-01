@@ -1,4 +1,4 @@
-import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261101c';
+import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261101-reserved';
 
 const root = document.getElementById('hall-dashboard');
 const byId = id => document.getElementById(id);
@@ -218,7 +218,7 @@ function rotate(manual = false) {
 
 function measure() {
     if (moving) return;
-    const win = lanes.get('draft').querySelector('.lane-window');
+    const win = lanes.get(stageKeys[0]).querySelector('.lane-window');
     const style = getComputedStyle(document.documentElement), height = parseFloat(style.getPropertyValue('--card-height')), gap = parseFloat(style.getPropertyValue('--card-gap'));
     const count = Math.max(1, Math.floor((win.clientHeight + gap) / (height + gap)));
     for (const lane of lanes.values()) {
@@ -239,6 +239,9 @@ byId('fullscreen').addEventListener('click', async () => { try { if (document.fu
 document.addEventListener('fullscreenchange', () => { byId('fullscreen').textContent = document.fullscreenElement ? 'خروج از تمام‌صفحه' : 'تمام‌صفحه'; });
 document.addEventListener('visibilitychange', () => { clearTimeout(pollTimer); if (document.hidden) controller?.abort(); else { poll(); measure(); } });
 const observer = new ResizeObserver(measure); observer.observe(byId('board'));
+for (const lane of lanes.values()) observer.observe(lane.querySelector('.lane-window'));
+window.addEventListener('resize', measure);
+document.fonts?.ready.then(measure);
 setInterval(() => {
     byId('wall-clock').textContent = `${dateFormat.format(new Date())} · ${timeFormat.format(new Date())}`;
     if (!snapshot || document.hidden) return;

@@ -39,7 +39,7 @@ class HallQueueRecorderTest extends TestCase
         $this->assertSame(0, DB::table('hall_queue_transitions')->count());
         DB::transaction(fn () => $observer->updated($this->changedOrder('draft', 'pending_finance')));
         $this->assertSame(1, DB::table('hall_queue_transitions')->count());
-        $this->assertSame('finance', DB::table('hall_queue_transitions')->value('to_stage'));
+        $this->assertSame('reserved', DB::table('hall_queue_transitions')->value('to_stage'));
     }
 
     public function test_captured_status_survives_later_model_updates_before_commit(): void
@@ -57,7 +57,7 @@ class HallQueueRecorderTest extends TestCase
     public function test_internal_finance_status_changes_and_converted_parent_do_not_reset_queue(): void
     {
         $observer = app(HallQueueObserver::class);
-        $observer->updated($this->changedOrder('pending_finance', 'finance_reviewing'));
+        $observer->updated($this->changedOrder('warehouse_approved_waiting_finance', 'finance_reviewing'));
         $observer->updated($this->changedOrder('pending_finance', 'converted_to_invoice'));
         $this->assertSame(0, DB::table('hall_queue_transitions')->count());
     }
@@ -120,7 +120,7 @@ class HallQueueRecorderTest extends TestCase
                 $this->assertSame(0, DB::table('hall_queue_transitions')->count());
             });
             $this->assertSame(2, DB::table('hall_queue_transitions')->count());
-            $this->assertSame('finance', DB::table('hall_queue_transitions')->orderByDesc('id')->value('to_stage'));
+            $this->assertSame('reserved', DB::table('hall_queue_transitions')->orderByDesc('id')->value('to_stage'));
         } finally {
             PreinvoiceOrder::setEventDispatcher($original);
         }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatDuration, compactDuration, diffDocuments, normalizeSnapshot, elapsedSeconds } from '../../public/hall-management/core.js';
 
 const document = (key, stage, extra = {}) => ({ key, stage, number: '123', customer: 'نمونه', amount_rial: 123456789, item_count: 2, unit_count: 80, ...extra });
-const snapshot = (documents) => ({ version: 1, documents, stages: ['draft','finance','warehouse','shipping'].map(key=>({key, count: documents.filter(x=>x.stage===key).length})), metrics: {sales_rial:0,sales_count:0,cash_rial:0,cheque_rial:0,cheque_count:0}, updated_at:'2026-11-01T14:00:00+03:30' });
+const snapshot = (documents) => ({ version: 2, documents, stages: ['reserved','finance','warehouse','shipping'].map(key=>({key, count: documents.filter(x=>x.stage===key).length})), metrics: {sales_rial:0,sales_count:0,cash_rial:0,cheque_rial:0,cheque_count:0}, updated_at:'2026-11-01T14:00:00+03:30' });
 
 test('long elapsed durations never wrap after a day', () => {
     assert.equal(formatDuration(90061), '۲۵:۰۱:۰۱');
@@ -56,4 +56,10 @@ test('incomplete financial metrics never overwrite the last real amounts with ze
 test('invalid event dates do not break rendering of otherwise valid financial data', () => {
     const result=normalizeSnapshot({...snapshot([]),events:[{key:'1',number:'1',label:'ارسال شد',at:'not-a-date'}]});
     assert.deepEqual(result.events,[]);
+});
+test('draft cards and the obsolete draft-queue payload are rejected', () => {
+    assert.throws(()=>normalizeSnapshot(snapshot([document('old-draft','draft')])));
+    assert.throws(()=>normalizeSnapshot({...snapshot([]),version:1}));
+    const current=normalizeSnapshot(snapshot([document('real-hold','reserved')]));
+    assert.equal(current.documents[0].stage,'reserved');
 });

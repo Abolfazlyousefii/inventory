@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
 final class HallManagementDashboard
 {
     private const STAGES = [
-        'draft' => 'در حال ثبت', 'finance' => 'صف مالی',
+        'reserved' => 'رزرو فعال', 'finance' => 'صف مالی',
         'warehouse' => 'صف انبار', 'shipping' => 'صف ارسال',
     ];
 
@@ -22,8 +22,9 @@ final class HallManagementDashboard
         if ($type === 'preinvoice') {
             return match ($status) {
                 'draft', 'returned_to_sales' => 'draft',
-                'pending_finance', 'finance_reviewing', 'warehouse_approved_waiting_finance' => 'finance',
-                'reserved_waiting_warehouse', 'warehouse_reviewing', 'returned_to_warehouse' => 'warehouse',
+                'pending_finance', 'reserved_waiting_warehouse' => 'reserved',
+                'finance_reviewing', 'warehouse_approved_waiting_finance' => 'finance',
+                'warehouse_reviewing', 'returned_to_warehouse' => 'warehouse',
                 default => null,
             };
         }
@@ -67,7 +68,7 @@ final class HallManagementDashboard
                 ->orderByDesc('entered_at')->orderByDesc('id')->get()->groupBy('workflow_key');
             $documents = $documents->map(function (array $doc) use ($entries, $now): array {
                 $entry = $entries->get($doc['key'])?->first();
-                if ($entry && $entry->source_type === $doc['type'] && (int) $entry->source_id === $doc['source_id'] && $entry->to_stage === $doc['stage']) {
+                if ($entry && $doc['stage'] !== 'reserved' && $entry->source_type === $doc['type'] && (int) $entry->source_id === $doc['source_id'] && self::stage($entry->source_type, $entry->status_to) === $doc['stage']) {
                     $entered = $this->time($entry->entered_at);
                     $doc['stage_entered_at'] = $entered->toIso8601String();
                     $doc['stage_time_known'] = true;
@@ -79,7 +80,7 @@ final class HallManagementDashboard
         }
 
         return [
-            'version' => 1,
+            'version' => 2,
             'updated_at' => $now->toIso8601String(),
             'refresh_seconds' => max(5, (int) config('hall_display.refresh_seconds', 15)),
             'metrics' => $this->metrics($now),
@@ -123,23 +124,28 @@ final class HallManagementDashboard
     {
         $counts = DB::table('preinvoice_order_items')->where('quantity', '>', 0)->groupBy('preinvoice_order_id')
             ->selectRaw('preinvoice_order_id, COUNT(*) AS item_count, SUM(quantity) AS unit_count');
+        $held = DB::table('preinvoice_draft_reservations')
+            ->where('reservation_scope', 'official')->where('quantity', '>', 0)
+            ->whereNull('converted_at')->whereNull('released_at')->whereNull('release_reason')
+            ->groupBy('preinvoice_order_id')
+            ->selectRaw('preinvoice_order_id, MIN(created_at) AS reserved_at, SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= ? THEN 1 ELSE 0 END) AS expired_lines', [$now]);
+        $cutoff = $now->subHours(min(24, max(1, (int) config('hall_display.reservation_hours', 24))));
 
         return DB::table('preinvoice_orders as d')
             ->leftJoin('customers as c', 'c.id', '=', 'd.customer_id')
             ->leftJoin('users as seller', 'seller.id', '=', DB::raw('COALESCE(d.seller_id, d.created_by)'))
             ->leftJoinSub($counts, 'lines', 'lines.preinvoice_order_id', '=', 'd.id')
+            ->joinSub($held, 'held', 'held.preinvoice_order_id', '=', 'd.id')
             ->whereIn('d.status', $this->statuses('preinvoice'))
+            ->whereIn('d.status', PreinvoiceOrder::reservationHoldingStatuses())
+            ->whereNull('d.stock_released_at')
+            ->where(fn ($q) => $q->whereNull('d.stock_frozen_until')->orWhere('d.stock_frozen_until', '>', $now))
+            ->where('held.expired_lines', 0)->where('held.reserved_at', '>', $cutoff)->where('held.reserved_at', '<=', $now)
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('invoices')->whereColumn('invoices.preinvoice_order_id', 'd.id'))
-            ->where(function ($q) use ($now) {
-                $q->where('d.status', '!=', 'draft')->orWhere(function ($draft) use ($now) {
-                    $draft->where('d.status', 'draft')->where('d.updated_at', '>=', $now->subHours(max(1, (int) config('hall_display.draft_hours', 24))))
-                        ->where('lines.item_count', '>', 0);
-                });
-            })
             ->get([
                 'd.id', 'd.uuid', 'd.status', 'd.created_at', 'd.updated_at', 'd.customer_name',
                 'c.name', 'c.company_name', 'c.first_name', 'c.last_name', 'seller.name as seller_name',
-                'lines.item_count', 'lines.unit_count', 'd.total_price as amount',
+                'lines.item_count', 'lines.unit_count', 'd.total_price as amount', 'held.reserved_at',
             ]);
     }
 
@@ -147,7 +153,7 @@ final class HallManagementDashboard
     {
         $statuses = $type === 'invoice' ? array_keys(Invoice::statusLabels()) : array_keys(PreinvoiceOrder::statusLabels());
 
-        return array_values(array_filter($statuses, fn ($status) => self::stage($type, $status) !== null));
+        return array_values(array_filter($statuses, fn ($status) => array_key_exists(self::stage($type, $status) ?? '', self::STAGES)));
     }
 
     private function document(object $row, string $type, Collection $history, CarbonImmutable $now): array
@@ -166,8 +172,8 @@ final class HallManagementDashboard
             }
             break;
         }
-        if ($type === 'preinvoice' && $row->status === 'draft' && $history->isEmpty()) {
-            $entered = $created;
+        if ($type === 'preinvoice' && $stage === 'reserved') {
+            $entered = $this->time($row->reserved_at);
         }
         $customer = trim((string) ($row->customer_name ?: $row->name ?: $row->company_name ?: trim(($row->first_name ?? '').' '.($row->last_name ?? ''))));
 
@@ -252,10 +258,12 @@ final class HallManagementDashboard
 
         $tracked = collect();
         if (Schema::hasTable('hall_queue_transitions')) {
-            $tracked = DB::table('hall_queue_transitions')->orderByDesc('entered_at')->orderByDesc('id')->limit(12)->get()
+            $tracked = DB::table('hall_queue_transitions')
+                ->where(fn ($q) => $q->whereIn('from_stage', array_keys(self::STAGES))->orWhereIn('to_stage', array_keys(self::STAGES)))
+                ->orderByDesc('entered_at')->orderByDesc('id')->limit(12)->get()
                 ->map(fn ($row) => [
                     'id' => 'hall:'.$row->id, 'key' => $row->workflow_key, 'number' => $row->document_number,
-                    'from' => $row->from_stage, 'to' => $row->to_stage,
+                    'from' => self::stage($row->source_type, (string) $row->status_from), 'to' => self::stage($row->source_type, $row->status_to),
                     'label' => $row->status_to === 'deleted' ? 'حذف شد' : (($row->source_type === 'invoice' ? Invoice::statusLabels() : PreinvoiceOrder::statusLabels())[$row->status_to] ?? 'وضعیت سند تغییر کرد'),
                     'at' => $this->time($row->entered_at)?->toIso8601String(),
                 ]);

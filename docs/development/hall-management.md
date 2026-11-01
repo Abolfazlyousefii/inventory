@@ -28,11 +28,20 @@ workflow's next queue. Internal statuses do not reset the queue clock.
 
 ## Definitions
 
-- Four queues: draft/returned to seller, finance, warehouse, shipping. Internal
-  finance statuses share one queue. Final check stays in warehouse; packing and
-  ready-to-ship are shipping. Shipped/cancelled documents are not active cards.
-- Drafts must have positive-quantity lines and have been updated within 24 hours.
-  This excludes empty autosaves and abandoned drafts, but not old active invoices.
+- Four queues: active reservations, finance, warehouse, shipping. Drafts and
+  returns to the seller are never active cards. Final check stays in warehouse;
+  packing and ready-to-ship are shipping.
+- Every displayed preinvoice must have positive, open official reservations,
+  no expired open reservation lines, and an unreleased, unexpired holding order.
+  The oldest open official reservation must be less than 24 hours old; editing
+  the document does not restart that window. Temporary, released and converted
+  reservations do not qualify. Existing active invoices have no 24-hour cutoff.
+- Pending finance/reserved-waiting-warehouse preinvoices occupy active reservations;
+  finance-review statuses occupy finance. Reservation queue time uses the actual
+  official reservation creation time. Payload version 2 rejects obsolete draft
+  columns. Refresh already-open displays once after this update.
+- Compact desktop header and metrics leave room for 3 whole cards per queue at
+  1280x720 and 5 at 1920x1080; independent rotations expose the remaining cards.
 - `order:<preinvoice-id>` survives conversion to an invoice. Standalone invoice
   keys have a separate namespace. Linked preinvoices are excluded from the feed.
 - Amounts are raw integer rials, not multiplied by ten. `item_count` is the number

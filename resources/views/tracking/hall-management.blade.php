@@ -28,7 +28,7 @@
         <div class="operations-heading"><h2>جریان سفارش‌ها <span id="document-total">—</span></h2><div class="board-controls"><span id="last-updated">هنوز به‌روز نشده</span><button type="button" id="pause" aria-pressed="false">توقف مرور</button><button type="button" id="next">ردیف بعد ↓</button></div></div>
         <div class="connection-alert" id="connection-alert" role="alert" hidden></div>
         <div class="board" id="board" aria-label="چهار صف سفارش‌ها">
-            @foreach (['draft' => 'در حال ثبت', 'finance' => 'صف مالی', 'warehouse' => 'صف انبار', 'shipping' => 'صف ارسال'] as $key => $label)
+            @foreach (['reserved' => 'رزرو فعال', 'finance' => 'صف مالی', 'warehouse' => 'صف انبار', 'shipping' => 'صف ارسال'] as $key => $label)
             <section class="lane lane-{{ $key }}" data-stage="{{ $key }}" aria-label="{{ $label }}">
                 <header class="lane-heading"><h3>{{ $label }}</h3><strong data-count>—</strong></header>
                 <div class="lane-summary"><span>میانگین انتظار</span><span data-average>—</span></div>

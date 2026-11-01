@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Tracking\HallTrackingController;
+use App\Models\PreinvoiceOrder;
 use App\Services\Tracking\HallManagementDashboard;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,8 @@ class HallManagementDashboardTest extends TestCase
                     $table->unsignedBigInteger('created_by')->nullable();
                     $table->boolean('is_auto_draft')->default(false);
                     $table->bigInteger('total_price')->default(0);
+                    $table->dateTime('stock_released_at')->nullable();
+                    $table->dateTime('stock_frozen_until')->nullable();
                 }
                 $table->timestamps();
             });
@@ -90,14 +93,88 @@ class HallManagementDashboardTest extends TestCase
             $table->unsignedBigInteger('invoice_payment_id');
             $table->date('received_at')->nullable();
         });
+        Schema::create('preinvoice_draft_reservations', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('preinvoice_order_id')->nullable();
+            $table->string('reservation_scope')->nullable();
+            $table->integer('quantity')->default(1);
+            $table->dateTime('converted_at')->nullable();
+            $table->dateTime('released_at')->nullable();
+            $table->string('release_reason')->nullable();
+            $table->dateTime('expires_at')->nullable();
+            $table->timestamps();
+        });
     }
 
-    private function order(array $overrides = []): int
+    private function order(array $overrides = [], bool $reserved = true): int
     {
-        return DB::table('preinvoice_orders')->insertGetId(array_merge([
+        $id = DB::table('preinvoice_orders')->insertGetId(array_merge([
             'uuid' => 'P-'.uniqid(), 'status' => 'pending_finance', 'total_price' => 128456789,
             'customer_name' => 'مشتری نمونه', 'created_at' => now()->subHours(2), 'updated_at' => now(),
         ], $overrides));
+        if ($reserved && in_array($overrides['status'] ?? 'pending_finance', PreinvoiceOrder::reservationHoldingStatuses(), true)) {
+            $this->reservation($id);
+        }
+
+        return $id;
+    }
+
+    private function reservation(int $id, array $overrides = []): void
+    {
+        DB::table('preinvoice_draft_reservations')->insert(array_merge([
+            'preinvoice_order_id' => $id, 'reservation_scope' => 'official', 'quantity' => 1,
+            'created_at' => now()->subMinutes(10), 'updated_at' => now(), 'expires_at' => now()->addHours(2),
+        ], $overrides));
+    }
+
+    public function test_only_real_open_official_reservations_inside_24_hours_are_visible(): void
+    {
+        $valid = $this->order();
+        $this->reservation($valid); // Many reserved lines still produce one card.
+        $this->order([], false);
+        foreach ([
+            ['reservation_scope' => 'temporary_online'], ['released_at' => now()],
+            ['converted_at' => now()], ['release_reason' => 'released'], ['quantity' => 0],
+            ['expires_at' => now()], ['created_at' => now()->subHours(24)],
+            ['created_at' => now()->addMinute()],
+        ] as $invalid) {
+            $id = $this->order([], false);
+            $this->reservation($id, $invalid);
+        }
+        $payload = app(HallManagementDashboard::class)->snapshot();
+        $this->assertCount(1, $payload['documents']);
+        $this->assertSame('order:'.$valid, $payload['documents'][0]['key']);
+        $this->assertSame('reserved', $payload['documents'][0]['stage']);
+    }
+
+    public function test_drafts_and_returned_sales_are_hidden_even_if_recent_or_reserved(): void
+    {
+        foreach (['draft', 'returned_to_sales'] as $status) {
+            $id = $this->order(['status' => $status]);
+            $this->reservation($id);
+        }
+        $this->invoice(['status' => 'returned_to_sales_after_collection']);
+        $this->assertEmpty(app(HallManagementDashboard::class)->snapshot()['documents']);
+    }
+
+    public function test_released_order_and_mixed_expired_reservations_are_not_active(): void
+    {
+        $this->order(['stock_released_at' => now()]);
+        $this->order(['stock_frozen_until' => now()->subMinute()]);
+        $id = $this->order();
+        $this->reservation($id, ['expires_at' => now()->subSecond()]);
+        $this->assertEmpty(app(HallManagementDashboard::class)->snapshot()['documents']);
+    }
+
+    public function test_window_starts_at_official_reservation_not_draft_creation_or_last_edit(): void
+    {
+        $fresh = $this->order(['created_at' => now()->subDays(5)]);
+        $old = $this->order(['created_at' => now()->subDays(5)], false);
+        $this->reservation($old, ['created_at' => now()->subHours(25), 'updated_at' => now()]);
+        $docs = app(HallManagementDashboard::class)->snapshot()['documents'];
+        $this->assertCount(1, $docs);
+        $this->assertSame('order:'.$fresh, $docs[0]['key']);
+        $this->assertSame(600, $docs[0]['stage_seconds']);
     }
 
     private function invoice(array $overrides = []): int
@@ -112,9 +189,9 @@ class HallManagementDashboardTest extends TestCase
     {
         $map = [
             ['preinvoice', 'draft', 'draft'], ['preinvoice', 'returned_to_sales', 'draft'],
-            ['preinvoice', 'pending_finance', 'finance'], ['preinvoice', 'finance_reviewing', 'finance'],
+            ['preinvoice', 'pending_finance', 'reserved'], ['preinvoice', 'finance_reviewing', 'finance'],
             ['preinvoice', 'warehouse_approved_waiting_finance', 'finance'],
-            ['preinvoice', 'reserved_waiting_warehouse', 'warehouse'], ['preinvoice', 'returned_to_warehouse', 'warehouse'],
+            ['preinvoice', 'reserved_waiting_warehouse', 'reserved'], ['preinvoice', 'returned_to_warehouse', 'warehouse'],
             ['invoice', 'pending_finance_reapproval', 'finance'], ['invoice', 'returned_to_sales_after_collection', 'draft'],
             ['invoice', 'pending_collection', 'warehouse'], ['invoice', 'collecting', 'warehouse'],
             ['invoice', 'checking_discrepancy', 'warehouse'], ['invoice', 'final_check', 'warehouse'],
@@ -184,13 +261,13 @@ class HallManagementDashboardTest extends TestCase
         $this->assertFalse($doc['stage_time_known']);
     }
 
-    public function test_old_drafts_and_empty_autosaves_do_not_fill_registration_queue(): void
+    public function test_saved_drafts_and_empty_autosaves_are_not_displayed(): void
     {
         $this->order(['status' => 'draft', 'is_auto_draft' => true]);
         $this->order(['status' => 'draft', 'updated_at' => now()->subDays(3)]);
         $id = $this->order(['status' => 'draft']);
         DB::table('preinvoice_order_items')->insert(['preinvoice_order_id' => $id, 'quantity' => 1]);
-        $this->assertCount(1, app(HallManagementDashboard::class)->snapshot()['documents']);
+        $this->assertEmpty(app(HallManagementDashboard::class)->snapshot()['documents']);
     }
 
     public function test_today_kpis_use_whole_day_and_deduplicate_cheques_by_payment(): void
@@ -237,14 +314,14 @@ class HallManagementDashboardTest extends TestCase
             ->assertRedirect('/hall')->assertCookie('hall_management_access');
     }
 
-    public function test_internal_finance_review_preserves_entry_and_reentry_resets_it(): void
+    public function test_finance_review_starts_when_leaving_reserved_queue_and_reentry_resets_it(): void
     {
         $id = $this->order(['status' => 'finance_reviewing']);
         DB::table('warehouse_review_logs')->insert([
             ['preinvoice_order_id' => $id, 'status_from' => 'draft', 'status_to' => 'pending_finance', 'created_at' => now()->subMinutes(40)],
             ['preinvoice_order_id' => $id, 'status_from' => 'pending_finance', 'status_to' => 'finance_reviewing', 'created_at' => now()->subMinutes(5)],
         ]);
-        $this->assertSame(2400, app(HallManagementDashboard::class)->snapshot()['documents'][0]['stage_seconds']);
+        $this->assertSame(300, app(HallManagementDashboard::class)->snapshot()['documents'][0]['stage_seconds']);
         DB::table('warehouse_review_logs')->insert([
             ['preinvoice_order_id' => $id, 'status_from' => 'finance_reviewing', 'status_to' => 'returned_to_sales', 'created_at' => now()->subMinutes(3)],
             ['preinvoice_order_id' => $id, 'status_from' => 'returned_to_sales', 'status_to' => 'finance_reviewing', 'created_at' => now()->subMinute()],
