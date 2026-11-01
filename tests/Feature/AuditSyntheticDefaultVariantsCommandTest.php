@@ -14,6 +14,12 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+// These audit fixtures intentionally have no pending external sync work.
+// A queued site-stock sync is a real reference and must block cleanup.
+beforeEach(function (): void {
+    config()->set('services.request_driven_site_stock', false);
+});
+
 function phaseFiveAuditCandidate(string $color = 'مشکی', string $suffix = '01'): ProductVariant
 {
     $root = Category::query()->firstOrCreate(['name' => 'برقیجات'], ['code' => '81']);
@@ -82,6 +88,26 @@ it('reports proven probable safe and protected synthetic candidates with require
         ->expectsOutputToContain('stock_protected=1')
         ->expectsOutputToContain('Read-only audit complete; no data was changed.')
         ->assertSuccessful();
+});
+
+it('protects queued site stock sync references without counting them as physical stock', function (): void {
+    // Re-enable the real observer side effect for this specific safety check.
+    config()->set('services.request_driven_site_stock', true);
+    $variant = phaseFiveAuditCandidate();
+    phaseFiveAuditProof($variant);
+
+    expect(DB::table('site_stock_sync_outbox')->where('variant_id', $variant->id)->exists())->toBeTrue();
+
+    $audit = app(SyntheticDefaultVariantAuditService::class);
+    $rows = $audit->rows(null, (int) $variant->id);
+    $row = $rows->first();
+    $summary = $audit->summary($rows);
+
+    expect($rows)->toHaveCount(1)
+        ->and($row['safe_to_remove'])->toBeFalse()
+        ->and($row['blocking_reasons'])->toContain('business_reference:site_stock_sync_outbox.variant_id')
+        ->and($summary['stock_protected'])->toBe(0)
+        ->and($summary['other_reference_protected'])->toBe(1);
 });
 
 it('performs no writes while auditing', function (): void {

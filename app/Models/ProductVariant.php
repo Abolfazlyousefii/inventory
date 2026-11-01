@@ -27,6 +27,13 @@ class ProductVariant extends Model
                     $variant->sell_price = (int) $product->uniform_sale_price;
                 }
             }
+
+            // A zero-priced SKU may be stocked for a return or a pending pricing
+            // decision, but it must not remain eligible for sale. Apply this after
+            // the product-wide master-price override above.
+            if ((int) ($variant->sell_price ?? 0) <= 0) {
+                $variant->sales_enabled = false;
+            }
         });
     }
 

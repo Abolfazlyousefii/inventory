@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use App\Models\Warehouse;
-use Symfony\Component\HttpKernel\Exception\HttpException;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class CanonicalInventoryAuthorityTest extends TestCase
@@ -57,20 +57,24 @@ class CanonicalInventoryAuthorityTest extends TestCase
     {
         [$product, $variant] = $this->productAndVariant();
         $central = WarehouseStockService::centralWarehouseId();
+
         WarehouseStockService::change($central, $product->id, 3, $variant->id);
 
         try {
             WarehouseStockService::change($central, $product->id, -4, $variant->id);
             $this->fail('Expected insufficient-stock failure.');
-        } catch (HttpException $exception) {
-            $this->assertSame(422, $exception->getStatusCode());
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertSame(422, $exception->status);
+            $this->assertArrayHasKey('items', $exception->errors());
         }
 
-        $this->assertSame(3, WarehouseStockService::available($central, $product->id, $variant->id));
+        $this->assertSame(
+            3,
+            WarehouseStockService::available($central, $product->id, $variant->id)
+        );
         $this->assertSame(3, (int) $variant->fresh()->stock);
         $this->assertSame(3, (int) $product->fresh()->stock);
     }
-
     public function test_mixed_stock_changes_preserve_all_balances_after_every_step(): void
     {
         Http::fake();
@@ -108,8 +112,9 @@ class CanonicalInventoryAuthorityTest extends TestCase
                 });
                 $this->assertGreaterThanOrEqual(0, $before + $delta);
                 $expected[$warehouse][$variant] += $delta;
-            } catch (HttpException $exception) {
-                $this->assertSame(422, $exception->getStatusCode());
+            } catch (ValidationException $exception) {
+        $this->assertSame(422, $exception->status);
+        $this->assertArrayHasKey('items', $exception->errors());
                 $this->assertLessThan(0, $before + $delta);
             } catch (\RuntimeException $exception) {
                 $this->assertTrue($rollback);

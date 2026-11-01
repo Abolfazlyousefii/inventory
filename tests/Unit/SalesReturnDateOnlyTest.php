@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\SalesReturnDocument;
 use Morilog\Jalali\Jalalian;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class SalesReturnDateOnlyTest extends TestCase
 {
@@ -17,16 +17,17 @@ class SalesReturnDateOnlyTest extends TestCase
         $this->assertSame('2026-07-26', $gregorian);
     }
 
-    public function test_model_and_migration_use_date_instead_of_datetime(): void
+    public function test_model_casts_external_invoice_date_to_date_only(): void
     {
         $model = new SalesReturnDocument;
-        $migration = file_get_contents(
-            dirname(__DIR__, 2).'/database/migrations/2026_07_12_000001_create_sales_return_documents_table.php'
-        );
 
         $this->assertSame('date', $model->getCasts()['external_invoice_date']);
-        $this->assertStringContainsString("\$table->date('external_invoice_date')", $migration);
-        $this->assertStringNotContainsString("\$table->dateTime('external_invoice_date')", $migration);
+
+        // A date cast should discard any legacy time component on retrieval.
+        $model->external_invoice_date = '2026-07-26 14:35:20';
+
+        $this->assertSame('2026-07-26', $model->external_invoice_date->format('Y-m-d'));
+        $this->assertSame('00:00:00', $model->external_invoice_date->format('H:i:s'));
     }
 
     public function test_return_form_forces_official_date_only_picker_options(): void

@@ -292,9 +292,11 @@ class StocktakeController extends Controller
                 return response()->json([
                     'message' => 'امکان ثبت نهایی سند وجود ندارد.',
                     'errors' => [
-                        'finalize' => [$exception->getMessage()],
-                    ],
-                    'conflicts' => $exception->conflicts(),
+
+                        'finalize' => [
+                            'امکان نهایی‌سازی انبارگردانی وجود ندارد. موجودی، رزرو فعال، سهم سبد، رزرو سایت، تنوع‌های کالا یا مقدار شمارش‌شده نیازمند بازبینی است. لطفاً مغایرت‌های مشخص‌شده را بررسی کنید.',
+                        ],
+                        'conflicts' => $exception->conflicts(),
                 ], 422);
             }
 

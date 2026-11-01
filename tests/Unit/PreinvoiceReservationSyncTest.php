@@ -20,6 +20,27 @@ class PreinvoiceReservationSyncTest extends TestCase
 
         Schema::dropAllTables();
 
+
+        Schema::create('warehouses', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('type');
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('warehouse_stocks', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('warehouse_id');
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('product_variant_id')->nullable();
+            $table->unsignedInteger('quantity')->default(0);
+            $table->timestamps();
+        });
+
+
+
+
         Schema::create('categories', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -29,6 +50,8 @@ class PreinvoiceReservationSyncTest extends TestCase
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('category_id');
+            $table->boolean('is_bundle')->default(false);
+            $table->string('bundle_stock_mode')->nullable();
             $table->string('name');
             $table->string('sku')->unique();
             $table->unsignedInteger('stock')->default(0);

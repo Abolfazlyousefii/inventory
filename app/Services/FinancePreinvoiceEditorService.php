@@ -2,12 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\PreinvoiceDraftReservation;
 use App\Models\PreinvoiceOrder;
 use App\Models\User;
 use App\Support\ActivityLogger;
 use App\Support\SalesDocumentTotals;
 use App\Support\DiscountMath;
-use Illuminate\Support\Facades\DB;
+use App\Support\ReservationSideEffects;
 use Illuminate\Validation\ValidationException;
 
 class FinancePreinvoiceEditorService
@@ -37,7 +38,7 @@ class FinancePreinvoiceEditorService
 
     public function update(PreinvoiceOrder $order, array $data, User $actor): PreinvoiceOrder
     {
-        return DB::transaction(function () use ($order, $data, $actor) {
+        return ReservationSideEffects::transaction(function () use ($order, $data, $actor) {
             $lockedOrder = PreinvoiceOrder::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             $oldStatus = $lockedOrder->status;
 
@@ -49,9 +50,29 @@ class FinancePreinvoiceEditorService
                 throw ValidationException::withMessages(['preinvoice' => 'این پیش‌فاکتور در وضعیت مجاز برای ویرایش مالی نیست.']);
             }
 
+            if ($lockedOrder->stock_frozen_until?->lte(now())) {
+                throw ValidationException::withMessages(['preinvoice' => $this->reservationService->expiredMessage()]);
+            }
+
             $items = $lockedOrder->items()->with(['product', 'variant'])->lockForUpdate()->get()->keyBy('id');
             $lockedOrder->setRelation('items', $items->values());
             \App\Support\FinanceDocumentVersion::assertCurrent($lockedOrder, $data['finance_version'] ?? null);
+            // Finance editing is not finance finalization: do not require the
+            // complete approval-only reservation set for a price-only save.
+            // Still reject expired *active* official reservations before any writes.
+            $hasExpiredOfficialReservation = PreinvoiceDraftReservation::query()
+                ->where('preinvoice_order_id', $lockedOrder->id)
+                ->where('reservation_scope', PreinvoiceDraftReservation::SCOPE_OFFICIAL)
+                ->whereNull('released_at')
+                ->whereNull('release_reason')
+                ->where('quantity', '>', 0)
+                ->whereNotNull('expires_at')
+                ->where('expires_at', '<=', now())
+                ->lockForUpdate()
+                ->first(['id']) !== null;
+            if ($hasExpiredOfficialReservation) {
+                throw ValidationException::withMessages(['preinvoice' => $this->reservationService->expiredMessage()]);
+            }
             $payload = collect($data['items'] ?? [])->keyBy(fn ($row) => (int) $row['id']);
             if ($payload->count() !== count($data['items'] ?? [])) {
                 throw ValidationException::withMessages(['items' => 'شناسه تکراری در اقلام ارسالی وجود دارد.']);

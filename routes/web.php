@@ -568,7 +568,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/purchases/export', [PurchaseController::class, 'exportExcel'])->name('purchases.export');
     Route::get('/purchases/create', [PurchaseController::class, 'create'])->name('purchases.create');
-    Route::get('/purchases/products/{product}/variants', [PurchaseController::class, 'productVariants'])->name('purchases.products.variants');
+    Route::get('/purchases/products/{product}/variants', [PurchaseController::class, 'productVariants'])
+        ->name('purchases.products.variants');
     Route::post('/purchases', [PurchaseController::class, 'store'])->name('purchases.store');
     Route::get('/purchases/{purchase}', [PurchaseController::class, 'show'])->name('purchases.show');
     Route::get('/purchases/{purchase}/edit', [PurchaseController::class, 'edit'])->name('purchases.edit');

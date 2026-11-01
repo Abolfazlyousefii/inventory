@@ -208,6 +208,7 @@ it('3 — the purchase form offers the Base and disables the synthetic black', f
 });
 
 it('4 — a real multi-variant electrical product keeps purchasing normally', function (): void {
+    $this->withoutExceptionHandling();
     $model = ModelList::query()->create(['brand' => 'Headset brand', 'model_name' => 'H-200', 'code' => '201']);
     $category = headsetElectricalCategory();
 
@@ -224,7 +225,8 @@ it('4 — a real multi-variant electrical product keeps purchasing normally', fu
         'sell_price' => 3_000_000,
         'buy_price' => 2_000_000,
         'is_sellable' => true,
-    ])->assertSessionHasNoErrors();
+    ])->assertSessionHasNoErrors()
+        ->assertRedirect(route('products.index'));
     $product = Product::query()->where('name', 'هدست چندتنوعی')->firstOrFail();
     $variants = $product->variants()->orderBy('variety_code')->get();
 
@@ -321,14 +323,18 @@ it('6 — a black variant of a non-electrical product is not blocked', function 
         'variety_name' => 'مشکی',
         'variety_code' => '0001',
         'variant_code' => '94000100001',
-        'sell_price' => 0,
+        // Already priced: this test isolates synthetic-variant eligibility, not repricing.
+        'sell_price' => 400_000,
         'stock' => 0,
         'reserved' => 0,
         'is_active' => true,
         'sales_enabled' => true,
     ]);
 
-    headsetPostPurchase([headsetRow($product, $black, 4)])
+    headsetPostPurchase([headsetRow($product, $black, 4, [
+        'sell_price' => 400_000,
+        'product_sell_price' => 400_000,
+    ])])
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('purchases.index'));
 

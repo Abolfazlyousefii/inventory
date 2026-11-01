@@ -31,8 +31,8 @@
         'allocated_quantity' => max(0, (int) ($allocations[$component->id] ?? 0)),
     ])->values()->all();
 
-    // Keep selections after Laravel validation redirects, including their human-readable labels.
-    $submittedComponents = old('components');
+// Preserve selected components and their labels after validation redirects.
+//    $submittedComponents = old('components');
     if (is_array($submittedComponents)) {
         $oldIds = collect($submittedComponents)->pluck('variant_id')->filter(fn ($id) => filter_var($id, FILTER_VALIDATE_INT))->unique()->values();
         $oldVariants = \App\Models\ProductVariant::with('product')->whereIn('id', $oldIds)->get()->keyBy('id');

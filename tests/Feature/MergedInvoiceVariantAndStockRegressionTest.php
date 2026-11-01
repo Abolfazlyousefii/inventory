@@ -282,7 +282,7 @@ it('refuses a change() that would drive stock negative', function (): void {
     ]);
 
     expect(fn () => WarehouseStockService::change($warehouse->id, $product->id, -5, $variant->id))
-        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+        ->toThrow(\Illuminate\Validation\ValidationException::class);
 
     expect(WarehouseStockService::available($warehouse->id, $product->id, $variant->id))->toBe(2);
 });

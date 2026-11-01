@@ -14,10 +14,27 @@ class PurchaseReturnTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Schema::create('site_stock_sync_outbox', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('variant_id')->default(0);
+            $table->string('origin', 16)->default('inventory');
+            $table->dateTime('created_at');
+            $table->dateTime('available_at');
+            $table->unsignedSmallInteger('attempts')->default(0);
+            $table->string('claimed_by', 36)->nullable();
+            $table->dateTime('locked_until')->nullable();
+            $table->string('last_error', 500)->nullable();
+            $table->index(
+                ['available_at', 'id'],
+                'site_stock_outbox_due_idx'
+            );
+        });
         \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/purchase-returns-20261011'));
         Schema::create('suppliers', function(Blueprint $t){$t->id();$t->string('name');$t->timestamps();});
         Schema::create('products', function(Blueprint $t){$t->id();$t->string('name');$t->integer('stock')->default(0);$t->timestamps();});
-        Schema::create('product_variants', function(Blueprint $t){$t->id();$t->integer('product_id');$t->string('variant_name');$t->integer('stock')->default(0);$t->integer('reserved')->default(0);$t->timestamps();});
+        Schema::create('product_variants', function(Blueprint $t){
+            $t->boolean('sales_enabled')->default(true);$t->id();$t->integer('product_id');$t->string('variant_name');$t->integer('stock')->default(0);$t->integer('reserved')->default(0);$t->timestamps();});
         Schema::create('warehouses', function(Blueprint $t){$t->id();$t->string('name');$t->string('type');$t->boolean('is_active')->default(true);$t->timestamps();});
         Schema::create('warehouse_stocks', function(Blueprint $t){$t->id();$t->integer('warehouse_id');$t->integer('product_id');$t->integer('product_variant_id')->nullable();$t->integer('quantity');$t->timestamps();});
         Schema::create('purchases', function(Blueprint $t){$t->id();$t->integer('supplier_id');$t->integer('warehouse_id');$t->integer('user_id')->nullable();$t->integer('total_amount')->default(10000);$t->timestamp('purchased_at')->nullable();$t->timestamps();});

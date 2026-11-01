@@ -32,6 +32,22 @@ class PendingSalesReturnEditTest extends TestCase
         parent::setUp();
         \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/purchase-returns-20261011'));
         Http::fake();
+        Schema::create('site_stock_sync_outbox', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('variant_id')->default(0);
+            $table->string('origin', 16)->default('inventory');
+            $table->dateTime('created_at');
+            $table->dateTime('available_at');
+            $table->unsignedSmallInteger('attempts')->default(0);
+            $table->string('claimed_by', 36)->nullable();
+            $table->dateTime('locked_until')->nullable();
+            $table->string('last_error', 500)->nullable();
+            $table->index(
+                ['available_at', 'id'],
+                'site_stock_outbox_due_idx'
+            );
+        });
         $models = ['SalesReturnDocument', 'SalesReturnDocumentItem', 'SalesReturnDocumentRevision', 'WarehouseInboundReceipt', 'WarehouseInboundReceiptItem', 'Customer', 'CustomerLedger', 'ActivityLog', 'StockMovement', 'Warehouse', 'WarehouseStock', 'Product', 'ProductVariant', 'Category', 'Invoice', 'InvoiceItem', 'WarehouseTransfer', 'WarehouseTransferItem', 'Color', 'ModelList', 'User'];
         foreach ($models as $name) {
             $class = 'App\\Models\\'.$name;

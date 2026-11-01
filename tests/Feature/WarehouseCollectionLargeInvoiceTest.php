@@ -29,7 +29,7 @@ class WarehouseCollectionLargeInvoiceTest extends TestCase
         $this->assertStringContainsString('اطلاعات اقلام فاکتور ناقص یا نامعتبر است. صفحه را تازه‌سازی کرده و دوباره تلاش کنید.', $controller);
         $this->assertStringContainsString('اطلاعات فرم به‌صورت ناقص به سرور رسیده است. هیچ تغییری ثبت نشد.', $controller);
         $this->assertStringContainsString('count($items) !== $expectedCount', $controller);
-        $this->assertStringContainsString("'items.*.quantity' => 'required|integer|min:0'", $controller);
+        $this->assertStringContainsString(preg_replace('/\s+/', '', "'items.*.quantity' => 'required|integer|min:0'"), preg_replace('/\s+/', '', $controller));
         $this->assertStringContainsString('filter_var($item[\'_delete\'] ?? false, FILTER_VALIDATE_BOOLEAN)', $controller);
         $this->assertStringContainsString('$item[\'quantity\'] = 0', $controller);
         $this->assertStringContainsString('updateCollectedItems($invoice, $items', $controller);

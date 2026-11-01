@@ -57,12 +57,14 @@ it('projects price only from active sales-enabled structurally usable positive v
     $other = phaseFiveSummaryProduct('720001');
     phaseFiveSummaryVariant($other, '00', 1);
 
+    $otherPriceBefore = $other->fresh()->price;
+
     app(ProductVariantStructureService::class)->recalculateProductSummary($product);
 
     expect($product->fresh()->price)->toBe(100)
         ->and($product->fresh()->is_sellable)->toBeTrue()
         ->and($base->fresh()->sell_price)->toBe(100)
-        ->and($other->fresh()->price)->toBe(999);
+        ->and($other->fresh()->price)->toBe($otherPriceBefore);
 });
 
 it('writes an explicit zero when no usable positive price exists without changing sales status', function (): void {

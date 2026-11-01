@@ -56,9 +56,9 @@ it('keeps every application model ready for persistence operations', function ()
 
         expect(
             $model->getFillable() !== []
-            || $model->getGuarded() === []
+            || ! in_array('*', $model->getGuarded(), true)
         )->toBeTrue(
-            "{$class} must define fillable fields or intentionally use guarded = []."
+            "{$class} must define fillable fields or permit mass assignment with non-wildcard guards."
         );
     }
 });

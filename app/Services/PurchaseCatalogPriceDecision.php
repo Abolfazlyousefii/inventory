@@ -22,11 +22,21 @@ final class PurchaseCatalogPriceDecision
         return $submittedPrice > 0 && $submittedPrice !== $currentCatalogPrice;
     }
 
-    public function requiresSalePriceApproval(?int $oldPurchasePrice, int $currentCatalogPrice): bool
-    {
-        // A brand-new purchase may seed an unpriced variant. Existing purchase
-        // edits and replacement of existing catalog prices always need consent.
-        return $oldPurchasePrice !== null || $currentCatalogPrice > 0;
+    public function requiresSalePriceApproval(?int $oldPurchasePrice, int $currentCatalogPrice): bool {
+        // Even first-time pricing changes the live catalog. The server's
+        // normalization observer may also affect other variants of this product;
+        // never exempt zero-priced variants from price-change authorization.
+        return true;
+    }
+
+    /**
+     * Even a snapshot-only sale-price edit must use the version shown to the
+     * operator. Quantity-only edits that retain the historical price do not
+     * need a fresh catalog-price version.
+     */
+    public function isStaleForExplicitSalePriceEdit( ?int $oldPurchasePrice, int $submittedPrice, int $lockedCatalogPrice, ?int $expectedCatalogPrice ): bool {
+        return $this->isExplicitChange($oldPurchasePrice, $submittedPrice, $lockedCatalogPrice)
+               && $this->isCurrentPriceStale($expectedCatalogPrice, $lockedCatalogPrice);
     }
 
     public function isCurrentPriceStale(?int $expectedCatalogPrice, int $lockedCatalogPrice): bool

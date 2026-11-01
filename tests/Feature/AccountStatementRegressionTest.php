@@ -229,7 +229,7 @@ class AccountStatementRegressionTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('account-statements.show', $this->target))
             ->assertOk()
-            ->assertSee('وضعیت نهایی حساب')
+            ->assertSee('ماندهٔ فعلی حساب')
             ->assertSee('تسویه');
     }
 

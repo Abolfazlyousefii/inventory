@@ -1037,8 +1037,8 @@ $productsPayload = $products->map(function ($p) {
                     const live = Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
                     return IS_EDIT_PURCHASE && original !== undefined && original !== ''
                         ? Number(item.sell_price) !== Number(original)
-                        : live > 0 && Number(item.sell_price) !== live;
-                });
+	                    : Number(item.sell_price) !== live;
+				});
                 document.getElementById('salePriceChangeConfirmed').value = '0';
                 document.getElementById('salePriceChangeReason').value = '';
                 if (saleChanges.length) {

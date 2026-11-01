@@ -205,35 +205,115 @@ document.addEventListener('DOMContentLoaded', () => {
   let timer,controller,revision=0;
   let selectionControls=[];
   function hide(){results.hidden=true;search.setAttribute('aria-expanded','false');}
-  function info(s){selectionControls=[];results.replaceChildren();search.setAttribute('aria-expanded','true');const e=document.createElement('div');e.className='p-3 small text-muted';e.textContent=s;results.append(e);results.hidden=false;}
-  function syncSelection(){
-    for(const {box,items,status} of selectionControls){
-      const n=items.filter(i=>selected.has(Number(i.id))).length;
-      box.checked=n===items.length && n>0;box.indeterminate=n>0&&n<items.length;
-      if(status)status.textContent=`${money(n)} از ${money(items.length)} انتخاب شده`;
-    }
-  }
-  const maxComponents = @json(\App\Support\BundleRecipe::MAX_COMPONENTS);
-  function selectItems(items,checked){
-    const additions=items.filter(i=>!selected.has(Number(i.id)));
-    if(checked && selected.size+additions.length>maxComponents){
-      alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);syncSelection();return;
-    }
-    for(const i of items){
-      const id=Number(i.id);
-      if(checked){if(!selected.has(id))selected.set(id,{...i,quantity:1,discount_type:'percent',discount_value:0});}
-      else selected.delete(id);
-    }
-    refresh();
-  }
-  function selectionLabel(items,labelText){
-    const label=document.createElement('label');label.className='kit-select';
-    const box=document.createElement('input');box.type='checkbox';box.setAttribute('aria-label',labelText);
-    box.addEventListener('change',()=>selectItems(items,box.checked));label.append(box);
-    const control={box,items};selectionControls.push(control);
-    return {label,control};
-  }
-  async function lookup(term){
+
+	function info(s) {
+		selectionControls = [];
+		results.replaceChildren();
+		search.setAttribute('aria-expanded', 'true');
+
+		const e = document.createElement('div');
+		e.className = 'p-3 small text-muted';
+		e.textContent = s;
+
+		results.append(e);
+		results.hidden = false;
+	}
+
+	function syncSelection() {
+		for (const { box, items, status } of selectionControls) {
+			const n = items.filter(i => selected.has(Number(i.id))).length;
+
+			box.checked = n === items.length && n > 0;
+			box.indeterminate = n > 0 && n < items.length;
+
+			if (status) {
+				status.textContent = `${money(n)} از ${money(items.length)} انتخاب شده`;
+			}
+		}
+	}
+
+// Matches the current BundleRecipe backend validation.
+	const maxComponents = 100;
+
+	function selectItems(items, checked) {
+		const additions = new Set(
+			items
+				.map(i => Number(i.id))
+				.filter(id => !selected.has(id))
+		);
+
+		if (checked && selected.size + additions.size > maxComponents) {
+			alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);
+			syncSelection();
+			return;
+		}
+
+		for (const i of items) {
+			const id = Number(i.id);
+
+			if (checked) {
+				if (!selected.has(id)) {
+					selected.set(id, {
+						...i,
+						quantity: 1,
+						discount_type: 'percent',
+						discount_value: 0
+					});
+				}
+			} else {
+				selected.delete(id);
+			}
+		}
+
+		refresh();
+	}
+
+	function choose(i) {
+		const id = Number(i.id);
+
+		if (!selected.has(id)) {
+			if (selected.size >= maxComponents) {
+				alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);
+				syncSelection();
+				return;
+			}
+
+			selected.set(id, {
+				...i,
+				quantity: 1,
+				discount_type: 'percent',
+				discount_value: 0
+			});
+
+			refresh();
+		}
+
+		hide();
+		search.value = '';
+		search.focus();
+	}
+
+	function selectionLabel(items, labelText) {
+		const label = document.createElement('label');
+		label.className = 'kit-select';
+
+		const box = document.createElement('input');
+		box.type = 'checkbox';
+		box.setAttribute('aria-label', labelText);
+
+		box.addEventListener('change', () => {
+			selectItems(items, box.checked);
+		});
+
+		label.append(box);
+
+		const control = { box, items };
+		selectionControls.push(control);
+
+		return { label, control };
+	}
+
+	async function lookup(term){
     const rev=++revision;if(controller)controller.abort();if(term.length<2){hide();return;}
     controller=new AbortController();info('در حال جستجو...');
     try{

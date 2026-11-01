@@ -74,6 +74,7 @@ it('requires the items key so a malformed request cannot release the selection',
 });
 
 it('converts temporary reservations and skips every old-token mutation including new variants', function () {
+    $this->withoutExceptionHandling();
     $rows = [$this->rows[0]];
     $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload($rows, $this->token))->assertOk();
     $reservation = PreinvoiceDraftReservation::sole();
@@ -83,7 +84,10 @@ it('converts temporary reservations and skips every old-token mutation including
     $official = PreinvoiceDraftReservation::where('reservation_scope', 'official')->whereNull('released_at')->sole();
     expect($official->preinvoice_order_id)->not->toBeNull();
     $before = DB::table('preinvoice_draft_reservations')->orderBy('id')->get()->toJson();
-    Log::spy();
+    $logSpy = Log::spy();
+    $logSpy->shouldReceive('channel')
+        ->with('slowdiag')
+        ->andReturnSelf();
     foreach ([[array_replace($rows[0], ['quantity' => 50])], $this->rows, []] as $desired) {
         $response = $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload($desired, $this->token))->assertOk();
         hardeningStock($rows[0], 998, 2);
@@ -201,6 +205,8 @@ it('rejects the competing seller demand after the first reservation wins', funct
 });
 
 it('never lets product lookup expire or expose an official reservation as temporary', function () {
+    \Tests\Support\InventorySqliteTestSchema::forReservationProductLookup();
+
     $rows = [$this->rows[0]];
     $this->postJson(route('preinvoice.api.reservations.sync'), hardeningPayload($rows, $this->token))->assertOk();
     $this->post(route('preinvoice.draft.save'), largePayloadPost($rows, ['reservation_token' => $this->token]))->assertSessionHasNoErrors();

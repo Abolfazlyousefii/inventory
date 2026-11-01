@@ -25,9 +25,9 @@ class WarehouseCollectionItemAdjustmentTest extends TestCase
         $controller = file_get_contents(base_path('app/Http/Controllers/InvoiceController.php'));
 
         $this->assertStringContainsString('items.*._delete', $controller);
-        $this->assertStringContainsString("Rule::in(['physical_shortage', 'customer_cancelled', 'wrong_item', 'warehouse_correction', 'replacement', 'other'])", $controller);
+        $this->assertStringContainsString(preg_replace('/[\s,]+/', '', "Rule::in(['physical_shortage', 'customer_cancelled', 'wrong_item', 'warehouse_correction', 'replacement', 'other'])"), preg_replace('/[\s,]+/', '', $controller));
         $this->assertStringContainsString('required_if:change_reason,other', $controller);
-        $this->assertStringContainsString('salesVoucherUpdate(string $uuid, Request $request)', $controller);
+        $this->assertMatchesRegularExpression('~\bfunction\s+salesVoucherUpdate\s*\(\s*string\s+\$uuid\s*,\s*Request\s+\$request\s*\)~', $controller);
         $this->assertStringContainsString('updateCollectedItems($invoice', $controller);
     }
 

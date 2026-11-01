@@ -25,6 +25,26 @@ class StockCountLifecycleSafetyTest extends TestCase
                 foreach(array_unique(array_merge($model->getFillable(),['created_at','updated_at'])) as $column) if($column!=='id')$table->text($column)->nullable();
             });
         }
+        // The stock-count service must read the real bundle and Site-hold
+        // queries; empty fixture tables are preferable to mocking away safety.
+        Schema::create('product_bundle_components', function (Blueprint $table) {
+            $table->id(); $table->unsignedBigInteger('bundle_variant_id');
+            $table->unsignedBigInteger('component_variant_id'); $table->unsignedInteger('quantity');
+        });
+        Schema::create('bundle_component_allocations', function (Blueprint $table) {
+            $table->id(); $table->unsignedBigInteger('bundle_variant_id');
+            $table->unsignedBigInteger('component_variant_id'); $table->unsignedInteger('remaining');
+        });
+        Schema::create('invoices', function (Blueprint $table) {
+            $table->id(); $table->string('status')->nullable(); $table->timestamp('shipped_at')->nullable();
+        });
+        Schema::create('site_stock_holds', function (Blueprint $table) {
+            $table->id(); $table->string('status'); $table->unsignedBigInteger('invoice_id')->nullable();
+        });
+        Schema::create('site_stock_hold_lines', function (Blueprint $table) {
+            $table->id(); $table->unsignedBigInteger('hold_id');
+            $table->unsignedBigInteger('variant_id'); $table->unsignedInteger('quantity');
+        });
         DB::table('products')->insert(['id'=>1,'name'=>'Safety product','stock'=>10,'reserved'=>0]);
         DB::table('product_variants')->insert(['id'=>1,'product_id'=>1,'variant_name'=>'Black','stock'=>10,'reserved'=>0]);
         DB::table('warehouses')->insert(['id'=>1,'name'=>'انبار مرکزی','type'=>'central','is_active'=>1]);
@@ -42,6 +62,62 @@ class StockCountLifecycleSafetyTest extends TestCase
         $this->assertSame($expected,(int)DB::table('warehouse_stocks')->value('quantity'));
         $this->assertSame($expected,(int)DB::table('product_variants')->value('stock'));
         $this->assertSame($expected,(int)DB::table('products')->value('stock'));
+    }
+
+    private function makeAllocatedBundle(int $remaining): void
+    {
+        DB::table('products')->insert(['id'=>2,'name'=>'Bundle','is_bundle'=>1,'bundle_stock_mode'=>'automatic']);
+        DB::table('product_variants')->insert(['id'=>2,'product_id'=>2,'variant_name'=>'Bundle SKU']);
+        DB::table('product_bundle_components')->insert([
+            'bundle_variant_id'=>2, 'component_variant_id'=>1, 'quantity'=>2,
+        ]);
+        DB::table('bundle_component_allocations')->insert([
+            'bundle_variant_id'=>2, 'component_variant_id'=>1, 'remaining'=>$remaining,
+        ]);
+        DB::table('warehouse_stocks')->where('product_variant_id',1)->update(['quantity'=>8]);
+        DB::table('product_variants')->where('id',1)->update(['stock'=>8]);
+        DB::table('products')->where('id',1)->update(['stock'=>8]);
+    }
+
+    public function test_bundle_component_is_not_recreated_as_free_stock_by_a_physical_count(): void
+    {
+        $this->makeAllocatedBundle(2);
+        $draft=$this->draft(10);
+        $item=$draft->items()->first();
+        $this->assertSame(2,(int)$item->bundle_free_at_start);
+        $this->assertSame(10,(int)$item->expected_physical_at_start);
+        app(StockCountDocumentService::class)->finalize($draft,1,true);
+        $this->unchangedStock(8);
+        $this->assertSame('finalized',$draft->fresh()->status);
+        $this->assertSame(0,StockMovement::count());
+    }
+
+    public function test_bundle_allocation_changed_after_draft_blocks_finalization(): void
+    {
+        $this->makeAllocatedBundle(2);
+        $draft=$this->draft(10);
+        DB::table('bundle_component_allocations')->update(['remaining'=>1]);
+        try { app(StockCountDocumentService::class)->finalize($draft,1,true); $this->fail('Stale bundle share was accepted'); }
+        catch (StockCountFinalizeValidationException $e) {
+            $this->assertContains('bundle_allocation_changed', array_column($e->conflicts(), 'reason_code'));
+        }
+        $this->unchangedStock(8);
+        $this->assertSame('draft',$draft->fresh()->status);
+        $this->assertSame(0,StockMovement::count());
+    }
+
+    public function test_site_held_units_are_counted_as_physical_but_never_as_free_stock(): void
+    {
+        DB::table('warehouse_stocks')->where('product_variant_id',1)->update(['quantity'=>8]);
+        DB::table('product_variants')->where('id',1)->update(['stock'=>8]);
+        DB::table('products')->where('id',1)->update(['stock'=>8]);
+        DB::table('site_stock_holds')->insert(['id'=>1,'status'=>'held']);
+        DB::table('site_stock_hold_lines')->insert(['hold_id'=>1,'variant_id'=>1,'quantity'=>2]);
+        $draft=$this->draft(10);
+        $this->assertSame(2,(int)$draft->items()->first()->site_held_at_start);
+        app(StockCountDocumentService::class)->finalize($draft,1,true);
+        $this->unchangedStock(8);
+        $this->assertSame(0,StockMovement::count());
     }
 
     public function test_stale_cancel_cannot_relabel_an_applied_stocktake(): void

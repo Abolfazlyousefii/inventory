@@ -55,6 +55,12 @@ return [
         'token'    => env('EXTERNAL_SYNC_TOKEN'),
     ],
 
+    // Provide these through the server environment, never in source control.
+    'ariyajanebi_sync' => [
+        'username' => env('ARIYAJANEBI_SYNC_USERNAME'),
+        'password' => env('ARIYAJANEBI_SYNC_PASSWORD'),
+    ],
+
     'site' => [
         'base_url' => env('SITE_BASE_URL'),
     ],
