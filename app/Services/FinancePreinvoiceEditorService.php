@@ -9,6 +9,7 @@ use App\Support\ActivityLogger;
 use App\Support\SalesDocumentTotals;
 use App\Support\DiscountMath;
 use App\Support\ReservationSideEffects;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class FinancePreinvoiceEditorService
