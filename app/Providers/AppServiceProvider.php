@@ -44,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->scoped(\App\Services\Tracking\HallQueueRecorder::class);
         $this->app->scoped(\App\Services\InventoryCountFreezeService::class);
         $this->app->bind(OtpSender::class, OtpSmsSender::class);
         $this->app->scoped(SlowRequestDiagnostics::class, fn () => new SlowRequestDiagnostics());
@@ -79,6 +80,8 @@ class AppServiceProvider extends ServiceProvider
 
 
         Invoice::observe(OrderStatusSmsObserver::class);
+        Invoice::observe(\App\Observers\HallQueueObserver::class);
+        PreinvoiceOrder::observe(\App\Observers\HallQueueObserver::class);
         PreinvoiceOrder::observe(OrderStatusSmsObserver::class);
         Invoice::observe(InvoiceFinancialChangeAuditObserver::class);
         InvoiceItem::observe(InvoiceItemChangeAuditObserver::class);

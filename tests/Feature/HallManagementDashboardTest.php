@@ -1,0 +1,287 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Services\Tracking\HallManagementDashboard;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+
+class HallManagementDashboardTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->travelTo(now('Asia/Tehran')->setDate(2026, 11, 1)->setTime(14, 0));
+        config(['app.timezone' => 'Asia/Tehran', 'hall_display.access_key' => 'test-manager-key']);
+
+        foreach (['customers' => ['name', 'company_name', 'first_name', 'last_name'], 'users' => ['name']] as $name => $columns) {
+            Schema::create($name, function (Blueprint $table) use ($columns) {
+                $table->id();
+                foreach ($columns as $column) {
+                    $table->string($column)->nullable();
+                }
+            });
+        }
+        foreach (['preinvoice_orders', 'invoices'] as $name) {
+            Schema::create($name, function (Blueprint $table) use ($name) {
+                $table->id();
+                $table->string('uuid');
+                $table->string('status');
+                $table->unsignedBigInteger('customer_id')->nullable();
+                $table->unsignedBigInteger('seller_id')->nullable();
+                $table->string('customer_name')->nullable();
+                $table->dateTime('document_date')->nullable();
+                $table->dateTime('items_updated_at')->nullable();
+                if ($name === 'invoices') {
+                    $table->unsignedBigInteger('preinvoice_order_id')->nullable();
+                    $table->bigInteger('total')->default(0);
+                    $table->dateTime('status_changed_at')->nullable();
+                    $table->dateTime('shipped_at')->nullable();
+                } else {
+                    $table->unsignedBigInteger('created_by')->nullable();
+                    $table->boolean('is_auto_draft')->default(false);
+                    $table->bigInteger('total_price')->default(0);
+                }
+                $table->timestamps();
+            });
+        }
+        foreach (['invoice_items' => 'invoice_id', 'preinvoice_order_items' => 'preinvoice_order_id'] as $name => $foreign) {
+            Schema::create($name, function (Blueprint $table) use ($foreign) {
+                $table->id();
+                $table->unsignedBigInteger($foreign);
+                $table->integer('quantity')->default(1);
+            });
+        }
+        Schema::create('sales_havaleh_histories', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('invoice_id');
+            $table->string('field_name')->nullable();
+            $table->string('old_value')->nullable();
+            $table->string('new_value')->nullable();
+            $table->dateTime('done_at');
+        });
+        Schema::create('warehouse_review_logs', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('preinvoice_order_id');
+            $table->string('status_from')->nullable();
+            $table->string('status_to')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('invoice_payments', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('invoice_id')->nullable();
+            $table->string('method');
+            $table->bigInteger('amount');
+            $table->dateTime('paid_at')->nullable();
+        });
+        Schema::create('cheques', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('invoice_payment_id');
+            $table->date('received_at')->nullable();
+        });
+    }
+
+    private function order(array $overrides = []): int
+    {
+        return DB::table('preinvoice_orders')->insertGetId(array_merge([
+            'uuid' => 'P-'.uniqid(), 'status' => 'pending_finance', 'total_price' => 128456789,
+            'customer_name' => 'مشتری نمونه', 'created_at' => now()->subHours(2), 'updated_at' => now(),
+        ], $overrides));
+    }
+
+    private function invoice(array $overrides = []): int
+    {
+        return DB::table('invoices')->insertGetId(array_merge([
+            'uuid' => 'F-'.uniqid(), 'status' => 'pending_collection', 'total' => 128456789,
+            'customer_name' => 'مشتری نمونه', 'created_at' => now()->subHour(), 'updated_at' => now(),
+        ], $overrides));
+    }
+
+    public function test_real_statuses_map_to_exactly_four_queues(): void
+    {
+        $map = [
+            ['preinvoice', 'draft', 'draft'], ['preinvoice', 'returned_to_sales', 'draft'],
+            ['preinvoice', 'pending_finance', 'finance'], ['preinvoice', 'finance_reviewing', 'finance'],
+            ['preinvoice', 'warehouse_approved_waiting_finance', 'finance'],
+            ['preinvoice', 'reserved_waiting_warehouse', 'warehouse'], ['preinvoice', 'returned_to_warehouse', 'warehouse'],
+            ['invoice', 'pending_finance_reapproval', 'finance'], ['invoice', 'returned_to_sales_after_collection', 'draft'],
+            ['invoice', 'pending_collection', 'warehouse'], ['invoice', 'collecting', 'warehouse'],
+            ['invoice', 'checking_discrepancy', 'warehouse'], ['invoice', 'final_check', 'warehouse'],
+            ['invoice', 'packing', 'shipping'], ['invoice', 'ready_to_ship', 'shipping'],
+            ['invoice', 'shipped', null], ['invoice', 'not_shipped', null],
+            ['preinvoice', 'converted_to_invoice', null], ['preinvoice', 'cancelled_by_finance', null],
+            ['invoice', 'unexpected', null],
+        ];
+        foreach ($map as [$type, $status, $stage]) {
+            $this->assertSame($stage, HallManagementDashboard::stage($type, $status), $status);
+        }
+    }
+
+    public function test_feed_keeps_all_active_documents_and_excludes_converted_duplicates(): void
+    {
+        $parent = $this->order();
+        $this->invoice(['preinvoice_order_id' => $parent]);
+        for ($i = 0; $i < 130; $i++) {
+            $this->invoice();
+        }
+        $this->invoice(['status' => 'shipped']);
+        $this->invoice(['status' => 'not_shipped']);
+        $payload = app(HallManagementDashboard::class)->snapshot();
+        $this->assertCount(131, $payload['documents']);
+        $this->assertSame(131, $payload['summary']['total']);
+        $this->assertCount(4, $payload['stages']);
+    }
+
+    public function test_amount_is_raw_rial_and_line_count_is_not_sum_of_units(): void
+    {
+        $id = $this->invoice();
+        DB::table('invoice_items')->insert([['invoice_id' => $id, 'quantity' => 50], ['invoice_id' => $id, 'quantity' => 3]]);
+        $doc = app(HallManagementDashboard::class)->snapshot()['documents'][0];
+        $this->assertSame(128456789, $doc['amount_rial']);
+        $this->assertSame(2, $doc['item_count']);
+        $this->assertSame(53, $doc['unit_count']);
+    }
+
+    public function test_identity_and_total_time_survive_conversion(): void
+    {
+        $id = $this->order(['created_at' => now()->subHours(3)]);
+        $before = app(HallManagementDashboard::class)->snapshot()['documents'][0];
+        $this->invoice(['preinvoice_order_id' => $id]);
+        $after = app(HallManagementDashboard::class)->snapshot()['documents'][0];
+        $this->assertSame($before['key'], $after['key']);
+        $this->assertSame($before['created_at'], $after['created_at']);
+        $this->assertSame(10800, $after['total_seconds']);
+    }
+
+    public function test_queue_clock_does_not_reset_on_item_edit_or_internal_status_change(): void
+    {
+        $id = $this->invoice(['status' => 'collecting', 'updated_at' => now(), 'status_changed_at' => now()->subMinutes(5)]);
+        DB::table('sales_havaleh_histories')->insert([
+            ['invoice_id' => $id, 'field_name' => 'status', 'old_value' => 'pending_finance_reapproval', 'new_value' => 'pending_collection', 'done_at' => now()->subMinutes(40)],
+            ['invoice_id' => $id, 'field_name' => 'status', 'old_value' => 'pending_collection', 'new_value' => 'collecting', 'done_at' => now()->subMinutes(5)],
+        ]);
+        $doc = app(HallManagementDashboard::class)->snapshot()['documents'][0];
+        $this->assertSame(2400, $doc['stage_seconds']);
+        $this->assertTrue($doc['stage_time_known']);
+    }
+
+    public function test_legacy_unknown_queue_time_is_not_fabricated_from_updated_at(): void
+    {
+        $this->invoice(['updated_at' => now()]);
+        $doc = app(HallManagementDashboard::class)->snapshot()['documents'][0];
+        $this->assertNull($doc['stage_seconds']);
+        $this->assertFalse($doc['stage_time_known']);
+    }
+
+    public function test_old_drafts_and_empty_autosaves_do_not_fill_registration_queue(): void
+    {
+        $this->order(['status' => 'draft', 'is_auto_draft' => true]);
+        $this->order(['status' => 'draft', 'updated_at' => now()->subDays(3)]);
+        $id = $this->order(['status' => 'draft']);
+        DB::table('preinvoice_order_items')->insert(['preinvoice_order_id' => $id, 'quantity' => 1]);
+        $this->assertCount(1, app(HallManagementDashboard::class)->snapshot()['documents']);
+    }
+
+    public function test_today_kpis_use_whole_day_and_deduplicate_cheques_by_payment(): void
+    {
+        $this->invoice(['total' => 1000, 'document_date' => now()]);
+        $this->invoice(['total' => 9000, 'status' => 'not_shipped', 'document_date' => now()]);
+        $this->invoice(['total' => 7000, 'document_date' => now()->subDay()]);
+        DB::table('invoice_payments')->insert([
+            ['id' => 1, 'method' => 'cash', 'amount' => 300, 'paid_at' => now()],
+            ['id' => 2, 'method' => 'online', 'amount' => 400, 'paid_at' => now()],
+            ['id' => 3, 'method' => 'cheque', 'amount' => 500, 'paid_at' => now()->subDay()],
+            ['id' => 4, 'method' => 'cash', 'amount' => 800, 'paid_at' => now()->subDay()],
+        ]);
+        DB::table('cheques')->insert([['invoice_payment_id' => 3, 'received_at' => now()->toDateString()], ['invoice_payment_id' => 3, 'received_at' => now()->toDateString()]]);
+        $kpi = app(HallManagementDashboard::class)->snapshot()['metrics'];
+        $this->assertSame(1000, $kpi['sales_rial']);
+        $this->assertSame(700, $kpi['cash_rial']);
+        $this->assertSame(500, $kpi['cheque_rial']);
+        $this->assertSame(1, $kpi['cheque_count']);
+    }
+
+    public function test_guest_and_old_customer_display_cookie_cannot_read_management_money(): void
+    {
+        $this->getJson('/hall/data')->assertForbidden();
+        $this->withCredentials()->withCookie('hall_display_access', hash('sha256', 'test-manager-key'))->getJson('/hall/data')->assertForbidden();
+    }
+
+    public function test_unlocked_manager_gets_private_new_dashboard_and_real_data(): void
+    {
+        $this->invoice();
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $this->withCookie('hall_management_access', $proof)->get('/hall')
+            ->assertOk()->assertSee('hall-management/dashboard.js')->assertDontSee('tracking/tracking.js');
+        $this->withCredentials()->withCookie('hall_management_access', $proof)->getJson('/hall/data')
+            ->assertOk()->assertJsonPath('summary.total', 1)->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    }
+
+    public function test_missing_key_fails_closed_and_unlock_issues_scoped_manager_cookie(): void
+    {
+        config(['hall_display.access_key' => '']);
+        $this->withCredentials()->withCookie('hall_management_access', hash_hmac('sha256', 'hall-management-v1', ''))->getJson('/hall/data')->assertForbidden();
+        config(['hall_display.access_key' => 'test-manager-key']);
+        $this->post('/hall/unlock', ['access_key' => 'test-manager-key'])
+            ->assertRedirect('/hall')->assertCookie('hall_management_access');
+    }
+
+    public function test_internal_finance_review_preserves_entry_and_reentry_resets_it(): void
+    {
+        $id = $this->order(['status' => 'finance_reviewing']);
+        DB::table('warehouse_review_logs')->insert([
+            ['preinvoice_order_id' => $id, 'status_from' => 'draft', 'status_to' => 'pending_finance', 'created_at' => now()->subMinutes(40)],
+            ['preinvoice_order_id' => $id, 'status_from' => 'pending_finance', 'status_to' => 'finance_reviewing', 'created_at' => now()->subMinutes(5)],
+        ]);
+        $this->assertSame(2400, app(HallManagementDashboard::class)->snapshot()['documents'][0]['stage_seconds']);
+        DB::table('warehouse_review_logs')->insert([
+            ['preinvoice_order_id' => $id, 'status_from' => 'finance_reviewing', 'status_to' => 'returned_to_sales', 'created_at' => now()->subMinutes(3)],
+            ['preinvoice_order_id' => $id, 'status_from' => 'returned_to_sales', 'status_to' => 'finance_reviewing', 'created_at' => now()->subMinute()],
+        ]);
+        $this->assertSame(60, app(HallManagementDashboard::class)->snapshot()['documents'][0]['stage_seconds']);
+    }
+
+    public function test_cancelled_preinvoice_is_an_outcome_not_an_active_card(): void
+    {
+        $this->order(['status' => 'cancelled_by_finance']);
+        $payload = app(HallManagementDashboard::class)->snapshot();
+        $this->assertEmpty($payload['documents']);
+        $this->assertSame('لغوشده توسط مالی', $payload['events'][0]['label']);
+    }
+
+    public function test_snapshot_does_not_write_operational_records(): void
+    {
+        $this->invoice();
+        DB::enableQueryLog();
+        app(HallManagementDashboard::class)->snapshot();
+        foreach (DB::getQueryLog() as $query) {
+            $this->assertMatchesRegularExpression('/^select\s/i', $query['query']);
+        }
+        DB::disableQueryLog();
+    }
+
+    public function test_new_queue_ledger_provides_entry_time_without_legacy_history(): void
+    {
+        (require database_path('migrations/2026_11_01_120000_create_hall_queue_transitions_table.php'))->up();
+        $id = $this->invoice(['status' => 'collecting']);
+        DB::table('hall_queue_transitions')->insert([
+            'workflow_key' => 'order:invoice:'.$id, 'source_type' => 'invoice', 'source_id' => $id,
+            'document_number' => 'F-123',
+            'from_stage' => null, 'to_stage' => 'warehouse', 'status_to' => 'pending_collection',
+            'entered_at' => now()->subMinutes(13),
+        ]);
+        $doc = app(HallManagementDashboard::class)->snapshot()['documents'][0];
+        $this->assertTrue($doc['stage_time_known']);
+        $this->assertSame(780, $doc['stage_seconds']);
+    }
+
+    public function test_lock_revokes_the_scoped_cookie_and_wrong_keys_are_rejected(): void
+    {
+        $this->post('/hall/unlock', ['access_key' => 'wrong'])->assertSessionHasErrors('access_key');
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $this->withCookie('hall_management_access', $proof)->get('/hall/unlock')
+            ->assertOk()->assertCookieExpired('hall_management_access');
+    }
+}
