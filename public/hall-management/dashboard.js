@@ -221,6 +221,11 @@ function measure() {
     const win = lanes.get('draft').querySelector('.lane-window');
     const style = getComputedStyle(document.documentElement), height = parseFloat(style.getPropertyValue('--card-height')), gap = parseFloat(style.getPropertyValue('--card-gap'));
     const count = Math.max(1, Math.floor((win.clientHeight + gap) / (height + gap)));
+    for (const lane of lanes.values()) {
+        const viewport = lane.querySelector('.lane-window');
+        const slack = Math.max(0, viewport.clientHeight - (count * (height + gap) - gap));
+        viewport.style.setProperty('--window-slack', `${slack}px`);
+    }
     if (visibleSlots !== count) { visibleSlots = count; if (snapshot) for (const key of stageKeys) renderLane(key); }
 }
 

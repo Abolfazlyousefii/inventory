@@ -17,3 +17,4 @@ dialog{border:1px solid var(--line);border-radius:12px;padding:22px;max-width:mi
 :root{--card-height:100px;line-height:1.5}.brand h1{line-height:1.25}.metric strong{line-height:1.2}.metric>div{margin:4px 0}.metric{padding-block:10px}
 @media(min-width:1600px){:root{--card-height:112px}.order-card{padding:8px 10px}.timer-value{font-size:1.1rem}}
 .card-timer{min-width:0;width:100%}.timer-label,.timer-value,.timer-total{line-height:1.2}.timer-total{white-space:nowrap}.timer-remainder{font-family:Consolas,monospace;font-size:.65rem;direction:ltr;line-height:1.1;font-variant-numeric:tabular-nums}
+.lane-window{clip-path:inset(0 0 var(--window-slack,0px) 0)}
