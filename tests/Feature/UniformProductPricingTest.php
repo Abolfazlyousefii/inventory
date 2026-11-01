@@ -44,6 +44,7 @@ class UniformProductPricingTest extends TestCase
             $t->string('variant_name')->nullable();
             $t->string('variety_name')->nullable();
             $t->string('variant_code')->nullable();
+            $t->string('variety_code')->nullable();
             $t->integer('sell_price');
             $t->integer('buy_price')->default(80);
             $t->integer('stock')->default(10);
@@ -85,6 +86,33 @@ class UniformProductPricingTest extends TestCase
             $t->timestamp('occurred_at')->nullable();
             $t->timestamps();
         });
+
+        Schema::create('site_stock_sync_outbox', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('product_id');
+            $t->unsignedBigInteger('variant_id')->default(0);
+            $t->string('origin', 32)->default('inventory');
+            $t->unsignedSmallInteger('attempts')->default(0);
+            $t->string('claimed_by', 36)->nullable();
+            $t->timestamp('locked_until')->nullable();
+            $t->timestamp('available_at')->useCurrent();
+            $t->text('last_error')->nullable();
+            $t->timestamp('created_at')->useCurrent();
+
+            $t->index(
+                ['available_at', 'locked_until', 'id'],
+                'site_stock_outbox_ready_idx'
+            );
+            $t->index(
+                ['claimed_by', 'id'],
+                'site_stock_outbox_claim_idx'
+            );
+            $t->index(
+                ['product_id', 'id'],
+                'site_stock_outbox_product_idx'
+            );
+        });
+
         DB::table('categories')->insert(['id' => 1, 'name' => 'Cases']);
         DB::table('products')->insert(['id' => 1, 'category_id' => 1, 'name' => 'Case', 'price' => 0, 'stock' => 20, 'reserved' => 4]);
         DB::table('product_variants')->insert([['id' => 1, 'product_id' => 1, 'variant_name' => 'A', 'sell_price' => 350, 'is_active' => true], ['id' => 2, 'product_id' => 1, 'variant_name' => 'B', 'sell_price' => 200, 'is_active' => false]]);

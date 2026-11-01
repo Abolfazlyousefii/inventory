@@ -12,13 +12,17 @@ use App\Models\StockCountDocumentItem;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
 use App\Models\WarehouseStock;
+use App\Support\StockCountQuantityCalculator as Quantities;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class StockCountDocumentService
 {
-    public function __construct(private readonly ReservationQueryService $reservations)
+    public function __construct(
+        private readonly ReservationQueryService $reservations,
+        private readonly BundleComponentStocktakeService $bundleStocktake,
+    )
     {
     }
 
@@ -49,12 +53,16 @@ class StockCountDocumentService
             $notes = $payload['notes'] ?? [];
             $rows = [];
             ProductVariant::query()->where('product_id', $product->id)->orderBy('id')->chunkById(500, function ($variants) use (&$rows, $document, $warehouse, $product, $actuals, $notes) {
+                $bundleQuantities = $this->bundleStocktake->quantitiesByComponent($variants->pluck('id')->all());
                 foreach ($variants as $variant) {
                     $stock = $this->lockOrCreateStock((int) $warehouse->id, (int) $product->id, (int) $variant->id, false);
                     $available = (int) $stock->quantity;
                     $reserved = $this->activeReserved($variant);
                     $actual = array_key_exists($variant->id, $actuals) && $actuals[$variant->id] !== '' ? (int) $actuals[$variant->id] : null;
-                    $rows[] = $this->itemPayload($document, $warehouse, $product, $variant, $stock, $available, $reserved, $actual, $notes[$variant->id] ?? null);
+                    $rows[] = $this->itemPayload($document, $warehouse, $product, $variant, $stock, $available, $reserved, $actual, $notes[$variant->id] ?? null,
+                        $bundleQuantities[$variant->id]['free'] ?? 0,
+                        $bundleQuantities[$variant->id]['reserved'] ?? 0,
+                        $bundleQuantities[$variant->id]['site_held'] ?? 0);
                 }
                 if (count($rows) >= 500) { StockCountDocumentItem::insert($rows); $rows = []; }
             });
@@ -122,6 +130,9 @@ class StockCountDocumentService
                     'current_quantity' => null,
                 ];
             }
+            // Lock bundle product rows BEFORE central stock rows, matching the
+            // order used by allocation changes and bundle checkout.
+            $bundleQuantities = $this->bundleStocktake->quantitiesByComponent($variantIds, true);
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->lockForUpdate()->get()->keyBy('id');
             $stocks = WarehouseStock::query()->where('warehouse_id', $warehouse->id)->whereIn('product_variant_id', $variantIds)->lockForUpdate()->get()->keyBy('product_variant_id');
             foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$document->product_id, (int)$item->product_variant_id, true);
@@ -130,12 +141,25 @@ class StockCountDocumentService
                 $reserved = $variant ? $this->activeReserved($variant) : 0; $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
                 if ($available !== (int)$item->system_available_at_start) $conflicts[] = $this->finalizeConflict($item, 'stock_changed', 'موجودی این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
                 if ($reserved !== (int)$item->reserved_at_start) $conflicts[] = $this->finalizeConflict($item, 'reservation_changed', 'رزرو فعال این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
-                if ($actual < $reserved) $conflicts[] = $this->finalizeConflict($item, 'actual_below_reserved', 'موجودی واقعی کمتر از رزرو فعال است.', $actual, $reserved, $available);
+                $bundleFree = (int) ($bundleQuantities[(int)$item->product_variant_id]['free'] ?? 0);
+                $bundleReserved = (int) ($bundleQuantities[(int)$item->product_variant_id]['reserved'] ?? 0);
+                $siteHeld = (int) ($bundleQuantities[(int)$item->product_variant_id]['site_held'] ?? 0);
+                if ($siteHeld !== (int)$item->site_held_at_start) {
+                    $conflicts[] = $this->finalizeConflict($item, 'site_hold_changed', 'رزرو فیزیکی سایت پس از شروع شمارش تغییر کرده است. سند جدید تهیه کنید.', $actual, $reserved, $available);
+                }
+                if ($bundleFree !== (int)$item->bundle_free_at_start || $bundleReserved !== (int)$item->bundle_reserved_at_start) {
+                    $conflicts[] = $this->finalizeConflict($item, 'bundle_allocation_changed', 'سهم آزاد یا رزروشده سبد پس از شروع شمارش تغییر کرده است. سند جدید تهیه کنید.', $actual, $reserved, $available);
+                }
+                if (Quantities::availableAfterCount($actual, $reserved, $bundleFree, $bundleReserved, $siteHeld) < 0) {
+                    $conflicts[] = $this->finalizeConflict($item, 'actual_below_protected', 'موجودی واقعی کمتر از مجموع رزرو عادی، سهم سبد و رزرو سایت است.', $actual, $reserved, $available);
+                }
             }
             if ($conflicts) throw new StockCountFinalizeValidationException('امکان ثبت نهایی سند وجود ندارد. موارد مشخص‌شده را اصلاح کنید.', $conflicts);
             foreach ($items as $item) {
                 $stock = $stocks[(int)$item->product_variant_id]; $reserved = (int)$item->reserved_at_start; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
-                $newAvailable = $actual - $reserved; $diff = $actual - (int)$item->expected_physical_at_start; $before = (int)$stock->quantity;
+                $newAvailable = Quantities::availableAfterCount($actual, $reserved,
+                    (int)$item->bundle_free_at_start, (int)$item->bundle_reserved_at_start, (int)$item->site_held_at_start);
+                $diff = $actual - (int)$item->expected_physical_at_start; $before = (int)$stock->quantity;
                 $stock->update(['quantity' => $newAvailable]);
                 WarehouseStockService::syncVariantStockFromCentral((int)$item->product_variant_id);
                 $item->update(['actual_quantity'=>$actual, 'new_available'=>$newAvailable, 'difference_quantity'=>$diff, 'system_quantity'=>(int)$item->system_available_at_start]);
@@ -168,10 +192,14 @@ class StockCountDocumentService
         if ($q) $query->where(function($x) use($q,$document){ $cols=$document?['variant_name_snapshot','sku_snapshot']:['variant_name','variant_code','variety_name','variety_code']; foreach($cols as $c) $x->orWhere($c,'like','%'.$q.'%'); });
         $p = $query->paginate($limit, ['*'], 'page', $page);
         $warehouse = $this->centralWarehouse();
-        $rows = $p->getCollection()->map(function($row) use($document,$warehouse,$productId){
+        $bundleQuantities = $document ? [] : $this->bundleStocktake->quantitiesByComponent($p->getCollection()->pluck('id')->all());
+        $rows = $p->getCollection()->map(function($row) use($document,$warehouse,$productId,$bundleQuantities){
             if ($document) return $this->itemResource($row);
             $stock = WarehouseStock::query()->where('warehouse_id',$warehouse->id)->where('product_variant_id',$row->id)->first(); $reserved=$this->activeReserved($row); $available=(int)($stock?->quantity ?? 0);
-            return ['variant_id'=>(int)$row->id,'name'=>$row->variant_name ?: $row->variety_name ?: ('#'.$row->id),'sku'=>$row->variant_code ?: $row->variety_code,'barcode'=>$row->variant_code,'sales_enabled'=>(bool)$row->sales_enabled && (bool)$row->is_active,'system_available'=>$available,'active_reserved'=>$reserved,'expected_physical'=>$available+$reserved,'stock_updated_at'=>$stock?->updated_at?->toDateTimeString(),'actual_physical'=>null,'new_available'=>null,'difference'=>null,'note'=>null];
+            $bundleFree = $bundleQuantities[$row->id]['free'] ?? 0;
+            $bundleReserved = $bundleQuantities[$row->id]['reserved'] ?? 0;
+            $siteHeld = $bundleQuantities[$row->id]['site_held'] ?? 0;
+            return ['variant_id'=>(int)$row->id,'name'=>$row->variant_name ?: $row->variety_name ?: ('#'.$row->id),'sku'=>$row->variant_code ?: $row->variety_code,'barcode'=>$row->variant_code,'sales_enabled'=>(bool)$row->sales_enabled && (bool)$row->is_active,'system_available'=>$available,'active_reserved'=>$reserved,'bundle_free'=>$bundleFree,'bundle_reserved'=>$bundleReserved,'site_held'=>$siteHeld,'expected_physical'=>Quantities::expectedPhysical($available, $reserved, $bundleFree, $bundleReserved, $siteHeld),'stock_updated_at'=>$stock?->updated_at?->toDateTimeString(),'actual_physical'=>null,'new_available'=>null,'difference'=>null,'note'=>null];
         })->values();
         return ['data'=>$rows,'meta'=>['current_page'=>$p->currentPage(),'last_page'=>$p->lastPage(),'has_more'=>$p->hasMorePages(),'total'=>$p->total()]];
     }
@@ -193,9 +221,50 @@ class StockCountDocumentService
         ];
     }
 
-    private function itemPayload($document,$warehouse,$product,$variant,$stock,int $available,int $reserved,?int $actual,?string $note): array
-    { $expected=$available+$reserved; return ['document_id'=>$document->id,'warehouse_id'=>$warehouse->id,'product_id'=>$product->id,'product_variant_id'=>$variant->id,'warehouse_stock_id'=>$stock->id,'product_name_snapshot'=>$product->name,'variant_name_snapshot'=>$variant->variant_name ?: $variant->variety_name ?: ('#'.$variant->id),'sku_snapshot'=>$variant->variant_code ?: $variant->variety_code,'system_quantity'=>$available,'system_available_at_start'=>$available,'reserved_at_start'=>$reserved,'expected_physical_at_start'=>$expected,'actual_quantity'=>$actual,'new_available'=>null,'difference_quantity'=>$actual===null?0:$actual-$expected,'warehouse_stock_updated_at_start'=>$stock->updated_at,'stock_updated_at_start'=>$variant->updated_at,'description'=>$note,'created_at'=>now(),'updated_at'=>now()]; }
-    private function itemResource($item): array { $actual=$item->actual_quantity; return ['variant_id'=>(int)$item->product_variant_id,'name'=>$item->variant_name_snapshot,'sku'=>$item->sku_snapshot,'barcode'=>$item->sku_snapshot,'sales_enabled'=>(bool)($item->variant?->sales_enabled && $item->variant?->is_active),'system_available'=>(int)$item->system_available_at_start,'active_reserved'=>(int)$item->reserved_at_start,'expected_physical'=>(int)$item->expected_physical_at_start,'stock_updated_at'=>$item->warehouse_stock_updated_at_start?->toDateTimeString(),'actual_physical'=>$actual,'new_available'=>$actual===null?null:$actual-(int)$item->reserved_at_start,'difference'=>$actual===null?null:$actual-(int)$item->expected_physical_at_start,'note'=>$item->description]; }
+    private function itemPayload($document, $warehouse, $product, $variant, $stock, int $available, int $reserved, ?int $actual, ?string $note, int $bundleFree, int $bundleReserved, int $siteHeld): array
+    {
+        $expected = Quantities::expectedPhysical($available, $reserved, $bundleFree, $bundleReserved, $siteHeld);
+        return [
+            'document_id' => $document->id, 'warehouse_id' => $warehouse->id,
+            'product_id' => $product->id, 'product_variant_id' => $variant->id,
+            'warehouse_stock_id' => $stock->id, 'product_name_snapshot' => $product->name,
+            'variant_name_snapshot' => $variant->variant_name ?: $variant->variety_name ?: ('#'.$variant->id),
+            'sku_snapshot' => $variant->variant_code ?: $variant->variety_code,
+            'system_quantity' => $available, 'system_available_at_start' => $available,
+            'reserved_at_start' => $reserved, 'bundle_free_at_start' => $bundleFree,
+            'bundle_reserved_at_start' => $bundleReserved, 'site_held_at_start' => $siteHeld,
+            'expected_physical_at_start' => $expected, 'actual_quantity' => $actual,
+            'new_available' => null, 'difference_quantity' => $actual === null ? 0 : $actual - $expected,
+            'warehouse_stock_updated_at_start' => $stock->updated_at,
+            'stock_updated_at_start' => $variant->updated_at,
+            'description' => $note, 'created_at' => now(), 'updated_at' => now(),
+        ];
+    }
+
+    private function itemResource($item): array
+    {
+        $actual = $item->actual_quantity;
+        $reserved = (int) $item->reserved_at_start;
+        $bundleFree = (int) $item->bundle_free_at_start;
+        $bundleReserved = (int) $item->bundle_reserved_at_start;
+        $siteHeld = (int) $item->site_held_at_start;
+        return [
+            'variant_id' => (int) $item->product_variant_id,
+            'name' => $item->variant_name_snapshot, 'sku' => $item->sku_snapshot,
+            'barcode' => $item->sku_snapshot,
+            'sales_enabled' => (bool) ($item->variant?->sales_enabled && $item->variant?->is_active),
+            'system_available' => (int) $item->system_available_at_start,
+            'active_reserved' => $reserved, 'bundle_free' => $bundleFree,
+            'bundle_reserved' => $bundleReserved, 'site_held' => $siteHeld,
+            'expected_physical' => (int) $item->expected_physical_at_start,
+            'stock_updated_at' => $item->warehouse_stock_updated_at_start?->toDateTimeString(),
+            'actual_physical' => $actual,
+            'new_available' => $actual === null ? null : Quantities::availableAfterCount((int)$actual, $reserved, $bundleFree, $bundleReserved, $siteHeld),
+            'difference' => $actual === null ? null : $actual - (int) $item->expected_physical_at_start,
+            'note' => $item->description,
+        ];
+    }
+
     private function lockOrCreateStock(int $warehouseId,int $productId,int $variantId,bool $lock): WarehouseStock { $q=WarehouseStock::query()->where('warehouse_id',$warehouseId)->where('product_id',$productId)->where('product_variant_id',$variantId); if($lock)$q->lockForUpdate(); $s=$q->first(); return $s ?: WarehouseStock::create(['warehouse_id'=>$warehouseId,'product_id'=>$productId,'product_variant_id'=>$variantId,'quantity'=>0]); }
     private function refreshSummary(StockCountDocument $document): void { $items=$document->items()->get(); $actualTotal=0;$inc=0;$dec=0;$counted=0;$zero=0;$incC=0;$decC=0; foreach($items as $i){$a=$i->actual_quantity; if($a!==null)$counted++; $final=$a??0; if($a===null)$zero++; $actualTotal+=$final; $d=$final-(int)$i->expected_physical_at_start; if($d>0){$inc+=$d;$incC++;} if($d<0){$dec+=abs($d);$decC++;}} $document->update(['variants_count'=>$items->count(),'counted_count'=>$counted,'zeroed_count'=>$zero,'increased_count'=>$incC,'decreased_count'=>$decC,'total_before'=>(int)$items->sum('expected_physical_at_start'),'total_actual'=>$actualTotal,'total_increase'=>$inc,'total_decrease'=>$dec]); }
     private function addHistory(int $documentId,string $actionType,mixed $oldValue,mixed $newValue,?string $description,int $userId): void { StockCountDocumentHistory::create(['document_id'=>$documentId,'action_type'=>$actionType,'old_value'=>$oldValue,'new_value'=>$newValue,'description'=>$description,'done_by'=>$userId,'done_at'=>now()]); }

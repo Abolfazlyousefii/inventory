@@ -89,7 +89,10 @@ class AppShellLayoutTest extends TestCase
         $this->assertStringNotContainsString('<script', $sidebar);
         $this->assertStringContainsString("@canPermission('dashboard.view')", $sidebar);
         $this->assertStringContainsString("@canAnyPermission(['products.view'", $sidebar);
-        $this->assertStringContainsString("@canAnyPermission(['issues.view'", $sidebar);
+        $this->assertMatchesRegularExpression(
+            "/@canAnyPermission\\(\\[[^\\]]*'issues\\.view'[^\\]]*\\]\\)/",
+            $sidebar
+        );
         $this->assertStringContainsString("@canAnyPermission(['preinvoices.create'", $sidebar);
         $this->assertStringContainsString("@canAnyPermission(['preinvoices.finance.view'", $sidebar);
         $this->assertStringContainsString("@canAnyPermission(['categories.view'", $sidebar);

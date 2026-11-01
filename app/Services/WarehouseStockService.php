@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use App\Services\AriyajanebiSyncService;
+use App\Support\SiteSellableWarehouseScope;
 
 class WarehouseStockService
 {
@@ -442,6 +443,22 @@ class WarehouseStockService
         Product::query()
             ->whereKey($productId)
             ->update(['stock' => max(0, $total)]);
+    }
+
+    /** @return list<int> */
+    public static function siteSellableWarehouseIds(): array
+    {
+        $configured = config('inventory.site_sellable_warehouse_ids', []);
+        $ids = SiteSellableWarehouseScope::resolve(self::centralWarehouseId(), $configured);
+        // Reject a stale or inactive explicitly permitted warehouse rather than
+        // silently counting stock outside the authorized store-front scope.
+        $activeIds = Warehouse::query()->whereIn('id', $ids)->where('is_active', true)
+            ->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        if (count($activeIds) !== count($ids)) {
+            throw new \RuntimeException('Site stock scope contains an unknown or inactive warehouse.');
+        }
+
+        return $ids;
     }
 
     public static function centralWarehouseId(): int

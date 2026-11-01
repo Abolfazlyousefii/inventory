@@ -1202,7 +1202,7 @@ class PreinvoiceController extends Controller
                     'preinvoice' => 'این درخواست قبلاً ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، صفحه پیش‌فاکتورها را بررسی کنید.',
                 ]);
             }
-            $this->assertDraftPricesForSubmission($validated['products']);
+            $this->assertDraftItemsSellableForSubmission($validated['products']);
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
             $reservationMeta = $this->reservationExpirationForCustomer($customer);
@@ -1746,14 +1746,15 @@ class PreinvoiceController extends Controller
         return $validated;
     }
 
-    /** Validate inside the submit transaction, before any document or reservation writes. */
-    private function assertDraftPricesForSubmission(array $rows): void
+    /** Validate the requested snapshot and current catalog prices under the submission locks. */
+    private function assertDraftPricesForSubmission(array $rows, $variants): void
     {
-        $prices = ProductVariant::query()->whereIn('id', collect($rows)->pluck('variety_id'))->pluck('sell_price', 'id');
         $errors = [];
         foreach ($rows as $index => $row) {
-            if ((int) ($row['price'] ?? $prices->get((int) $row['variety_id'], 0)) <= 0) {
-                $errors["products.{$index}.price"] = 'قیمت این ردیف صفر است؛ قبل از ارسال به مالی، قیمت فروش را مشخص کنید. پیش‌نویس قابل نگهداری است.';
+            $variant = $variants->get((int) $row['variety_id']);
+            if ((int) ($row['price'] ?? $variant?->sell_price ?? 0) <= 0
+                || (int) ($variant?->sell_price ?? 0) <= 0) {
+                $errors["products.{$index}.price"] = 'قیمت فروش جاری این تنوع معتبر نیست؛ قبل از ارسال به مالی، قیمت فروش را مشخص کنید. پیش‌نویس قابل نگهداری است.';
             }
         }
         if ($errors !== []) throw ValidationException::withMessages($errors);
@@ -1761,17 +1762,17 @@ class PreinvoiceController extends Controller
 
     private function assertDraftItemsSellableForSubmission(array $rows): void
     {
-        $this->assertDraftPricesForSubmission($rows);
         // Match the product-status writer's product -> variant lock order, so a
-        // concurrent deactivation cannot slip between validation and reservation.
+        // concurrent deactivation or price change cannot bypass validation.
         $products = Product::query()
             ->whereIn('id', collect($rows)->pluck('id')->unique())
             ->orderBy('id')->lockForUpdate()->get(['id', 'name', 'is_sellable'])->keyBy('id');
         $variants = ProductVariant::query()
             ->whereIn('id', collect($rows)->pluck('variety_id')->unique())
             ->orderBy('id')->lockForUpdate()
-            ->get(['id', 'product_id', 'variant_name', 'is_active', 'sales_enabled'])->keyBy('id');
+            ->get(['id', 'product_id', 'variant_name', 'is_active', 'sales_enabled', 'sell_price'])->keyBy('id');
 
+        $this->assertDraftPricesForSubmission($rows, $variants);
         $errors = [];
         foreach ($rows as $index => $row) {
             $product = $products->get((int) $row['id']);

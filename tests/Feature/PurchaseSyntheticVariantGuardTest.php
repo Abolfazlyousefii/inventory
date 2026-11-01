@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\PurchaseController;
 use App\Models\ActivityLog;
+use App\Models\AccessPermission;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -23,7 +24,15 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     config()->set('cache.default', 'array');
-    $this->actingAs(User::factory()->create());
+    // These guard tests intentionally submit an initial selling price for zero-priced
+    // variants. Grant only the separate price-change permission they need.
+    $user = User::factory()->create();
+    $pricePermission = AccessPermission::query()->firstOrCreate(
+        ['key' => 'products.price_changes.apply'],
+        ['name' => 'Apply product price changes', 'group' => 'Products', 'guard_name' => 'web']
+    );
+    $user->permissions()->syncWithoutDetaching([$pricePermission->id]);
+    $this->actingAs($user);
     WarehouseStockService::centralWarehouseId();
     $this->supplier = Supplier::query()->create(['name' => 'Guard supplier']);
 });
@@ -135,7 +144,13 @@ function guardStore(Product $product, ProductVariant|int|null $variant, int $qua
             'quantity' => $quantity,
             'buy_price' => 1000,
             'sell_price' => $variant instanceof ProductVariant && $variant->sell_price > 0 ? $variant->sell_price : ($variant === null ? $product->price : 1500),
+            // Optimistic concurrency: the form saw this exact catalog price.
+            'expected_current_sell_price' => $variant instanceof ProductVariant
+                ? (int) $variant->fresh()->sell_price
+                : null,
         ]],
+        'sale_price_change_confirmed' => true,
+        'sale_price_change_reason' => 'Approved initial price for synthetic-variant guard regression test',
     ]);
 
     app(PurchaseController::class)->store($request);

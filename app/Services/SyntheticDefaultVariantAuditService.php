@@ -124,7 +124,10 @@ class SyntheticDefaultVariantAuditService
             'safe' => $rows->where('safe_to_remove', true)->count(),
             'history_protected' => $rows->filter(fn (array $row) => ! $row['safe_to_remove']
                 && ((int) $row['purchase_refs'] + (int) $row['invoice_refs'] + (int) $row['preinvoice_refs'] + (int) $row['stock_movement_refs']) > 0)->count(),
-            'stock_protected' => $rows->filter(fn (array $row) => str_contains((string) $row['blocking_reasons'], 'stock'))->count(),
+            'stock_protected' => $rows->filter(fn (array $row): bool => (bool) array_intersect(
+                ['nonzero_warehouse_stock', 'nonzero_cached_stock', 'stock_movement_references'],
+                explode(',', (string) $row['blocking_reasons']),
+            ))->count(),
             'reservation_protected' => $rows->filter(fn (array $row) => str_contains((string) $row['blocking_reasons'], 'reserv'))->count(),
             'other_reference_protected' => $rows->filter(fn (array $row) => (string) $row['other_reference_tables'] !== '')->count(),
             'missing_base' => $missingBase,

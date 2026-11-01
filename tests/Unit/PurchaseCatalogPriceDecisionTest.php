@@ -1,46 +1,50 @@
 <?php
 
+namespace Tests\Unit;
+
 use App\Services\PurchaseCatalogPriceDecision;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
 
-it('does not replay the historical price when quantity or notes on purchase 578 change', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    // Purchased price 5m; live catalog was reduced to 4.8m.
-    expect($policy->isExplicitChange(5_000_000, 5_000_000, 4_800_000))->toBeFalse()
-        ->and($policy->isExplicitChange(2_000_000, 2_000_000, 2_100_000))->toBeFalse();
-});
+final class PurchaseCatalogPriceDecisionTest extends TestCase
+{
+    #[DataProvider('salePriceWriteCases')]
+    public function test_stale_catalog_prices_block_any_explicit_sale_price_edit(
+        ?int $oldPurchasePrice,
+        int $submittedPrice,
+        int $currentCatalogPrice,
+        ?int $expectedCatalogPrice,
+        bool $stale
+    ): void {
+        $decision = new PurchaseCatalogPriceDecision();
 
-it('requires approval for a real edit of a historical purchase sale price', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    expect($policy->isExplicitChange(5_000_000, 5_300_000, 4_800_000))->toBeTrue()
-        ->and($policy->requiresSalePriceApproval(5_000_000, 4_800_000))->toBeTrue();
-});
+        $this->assertSame(
+            $stale,
+            $decision->isStaleForExplicitSalePriceEdit(
+                $oldPurchasePrice, $submittedPrice, $currentCatalogPrice, $expectedCatalogPrice
+            )
+        );
+    }
 
-it('requires approval for a newly purchased variant with an existing live sale price', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    expect($policy->isExplicitChange(null, 5_000_000, 4_800_000))->toBeTrue()
-        ->and($policy->requiresSalePriceApproval(null, 4_800_000))->toBeTrue();
-});
+    public function test_initial_pricing_of_a_zero_priced_variant_also_requires_separate_approval(): void
+    {
+        $decision = new PurchaseCatalogPriceDecision();
 
-it('preserves existing sale price when a new purchase matches it', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    expect($policy->isExplicitChange(null, 4_800_000, 4_800_000))->toBeFalse();
-});
+        $this->assertTrue($decision->requiresSalePriceApproval(null, 0));
+    }
 
-it('allows only initial pricing of a previously unpriced variant without additional approval', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    expect($policy->isExplicitChange(null, 4_800_000, 0))->toBeTrue()
-        ->and($policy->requiresSalePriceApproval(null, 0))->toBeFalse();
-});
-
-it('rejects a changed catalog price that the editor has not freshly acknowledged', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    expect($policy->isCurrentPriceStale(5_000_000, 4_800_000))->toBeTrue()
-        ->and($policy->isCurrentPriceStale(null, 4_800_000))->toBeTrue()
-        ->and($policy->isCurrentPriceStale(4_800_000, 4_800_000))->toBeFalse();
-});
-
-it('recognizes a deliberate correction of a historical price to exactly the current price', function (): void {
-    $policy = new PurchaseCatalogPriceDecision();
-    expect($policy->isExplicitChange(5_000_000, 4_800_000, 4_800_000))->toBeTrue()
-        ->and($policy->requiresSalePriceApproval(5_000_000, 4_800_000))->toBeTrue();
-});
+    public static function salePriceWriteCases(): array
+    {
+        return [
+            'quantity-only edit must retain historical snapshot' => [5_000_000, 5_000_000, 4_800_000, null, false],
+            'historical sale-price change without a version must be rejected' => [5_000_000, 5_100_000, 4_800_000, null, true],
+            'approved price change with a current version is fresh' => [5_000_000, 5_100_000, 4_800_000, 4_800_000, false],
+            'price change from old form must be rejected' => [5_000_000, 5_100_000, 4_800_000, 5_000_000, true],
+            'initial pricing without a version must be rejected' => [null, 4_800_000, 0, null, true],
+            'initial pricing from a form that saw zero is fresh' => [null, 4_800_000, 0, 0, false],
+            'no sale-price edit when incoming price equals current' => [null, 5_000_000, 5_000_000, null, false],
+            'new row changing current priced variant with fresh value' => [null, 5_000_000, 4_800_000, 4_800_000, false],
+            'snapshot edit from stale form is rejected' => [5_000_000, 4_800_000, 4_800_000, 5_000_000, true],
+        ];
+    }
+}

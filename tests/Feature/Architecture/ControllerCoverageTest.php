@@ -40,8 +40,13 @@ it('ensures all controller actions referenced by routes exist', function (): voi
         $importedName = $match[1];
         $method = $match[2];
         $classes = array_filter(array_map(app_class_from_file(...), app_php_files('app/Http/Controllers')));
-        $class = collect($classes)->first(fn (string $candidate): bool => str_ends_with($candidate, '\\'.$importedName));
+        $class = collect($classes)->first(function (string $candidate) use ($importedName): bool {
+            $controller = ltrim($importedName, '\\');
+            $candidate = ltrim($candidate, '\\');
 
+            return $candidate === $controller
+                   || str_ends_with($candidate, '\\'.$controller);
+        });
         expect($class)->not->toBeNull("Route references unknown controller {$importedName}::{$method}")
             ->and(method_exists($class, $method))->toBeTrue("Route references missing action {$class}::{$method}");
     }

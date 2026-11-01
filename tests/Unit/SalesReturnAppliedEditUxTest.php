@@ -21,7 +21,7 @@ it('keeps stable temporary ids and exposes editing for draft new products', func
         "np.editingProductUuid||(crypto.randomUUID",
         'temporary_variant_uuid:oldVariants.get',
         'ویرایش تعریف کالا',
-        'if(isAppliedEdit)return'
+        'if(isAppliedEdit || isPendingEdit)return'
     );
 });
 

@@ -100,8 +100,8 @@ class StocktakeController extends Controller
                 return response()->json([
                     'message' => 'امکان ثبت نهایی سند وجود ندارد.',
                     'errors' => [
-                        'finalize' => ['موجودی واقعی برخی تنوع‌ها کمتر از رزرو فعال است.'],
-                    ],
+                        'finalize' => ['موجودی واقعی، رزرو یا سهم سبد برخی تنوع‌ها نیازمند بازبینی است.'],
+                        ],
                     'conflicts' => $exception->conflicts(),
                 ], 422);
             }

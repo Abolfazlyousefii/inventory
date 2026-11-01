@@ -8,6 +8,7 @@ use App\Models\Site\Price as SitePrice;
 use App\Models\Site\Product as SiteProduct;
 use App\Models\WarehouseStock;
 use App\Services\AutomaticBundleAvailabilityService;
+use App\Services\WarehouseStockService;
 use App\Services\BundleDiscountService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -139,7 +140,7 @@ class SyncProductsToSite {
     }
 
     /**
-     * Reconciles every current variant. Stock is calculated from warehouse rows,
+     * Reconciles every current variant. Stock is calculated from central warehouse rows,
      * so a stock mismatch is also fixed even when product_variants.updated_at did
      * not change.
      */
@@ -165,6 +166,7 @@ class SyncProductsToSite {
                     ->all();
 
                 $stockRows = WarehouseStock::query()
+                    ->whereIn('warehouse_id', WarehouseStockService::siteSellableWarehouseIds())
                     ->whereIn('product_variant_id', $variantIds)
                     ->groupBy('product_variant_id')
                     ->select([

@@ -1338,7 +1338,7 @@ class PurchaseController extends Controller
                 $oldItem?->sell_price === null ? null : (int) $oldItem->sell_price,
                 $currentSellPrice
             );
-            $initialUnpricedPurchase = ! $requiresApproval;
+            $initialUnpricedPurchase = $oldItem === null && $currentSellPrice === 0;
             if ($requiresApproval) {
                 if (! PermissionCatalog::userHasPermission(auth()->user(), 'products.price_changes.apply')) {
                     abort(403, 'مجوز اعمال تغییر قیمت فروش کالا را ندارید.');
@@ -1351,8 +1351,24 @@ class PurchaseController extends Controller
                 }
             }
 
+            if ( $requiresApproval
+                 && $decision->isCurrentPriceStale(( $row['expected_current_sell_price'] ?? null ) === null ? null : (int) $row['expected_current_sell_price'], $currentSellPrice) ) {
+                throw ValidationException::withMessages([
+                    'items' => 'قیمت جاری تنوع پس از بازشدن فرم تغییر کرده است. صفحه را تازه کنید و مجدداً تأیید کنید.',
+                ]);
+            }
+
+            // Require the submitted catalog version even for snapshot-only edits.
+            // Caller holds the variant lock and the purchase transaction is active.
+            $expected = $row['expected_current_sell_price'] ?? null;
+            if ( $decision->isStaleForExplicitSalePriceEdit($oldItem?->sell_price === null ? null : (int) $oldItem->sell_price, $sellPrice, $currentSellPrice, $expected === null ? null : (int) $expected) ) {
+                throw ValidationException::withMessages([
+                    'items' => 'قیمت جاری تنوع پس از بازشدن فرم تغییر کرده است. صفحه را تازه کنید و مجدداً تأیید کنید.',
+                ]);
+            }
+
             if ($sellPrice > 0 && $sellPrice !== $currentSellPrice) {
-                if (! $eligible) {
+            if (! $eligible) {
                     throw ValidationException::withMessages([
                         'items' => 'این سند خرید قدیمی است و خرید جدیدتری برای این تنوع وجود دارد. تغییر قیمت فروش را از بخش تغییر قیمت کالا انجام دهید.',
                     ]);
@@ -1364,15 +1380,7 @@ class PurchaseController extends Controller
                     ]);
                 }
 
-                $expected = $row['expected_current_sell_price'] ?? null;
-                if ($requiresApproval && $decision->isCurrentPriceStale(
-                    $expected === null ? null : (int) $expected,
-                    $currentSellPrice
-                )) {
-                    throw ValidationException::withMessages([
-                        'items' => 'قیمت جاری تنوع پس از بازشدن فرم تغییر کرده است. صفحه را تازه کنید و مجدداً تأیید کنید.',
-                    ]);
-                }
+
 
                 // Variant is row-locked by the caller before this method.
                 $variant->update(['sell_price' => $sellPrice]);

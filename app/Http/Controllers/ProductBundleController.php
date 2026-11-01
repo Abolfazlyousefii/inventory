@@ -24,11 +24,12 @@ class ProductBundleController extends Controller
         $data = $request->validate([
             'q' => ['required', 'string', 'min:2', 'max:100'],
             'exclude_variant_id' => ['nullable', 'integer', 'min:1'],
+            'complete_products' => ['sometimes', 'boolean'],
         ]);
         $term = trim($data['q']);
         $like = '%'.addcslashes($term, '%_\\').'%';
         $warehouseId = WarehouseStockService::centralWarehouseId();
-        $variants = ProductVariant::query()
+        $eligible = ProductVariant::query()
             ->with('product:id,name,code,sku,is_bundle')
             ->where('is_active', true)
             ->whereHas('product', fn ($query) => $query->where('is_bundle', false)->where('is_sellable', true))
@@ -39,16 +40,24 @@ class ProductBundleController extends Controller
                     ->where('warehouse_id', $warehouseId)
                     ->groupBy('product_variant_id')
                     ->havingRaw('SUM(quantity) > 0');
-            })
-            ->where(function ($query) use ($like) {
+            });
+        $matching = (clone $eligible)->where(function ($query) use ($like) {
                 $query->where('variant_name', 'like', $like)
                     ->orWhere('variant_code', 'like', $like)
                     ->orWhere('variety_name', 'like', $like)
                     ->orWhereHas('product', fn ($product) => $product->where('name', 'like', $like)
                         ->orWhere('code', 'like', $like)
                         ->orWhere('sku', 'like', $like));
-            })
-            ->orderBy('product_id')->orderBy('id')->limit(100)->get();
+            });
+        if ($request->boolean('complete_products')) {
+            // Limit products, not variants: a product checkbox must represent its complete eligible group.
+            $productIds = (clone $matching)->select('product_id')->distinct()
+                ->orderBy('product_id')->limit(20)->pluck('product_id');
+            $variants = $eligible->whereIn('product_id', $productIds)
+                ->orderBy('product_id')->orderBy('id')->get();
+        } else {
+            $variants = $matching->orderBy('product_id')->orderBy('id')->limit(100)->get();
+        }
 
         $stocks = WarehouseStock::query()
             ->where('warehouse_id', $warehouseId)
