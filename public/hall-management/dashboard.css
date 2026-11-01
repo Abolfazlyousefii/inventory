@@ -33,3 +33,28 @@ dialog{border:1px solid var(--line);border-radius:12px;padding:22px;max-width:mi
  .event-bar{padding:7px 12px;min-height:34px}.page-footer{line-height:1.3}
 }
 @media(min-width:1600px){:root{--card-height:108px;--card-gap:8px}}
+
+/* Left rail keeps the four operational queues at full viewport height. */
+.dashboard-sidebar{display:contents}
+.dashboard>.operations{order:3}.dashboard-sidebar>.masthead{order:0}.dashboard-sidebar>.metrics{order:1}.dashboard-sidebar>.board-controls{order:2}.dashboard-sidebar>.event-bar{order:4}.dashboard-sidebar>.page-footer{order:5}
+@media(min-width:1100px) and (min-height:600px){
+ .dashboard{display:grid;grid-template-columns:clamp(204px,17vw,280px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);direction:ltr;gap:12px}
+ .dashboard-sidebar{display:flex;flex-direction:column;gap:9px;min-height:0;direction:rtl;grid-column:1;grid-row:1;overflow:auto;scrollbar-width:thin;padding-bottom:2px}
+ .dashboard>.operations{direction:rtl;grid-column:2;grid-row:1;order:0;min-width:0;gap:10px}
+ .dashboard-sidebar>*{order:0!important;flex-shrink:0}
+ .dashboard-sidebar .masthead{display:flex;flex-direction:column;align-items:stretch;padding:12px;gap:10px}
+ .dashboard-sidebar .brand{gap:9px}.dashboard-sidebar .brand p{display:block;font-size:.68rem}.dashboard-sidebar .brand h1{font-size:1.15rem}
+ .dashboard-sidebar .masthead-end{display:grid;grid-template-columns:1fr 1fr;gap:10px 6px}
+ .dashboard-sidebar .connection,.dashboard-sidebar #wall-clock{grid-column:1/-1}
+ .dashboard-sidebar #wall-clock{font-size:.73rem}.dashboard-sidebar .header-button{width:100%;padding:7px 5px}
+ .dashboard-sidebar .metrics{display:flex;flex-direction:column;gap:10px}
+ .dashboard-sidebar .metric{display:flex;flex-direction:column;align-items:stretch;padding:12px;gap:6px}
+ .dashboard-sidebar .metric>div{display:flex;flex-wrap:wrap;white-space:normal;gap:5px;min-width:0}
+ .dashboard-sidebar .metric strong{font-size:clamp(19px,1.3vw,26px);letter-spacing:-.7px;max-width:100%;overflow-wrap:anywhere}
+ .dashboard-sidebar .metric>span{font-size:.8rem}.dashboard-sidebar .metric>small{font-size:.68rem}
+ .dashboard-sidebar .board-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+ .dashboard-sidebar .board-controls>span{grid-column:1/-1}.dashboard-sidebar .board-controls button{padding:7px 4px}
+ .dashboard-sidebar .event-bar{margin-top:auto;display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:10px;line-height:1.8;overflow-wrap:anywhere}
+ .dashboard-sidebar .page-footer{display:flex;flex-direction:column;gap:5px;font-size:.64rem}
+ .operations-heading{min-height:22px}.board{gap:10px}.lane-window{margin-inline:8px}
+}

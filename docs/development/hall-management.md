@@ -40,8 +40,12 @@ workflow's next queue. Internal statuses do not reset the queue clock.
   finance-review statuses occupy finance. Reservation queue time uses the actual
   official reservation creation time. Payload version 2 rejects obsolete draft
   columns. Refresh already-open displays once after this update.
-- Compact desktop header and metrics leave room for 3 whole cards per queue at
-  1280x720 and 5 at 1920x1080; independent rotations expose the remaining cards.
+- At desktop widths of 1100px and above (height at least 600px), a left rail
+  holds the brand, clock, daily metrics, browsing controls and last event. The
+  four queues use the remaining full height: 5 cards per queue at 1280x720 and
+  7 at 1920x1080, with independent rotation. At smaller sizes the rail becomes
+  normal stacked content and queues adapt to one or two columns. The rail can
+  scroll independently on short screens without taking height from the queues.
 - `order:<preinvoice-id>` survives conversion to an invoice. Standalone invoice
   keys have a separate namespace. Linked preinvoices are excluded from the feed.
 - Amounts are raw integer rials, not multiplied by ten. `item_count` is the number
