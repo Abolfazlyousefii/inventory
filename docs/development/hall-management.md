@@ -67,9 +67,22 @@ workflow's next queue. Internal statuses do not reset the queue clock.
 
 ## Verification
 
+The minimal sidebar now opens read-only sales, receipts, queue-wait and overdue
+summaries in a native dialog, computed only from the existing authorized snapshot.
+Seller rows are explicitly labelled as open documents, not completed daily sales.
+Full seller/receipt, stock-flow and return reports retain their existing ERP
+authentication and route permissions, opening separately. No new financial API
+or broader Hall-cookie access is introduced.
+
+Cards rotate every 2 seconds with a 520ms slide. Reduced-motion, pause, hover,
+keyboard focus and open report/detail dialogs suspend automatic browsing. API
+polling stays at 15 seconds; visual browsing never increases server polling.
+Report dialogs show the last-success timestamp and connection failures; access
+expiry clears their contents together with the dashboard before redirecting.
+
 Run `php vendor/phpunit/phpunit/phpunit tests/Feature/HallManagementDashboardTest.php`
 plus `tests/Feature/HallQueueRecorderTest.php`,
-and `node --test tests/Js/hall-management-core.test.mjs`.
+and `node --test tests/Js/hall-management-core.test.mjs tests/Js/hall-management-reports.test.mjs`.
 
 Synthetic browser fixtures are under `tests/browser/hall-*`. They bind only to
 loopback and use `storage/logs/hall-browser-state.json`, never operational data.

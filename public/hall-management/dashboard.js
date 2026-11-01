@@ -1,4 +1,5 @@
 import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261101-reserved';
+import { buildReport } from './reports.js?v=20261101-minimal';
 
 const root = document.getElementById('hall-dashboard');
 const byId = id => document.getElementById(id);
@@ -9,6 +10,8 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 const lanes = new Map(stageKeys.map(key => [key, root.querySelector(`[data-stage="${key}"]`)]));
 const positions = new Map(stageKeys.map(key => [key, 0]));
 const detail = byId('document-detail');
+const reportDialog = byId('management-report');
+let selectedReport = null;
 let snapshot = null, receivedAt = 0, pollTimer, controller, fetching = false, disposed = false;
 let refreshSeconds = Math.max(5, Number(document.querySelector('meta[name="hall-refresh-seconds"]').content) || 15);
 let paused = reducedMotion, moving = false, selectedKey = null, visibleSlots = 4, flights = [], lastServerEventId = null;
@@ -98,6 +101,56 @@ function renderDetail() {
     target.replaceChildren(...rows.flatMap(([key, value]) => [element('dt', '', key), element('dd', '', value)]));
 }
 
+function renderReport() {
+    if (!snapshot || !selectedReport) return;
+    const live = {...snapshot, documents:snapshot.documents.map(doc=>({...doc,stage_seconds:currentSeconds(doc,'stage_seconds')}))};
+    const report = buildReport(live,selectedReport), content = byId('management-report-content');
+    const focusedKey=content.contains(document.activeElement)?document.activeElement.dataset.documentKey:null;
+    byId('management-report-title').textContent = report.title;
+    const metrics = element('div','report-metrics');
+    for (const metric of report.metrics) {
+        const item=element('div','report-stat');
+        item.append(element('span','',metric.label),element('strong','',metric.unit==='duration'?compactDuration(metric.value):`${fa.format(metric.value)} ${metric.unit}`));
+        metrics.append(item);
+    }
+    const scope=element('p','report-scope',report.scope);
+    const table=element('table','report-table'), head=element('thead'), body=element('tbody');
+    const heading=element('tr');
+    const labels=selectedReport==='sales'?['فروشنده','اسناد در جریان','مبلغ اسناد در جریان / ریال']:['سند / مشتری','وضعیت','مبلغ / ریال','زمان صف'];
+    heading.append(...labels.map(text=>element('th','',text)));head.append(heading);
+    if (selectedReport==='sales') {
+        for (const group of report.groups) {
+            const tr=element('tr');tr.append(element('td','',group.name),element('td','',fa.format(group.count)),element('td','',fa.format(group.amount)));body.append(tr);
+        }
+    } else {
+        for (const doc of report.documents) {
+            const tr=element('tr'), cell=element('td');
+            const open=element('button','report-document',`${doc.number} · ${doc.customer}`);open.type='button';open.dataset.documentKey=doc.key;
+            open.addEventListener('click',()=>{selectedKey=doc.key;renderDetail();if(!detail.open)detail.showModal();});
+            cell.append(open);tr.append(cell,element('td','',doc.status_label||snapshot.stages.find(s=>s.key===doc.stage)?.label||''),element('td','',fa.format(doc.amount_rial)),element('td','',formatDuration(doc.stage_seconds)));body.append(tr);
+        }
+    }
+    table.append(head,body);
+    const empty=element('p','report-empty',selectedReport==='attention'?'سندی با زمان انتظار بالاتر از حد تعیین‌شده وجود ندارد.':'سندی در این بخش نیست.');
+    content.replaceChildren(metrics,scope,(selectedReport==='sales'?report.groups.length:report.documents.length)?table:empty);
+    for(const link of root.querySelectorAll('[data-full-report]'))link.hidden=link.dataset.fullReport!==selectedReport;
+    if(focusedKey)[...content.querySelectorAll('[data-document-key]')].find(node=>node.dataset.documentKey===focusedKey)?.focus({preventScroll:true});
+    paintReportFreshness();
+}
+function paintReportFreshness() {
+    if(!reportDialog?.open)return;
+    const stale=byId('connection').dataset.state==='stale';
+    byId('report-freshness').textContent=(stale?'ارتباط به‌روز نیست؛ آخرین دریافت موفق: ':'آخرین دریافت: ')+(snapshot?timeFormat.format(new Date(snapshot.updated_at)):'—');
+    byId('report-freshness').classList.toggle('is-stale',stale);
+}
+root.addEventListener('click',event=>{
+    const button=event.target.closest('[data-report]');
+    if(!button||!snapshot||moving)return;
+    selectedReport=button.dataset.report;renderReport();if(!reportDialog.open)reportDialog.showModal();paintReportFreshness();
+});
+reportDialog?.addEventListener('close',()=>{for(const button of root.querySelectorAll('[data-report]'))button.removeAttribute('aria-current');});
+byId('close-management-report')?.addEventListener('click',()=>reportDialog.close());
+
 function changeMessage(change) {
     const doc = change.document;
     const label = key => snapshot.stages.find(s => s.key === key)?.label ?? key;
@@ -129,6 +182,8 @@ async function applySnapshot(next) {
     byId('document-total').textContent = `/ ${fa.format(next.documents.length)} سند`;
     for (const key of stageKeys) renderLane(key);
     if (detail.open) renderDetail();
+    if (reportDialog?.open) renderReport();
+    byId('attention-count').textContent=fa.format(buildReport(next,'attention').documents.length);
     if (changes.length) {
         const preferred = moves[0] ?? changes.find(c => c.kind === 'left') ?? changes[0];
         byId('event-text').textContent = changeMessage(preferred) + (changes.length > 1 ? ` · ${fa.format(changes.length - 1)} تغییر دیگر` : '');
@@ -164,6 +219,7 @@ function connection(state, message) {
     byId('connection').dataset.state = state;
     byId('connection-label').textContent = message;
     byId('connection-alert').hidden = state !== 'stale';
+    paintReportFreshness();
     if (state === 'stale') byId('connection-alert').textContent = 'ارتباط به‌روز نیست؛ اطلاعات نمایش‌داده‌شده مربوط به آخرین دریافت موفق است. اتصال دوباره بررسی می‌شود.';
 }
 
@@ -171,6 +227,7 @@ function clearPrivateScreen() {
     snapshot = null;
     for (const node of flights) node.remove();
     if (detail.open) detail.close(); byId('detail-content').replaceChildren();
+    if(reportDialog?.open)reportDialog.close();byId('management-report-content').replaceChildren();byId('management-report-title').textContent='';byId('report-freshness').textContent='';byId('attention-count').textContent='—';
     for (const lane of lanes.values()) { lane.querySelector('.lane-track').replaceChildren(); lane.querySelector('[data-count]').textContent = '—'; lane.querySelector('[data-average]').textContent = '—'; }
     for (const id of ['sales-amount', 'cash-amount', 'cheque-amount', 'sales-count', 'cheque-count', 'document-total', 'event-text']) byId(id).textContent = '—';
 }
@@ -202,7 +259,7 @@ async function poll() {
 }
 
 function rotate(manual = false) {
-    if (!snapshot || moving || detail.open || (!manual && (paused || document.hidden))) return;
+    if (!snapshot || moving || detail.open || reportDialog?.open || (!manual && (paused || document.hidden))) return;
     for (const key of stageKeys) {
         const lane = lanes.get(key), docs = queueDocuments(key);
         if (docs.length <= visibleSlots || (!manual && (lane.matches(':hover') || lane.contains(document.activeElement)))) continue;
@@ -211,7 +268,7 @@ function rotate(manual = false) {
         if (!reducedMotion) {
             const track = lane.querySelector('.lane-track'), first = track.firstElementChild;
             const step = first.getBoundingClientRect().height + parseFloat(getComputedStyle(track).gap);
-            track.animate([{ transform: `translateY(-${step}px)` }, { transform: 'translateY(0)' }], { duration: 1400, easing: 'ease-in-out' });
+            track.animate([{ transform: `translateY(-${step}px)` }, { transform: 'translateY(0)' }], { duration: 520, easing: 'cubic-bezier(.22,.68,.23,1)' });
         }
     }
 }
@@ -250,7 +307,7 @@ setInterval(() => {
     if (detail.open) renderDetail();
     if (performance.now() - receivedAt > (refreshSeconds * 2 + 10) * 1000) connection('stale', 'اطلاعات قدیمی است');
 }, 1000);
-setInterval(() => rotate(), 8000);
+setInterval(() => rotate(), 2000);
 window.addEventListener('pagehide', () => { disposed = true; clearTimeout(pollTimer); controller?.abort(); observer.disconnect(); });
 window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
 measure(); poll();
