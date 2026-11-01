@@ -30,7 +30,7 @@ function card(doc) {
     const customer = element('span', 'card-customer', doc.customer); customer.title = doc.customer;
     main.append(customer, element('span', 'card-number', `${doc.type === 'preinvoice' ? 'پیش‌فاکتور' : 'فاکتور'} ${doc.number}`));
     const timer = element('span', 'card-timer');
-    timer.append(element('span', 'timer-label', 'زمان صف'), element('span', 'timer-value'), element('span', 'timer-total'));
+    timer.append(element('span', 'timer-label', 'زمان صف'), element('span', 'timer-value'), element('span', 'timer-remainder'), element('span', 'timer-total'));
     if (!doc.stage_time_known) timer.title = 'سابقهٔ معتبر ورود این سند به صف در دسترس نیست.';
     const bottom = element('span', 'card-bottom');
     const amount = element('span', 'card-amount', fa.format(doc.amount_rial)); amount.append(element('small', '', 'ریال'));
@@ -45,10 +45,17 @@ function card(doc) {
 function updateCardTimer(node, doc) {
     const seconds = currentSeconds(doc, 'stage_seconds');
     const value = node.querySelector('.timer-value');
-    value.textContent = seconds != null && seconds >= 86400 ? compactDuration(seconds) : formatDuration(seconds);
+    const hasDays = seconds != null && seconds >= 86400;
+    value.textContent = hasDays ? `${fa.format(Math.floor(seconds / 86400))} روز` : formatDuration(seconds);
     value.classList.toggle('timer-days', seconds != null && seconds >= 86400);
     value.title = formatDuration(seconds);
-    node.querySelector('.timer-total').textContent = `کل ${compactDuration(currentSeconds(doc, 'total_seconds'))}`;
+    const remainder = node.querySelector('.timer-remainder');
+    remainder.hidden = !hasDays;
+    remainder.textContent = hasDays ? formatDuration(seconds % 86400) : '';
+    const total = currentSeconds(doc, 'total_seconds');
+    const totalNode = node.querySelector('.timer-total');
+    totalNode.textContent = `کل ${total != null && total >= 86400 ? `${fa.format(Math.floor(total / 86400))}روز ${formatDuration(total % 86400, false)}` : formatDuration(total, false)}`;
+    totalNode.title = formatDuration(total);
     const limit = snapshot?.stages.find(s => s.key === doc.stage)?.warning_minutes ?? 45;
     node.classList.toggle('is-late', seconds != null && seconds >= limit * 60);
 }
