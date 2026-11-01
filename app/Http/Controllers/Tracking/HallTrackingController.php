@@ -10,6 +10,14 @@ use Illuminate\Http\Response;
 
 final class HallTrackingController extends Controller
 {
+    public function __construct()
+    {
+        // The private TV display must not render/store an interactive debug toolbar.
+        if (app()->bound('debugbar')) {
+            app('debugbar')->disable();
+        }
+    }
+
     public function unlockForm(): Response
     {
         return response()->view('tracking.hall-unlock')

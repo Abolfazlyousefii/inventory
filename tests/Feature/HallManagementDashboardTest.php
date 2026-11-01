@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Tracking\HallTrackingController;
 use App\Services\Tracking\HallManagementDashboard;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +11,14 @@ use Tests\TestCase;
 
 class HallManagementDashboardTest extends TestCase
 {
+    public function test_management_display_never_enables_the_debug_toolbar(): void
+    {
+        $bar = app('debugbar');
+        $bar->enable();
+        new HallTrackingController;
+        $this->assertFalse($bar->isEnabled());
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
