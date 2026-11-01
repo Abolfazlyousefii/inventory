@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="{{ asset('js/app-theme.js') }}?v=20261025d"></script>
+    <script src="{{ asset('js/rial-inputs.js') }}?v=20261027a"></script>
 
     @if(session('preinvoice_submit_succeeded'))
         <script>
@@ -57,6 +59,9 @@
     <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v=20261011">
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
+    <link rel="stylesheet" href="{{ asset('css/rial-inputs.css') }}?v=20261027a">
+    <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025d">
+    <script src="{{ asset('js/app-theme-compat.js') }}?v=20261025c" defer></script>
 </head>
 @php
     $backFallbackUrl = \Illuminate\Support\Facades\Route::has('dashboard')
@@ -114,6 +119,7 @@
             </div>
 
             <div class="app-topbar__actions">
+                @include('layouts.theme-toggle')
                 <button class="app-icon-btn app-notification-btn"
                         type="button"
                         id="notifBell"
@@ -216,6 +222,7 @@
         </section>
 
         <main class="app-content @yield('content_class')">
+            @include('inventory-count-freeze.banner')
             @if(session('success'))
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     {{ session('success') }}
@@ -250,7 +257,7 @@
     </div>
 </div>
 
-<script src="{{ asset('js/app-shell.js') }}"></script>
+<script src="{{ asset('js/app-shell.js') }}?v=20261027a"></script>
 @stack('scripts')
 </body>
 </html>

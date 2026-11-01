@@ -32,7 +32,10 @@ class InvoiceNumberAuditCommand extends Command
         foreach ($query->orderBy('id')->cursor() as $preinvoice) {
             $conflicts = Invoice::query()
                 ->where('uuid', (string) $preinvoice->uuid)
-                ->where('preinvoice_order_id', '!=', (int) $preinvoice->id)
+                ->where(function ($query) use ($preinvoice) {
+                    $query->whereNull('preinvoice_order_id')
+                        ->orWhere('preinvoice_order_id', '!=', (int) $preinvoice->id);
+                })
                 ->get(['id', 'uuid', 'preinvoice_order_id', 'customer_name', 'total']);
 
             foreach ($conflicts as $invoice) {
@@ -44,7 +47,7 @@ class InvoiceNumberAuditCommand extends Command
                     'invoice_uuid' => (string) $invoice->uuid,
                     'invoice_preinvoice_order_id' => (int) $invoice->preinvoice_order_id,
                     'invoice_customer' => (string) $invoice->customer_name,
-                    'suggested_safe_uuid' => $this->safeUuid($preinvoice),
+                    'replacement_strategy' => 'next_locked_invoice_sequence_number',
                 ];
             }
         }
@@ -61,7 +64,7 @@ class InvoiceNumberAuditCommand extends Command
 
         $this->info('Legacy invoice number conflicts: ' . count($rows));
         if ($rows) {
-            $this->table(['preinvoice_id', 'preinvoice_uuid', 'preinvoice_customer', 'invoice_id', 'invoice_uuid', 'invoice_preinvoice_order_id', 'invoice_customer', 'suggested_safe_uuid'], $rows);
+            $this->table(['preinvoice_id', 'preinvoice_uuid', 'preinvoice_customer', 'invoice_id', 'invoice_uuid', 'invoice_preinvoice_order_id', 'invoice_customer', 'replacement_strategy'], $rows);
         }
 
         $this->info('Duplicate invoice uuid groups: ' . count($duplicates));
@@ -86,17 +89,5 @@ class InvoiceNumberAuditCommand extends Command
         return self::SUCCESS;
     }
 
-    private function safeUuid(PreinvoiceOrder $preinvoice): string
-    {
-        $base = (string) $preinvoice->uuid . '-P' . (int) $preinvoice->id;
-        $candidate = $base;
-        $suffix = 2;
 
-        while (Invoice::query()->where('uuid', $candidate)->exists()) {
-            $candidate = $base . '-' . $suffix;
-            $suffix++;
-        }
-
-        return $candidate;
-    }
 }

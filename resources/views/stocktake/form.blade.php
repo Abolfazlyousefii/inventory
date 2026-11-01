@@ -6,10 +6,158 @@
     $oldActualQuantities = old('actual_quantities', []);
 @endphp
 <style>
-.stocktake-page{width:100%;max-width:1600px;margin:0 auto;padding:0 18px 96px;overflow-x:hidden}.stocktake-card{border:1px solid #e9edf3;border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.04)}.stocktake-compact .form-label{font-size:.78rem;color:#64748b;margin-bottom:.35rem}.stocktake-tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}.stocktake-tools .variant-search{min-width:280px;flex:1 1 340px}.stocktake-table-wrap{max-height:60vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.stocktake-table{table-layout:fixed;width:100%;margin:0}.stocktake-table th{position:sticky;top:0;z-index:2;background:#f8fafc;font-size:.8rem;color:#475569;white-space:nowrap}.stocktake-table td{vertical-align:middle;background:#fff}.stocktake-table tbody tr:hover td{background:#fcfcfd}.col-variant{width:auto}.col-central{width:140px}.col-reserved{width:110px}.col-actual{width:190px}.col-diff{width:100px}.variant-title{font-weight:700;color:#0f172a;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.variant-meta{font-size:.76rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sales-badge{display:inline-flex;margin-top:.25rem;padding:.1rem .45rem;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.7rem}.sales-badge.is-on{background:#ecfdf5;color:#047857}.central-qty{text-align:center;font-weight:800;font-size:1rem;color:#1e293b}.central-help{display:block;font-size:.68rem;color:#94a3b8}.reserved-badge{display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:.2rem .5rem;border-radius:999px;background:#f8fafc;color:#475569}.reserved-badge.has-reserve{background:#fef9c3;color:#92400e}.stock-count-stepper{display:grid;grid-template-columns:42px minmax(72px,1fr) 42px;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;background:#fff}.stock-count-stepper button{border:0;background:#f8fafc;color:#0f172a;font-weight:900;font-size:1.05rem;min-height:40px}.stock-count-stepper button:hover{background:#eef2f7}.stock-count-stepper input{border:0;border-inline:1px solid #dbe3ef;text-align:center;font-weight:800;min-width:0;outline:0}.stock-count-stepper.has-error{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.08)}.has-stock-count-error td{background:#fff7f7!important}.has-stock-count-error{border-inline-start:4px solid #fca5a5}.stock-count-row-message{margin-top:.3rem;font-size:.74rem;color:#dc2626}.stock-count-row-message.is-warning{color:#b45309}.stock-count-refresh{display:inline-flex;margin-top:.35rem}.summary-pill.error-pill{cursor:pointer}.summary-pill.error-pill.has-errors{border-color:#fecaca;background:#fee2e2;color:#991b1b}.summary-pill.error-pill.no-errors{background:#f0fdf4;color:#166534}.server-conflict-note{display:block;margin-top:.25rem;color:#b91c1c;font-size:.72rem}.diff-badge{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:.22rem .55rem;border-radius:999px;font-weight:800;font-size:.82rem;background:#eef2ff;color:#3730a3}.diff-badge.diff-empty{background:#f8fafc;color:#64748b}.diff-badge.diff-up{background:#dcfce7;color:#166534}.diff-badge.diff-down{background:#fee2e2;color:#991b1b}.diff-badge.diff-zero{background:#f1f5f9;color:#334155}.reserve-error-text{display:block;margin-top:.25rem;color:#dc2626;font-size:.72rem}.summary-line{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}.summary-pill{border:1px solid #e2e8f0;border-radius:999px;padding:.35rem .75rem;background:#fff;font-size:.86rem}.summary-pill b{font-weight:900}.summary-details{font-size:.78rem;color:#64748b;margin-top:.5rem}.stocktake-actions{position:sticky;bottom:0;z-index:5;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border:1px solid #e2e8f0;border-radius:16px;padding:.75rem;margin-top:1rem;display:flex;gap:.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap}.stocktake-mobile-label{display:none}@media(max-width:768px){.stocktake-page{padding:0 12px 110px}.stocktake-table-wrap{max-height:none;overflow:visible}.stocktake-table,.stocktake-table thead,.stocktake-table tbody,.stocktake-table tr,.stocktake-table td{display:block;width:100%}.stocktake-table thead{display:none}.stocktake-table tr{border:1px solid #e2e8f0;border-radius:14px;margin-bottom:.75rem;padding:.75rem;background:#fff}.stocktake-table td{border:0!important;padding:.35rem 0;background:transparent!important}.stocktake-mobile-label{display:block;font-size:.72rem;color:#64748b;margin-bottom:.15rem}.stocktake-row-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}.stock-count-stepper{grid-template-columns:48px 1fr 48px}.stock-count-stepper button{min-height:44px}.col-central,.col-reserved,.col-actual,.col-diff{width:auto}.stocktake-actions{left:12px;right:12px}}
+.stocktake-page{width:100%;max-width:1600px;margin:0 auto;padding:0 18px 96px;overflow-x:hidden}.stocktake-card{border:1px solid #e9edf3;border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.04)}.stocktake-compact .form-label{font-size:.78rem;color:#64748b;margin-bottom:.35rem}.stocktake-tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}.stocktake-tools .variant-search{min-width:280px;flex:1 1 340px}.stocktake-table-wrap{max-height:60vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.stocktake-table{table-layout:fixed;width:100%;margin:0}.stocktake-table th{position:sticky;top:0;z-index:2;background:#f8fafc;font-size:.8rem;color:#475569;white-space:nowrap}.stocktake-table td{vertical-align:middle;background:#fff}.stocktake-table tbody tr:hover td{background:#fcfcfd}.col-variant{width:auto}.col-central{width:140px}.col-reserved{width:110px}.col-flow{width:154px}.flow-badge{display:inline-flex;align-items:center;justify-content:center;min-width:42px;border-radius:999px;padding:.16rem .5rem;background:#f1f5f9;color:#64748b;font-size:.84rem;font-weight:800}.flow-badge.has-flow{background:#fff3d6;color:#9a5609}.flow-breakdown{margin-top:.28rem;font-size:.66rem;line-height:1.8;color:#68758a}.flow-breakdown b{color:#92500b}.col-actual{width:190px}.col-diff{width:100px}.variant-title{font-weight:700;color:#0f172a;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.variant-meta{font-size:.76rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sales-badge{display:inline-flex;margin-top:.25rem;padding:.1rem .45rem;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.7rem}.sales-badge.is-on{background:#ecfdf5;color:#047857}.central-qty{text-align:center;font-weight:800;font-size:1rem;color:#1e293b}.central-help{display:block;font-size:.68rem;color:#94a3b8}.reserved-badge{display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:.2rem .5rem;border-radius:999px;background:#f8fafc;color:#475569}.reserved-badge.has-reserve{background:#fef9c3;color:#92400e}.stock-count-stepper{display:grid;grid-template-columns:42px minmax(72px,1fr) 42px;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;background:#fff}.stock-count-stepper button{border:0;background:#f8fafc;color:#0f172a;font-weight:900;font-size:1.05rem;min-height:40px}.stock-count-stepper button:hover{background:#eef2f7}.stock-count-stepper input{border:0;border-inline:1px solid #dbe3ef;text-align:center;font-weight:800;min-width:0;outline:0}.stock-count-stepper.has-error{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.08)}.has-stock-count-error td{background:#fff7f7!important}.has-stock-count-error{border-inline-start:4px solid #fca5a5}.stock-count-row-message{margin-top:.3rem;font-size:.74rem;color:#dc2626}.stock-count-row-message.is-warning{color:#b45309}.stock-count-refresh{display:inline-flex;margin-top:.35rem}.summary-pill.error-pill{cursor:pointer}.summary-pill.error-pill.has-errors{border-color:#fecaca;background:#fee2e2;color:#991b1b}.summary-pill.error-pill.no-errors{background:#f0fdf4;color:#166534}.server-conflict-note{display:block;margin-top:.25rem;color:#b91c1c;font-size:.72rem}.diff-badge{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:.22rem .55rem;border-radius:999px;font-weight:800;font-size:.82rem;background:#eef2ff;color:#3730a3}.diff-badge.diff-empty{background:#f8fafc;color:#64748b}.diff-badge.diff-up{background:#dcfce7;color:#166534}.diff-badge.diff-down{background:#fee2e2;color:#991b1b}.diff-badge.diff-zero{background:#f1f5f9;color:#334155}.reserve-error-text{display:block;margin-top:.25rem;color:#dc2626;font-size:.72rem}.summary-line{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}.summary-pill{border:1px solid #e2e8f0;border-radius:999px;padding:.35rem .75rem;background:#fff;font-size:.86rem}.summary-pill b{font-weight:900}.summary-details{font-size:.78rem;color:#64748b;margin-top:.5rem}.stocktake-actions{position:sticky;bottom:0;z-index:5;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border:1px solid #e2e8f0;border-radius:16px;padding:.75rem;margin-top:1rem;display:flex;gap:.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap}.stocktake-mobile-label{display:none}@media(max-width:768px){.stocktake-page{padding:0 12px 110px}.stocktake-table-wrap{max-height:none;overflow:visible}.stocktake-table,.stocktake-table thead,.stocktake-table tbody,.stocktake-table tr,.stocktake-table td{display:block;width:100%}.stocktake-table thead{display:none}.stocktake-table tr{border:1px solid #e2e8f0;border-radius:14px;margin-bottom:.75rem;padding:.75rem;background:#fff}.stocktake-table td{border:0!important;padding:.35rem 0;background:transparent!important}.stocktake-mobile-label{display:block;font-size:.72rem;color:#64748b;margin-bottom:.15rem}.stocktake-row-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}.stock-count-stepper{grid-template-columns:48px 1fr 48px}.stock-count-stepper button{min-height:44px}.col-central,.col-reserved,.col-flow,.col-actual,.col-diff{width:auto}.stocktake-actions{left:12px;right:12px}}
+.stocktake-category .sc-bulk-toolbar{position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:24px;right:280px;z-index:1035;display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;padding:13px 16px;border:1px solid var(--app-border,#bad5df);border-radius:15px;background:var(--app-surface,#fff);color:var(--app-text,#18364a);box-shadow:0 7px 32px rgba(18,52,72,.2);backdrop-filter:blur(10px)}
+.stocktake-category .sc-bulk-toolbar[hidden],.stocktake-category[hidden] .sc-bulk-toolbar{display:none!important}
+.stocktake-category .sc-toolbar-status{flex:1 1 100%;font-size:.78rem;line-height:1.8;color:var(--app-text,#34566d);max-height:3.6em;overflow:auto}
+.stocktake-category .sc-bulk-toolbar button{min-height:41px;margin:0;white-space:normal;font-weight:700}
+.stocktake-category .sc-review-summary{padding:12px;border-radius:10px;background:var(--app-surface,#f0f8fb);color:var(--app-text,#25485d);border:1px solid var(--app-border,#cbdde8);font-size:.83rem;line-height:2;margin-bottom:12px}
+.stocktake-category{padding-bottom:190px!important}
+@media(max-width:1199px){.stocktake-category .sc-bulk-toolbar{left:16px;right:16px}}
+@media(max-width:600px){.stocktake-category .sc-bulk-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom))}.stocktake-category .sc-toolbar-status{grid-column:1/-1;font-size:.72rem}.stocktake-category .sc-bulk-toolbar button{font-size:.77rem;padding:7px}.stocktake-category{padding-bottom:240px!important}}
 </style>
-<div class="stocktake-page" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
- <div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0">ثبت سند انبارگردانی محصولی</h4><a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary">بازگشت</a></div>
+<style>
+
+.stocktake-category{max-width:1500px;margin:auto;padding:4px 14px 70px;direction:rtl}
+.stocktake-category .sc-panel{border:1px solid #e2e8f0;background:#fff;border-radius:15px;box-shadow:0 5px 16px rgba(20,45,62,.04);padding:18px;margin-bottom:14px}
+.stocktake-category .sc-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.stocktake-category .sc-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:end}
+.stocktake-category .sc-control{display:flex;flex-direction:column;gap:5px;font-size:.85rem;font-weight:700;color:#42566b}
+.stocktake-category .sc-control :is(select,input){min-height:40px;width:100%;padding:7px 10px;border-radius:9px;border:1px solid #cedbe8;color:#18364a;background:#fff}
+.stocktake-category .sc-subtitle{font-size:.82rem;color:#64748b;line-height:2;margin-top:7px}
+.stocktake-category .sc-warning{border:1px solid #f1d6a2;background:#fffbeb;color:#805419;padding:12px 15px;border-radius:11px;font-size:.83rem;line-height:2;margin-bottom:15px}
+.stocktake-category .sc-status{border-radius:10px;border:1px solid #cbdde8;background:#f0f9fc;color:#265573;padding:12px 14px;margin-bottom:12px;line-height:1.9}
+.stocktake-category .sc-status.is-error{border-color:#fecaca;background:#fff4f4;color:#a12323}
+.stocktake-category .sc-product{border:1px solid #dce6ee;border-radius:13px;background:#fff;margin-bottom:13px;overflow:hidden}
+.stocktake-category .sc-product-head{background:#f6fafc;display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 15px;border-bottom:1px solid #e1eaf0}
+.stocktake-category .sc-product-head strong{display:block;font-size:.96rem;color:#173c53}
+.stocktake-category .sc-product-meta{font-size:.73rem;color:#667b8c;margin-top:3px}
+.stocktake-category .sc-table-wrap{overflow-x:auto}
+.stocktake-category table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.82rem}
+.stocktake-category th{background:#f8fafc;color:#536879;font-weight:800;font-size:.75rem;padding:9px 10px;border-bottom:1px solid #e2e8f0;text-align:right}
+.stocktake-category td{padding:9px 10px;border-bottom:1px solid #edf2f6;vertical-align:middle}
+.stocktake-category tr:last-child td{border-bottom:0}
+.stocktake-category th:nth-child(1){width:30%}
+.stocktake-category th:nth-child(2){width:12%}
+.stocktake-category th:nth-child(3){width:11%}
+.stocktake-category th:nth-child(4){width:18%}
+.stocktake-category th:nth-child(5){width:19%}
+.stocktake-category th:nth-child(6){width:10%}
+.stocktake-category .sc-flow-details{display:block;font-size:.68rem;line-height:1.8;color:#9a5609;margin-top:3px}
+.stocktake-category .sc-diff-up{color:#166534;font-weight:800}
+.stocktake-category .sc-diff-down{color:#991b1b;font-weight:800}
+.stocktake-category .sc-number{text-align:center;font-variant-numeric:tabular-nums}
+.stocktake-category .sc-variant{font-weight:750;color:#203c50}
+.stocktake-category .sc-variant small{display:block;color:#8292a2;font-weight:400;direction:ltr;text-align:right}
+.stocktake-category .sc-actual{display:block;width:100%;min-height:38px;border:1px solid #d0dce8;border-radius:8px;padding:6px 10px;text-align:center;font-weight:800;min-width:90px}
+.stocktake-category .sc-actual:focus{outline:2px solid #84bdb9;border-color:#287c7c}
+.stocktake-category .sc-badge{border-radius:999px;padding:3px 9px;background:#fff0d2;color:#87520c;font-weight:750}
+.stocktake-category .sc-muted{color:#8292a2}
+.stocktake-category .sc-feedback{font-size:.76rem;margin-top:5px;color:#61768c}
+.stocktake-category .sc-feedback.is-error{color:#bd2929}
+.stocktake-category .sc-success{font-size:.81rem;color:#0b805c;font-weight:700}
+.stocktake-category .sc-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 15px;border-top:1px solid #e4eaf0}
+.stocktake-category .sc-more{display:block;margin:18px auto}
+@media(max-width:800px){.stocktake-category .sc-controls{grid-template-columns:1fr 1fr}.stocktake-category .sc-panel{padding:12px}.stocktake-category table{min-width:850px}}
+@media(max-width:500px){.stocktake-category .sc-controls{grid-template-columns:1fr}.stocktake-category .sc-product-head,.stocktake-category .sc-footer{padding:11px}}
+
+.stocktake-page .stocktake-category{max-width:none;padding:0;margin:0 0 16px}
+/* Page header and counting form must remain separate full-width blocks. */
+.stocktake-page > #stocktakeForm{display:block;width:100%;min-width:0;max-width:100%}
+.stocktake-page__header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-width:0;width:100%;padding:4px 0}
+.stocktake-page__heading{min-width:0;flex:1 1 290px}
+.stocktake-page__heading h4{font-weight:800;font-size:1.16rem;line-height:1.6;color:#15344a;overflow-wrap:anywhere}
+.stocktake-page__intro{font-size:.8rem;line-height:1.75;color:#64748b}
+.stocktake-page__back{flex:0 0 auto;white-space:nowrap}
+.stocktake-page .card,.stocktake-page .card-body,.stocktake-page .stocktake-category,.stocktake-category .sc-panel{min-width:0}
+.stocktake-category .sc-product-head>div{min-width:0;flex:1 1 220px}
+.stocktake-category .sc-product-head strong{overflow-wrap:anywhere;line-height:1.6}
+.stocktake-category .sc-table-wrap{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.stocktake-category table{min-width:700px}
+.stocktake-category td,.stocktake-category th{overflow-wrap:anywhere}
+.stocktake-category .sc-actual{min-width:0}
+.stocktake-category .sc-footer>*{min-width:0}
+@media(max-width:800px){
+ .stocktake-page__header{align-items:flex-start}
+ .stocktake-category table{min-width:780px}
+ .stocktake-category .sc-product{margin-bottom:10px}
+ .stocktake-category .sc-panel{padding:12px}
+}
+@media(max-width:500px){
+ .stocktake-page__heading{flex-basis:100%}
+ .stocktake-page__heading h4{font-size:1.05rem}
+ .stocktake-page__back{width:100%;justify-content:center}
+ .stocktake-category .sc-footer{align-items:stretch}
+ .stocktake-category .sc-footer button{width:100%}
+}
+
+/* Inline category counting: stable full-width desktop and accessible mobile cards. */
+.stocktake-page{width:100%;max-width:1600px;min-width:0;overflow:visible}
+.stocktake-page__header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-width:0}
+.stocktake-page__heading{min-width:0;max-width:100%}
+.stocktake-page__back{justify-self:end;max-width:100%;white-space:normal}
+.stocktake-page #stocktakeForm{display:block;width:100%;min-width:0;max-width:100%;margin:0}
+.stocktake-page #stocktakeCategoryApp{display:block;width:100%;min-width:0;max-width:none;margin:0 0 18px;padding:0}
+.stocktake-page .sc-panel,.stocktake-page .sc-product{width:100%;min-width:0;max-width:100%}
+.stocktake-page .sc-panel{padding:16px}
+.stocktake-page .sc-product{box-shadow:0 4px 16px rgba(20,43,62,.045)}
+.stocktake-page .sc-product-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;gap:12px;padding:13px 16px}
+.stocktake-page .sc-product-head>div{min-width:0;max-width:100%}
+.stocktake-page .sc-product-head strong{line-height:1.7;overflow-wrap:anywhere}
+.stocktake-page .sc-product-head>.sc-muted{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:5px 10px;border-radius:999px;border:1px solid #d8e8f0;background:#eef7fa;white-space:nowrap;color:#315771;font-weight:700;font-size:.75rem}
+.stocktake-page .sc-table-wrap{display:block;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.stocktake-page .sc-table-wrap table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse}
+.stocktake-page .sc-table-wrap td,.stocktake-page .sc-table-wrap th{padding:10px 11px;line-height:1.8;vertical-align:middle;overflow-wrap:anywhere}
+.stocktake-page .sc-table-wrap th{background:#f4f8fb;font-size:.76rem;white-space:normal}
+.stocktake-page .sc-table-wrap th:nth-child(1){width:29%}
+.stocktake-page .sc-table-wrap th:nth-child(2){width:12%}
+.stocktake-page .sc-table-wrap th:nth-child(3){width:10%}
+.stocktake-page .sc-table-wrap th:nth-child(4){width:21%}
+.stocktake-page .sc-table-wrap th:nth-child(5){width:18%}
+.stocktake-page .sc-table-wrap th:nth-child(6){width:10%}
+.stocktake-page .sc-variant{min-width:0;overflow-wrap:anywhere}
+.stocktake-page .sc-variant small{max-width:100%;overflow-wrap:anywhere}
+.stocktake-page .sc-actual{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:185px;min-height:42px;margin-inline:auto}
+.stocktake-page .sc-flow-details{line-height:1.9;overflow-wrap:anywhere}
+.stocktake-page .sc-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px}
+.stocktake-page .sc-feedback{min-width:0;overflow-wrap:anywhere;line-height:1.9}
+.stocktake-page .sc-footer .btn{justify-self:end;white-space:normal}
+.stocktake-page .sc-status,.stocktake-page .sc-warning,.stocktake-page .sc-live-search{min-width:0;max-width:100%;overflow-wrap:anywhere}
+@media(max-width:900px){.stocktake-page{padding-inline:12px}.stocktake-page .sc-table-wrap table{min-width:800px}}
+@media(max-width:720px){
+.stocktake-page{padding-inline:10px}
+.stocktake-page__header{grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch}
+.stocktake-page__heading{width:100%}
+.stocktake-page__back{justify-self:stretch;width:100%;text-align:center}
+.stocktake-page .sc-panel{padding:11px}
+.stocktake-page .sc-product-head{grid-template-columns:minmax(0,1fr);gap:7px;padding:12px}
+.stocktake-page .sc-product-head>.sc-muted{justify-self:start;white-space:normal}
+.stocktake-page .sc-product .sc-table-wrap{overflow:visible;max-width:100%}
+.stocktake-page .sc-product table,.stocktake-page .sc-product thead,.stocktake-page .sc-product tbody{display:block;width:100%;min-width:0;max-width:100%}
+.stocktake-page .sc-product thead{display:none}
+.stocktake-page .sc-product tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:12px;border-bottom:1px solid #e6edf3}
+.stocktake-page .sc-product tbody tr:last-child{border-bottom:0}
+.stocktake-page .sc-product tbody td{display:flex;flex-direction:column;gap:4px;justify-content:center;align-items:stretch;min-width:0;width:100%;padding:9px 11px;border:1px solid #e8eef5;border-radius:10px;background:#fbfdff;text-align:right}
+.stocktake-page .sc-product tbody td::before{content:attr(data-label);display:block;color:#6b7f91;font-size:.73rem;font-weight:700;line-height:1.65}
+.stocktake-page .sc-product tbody td:first-child,.stocktake-page .sc-product tbody td:nth-child(4),.stocktake-page .sc-product tbody td:nth-child(5),.stocktake-page .sc-product tbody td:nth-child(6){grid-column:1/-1}
+.stocktake-page .sc-product tbody td.sc-number{text-align:right}
+.stocktake-page .sc-product .sc-actual{max-width:none;min-height:44px;margin:0}
+.stocktake-page .sc-footer{grid-template-columns:minmax(0,1fr);padding:12px}
+.stocktake-page .sc-footer .btn{justify-self:stretch;width:100%;min-height:43px}
+}
+[hidden]{display:none!important}
+</style>
+<link rel="stylesheet" href="{{ asset('css/stocktake-workspace.css') }}?v=20261030-2">
+<div class="stocktake-page stocktake-workspace" dir="rtl" id="stocktakeApp" data-document-id="{{ $document?->id }}" data-product-id="{{ $document?->product_id }}">
+ <header class="stocktake-page__header mb-3">
+   <div class="stocktake-page__heading">
+     <div class="stocktake-eyebrow">کنترل موجودی انبار مرکزی</div>
+     <h4 class="mb-1">{{ $mode === 'edit' ? 'ویرایش شمارش محصول' : 'انبارگردانی کالاها' }}</h4>
+     <p class="stocktake-page__intro mb-0">انتخاب محدوده، ثبت شمارش، بررسی و تأیید نهایی</p>
+     @if($document)<span class="stocktake-document-tag">سند {{ $document->document_number }}</span>@endif
+   </div>
+   <a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary stocktake-page__back">بازگشت به انبارگردانی</a>
+ </header>
  @if($errors->stock_count_finalize->any())
   <div class="alert alert-danger" id="stockCountFinalizeAlert">
    <div class="fw-bold mb-1">ثبت نهایی سند انجام نشد</div>
@@ -58,13 +206,14 @@ els.rows.addEventListener('click',e=>{let inc=e.target.closest('[data-stock-incr
 els.rows.addEventListener('input',e=>{if(!e.target.matches('.actual-input'))return; let id=e.target.dataset.id, clean=sanitizeQuantity(e.target.value); if(clean===null){e.target.value=actualValue(id);return} state.actual[id]=clean; e.target.value=clean; render(); requestAnimationFrame(()=>{let next=els.rows.querySelector(`.actual-input[data-id="${id}"]`); if(next){next.focus(); next.setSelectionRange(next.value.length,next.value.length);}});});
 els.rows.addEventListener('wheel',e=>{if(e.target.matches('.actual-input'))e.target.blur();},{passive:true});
 document.addEventListener('focusin',e=>{if(e.target.matches('.actual-input'))e.target.select()});document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('.actual-input')){e.preventDefault();let a=[...document.querySelectorAll('.actual-input')],i=a.indexOf(e.target);if(a[i+1])a[i+1].focus();}});
-els.search.addEventListener('input',render);document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));render();}));document.getElementById('confirmEmpty').addEventListener('change',summary);
+els.search.addEventListener('input',render);document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));render();}));
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',async()=>{await ensureAllLoaded(); if(b.dataset.tool==='zeroAll'&&!confirm('موجودی واقعی تمام تنوع‌های این محصول صفر شود؟'))return; if(b.dataset.tool==='clearAll'&&!confirm('مقدارهای واردشده پاک شوند؟'))return; state.rows.forEach(r=>{if(b.dataset.tool==='fillExpected')state.actual[r.variant_id]=String(r.expected_physical); if(b.dataset.tool==='zeroAll')state.actual[r.variant_id]='0'; if(b.dataset.tool==='clearAll')state.actual[r.variant_id]='';}); render();}));
 document.getElementById('variantScroller').addEventListener('scroll',e=>{if(state.hasMore&&e.target.scrollTop+e.target.clientHeight>e.target.scrollHeight-80)load(false)});
-document.getElementById('category').onchange=async e=>{document.getElementById('subcategory').innerHTML='<option value="">انتخاب زیر‌دسته‌بندی</option>';document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];state.actual={};render(); if(!e.target.value)return; let j=await (await fetch(`/stock-count-documents/subcategories?category_id=${e.target.value}`)).json(); j.forEach(c=>document.getElementById('subcategory').insertAdjacentHTML('beforeend',`<option value="${c.id}">${esc(c.name)}</option>`)); document.getElementById('subcategory').disabled=false; searchProducts();};
+document.getElementById('category').onchange=async e=>{document.getElementById('subcategory').innerHTML='<option value="">همه زیردسته‌ها</option>';document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];state.actual={};render(); if(!e.target.value)return; let j=await (await fetch(`/stock-count-documents/subcategories?category_id=${e.target.value}`)).json(); j.forEach(c=>document.getElementById('subcategory').insertAdjacentHTML('beforeend',`<option value="${c.id}">${esc(c.name)}</option>`)); document.getElementById('subcategory').disabled=false; searchProducts();};
 document.getElementById('subcategory').onchange=()=>{document.getElementById('product').innerHTML='<option value="">انتخاب محصول</option>';state.rows=[];state.actual={};render();searchProducts()}; document.getElementById('productSearch').oninput=()=>setTimeout(searchProducts,250);
 async function searchProducts(){let c=document.getElementById('category').value,sc=document.getElementById('subcategory').value,q=document.getElementById('productSearch').value; if(!c&&!q)return; let j=await (await fetch(`/stock-count-documents/products/search?category_id=${c}&subcategory_id=${sc}&q=${encodeURIComponent(q)}`)).json(); let p=document.getElementById('product'); p.innerHTML='<option value="">انتخاب محصول</option>'; j.forEach(x=>p.insertAdjacentHTML('beforeend',`<option value="${x.id}">${esc(x.name)} - ${esc(x.sku||x.code||'')}</option>`));}
-document.getElementById('product').onchange=()=>{state.rows=[];state.actual={};load(true)};document.getElementById('stocktakeForm').addEventListener('submit',()=>{buildHiddenInputs();state.submitting=true;summary();});document.addEventListener('click',e=>{if(e.target.closest('[data-scroll-error]'))scrollToFirstError();});function scrollToFirstError(){let el=document.querySelector('.has-stock-count-error'); if(!el)return; el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>el.querySelector('.actual-input')?.focus(),350);}function showApplyModal(){summary(); if(els.apply?.disabled)return; if(confirm('پس از ثبت نهایی، موجودی انبار مرکزی براساس این شمارش اصلاح می‌شود و سند دیگر قابل ویرایش نخواهد بود. تأیید نهایی و اعمال موجودی؟')){buildHiddenInputs();state.submitting=true;let f=document.getElementById('stocktakeForm'), apply=document.getElementById('applyBtn'); if(apply){apply.disabled=true;apply.innerHTML='در حال ثبت...';} if(apply&&apply.formAction)f.action=apply.formAction; f.querySelector('input[name=_method]').value='PATCH'; f.submit();}}
+document.getElementById('product').onchange=()=>{state.rows=[];state.actual={};load(true)};document.getElementById('stocktakeForm').addEventListener('submit',()=>{buildHiddenInputs();state.submitting=true;summary();});document.addEventListener('click',e=>{if(e.target.closest('[data-scroll-error]'))scrollToFirstError();});function scrollToFirstError(){let el=document.querySelector('.has-stock-count-error'); if(!el)return; el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>el.querySelector('.actual-input')?.focus(),350);}function showApplyModal(){summary(); if(els.apply?.disabled)return; if(confirm('تمام تنوع‌ها تعیین تکلیف شده‌اند. پس از ثبت نهایی، موجودی انبار مرکزی براساس این شمارش اصلاح می‌شود و سند دیگر قابل ویرایش نخواهد بود. تأیید نهایی و اعمال موجودی؟')){buildHiddenInputs();state.submitting=true;let f=document.getElementById('stocktakeForm'), apply=document.getElementById('applyBtn'); if(apply){apply.disabled=true;apply.innerHTML='در حال ثبت...';} if(apply&&apply.formAction)f.action=apply.formAction; f.querySelector('input[name=_method]').value='PATCH'; f.submit();}}
 if(document.getElementById('product').value)load(true).then(()=>{if(serverConflicts.length)scrollToFirstError();}); else summary();
 </script>
+@if($mode==='create')<script>{!! file_get_contents(public_path('js/stocktake-category-workspace.js')) !!}</script>@endif
 @endsection

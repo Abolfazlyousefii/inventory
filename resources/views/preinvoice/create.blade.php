@@ -3,6 +3,11 @@
 @push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
 
 @section('content')
+    @include('preinvoice.partials.count-freeze-notice', ['order' => $order ?? null])
+    <div id="preinvoiceStocktakeWarning" class="alert alert-warning" role="status" aria-live="polite" hidden>
+        <div id="preinvoiceStocktakeWarningMessage"></div>
+        <ul id="preinvoiceStocktakeWarningItems" class="mb-0 mt-2"></ul>
+    </div>
 	@php
 		$order = $order ?? null;
 $customersPageUrl = $customersPageUrl ?? '/customers';
@@ -1381,6 +1386,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		@if(session('success'))
 			<div class="alert alert-success border-0 shadow-sm rounded-4 fw-bold py-2">✅ {{ session('success') }}</div>
 		@endif
+
+		@if(session('warning'))
+			<div class="alert alert-warning border-0 shadow-sm rounded-4 fw-bold py-2" role="status">{{ session('warning') }}</div>
+		@endif
 		@if(session('error'))
 			<div class="alert alert-danger border-0 shadow-sm rounded-4 fw-bold py-2" style="white-space:pre-wrap">{!! session('error') !!}</div>
 		@endif
@@ -1515,7 +1524,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 								<option value="amount" @selected(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')) === 'amount')>ریال</option>
 								<option value="percent" @selected(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')) === 'percent')>درصد</option>
 							</select>
-							<input type="number" id="orderDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="{{ old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) }}" placeholder="مقدار">
+							<input data-rial data-rial-kind-source="#orderDiscountType" type="text" id="orderDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="{{ old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) }}" placeholder="مقدار">
 						</div>
 						<div class="discount-line" id="orderDiscountPreview">تخفیف کلی: 0 ریال</div>
 					</div>
@@ -1582,7 +1591,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 								<option value="amount">ریال</option>
 								<option value="percent">درصد</option>
 							</select>
-							<input type="number" id="modalGroupDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="0" placeholder="مقدار تخفیف">
+							<input data-rial data-rial-kind-source="#modalGroupDiscountType" type="text" id="modalGroupDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="0" placeholder="مقدار تخفیف">
 						</div>
 						<div class="discount-line">تخفیف: <strong id="modalGroupDiscountPreview">0 ریال</strong></div>
 					</div>
@@ -1630,6 +1639,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 	@endphp
 
 	<script src="{{ asset('js/preinvoice-merge.js') }}"></script>
+	<script src="{{ asset('js/preinvoice-stocktake-warning.js') }}?v=20261030"></script>
 	<script src="{{ asset('js/variant-search.js') }}?v=20261018"></script>
 	<script>
 		window.PREINVOICE_BOOT = {
@@ -1954,6 +1964,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				if (error.itemErrors.length) showReservationItemErrors(error.itemErrors);
 				throw error;
 			}
+			if (Object.prototype.hasOwnProperty.call(json || {}, 'stocktake_warning')) {
+				globalThis.PreinvoiceStocktakeWarning?.render(json.stocktake_warning);
+			}
 			return json;
 		}
 
@@ -2030,7 +2043,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function safeDiscountValue(type, value) {
-			let n = Number(value || 0);
+			let n = RialInput.number(value || 0);
 			if (!Number.isFinite(n)) n = 0;
 			if (n < 0) n = 0;
 			if (type === 'percent' && n > 100) n = 100;
@@ -2262,7 +2275,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
 				discount_amount: toInt(document.getElementById('discount')?.value || 0),
 				invoice_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
-				invoice_discount_value: Number(document.getElementById('orderDiscountValue')?.value || 0),
+				invoice_discount_value: RialInput.number(document.getElementById('orderDiscountValue')?.value || 0),
 				discount_breakdown: document.getElementById('discount_breakdown')?.value || '',
 				products: collectProductsForAutosave()
 			};
@@ -2339,6 +2352,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					updateLocalDraftStatus('نسخه دیگری از این پیش‌نویس تغییر کرده است؛ صفحه را تازه‌سازی کنید.', false);
 				}
 				throw new Error(json?.message || 'ذخیره انجام نشد؛ پیش‌نویس قبلی حفظ شد.');
+			}
+			if (Object.prototype.hasOwnProperty.call(json || {}, 'stocktake_warning')) {
+				globalThis.PreinvoiceStocktakeWarning?.render(json.stocktake_warning);
 			}
 			currentAutosaveUuid = json.uuid || currentAutosaveUuid;
 			currentAutosaveVersion = json.version;
@@ -3396,7 +3412,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				subtotal,
 				group_discount_amount: groupDiscounts,
 				order_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
-				order_discount_value: Number(document.getElementById('orderDiscountValue')?.value || 0),
+				order_discount_value: RialInput.number(document.getElementById('orderDiscountValue')?.value || 0),
 				order_discount_amount: orderDiscount,
 				total_discount_amount: totalDiscount,
 				groups

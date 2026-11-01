@@ -88,6 +88,12 @@ class PersonnelVoucherManagementTest extends TestCase
 
         $transfer = WarehouseTransfer::query()->where('reference', 'PER-101')->firstOrFail();
         $originalId = $transfer->id;
+        $editHtml = $this->get(route('vouchers.edit', $transfer))->assertOk()->getContent();
+        preg_match('/const rootCategories = (.*);/', $editHtml, $matches);
+        $roots = array_column(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR), 'id');
+        $this->assertContains($category->parent_id, $roots);
+        $this->assertNotContains($category->id, $roots);
+
 
         $this->actingAs($admin)
             ->put(route('vouchers.update', $transfer), [
@@ -241,11 +247,115 @@ class PersonnelVoucherManagementTest extends TestCase
 
         $html = $this->get(route('vouchers.section.create', 'personnel'))->getContent();
 
+        // Optional, database-isolated fixtures for tests/browser/personnel-voucher.cjs.
+        if ($directory = getenv('VOUCHER_BROWSER_FIXTURES')) {
+            if (! is_dir($directory)) mkdir($directory, 0777, true);
+            file_put_contents($directory.'/voucher-candidate-create.html', $html);
+            file_put_contents($directory.'/voucher-candidate-hub.html', $this->get(route('vouchers.index'))->assertOk()->getContent());
+        }
+
+
         $this->assertTrue(
             str_contains($html, route('vouchers.personnel.products.search'))
                 || str_contains($html, str_replace('/', '\/', route('vouchers.personnel.products.search'))),
             'Personnel products search endpoint was not rendered in the create page.'
         );
+    }
+
+    public function test_variant_lookup_reads_all_central_quantities_in_one_query_without_changing_stock(): void
+    {
+        [$admin,, $central, $personnel,, $product, $first] = $this->fixture();
+        for ($n = 1; $n <= 35; $n++) {
+            $variant = ProductVariant::withoutEvents(fn () => ProductVariant::create([
+                'product_id' => $product->id, 'variant_name' => 'Lookup '.$n,
+                'variant_code' => 'LOOKUP-'.$n, 'variety_code' => str_pad((string) $n, 4, '0', STR_PAD_LEFT),
+                'sell_price' => 1000, 'stock' => 999, 'is_active' => true,
+            ]));
+            WarehouseStock::withoutEvents(fn () => WarehouseStock::create([
+                'warehouse_id' => $central->id, 'product_id' => $product->id,
+                'product_variant_id' => $variant->id, 'quantity' => $n,
+            ]));
+            WarehouseStock::withoutEvents(fn () => WarehouseStock::create([
+                'warehouse_id' => $personnel->id, 'product_id' => $product->id,
+                'product_variant_id' => $variant->id, 'quantity' => 200,
+            ]));
+        }
+        $before = \Illuminate\Support\Facades\DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+        $stockQueries = 0;
+        \Illuminate\Support\Facades\DB::listen(function ($query) use (&$stockQueries) {
+            if (str_contains(strtolower($query->sql), 'select') && str_contains($query->sql, 'warehouse_stocks')) $stockQueries++;
+        });
+        $response = $this->actingAs($admin)->getJson(route('vouchers.personnel.products.variants', $product))->assertOk();
+        $this->assertCount(36, $response->json('results'));
+        $this->assertSame(1, $stockQueries, 'Variant lookup must use one batched warehouse query, not one per variant.');
+        $rows = collect($response->json('results'))->keyBy('id');
+        $this->assertSame(10, $rows[$first->id]['central_stock']);
+        $this->assertSame(35, $rows[$variant->id]['central_stock']);
+        $this->assertSame($before, \Illuminate\Support\Facades\DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
+    }
+
+    public function test_personnel_category_picker_only_contains_roots_despite_global_category_composer(): void
+    {
+        [$admin,,,, $child, $product] = $this->fixture();
+        $root = $child->parent;
+        $otherRoot = Category::create(['name' => 'Other root', 'code' => '91']);
+        $otherChild = Category::create(['name' => 'Other child', 'code' => '92', 'parent_id' => $otherRoot->id]);
+
+        $html = $this->actingAs($admin)->get(route('vouchers.section.create', 'personnel'))->assertOk()->getContent();
+        preg_match('/const rootCategories = (.*);/', $html, $matches);
+        $this->assertNotEmpty($matches, 'Category picker configuration was not rendered.');
+        $ids = array_column(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR), 'id');
+        $roots = collect(json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR))->keyBy('id');
+        $this->assertSame([$child->id], array_column($roots[$root->id]['children'] ?? [], 'id'), 'Subcategories must be embedded so selection works without another HTTP request.');
+        $this->assertSame([$otherChild->id], array_column($roots[$otherRoot->id]['children'] ?? [], 'id'));
+
+        $this->assertContains($root->id, $ids);
+        $this->assertContains($otherRoot->id, $ids);
+        $this->assertNotContains($child->id, $ids);
+        $this->assertNotContains($otherChild->id, $ids);
+        $this->getJson(route('vouchers.personnel.categories.children', $root))
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $child->id);
+        $this->getJson(route('vouchers.personnel.products.search', ['category_id' => $child->id]))
+            ->assertOk()->assertJsonPath('results.0.id', $product->id);
+    }
+
+    public function test_personnel_form_action_permissions_include_its_read_only_lookups(): void
+    {
+        [, , $central, , $category, $product, $variant] = $this->fixture();
+        $before = $this->stock($central, $product, $variant);
+        foreach (['issues.create', 'issues.edit'] as $action) {
+            $role = Role::findOrCreate('Personnel '.$action, 'web');
+            $role->givePermissionTo(\Spatie\Permission\Models\Permission::where('key', $action)->firstOrFail());
+            $staff = User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
+            $staff->assignRole($role);
+            $this->actingAs($staff);
+            if ($action === 'issues.create') {
+                $this->get(route('vouchers.section.create', 'personnel'))->assertOk();
+            }
+            $this->getJson(route('vouchers.personnel.products.search', ['category_id' => $category->id]))
+                ->assertOk()->assertJsonPath('results.0.id', $product->id);
+            $this->getJson(route('vouchers.personnel.categories.children', $category->parent_id))
+                ->assertOk()->assertJsonPath('data.0.id', $category->id);
+            $this->getJson(route('vouchers.personnel.products.variants', $product))
+                ->assertOk()->assertJsonPath('results.0.id', $variant->id);
+            $this->assertSame($action === 'issues.create', \App\Support\PageAccessCatalog::userCanRoute($staff, 'vouchers.section.store'));
+        }
+        $this->assertSame($before, $this->stock($central, $product, $variant));
+    }
+
+    public function test_personnel_lookups_still_reject_users_without_form_access(): void
+    {
+        [, , , , $category, $product] = $this->fixture();
+        $role = Role::findOrCreate('Personnel list only', 'web');
+        $role->givePermissionTo(\Spatie\Permission\Models\Permission::where('key', 'issues.view')->firstOrFail());
+        foreach ([false, true] as $listOnly) {
+            $staff = User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
+            if ($listOnly) $staff->assignRole($role);
+            $this->actingAs($staff);
+            $this->getJson(route('vouchers.personnel.products.search', ['category_id' => $category->id]))->assertForbidden();
+            $this->getJson(route('vouchers.personnel.categories.children', $category->parent_id))->assertForbidden();
+            $this->getJson(route('vouchers.personnel.products.variants', $product))->assertForbidden();
+        }
     }
 
     private function fixture(): array

@@ -4,20 +4,21 @@ use Illuminate\Support\Facades\File;
 
 it('previews percent product discounts with backend allocation contract', function () {
     $view = File::get(resource_path('views/preinvoice/finance-edit.blade.php'));
+    $script = File::get(public_path('js/finance-review.js'));
 
-    expect($view)->toContain('function recalculateFinanceEditor()')
+    expect($script)->toContain('function recalculate()')
+        ->and($script)->toContain('math.amount(groupGross,')
+        ->and($script)->toContain('math.allocate(weights, amount)')
+        ->and($script)->toContain('shares[index]')
+        ->and($script)->toContain('math.amount(gross-discount, invoiceType, invoiceValue.value)')
+        ->and($view)->toContain('js/finance-review.js')
         ->and($view)->toContain('data-product-discount-group')
         ->and($view)->toContain('data-product-discount-type')
         ->and($view)->toContain('data-product-discount-value')
-        ->and($view)->toContain('SalesDiscountMath.amount(groupGross,type,value)')
-        ->and($view)->toContain('allocatedDiscounts(groupRows,amount,groupGross)')
-        ->and($view)->toContain('SalesDiscountMath.allocate')
-        ->and($view)->toContain('shares[index]')
         ->and($view)->toContain('data-summary-product-discount')
         ->and($view)->toContain('data-summary-invoice-discount')
         ->and($view)->toContain('data-summary-total-discount')
-        ->and($view)->toContain('data-summary-grand-total')
-        ->and($view)->toContain("SalesDiscountMath.amount(subtotalAfterProductDiscount,'percent',invoiceValue)");
+        ->and($view)->toContain('data-summary-grand-total');
 });
 
 it('persists percent product discounts and reloads discount breakdown fields', function () {

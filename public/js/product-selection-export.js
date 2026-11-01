@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const selected = new Set();
     const maxProducts = 200;
-    let downloading = false;
+    let submitting = false;
 
     function showError(message = '') {
         error.textContent = message;
@@ -23,46 +23,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const visibleSelected = visibleBoxes.filter(box => selected.has(Number(box.value))).length;
         selectLoaded.checked = visibleBoxes.length > 0 && visibleSelected === visibleBoxes.length;
         selectLoaded.indeterminate = visibleSelected > 0 && visibleSelected < visibleBoxes.length;
-        selectLoaded.disabled = visibleBoxes.length === 0;
-        selectVisible.disabled = downloading || visibleBoxes.length === 0;
+        selectLoaded.disabled = submitting || visibleBoxes.length === 0;
+        selectVisible.disabled = submitting || visibleBoxes.length === 0;
         selectVisible.textContent = selectLoaded.checked ? 'برداشتن تیک‌های بارگذاری‌شده' : 'انتخاب همهٔ بارگذاری‌شده‌ها';
         for (const box of visibleBoxes) box.checked = selected.has(Number(box.value));
         count.textContent = selected.size ? `${selected.size.toLocaleString('fa-IR')} کالا انتخاب شده` : 'کالایی انتخاب نشده است.';
-        clear.disabled = downloading || selected.size === 0;
-        download.disabled = downloading || selected.size === 0;
-        download.textContent = downloading ? 'در حال ساخت فایل...' : 'دریافت PDF کالاهای انتخابی';
+        clear.disabled = submitting || selected.size === 0;
+        download.disabled = submitting || selected.size === 0;
+        download.textContent = 'چاپ / ذخیره PDF';
     }
 
-    function decorateRows() {
-        for (const row of body.querySelectorAll('tr[data-product-id]')) {
-            if (row.querySelector('.product-select')) continue;
-            const id = Number(row.dataset.productId);
-            if (!Number.isSafeInteger(id) || id <= 0) continue;
-            const cell = document.createElement('td');
-            cell.className = 'select-col';
-            const label = document.createElement('label');
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'product-select';
-            checkbox.value = String(id);
-            checkbox.setAttribute('aria-label', 'انتخاب کالا برای خروجی');
-            label.append(checkbox);
-            const mobileLabel = document.createElement('span');
-            mobileLabel.className = 'desktop-label';
-            mobileLabel.textContent = ' انتخاب برای خروجی';
-            label.append(mobileLabel);
-            cell.append(label);
-            row.prepend(cell);
-        }
-        syncControls();
-    }
-
-    new MutationObserver(decorateRows).observe(body, {childList: true});
-    decorateRows();
+    // Each product row now includes its own checkbox when export is allowed.
+    // Observe newly fetched rows only to sync checked state and counts; avoid
+    // injecting DOM nodes or shifting table columns after initial render.
+    new MutationObserver(syncControls).observe(body, {childList: true});
+    syncControls();
 
     body.addEventListener('change', event => {
         const box = event.target.closest('.product-select');
         if (!box) return;
+        if (submitting) { syncControls(); return; }
         const id = Number(box.value);
         if (box.checked && selected.size >= maxProducts && !selected.has(id)) {
             box.checked = false;
@@ -100,38 +80,51 @@ document.addEventListener('DOMContentLoaded', () => {
         syncControls();
     });
 
-    download.addEventListener('click', async () => {
-        if (downloading || selected.size === 0) return;
-        downloading = true;
+    const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    download.addEventListener('click', () => {
+        if (submitting || selected.size === 0) return;
+        if (!app.dataset.stockPrintUrl) {
+            showError('صفحه چاپ بارگذاری نشده است. صفحه را تازه‌سازی کنید.');
+            return;
+        }
+
+        submitting = true;
         showError();
         syncControls();
         try {
-            const form = new FormData();
-            for (const id of selected) form.append('product_ids[]', String(id));
-            const response = await fetch(app.dataset.selectionExportUrl, {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '', 'Accept': 'application/pdf, application/json' },
-                credentials: 'same-origin',
-                body: form,
-            });
-            if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                throw new Error(payload.message || 'ساخت فایل انجام نشد. دوباره تلاش کنید.');
+            // Native form navigation preserves the active session and opens a
+            // dedicated print preview. No server-side PDF rendering or CSV file.
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = app.dataset.stockPrintUrl;
+            form.target = '_blank';
+            form.hidden = true;
+            const append = (name, value) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = String(value);
+                form.appendChild(input);
+            };
+            append('_token', csrf());
+            for (const id of selected) append('product_ids[]', id);
+            const filterControls = {q:'productSearch',category_id:'categoryFilter',subcategory_id:'subcategoryFilter',stock_status:'stockFilter',sellable_status:'sellableFilter',product_type:'productTypeFilter',min_price:'minPrice',max_price:'maxPrice',has_variants:'hasVariants',without_price:'withoutPrice',sort:'sortFilter',direction:'directionFilter'};
+            for (const [key, controlId] of Object.entries(filterControls)) {
+                let value = document.getElementById(controlId)?.value.trim() || '';
+                if (key === 'min_price' || key === 'max_price') value = window.RialInput?.raw(value) || value;
+                if (value !== '') append(`filters[${key}]`, value);
             }
-            const blob = await response.blob();
-            if (!blob.size || !blob.type.includes('pdf')) throw new Error('فایل PDF معتبر دریافت نشد.');
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `ariya-products-${new Date().toISOString().slice(0, 10)}.pdf`;
-            document.body.append(link);
-            link.click();
-            link.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
-        } catch (exception) {
-            showError(exception.message || 'ساخت فایل انجام نشد. دوباره تلاش کنید.');
+            document.body.appendChild(form);
+            try {
+                form.submit();
+            } finally {
+                form.remove();
+            }
+        } catch (error) {
+            showError('باز کردن پیش‌نمایش چاپ موفق نبود؛ دوباره تلاش کنید.');
         } finally {
-            downloading = false;
+            submitting = false;
             syncControls();
         }
     });

@@ -78,4 +78,49 @@ class InventoryRepairCorruptionCommand extends Command
 
         return SymfonyCommand::SUCCESS;
     }
+
+    private function setWarehouseStock(int $warehouseId, int $productId, ?int $variantId, int $quantity): void
+    {
+        app(\App\Services\InventoryCountFreezeService::class)->assertProduct($productId,$warehouseId);
+        $query = DB::table('warehouse_stocks')
+            ->where('warehouse_id', $warehouseId)
+            ->where('product_id', $productId);
+
+        $variantId === null
+            ? $query->whereNull('product_variant_id')
+            : $query->where('product_variant_id', $variantId);
+
+        $existing = $query->lockForUpdate()->first(['id']);
+
+        if ($existing) {
+            DB::table('warehouse_stocks')
+                ->where('id', $existing->id)
+                ->update(['quantity' => $quantity, 'updated_at' => now()]);
+
+            return;
+        }
+
+        DB::table('warehouse_stocks')->insert([
+            'warehouse_id' => $warehouseId,
+            'product_id' => $productId,
+            'product_variant_id' => $variantId,
+            'quantity' => $quantity,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function createBackups(): array
+    {
+        $timestamp = now()->format('Ymd_His');
+        $backupNames = [];
+
+        foreach ($this->backupTables as $table) {
+            $backupName = "backup_{$table}_{$timestamp}";
+            DB::statement("CREATE TABLE `{$backupName}` AS SELECT * FROM `{$table}`");
+            $backupNames[] = $backupName;
+        }
+
+        return $backupNames;
+    }
 }

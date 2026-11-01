@@ -921,6 +921,8 @@ class PreinvoiceController extends Controller
             'version' => $this->autosaveVersion($order),
             'saved_at' => optional($order->auto_saved_at)->toIso8601String(),
             'draft_token' => $order->draft_token,
+            'stocktake_warning' => app(\App\Services\InventoryCountFreezeService::class)
+                ->salesWarning($order->items->pluck('product_id')->all()),
         ]);
     }
 
@@ -1181,7 +1183,8 @@ class PreinvoiceController extends Controller
             ]);
         }
 
-        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated, $submissionToken) {
+        $reservationMeta = ReservationSideEffects::transaction(function () use ($validated, $submissionToken, $request) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
 
             $existingOrder = PreinvoiceOrder::query()
@@ -1189,7 +1192,19 @@ class PreinvoiceController extends Controller
                 ->where('submission_token', $submissionToken)
                 ->first();
             if ($existingOrder) {
+                if ($existingOrder->status === PreinvoiceOrder::STATUS_DRAFT) {
+                    $existingOrder->loadMissing('items');
+                    $existingRows = $existingOrder->items->map(fn ($item) => ['id' => (int) $item->product_id])->all();
+                    $message = $this->blockedCountSubmissionMessage($existingRows)
+                        ?? 'این پیش‌فاکتور در وضعیت پیش‌نویس است؛ همان سند را باز کنید، اقلام را بررسی و دوباره به مالی ارسال کنید.';
+                    return ['stocktake_draft_response' => redirect()->route('preinvoice.draft.edit', $existingOrder->uuid)
+                        ->with('preinvoice_submit_succeeded', true)->with('warning', $message)];
+                }
                 return ['expires_at' => $existingOrder->stock_frozen_until];
+            }
+
+            if ($message = $this->blockedCountSubmissionMessage($validated['products'])) {
+                return ['stocktake_draft_response' => $this->saveTrueDraftFromRequest($request, $message)];
             }
 
             $reservationToken = $validated['reservation_token'] ?? null;
@@ -1267,16 +1282,20 @@ class PreinvoiceController extends Controller
             return $reservationMeta;
         });
 
+        if (isset($reservationMeta['stocktake_draft_response'])) return $reservationMeta['stocktake_draft_response'];
+
         return redirect()->route('preinvoice.create')
             ->with('preinvoice_submit_succeeded', true)
             ->with('success', $this->finalSubmitSuccessMessage($reservationMeta));
     }
 
-    private function saveTrueDraftFromRequest(Request $request)
+    private function saveTrueDraftFromRequest(Request $request, ?string $stocktakeWarning = null)
     {
         $validated = $this->validateDraftPayload($request, false);
 
-        $order = DB::transaction(function () use ($validated) {
+        $order = DB::transaction(function () use ($validated, &$stocktakeWarning) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $stocktakeWarning ??= $this->blockedCountSubmissionMessage($validated['products']);
             $customer = $this->resolveCustomer($validated);
             $shippingId = $this->validatedShippingId($validated);
 
@@ -1344,13 +1363,22 @@ class PreinvoiceController extends Controller
                 'preinvoice_uuid' => $order->uuid,
                 'status' => PreinvoiceOrder::STATUS_DRAFT,
             ]);
+            if ($stocktakeWarning !== null) {
+                $order->reviews()->create([
+                    'user_id' => auth()->id(), 'action' => 'stocktake_freeze_submission',
+                    'reason' => $stocktakeWarning,
+                    'before_items' => ['status' => 'submission_requested'],
+                    'after_items' => ['status' => PreinvoiceOrder::STATUS_DRAFT],
+                ]);
+            }
 
             return $order;
         });
 
         return redirect()->route('preinvoice.draft.edit', $order->uuid)
             ->with('preinvoice_submit_succeeded', true)
-            ->with('success', '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
+            ->with($stocktakeWarning !== null ? 'warning' : 'success',
+                $stocktakeWarning ?? '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
     }
 
     public function editDraft(string $uuid)
@@ -1389,6 +1417,9 @@ class PreinvoiceController extends Controller
         $validated = $this->validateDraftPayload($request, false, $order);
 
         $reservationMeta = ReservationSideEffects::transaction(function () use ($order, $validated, $isSubmit) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $stocktakeWarning = $this->blockedCountSubmissionMessage($validated['products']);
+            if ($stocktakeWarning !== null) $isSubmit = false;
             auth()->user()->newQuery()->whereKey(auth()->id())->lockForUpdate()->firstOrFail();
             $order = PreinvoiceOrder::query()
                 ->with(['items', 'invoice.items'])
@@ -1538,7 +1569,7 @@ class PreinvoiceController extends Controller
             $order->reviews()->create([
                 'user_id' => auth()->id(),
                 'action' => $isSubmit ? 'seller_submitted_to_finance' : 'preinvoice_draft_updated',
-                'reason' => $isSubmit ? 'پیش‌فاکتور ثبت نهایی شد و به صف تایید مالی رفت.' : 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.',
+                'reason' => $stocktakeWarning ?? ($isSubmit ? 'پیش‌فاکتور ثبت نهایی شد و به صف تایید مالی رفت.' : 'پیش‌فاکتور به صورت پیش‌نویس ذخیره شد.'),
                 'before_items' => $before,
                 'after_items' => $this->snapshotItems($order->fresh('items.product', 'items.variant')),
             ]);
@@ -1549,12 +1580,22 @@ class PreinvoiceController extends Controller
                 'user_id' => auth()->id(),
             ]);
 
-            return $reservationMeta;
+            return $reservationMeta + ['stocktake_warning' => $stocktakeWarning];
         });
 
+        if (! empty($reservationMeta['stocktake_warning'])) {
+            return back()->with('preinvoice_submit_succeeded', true)->with('warning', $reservationMeta['stocktake_warning']);
+        }
         return back()
             ->with('preinvoice_submit_succeeded', true)
             ->with('success', $isSubmit ? $this->finalSubmitSuccessMessage($reservationMeta) : '✅ پیش‌فاکتور به صورت پیش‌نویس ذخیره شد و موجودی آن رزرو شد.');
+    }
+
+
+    private function blockedCountSubmissionMessage(array $products): ?string
+    {
+        $warning = app(\App\Services\InventoryCountFreezeService::class)->salesWarning(array_column($products, 'id'));
+        return $warning ? $warning['message'].' همهٔ اقلام سند به‌صورت پیش‌نویس حفظ شدند.' : null;
     }
 
 
@@ -2901,8 +2942,10 @@ class PreinvoiceController extends Controller
         $discountEditorState = $this->preinvoiceDiscountHydrator->hydrateForEditing($order);
         $invoiceDiscount = (int) ($discountEditorState['invoice_discount']['amount'] ?? 0);
         $totals = SalesDocumentTotals::calculate($order->items, $invoiceDiscount, (int) $order->shipping_price, ['discount_allocation_mode' => $order->discount_allocation_mode]);
+        $customerBalance = $order->customer_id
+            ? (int) (Customer::query()->withBalance()->find($order->customer_id)?->balance ?? 0) : 0;
 
-        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals', 'discountEditorState'));
+        return view('preinvoice.finance-edit', compact('order', 'zeroPriceItems', 'totals', 'discountEditorState', 'customerBalance'));
     }
 
     public function financeUpdate(string $uuid, FinanceUpdatePreinvoiceRequest $request)
@@ -2912,14 +2955,16 @@ class PreinvoiceController extends Controller
 
         try {
             $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
-            $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
+            $this->financePreinvoiceEditorService->updateDiscounts($order, $validated, auth()->user());
         } catch (QueryException $exception) {
             Log::error('Finance preinvoice update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, $validated['intent'] ?? 'save'));
 
             return back()->withErrors(['finance_update' => 'ذخیره تغییرات انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
 
-        return redirect()->route('preinvoice.draft.finance.edit', $uuid)->with('success', 'تغییرات مالی با موفقیت ذخیره شد. پیش‌فاکتور همچنان در صف مالی قرار دارد.');
+        return redirect()->route('preinvoice.draft.finance.edit', $uuid)
+            ->withInput(['payments' => $request->input('payments', [])])
+            ->with('success', 'تغییرات مالی ذخیره شد. پرداخت‌های آماده‌شده فقط همراه تأیید مالی ثبت می‌شوند.');
     }
 
     public function financeSaveAndFinalize(string $uuid, FinanceUpdatePreinvoiceRequest $request)
@@ -2929,17 +2974,33 @@ class PreinvoiceController extends Controller
         $validated['intent'] = 'save_and_finalize';
 
         try {
-            $order = PreinvoiceOrder::query()->where('uuid', $uuid)->firstOrFail();
-            $updated = $this->financePreinvoiceEditorService->update($order, $validated, auth()->user());
-            // Approve the version this request just saved, not a later concurrent edit.
-            $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
+            return ReservationSideEffects::transaction(function () use ($uuid, $validated, $request) {
+                $order = PreinvoiceOrder::query()->where('uuid', $uuid)->lockForUpdate()->with('invoice')->firstOrFail();
+                // Retried approvals and expired reservations retain the existing finalizer behavior.
+                if ($order->invoice || $order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE
+                    || $order->status === PreinvoiceOrder::STATUS_RESERVATION_EXPIRED
+                    || ($order->stock_frozen_until && $order->stock_frozen_until->lte(now()))) {
+                    return $this->finalize($uuid, $request);
+                }
+                $updated = $this->financePreinvoiceEditorService->updateDiscounts($order, $validated, auth()->user());
+                $request->merge(['finance_version' => FinanceDocumentVersion::token($updated)]);
+                $response = $this->finalize($uuid, $request);
+                if (! $updated->invoice()->exists()) {
+                    throw ValidationException::withMessages(['finance_update' => 'تأیید کامل نشد؛ هیچ تغییری ثبت نشد. صفحه را تازه کنید و دوباره بررسی کنید.']);
+                }
+                return $response;
+            });
+        } catch (ValidationException $exception) {
+            // The saved version was rolled back with the transaction. Preserve the
+            // original version in old input so correcting a payment remains retryable.
+            $request->merge(['finance_version' => $validated['finance_version']]);
+            throw $exception;
         } catch (QueryException $exception) {
+            $request->merge(['finance_version' => $validated['finance_version']]);
             Log::error('Finance preinvoice save-and-finalize update failed.', $this->financeQueryExceptionContext($exception, $uuid, $validated, $request, 'save_and_finalize'));
 
             return back()->withErrors(['finance_update' => 'ذخیره و تأیید انجام نشد. اطلاعات هیچ تغییری نکرد. لطفاً دوباره تلاش کنید.'])->withInput();
         }
-
-        return $this->finalize($uuid, $request);
     }
 
     private function financeQueryExceptionContext(QueryException $exception, string $uuid, array $validated, Request $request, string $intent): array
@@ -2968,6 +3029,9 @@ class PreinvoiceController extends Controller
         $order = PreinvoiceOrder::with(['items.product', 'items.variant', 'creator:id,name', 'customer:id,crm_customer_id,reservation_tier'])
             ->where('uuid', $uuid)
             ->firstOrFail();
+        if ($order->status === PreinvoiceOrder::STATUS_PENDING_FINANCE && ! $order->invoice()->exists()) {
+            return $this->financeEdit($uuid);
+        }
         abort_if(! in_array($order->status, [
             PreinvoiceOrder::STATUS_PENDING_FINANCE,
             PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
@@ -3052,19 +3116,12 @@ class PreinvoiceController extends Controller
                     $this->reservationExpiryService->expireIfNeeded($order, auth()->user(), 'finance_finalize');
                     throw ValidationException::withMessages(['preinvoice' => 'زمان رزرو این پیش‌فاکتور به پایان رسیده است. سند برای بررسی مجدد به فروشنده بازگردانده شد.']);
                 }
-                $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
+                // Only an invoice explicitly linked to this preinvoice may be reused.
+                // A matching number alone can belong to a separate Site invoice.
                 $existingInvoice = Invoice::query()
                     ->where('preinvoice_order_id', $order->id)
-                    ->orWhere('uuid', $officialInvoiceUuid)
                     ->lockForUpdate()
                     ->first();
-
-
-                if ($existingInvoice && (int) $existingInvoice->preinvoice_order_id !== (int) $order->id) {
-                    throw ValidationException::withMessages([
-                        'invoice' => "شماره فاکتور {$officialInvoiceUuid} قبلاً برای پیش‌فاکتور دیگری ثبت شده است. لطفاً با مدیر سیستم تماس بگیرید.",
-                    ]);
-                }
 
                 if ($order->status === PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE) {
                     if ($existingInvoice) {
@@ -3082,6 +3139,23 @@ class PreinvoiceController extends Controller
                     PreinvoiceOrder::STATUS_WAREHOUSE_APPROVED_WAITING_FINANCE,
                 ], true)) {
                     abort(403);
+                }
+
+                $officialInvoiceUuid = $existingInvoice?->uuid;
+                $conflictingInvoice = null;
+                if (! $existingInvoice) {
+                    $officialInvoiceUuid = $this->officialCodeForPreinvoiceConversion($order);
+                    $conflictingInvoice = Invoice::query()
+                        ->where('uuid', $officialInvoiceUuid)
+                        ->lockForUpdate()
+                        ->first(['id', 'uuid', 'preinvoice_order_id', 'external_order_id']);
+
+                    if ($conflictingInvoice) {
+                        // Do not rewrite previously issued invoice numbers. Older
+                        // site imports can overlap with reserved preinvoice numbers.
+                        // The shared sequence allocates a fresh number under a row lock.
+                        $officialInvoiceUuid = DocumentCodeGenerator::nextInvoiceCode();
+                    }
                 }
 
                 foreach ($order->items as $it) {
@@ -3163,6 +3237,21 @@ class PreinvoiceController extends Controller
                         'total' => (int) $total,
                         'status' => Invoice::STATUS_PENDING_COLLECTION,
                     ]);
+                }
+
+                if ($conflictingInvoice) {
+                    ActivityLogger::log(
+                        'invoice_number_collision_resolved',
+                        $invoice,
+                        'تداخل شماره قدیمی پیش‌فاکتور و فاکتور سایت برطرف شد؛ فاکتور جدید با شماره آزاد صادر شد.',
+                        [
+                            'preinvoice_id' => (int) $order->id,
+                            'original_preinvoice_number' => (string) $order->uuid,
+                            'new_invoice_number' => (string) $invoice->uuid,
+                            'occupied_invoice_id' => (int) $conflictingInvoice->id,
+                            'occupied_external_order_id' => $conflictingInvoice->external_order_id,
+                        ]
+                    );
                 }
 
                 $supportsBundleSnapshots = Schema::hasColumn('invoice_items', 'bundle_components_snapshot');

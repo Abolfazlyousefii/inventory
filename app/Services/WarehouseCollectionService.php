@@ -24,6 +24,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice->assertNotCancelled();
 
             if ($invoice->status === Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL) {
@@ -48,6 +49,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice->assertNotCancelled();
             $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED]);
             return $this->mark($invoice, Invoice::STATUS_COLLECTING, [
@@ -61,6 +63,7 @@ class WarehouseCollectionService
     {
         return DB::transaction(function () use ($invoice, $user, $note) {
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice->assertNotCancelled();
             $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
             return $this->mark($invoice, Invoice::STATUS_READY_TO_SHIP, [
@@ -81,6 +84,7 @@ class WarehouseCollectionService
         $webhookPayload = null;
 
         $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $note, $canEditPrices, $reason, $openedAt, &$webhookPayload) {
+            app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice = Invoice::query()->with(['payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertNotCancelled();
             $lockedItems = InvoiceItem::query()->with(['product', 'variant'])->where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
@@ -324,6 +328,7 @@ class WarehouseCollectionService
         $webhookPayload = null;
 
         $updatedInvoice = DB::transaction(function () use ($invoice, $items, $user, $canEditPrices, $reason, $note, $deferLedgerSync, &$webhookPayload) {
+            app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice = Invoice::query()
                 ->with(['items.product', 'items.variant', 'payments', 'customer'])
                 ->whereKey($invoice->id)

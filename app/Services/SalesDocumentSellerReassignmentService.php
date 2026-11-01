@@ -30,8 +30,8 @@ class SalesDocumentSellerReassignmentService
         if ($reason === '') {
             throw ValidationException::withMessages(['reason' => 'دلیل تغییر فروشنده الزامی است.']);
         }
-        if (! $newSeller->is_active || ! $newSeller->can_access_erp || ! $newSeller->is_seller) {
-            throw ValidationException::withMessages(['seller_id' => 'کاربر مقصد فروشنده فعال و مجاز ERP نیست.']);
+        if (! $newSeller->is_active || ! $newSeller->can_access_erp) {
+            throw ValidationException::withMessages(['seller_id' => 'کاربر مقصد باید فعال و مجاز به ERP باشد.']);
         }
 
         // seller_reassignment_audits.source is VARCHAR(20). Source values are

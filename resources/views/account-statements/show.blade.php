@@ -7,6 +7,7 @@
 @php
     $rial = fn ($value) => \App\Support\Currency::formatRial(abs((int) $value));
     $financeActor = auth()->user();
+    $canAddPayment = $financeActor && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.store');
     $canManagePayments = $financeActor && ($financeActor->hasAnyRole(['admin','Admin','Manager','manager','finance','Accountant']) || $financeActor->can('finance.approve')) && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.edit');
     $balanceText = fn ($value) => $value > 0 ? 'بدهکار' : ($value < 0 ? 'بستانکار' : 'تسویه');
 @endphp
@@ -14,7 +15,8 @@
     <header class="asd-toolbar">
         <div><span class="asd-eyebrow">دفتر حساب شخص</span><h1>{{ $customer->display_name ?: 'شخص' }}</h1><div class="asd-identity"><span>کد: {{ $customer->crm_customer_id ?: $customer->id }}</span><span dir="ltr">{{ $customer->mobile ?: '—' }}</span></div></div>
         <div class="asd-actions">
-            <button type="button" class="btn asd-primary" id="openPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#paymentModal">+ افزودن پرداخت</button>
+            @if($canAddPayment)<button type="button" class="btn asd-primary" id="openPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#paymentModal">+ افزودن پرداخت</button>@endif
+            @if($financeActor && \App\Support\AccountStatementAccess::readOnly($financeActor))<span class="badge bg-light text-secondary">فقط مشاهده</span>@endif
             @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#balanceAdjustmentModal">اصلاح مانده</button>@endif
             <a href="{{ route('account-statements.index') }}" class="btn asd-secondary">بازگشت</a>
         </div>
@@ -28,10 +30,10 @@
         <div class="asd-current {{ $netBalance > 0 ? 'asd-debt' : ($netBalance < 0 ? 'asd-credit' : '') }}"><span>ماندهٔ فعلی حساب</span><strong>{{ $rial($netBalance) }}</strong><small>{{ $balanceText($netBalance) }}</small></div>
     </section>
     <section class="asd-book">
-        <div class="asd-book-heading"><h2>گردش حساب</h2><span>به ترتیب ثبت در سامانه · مبالغ به ریال</span></div>
+        <div class="asd-book-heading"><h2>گردش حساب</h2><span>بر اساس تاریخ سند، جدیدترین ابتدا · مبالغ به ریال</span></div>
         <div class="asd-table-wrap">
             <table class="asd-table">
-                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از ثبت</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
+                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از سند</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
                 <tbody>
                 @forelse($ledgers as $ledger)
                     @php
@@ -47,7 +49,8 @@
                         if ($invoice) {
                             $reference = $invoice->uuid;
                             $description = 'فاکتور فروش';
-                            $url = route('vouchers.sales.show', $invoice->uuid);
+                            $url = route(\App\Support\AccountStatementAccess::readOnly(auth()->user())
+                                ? 'account-statements.documents.invoices.show' : 'vouchers.sales.show', $invoice->uuid);
                             $invoiceCustomerName = trim((string) ($invoice->customer_name ?? ''));
                             if ($invoiceCustomerName === '') {
                                 $invoiceCustomerName = trim((string) ($invoice->customer?->display_name ?? ''));
@@ -97,7 +100,7 @@
                         </td>
                         <td class="asd-money" data-label="بدهکار">{{ $ledger->type === 'debit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-money" data-label="بستانکار">{{ $ledger->type === 'credit' ? $rial($ledger->amount) : '—' }}</td>
-                        <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از ثبت"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
+                        <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از سند"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
                         @if($canManagePayments)<td class="asd-operations" data-label="عملیات">@if($payment) @include('payments.manage-link', ['payment' => $payment, 'compactPaymentLink' => true]) @endif</td>@endif
                     </tr>
                 @empty
@@ -110,7 +113,7 @@
     </section>
     @include('account-statements.partials.balance-adjustment', ['collapseBalanceHistory' => true])
 </div>
-@include('payments.entry-modal', ['paymentModalId' => 'paymentModal', 'paymentAction' => route('account-statements.payments.store', $customer->id), 'paymentInvoiceOptions' => $paymentInvoiceOptions])
+@if($canAddPayment)@include('payments.entry-modal', ['paymentModalId' => 'paymentModal', 'paymentAction' => route('account-statements.payments.store', $customer->id), 'paymentInvoiceOptions' => $paymentInvoiceOptions])@endif
 @endsection
 
 @push('scripts')<script src="{{ asset('js/account-statement-display.js') }}?v=20261011" defer></script>@endpush

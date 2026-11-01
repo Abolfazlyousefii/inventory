@@ -16,7 +16,7 @@
 
           <div class="col-12">
             <label class="form-label">هزینه ارسال (ریال)</label>
-            <input type="number" min="0" name="price" class="form-control" value="{{ old('price', 0) }}" required>
+            <input data-rial type="text" inputmode="numeric" min="0" name="price" class="form-control" value="{{ old('price', 0) }}" required>
           </div>
 
           <div class="col-12 d-grid mt-2">
@@ -58,8 +58,8 @@
 				                  value="{{ $method->name }}"
 				                  required
 		                  >
-		                  <input
-				                  type="number"
+		                  <input data-rial
+				                  type="text" inputmode="numeric"
 				                  min="0"
 				                  name="price"
 				                  class="form-control shipping-method-price"

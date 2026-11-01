@@ -23,6 +23,7 @@ class WarehouseShippingController extends Controller
             ->where('status', Invoice::STATUS_READY_TO_SHIP);
 
         $summary = [
+            'incoming_count' => $this->incomingQuery()->count(),
             'ready_count' => (clone $invoicesQuery)->count(),
             'shipped_today' => Invoice::query()
                 ->where('status', Invoice::STATUS_SHIPPED)
@@ -42,6 +43,40 @@ class WarehouseShippingController extends Controller
             ->get(['id', 'name', 'price']);
 
         return view('warehouse.shipping.index', compact('invoices', 'shippingMethods', 'summary'));
+    }
+
+    private function incomingQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return Invoice::query()->whereIn('status', [
+            Invoice::STATUS_PENDING_COLLECTION,
+            Invoice::STATUS_WAREHOUSE_RECEIVED,
+            Invoice::STATUS_COLLECTING,
+        ])->whereNull('cancelled_at')->whereNull('shipped_at');
+    }
+
+    public function incoming(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate(['page' => ['sometimes', 'integer', 'min:1']]);
+        $invoices = $this->incomingQuery()->orderBy('id')->paginate(20, [
+            'id', 'uuid', 'customer_name', 'customer_address', 'status',
+        ]);
+
+        return response()->json([
+            'data' => $invoices->getCollection()->map(fn (Invoice $invoice) => [
+                'uuid' => $invoice->uuid,
+                'customer_name' => trim((string) $invoice->customer_name) ?: 'مشتری بدون نام',
+                'status' => $invoice->status,
+                'status_label' => match ($invoice->status) {
+                    Invoice::STATUS_PENDING_COLLECTION => 'در انتظار جمع‌آوری',
+                    Invoice::STATUS_WAREHOUSE_RECEIVED => 'دریافت‌شده در انبار',
+                    default => 'در حال جمع‌آوری',
+                },
+                // Use the invoice snapshot; do not substitute a later customer address.
+                'address' => trim((string) $invoice->customer_address) ?: null,
+            ])->values(),
+            'total' => $invoices->total(),
+            'next_page' => $invoices->hasMorePages() ? $invoices->currentPage() + 1 : null,
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     public function ship(Request $request, string $uuid): RedirectResponse

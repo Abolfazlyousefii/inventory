@@ -8,7 +8,7 @@
     $statuses = ['draft'=>'پیش‌نویس','finalized'=>'اعمال‌شده','cancelled'=>'لغوشده'];
 @endphp
 <div class="stocktake-archive" dir="rtl">
-    <header class="sa-header"><div class="sa-heading"><span class="sa-icon" aria-hidden="true">▤</span><div><span class="sa-eyebrow">کنترل و تطبیق موجودی انبار</span><h1>آرشیو انبارگردانی</h1><p>سوابق شمارش و تغییرات موجودی کالاها</p></div></div><a class="btn btn-primary" href="{{ route('stock-count-documents.create') }}">+ ثبت سند انبارگردانی محصولی</a></header>
+    <header class="sa-header"><div class="sa-heading"><span class="sa-icon" aria-hidden="true">▤</span><div><span class="sa-eyebrow">کنترل و تطبیق موجودی انبار</span><h1>آرشیو انبارگردانی</h1><p>سوابق شمارش و تغییرات موجودی کالاها</p></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-outline-primary" href="{{ route('warehouse.stock-flow.index') }}">موجودی در جریان / چاپ گزارش</a><a class="btn btn-primary" href="{{ route('stock-count-documents.create') }}">+ ثبت سند انبارگردانی محصولی</a></div></header>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
     <div class="sa-stats">

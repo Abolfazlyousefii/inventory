@@ -36,6 +36,9 @@ class PreinvoiceDraftReservationService
         $scope = array_values(array_unique(array_map('intval', $scopeProductIds ?? [])));
 
         return ReservationSideEffects::transaction(function () use ($token, $userId, $desired, $isInPerson, $preinvoiceUuid, $scope) {
+            $freeze=app(InventoryCountFreezeService::class);
+            $freeze->fence();
+            $desired=array_filter($desired,fn($row)=>!$freeze->blocked((int)$row['product_id']));
             // A stable row exists even for the first request for an empty token.
             $user = User::query()->whereKey($userId)->lockForUpdate()->firstOrFail();
             // Submission releases the old temporary rows and creates separate

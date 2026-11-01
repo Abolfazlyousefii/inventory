@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\StockCountDocument;
 use App\Exceptions\StockCountFinalizeValidationException;
 use App\Services\StockCountDocumentService;
+use App\Services\WarehouseStockFlowReportService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -61,11 +62,200 @@ class StocktakeController extends Controller
         return view('stocktake.form', ['mode'=>'create','document'=>null,'centralWarehouse'=>$this->service->centralWarehouse(),'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get()]);
     }
 
+    /**
+     * Category-wide counting workspace. No stock writes are performed here:
+     * each product gets its own existing draft document upon explicit save.
+     */
+    public function categoryWorkspace()
+    {
+        return view('stocktake.category-workspace', [
+            'rootCategories' => Category::query()
+                ->whereNull('parent_id')->orderBy('name')->get(['id','name']),
+        ]);
+    }
+
+    public function categoryVariants(
+        Request $request,
+        \App\Services\StocktakeCategoryWorkspaceService $browser
+    ) {
+        $validated = $request->validate([
+            'category_id' => ['required','integer','exists:categories,id'],
+            'after_id' => ['nullable','integer','min:0'],
+            'limit' => ['nullable','integer','min:1','max:100'],
+            'q' => ['nullable','string','max:80'],
+        ]);
+
+        return response()->json($browser->rows(
+            (int) $validated['category_id'],
+            (int) ($validated['after_id'] ?? 0),
+            (int) ($validated['limit'] ?? \App\Services\StocktakeCategoryWorkspaceService::PAGE_SIZE),
+            trim((string) ($validated['q'] ?? '')),
+        ))->header('Cache-Control', 'private, no-store');
+    }
+
     public function store(Request $request)
     {
         $data = $this->validatedPayload($request, false);
         $document = $this->service->createProductDraft($data, (int) auth()->id());
+        if ($request->expectsJson()) {
+            return response()->json([
+                'document_id' => (int) $document->id,
+                'edit_url' => route('stock-count-documents.edit', $document),
+                'message' => 'پیش‌نویس محصول ذخیره شد؛ موجودی مرکزی تغییری نکرد.',
+            ], 201)->header('Cache-Control', 'private, no-store');
+        }
+
         return redirect()->route('stock-count-documents.edit', $document)->with('success', 'پیش‌نویس سند انبارگردانی محصولی ذخیره شد.');
+    }
+
+    public function storeCategoryDrafts(Request $request)
+    {
+        return app(\App\Services\StocktakeRequestService::class)->run($request, 'drafts', fn () => $this->performStoreCategoryDrafts($request));
+    }
+
+    public function requestStatus(Request $request, string $requestId)
+    {
+        return app(\App\Services\StocktakeRequestService::class)->status($request, $requestId);
+    }
+
+    private function performStoreCategoryDrafts(Request $request)
+    {
+        $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'document_date' => ['required', 'date'],
+            'products' => ['required', 'array', 'min:1', 'max:500'],
+            'products.*.product_id' => ['required', 'integer', 'distinct', 'exists:products,id'],
+            'products.*.document_id' => ['nullable', 'integer', 'distinct', 'exists:stock_count_documents,id'],
+            'products.*.expected_review_token' => ['nullable', 'string', 'size:64'],
+            'products.*.actual_quantities' => ['nullable', 'array', 'max:5000'],
+            'products.*.actual_quantities.*' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'products.*.notes' => ['nullable', 'array', 'max:5000'],
+            'products.*.notes.*' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $modern = $request->filled('request_id') || $request->hasHeader('Idempotency-Key');
+        $documents = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $modern) {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
+            $categoryIds = Category::selfAndDescendantIds((int) $data['category_id']);
+            $products = Product::query()->whereIn('id', array_column($data['products'], 'product_id'))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $result = [];
+            foreach ($data['products'] as $index => $entry) {
+                $product = $products->get((int) $entry['product_id']);
+                if (! $product || ! in_array((int) $product->category_id, $categoryIds, true)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "products.$index.product_id" => 'کالا خارج از دسته انتخابی است؛ هیچ پیش‌نویسی ذخیره نشد.',
+                    ]);
+                }
+                $variantIds = $product->variants()->pluck('id')->map(fn ($id) => (int) $id)->all();
+                foreach (['actual_quantities', 'notes'] as $field) {
+                    foreach (array_keys($entry[$field] ?? []) as $variantId) {
+                        if (! ctype_digit((string) $variantId) || ! in_array((int) $variantId, $variantIds, true)) {
+                            throw \Illuminate\Validation\ValidationException::withMessages([
+                                "products.$index.$field" => 'تنوع واردشده متعلق به این کالا نیست.',
+                            ]);
+                        }
+                    }
+                }
+                $payload = $entry + ['document_date' => $data['document_date'], 'description' => 'انبارگردانی از نمای دسته‌ای'];
+                if (! empty($entry['document_id'])) {
+                    $document = StockCountDocument::query()->lockForUpdate()->findOrFail($entry['document_id']);
+                    if ((int) $document->product_id !== (int) $product->id || $document->type !== 'product' || $document->status !== 'draft') {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            "products.$index.document_id" => 'سند باید پیش‌نویس همین محصول باشد.',
+                        ]);
+                    }
+                    if ($modern && ! hash_equals($this->service->reviewToken($document), (string) ($entry['expected_review_token'] ?? ''))) {
+                        abort(409, 'شمارش این محصول در صفحهٔ دیگری تغییر کرده است؛ قبل از ذخیره نسخهٔ جدید را بازیابی کنید.');
+                    }
+                    $document = $this->service->updateProductDraft($document, $payload, (int) auth()->id());
+                } else {
+                    $document = $this->service->createProductDraft($payload, (int) auth()->id());
+                }
+                $result[] = [
+                    'product_id' => (int) $product->id, 'product_name' => $product->name,
+                    'document_id' => (int) $document->id, 'document_number' => $document->document_number,
+                    'edit_url' => route('stock-count-documents.edit', $document),
+                    'counted_count' => (int) $document->counted_count, 'variants_count' => (int) $document->variants_count,
+                    'total_before' => (int) $document->total_before, 'total_actual' => (int) $document->total_actual,
+                    'total_increase' => (int) $document->total_increase, 'total_decrease' => (int) $document->total_decrease,
+                    'review_token' => $this->service->reviewToken($document),
+                ];
+            }
+            return $result;
+        }, 3);
+
+        return response()->json(['documents' => $documents, 'message' => 'همه پیش‌نویس‌ها ذخیره شدند؛ خلاصه را بررسی و سپس ثبت نهایی یکجا را تأیید کنید.'])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function finalizeCategory(Request $request)
+    {
+        return app(\App\Services\StocktakeRequestService::class)->run($request, 'finalize', fn () => $this->performFinalizeCategory($request));
+    }
+
+    private function performFinalizeCategory(Request $request)
+    {
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'document_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'document_ids.*' => ['required', 'integer', 'distinct', 'exists:stock_count_documents,id'],
+            'review_tokens' => ['required', 'array', 'min:1', 'max:500'],
+            'review_tokens.*' => ['required', 'string', 'size:64'],
+        ]);
+
+        try {
+            $result = \App\Support\ReservationSideEffects::transaction(function () use ($data) {
+                $categories = Category::selfAndDescendantIds((int) $data['category_id']);
+                $documents = StockCountDocument::query()->whereIn('id', $data['document_ids'])
+                    ->with('product')->orderBy('id')->lockForUpdate()->get();
+                $productIds = [];
+                foreach ($documents as $document) {
+                    if ($document->status !== 'draft' || $document->type !== 'product'
+                        || ! $document->product || ! in_array((int) $document->product->category_id, $categories, true)
+                        || in_array((int) $document->product_id, $productIds, true)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'document_ids' => 'همه اسناد باید پیش‌نویس محصولات متفاوتِ همین دسته باشند؛ هیچ موجودی تغییر نکرد.',
+                        ]);
+                    }
+                    $productIds[] = (int) $document->product_id;
+                    $token = (string) ($data['review_tokens'][$document->id] ?? '');
+                    if ($token === '' || ! hash_equals($this->service->reviewToken($document), $token)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'review_tokens' => 'شمارش ذخیره‌شدهٔ «'.$document->product->name.'» پس از بررسی تغییر کرده است؛ پیش‌نویس‌ها را دوباره بررسی کنید. هیچ موجودی تغییر نکرد.',
+                        ]);
+                    }
+                }
+                if ($documents->count() !== count($data['document_ids'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['document_ids' => 'فهرست اسناد تغییر کرده است؛ دوباره بررسی کنید.']);
+                }
+                $result = [];
+                foreach ($documents as $document) {
+                    try {
+                        $finalized = $this->service->finalize($document, (int) auth()->id(), false);
+                    } catch (StockCountFinalizeValidationException $exception) {
+                        throw new StockCountFinalizeValidationException(
+                            'کالای «'.$document->product->name.'»: '.$exception->getMessage(),
+                            array_map(fn ($conflict) => $conflict + [
+                                'document_id' => (int) $document->id, 'product_name' => $document->product->name,
+                            ], $exception->conflicts()),
+                        );
+                    }
+                    $result[] = ['document_id' => (int) $finalized->id, 'product_id' => (int) $finalized->product_id,
+                        'view_url' => route('stock-count-documents.view', $finalized)];
+                }
+                return $result;
+            });
+        } catch (StockCountFinalizeValidationException $exception) {
+            return response()->json([
+                'message' => 'ثبت نهایی یکجا انجام نشد؛ هیچ‌کدام از اسناد اعمال نشدند.',
+                'errors' => ['finalize' => [$exception->getMessage()]], 'conflicts' => $exception->conflicts(),
+            ], 422)->header('Cache-Control', 'private, no-store');
+        }
+
+        return response()->json(['documents' => $result, 'message' => 'همهٔ اسناد بررسی‌شده یکجا نهایی شدند و موجودی اصلاح شد.'])
+            ->header('Cache-Control', 'private, no-store');
     }
 
     public function show(Request $request, StockCountDocument $stockCountDocument)
@@ -84,6 +274,8 @@ class StocktakeController extends Controller
 
     public function update(Request $request, StockCountDocument $stockCountDocument)
     {
+        $request->merge(['document_date' => $stockCountDocument->document_date?->format('Y-m-d')
+            ?? now('Asia/Tehran')->toDateString()]);
         $data = $this->validatedPayload($request, true);
         $updated = $this->service->updateProductDraft($stockCountDocument, $data, (int) auth()->id());
         return redirect()->route('stock-count-documents.edit', $updated)->with('success', 'پیش‌نویس ذخیره شد.');
@@ -91,8 +283,8 @@ class StocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
-        $request->validate(['confirm_empty_as_zero'=>['accepted']]);
-
+        $request->merge(['document_date' => $stockCountDocument->document_date?->format('Y-m-d')
+            ?? now('Asia/Tehran')->toDateString()]);
         try {
             $finalized = $this->service->finalize($stockCountDocument, (int) auth()->id(), true, $this->validatedPayload($request, true));
         } catch (StockCountFinalizeValidationException $exception) {
@@ -100,9 +292,11 @@ class StocktakeController extends Controller
                 return response()->json([
                     'message' => 'امکان ثبت نهایی سند وجود ندارد.',
                     'errors' => [
-                        'finalize' => ['موجودی واقعی، رزرو یا سهم سبد برخی تنوع‌ها نیازمند بازبینی است.'],
+
+                        'finalize' => [
+                            'امکان نهایی‌سازی انبارگردانی وجود ندارد. موجودی، رزرو فعال، سهم سبد، رزرو سایت، تنوع‌های کالا یا مقدار شمارش‌شده نیازمند بازبینی است. لطفاً مغایرت‌های مشخص‌شده را بررسی کنید.',
                         ],
-                    'conflicts' => $exception->conflicts(),
+                        'conflicts' => $exception->conflicts(),
                 ], 422);
             }
 
@@ -110,7 +304,7 @@ class StocktakeController extends Controller
                 ->back()
                 ->withInput()
                 ->withErrors([
-                    'finalize' => 'امکان ثبت نهایی سند وجود ندارد. موارد مشخص‌شده را اصلاح کنید.',
+                    'finalize' => $exception->getMessage(),
                 ], 'stock_count_finalize')
                 ->with('stock_count_conflicts', $exception->conflicts());
         }
@@ -145,17 +339,39 @@ class StocktakeController extends Controller
     {
         $data = $request->validate(['page'=>['nullable','integer','min:1'],'limit'=>['nullable','integer','min:1','max:200'],'q'=>['nullable','string'],'document_id'=>['nullable','integer','exists:stock_count_documents,id']]);
         $document = !empty($data['document_id']) ? StockCountDocument::query()->find((int)$data['document_id']) : null;
-        return response()->json($this->service->variantsPage($product->id, $document, (int)($data['page'] ?? 1), (int)($data['limit'] ?? 100), $data['q'] ?? null));
+        $payload = $this->service->variantsPage($product->id, $document, (int)($data['page'] ?? 1), (int)($data['limit'] ?? 100), $data['q'] ?? null);
+
+        // Display-only figures. Do not alter expected_physical, active_reserved
+        // or actual_physical: final stock count calculations remain unchanged.
+        $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds(
+            array_column($payload['data']->all(), 'variant_id')
+        );
+        $payload['data'] = $payload['data']->map(static function (array $row) use ($queue): array {
+            $amount = $queue->get($row['variant_id']);
+            $pending = (int) ($amount->pending_collection ?? 0);
+            $received = (int) ($amount->warehouse_received ?? 0);
+            $collecting = (int) ($amount->collecting ?? 0);
+            return $row + [
+                'pending_collection' => $pending,
+                'warehouse_received' => $received,
+                'collecting' => $collecting,
+                'queue_total' => $pending + $received + $collecting,
+            ];
+        });
+
+        return response()->json($payload)->header('Cache-Control','private, no-store');
     }
 
     public function systemQuantity(Request $request) { abort(410, 'برای انبارگردانی محصولی از endpoint دریافت تنوع‌ها استفاده کنید.'); }
 
     private function validatedPayload(Request $request, bool $editing): array
     {
+        if (! $editing) $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
         return $request->validate([
             'product_id' => [$editing ? 'nullable' : 'required', 'integer', 'exists:products,id'],
             'document_date' => ['required', 'date'], 'description' => ['nullable','string','max:2000'],
-            'actual_quantities' => ['nullable','array'], 'actual_quantities.*' => ['nullable','integer','min:0'],
+            'expected_review_token' => ['sometimes', 'required', 'string', 'size:64'],
+            'actual_quantities' => ['nullable','array'], 'actual_quantities.*' => ['nullable','integer','min:0','max:2147483647'],
             'notes' => ['nullable','array'], 'notes.*' => ['nullable','string','max:1000'],
         ]);
     }

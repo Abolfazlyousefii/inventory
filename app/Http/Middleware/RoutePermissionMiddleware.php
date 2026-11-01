@@ -29,6 +29,7 @@ class RoutePermissionMiddleware
 
     public function handle(Request $request, Closure $next, ...$permissions): Response
     {
+        abort_if(\App\Support\WarehouseVoucherAccess::deniesRequest($request), 403, 'شما به این نوع حواله دسترسی ندارید.');
         $customerPermissions = [
             'customers.index' => 'customers.view',
             'customers.show' => 'customers.view',
@@ -88,7 +89,7 @@ class RoutePermissionMiddleware
             return redirect()->guest(route('login'));
         }
 
-        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+        if (method_exists($user, 'isAdministrator') && $user->isAdministrator()) {
             return $next($request);
         }
 

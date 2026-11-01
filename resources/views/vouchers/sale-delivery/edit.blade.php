@@ -38,7 +38,7 @@
                   <input type="hidden" name="items[{{ $loop->index }}][id]" value="{{ $item->id }}">
                 </td>
                 <td><input type="number" min="1" class="form-control" name="items[{{ $loop->index }}][quantity]" value="{{ (int) $item->quantity }}"></td>
-                <td><input type="number" min="0" class="form-control" name="items[{{ $loop->index }}][price]" value="{{ (int) $item->price }}"></td>
+                <td><input data-rial type="text" inputmode="numeric" min="0" class="form-control" name="items[{{ $loop->index }}][price]" value="{{ (int) $item->price }}"></td>
               </tr>
             @endforeach
           </tbody>

@@ -9,6 +9,8 @@ use Spatie\Permission\PermissionRegistrar;
 
 class PermissionCatalog
 {
+    /** Local revocation must survive roles arriving again from CRM. */
+    public const ADMINISTRATOR_SYNC_BLOCK_ROLE = 'local_no_administrator_sync';
     public static function superAdminRoles(): array
     {
         return ['super_admin', 'super-admin', 'Super Admin', 'مدیرکل', 'Owner'];
@@ -658,6 +660,14 @@ class PermissionCatalog
             return false;
         }
 
+        if ($user instanceof User && AccountStatementAccess::deniesPermission($user, $permission)) {
+            return false;
+        }
+        if ($permission === 'account_statements.view' && $user instanceof User
+            && PageAccessCatalog::userCan($user, 'page.finance.account_statements_readonly')) {
+            return true;
+        }
+
         if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(self::superAdminRoles())) {
             return true;
         }
@@ -1032,6 +1042,13 @@ class PermissionCatalog
             'finance.cheques.registered' => 'cheques.view',
             'finance.cheques.index' => 'cheques.view',
             'finance.reports.index' => 'finance.reports.view',
+            'finance.reports.receipts' => 'finance.reports.view',
+            'finance.reports.receipts.detail' => 'finance.reports.view',
+            'finance.reports.receipts.export' => 'finance.reports.view',
+            'finance.reports.top-products' => 'finance.reports.view',
+            'finance.reports.top-products.detail' => 'finance.reports.view',
+            'finance.reports.top-products.export' => 'finance.reports.view',
+            'finance.reports.top-products.image' => 'finance.reports.view',
             'finance.reports.sales-visitors' => 'finance.reports.view',
             'finance.reports.sales-visitors.commission-batches.store' => 'finance.reports.view',
             'finance.reports.sales-visitors.commission-batches.show' => 'finance.reports.view',

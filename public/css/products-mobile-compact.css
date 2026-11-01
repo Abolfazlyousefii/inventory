@@ -1,0 +1,32 @@
+@media(max-width:800px){
+ .products-shell .products-table tr{display:grid;grid-template-columns:64px minmax(0,1fr) minmax(0,1fr) 40px;grid-template-areas:"image name name select" "code category category category" "stock stock price price" "variants status actions actions";gap:6px 8px;padding:10px;margin:8px 0;background:var(--app-surface,#fff);align-items:center}
+ .products-shell .products-table td{width:auto;min-width:0;padding:0;font-size:11px;line-height:1.7}
+ .products-shell .products-table .image-col{grid-area:image;width:auto}
+ .products-shell .products-table .image-col>.desktop-label{display:none}
+ .products-shell .products-table .product-thumb{width:40px;height:40px}
+ .products-shell .products-table .select-col{grid-area:select;display:flex!important;width:40px;padding:0;align-self:start;justify-content:center}
+ .products-shell .product-select-label{display:flex;align-items:center;justify-content:center;min-width:40px;min-height:44px;margin:0;cursor:pointer}
+ .products-shell .product-select-label .desktop-label{display:none}
+ .products-shell .product-select{display:block!important;appearance:auto;position:static;opacity:1;visibility:visible;width:20px;height:20px;margin:0;flex-shrink:0}
+ .products-shell .products-table .product-name-cell{grid-area:name;overflow-wrap:anywhere}
+ .products-shell .product-name-cell>.desktop-label{display:none}
+ .products-shell .product-name-cell>strong{font-size:12px;line-height:1.7}
+ .products-shell .product-name-cell .muted{font-size:10px}
+ .products-shell .products-table .product-code-cell{grid-area:code}
+ .products-shell .product-code-cell>.desktop-label{display:none}
+ .products-shell .products-table .product-category-cell{grid-area:category;font-size:10px;color:var(--app-muted,#64748b);overflow-wrap:anywhere}
+ .products-shell .products-table .product-stock-cell{grid-area:stock}
+ .products-shell .products-table .product-price-cell{grid-area:price;text-align:end}
+ .products-shell .product-price-cell .price{white-space:normal;font-size:11px;color:var(--app-text,#12343d)}
+ .products-shell .products-table .product-variants-cell{grid-area:variants;font-size:10px;white-space:nowrap}
+ .products-shell .products-table .product-status-cell{grid-area:status}
+ .products-shell .product-status-cell>.desktop-label{display:none}
+ .products-shell .products-table .actions-col{grid-area:actions;width:auto;text-align:end}
+ .products-shell .actions-col .action-btn{width:auto;min-width:100px;min-height:40px;height:40px}
+ .products-shell .products-table .pill{font-size:10px;padding:2px 6px}
+ .products-shell .products-table .desktop-label{font-size:10px;margin-left:3px}
+ .products-shell .products-table tr:has(.product-select:checked){border-color:var(--app-success,#15866b);box-shadow:inset 3px 0 var(--app-success,#15866b)}
+ .products-shell .toolbar-sticky{position:static}
+ .products-shell .product-export-bar{position:static;gap:6px}
+ .products-shell .product-export-bar .btn{min-height:40px}
+}

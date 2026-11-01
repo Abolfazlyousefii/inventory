@@ -20,9 +20,12 @@
 					<h1 class="h4 fw-bold text-primary mb-2">صف ارسال بار</h1>
 					<p class="text-muted mb-0">فاکتورهای آماده ارسال که باید روش ارسال، هزینه و توضیحات ارسال برای آن‌ها ثبت شود.</p>
 				</div>
+				<div class="d-flex gap-2 align-items-start flex-wrap">
+				<button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#shippingIncomingModal">در راه ارسال <span class="badge text-bg-primary ms-1" id="shippingIncomingCount">{{ number_format($summary['incoming_count']) }}</span></button>
 				@canPermission('warehouse.collection.queue.view')
 				<a class="btn btn-outline-primary align-self-start" href="{{ route('vouchers.sales.queue') }}">بازگشت به صف جمع‌آوری</a>
 				@endcanPermission
+				</div>
 			</div>
 		</div>
 
@@ -78,7 +81,7 @@
 							<div class="modal-body">
 								<div class="alert alert-info small">هزینه ارسال در این مرحله فقط روی فاکتور ثبت می‌شود و فعلاً وارد حساب مشتری نمی‌شود.</div>
 								<div class="mb-3"><label class="form-label">روش ارسال</label><select name="shipping_method_id" class="form-select js-shipping-method" required><option value="">انتخاب روش ارسال...</option>@foreach($shippingMethods as $method)<option value="{{ $method->id }}" data-price="{{ (int) $method->price }}">{{ $method->name }} @if((int)$method->price > 0)- {{ $rial($method->price) }}@endif</option>@endforeach</select></div>
-								<div class="mb-3"><label class="form-label">هزینه ارسال</label><input name="shipping_cost" class="form-control js-shipping-cost" inputmode="numeric" value="0" placeholder="0"></div>
+								<div class="mb-3"><label class="form-label">هزینه ارسال</label><input data-rial name="shipping_cost" class="form-control js-shipping-cost" inputmode="numeric" value="0" placeholder="0"></div>
 								<div class="mb-0"><label class="form-label">توضیحات ارسال</label><textarea name="shipping_note" class="form-control" rows="4" maxlength="2000" placeholder="توضیحات اختیاری ارسال..."></textarea></div>
 							</div>
 							<div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button class="btn btn-primary">ثبت ارسال</button></div>
@@ -87,6 +90,7 @@
 			</div>
 		@endforeach
 	</div>
+	@include('warehouse.shipping.incoming')
 	<script>
 		document.querySelectorAll('.js-shipping-method').forEach((select)=>{select.addEventListener('change',()=>{const price=select.options[select.selectedIndex]?.dataset.price||'0';const input=select.closest('form')?.querySelector('.js-shipping-cost');if(input){input.value=Number(price||0).toLocaleString('en-US');}});});
 		document.querySelectorAll('.js-shipping-cost').forEach((input)=>{input.addEventListener('input',()=>{const raw=input.value.replace(/[۰-۹٠-٩]/g,(d)=>'۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩'.indexOf(d)%10).replace(/[^0-9]/g,'');input.value=raw ? Number(raw).toLocaleString('en-US') : '';});});

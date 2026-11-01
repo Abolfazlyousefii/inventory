@@ -6,10 +6,25 @@ use App\Models\User;
 
 class PageAccessCatalog
 {
+    /** Read-only selectors inherit access from the forms that embed them.
+     * These dependencies must never be added to write/confirm/delete routes.
+     */
+    private const FORM_LOOKUP_DEPENDENCIES = [
+        'vouchers.personnel.categories.children' => ['vouchers.section.create', 'vouchers.edit'],
+        'vouchers.personnel.products.search' => ['vouchers.section.create', 'vouchers.edit'],
+        'vouchers.personnel.products.variants' => ['vouchers.section.create', 'vouchers.edit'],
+    ];
+
     private const PAGE_ACTION_PERMISSIONS = [
+        'sales.preinvoice_finance_review' => ['preinvoices.all.view'],
+        'sales.preinvoice_warehouse_review' => ['preinvoices.all.view'],
         'warehouse.reservations' => [
             'warehouse_reservations.view',
             'warehouse_reservations.release',
+        ],
+        'assets' => [
+            'assets.documents.create', 'assets.documents.edit', 'assets.documents.confirm',
+            'assets.documents.cancel', 'assets.documents.print', 'assets.codes.search',
         ],
     ];
 
@@ -65,9 +80,12 @@ class PageAccessCatalog
         'commercial.commissions.settlements.payments.void' => ['commercial.commissions'],
         'products.index' => ['products'],
         'products.selected-export' => ['products'],
+        'products.selected-stock-print' => ['products'],
+        'products.selected-stock-export.start' => ['products'],
+        'products.selected-stock-export.batch' => ['products'],
         'products.data' => ['products'],
-        'products.create' => ['products'],
-        'products.store' => ['products'],
+        'products.create' => ['products.definition'],
+        'products.store' => ['products.definition'],
         'products.price-changes.index' => ['products.price_changes'],
         'products.price-changes.create' => ['products.price_changes'],
         'products.price-changes.categories.root' => ['products.price_changes'],
@@ -80,6 +98,7 @@ class PageAccessCatalog
         'products.price-changes.show' => ['products.price_changes'],
         'products.price-changes.apply' => ['products.price_changes'],
         'products.price-changes.cancel' => ['products.price_changes'],
+        'products.bundle-components' => ['products'],
         'products.variants' => ['products'],
         'products.edit' => ['products'],
         'products.update' => ['products'],
@@ -89,8 +108,8 @@ class PageAccessCatalog
         'products.bundle.policy' => ['products'],
         'products.bundle.pricing' => ['products'],
         'products.bundle.site-publication' => ['products'],
-        'products.bundle.assemble' => ['products', 'warehouse.stocks'],
-        'products.bundle.disassemble' => ['products', 'warehouse.stocks'],
+        'products.bundle.assemble' => ['warehouse.stocks'],
+        'products.bundle.disassemble' => ['warehouse.stocks'],
         'products.warehouse-stock' => ['products', 'warehouse.stocks'],
         'products.image' => ['products'],
         'products.destroy' => ['products'],
@@ -172,7 +191,13 @@ class PageAccessCatalog
         'vouchers.sales.queue.data' => ['warehouse.collection'],
         'vouchers.sales.shipped' => ['warehouse.shipping'],
         'warehouse.shipping.index' => ['warehouse.shipping'],
+        'warehouse.shipping.incoming' => ['warehouse.shipping'],
         'warehouse.shipping.ship' => ['warehouse.shipping'],
+        'warehouse.daily-sales.index' => ['warehouse.daily_sales'],
+        'warehouse.daily-sales.data' => ['warehouse.daily_sales'],
+        'warehouse.daily-sales.detail' => ['warehouse.daily_sales'],
+        'warehouse.daily-sales.export' => ['warehouse.daily_sales'],
+        'warehouse.daily-sales.store' => ['warehouse.daily_sales'],
         'warehouse-reservations.index' => ['warehouse.reservations'],
         'warehouse-reservations.health.export' => ['warehouse.reservations'],
         'warehouse-reservations.release' => ['warehouse.reservations'],
@@ -198,10 +223,17 @@ class PageAccessCatalog
         'vouchers.sales.update' => ['warehouse.collection'],
         'vouchers.sales.status' => ['warehouse.issues'],
         'vouchers.sales.print' => ['warehouse.issues'],
-        'finance.invoices.reapprove' => ['finance.payments'],
-        'finance.invoices.return-to-sales' => ['finance.payments'],
+        'finance.invoices.reapprove' => ['sales.preinvoice_finance_review'],
+        'finance.invoices.return-to-sales' => ['sales.preinvoice_finance_review'],
         'finance.cheques.registered' => ['finance.payments'],
         'finance.reports.index' => ['finance.accounts'],
+        'finance.reports.receipts' => ['finance.accounts'],
+        'finance.reports.receipts.detail' => ['finance.accounts'],
+        'finance.reports.receipts.export' => ['finance.accounts'],
+        'finance.reports.top-products' => ['finance.accounts'],
+        'finance.reports.top-products.detail' => ['finance.accounts'],
+        'finance.reports.top-products.export' => ['finance.accounts'],
+        'finance.reports.top-products.image' => ['finance.accounts'],
         'finance.reports.sales-visitors' => ['finance.accounts'],
         'finance.reports.sales-visitors.commission-batches.store' => ['finance.accounts'],
         'finance.reports.sales-visitors.commission-batches.show' => ['finance.accounts'],
@@ -362,10 +394,17 @@ class PageAccessCatalog
         'persons.update' => ['customers'],
         'suppliers.index' => ['suppliers'],
         'suppliers.store' => ['suppliers'],
+        'warehouse.stock-flow.index' => ['warehouse.stocktake'],
+        'warehouse.stock-flow.rows' => ['warehouse.stocktake'],
         'stocktake.index' => ['warehouse.stocktake'],
         'stock-count-documents.index' => ['warehouse.stocktake'],
+        'stock-count-documents.category-workspace' => ['warehouse.stocktake'],
+        'stock-count-documents.category-variants' => ['warehouse.stocktake'],
         'stock-count-documents.create' => ['warehouse.stocktake'],
         'stock-count-documents.store' => ['warehouse.stocktake'],
+        'stock-count-documents.category-drafts.store' => ['warehouse.stocktake'],
+        'stock-count-documents.category-finalize' => ['warehouse.stocktake'],
+        'stock-count-documents.request-status' => ['warehouse.stocktake'],
         'stock-count-documents.subcategories' => ['warehouse.stocktake'],
         'stock-count-documents.products' => ['warehouse.stocktake'],
         'stock-count-documents.variants' => ['warehouse.stocktake'],
@@ -492,6 +531,25 @@ class PageAccessCatalog
      * @var array<string, array<int, string>>
      */
     private const LINKED_ROUTE_ACCESS = [
+        'finance.account_statements_readonly' => [
+            'account-statements.index', 'account-statements.show',
+            'account-statements.documents.invoices.show', 'account-statements.documents.returns.show',
+            'account-statements.documents.payments.show',
+        ],
+        // Defining a product is separate from browsing the product catalogue.
+        'products.definition' => [
+            'products.bundle.search', 'products.variants',
+            'categories.quickStore', 'model-lists.quick-store',
+        ],
+        // Received-return corrections belong to the warehouse, never to warranty alone.
+        'warehouse.inbound_queue' => [
+            'vouchers.return-from-sale.show', 'vouchers.return-from-sale.applied.edit',
+            'vouchers.return-from-sale.applied.update', 'vouchers.return-from-sale.applied.void',
+            'vouchers.return-from-sale.customers.search', 'vouchers.return-from-sale.customers.invoices',
+            'vouchers.return-from-sale.invoices.items', 'vouchers.return-from-sale.categories.index',
+            'vouchers.return-from-sale.categories.products', 'vouchers.return-from-sale.products.search',
+            'vouchers.return-from-sale.products.variants', 'vouchers.return-from-sale.preview',
+        ],
         // Warehouse workflows need read-only access to the sale document.
         'warehouse.collection' => [
             'vouchers.sales.show',
@@ -556,6 +614,7 @@ class PageAccessCatalog
             'warehouse.reservations' => ['انبارداری', 'رزرو موجودی', ['warehouse.reservations']],
             'dashboard' => ['داشبورد', 'داشبورد', ['dashboard', 'notifications']],
             'products' => ['کالاهای آریا', 'کالاها', ['products']],
+            'products.definition' => ['کالاهای آریا', 'تعریف کالا', []],
             'products.price_changes' => ['کالاهای آریا', 'تغییر قیمت کالا', ['products.price_changes']],
             'categories' => ['پیکربندی', 'دسته‌بندی کالا', ['categories']],
             'brands_models' => ['پیکربندی', 'برندها و مدل‌ها', ['brands', 'model_lists']],
@@ -568,6 +627,7 @@ class PageAccessCatalog
             'warehouse.issues' => ['انبارداری', 'خروج کالا و حواله', ['stock_out', 'issues']],
             'warehouse.collection' => ['انبارداری', 'جمع‌آوری سفارش', ['warehouse.collection']],
             'warehouse.shipping' => ['انبارداری', 'ارسال سفارش', ['warehouse.shipping']],
+            'warehouse.daily_sales' => ['انبارداری', 'گزارش فروش روز انبار', []],
             'warehouse.inbound_queue' => ['انبارداری', 'صف ورودی موجودی', []],
             'warehouse.transfers' => ['انبارداری', 'انتقال بین انبار', ['transfers']],
             'warehouse.receipts' => ['انبارداری', 'رسید انبار', ['receipts']],
@@ -583,6 +643,7 @@ class PageAccessCatalog
             'suppliers' => ['بازرگانی و فروش', 'تأمین‌کنندگان', ['suppliers']],
             'finance.payments' => ['مالی', 'پرداخت‌ها و چک‌ها', ['payments', 'cheques']],
             'finance.accounts' => ['مالی', 'گردش حساب و گزارش مالی', ['account_statements', 'finance.reports']],
+            'finance.account_statements_readonly' => ['مالی', 'فقط مشاهده گردش حساب اشخاص', []],
             'finance.seller_sales_documents' => ['مالی', 'گزارش پورسانت فروشندگان', ['seller_sales_documents']],
             'reports' => ['گزارش‌ها', 'گزارش‌های مدیریتی', ['reports']],
             'tickets' => ['مدیریت سیستم', 'تیکت‌ها', ['tickets']],
@@ -599,6 +660,7 @@ class PageAccessCatalog
             $permission = 'page.'.$key;
             $legacy = collect(PermissionCatalog::groups())->flatMap(fn (array $permissions) => array_keys($permissions))
                 ->filter(fn (string $name) => self::matchesAnyPrefix($name, $legacyPrefixes))
+                ->reject(fn (string $name) => $key === 'products' && $name === 'products.create')
                 ->values()->all();
             $pageRoutes = collect(self::ROUTE_OWNERS)
                 ->filter(fn (array $owners) => in_array($key, $owners, true))
@@ -683,6 +745,9 @@ class PageAccessCatalog
 
     public static function pagePermissionForLegacy(string $legacyPermission): ?string
     {
+        if ($legacyPermission === 'products.create') {
+            return 'page.products.definition';
+        }
         if (in_array($legacyPermission, [
             'sales_returns.override_invoice_status',
             'sales_returns.override_destination',
@@ -759,7 +824,7 @@ class PageAccessCatalog
 
     public static function userCan(User $user, string $pagePermission): bool
     {
-        if ($user->isSuperAdmin()) {
+        if ($user->isAdministrator()) {
             return true;
         }
         $page = collect(self::pages())->firstWhere('permission', $pagePermission);
@@ -771,8 +836,12 @@ class PageAccessCatalog
 
     public static function userCanRoute(User $user, ?string $routeName): bool
     {
-        if ($user->isSuperAdmin()) {
+        if ($user->isAdministrator()) {
             return true;
+        }
+
+        if (AccountStatementAccess::deniesRoute($user, $routeName) || WarehouseVoucherAccess::deniesRoute($user, $routeName)) {
+            return false;
         }
 
         $actionPermission = $routeName
@@ -781,6 +850,12 @@ class PageAccessCatalog
 
         if ($actionPermission && $user->hasPermission($actionPermission)) {
             return true;
+        }
+
+        foreach (self::FORM_LOOKUP_DEPENDENCIES[$routeName ?? ''] ?? [] as $formRoute) {
+            if (self::userCanRoute($user, $formRoute)) {
+                return true;
+            }
         }
 
         return collect(self::permissionsForRoute($routeName))

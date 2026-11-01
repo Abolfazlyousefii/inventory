@@ -79,6 +79,7 @@ class ProductBundleController extends Controller
 
     public function recipe(Request $request, Product $product, ProductBundleService $service): RedirectResponse
     {
+        \App\Support\BundleFormPayload::merge($request, ['components']);
         // Optional empty editor rows are not recipe components.
         $request->merge(['components' => array_values(array_filter(
             (array) $request->input('components', []),
@@ -86,7 +87,7 @@ class ProductBundleController extends Controller
         ))]);
         $payload = $request->validate([
             'bundle_variant_id' => ['required', 'integer', 'exists:product_variants,id'],
-            'components' => ['required', 'array', 'min:1', 'max:100'],
+            'components' => ['required', 'array', 'min:1', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
             'components.*.variant_id' => ['required', 'integer', 'exists:product_variants,id'],
             'components.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
             'components.*.discount_type' => ['nullable', 'in:percent,fixed'],
@@ -234,12 +235,13 @@ class ProductBundleController extends Controller
     /** Allocate real, protected stock to the bundle. Not a virtual sales cap. */
     public function policy(Request $request, Product $product): RedirectResponse
     {
+        \App\Support\BundleFormPayload::merge($request, ['allocations', 'expected_allocations']);
         $data = $request->validate([
             'bundle_quantity_mode' => ['required', 'in:shared'],
             'bundle_shared_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
-            'allocations' => ['nullable', 'array', 'max:100'],
+            'allocations' => ['nullable', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
             'allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
-            'expected_allocations' => ['required', 'array', 'max:100'],
+            'expected_allocations' => ['required', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
             'expected_allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
         ]);
         if (!$product->is_bundle || $product->bundle_stock_mode !== 'automatic' || $product->variants()->count() !== 1) {
@@ -274,7 +276,7 @@ class ProductBundleController extends Controller
                     throw ValidationException::withMessages(['allocations' => 'موجودی این بسته تغییر کرده است. صفحه را تازه کنید و دوباره ثبت کنید.']);
                 }
             }
-            if (DB::table('site_stock_holds')
+            if (\Illuminate\Support\Facades\Schema::hasTable('site_stock_holds') && DB::table('site_stock_holds')
                 ->whereIn('status', ['held','payment_confirmed'])
                 ->whereRaw('JSON_CONTAINS_PATH(bundle_allocated_lines, \'one\', ?) = 1', ['$.' . '"' . $bundleVariantId . '"'])
                 ->exists()) {

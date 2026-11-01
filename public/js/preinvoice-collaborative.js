@@ -33,10 +33,10 @@
             if (!tr) {
                 tr=element('tr');tr.dataset.id=item.id;tr.append(element('td',item.name));
                 for (const field of ['quantity','price']) {
-                    const td=element('td'), input=element('input');input.type='number';input.min='1';input.max=field==='quantity'?'1000000':'1000000000000';input.className='form-control';input.dataset.field=field;
+                    const td=element('td'), input=element('input');input.type='number';input.min='1';input.max=field==='quantity'?'1000000':'1000000000000';input.className='form-control';input.dataset.field=field;if(field==='price')input.dataset.rial='';
                     input.addEventListener('input',()=>{input.dataset.dirty='1';});
                     input.addEventListener('change',()=>{
-                        const value=Number(input.value), expected=Number(input.dataset.base);
+                        const value=RialInput.number(input.value), expected=Number(input.dataset.base);
                         if (!Number.isSafeInteger(value)||value<1) {text('تعداد و قیمت باید عدد مثبت باشند.');return;}
                         enqueue({action:'set',item_id:item.id,field,value,expected},input);
                     });td.append(input);tr.append(td);
@@ -52,7 +52,7 @@
             for (const field of ['quantity','price']) {
                 const input=tr.querySelector(`[data-field="${field}"]`);
                 if(input.dataset.dirty!=='1') {input.value=item[field];input.dataset.base=item[field];}
-                else if(Number(input.value)===item[field]) {input.dataset.dirty='0';input.dataset.base=item[field];}
+                else if(RialInput.number(input.value)===item[field]) {input.dataset.dirty='0';input.dataset.base=item[field];}
             }
         }
         document.getElementById('live-total').textContent='جمع سند: '+Number(doc.total).toLocaleString('fa-IR')+' ریال';
@@ -76,7 +76,7 @@
                     }
                     if(result.conflict) {render(result.document);text(result.conflict);return;}
                 }
-                if(input && Number(input.value)===action.value) input.dataset.dirty='0';
+                if(input && RialInput.number(input.value)===action.value) input.dataset.dirty='0';
                 render(result.document);text('تغییر ذخیره شد.');
             } catch(error) {text(error.message);} finally {busy=false;}
         };

@@ -108,6 +108,9 @@ class User extends Authenticatable
 
     public function hasPermission(string $key): bool
     {
+        if (\App\Support\AccountStatementAccess::deniesPermission($this, $key)) {
+            return false;
+        }
         if ($this->hasAnyRole(PermissionCatalog::administratorRoles())) {
             return true;
         }
@@ -137,6 +140,12 @@ class User extends Authenticatable
         }
 
         return false;
+    }
+
+    /** Administrators have complete page access without acquiring Super Admin identity. */
+    public function isAdministrator(): bool
+    {
+        return $this->hasAnyRole(PermissionCatalog::administratorRoles());
     }
 
     public function isSuperAdmin(): bool

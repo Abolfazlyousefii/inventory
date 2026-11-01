@@ -48,6 +48,7 @@ class ProductBundleService
                 throw ValidationException::withMessages(['components' => 'برای تغییر ترکیب بسته خودکار ابتدا آن را از انتشار سایت خارج کنید. سفارش‌های در جریان را نیز بررسی کنید.']);
             }
             if ($bundle->product->is_bundle && $bundle->product->bundle_stock_mode === 'automatic'
+                && Schema::hasTable('site_stock_holds')
                 && DB::table('site_stock_holds')->whereIn('status', ['held', 'payment_confirmed'])
                     ->whereRaw('JSON_CONTAINS_PATH(bundle_allocated_lines, \'one\', ?) = 1', ['$.' . '"' . $bundleVariantId . '"'])
                     ->exists()) {

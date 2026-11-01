@@ -43,9 +43,9 @@ class StoreSalesReturnRequest extends FormRequest
             'items.*.return_quantity' => ['required', 'integer', 'min:1'],
             'items.*.item_condition' => ['required', Rule::in([SalesReturnDocumentItem::CONDITION_HEALTHY, SalesReturnDocumentItem::CONDITION_DAMAGED])],
             'items.*.destination_warehouse_id' => ['required', 'integer', Rule::exists('warehouses', 'id')->where(fn ($query) => $query->where('is_active', true)->whereIn('type', ['central', 'return']))],
-            'items.*.refund_unit_price' => ['nullable', 'integer', 'min:0'],
+            'items.*.refund_unit_price' => ['nullable', 'integer', 'min:0', 'max:1000000000000'],
             'items.*.purchase_price' => ['nullable', 'integer', 'min:0'],
-            'items.*.sell_price' => ['nullable', 'integer', 'min:0'],
+            'items.*.sell_price' => ['nullable', 'integer', 'min:0', 'max:1000000000000'],
             'items.*.new_product_payload' => ['nullable', 'array'],
             'items.*.new_product_payload.product_name' => ['nullable', 'string', 'max:255'],
             'items.*.new_product_payload.category_id' => ['nullable', 'exists:categories,id'],
@@ -107,8 +107,20 @@ class StoreSalesReturnRequest extends FormRequest
             if (blank($row['item_condition'] ?? null)) {
                 $row['item_condition'] = SalesReturnDocumentItem::CONDITION_HEALTHY;
             }
-            if (isset($row['refund_unit_price'])) {
-                $row['refund_unit_price'] = (int) preg_replace('/[^0-9]/', '', strtr((string) $row['refund_unit_price'], ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9', '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']));
+            foreach (['refund_unit_price', 'sell_price'] as $field) {
+                if (isset($row[$field])) {
+                    $value = trim(strtr((string) $row[$field], array_combine(
+                        preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
+                        str_split('01234567890123456789')
+                    )));
+                    // Keep invalid signs and decimals intact so integer validation rejects them.
+                    $value = preg_replace('/\s*ریال$/u', '', $value);
+                    if (preg_match('/^(?:[0-9]+|[0-9]{1,3}(?:[,٬][0-9]{3})+)$/u', $value)) {
+                        $digits = str_replace([',', '٬'], '', $value);
+                        $value = strlen($digits) <= 13 ? (int) $digits : $digits;
+                    }
+                    $row[$field] = $value === '' ? null : $value;
+                }
             }
             if (is_array($row['new_product_payload'] ?? null)) {
                 $row['new_product_payload'] = app(SalesReturnNewProductPayloadNormalizer::class)
@@ -183,7 +195,7 @@ class StoreSalesReturnRequest extends FormRequest
                     if ($src === SalesReturnDocumentItem::SOURCE_INVOICE_ITEM) {
                         $validator->errors()->add("items.$idx.item_source", 'در سازه‌حساب آیتم فاکتور داخلی مجاز نیست.');
                     }
-                    if ((int) ($row['refund_unit_price'] ?? 0) < 1) {
+                    if ($this->input('action') !== 'draft' && (int) ($row['refund_unit_price'] ?? 0) < 1) {
                         $validator->errors()->add("items.$idx.refund_unit_price", 'قیمت برگشتی مشتری الزامی است.');
                     }
                     if ($src === SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT && empty($row['product_variant_id'])) {

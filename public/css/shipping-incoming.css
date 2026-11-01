@@ -1,0 +1,23 @@
+#shippingIncomingModal .modal-content{background:var(--app-surface,#fff);color:var(--app-text,#193e55);border:1px solid var(--app-border,#dce6ef);border-radius:14px}
+#shippingIncomingModal .modal-dialog{max-width:620px}
+#shippingIncomingModal .modal-header,#shippingIncomingModal .modal-footer{border-color:var(--app-border,#dce6ef);padding:16px 20px}
+#shippingIncomingModal .modal-body{padding:14px 20px 8px}
+#shippingIncomingModal .modal-footer{justify-content:space-between;gap:12px;background:var(--app-surface-soft,#f8fafb)}
+#shippingIncomingModal .incoming-intro,#shippingIncomingModal .incoming-footer-note{font-size:12px;color:var(--app-muted,#657c90);line-height:1.9}
+#shippingIncomingModal .incoming-intro{margin:0 0 6px}
+#shippingIncomingState{font-size:13px;color:var(--app-muted,#657c90);line-height:1.9}
+#shippingIncomingState.is-error{color:var(--app-danger,#b42318)}
+#shippingIncomingModal .incoming-invoice{padding:16px 0;border-bottom:1px solid var(--app-border,#dce6ef)}
+#shippingIncomingModal .incoming-invoice:last-child{border-bottom:0}
+#shippingIncomingModal .incoming-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+#shippingIncomingModal .incoming-customer{font-size:14px;font-weight:700;overflow-wrap:anywhere}
+#shippingIncomingModal .incoming-number{font-size:12px;color:var(--app-muted,#657c90)}
+#shippingIncomingModal .incoming-number b{color:var(--app-text,#193e55);margin-inline-start:5px;direction:ltr;unicode-bidi:isolate}
+#shippingIncomingModal .incoming-status{display:inline-block;font-size:11px;color:var(--app-warning,#916020);background:var(--app-warning-soft,#fff6e7);border-radius:5px;padding:3px 7px;margin-top:7px}
+#shippingIncomingModal .incoming-status.is-waiting{color:var(--app-muted,#657c90);background:var(--app-surface-soft,#f8fafb)}
+#shippingIncomingModal .incoming-address{font-size:13px;line-height:1.95;margin:10px 0 0;overflow-wrap:anywhere;white-space:pre-line}
+#shippingIncomingModal .incoming-address.is-missing{color:var(--app-danger,#b42318)}
+#shippingIncomingModal .incoming-more{width:100%;margin:10px 0}
+#shippingIncomingModal [hidden]{display:none!important}
+html[data-app-theme="dark"] #shippingIncomingModal .btn-close{filter:invert(1)}
+@media(max-width:575px){#shippingIncomingModal .modal-dialog{margin:12px}#shippingIncomingModal .modal-header,#shippingIncomingModal .modal-footer{padding:14px}#shippingIncomingModal .modal-body{padding:12px 14px}#shippingIncomingModal .btn{min-height:44px}}

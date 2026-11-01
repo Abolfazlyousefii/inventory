@@ -35,6 +35,7 @@ final class ReservationSideEffects
         // choose one transaction as a deadlock victim. Laravel retries only
         // when the transaction is configured with more than one attempt.
         return DB::transaction(function () use ($callback): mixed {
+            app(\App\Services\InventoryCountFreezeService::class)->fence();
             $outermost = self::$affectedProducts === null;
             $previous = self::$affectedProducts;
             if ($outermost) {

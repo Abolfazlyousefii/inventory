@@ -84,7 +84,7 @@
             </select>
           </div>
           <div class="col-md-6"><label class="form-label fw-semibold" for="bundleDiscountValue" id="bundleDiscountValueLabel">درصد تخفیف (۰ تا ۹۹)</label>
-            <div class="input-group" dir="ltr"><input id="bundleDiscountValue" type="text" class="form-control" inputmode="numeric" autocomplete="off" value="{{ old('bundle_discount_value', 0) }}" aria-describedby="bundleDiscountHelp bundleDiscountCheck"><span class="input-group-text" id="bundleDiscountUnit">٪</span></div>
+            <div class="input-group" dir="ltr"><input data-rial data-rial-kind-source="#bundleDiscountType" id="bundleDiscountValue" type="text" class="form-control" inputmode="numeric" autocomplete="off" value="{{ old('bundle_discount_value', 0) }}" aria-describedby="bundleDiscountHelp bundleDiscountCheck"><span class="input-group-text" id="bundleDiscountUnit">٪</span></div>
             <input type="hidden" name="bundle_discount_value" id="bundleDiscountValueRaw" value="{{ old('bundle_discount_value', 0) }}">
             <div id="bundleDiscountCheck" class="small mt-1" role="status" aria-live="polite"></div>
             <div id="bundleDiscountHelp" class="form-text">مثال: ۲۰ یعنی ۲۰٪ کمتر از مجموع قیمت اقلام.</div>
@@ -94,13 +94,16 @@
           </div>
         </div>
         <input id="bundleSellPrice" type="hidden" name="sell_price" value="{{ old('sell_price') }}">
-        <div class="mt-3"><label for="bundleBuyPrice" class="form-label">هزینه خرید بسته (اختیاری)</label><input id="bundleBuyPrice" class="form-control" style="max-width:230px" type="text" inputmode="numeric" autocomplete="off" name="buy_price" value="{{ old('buy_price') }}"></div>
+        <div class="mt-3"><label for="bundleBuyPrice" class="form-label">هزینه خرید بسته (اختیاری)</label><input data-rial id="bundleBuyPrice" class="form-control" style="max-width:230px" type="text" inputmode="numeric" autocomplete="off" name="buy_price" value="{{ old('buy_price') }}"></div>
       </div>
       <div class="kit-preview mt-3"><strong>خلاصه نهایی</strong><div id="bundleCreateReview" class="small text-muted mt-2"></div></div>
       <p class="text-muted small mt-3 mb-0">این فرم موجودی جدید نمی‌سازد. هنگام تأیید، مقدار مشخص‌شده از موجودی آزاد هر تنوع برای بسته رزرو و از فروش تکی کنار گذاشته می‌شود.</p>
     </div>
   </div>
 </div>
+@once
+<script src="{{ asset('js/bundle-form-payload.js') }}?v=20261024"></script>
+@endonce
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const form=document.getElementById('productCreateForm'), section=document.getElementById('bundleCreateSection');
@@ -180,12 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const dType=document.createElement('select');dType.className='form-select form-select-sm';dType.name=`components[${idx}][discount_type]`;
       for(const [v,t] of [['percent','درصد ٪'],['fixed','ریال']]){const option=document.createElement('option');option.value=v;option.textContent=t;dType.append(option);}
       dType.value=i.discount_type||'percent';
-      const dValue=document.createElement('input');dValue.className='form-control form-control-sm';dValue.type='number';dValue.inputMode='numeric';dValue.min='0';dValue.step='1';dValue.required=true;
+      const dValue=document.createElement('input');dValue.className='form-control form-control-sm';dValue.type='text';dValue.dataset.rial='';discount.dataset.rialDiscount='';dValue.inputMode='numeric';dValue.min='0';dValue.step='1';dValue.required=true;
       dValue.name=`components[${idx}][discount_value]`;dValue.value=i.discount_value??0;dValue.dir='ltr';
       dValue.setAttribute('aria-label',`تخفیف هر عدد ${i.name}`);
       const setLimit=()=>{dValue.max=dType.value==='percent'?'99':String(Math.max(0,Number(i.sell_price)-1));};
       dType.addEventListener('change',()=>{i.discount_type=dType.value;i.discount_value=0;dValue.value='0';setLimit();updateTotals();});
-      dValue.addEventListener('input',()=>{i.discount_value=dValue.value;updateTotals();});
+      dValue.addEventListener('input',()=>{i.discount_value=RialInput.raw(dValue.value);updateTotals();});
       setLimit();discount.append(dLabel,dType,dValue);
       const rm=document.createElement('button');rm.className='btn btn-sm btn-outline-danger';rm.type='button';rm.textContent='حذف';rm.addEventListener('click',()=>{selected.delete(Number(i.id));refresh();});
       row.append(details,hidden,qWrap,discount,rm);list.append(row);
@@ -202,34 +205,115 @@ document.addEventListener('DOMContentLoaded', () => {
   let timer,controller,revision=0;
   let selectionControls=[];
   function hide(){results.hidden=true;search.setAttribute('aria-expanded','false');}
-  function info(s){selectionControls=[];results.replaceChildren();search.setAttribute('aria-expanded','true');const e=document.createElement('div');e.className='p-3 small text-muted';e.textContent=s;results.append(e);results.hidden=false;}
-  function syncSelection(){
-    for(const {box,items,status} of selectionControls){
-      const n=items.filter(i=>selected.has(Number(i.id))).length;
-      box.checked=n===items.length && n>0;box.indeterminate=n>0&&n<items.length;
-      if(status)status.textContent=`${money(n)} از ${money(items.length)} انتخاب شده`;
-    }
-  }
-  function selectItems(items,checked){
-    const additions=items.filter(i=>!selected.has(Number(i.id)));
-    if(checked && selected.size+additions.length>100){
-      alert('هر بسته حداکثر ۱۰۰ تنوع دارد. تعدادی از تنوع‌ها را جداگانه انتخاب کنید.');syncSelection();return;
-    }
-    for(const i of items){
-      const id=Number(i.id);
-      if(checked){if(!selected.has(id))selected.set(id,{...i,quantity:1,discount_type:'percent',discount_value:0});}
-      else selected.delete(id);
-    }
-    refresh();
-  }
-  function selectionLabel(items,labelText){
-    const label=document.createElement('label');label.className='kit-select';
-    const box=document.createElement('input');box.type='checkbox';box.setAttribute('aria-label',labelText);
-    box.addEventListener('change',()=>selectItems(items,box.checked));label.append(box);
-    const control={box,items};selectionControls.push(control);
-    return {label,control};
-  }
-  async function lookup(term){
+
+	function info(s) {
+		selectionControls = [];
+		results.replaceChildren();
+		search.setAttribute('aria-expanded', 'true');
+
+		const e = document.createElement('div');
+		e.className = 'p-3 small text-muted';
+		e.textContent = s;
+
+		results.append(e);
+		results.hidden = false;
+	}
+
+	function syncSelection() {
+		for (const { box, items, status } of selectionControls) {
+			const n = items.filter(i => selected.has(Number(i.id))).length;
+
+			box.checked = n === items.length && n > 0;
+			box.indeterminate = n > 0 && n < items.length;
+
+			if (status) {
+				status.textContent = `${money(n)} از ${money(items.length)} انتخاب شده`;
+			}
+		}
+	}
+
+// Matches the current BundleRecipe backend validation.
+	const maxComponents = 100;
+
+	function selectItems(items, checked) {
+		const additions = new Set(
+			items
+				.map(i => Number(i.id))
+				.filter(id => !selected.has(id))
+		);
+
+		if (checked && selected.size + additions.size > maxComponents) {
+			alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);
+			syncSelection();
+			return;
+		}
+
+		for (const i of items) {
+			const id = Number(i.id);
+
+			if (checked) {
+				if (!selected.has(id)) {
+					selected.set(id, {
+						...i,
+						quantity: 1,
+						discount_type: 'percent',
+						discount_value: 0
+					});
+				}
+			} else {
+				selected.delete(id);
+			}
+		}
+
+		refresh();
+	}
+
+	function choose(i) {
+		const id = Number(i.id);
+
+		if (!selected.has(id)) {
+			if (selected.size >= maxComponents) {
+				alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);
+				syncSelection();
+				return;
+			}
+
+			selected.set(id, {
+				...i,
+				quantity: 1,
+				discount_type: 'percent',
+				discount_value: 0
+			});
+
+			refresh();
+		}
+
+		hide();
+		search.value = '';
+		search.focus();
+	}
+
+	function selectionLabel(items, labelText) {
+		const label = document.createElement('label');
+		label.className = 'kit-select';
+
+		const box = document.createElement('input');
+		box.type = 'checkbox';
+		box.setAttribute('aria-label', labelText);
+
+		box.addEventListener('change', () => {
+			selectItems(items, box.checked);
+		});
+
+		label.append(box);
+
+		const control = { box, items };
+		selectionControls.push(control);
+
+		return { label, control };
+	}
+
+	async function lookup(term){
     const rev=++revision;if(controller)controller.abort();if(term.length<2){hide();return;}
     controller=new AbortController();info('در حال جستجو...');
     try{
@@ -283,6 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
   results.addEventListener('keydown',e=>{if(e.key==='Escape'){search.focus();hide();}});
   search.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});
   document.addEventListener('click',e=>{if(!section.contains(e.target))hide();});
+  window.BundleFormPayload.attach(form, ['components']);
   form.addEventListener('submit',e=>{
     if(!on())return;
     if(!selected.size){e.preventDefault();alert('حداقل یک محصول و تنوع انتخاب کنید.');search.focus();return;}

@@ -22,6 +22,7 @@
   }
 </style>
 <div class="container py-4">
+  @include('preinvoice.partials.count-freeze-notice', ['order' => $order])
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="mb-0">✅ مشاهده و تایید مالی پیش‌فاکتور</h4>
     <div class="d-flex gap-2 flex-wrap">
@@ -252,7 +253,7 @@
           <div class="row g-2">
             <div class="col-md-4">
               <label class="form-label">مبلغ</label>
-              <input type="text" inputmode="numeric" id="cashAmountInput" class="form-control money" placeholder="مثلاً 5,000,000">
+              <input data-rial type="text" inputmode="numeric" id="cashAmountInput" class="form-control money" placeholder="مثلاً 5,000,000">
             </div>
             <div class="col-md-4">
               <label class="form-label">تاریخ پرداخت</label>
@@ -273,7 +274,7 @@
           <div class="row g-2">
             <div class="col-md-6">
               <label class="form-label">مبلغ چک</label>
-              <input type="text" inputmode="numeric" id="chequeAmountInput" class="form-control money" placeholder="مثلاً 5,000,000">
+              <input data-rial type="text" inputmode="numeric" id="chequeAmountInput" class="form-control money" placeholder="مثلاً 5,000,000">
             </div>
             <div class="col-md-6">
               <label class="form-label">شماره سریال چک</label>
@@ -337,7 +338,7 @@
     const allTotalLabel = document.getElementById('allTotalLabel');
 
     function normalizeAmount(value) {
-      return (value || '').toString().replace(/[^\d]/g, '');
+      return RialInput.raw(value);
     }
 
     function div(a, b) { return ~~(a / b); }
@@ -493,7 +494,7 @@
 
     paymentTypeInput.addEventListener('change', togglePaymentTypeFields);
 
-    paymentModalEl.querySelectorAll('input.money').forEach((input) => input.addEventListener('input', () => {
+    paymentModalEl.querySelectorAll('input.money:not([data-rial])').forEach((input) => input.addEventListener('input', () => {
       const digits = input.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
         .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
       input.value = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');

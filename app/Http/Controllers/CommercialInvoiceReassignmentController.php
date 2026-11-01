@@ -247,18 +247,20 @@ class CommercialInvoiceReassignmentController extends Controller
 
     private function sellers(): Collection
     {
+        // Invoice ownership may be reassigned to any active ERP user, not only
+        // accounts that are entitled to sales commission.
         return User::query()
-            ->activeSellers()
+            ->activeErpUsers()
             ->orderBy('name')
             ->get(['id', 'name']);
     }
 
     private function activeSeller(int $sellerId): User
     {
-        $seller = User::query()->activeSellers()->find($sellerId);
+        $seller = User::query()->activeErpUsers()->find($sellerId);
         if (! $seller) {
             throw ValidationException::withMessages([
-                'seller_id' => 'فروشنده مقصد باید کاربر فعال و مجاز ERP باشد.',
+                'seller_id' => 'مقصد انتقال باید کاربر فعال و مجاز ERP باشد.',
             ]);
         }
 

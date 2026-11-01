@@ -26,7 +26,7 @@
                 <div class="col-12"><div class="payment-entry-balance"><span>مانده قابل پرداخت:</span><strong data-payment-remaining>@isset($paymentRemaining){{ \App\Support\Currency::formatRial($paymentRemaining) }}@else ابتدا فاکتور را انتخاب کنید @endisset</strong></div></div>
                 <div class="col-12"><p class="small text-muted mb-0">پرداخت بیش از مانده هم قابل ثبت است؛ مبلغ مازاد در گردش حساب مشتری بستانکار منظور می‌شود.</p></div>
                 <div class="col-md-6"><label class="form-label" for="{{ $paymentModalId }}-method">روش پرداخت</label><select name="method" id="{{ $paymentModalId }}-method" class="form-select" data-payment-method required><option value="cash" @selected($paymentOld('method', 'cash') === 'cash')>نقدی</option><option value="cheque" @selected($paymentOld('method') === 'cheque')>چکی</option></select></div>
-                <div class="col-md-6"><label class="form-label" for="{{ $paymentModalId }}-amount">مبلغ پرداخت (ریال)</label><input name="amount" id="{{ $paymentModalId }}-amount" type="text" inputmode="numeric" autocomplete="off" class="form-control" value="{{ $paymentOld('amount') }}" required></div>
+                <div class="col-md-6"><label class="form-label" for="{{ $paymentModalId }}-amount">مبلغ پرداخت (ریال)</label><input data-rial name="amount" id="{{ $paymentModalId }}-amount" type="text" inputmode="numeric" autocomplete="off" class="form-control" value="{{ $paymentOld('amount') }}" required></div>
                 <div class="col-md-6" data-payment-cash><label class="form-label">تاریخ پرداخت شمسی</label><input name="payment_date" type="text" class="form-control" required data-jdp data-jdp-only-date value="{{ $paymentOld('payment_date', \Morilog\Jalali\Jalalian::fromCarbon(now())->format('Y/m/d')) }}"></div>
                 <div class="col-md-6"><label class="form-label">نام بانک</label><input name="bank_name" class="form-control" maxlength="255" value="{{ $paymentOld('bank_name') }}"></div>
                 <div class="col-md-6" data-payment-cash><label class="form-label">شماره پیگیری / رسید</label><input name="tracking_number" class="form-control" maxlength="190" value="{{ $paymentOld('tracking_number') }}"></div>
@@ -45,4 +45,4 @@
         </div>
     </div></div>
 </div>
-<script src="{{ asset('js/payment-entry.js') }}?v=20261007" defer></script>
+<script src="{{ asset('js/payment-entry.js') }}?v=20261027a" defer></script>

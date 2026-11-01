@@ -143,17 +143,17 @@ it('saves a 195 row finance form through a complete packed payload without losin
     $order = financeValidationOrderFixture();
     $first = $order->items()->first();
     for ($n=1; $n<195; $n++) $order->items()->create(['product_id'=>$first->product_id,'variant_id'=>$first->variant_id,'quantity'=>1,'price'=>1000000,'line_total'=>1000000,'line_discount_amount'=>0]);
-    $order->items()->orderBy('id')->limit(2)->update(['price'=>0,'line_total'=>0]);
-    $order->update(['total_price'=>193000000]);
+    $order->items()->update(['price'=>100000000,'line_total'=>100000000]);
+    $order->update(['total_price'=>19500000000]);
     $order->refresh()->load('items');
     if (getenv('FINANCE_EDITOR_QA_RENDER')) {
         $html = $this->actingAs(financeValidationUser())->get(route('preinvoice.draft.finance.edit',$order->uuid))->assertOk()->getContent();
         file_put_contents(storage_path('app/stock-ledger-qa/finance-editor-195.html'),$html);
     }
-    $payload = ['finance_version'=>\App\Support\FinanceDocumentVersion::token($order), 'items'=>$order->items->map(fn($item)=>['id'=>$item->id,'quantity'=>1,'price'=>$item->price>0?$item->price:'۳,۵۱۰,۰۰۰'])->all(), 'product_discounts'=>[], 'invoice_discount_type'=>'none','invoice_discount_value'=>'','edit_reason'=>'اصلاح دو قیمت صفر در سند بزرگ','intent'=>'save'];
+    $payload = ['finance_version'=>\App\Support\FinanceDocumentVersion::token($order), 'items'=>$order->items->map(fn($item)=>['id'=>$item->id,'quantity'=>1,'price'=>$item->price])->all(), 'product_discounts'=>[['product_id'=>$first->product_id,'type'=>'percent','value'=>'۱۲٫۵']], 'invoice_discount_type'=>'amount','invoice_discount_value'=>'۶۲٬۵۰۰٬۰۰۰','edit_reason'=>'تخفیف سند بزرگ بدون تغییر اقلام','intent'=>'save'];
     $this->actingAs(financeValidationUser())->put(route('preinvoice.draft.finance.update',$order->uuid), ['finance_payload'=>json_encode($payload,JSON_UNESCAPED_UNICODE),'finance_payload_item_count'=>195])->assertSessionHasNoErrors();
     $order->refresh();
-    expect($order->items()->count())->toBe(195)->and($order->items()->where('price',0)->count())->toBe(0)->and((int)$order->total_price)->toBe(200020000)
+    expect($order->items()->count())->toBe(195)->and($order->items()->where('price',0)->count())->toBe(0)->and((int)$order->total_price)->toBe(17000000000)
         ->and($order->reviews()->where('action','finance_edited')->latest('id')->value('reason'))->toBe($payload['edit_reason']);
 });
 

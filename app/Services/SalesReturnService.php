@@ -2,10 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\SalesReturnDocumentRevision;
-use App\Models\WarehouseInboundReceipt;
-use App\Support\InboundReviewVersion;
-use Illuminate\Support\Str;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -15,8 +11,12 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\SalesReturnDocument;
 use App\Models\SalesReturnDocumentItem;
+use App\Models\SalesReturnDocumentRevision;
 use App\Models\Warehouse;
+use App\Models\WarehouseInboundReceipt;
+use App\Support\InboundReviewVersion;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class SalesReturnService
@@ -53,7 +53,10 @@ class SalesReturnService
     {
         return DB::transaction(function () use ($doc, $data, $actorId) {
             $locked = SalesReturnDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
-            if (! $locked->isDraft()) throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            if (! $locked->isDraft()) {
+                throw ValidationException::withMessages(['document' => 'وضعیت سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            }
+
             return $this->persistDraft($locked, $data, $actorId);
         });
     }
@@ -120,6 +123,7 @@ class SalesReturnService
                 $this->assertInternalReturnablesStillValid($doc);
             }
             if ($doc->isSazehHesab()) {
+                app(SalesReturnSellingPriceService::class)->validateForSubmission($doc, false);
                 $this->materializeNewProductGroups($doc);
                 $doc = $doc->fresh('items');
             }
@@ -177,15 +181,48 @@ class SalesReturnService
     {
         return DB::transaction(function () use ($doc, $actorId, $reason) {
             $locked = SalesReturnDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
-            if (! $locked->isDraft()) throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل لغو است؛ وضعیت سند تغییر کرده است.']);
+            if (! $locked->isDraft()) {
+                throw ValidationException::withMessages(['document' => 'فقط پیش‌نویس قابل لغو است؛ وضعیت سند تغییر کرده است.']);
+            }
             $locked->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => $reason]);
+
             return $locked;
         });
     }
 
-    public function apply(SalesReturnDocument $document, ?int $actorId): SalesReturnDocument
+    public function cancelPending(SalesReturnDocument $document, int $actorId, string $reason, string $version): SalesReturnDocument
     {
-        return DB::transaction(function () use ($document, $actorId) {
+        return DB::transaction(function () use ($document, $actorId, $reason, $version) {
+            $doc = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
+            if ($doc->isCancelled()) {
+                return $doc;
+            }
+            if (! $doc->isPendingWarehouse() || ! hash_equals(InboundReviewVersion::token($doc), $version)) {
+                throw ValidationException::withMessages(['document' => 'وضعیت یا نسخه سند تغییر کرده است؛ صفحه را تازه کنید.']);
+            }
+            Customer::whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
+            if ((int) (app(SalesReturnQueryService::class)->appliedHealthCheck($doc)['ledger_amount'] ?? 0) !== 0) {
+                throw ValidationException::withMessages(['document' => 'این سند قدیمی اثر مالی باز دارد؛ لغو بدون بررسی سابقه انجام نمی‌شود.']);
+            }
+            if (mb_strlen(trim($reason)) < 3 || mb_strlen($reason) > 1000) {
+                throw ValidationException::withMessages(['cancel_reason' => 'دلیل لغو را وارد کنید (۳ تا ۱۰۰۰ نویسه).']);
+            }
+            $receipts = WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $doc->id)->lockForUpdate()->get();
+            if ($receipts->count() !== 1 || $receipts->first()->status !== 'pending' || (int) $receipts->first()->accepted_quantity !== 0 || $receipts->first()->items()->whereNotNull('stock_movement_id')->exists()) {
+                throw ValidationException::withMessages(['document' => 'دریافت این سند تغییر کرده است؛ لغو بدون بررسی انبار مجاز نیست.']);
+            }
+            $before = ['document' => $doc->getAttributes(), 'items' => $doc->items->map->getAttributes()->all()];
+            $receipts->first()->update(['status' => 'cancelled']);
+            $doc->update(['status' => SalesReturnDocument::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'cancel_reason' => trim($reason), 'updated_by' => $actorId]);
+            SalesReturnDocumentRevision::create(['document_id' => $doc->id, 'action' => 'pending_cancel', 'token' => (string) Str::uuid(), 'reason' => trim($reason), 'before_snapshot' => $before, 'after_snapshot' => ['document' => $doc->getAttributes(), 'items' => $before['items']], 'previous_total' => $doc->total_refund_amount, 'new_total' => 0, 'created_by' => $actorId, 'created_at' => now()]);
+
+            return $doc->fresh('items');
+        });
+    }
+
+    public function apply(SalesReturnDocument $document, ?int $actorId, bool $requireSellingPrice = true): SalesReturnDocument
+    {
+        return DB::transaction(function () use ($document, $actorId, $requireSellingPrice) {
             $doc = SalesReturnDocument::query()->whereKey($document->id)->lockForUpdate()->firstOrFail();
             if ($doc->isApplied() || $doc->isPendingWarehouse()) {
                 return $doc;
@@ -204,6 +241,7 @@ class SalesReturnService
                 $this->assertInternalReturnablesStillValid($doc);
             }
             if ($doc->isSazehHesab()) {
+                app(SalesReturnSellingPriceService::class)->validateForSubmission($doc, $requireSellingPrice);
                 $this->materializeNewProductGroups($doc);
                 $doc->load('items');
             }
@@ -273,7 +311,7 @@ class SalesReturnService
             $attrs = ['item_source' => $source, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'return_quantity' => $qty, 'refund_unit_price' => $unit, 'refund_amount' => $qty * $unit];
             if ($source === SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT) {
                 $variant = ProductVariant::with('product')->findOrFail((int) $row['product_variant_id']);
-                $attrs += ['product_id' => $variant->product_id, 'product_variant_id' => $variant->id, 'product_name_snapshot' => $variant->product?->name, 'variant_name_snapshot' => $variant->variant_name, 'sku_snapshot' => $variant->variant_code, 'barcode_snapshot' => $variant->variant_code];
+                $attrs += ['sell_price' => (isset($row['sell_price']) && (int) $row['sell_price'] > 0) ? (int) $row['sell_price'] : null, 'product_id' => $variant->product_id, 'product_variant_id' => $variant->id, 'product_name_snapshot' => $variant->product?->name, 'variant_name_snapshot' => $variant->variant_name, 'sku_snapshot' => $variant->variant_code, 'barcode_snapshot' => $variant->variant_code];
             } else {
                 $payload = $this->normalizer->normalize($row['new_product_payload'] ?? []);
                 $attrs += ['product_name_snapshot' => $payload['name'] ?? $payload['product_name'] ?? null, 'variant_name_snapshot' => $payload['variant_name'] ?? ($payload['selected_variants'][0]['display_name'] ?? null), 'sku_snapshot' => $payload['selected_variants'][0]['preview_code'] ?? ($payload['sku'] ?? null), 'barcode_snapshot' => $payload['barcode'] ?? null, 'purchase_price' => (int) ($payload['purchase_price'] ?? $row['purchase_price'] ?? 0), 'sell_price' => (int) ($payload['sell_price'] ?? $row['sell_price'] ?? 0), 'new_product_payload' => $payload];

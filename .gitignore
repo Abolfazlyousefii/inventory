@@ -2,7 +2,6 @@
 .env
 .DS_Store
 
-*.sql
 *.zip
 .env.backup
 .env.production
@@ -25,3 +24,69 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Local configuration, generated Laravel files and review artifacts.
+.env
+.env.*
+!.env.example
+*.log
+error_log
+*.pem
+*.key
+*.p12
+*.zip
+*.sql.gz
+*.sqlite
+*.sqlite3
+/.rnd
+/laravel
+/node_modules/
+/vendor/
+/.idea/
+/.vscode/
+/.phpunit.cache/
+/.phpunit.result.cache
+/auth.json
+/public/hot
+/storage/debugbar/
+/storage/pail/
+/output/
+/outputs/
+/tmp/
+/Claude outputs/
+/test-results.xml
+/prototypes/
+/New Text Document.txt
+/CHANGED-FILES.txt
+/EXISTING-FILES-PATCH.diff
+/README-FA.txt
+/README-LOCAL-TEST.txt
+/UPLOAD-INSTRUCTIONS-FA.txt
+
+# Editor backups and superseded deployment copies.
+*.bak
+*.bak-*
+*.backup
+*.backup-*
+*.before-*
+*.orig
+
+*.repaired
+
+# Runtime uploads and machine-specific deployment artifacts.
+/public/uploads/
+/public/upload/
+/public/landing-preview/
+/storage/installed
+/.codex/
+/backup-db.bat
+/*.sql
+*.sql.gz
+*.sql.zip
+
+# Local assistant files, demos and root diagnostic notes.
+/.claude/
+/.superpowers/
+/public/reach-demo/
+/ariya-debug*/
+/*.txt

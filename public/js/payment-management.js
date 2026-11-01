@@ -13,7 +13,7 @@
     method.addEventListener('change', toggle); toggle();
     const amount = form.querySelector('[data-payment-amount]');
     const digits = value => value.replace(/[۰-۹]/g, c => '۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[,٬\s]/g, '');
-    amount.addEventListener('input', () => { const value = digits(amount.value); if (/^\d*$/.test(value)) amount.value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ','); });
+    amount.addEventListener('input', () => { if (amount.hasAttribute('data-rial')) return; const value = digits(amount.value); if (/^\d*$/.test(value)) amount.value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ','); });
     form.addEventListener('submit', () => { amount.value = digits(amount.value); form.querySelector('button[type="submit"]').disabled = true; });
     const deletion = document.querySelector('[data-payment-delete]');
     deletion?.addEventListener('submit', event => {

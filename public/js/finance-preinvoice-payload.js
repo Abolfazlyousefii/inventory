@@ -19,9 +19,12 @@
         const intent = button?.value === 'save_and_finalize' ? 'save_and_finalize' : 'save';
         if (intent === 'save_and_finalize' && finalize?.disabled) { event.preventDefault(); return; }
         try {
+            if (document.getElementById('financePaymentComposer') && !window.FinanceReviewPayments) {
+                throw new Error('Payment editor did not initialize.');
+            }
             const items = rows().map(row => ({id: Number(row.dataset.itemId), quantity: value(row, '.js-qty'), price: value(row, '.js-price')}));
             const groups = [...form.querySelectorAll('[data-product-discount-group]')].map(group => ({product_id: Number(group.dataset.productId), type: value(group, '[data-product-discount-type]'), value: value(group, '[data-product-discount-value]')}));
-            const payload = {finance_version: read('finance_version'), items, product_discounts: groups, invoice_discount_type: read('invoice_discount_type'), invoice_discount_value: read('invoice_discount_value'), edit_reason: read('edit_reason'), intent};
+            const payload = {finance_version: read('finance_version'), items, product_discounts: groups, invoice_discount_type: read('invoice_discount_type'), invoice_discount_value: read('invoice_discount_value'), edit_reason: read('edit_reason'), intent, payments: window.FinanceReviewPayments?.rows() ?? []};
             const hidden = (name, val) => { let field = form.querySelector(`input[name="${name}"]`); if (!field) { field = document.createElement('input'); field.type = 'hidden'; field.name = name; form.appendChild(field); } field.value = val; };
             hidden('finance_payload', JSON.stringify(payload));
             hidden('finance_payload_item_count', String(items.length));

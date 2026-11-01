@@ -18,6 +18,7 @@
         method.addEventListener('change', toggle); toggle();
         const amount = form.elements.amount;
         amount.addEventListener('input', () => {
+            if (amount.hasAttribute('data-rial')) return;
             const digits = amount.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
             amount.value = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         });

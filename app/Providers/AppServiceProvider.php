@@ -44,12 +44,14 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->scoped(\App\Services\InventoryCountFreezeService::class);
         $this->app->bind(OtpSender::class, OtpSmsSender::class);
         $this->app->scoped(SlowRequestDiagnostics::class, fn () => new SlowRequestDiagnostics());
     }
 
     public function boot(Router $router): void
     {
+        $this->loadRoutesFrom(base_path('routes/inventory-count-freeze.php'));
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
 
         if (! $this->app->runningInConsole() && (bool) config('slowdiag.enabled')) {
@@ -92,6 +94,7 @@ class AppServiceProvider extends ServiceProvider
         StockMovement::observe(ActivityObserver::class);
 
         Product::observe(ProductInventoryObserver::class);
+        foreach([Product::class,ProductVariant::class,InvoiceItem::class,PreinvoiceOrder::class]as$model)$model::observe(\App\Observers\InventoryCountFreezeObserver::class);
         ProductVariant::observe(ProductVariantSyncObserver::class);
         WarehouseStock::observe(WarehouseStockObserver::class);
         StockMovement::observe(StockMovementObserver::class);

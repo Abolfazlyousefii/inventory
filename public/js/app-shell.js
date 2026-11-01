@@ -432,16 +432,7 @@
     }
 
     function initMoneyInputs() {
-        const format = element => {
-            const raw = (element.value || '').replace(/[^\d]/g, '');
-            element.value = raw.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        };
-        document.querySelectorAll('input.money').forEach(format);
-        document.addEventListener('input', event => {
-            if (event.target?.classList.contains('money')) {
-                format(event.target);
-            }
-        });
+        window.RialInput?.install();
     }
 
     function initJalaliDatepickers() {

@@ -3,6 +3,7 @@
 namespace App\Services\Crm;
 
 use App\Models\User;
+use App\Support\PermissionCatalog;
 use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 
@@ -32,6 +33,12 @@ final class CrmRoleMapper
 
         $localRoles = $user->roles->pluck('name')
             ->reject(fn (string $role) => $managed->contains(mb_strtolower($role)));
+
+        if ($user->hasRole(PermissionCatalog::ADMINISTRATOR_SYNC_BLOCK_ROLE)) {
+            $isAdministrator = fn (string $role) => in_array($role, PermissionCatalog::administratorRoles(), true);
+            $existingRoleNames = $existingRoleNames->reject($isAdministrator);
+            $localRoles = $localRoles->reject($isAdministrator);
+        }
 
         $user->syncRoles($localRoles->merge($existingRoleNames)->unique()->values()->all());
 

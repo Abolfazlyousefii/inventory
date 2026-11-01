@@ -172,6 +172,12 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
     Route::post('/products/selected-export', ProductSelectionExportController::class)
         ->middleware('route.permission:products.export')->name('products.selected-export');
+    Route::post('/products/selected-stock-print', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'printPreview'])
+        ->middleware('route.permission:products.export')->name('products.selected-stock-print');
+    Route::post('/products/selected-stock-export/start', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'start'])
+        ->middleware('route.permission:products.export')->name('products.selected-stock-export.start');
+    Route::post('/products/selected-stock-export/batch', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'batch'])
+        ->middleware('route.permission:products.export')->name('products.selected-stock-export.batch');
     Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->name('products.store');
     Route::prefix('products/price-changes')->name('products.price-changes.')->group(function () {
@@ -189,6 +195,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/{document}/cancel', [PriceChangeDocumentController::class, 'cancel'])->name('cancel');
     });
 
+    Route::get('/products/{product}/bundle-components', [ProductController::class, 'bundleComponents'])->whereNumber('product')->name('products.bundle-components');
     Route::get('/products/{product}/variants', [ProductController::class, 'variants'])->whereNumber('product')->name('products.variants');
     Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->name('products.edit');
     Route::match(['put', 'patch'], '/products/{product}', [ProductController::class, 'update'])
@@ -307,6 +314,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/vouchers/sales/queue/data', [InvoiceController::class, 'salesQueueData'])->name('vouchers.sales.queue.data');
     Route::get('/vouchers/sales/shipped', [InvoiceController::class, 'salesShipped'])->name('vouchers.sales.shipped');
     Route::get('/warehouse/shipping', [WarehouseShippingController::class, 'index'])->name('warehouse.shipping.index');
+    Route::get('/warehouse/shipping/incoming', [WarehouseShippingController::class, 'incoming'])->name('warehouse.shipping.incoming');
     Route::post('/warehouse/shipping/{invoice:uuid}/ship', [WarehouseShippingController::class, 'ship'])->name('warehouse.shipping.ship');
     Route::prefix('warehouse/inbound-queue')->name('warehouse.inbound.')->group(function () {
         Route::get('/', [WarehouseInboundController::class, 'index'])->name('index');
@@ -578,10 +586,17 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/suppliers', [SupplierController::class, 'store'])->name('suppliers.store');
 
     // Stocktake / Stock Count Documents
+    Route::get('/inventory-stock-flow', [\App\Http\Controllers\WarehouseStockFlowController::class, 'index'])->name('warehouse.stock-flow.index');
+    Route::get('/inventory-stock-flow/rows', [\App\Http\Controllers\WarehouseStockFlowController::class, 'rows'])->name('warehouse.stock-flow.rows');
     Route::get('/stocktake', [StocktakeController::class, 'index'])->name('stocktake.index');
     Route::get('/stock-count-documents', [StocktakeController::class, 'index'])->name('stock-count-documents.index');
+    Route::get('/stock-count-documents/category-workspace', [StocktakeController::class, 'categoryWorkspace'])->name('stock-count-documents.category-workspace');
+    Route::get('/stock-count-documents/category-variants', [StocktakeController::class, 'categoryVariants'])->name('stock-count-documents.category-variants');
     Route::get('/stock-count-documents/create', [StocktakeController::class, 'create'])->name('stock-count-documents.create');
     Route::post('/stock-count-documents', [StocktakeController::class, 'store'])->name('stock-count-documents.store');
+    Route::post('/stock-count-documents/category-drafts', [StocktakeController::class, 'storeCategoryDrafts'])->name('stock-count-documents.category-drafts.store');
+    Route::post('/stock-count-documents/category-finalize', [StocktakeController::class, 'finalizeCategory'])->name('stock-count-documents.category-finalize');
+    Route::get('/stock-count-documents/requests/{requestId}', [StocktakeController::class, 'requestStatus'])->name('stock-count-documents.request-status');
     Route::get('/stock-count-documents/subcategories', [StocktakeController::class, 'subcategories'])->name('stock-count-documents.subcategories');
     Route::get('/stock-count-documents/products/search', [StocktakeController::class, 'products'])->name('stock-count-documents.products');
     Route::get('/stock-count-documents/products/{product}/variants', [StocktakeController::class, 'variants'])->name('stock-count-documents.variants');
@@ -767,3 +782,5 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
 
 require __DIR__ . '/auth.php';
 
+Route::get('test',function (){
+});

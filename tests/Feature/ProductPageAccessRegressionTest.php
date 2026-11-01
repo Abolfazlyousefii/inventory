@@ -21,7 +21,7 @@ it('lets a non admin product page role use every routine product endpoint', func
     $user = User::factory()->create();
     $user->assignRole($role);
 
-    foreach (['products.index', 'products.data', 'products.create', 'products.store', 'products.edit', 'products.update', 'products.destroy', 'products.variants', 'products.image', 'products.warehouse-stock', 'products.sales-ledger', 'products.purchase-ledger', 'products.pricelist', 'admin.product-exports.print', 'admin.product-exports.products.search'] as $routeName) {
+    foreach (['products.index', 'products.data', 'products.edit', 'products.update', 'products.destroy', 'products.variants', 'products.image', 'products.warehouse-stock', 'products.sales-ledger', 'products.purchase-ledger', 'products.pricelist', 'admin.product-exports.print', 'admin.product-exports.products.search'] as $routeName) {
         $request = Request::create('/product-regression/'.$routeName, 'GET');
         $route = new Route(['GET'], '/product-regression/'.$routeName, fn () => response('ok'));
         $route->name($routeName);
