@@ -2,7 +2,8 @@
 
 Implemented in the separate local `main` checkout at
 `E:/laragon/www/inventory-hall-main`. The original `dev` checkout is unchanged.
-Nothing has been pushed or deployed to the production host.
+This records the pre-release local checks. The later authorized production release
+is documented in `hall-management-release-2026-11-01.md`.
 
 ## Focused checks
 
@@ -74,4 +75,5 @@ classified or reproduced on the unchanged main baseline during this task.
 Raw full-suite output/JUnit remain ignored under `storage/logs/hall-full-suite.*`.
 After the completed report, the still-running console wrapper and the temporary
 synthetic browser server were stopped. The local review server on port 8001 is
-kept available. Production publication still awaits user approval.
+kept available. Production publication was subsequently authorized and completed;
+see the separate release record for the merged-baseline and live checks.

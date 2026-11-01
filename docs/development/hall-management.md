@@ -1,8 +1,8 @@
 # Hall management display
 
-The management-only display replaces `/hall` on local `main`. Customer tracking
-keeps its existing controller, view and assets. No production deployment has been
-performed. No inventory, invoice, payment or reservation writes are made by the
+The management-only display replaces `/hall` on `main` and was published with user
+approval on 2026-11-01; see `hall-management-release-2026-11-01.md`. Customer tracking
+keeps its existing controller, view and assets. No inventory, invoice, payment or reservation writes are made by the
 dashboard. One additive migration creates `hall_queue_transitions`, containing
 only document identity and queue-entry metadata. Existing document tables are not
 altered. The observer appends entries after commit without a queue worker; missing
@@ -65,7 +65,8 @@ They are not deployment files. Run the state builder with `reset`, `move`, `fail
 
 ## Release boundary
 
-User approval is still required before push/deployment. Recheck the dirty host
+Publication of this release was approved; see the release record. For further
+deployments, recheck the host
 working tree, compare only the changed files, take private backups and deploy
 atomically with a rollback manifest. Do not pull/reset the production checkout.
 Invalidate config/view caches using the host's existing safe deployment workflow.
