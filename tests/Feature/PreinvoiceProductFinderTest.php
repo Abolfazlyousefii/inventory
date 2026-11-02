@@ -14,6 +14,22 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     config(['app.key' => 'base64:'.base64_encode(str_repeat('a', 32))]);
+    foreach (['is_bundle', 'bundle_stock_mode'] as $column) {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('products', $column)) \Illuminate\Support\Facades\Schema::table('products', function ($t) use ($column) {
+            $column === 'is_bundle' ? $t->boolean($column)->default(false) : $t->string($column)->default('physical');
+        });
+    }
+    // These legacy bundle tables are present in production but absent from the recovered baseline.
+    if (! \Illuminate\Support\Facades\Schema::hasTable('product_bundle_components')) {
+        \Illuminate\Support\Facades\Schema::create('product_bundle_components', function ($t) {
+            $t->id(); $t->integer('bundle_variant_id'); $t->integer('component_variant_id'); $t->integer('quantity');
+        });
+    }
+    if (! \Illuminate\Support\Facades\Schema::hasTable('bundle_component_allocations')) {
+        \Illuminate\Support\Facades\Schema::create('bundle_component_allocations', function ($t) {
+            $t->id(); $t->integer('bundle_variant_id'); $t->integer('component_variant_id'); $t->integer('remaining');
+        });
+    }
 });
 
 function signInForProductFinder(bool $allowed = true): User
@@ -70,7 +86,7 @@ it('returns product-centric A14 model and variant matches with bounded previews 
 
     $response = $this->getJson(route('preinvoice.api.product-finder', ['q' => 'a 14', 'in_stock_only' => 1]));
     $response->assertOk()->assertJsonPath('data.0.id', $product->id)
-        ->assertJsonPath('data.0.matched_variants_count', 4)
+        ->assertJsonPath('data.0.matched_variants_count', 3)
         ->assertJsonCount(3, 'data.0.matched_variants')
         ->assertJsonPath('data.0.total_available_stock', 48);
     expect(array_keys($response->json('data.0')))->not->toContain('price', 'buy_price', 'margin', 'supplier');
@@ -183,4 +199,25 @@ it('uses one bootstrap bundle and stable modal lifecycle without double submit',
         ->toContain('cleanupOrphanedProductModalArtifacts')
         ->not->toContain("document.getElementById('groupPickerModal').style.display")
         ->not->toContain('new bootstrap.Modal');
+});
+
+
+it('requires stock on the matching model rather than another variant', function () {
+    signInForProductFinder();
+    $category = Category::query()->create(['name' => 'گارد']);
+    $wrong = finderProduct($category, 'گارد A12 نامرتبط', '8101', [
+        ['name' => 'A12', 'stock' => 0], ['name' => 'A13', 'stock' => 8],
+    ]);
+    $right = finderProduct($category, 'گارد موجود', '8102', [
+        ['name' => 'A12', 'stock' => 3], ['name' => 'A12 آبی', 'stock' => 0],
+        ['name' => 'A12 بسته', 'stock' => 5, 'sales_enabled' => false],
+    ]);
+    $this->getJson(route('preinvoice.api.product-finder', ['q' => 'A12']))
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $right->id)
+        ->assertJsonPath('data.0.picker_query', 'a12')->assertJsonCount(1, 'data.0.matched_variants');
+    $this->getJson(route('preinvoice.api.product-finder', ['q' => 'گارد A12']))
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $right->id)
+        ->assertJsonPath('data.0.picker_query', 'a12');
+    $ids = collect($this->getJson(route('preinvoice.api.product-finder', ['q' => 'A12', 'in_stock_only' => 0]))->json('data'))->pluck('id');
+    expect($ids)->toContain($wrong->id, $right->id);
 });

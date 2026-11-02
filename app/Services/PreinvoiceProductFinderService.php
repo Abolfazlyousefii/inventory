@@ -39,8 +39,22 @@ class PreinvoiceProductFinderService
             $query->whereHas('variants', fn (Builder $q) => $bundleStock->constrainAvailableVariants($q));
         }
         if ($term !== '') {
-            $query->where(fn (Builder $q) => $this->applyMatch($q, $term));
-            $query->withCount(['variants as matched_variants_count' => fn (Builder $q) => $this->applyVariantMatch($q, $term)]);
+            foreach (explode(' ', $term) as $token) {
+                $query->where(fn (Builder $q) => $this->applyMatch($q, $token, $inStockOnly));
+                if ($inStockOnly) {
+                    $query->where(function (Builder $q) use ($token, $bundleStock) {
+                        $q->whereDoesntHave('variants', fn (Builder $v) => $this->applyVariantMatch($v, $token))
+                            ->orWhereHas('variants', function (Builder $v) use ($token, $bundleStock) {
+                                $this->applyVariantMatch($v, $token);
+                                $bundleStock->constrainAvailableVariants($v);
+                            });
+                    });
+                }
+            }
+            $query->withCount(['variants as matched_variants_count' => function (Builder $q) use ($term, $inStockOnly, $bundleStock) {
+                $this->applyVariantMatch($q, $term);
+                if ($inStockOnly) $bundleStock->constrainAvailableVariants($q);
+            }]);
             $this->applyRanking($query, $term);
         } else {
             $query->orderBy('products.name')->orderBy('products.id');
@@ -48,7 +62,7 @@ class PreinvoiceProductFinderService
 
         $paginator = $query->paginate($perPage);
         $products = collect($paginator->items());
-        $matched = $this->matchedVariants($products->pluck('id'), $term);
+        $matched = $this->matchedVariants($products->pluck('id'), $term, $inStockOnly);
         $categoryPaths = $this->categoryPaths($products->pluck('category_id'));
         $bundleParts = \App\Support\BundleContentsDisplay::forProducts(
             $products->filter(fn ($p) => (bool) $p->is_bundle)->pluck('id')->all()
@@ -63,7 +77,7 @@ class PreinvoiceProductFinderService
             $bundleCapacity[(int) $bundle->id] = $available;
         }
         return [
-            'data' => $products->map(fn (Product $product) => $this->productPayload($product, $matched[(int) $product->id] ?? collect(), $categoryPaths, $bundleParts[(int) $product->id] ?? [], $bundleCapacity[(int) $product->id] ?? null))->values()->all(),
+            'data' => $products->map(fn (Product $product) => $this->productPayload($product, $matched[(int) $product->id] ?? collect(), $categoryPaths, $bundleParts[(int) $product->id] ?? [], $bundleCapacity[(int) $product->id] ?? null, $term))->values()->all(),
             'meta' => $this->paginationMeta($paginator),
             'has_filters' => true,
         ];
@@ -76,7 +90,7 @@ class PreinvoiceProductFinderService
             ->map(fn (Category $category) => ['id' => (int) $category->id, 'name' => $category->name])->all();
     }
 
-    private function applyMatch(Builder $query, string $term): void
+    private function applyMatch(Builder $query, string $term, bool $inStockOnly): void
     {
         $variants = ProductFinderSearchNormalizer::databaseVariants($term);
         $compact = ProductFinderSearchNormalizer::compact($term);
@@ -85,22 +99,16 @@ class PreinvoiceProductFinderService
             : null;
         foreach ($variants as $index => $variant) {
             $method = $index === 0 ? 'where' : 'orWhere';
-            $query->{$method}(function (Builder $q) use ($variant, $compact, $shortBarcode) {
+            $query->{$method}(function (Builder $q) use ($variant, $compact, $shortBarcode, $inStockOnly) {
                 $like = '%'.$variant.'%';
                 $q->when($shortBarcode !== null, fn (Builder $product) => $product->where('products.short_barcode', $shortBarcode)->orWhere('products.name', 'like', $like), fn (Builder $product) => $product->where('products.name', 'like', $like))
                     ->orWhere('products.code', 'like', $like)->orWhere('products.short_barcode', 'like', $like)
                     ->orWhere('products.sku', 'like', $like)->orWhere('products.barcode', 'like', $like)
                     ->orWhereRaw("LOWER(REPLACE(products.name, ' ', '')) LIKE ?", ['%'.$compact.'%'])
                     ->orWhereHas('category', fn (Builder $category) => $category->where('name', 'like', $like))
-                    ->orWhereHas('variants', function (Builder $variantQuery) use ($like, $compact) {
-                        $variantQuery->where('variant_name', 'like', $like)->orWhere('variety_name', 'like', $like)
-                            ->orWhere('variant_code', 'like', $like)->orWhere('variety_code', 'like', $like)
-                            ->orWhere('unique_key', 'like', $like)
-                            ->orWhereRaw("LOWER(REPLACE(product_variants.variant_name, ' ', '')) LIKE ?", ['%'.$compact.'%'])
-                            ->orWhereHas('modelList', fn (Builder $model) => $model->where('model_name', 'like', $like)
-                                ->orWhere('brand', 'like', $like)
-                                ->orWhere('code', 'like', $like)
-                                ->orWhereRaw("LOWER(REPLACE(model_lists.model_name, ' ', '')) LIKE ?", ['%'.$compact.'%']));
+                    ->orWhereHas('variants', function (Builder $variantQuery) use ($variant, $inStockOnly) {
+                        $this->applyVariantMatch($variantQuery, $variant);
+                        if ($inStockOnly) app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($variantQuery);
                     });
             });
         }
@@ -126,7 +134,7 @@ class PreinvoiceProductFinderService
             ->orderBy('products.name')->orderBy('products.id');
     }
 
-    private function matchedVariants(Collection $productIds, string $term): Collection
+    private function matchedVariants(Collection $productIds, string $term, bool $inStockOnly): Collection
     {
         if ($term === '' || $productIds->isEmpty()) {
             return collect();
@@ -144,6 +152,12 @@ class PreinvoiceProductFinderService
                     ->orWhereRaw("LOWER(REPLACE(pv.variant_name, ' ', '')) LIKE ?", ['%'.$compact.'%'])
                     ->orWhereRaw("LOWER(REPLACE(ml.model_name, ' ', '')) LIKE ?", ['%'.$compact.'%']);
             });
+
+        if ($inStockOnly) {
+            $available = \App\Models\ProductVariant::query()->select('product_variants.id');
+            app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($available);
+            $ranked->whereIn('pv.id', $available);
+        }
 
         return DB::query()->fromSub($ranked, 'matched')->where('preview_rank', '<=', 3)
             ->orderBy('product_id')->orderBy('preview_rank')->get()->groupBy('product_id');
@@ -163,7 +177,7 @@ class PreinvoiceProductFinderService
         });
     }
 
-    private function productPayload(Product $product, Collection $matched, Collection $paths, array $bundleParts = [], ?array $bundleAvailability = null): array
+    private function productPayload(Product $product, Collection $matched, Collection $paths, array $bundleParts = [], ?array $bundleAvailability = null, string $term = ''): array
     {
         return [
             'id' => (int) $product->id, 'name' => $product->name, 'title' => $product->name,
@@ -182,6 +196,13 @@ class PreinvoiceProductFinderService
             'sellable_variants_count' => (int) $product->sellable_variants_count,
             'total_available_stock' => $bundleAvailability !== null ? array_sum($bundleAvailability) : (int) ($product->total_available_stock ?? 0),
             'match_reason' => $matched->isNotEmpty() ? 'variant' : 'product',
+            'picker_query' => $matched->isNotEmpty() ? $term : implode(' ', array_filter(explode(' ', $term), function ($token) use ($product) {
+                $fields = [$product->name, $product->code, $product->short_barcode, $product->sku, $product->barcode, $product->category?->name];
+                foreach ($fields as $field) {
+                    if (str_contains(ProductFinderSearchNormalizer::compact((string) $field), ProductFinderSearchNormalizer::compact($token))) return false;
+                }
+                return true;
+            })),
         ];
     }
 

@@ -1570,7 +1570,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 						<button type="button" id="clearPickerSearchBtn" class="picker-search-clear" aria-label="پاک کردن جستجو">×</button>
 					</div>
 					<label class="stock-toggle" id="onlyInStockWrap">
-						<input type="checkbox" id="onlyInStockToggle">
+						<input type="checkbox" id="onlyInStockToggle" checked>
 						<span>فقط موجودها</span>
 					</label>
 				</div>
@@ -1695,7 +1695,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		let modalQuantities = new Map();
 		let modalGroupDiscountType = 'amount';
 		let modalGroupDiscountValue = 0;
-		let modalOnlyInStock = false;
+		let modalOnlyInStock = true;
 
 		let groupedSelections = {};
 		let motherAutoTimer = null;
@@ -3045,9 +3045,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             document.getElementById('pickerBundleContents').innerHTML = '';
 			document.getElementById('pickerTableWrap').classList.add('d-none');
 			document.getElementById('groupPickerRows').innerHTML = '';
-			document.getElementById('pickerSearchInput').value = '';
-			document.getElementById('onlyInStockToggle').checked = false;
-			modalOnlyInStock = false;
+			document.getElementById('pickerSearchInput').value = Number(selectedMotherProduct?.id) === activeProductId ? (selectedMotherProduct?._finder_query || '') : '';
+			document.getElementById('onlyInStockToggle').checked = true;
+			modalOnlyInStock = true;
 			groupPickerModal.show();
 			try {
 				const product = await getProductDetails(activeProductId);
@@ -3750,6 +3750,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				const product = event.detail?.product || {id: event.detail?.productId};
 				if (!product?.id) return;
 				product._finder_include_unavailable = true;
+                product._finder_query = product.picker_query || '';
 				window.PreinvoiceProductModalLifecycle.beginSwitch();
 				applyMotherProduct(product, true);
 			});

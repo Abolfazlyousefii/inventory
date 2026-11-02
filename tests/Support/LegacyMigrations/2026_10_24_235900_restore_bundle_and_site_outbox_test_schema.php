@@ -25,13 +25,13 @@ return new class extends Migration
         $this->guardTestDatabase();
 
         Schema::table('products', function (Blueprint $table): void {
-            $table->boolean('is_bundle')->default(false);
-            $table->string('bundle_stock_mode', 16)->default('physical');
-            $table->string('bundle_quantity_mode', 16)->default('custom');
-            $table->unsignedInteger('bundle_shared_remaining')->nullable();
-            $table->string('bundle_discount_type', 16)->nullable();
-            $table->unsignedBigInteger('bundle_discount_value')->nullable();
-            $table->boolean('bundle_site_auto_publish')->nullable();
+            if (! Schema::hasColumn('products', 'is_bundle')) $table->boolean('is_bundle')->default(false);
+            if (! Schema::hasColumn('products', 'bundle_stock_mode')) $table->string('bundle_stock_mode', 16)->default('physical');
+            if (! Schema::hasColumn('products', 'bundle_quantity_mode')) $table->string('bundle_quantity_mode', 16)->default('custom');
+            if (! Schema::hasColumn('products', 'bundle_shared_remaining')) $table->unsignedInteger('bundle_shared_remaining')->nullable();
+            if (! Schema::hasColumn('products', 'bundle_discount_type')) $table->string('bundle_discount_type', 16)->nullable();
+            if (! Schema::hasColumn('products', 'bundle_discount_value')) $table->unsignedBigInteger('bundle_discount_value')->nullable();
+            if (! Schema::hasColumn('products', 'bundle_site_auto_publish')) $table->boolean('bundle_site_auto_publish')->nullable();
 
             $table->index('is_bundle', 'products_is_bundle_index');
         });
