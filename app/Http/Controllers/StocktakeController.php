@@ -296,7 +296,8 @@ class StocktakeController extends Controller
                         'finalize' => [
                             'امکان نهایی‌سازی انبارگردانی وجود ندارد. موجودی، رزرو فعال، سهم سبد، رزرو سایت، تنوع‌های کالا یا مقدار شمارش‌شده نیازمند بازبینی است. لطفاً مغایرت‌های مشخص‌شده را بررسی کنید.',
                         ],
-                        'conflicts' => $exception->conflicts(),
+                    ],
+                    'conflicts' => $exception->conflicts(),
                 ], 422);
             }
 
