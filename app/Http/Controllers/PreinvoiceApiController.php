@@ -54,7 +54,12 @@ class PreinvoiceApiController extends Controller
             }
             return ['brand' => trim((string) $v->modelList?->brand), 'name' => $name ?: 'تنوع اصلی'];
         })->unique(fn ($m) => mb_strtolower($m['brand'].'|'.$m['name']))->values();
+        $structure = app(\App\Services\ProductVariantStructureService::class)->structure($product);
+        $designs = $structure['uses_designs']
+            ? $variants->pluck('variety_name')->map(fn ($name) => trim((string) $name))->filter()->unique()->values()
+            : collect();
         return response()->json(['data' => ['id' => $product->id, 'name' => $product->name,
+            'design_count' => $structure['uses_designs'] ? $structure['design_count'] : 0, 'designs' => $designs,
             'models' => $models, 'colors' => $variants->map(fn ($v) => trim((string) $v->color?->name))->filter()->unique()->values()]]);
     }
 

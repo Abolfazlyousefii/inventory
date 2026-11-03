@@ -28,7 +28,9 @@
             (data.models || []).forEach(model => {const brand = model.brand || 'مدل‌های موجود'; if (!groups.has(brand)) groups.set(brand, []); groups.get(brand).push(model.name);});
             body.innerHTML = `<div class="product-model-list__name">${escape(data.name)}</div>` +
                 (groups.size ? [...groups].map(([brand,names]) => `<h4>${escape(brand)}</h4><div class="product-model-list__models">${names.map(name => `<span dir="auto">${escape(name)}</span>`).join('')}</div>`).join('') : '<p>در حال حاضر مدل قابل سفارشی موجود نیست.</p>') +
-                '<h4>رنگ‌بندی این محصول</h4>' + ((data.colors || []).length ? `<div class="product-model-list__models">${data.colors.map(name => `<span>${escape(name)}</span>`).join('')}</div><p class="product-model-list__hint">رنگ‌های قابل سفارش هر مدل در انتخاب تنوع مشخص می‌شود.</p>` : '<p class="product-model-list__hint">رنگ‌بندی برای این کالا ثبت نشده است.</p>');
+                '<h4>طرح‌بندی و رنگ‌بندی</h4>' +
+                (Number(data.design_count) > 0 ? `<p class="product-model-list__hint">${Number(data.design_count).toLocaleString('fa-IR')} طرح تعریف‌شده برای این محصول</p>` : '') +
+                ((data.designs || []).length ? `<div class="product-model-list__models">${data.designs.map(name => `<span>${escape(name)}</span>`).join('')}</div>` : '') + ((data.colors || []).length ? `<div class="product-model-list__models">${data.colors.map(name => `<span>${escape(name)}</span>`).join('')}</div><p class="product-model-list__hint">طرح‌ها و رنگ‌های قابل سفارش هر مدل در انتخاب تنوع مشخص می‌شود.</p>` : ((data.designs || []).length || Number(data.design_count) > 0 ? '' : '<p class="product-model-list__hint">طرح‌بندی یا رنگ‌بندی برای این کالا ثبت نشده است.</p>'));
             select.disabled = !groups.size;
         } catch (error) {
             if (error.name === 'AbortError') return;

@@ -233,11 +233,17 @@ it('returns a read-only deduplicated model list of available sellable variants',
         ['name' => 'A13', 'stock' => 0],
         ['name' => 'A14', 'stock' => 4, 'sales_enabled' => false],
     ]);
+    $product->update(['models' => ['use_models' => true, 'use_designs' => true, 'model_list_ids' => [$model->id], 'design_count' => 3]]);
+    $available = $product->variants()->where('stock', '>', 0)->where('sales_enabled', true)->orderBy('id')->get();
+    $available[0]->update(['variety_name' => 'طرح مشکی']);
+    $available[1]->update(['variety_name' => 'طرح کرم']);
     $before = DB::table('product_variants')->where('product_id', $product->id)->get()->toJson();
     $this->getJson(route('preinvoice.api.product-finder.models', $product))
         ->assertOk()->assertJsonCount(1, 'data.models')->assertJsonPath('data.models.0.name', 'A12')
         ->assertJsonPath('data.models.0.brand', 'Samsung')->assertJsonCount(0, 'data.colors')
-        ->assertJsonMissingPath('data.price')->assertJsonMissingPath('data.stock');
+        ->assertJsonMissingPath('data.price')->assertJsonMissingPath('data.stock')
+        ->assertJsonPath('data.design_count', 3)->assertJsonCount(2, 'data.designs')
+        ->assertJsonFragment(['designs' => ['طرح مشکی', 'طرح کرم']]);
     expect(DB::table('product_variants')->where('product_id', $product->id)->get()->toJson())->toBe($before);
     $product->update(['is_sellable' => false]);
     $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertNotFound();
