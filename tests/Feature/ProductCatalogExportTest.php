@@ -21,6 +21,7 @@ class ProductCatalogExportTest extends TestCase
 
     private function signIn(): void
     {
+        $this->withoutVite();
         $this->withoutMiddleware(\App\Http\Middleware\RoutePermissionMiddleware::class);
         $role = Role::findOrCreate('products-viewer', 'web');
         $permission = Permission::findOrCreate('products.view', 'web');

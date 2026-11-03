@@ -17,6 +17,20 @@ class ProductSelectionExportTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_export_is_available_to_active_erp_accounts_without_granting_write_permissions(): void
+    {
+        $user = User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
+        $this->assertTrue($user->hasPermission('products.export'));
+        $this->assertTrue(\App\Support\PermissionCatalog::userHasPermission($user, 'products.export'));
+        $this->assertFalse($user->hasPermission('products.delete'));
+        $this->assertFalse($user->hasPermission('products.update'));
+        $user->can_access_erp = false;
+        $this->assertFalse($user->hasPermission('products.export'));
+        $user->can_access_erp = true;
+        $user->is_active = false;
+        $this->assertFalse($user->hasPermission('products.export'));
+    }
+
     private function signIn(bool $canExport): void
     {
         $role = Role::findOrCreate($canExport ? 'catalog-exporter' : 'catalog-viewer', 'web');
@@ -30,7 +44,7 @@ class ProductSelectionExportTest extends TestCase
         if ($canExport) {
             $role->givePermissionTo(Permission::findOrCreate('products.export', 'web'));
         }
-        $user = User::factory()->create();
+        $user = User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
         $user->assignRole($role);
         $this->actingAs($user);
     }
@@ -69,12 +83,15 @@ class ProductSelectionExportTest extends TestCase
         $this->assertStringContainsString('attachment;', $response->headers->get('Content-Disposition'));
     }
 
-    public function test_view_only_user_cannot_export_and_empty_selection_is_rejected(): void
+    public function test_view_only_erp_user_can_export_and_empty_selection_is_rejected(): void
     {
         $category = Category::create(['name' => 'آزمایش خروجی']);
         $product = Product::create(['name' => 'کالا', 'sku' => 'CAT-PDF-2', 'category_id' => $category->id, 'price' => 1000, 'stock' => 0]);
         $this->signIn(false);
-        $this->post(route('products.selected-export'), ['product_ids' => [$product->id]])->assertForbidden();
+        $this->mock(ProductSelectionPdfService::class, function ($mock) {
+            $mock->shouldReceive('render')->once()->andReturn('%PDF-test');
+        });
+        $this->post(route('products.selected-export'), ['product_ids' => [$product->id]])->assertOk();
 
         $this->signIn(true);
         $this->postJson(route('products.selected-export'), ['product_ids' => []])->assertUnprocessable();

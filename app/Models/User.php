@@ -111,6 +111,11 @@ class User extends Authenticatable
         if (\App\Support\AccountStatementAccess::deniesPermission($this, $key)) {
             return false;
         }
+        // Catalog export is a standard capability for every active ERP account.
+        // Page access and unrelated write/price permissions remain separate.
+        if ($key === 'products.export' && $this->is_active && $this->can_access_erp) {
+            return true;
+        }
         if ($this->hasAnyRole(PermissionCatalog::administratorRoles())) {
             return true;
         }
