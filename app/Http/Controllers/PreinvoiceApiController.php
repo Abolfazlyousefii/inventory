@@ -45,7 +45,14 @@ class PreinvoiceApiController extends Controller
         abort_unless($product->is_sellable, 404);
         app(InventoryCountFreezeService::class)->assertProduct((int) $product->id);
         $query = $product->variants()->with(['modelList', 'color'])->where('sell_price', '>', 0);
-        app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($query->getQuery());
+        if ($product->is_bundle && $product->bundle_stock_mode === 'automatic') {
+            app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($query->getQuery());
+        } else {
+            // Central warehouse quantity already excludes reservations. Do not subtract them twice.
+            $centralId = WarehouseStockService::centralWarehouseId();
+            $query->active()->where('sales_enabled', true)->whereHas('warehouseStocks', fn ($stock) => $stock
+                ->where('warehouse_id', $centralId)->where('quantity', '>', 0));
+        }
         $variants = $query->orderBy('variant_name')->get();
         $models = $variants->map(function ($v) use ($product) {
             $name = trim((string) $v->modelList?->model_name);
@@ -59,8 +66,8 @@ class PreinvoiceApiController extends Controller
             ? $variants->pluck('variety_name')->map(fn ($name) => trim((string) $name))->filter()->unique()->values()
             : collect();
         return response()->json(['data' => ['id' => $product->id, 'name' => $product->name,
-            'design_count' => $structure['uses_designs'] ? $structure['design_count'] : 0, 'designs' => $designs,
-            'models' => $models, 'colors' => $variants->map(fn ($v) => trim((string) $v->color?->name))->filter()->unique()->values()]]);
+            'design_count' => $designs->count(), 'designs' => $designs,
+            'models' => $models, 'colors' => $variants->map(fn ($v) => trim((string) $v->color?->name))->filter()->unique()->values()]])->header('Cache-Control', 'private, no-store');
     }
 
     public function products(Request $request)

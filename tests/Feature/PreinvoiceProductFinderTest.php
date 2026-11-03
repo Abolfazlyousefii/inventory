@@ -237,12 +237,16 @@ it('returns a read-only deduplicated model list of available sellable variants',
     $available = $product->variants()->where('stock', '>', 0)->where('sales_enabled', true)->orderBy('id')->get();
     $available[0]->update(['variety_name' => 'طرح مشکی']);
     $available[1]->update(['variety_name' => 'طرح کرم']);
+    foreach ($available as $variant) \App\Models\WarehouseStock::create([
+        'warehouse_id' => \App\Services\WarehouseStockService::centralWarehouseId(),
+        'product_id' => $product->id, 'product_variant_id' => $variant->id, 'quantity' => 2,
+    ]);
     $before = DB::table('product_variants')->where('product_id', $product->id)->get()->toJson();
     $this->getJson(route('preinvoice.api.product-finder.models', $product))
         ->assertOk()->assertJsonCount(1, 'data.models')->assertJsonPath('data.models.0.name', 'A12')
         ->assertJsonPath('data.models.0.brand', 'Samsung')->assertJsonCount(0, 'data.colors')
         ->assertJsonMissingPath('data.price')->assertJsonMissingPath('data.stock')
-        ->assertJsonPath('data.design_count', 3)->assertJsonCount(2, 'data.designs')
+        ->assertJsonPath('data.design_count', 2)->assertJsonCount(2, 'data.designs')
         ->assertJsonFragment(['designs' => ['طرح مشکی', 'طرح کرم']]);
     expect(DB::table('product_variants')->where('product_id', $product->id)->get()->toJson())->toBe($before);
     $product->update(['is_sellable' => false]);
@@ -255,4 +259,27 @@ it('protects model lists with the existing finder permission', function () {
     $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertUnauthorized();
     signInForProductFinder(false);
     $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertForbidden();
+});
+
+
+it('uses free central stock for model lists rather than reserved or stale projections', function () {
+    signInForProductFinder();
+    $category = Category::create(['name' => 'گارد']);
+    $product = finderProduct($category, 'گارد آزمایش رزرو', '8301', [
+        ['name' => 'رزروشده', 'stock' => 10],
+        ['name' => 'آزاد مرکزی', 'stock' => 0],
+        ['name' => 'فقط انبار دیگر', 'stock' => 8],
+    ]);
+    $variants = $product->variants()->orderBy('id')->get();
+    $central = \App\Services\WarehouseStockService::centralWarehouseId();
+    foreach ([0 => 0, 1 => 2] as $index => $quantity) \App\Models\WarehouseStock::create([
+        'warehouse_id' => $central, 'product_id' => $product->id,
+        'product_variant_id' => $variants[$index]->id, 'quantity' => $quantity,
+    ]);
+    $variants[0]->update(['reserved' => 10]);
+    $other = \App\Models\Warehouse::create(['name' => 'انبار دیگر', 'type' => 'personnel']);
+    \App\Models\WarehouseStock::create(['warehouse_id' => $other->id, 'product_id' => $product->id,
+        'product_variant_id' => $variants[2]->id, 'quantity' => 8]);
+    $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertOk()
+        ->assertJsonCount(1, 'data.models')->assertJsonPath('data.models.0.name', 'آزاد مرکزی');
 });
