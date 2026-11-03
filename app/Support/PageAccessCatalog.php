@@ -454,6 +454,7 @@ class PageAccessCatalog
         'preinvoice.print' => ['sales.preinvoices'],
         'preinvoice.api.product-finder' => ['sales.preinvoices'],
         'preinvoice.api.product-finder.categories' => ['sales.preinvoices'],
+        'preinvoice.api.product-finder.models' => ['sales.preinvoices'],
         'preinvoice.api.products' => ['sales.preinvoices'],
         'preinvoice.api.product' => ['sales.preinvoices'],
         'preinvoice.api.reservations.sync' => ['sales.preinvoices'],

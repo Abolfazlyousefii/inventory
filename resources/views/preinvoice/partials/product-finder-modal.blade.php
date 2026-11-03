@@ -1,8 +1,10 @@
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/pages/preinvoice-product-finder.css') }}?v={{ filemtime(public_path('css/pages/preinvoice-product-finder.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/pages/preinvoice-model-list.css') }}?v={{ filemtime(public_path('css/pages/preinvoice-model-list.css')) }}">
 @endpush
 
 <div class="modal fade product-finder" id="productFinderModal" tabindex="-1" aria-labelledby="productFinderTitle" aria-hidden="true"
+     data-models-url="{{ route('preinvoice.api.product-finder.models', ['product' => '__PRODUCT__'], absolute: false) }}"
      data-search-url="{{ route('preinvoice.api.product-finder', absolute: false) }}"
      data-categories-url="{{ route('preinvoice.api.product-finder.categories', absolute: false) }}">
     <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-sm-down">
@@ -42,10 +44,21 @@
                 <div id="productFinderResults" class="product-finder__results" aria-live="polite"></div>
                 <nav id="productFinderPagination" class="product-finder__pagination" aria-label="صفحه‌بندی نتایج"></nav>
             </div>
+            <section id="productModelList" class="product-model-list" hidden role="dialog" aria-modal="true" aria-labelledby="productModelListTitle">
+                <div class="product-model-list__panel">
+                    <div class="product-model-list__header"><h3 id="productModelListTitle" class="h6 mb-0">مدلیست محصول</h3><button type="button" class="btn-close" data-model-close aria-label="بستن مدلیست"></button></div>
+                    <div class="product-model-list__body" id="productModelListBody" aria-live="polite"></div>
+                    <div class="product-model-list__footer"><button type="button" class="btn btn-outline-secondary" data-model-close>بستن</button><button type="button" class="btn btn-primary" id="productModelListSelect" disabled>انتخاب کالا</button></div>
+                </div>
+            </section>
         </div>
     </div>
 </div>
 
 @push('scripts')
     <script src="{{ asset('js/pages/preinvoice-product-finder.js') }}?v={{ filemtime(public_path('js/pages/preinvoice-product-finder.js')) }}"></script>
+@endpush
+
+@push('scripts')
+<script src="{{ asset('js/pages/preinvoice-model-list.js') }}?v={{ filemtime(public_path('js/pages/preinvoice-model-list.js')) }}"></script>
 @endpush

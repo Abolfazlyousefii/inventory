@@ -60,7 +60,7 @@
             const priceHtml = product.price ? `<div class="finder-product__price">${formatPrice(product.price)}</div>` : '';
             const availableStock = stock(product);
             const stockHtml = `<div class="finder-product__stock${availableStock <= 0 ? ' is-empty' : ''}">${availableStock > 0 ? `موجودی: ${availableStock.toLocaleString('fa-IR')}` : 'ناموجود'}</div>`;
-            return `<article class="finder-product" data-product-id="${Number(product.id)}" role="button" tabindex="0" aria-label="${escapeHtml(product.name)}">${imageHtml}<div class="finder-product__info"><div class="finder-product__title">${escapeHtml(product.name)}</div>${priceHtml}${stockHtml}</div></article>`;
+            return `<article class="finder-product" data-product-id="${Number(product.id)}" role="button" tabindex="0" aria-label="${escapeHtml(product.name)}">${imageHtml}<div class="finder-product__info"><div class="finder-product__title">${escapeHtml(product.name)}</div>${priceHtml}${stockHtml}<button type="button" class="finder-product__model-list btn btn-sm btn-outline-secondary" data-model-list="${Number(product.id)}">مدلیست</button></div></article>`;
         }).join('');
     }
 
@@ -95,6 +95,8 @@
         finderModal.hide();
     }
 
+    modalEl.addEventListener('preinvoice:model-list-select', event => selectProduct(Number(event.detail.productId)));
+
     const schedule = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => search(1), 350); };
     query.addEventListener('input', schedule);
     query.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); clearTimeout(debounceTimer); search(1); } });
@@ -103,12 +105,14 @@
     subcategory.addEventListener('change', () => search(1));
     el('productFinderReset').addEventListener('click', () => { query.value='';category.value='';subcategory.innerHTML='<option value="">همه زیردسته‌ها</option>';subcategory.disabled=true;inStock.checked=true;controller?.abort();clearResults();setStatus('برای شروع حداقل دو حرف وارد کنید یا یک دسته‌بندی انتخاب کنید.');query.focus(); });
     results.addEventListener('click', event => {
+        if (event.target.closest('[data-model-list]')) return;
         const card = event.target.closest('[data-product-id]');
         if (!card) return;
         selectProduct(Number(card.dataset.productId));
     });
     results.addEventListener('keydown', event => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.target.closest('[data-model-list]')) return;
         const card = event.target.closest('[data-product-id]');
         if (!card) return;
         event.preventDefault();

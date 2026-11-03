@@ -221,3 +221,32 @@ it('requires stock on the matching model rather than another variant', function 
     $ids = collect($this->getJson(route('preinvoice.api.product-finder', ['q' => 'A12', 'in_stock_only' => 0]))->json('data'))->pluck('id');
     expect($ids)->toContain($wrong->id, $right->id);
 });
+
+
+it('returns a read-only deduplicated model list of available sellable variants', function () {
+    signInForProductFinder();
+    $category = Category::create(['name' => 'گارد']);
+    $model = ModelList::create(['model_name' => 'A12', 'brand' => 'Samsung', 'code' => 'SM-A12']);
+    $product = finderProduct($category, 'گارد سولید', '8201', [
+        ['name' => 'A12 مشکی', 'stock' => 4, 'model_id' => $model->id],
+        ['name' => 'A12 آبی', 'stock' => 3, 'model_id' => $model->id],
+        ['name' => 'A13', 'stock' => 0],
+        ['name' => 'A14', 'stock' => 4, 'sales_enabled' => false],
+    ]);
+    $before = DB::table('product_variants')->where('product_id', $product->id)->get()->toJson();
+    $this->getJson(route('preinvoice.api.product-finder.models', $product))
+        ->assertOk()->assertJsonCount(1, 'data.models')->assertJsonPath('data.models.0.name', 'A12')
+        ->assertJsonPath('data.models.0.brand', 'Samsung')->assertJsonCount(0, 'data.colors')
+        ->assertJsonMissingPath('data.price')->assertJsonMissingPath('data.stock');
+    expect(DB::table('product_variants')->where('product_id', $product->id)->get()->toJson())->toBe($before);
+    $product->update(['is_sellable' => false]);
+    $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertNotFound();
+});
+
+it('protects model lists with the existing finder permission', function () {
+    $category = Category::create(['name' => 'کالا']);
+    $product = finderProduct($category, 'نمونه', '8202', [['name'=>'مدل', 'stock'=>1]]);
+    $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertUnauthorized();
+    signInForProductFinder(false);
+    $this->getJson(route('preinvoice.api.product-finder.models', $product))->assertForbidden();
+});

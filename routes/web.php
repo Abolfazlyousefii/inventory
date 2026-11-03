@@ -659,6 +659,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/product-finder', [PreinvoiceApiController::class, 'productFinder'])->name('preinvoice.api.product-finder');
         Route::get('/product-finder/categories', [PreinvoiceApiController::class, 'productFinderCategories'])->name('preinvoice.api.product-finder.categories');
         Route::get('/products', [PreinvoiceApiController::class, 'products'])->name('preinvoice.api.products');
+        Route::get('/product-finder/models/{product}', [PreinvoiceApiController::class, 'productModelList'])->name('preinvoice.api.product-finder.models');
         Route::get('/products/{product}', [PreinvoiceApiController::class, 'product'])->name('preinvoice.api.product');
         Route::post('/reservations/sync', [PreinvoiceApiController::class, 'syncDraftReservation'])->name('preinvoice.api.reservations.sync');
         Route::post('/reservations/release', [PreinvoiceApiController::class, 'releaseDraftReservation'])->name('preinvoice.api.reservations.release');

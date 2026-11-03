@@ -40,6 +40,24 @@ class PreinvoiceApiController extends Controller
         return response()->json(['data' => $this->productFinderService->categories(isset($data['parent_id']) ? (int) $data['parent_id'] : null)]);
     }
 
+    public function productModelList(Product $product)
+    {
+        abort_unless($product->is_sellable, 404);
+        app(InventoryCountFreezeService::class)->assertProduct((int) $product->id);
+        $query = $product->variants()->with(['modelList', 'color'])->where('sell_price', '>', 0);
+        app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($query->getQuery());
+        $variants = $query->orderBy('variant_name')->get();
+        $models = $variants->map(function ($v) use ($product) {
+            $name = trim((string) $v->modelList?->model_name);
+            if ($name === '') {
+                $name = trim(preg_replace('/^'.preg_quote($product->name, '/').'\s*/iu', '', $v->variant_name ?: $v->variety_name));
+            }
+            return ['brand' => trim((string) $v->modelList?->brand), 'name' => $name ?: 'تنوع اصلی'];
+        })->unique(fn ($m) => mb_strtolower($m['brand'].'|'.$m['name']))->values();
+        return response()->json(['data' => ['id' => $product->id, 'name' => $product->name,
+            'models' => $models, 'colors' => $variants->map(fn ($v) => trim((string) $v->color?->name))->filter()->unique()->values()]]);
+    }
+
     public function products(Request $request)
     {
         $q = ProductFinderSearchNormalizer::normalize($request->query('q'));

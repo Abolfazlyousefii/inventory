@@ -1016,6 +1016,7 @@ class PermissionCatalog
             'api.customers.show' => 'customers.view',
             'preinvoice.api.product-finder' => 'preinvoices.create',
             'preinvoice.api.product-finder.categories' => 'preinvoices.create',
+        'preinvoice.api.product-finder.models' => 'preinvoices.create',
             'preinvoice.api.reservations.sync' => 'preinvoices.create',
             'preinvoice.api.reservations.release' => 'preinvoices.create',
             'customers.index' => 'customers.view',
