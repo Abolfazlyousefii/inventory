@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Warehouse;
+use App\Support\StockCountQuantityCalculator as Quantities;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -80,12 +81,20 @@ final class StocktakeCategoryWorkspaceService
             ->pluck('qty', 'product_variant_id');
 
         $reserved = app(ReservationQueryService::class)->quantitiesByVariant(variantIds: $ids);
+        // The same protected component and Site-hold ledgers used by product
+        // stocktake snapshots. Display only: no stock or reservation writes.
+        $protected = app(BundleComponentStocktakeService::class)->quantitiesByComponent($ids);
         $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds($ids);
 
-        $rows = $page->map(static function ($variant) use ($free, $reserved, $queue) {
+        $rows = $page->map(static function ($variant) use ($free, $reserved, $protected, $queue) {
             $id = (int) $variant->variant_id;
             $available = (int) ($free->get($id) ?? 0);
             $held = (int) ($reserved->get($id) ?? 0);
+            $bundleFree = (int) ($protected[$id]['free'] ?? 0);
+            $bundleReserved = (int) ($protected[$id]['reserved'] ?? 0);
+            $siteHeld = (int) ($protected[$id]['site_held'] ?? 0);
+            $expected = Quantities::expectedPhysical($available, $held, $bundleFree, $bundleReserved, $siteHeld);
+            $protectedTotal = Quantities::expectedPhysical(0, $held, $bundleFree, $bundleReserved, $siteHeld);
             $flow = $queue->get($id);
             return [
                 'variant_id' => $id,
@@ -95,7 +104,11 @@ final class StocktakeCategoryWorkspaceService
                 'sku' => (string) ($variant->variant_code ?: $variant->variety_code ?: ''),
                 'system_available' => $available,
                 'active_reserved' => $held,
-                'expected_physical' => $available + $held,
+                'bundle_free' => $bundleFree,
+                'bundle_reserved' => $bundleReserved,
+                'site_held' => $siteHeld,
+                'protected_total' => $protectedTotal,
+                'expected_physical' => $expected,
                 'pending_collection' => (int) ($flow->pending_collection ?? 0),
                 'warehouse_received' => (int) ($flow->warehouse_received ?? 0),
                 'collecting' => (int) ($flow->collecting ?? 0),
