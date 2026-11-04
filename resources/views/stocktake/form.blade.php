@@ -184,13 +184,13 @@
       <button type="button" id="stocktakeInlinePreviewClose" class="btn btn-sm btn-outline-secondary">بازگشت به شمارش محصولی</button>
     </div>
     <div class="card-body">
-      <div class="alert alert-info small mb-3">در این مرحله می‌توانی موجودی واقعی تنوع‌ها را وارد کنی، اما اعداد فقط تا وقتی همین صفحه باز است در حافظه مرورگر حفظ می‌شوند و هنوز سندی ذخیره یا نهایی نمی‌شود. مقدار خالی یعنی شمارش‌نشده و عدد صفر باید صریحاً وارد شود. بسته‌های خودکار مستقیم شمرده نمی‌شوند؛ اعداد موجودی نمایشی هنوز همه سهم‌های سبد و رزرو سایت را شامل نمی‌شوند و مبنای تأیید نهایی نیستند.</div>
+      <div class="alert alert-info small mb-3">در این مرحله می‌توانی تعداد واقعی را وارد کنی اما اعداد فقط در حافظه مرورگرند و هنوز هیچ سندی ساخته یا نهایی نمی‌شود. مقدار خالی یعنی شمارش‌نشده و صفر باید صریح ثبت شود. موجودی فیزیکی مورد انتظار از موجودی آزاد مرکزی + رزرو عادی + سهم آزاد سبد + سهم رزروشده سبد + رزرو سایت محاسبه می‌شود؛ صف جمع‌آوری صرفاً اطلاعاتی است و به جمع اضافه نمی‌شود. این اعداد نمای لحظه‌ای هستند، Snapshot قفل‌شده برای ثبت نهایی نیستند. بسته‌های خودکار مستقیم شمارش نمی‌شوند.</div>
       <div id="stocktakeInlinePreviewStatus" role="status" aria-live="polite" class="small text-secondary mb-2">برای نمایش کالاها، دسته یا زیردسته را انتخاب کن.</div>
       <label for="stocktakeInlinePreviewSearch" class="form-label fw-bold">جستجو در محصولات و تنوع‌های همین محدوده</label>
       <input id="stocktakeInlinePreviewSearch" type="search" maxlength="80" autocomplete="off" class="form-control mb-3" placeholder="نام، کد یا تنوع کالا؛ شمارش‌های قبلی حفظ می‌شوند">
       <div class="table-responsive" style="max-height:60vh;overflow:auto">
         <table class="table table-sm table-striped align-middle">
-          <thead class="table-light"><tr><th>محصول</th><th>تنوع</th><th>کد</th><th>موجودی آزاد مرکزی</th><th>رزرو فعال</th><th>آزاد + رزرو عادی (نمایش اولیه)</th><th>صف جمع‌آوری</th><th>موجودی واقعی شمارش‌شده (ذخیره‌نشده)</th></tr></thead>
+          <thead class="table-light"><tr><th>محصول</th><th>تنوع</th><th>کد</th><th>موجودی آزاد مرکزی</th><th>رزرو عادی</th><th>سهم آزاد سبد</th><th>سهم رزروشده سبد</th><th>رزرو سایت</th><th>جمع محافظت‌شده</th><th>موجودی فیزیکی مورد انتظار</th><th>صف جمع‌آوری (اطلاعاتی)</th><th>موجودی واقعی شمارش‌شده (ذخیره‌نشده)</th></tr></thead>
           <tbody id="stocktakeInlinePreviewRows"></tbody>
         </table>
       </div>

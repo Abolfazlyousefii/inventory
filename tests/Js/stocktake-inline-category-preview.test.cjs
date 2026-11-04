@@ -44,7 +44,7 @@ test('preview renders inside the original stocktake create form and nowhere else
     assert.match(form, /id="stocktakeInlinePreviewMore"/);
     assert.match(form, /stocktake-inline-category-preview\.js/);
     assert.match(form, /@if\(\$mode==='create'\)/);
-    assert.match(form, /در این مرحله می‌توانی موجودی واقعی تنوع‌ها را وارد کنی/);
+    assert.match(form, /هنوز هیچ سندی ساخته یا نهایی نمی‌شود/);
     assert.doesNotMatch(form, /id="stocktakeInlinePreviewSave"/);
     assert.doesNotMatch(form, /id="stocktakeInlinePreviewFinalize"/);
 });
@@ -92,5 +92,23 @@ test('in-page counting has search, numeric inputs and no write endpoint', () => 
     assert.match(script, /entered\.set\(variantId,/);
     assert.match(script, /const stored = entered\.get\(variantId\)/);
     assert.match(script, /searchInput\.addEventListener\('input'/);
+    assert.doesNotMatch(script, /method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/i);
+});
+
+
+test('all protected physical-stock sources are shown without treating collection queue as stock', () => {
+    const view = read('resources/views/stocktake/form.blade.php');
+    const script = read('public/js/stocktake-inline-category-preview.js');
+    for (const title of ['رزرو عادی', 'سهم آزاد سبد', 'سهم رزروشده سبد', 'رزرو سایت',
+        'جمع محافظت‌شده', 'موجودی فیزیکی مورد انتظار']) {
+        assert.ok(view.includes(title), title);
+    }
+    for (const field of ['system_available', 'active_reserved', 'bundle_free',
+        'bundle_reserved', 'site_held', 'protected_total', 'expected_physical']) {
+        assert.match(script, new RegExp('showNumber\\(item\\.' + field + '\\)'));
+    }
+    assert.match(view, /صف جمع‌آوری صرفاً اطلاعاتی است/);
+    assert.match(script, /protectedByVariant\.set\(variantId, Number\(item\.protected_total\)\)/);
+    assert.match(script, /Number\(count\) < protectedTotal/);
     assert.doesNotMatch(script, /method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/i);
 });

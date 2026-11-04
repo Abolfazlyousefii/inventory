@@ -1,0 +1,51 @@
+name: Stocktake protected quantities (isolated)
+
+on:
+  pull_request:
+    paths:
+      - 'app/Services/StocktakeCategoryWorkspaceService.php'
+      - 'app/Services/BundleComponentStocktakeService.php'
+      - 'app/Support/StockCountQuantityCalculator.php'
+      - 'tests/Feature/StocktakeCategoryProtectedQuantitiesTest.php'
+      - '.github/workflows/stocktake-protected-quantities.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/Services/StocktakeCategoryWorkspaceService.php'
+      - 'app/Services/BundleComponentStocktakeService.php'
+      - 'app/Support/StockCountQuantityCalculator.php'
+      - 'tests/Feature/StocktakeCategoryProtectedQuantitiesTest.php'
+      - '.github/workflows/stocktake-protected-quantities.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-physical-count:
+    runs-on: ubuntu-latest
+    name: SQLite-only physical quantity checks
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Ensure isolated testing database
+        run: |
+          test ! -f .env
+          test "$(php -r 'echo extension_loaded("pdo_sqlite") ? "yes" : "no";')" = "yes"
+      - name: PHP syntax
+        run: |
+          php -l app/Services/StocktakeCategoryWorkspaceService.php
+          php -l tests/Feature/StocktakeCategoryProtectedQuantitiesTest.php
+      - name: Protected stock count fixture tests
+        run: php artisan test --filter=StocktakeCategoryProtectedQuantitiesTest
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
