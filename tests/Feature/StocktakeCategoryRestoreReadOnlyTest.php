@@ -9,7 +9,7 @@ use Tests\TestCase;
  * Category stocktake write routes are enabled only after counted-only snapshots
  * and protected reserve/bundle validation are implemented.
  */
-final class StocktakeCategoryRouteActivationTest extends TestCase
+final class StocktakeCategoryRestoreReadOnlyTest extends TestCase
 {
     public function test_restored_category_routes_exist(): void
     {
