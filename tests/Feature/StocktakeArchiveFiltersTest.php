@@ -6,6 +6,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\ViewErrorBag;
 use Tests\TestCase;
 
 class StocktakeArchiveFiltersTest extends TestCase
@@ -107,6 +108,7 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame('Header Holder', $document->archive_subject_name);
         $this->assertSame('انبارگردانی زیردسته‌ای', $document->archive_scope_label);
 
+        view()->share('errors', new ViewErrorBag());
         $html = $view->render();
         $this->assertStringContainsString('Header Holder', $html);
         $this->assertStringContainsString('انبارگردانی زیردسته‌ای', $html);
