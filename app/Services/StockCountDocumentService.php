@@ -62,7 +62,7 @@ class StockCountDocumentService
             $product = Product::query()->findOrFail((int) $payload['product_id']);
             $this->assertCountableProduct($product);
             $this->validateCounts((int) $product->id, $payload);
-            $this->assertNoSiteHolds((int) $product->id);
+            // Active site holds are accounted for by the protected site_held snapshot.
             Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
             $document = StockCountDocument::create([
                 'document_number' => $this->nextDocumentNumber(), 'type' => 'product', 'warehouse_id' => $warehouse->id,
@@ -115,6 +115,7 @@ class StockCountDocumentService
         return DB::transaction(function () use ($document, $payload, $userId) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل ویرایش است.');
+            $this->assertNotSuperseded($document);
             $this->assertExpectedReview($document, $payload);
             $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
             $this->validateCounts((int) $document->product_id, $payload);
@@ -152,11 +153,12 @@ class StockCountDocumentService
             app(InventoryCountFreezeService::class)->fence();
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
+            $this->assertNotSuperseded($document);
             if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
             $this->assertExpectedReview($document, $payload);
             $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
             $this->validateCounts((int) $document->product_id, $payload);
-            $this->assertNoSiteHolds((int) $document->product_id);
+            // Site-held quantities are validated against the saved snapshot below.
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -258,6 +260,7 @@ class StockCountDocumentService
     {
         return DB::transaction(function () use ($document, $userId, $reason) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
+            $this->assertNotSuperseded($document);
             if ($document->status === 'cancelled') return $document;
             if ($document->status !== 'draft') abort(422, 'لغو سند اعمال‌شده مجاز نیست.');
             $document->update(['status'=>'cancelled','cancelled_by'=>$userId,'cancelled_at'=>now(),'cancel_reason'=>$reason,'updated_by'=>$userId]);
@@ -435,6 +438,22 @@ class StockCountDocumentService
                         'تنوع واردشده متعلق به این کالا نیست؛ هیچ تغییری اعمال نشد.',
                 ]);
             }
+        }
+    }
+
+    /** Reject stale pages before any write to a child document merged into a category count. */
+    private function assertNotSuperseded(StockCountDocument $document): void
+    {
+        abort_if((bool) $document->superseded_by_id, 409,
+            'این پیش‌نویس در سند انبارگردانی یکپارچه تجمیع شده است؛ از سند اصلی استفاده کنید.');
+    }
+
+    /** A review token binds the user's approval to the saved document snapshot. */
+    private function assertExpectedReview(StockCountDocument $document, array $payload): void
+    {
+        if (array_key_exists('expected_review_token', $payload)
+            && ! hash_equals($this->reviewToken($document), (string) $payload['expected_review_token'])) {
+            abort(409, 'این پیش‌نویس پس از بازشدن صفحه تغییر کرده است؛ سند را دوباره باز کنید. هیچ شمارشی اعمال نشد.');
         }
     }
 
