@@ -16,6 +16,7 @@ on:
       - 'tests/Js/stocktake-category-workspace.test.cjs'
       - 'tests/Feature/StockCountLifecycleSafetyTest.php'
       - 'tests/Feature/StocktakeCategoryDraftValidationTest.php'
+      - 'tests/Unit/StockCountQuantityCalculatorTest.php'
       - 'tests/Feature/StocktakeArchiveFiltersTest.php'
       - '.github/workflows/stocktake-lifecycle.yml'
 
@@ -34,4 +35,4 @@ jobs:
           coverage: none
       - run: node --test tests/Js/stocktake-category-workspace.test.cjs
       - run: composer install --prefer-dist --no-interaction --no-progress
-      - run: php vendor/bin/pest tests/Feature/StockCountLifecycleSafetyTest.php tests/Feature/StocktakeArchiveFiltersTest.php tests/Feature/StocktakeCategoryDraftValidationTest.php --stop-on-failure --display-errors
+      - run: php vendor/bin/pest tests/Feature/StockCountLifecycleSafetyTest.php tests/Feature/StocktakeArchiveFiltersTest.php tests/Feature/StocktakeCategoryDraftValidationTest.php tests/Unit/StockCountQuantityCalculatorTest.php --stop-on-failure --display-errors
