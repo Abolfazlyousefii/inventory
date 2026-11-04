@@ -67,6 +67,7 @@
         const searchInput = document.getElementById('stocktakeInlinePreviewSearch');
         const showNumber = value => Number(value || 0).toLocaleString('fa-IR');
         const entered = new Map(); // variant ID -> explicitly entered quantity, never transmitted
+        const protectedByVariant = new Map(); // latest read-only reservation/bundle/site protection
         const known = new Set(); // all distinct variants encountered for the selected scope
         const visible = new Set(); // current page set across paginated results
         const products = new Set();
@@ -123,6 +124,7 @@
             query = '';
             searchInput.value = '';
             entered.clear();
+            protectedByVariant.clear();
             known.clear();
             updateSummary();
             panel.hidden = true;
@@ -133,6 +135,7 @@
             if (!Number.isSafeInteger(variantId) || variantId < 1 || visible.has(variantId)) return;
             visible.add(variantId);
             known.add(variantId);
+            protectedByVariant.set(variantId, Number(item.protected_total));
             const productId = Number(item.product_id);
             if (Number.isSafeInteger(productId) && productId > 0) products.add(productId);
             const tr = document.createElement('tr');
@@ -142,6 +145,10 @@
                 item.sku || '—',
                 showNumber(item.system_available),
                 showNumber(item.active_reserved),
+                showNumber(item.bundle_free),
+                showNumber(item.bundle_reserved),
+                showNumber(item.site_held),
+                showNumber(item.protected_total),
                 showNumber(item.expected_physical),
                 showNumber(item.queue_total)
             ];
@@ -223,9 +230,14 @@
                 const count = normalizeActualCount(input.value);
                 if (count === null) entered.delete(variantId);
                 else entered.set(variantId, count);
-                input.classList.remove('is-invalid');
-                input.removeAttribute('aria-invalid');
-                message('شمارش در همین صفحه نگهداری می‌شود؛ هنوز ذخیره نشده است.', false);
+                const protectedTotal = protectedByVariant.get(variantId);
+                const shortfall = count !== null && Number.isSafeInteger(protectedTotal) && Number(count) < protectedTotal;
+                input.classList.toggle('is-invalid', shortfall);
+                if (shortfall) input.setAttribute('aria-invalid', 'true');
+                else input.removeAttribute('aria-invalid');
+                message(shortfall
+                    ? 'این عدد از موجودی محافظت‌شده (رزرو عادی، سهم سبد و رزرو سایت) کمتر است؛ برای ثبت نهایی باید تعیین تکلیف شود.'
+                    : 'شمارش در همین صفحه نگهداری می‌شود؛ هنوز ذخیره نشده است.', shortfall);
             } catch (error) {
                 entered.delete(variantId);
                 input.classList.add('is-invalid');
