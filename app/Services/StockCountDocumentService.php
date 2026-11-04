@@ -44,8 +44,19 @@ class StockCountDocumentService
     {
         $rows = $document->items()->orderBy('product_variant_id')->get()->map(static fn ($item) => [
             (int) $item->product_variant_id,
+            (int) $item->product_id,
             $item->actual_quantity === null ? null : (int) $item->actual_quantity,
-            (int) $item->system_available_at_start, (int) $item->reserved_at_start,
+            (int) $item->system_available_at_start,
+            (int) $item->reserved_at_start,
+            (int) $item->bundle_free_at_start,
+            (int) $item->bundle_reserved_at_start,
+            (int) $item->site_held_at_start,
+            (int) $item->expected_physical_at_start,
+            $item->warehouse_stock_updated_at_start?->toDateTimeString(),
+            $item->stock_updated_at_start?->toDateTimeString(),
+            $item->product_name_snapshot,
+            $item->variant_name_snapshot,
+            $item->sku_snapshot,
             $item->description,
         ])->all();
         return hash('sha256', json_encode([
@@ -204,14 +215,19 @@ class StockCountDocumentService
             }
 
             $document = null;
+            $isNewDocument = true;
             $existingItems = collect();
             if (! empty($data['document_id'])) {
                 $document = StockCountDocument::query()->lockForUpdate()->findOrFail((int) $data['document_id']);
+                $isNewDocument = false;
                 abort_unless($document->type === 'category' && (int) $document->category_id === $categoryId, 404);
                 if ($document->status !== 'draft') {
                     abort(422, 'فقط پیش‌نویس دسته‌ای قابل ویرایش است.');
                 }
                 $this->assertNotSuperseded($document);
+                if (empty($data['expected_review_token'])) {
+                    abort(409, 'برای ویرایش پیش‌نویس، صفحه را تازه‌سازی کنید تا توکن بررسی دریافت شود.');
+                }
                 $this->assertExpectedReview($document, $data);
                 $existingItems = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get()->keyBy('product_variant_id');
                 $existingIds = $existingItems->keys()->map(fn ($id) => (int) $id)->all();
@@ -228,6 +244,11 @@ class StockCountDocumentService
                         'actual_quantities' => 'برای نگهداری پیش‌نویس، حداقل یک تنوع باید صریحاً شمارش شده باشد.',
                     ]);
                 }
+                if ($remainingCount > 50000) {
+                    throw ValidationException::withMessages([
+                        'actual_quantities' => 'هر سند حداکثر می‌تواند ۵۰ هزار تنوع شمارش‌شده داشته باشد.',
+                    ]);
+                }
             } else {
                 if ($removedIds !== []) {
                     throw ValidationException::withMessages([
@@ -239,15 +260,19 @@ class StockCountDocumentService
                         'actual_quantities' => 'حداقل یک تنوع را با عدد صریح شمارش کنید؛ خانهٔ خالی به معنی شمارش‌نشده است.',
                     ]);
                 }
-                $activeDraft = StockCountDocument::query()
+                $activeDrafts = StockCountDocument::query()
                     ->where('type', 'category')
-                    ->where('category_id', $categoryId)
                     ->where('status', 'draft')
                     ->whereNull('superseded_by_id')
+                    ->whereNotNull('category_id')
+                    ->orderBy('id')
                     ->lockForUpdate()
-                    ->first();
-                if ($activeDraft) {
-                    abort(409, 'برای این محدوده پیش‌نویس وجود دارد؛ همان سند را ادامه دهید.');
+                    ->get(['id', 'category_id']);
+                foreach ($activeDrafts as $activeDraft) {
+                    $activeScope = array_map('intval', Category::selfAndDescendantIds((int) $activeDraft->category_id));
+                    if (array_intersect($categoryIds, $activeScope) !== []) {
+                        abort(409, 'برای این دسته یا یکی از محدوده‌های هم‌پوشان پیش‌نویس وجود دارد؛ همان سند را ادامه دهید.');
+                    }
                 }
             }
 
@@ -359,10 +384,10 @@ class StockCountDocumentService
             $this->refreshSummary($document);
             $this->addHistory(
                 (int) $document->id,
-                $document->wasRecentlyCreated ? 'created' : 'updated',
+                $isNewDocument ? 'created' : 'updated',
                 null,
                 ['status' => 'draft', 'type' => 'category', 'counted_variants' => (int) $document->counted_count],
-                $document->wasRecentlyCreated ? 'ایجاد پیش‌نویس انبارگردانی دسته‌ای' : 'به‌روزرسانی پیش‌نویس انبارگردانی دسته‌ای',
+                $isNewDocument ? 'ایجاد پیش‌نویس انبارگردانی دسته‌ای' : 'به‌روزرسانی پیش‌نویس انبارگردانی دسته‌ای',
                 $userId,
             );
 
