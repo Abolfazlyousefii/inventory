@@ -70,10 +70,10 @@ final class StocktakeCategoryProtectedQuantitiesTest extends TestCase
             ['id'=>12,'parent_id'=>null,'name'=>'Outside'],
         ]);
         DB::table('products')->insert([
-            ['id'=>1,'category_id'=>11,'name'=>'Countable component','is_bundle'=>0],
+            ['id'=>1,'category_id'=>11,'name'=>'Countable component','is_bundle'=>0,'bundle_stock_mode'=>null],
             ['id'=>2,'category_id'=>11,'name'=>'Automatic bundle','is_bundle'=>1,'bundle_stock_mode'=>'automatic'],
-            ['id'=>3,'category_id'=>12,'name'=>'Outside product','is_bundle'=>0],
-            ['id'=>4,'category_id'=>11,'name'=>'Second countable','is_bundle'=>0],
+            ['id'=>3,'category_id'=>12,'name'=>'Outside product','is_bundle'=>0,'bundle_stock_mode'=>null],
+            ['id'=>4,'category_id'=>11,'name'=>'Second countable','is_bundle'=>0,'bundle_stock_mode'=>null],
         ]);
         DB::table('product_variants')->insert([
             ['id'=>1,'product_id'=>1,'variant_name'=>'Component','variant_code'=>'TEST-C'],
