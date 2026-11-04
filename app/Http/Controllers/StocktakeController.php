@@ -23,7 +23,8 @@ class StocktakeController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'finalized', 'cancelled'])],
             'date_from' => ['nullable', 'string', 'max:10'], 'date_to' => ['nullable', 'string', 'max:10'],
         ]);
-        $query = StockCountDocument::query()->with(['warehouse','product','category','creator'])->withCount('items');
+        // Consolidated child drafts remain in the database for audit, but must not appear as active archive documents.
+        $query = StockCountDocument::query()->whereNull('superseded_by_id')->with(['warehouse','product','category','creator'])->withCount('items');
         if (! empty($filters['status'])) $query->where('status', $filters['status']);
         if (! empty($filters['warehouse_id'])) $query->where('warehouse_id', $filters['warehouse_id']);
         $normalize = fn ($value) => strtr(trim($value), ['ي'=>'ی','ك'=>'ک','۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
