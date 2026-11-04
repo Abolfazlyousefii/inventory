@@ -82,12 +82,12 @@ final class StocktakeSnapshotSchemaMigrationTest extends TestCase
         $this->assertSame($counts, $this->oldCounts());
         $this->assertSame(
             [7, 4, 2],
-            array_map('intval', (array) DB::table('stock_count_document_items')
+            array_values(array_map('intval', (array) DB::table('stock_count_document_items')
                 ->where('id', 2)->first([
                     'bundle_free_at_start',
                     'bundle_reserved_at_start',
                     'site_held_at_start',
-                ])),
+                ]))),
         );
     }
 
