@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const table = make('table');
         const head = make('thead');
         const trHead = make('tr');
-        ['تنوع کالا','موجودی آزاد مرکزی','رزرو فعال','سهم سبد (آزاد / رزرو)','رزرو سایت','در صف جمع‌آوری','موجودی واقعی','اختلاف'].forEach(label =>
+        ['تنوع کالا','موجودی انبار مرکزی','در صف جمع‌آوری','موجودی واقعی','اختلاف'].forEach(label =>
             trHead.append(make('th','',label)));
         head.append(trHead);
         const tbody = make('tbody');
@@ -246,15 +246,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const centralCell = make('td','sc-number',fa(row.system_available));
         centralCell.dataset.label = 'موجودی انبار مرکزی';
         tr.append(centralCell);
-        const reservedCell = make('td','sc-number',fa(row.active_reserved));
-        reservedCell.dataset.label = 'رزرو فعال';
-        tr.append(reservedCell);
-        const bundleCell = make('td','sc-number',fa(row.bundle_free) + ' / ' + fa(row.bundle_reserved));
-        bundleCell.dataset.label = 'سهم سبد (آزاد / رزرو)';
-        tr.append(bundleCell);
-        const siteCell = make('td','sc-number',fa(row.site_held));
-        siteCell.dataset.label = 'رزرو سایت';
-        tr.append(siteCell);
         const queue = make('td','sc-number');
         queue.dataset.label = 'موجودی در صف جمع‌آوری';
         queue.append(make('span',Number(row.queue_total)>0?'sc-badge':'sc-muted',fa(row.queue_total)));
@@ -307,8 +298,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (isBelowProtectedQuantity(variant, actual)) {
             protectedConflicts.add(variantId);
-            cell.textContent = 'کمتر از سهم محفوظ';
-            cell.title = 'موجودی واقعی از مجموع رزروها، سهم سبد و رزرو سایت کمتر است.';
+            cell.textContent = 'کمتر از مقدار محافظت‌شده';
+            cell.title = 'موجودی واقعی از مقدار محافظت‌شده کمتر است.';
             cell.classList.remove('sc-diff-up');
             cell.classList.add('sc-diff-down');
             return;
