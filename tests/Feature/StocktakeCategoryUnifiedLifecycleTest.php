@@ -275,6 +275,23 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->saveCategory([]);
     }
 
+    public function test_category_draft_update_can_add_a_new_counted_variant_to_the_same_document(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $service = app(StockCountDocumentService::class);
+
+        $updated = $this->saveCategory([101 => 8, 102 => 4], [
+            'document_id' => $document->id,
+            'expected_review_token' => $service->reviewToken($document),
+        ]);
+
+        $this->assertSame(1, StockCountDocument::count());
+        $this->assertSame(2, (int) $updated->variants_count);
+        $this->assertSame([101, 102], $updated->items()->orderBy('product_variant_id')
+            ->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all());
+        $this->assertSame(5, (int) $updated->items()->where('product_variant_id', 102)->value('system_available_at_start'));
+    }
+
     public function test_editing_a_category_draft_can_remove_a_previously_counted_variant(): void
     {
         $document = $this->saveCategory([101 => 8, 102 => 0], [
