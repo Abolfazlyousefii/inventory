@@ -31,6 +31,8 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run build
+      - name: Check purchase form inline JavaScript
+        run: node --test tests/Js/purchase-sale-price-approval.test.cjs
       - name: Run focused purchase sale-price regression tests
         run: php tests/run.php --configuration phpunit.xml tests/Feature/PurchaseSalePriceSafetyTest.php
       - run: php tests/run-inventory.php --log-junit inventory-results.xml
