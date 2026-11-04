@@ -62,7 +62,6 @@ class StockCountDocumentService
             $product = Product::query()->findOrFail((int) $payload['product_id']);
             $this->assertCountableProduct($product);
             $this->validateCounts((int) $product->id, $payload);
-            $this->assertNoSiteHolds((int) $product->id);
             Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
             $document = StockCountDocument::create([
                 'document_number' => $this->nextDocumentNumber(), 'type' => 'product', 'warehouse_id' => $warehouse->id,
@@ -174,7 +173,6 @@ class StockCountDocumentService
                 throw ValidationException::withMessages(['stocktake'=>'فهرست کالاهای دسته پس از شروع شمارش تغییر کرده است؛ شمارش قبلی حفظ شد. برای محدودهٔ جدید سند تازه بسازید.']);
             }
             $productIds = $variants->pluck('product_id')->unique()->values()->all();
-            $this->assertNoSiteHoldsForProducts($productIds);
             if (!$document) {
                 $document = StockCountDocument::create([
                     'document_number'=>$this->nextDocumentNumber(), 'type'=>'category', 'product_id'=>null,
@@ -273,7 +271,6 @@ class StockCountDocumentService
             } else {
                 $this->validateCounts((int) $document->product_id, $payload);
             }
-            $this->assertNoSiteHoldsForProducts($productIds);
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -584,22 +581,6 @@ class StockCountDocumentService
             ]);
         }
     }
-    private function assertNoSiteHolds(int $productId): void
-    {
-        $this->assertNoSiteHoldsForProducts([$productId]);
-    }
-
-    private function assertNoSiteHoldsForProducts(array $productIds): void
-    {
-        if (! \Illuminate\Support\Facades\Schema::hasTable('site_stock_holds')
-            || ! \Illuminate\Support\Facades\Schema::hasTable('site_stock_hold_lines')) return;
-        $hold = \App\Models\SiteStockHold::query()->whereIn('status', ['held', 'payment_confirmed'])
-            ->whereHas('lines', fn ($query) => $query->whereIn('product_id', $productIds))
-            ->lockForUpdate()->first(['id', 'site_order_id']);
-        if ($hold) throw ValidationException::withMessages(['stocktake' => 'این کالا رزرو فعال سفارش سایت شمارهٔ '.$hold->site_order_id.' دارد؛ ابتدا سفارش سایت را تعیین تکلیف کنید. شمارش اعمال نشد.']);
-    }
-
-
     private function lockOrCreateStock(int $warehouseId,int $productId,int $variantId,bool $lock): WarehouseStock { $q=WarehouseStock::query()->where('warehouse_id',$warehouseId)->where('product_id',$productId)->where('product_variant_id',$variantId); if($lock)$q->lockForUpdate(); $s=$q->first(); return $s ?: WarehouseStock::create(['warehouse_id'=>$warehouseId,'product_id'=>$productId,'product_variant_id'=>$variantId,'quantity'=>0]); }
     private function refreshSummary(StockCountDocument $document): void { $items=$document->items()->get(); $actualTotal=0;$inc=0;$dec=0;$counted=0;$zero=0;$incC=0;$decC=0; foreach($items as $i){$a=$i->actual_quantity; if($a===null)continue; $counted++; $final=(int)$a; if($final===0)$zero++; $actualTotal+=$final; $d=$final-(int)$i->expected_physical_at_start; if($d>0){$inc+=$d;$incC++;} if($d<0){$dec+=abs($d);$decC++;}} $document->update(['variants_count'=>$items->count(),'counted_count'=>$counted,'zeroed_count'=>$zero,'increased_count'=>$incC,'decreased_count'=>$decC,'total_before'=>(int)$items->sum('expected_physical_at_start'),'total_actual'=>$actualTotal,'total_increase'=>$inc,'total_decrease'=>$dec]); }
     private function addHistory(int $documentId,string $actionType,mixed $oldValue,mixed $newValue,?string $description,int $userId): void { StockCountDocumentHistory::create(['document_id'=>$documentId,'action_type'=>$actionType,'old_value'=>$oldValue,'new_value'=>$newValue,'description'=>$description,'done_by'=>$userId,'done_at'=>now()]); }
