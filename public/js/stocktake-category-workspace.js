@@ -1,3 +1,14 @@
+    function productsToSave(knownProducts, entered, saved, dirtyProducts, finalized) {
+        return [...knownProducts.keys()].filter(id => {
+            if (finalized.has(id)) return false;
+            if (saved.has(id)) return dirtyProducts.has(id);
+            const quantities = entered.get(id);
+            return Boolean(quantities && [...quantities.values()].some(value =>
+                value !== '' && value !== null && value !== undefined
+            ));
+        });
+    }
+
 document.addEventListener('DOMContentLoaded', () => {
     'use strict';
 
@@ -114,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function containsUnsavedCounts() {
-        return Boolean(pendingOperation) || dirtyProducts.size > 0 || invalidCounts.size > 0 || [...entered].some(([productId, values]) => !saved.has(productId) &&
-            [...values.values()].some(v => v !== ''));
+        return Boolean(pendingOperation) || invalidCounts.size > 0 ||
+            productsToSave(knownProducts, entered, saved, dirtyProducts, finalized).length > 0;
     }
 
     function reset() {
@@ -304,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function pendingProducts() {
-        return [...knownProducts.keys()].filter(id => !finalized.has(id) && (!saved.has(id) || dirtyProducts.has(id)));
+        return productsToSave(knownProducts, entered, saved, dirtyProducts, finalized);
     }
 
     function completeDraft(meta) {
@@ -366,9 +377,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setBulkControls(disabled) {
         disabled = disabled || Boolean(pendingOperation);
+        const scopeLocked = embedded && selectionId > 0;
+        const scopeControls = new Set([show, category, subcategory]);
         [show, more, category, subcategory, date, liveSearch, document.getElementById('scClose')]
-            .filter(Boolean).forEach(node => { node.disabled = disabled; });
-        date.disabled = disabled || (knownProducts.size > 0 && finalized.size === knownProducts.size);
+            .filter(Boolean).forEach(node => {
+                node.disabled = disabled || (scopeLocked && scopeControls.has(node));
+            });
+        date.disabled = disabled || (savedMetadata.size > 0 && finalized.size === savedMetadata.size);
         for (const group of groups.values()) {
             group.tbody.querySelectorAll('.sc-actual').forEach(input => {
                 input.disabled = disabled || finalized.has(group.id);
@@ -635,6 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (current===sequence) {
                 loading = false;
                 loadingController = null;
+                setBulkControls(false);
                 show.disabled = false;
                 updateButtons();
                 renderDraftList();
@@ -663,6 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scopeCategory = String(category.value || '');
         scopeSubcategory = String(subcategory.value || '');
         hasMore = true;
+        setBulkControls(false);
         await requestPage();
     }
 
@@ -774,6 +791,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bulkSaving || bulkFinalizing || pendingOperation) return;
             if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
             reset();
+            setBulkControls(false);
             app.hidden = true;
             document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden = false; });
             delete originalForm.dataset.categoryMode;
