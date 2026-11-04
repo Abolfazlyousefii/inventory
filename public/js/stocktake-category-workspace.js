@@ -346,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             finalizeAll.textContent = pendingOperation?.operation === 'finalize' ? 'بازیابی نتیجه ثبت نهایی' : 'ثبت نهایی همه';
         }
         if (reviewButton) reviewButton.disabled = savedMetadata.size === 0 || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        if (liveSearch) liveSearch.disabled = loading || loadingAllPages || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
         if (toolbar) toolbar.hidden = !selectionId;
     }
 
@@ -674,9 +675,12 @@ document.addEventListener('DOMContentLoaded', () => {
             afterId = next;
             hasMore = Boolean(payload.has_more);
             if (!activeQuery && !hasMore) allCategoryLoaded = true;
-            notice(hasMore
-                ? fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0)) + ' تنوع دریافت شد. برای دریافت باقی محصولات، «بارگذاری همه محصولات باقی‌مانده» را بزنید.'
-                : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
+            const loadedCount = fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0));
+            notice(loadingAllPages
+                ? loadedCount + ' تنوع بارگذاری شد؛ دریافت ادامه دارد...'
+                : hasMore
+                    ? loadedCount + ' تنوع دریافت شد. برای دریافت باقی محصولات، «بارگذاری همه محصولات باقی‌مانده» را بزنید.'
+                    : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
                     'همه تنوع‌های دسته دریافت شدند. شمارش‌ها را وارد کنید و در پایان «ذخیره یکجای پیش‌نویس‌ها» را بزنید.'));
         } catch(error) {
             if (current===sequence && error.name !== 'AbortError') {
