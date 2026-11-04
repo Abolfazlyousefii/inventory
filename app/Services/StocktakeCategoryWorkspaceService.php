@@ -80,12 +80,16 @@ final class StocktakeCategoryWorkspaceService
             ->pluck('qty', 'product_variant_id');
 
         $reserved = app(ReservationQueryService::class)->quantitiesByVariant(variantIds: $ids);
+        $bundle = app(BundleComponentStocktakeService::class)->quantitiesByComponent($ids);
         $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds($ids);
 
-        $rows = $page->map(static function ($variant) use ($free, $reserved, $queue) {
+        $rows = $page->map(static function ($variant) use ($free, $reserved, $bundle, $queue) {
             $id = (int) $variant->variant_id;
             $available = (int) ($free->get($id) ?? 0);
             $held = (int) ($reserved->get($id) ?? 0);
+            $bundleFree = (int) ($bundle[$id]['free'] ?? 0);
+            $bundleReserved = (int) ($bundle[$id]['reserved'] ?? 0);
+            $siteHeld = (int) ($bundle[$id]['site_held'] ?? 0);
             $flow = $queue->get($id);
             return [
                 'variant_id' => $id,
@@ -95,7 +99,12 @@ final class StocktakeCategoryWorkspaceService
                 'sku' => (string) ($variant->variant_code ?: $variant->variety_code ?: ''),
                 'system_available' => $available,
                 'active_reserved' => $held,
-                'expected_physical' => $available + $held,
+                'bundle_free' => $bundleFree,
+                'bundle_reserved' => $bundleReserved,
+                'site_held' => $siteHeld,
+                'expected_physical' => \App\Support\StockCountQuantityCalculator::expectedPhysical(
+                    $available, $held, $bundleFree, $bundleReserved, $siteHeld
+                ),
                 'pending_collection' => (int) ($flow->pending_collection ?? 0),
                 'warehouse_received' => (int) ($flow->warehouse_received ?? 0),
                 'collecting' => (int) ($flow->collecting ?? 0),
