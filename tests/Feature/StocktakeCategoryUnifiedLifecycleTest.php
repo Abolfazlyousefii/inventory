@@ -144,7 +144,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->actingAs($user)->withoutMiddleware();
         $service = app(StockCountDocumentService::class);
 
-        $response = $this->postJson('/stock-count-documents/category-document/'.$document->id.'/finalize', [
+        $response = $this->postJson(route('stock-count-documents.category-document.finalize', $document), [
             'expected_review_token' => $service->reviewToken($document),
         ]);
 
