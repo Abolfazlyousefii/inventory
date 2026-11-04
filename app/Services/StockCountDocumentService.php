@@ -245,7 +245,9 @@ class StockCountDocumentService
                     abort(409, 'برای ویرایش پیش‌نویس، صفحه را تازه‌سازی کنید تا توکن بررسی دریافت شود.');
                 }
                 $this->assertExpectedReview($document, $data);
-                $existingItems = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get()->keyBy('product_variant_id');
+                $document->items()->whereNull('actual_quantity')->lockForUpdate()->delete();
+                $existingItems = $document->items()->whereNotNull('actual_quantity')
+                    ->lockForUpdate()->orderBy('product_variant_id')->get()->keyBy('product_variant_id');
                 $existingIds = $existingItems->keys()->map(fn ($id) => (int) $id)->all();
 
                 if (array_diff($removedIds, $existingIds) !== []) {
