@@ -208,6 +208,8 @@ class StockCountDocumentService
             $notes = $data['notes'] ?? [];
             $removedIds = array_map('intval', $data['removed_variant_ids'] ?? []);
             $actualIds = array_map('intval', array_keys($actuals));
+            sort($removedIds, SORT_NUMERIC);
+            sort($actualIds, SORT_NUMERIC);
             $noteIds = array_map('intval', array_keys($notes));
 
             foreach (array_merge(array_keys($actuals), array_keys($notes)) as $key) {
