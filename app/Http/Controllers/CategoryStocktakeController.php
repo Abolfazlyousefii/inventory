@@ -51,14 +51,11 @@ final class CategoryStocktakeController extends Controller
     public function store(Request $request)
     {
         return app(StocktakeRequestService::class)->run($request, 'unified_save', function () use ($request) {
-            if (! $request->filled('document_date')) {
-                $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
-            }
             $data = $request->validate([
                 'category_id'=>['required','integer','exists:categories,id'],
                 'document_id'=>['nullable','integer','exists:stock_count_documents,id'],
                 'expected_review_token'=>['nullable','string','size:64'],
-                'document_date'=>['required','date'],
+                'document_date'=>['nullable','date'],
                 'actual_quantities'=>['nullable','array','max:50000'],
                 'actual_quantities.*'=>['required','integer','min:0','max:2147483647'],
                 'removed_variant_ids'=>['nullable','array','max:50000'],
