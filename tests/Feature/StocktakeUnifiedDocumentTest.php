@@ -238,6 +238,46 @@ final class StocktakeUnifiedDocumentTest extends TestCase
         $this->assertSame(16, (int) WarehouseStock::whereIn('product_variant_id', [$first[1]->id, $second[1]->id])->sum('quantity'));
     }
 
+    public function test_category_rejects_count_below_protected_reservations_without_stock_writes(): void
+    {
+        [$root, $first, $second] = $this->fixture();
+        $id = (int) $first[1]->id;
+        $this->mock(\App\Services\ReservationQueryService::class)
+            ->shouldReceive('quantitiesByVariant')
+            ->andReturnUsing(fn () => collect([$id => 3]));
+
+        $saved = $this->save($this->payload($root, $first, $second))
+            ->assertSuccessful()->json('document');
+        $item = StockCountDocument::sole()->items()->where('product_variant_id', $id)->sole();
+        $this->assertSame(3, (int) $item->reserved_at_start);
+        $this->assertSame(11, (int) $item->expected_physical_at_start);
+
+        $before = $this->snapshot();
+        $this->finalize($saved)->assertUnprocessable();
+        $this->assertSame($before, $this->snapshot());
+        $this->assertSame('draft', StockCountDocument::sole()->status);
+        $this->assertSame(0, StockMovement::count());
+    }
+
+    public function test_new_reservation_after_category_snapshot_blocks_entire_finalization(): void
+    {
+        [$root, $first, $second] = $this->fixture();
+        $id = (int) $first[1]->id;
+        $reservation = 0;
+        $this->mock(\App\Services\ReservationQueryService::class)
+            ->shouldReceive('quantitiesByVariant')
+            ->andReturnUsing(function () use ($id, &$reservation) {
+                return collect([$id => $reservation]);
+            });
+        $saved = $this->save($this->payload($root, $first, $second))
+            ->assertSuccessful()->json('document');
+        $reservation = 2;
+        $before = $this->snapshot();
+        $this->finalize($saved)->assertUnprocessable();
+        $this->assertSame($before, $this->snapshot());
+        $this->assertSame(0, StockMovement::count());
+    }
+
     public function test_stock_conflict_rolls_back_all_selected_products_in_unified_document(): void
     {
         [$root, $first, $second] = $this->fixture();
