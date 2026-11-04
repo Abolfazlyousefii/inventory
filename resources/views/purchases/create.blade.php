@@ -323,7 +323,7 @@ $productsPayload = $products->map(function ($p) {
 							</div>
 							<div class="mt-3">
 								<label class="form-label fw-semibold" for="salePriceChangeReasonInput">دلیل تغییر قیمت <span class="text-danger">*</span></label>
-								<textarea id="salePriceChangeReasonInput" class="form-control" rows="3" maxlength="500" required placeholder="مثلاً: اصلاح قیمت طبق لیست قیمت تأییدشده مدیریت"></textarea>
+								<textarea id="salePriceChangeReasonInput" class="form-control" rows="3" maxlength="500" aria-required="true" aria-describedby="salePriceChangeReasonError" placeholder="مثلاً: اصلاح قیمت طبق لیست قیمت تأییدشده مدیریت"></textarea>
 								<div class="form-text">این توضیح در تاریخچه فعالیت ثبت می‌شود و حداکثر ۵۰۰ نویسه است.</div>
 								<div class="invalid-feedback d-none" id="salePriceChangeReasonError">برای ادامه، دلیل تغییر قیمت را وارد کنید.</div>
 							</div>
@@ -843,19 +843,19 @@ $productsPayload = $products->map(function ($p) {
 						if (!row) return;
 
 						row.dataset.purchaseItemId = item.id || '';
-                    if (item.original_sell_price !== undefined && item.original_sell_price !== null && item.original_sell_price !== '') {
-                        row.dataset.originalPurchaseSellPrice = String(parseNumericInput(item.original_sell_price));
-                    } else {
-                        delete row.dataset.originalPurchaseSellPrice;
-                    }
+						if (item.original_sell_price !== undefined && item.original_sell_price !== null && item.original_sell_price !== '') {
+							row.dataset.originalPurchaseSellPrice = String(parseNumericInput(item.original_sell_price));
+						} else {
+							delete row.dataset.originalPurchaseSellPrice;
+						}
 						row.querySelector('[data-qty]').value = item.quantity || '';
 						row.querySelector('[data-buy]').value = formatNumericInput(item.buy_price || '');
 						row.querySelector('[data-sell]').value = formatNumericInput(item.sell_price || '');
-                    const livePrice = Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
-                    if (Number(item.sell_price || 0) !== livePrice) {
-                        row.querySelector('[data-current-sale-price]')?.insertAdjacentHTML('afterend',
-                            '<div class="small text-warning mt-1">قیمت این سند با قیمت فعلی فرق دارد؛ بدون تغییر عمدی قیمت فعلی محفوظ می‌ماند.</div>');
-                    }
+						const livePrice = Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
+						if (Number(item.sell_price || 0) !== livePrice) {
+							row.querySelector('[data-current-sale-price]')?.insertAdjacentHTML('afterend',
+								'<div class="small text-warning mt-1">قیمت این سند با قیمت فعلی فرق دارد؛ بدون تغییر عمدی قیمت فعلی محفوظ می‌ماند.</div>');
+						}
 						row.dataset.buyOverridden = item.price_overridden ? '1' : '0';
 						row.dataset.sellOverridden = item.price_overridden ? '1' : '0';
 						updatePriceBadge(row);
