@@ -185,7 +185,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $request->setUserResolver(fn () => $user);
 
         $response = app(CategoryStocktakeController::class)->store($request);
-        $response->assertOk();
+        $this->assertSame(200, $response->getStatusCode());
 
         $statusRequest = \Illuminate\Http\Request::create('/stock-count-documents/requests/'.$requestId, 'GET', [
             'operation' => 'unified_save',
