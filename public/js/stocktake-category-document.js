@@ -93,7 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
         name.dataset.label='کالا و تنوع';
         name.append(make('strong','',row.product_name),make('span','',row.name || ''),make('small','',row.sku || ''));
         tr.append(name);
-        const figures = [['موجودی انبار مرکزی',row.system_available],['رزرو فعال',row.active_reserved],['صف جمع‌آوری',row.queue_total]];
+        const protectedStock = Number(row.active_reserved || 0) + Number(row.bundle_free || 0) + Number(row.bundle_reserved || 0) + Number(row.site_held || 0);
+        const figures = [['موجودی آزاد انبار مرکزی',row.system_available],['رزرو + سهم سبد و سایت',protectedStock],['صف جمع‌آوری',row.queue_total]];
         for (const [label,value] of figures) {
             const cell=make('td','cd-number',fa(value));cell.dataset.label=label;tr.append(cell);
         }
