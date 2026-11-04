@@ -117,6 +117,42 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(2, (int) $document->variants_count);
     }
 
+    public function test_category_save_route_creates_one_document_for_explicit_counts(): void
+    {
+        $user = new User();
+        $user->forceFill(['id' => 1]);
+        $this->actingAs($user)->withoutMiddleware();
+
+        $response = $this->postJson('/stock-count-documents/category-document', [
+            'category_id' => 10,
+            'actual_quantities' => ['101' => 0],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('document.status', 'draft')
+            ->assertJsonPath('document.counted_count', 1)
+            ->assertJsonPath('document.zeroed_count', 1);
+        $this->assertSame(1, StockCountDocument::count());
+        $this->assertSame([101], StockCountDocumentItem::query()->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all());
+    }
+
+    public function test_category_finalize_route_applies_only_the_saved_counted_rows(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $user = new User();
+        $user->forceFill(['id' => 1]);
+        $this->actingAs($user)->withoutMiddleware();
+        $service = app(StockCountDocumentService::class);
+
+        $response = $this->postJson('/stock-count-documents/category-document/'.$document->id.'/finalize', [
+            'expected_review_token' => $service->reviewToken($document),
+        ]);
+
+        $response->assertOk()->assertJsonPath('document.status', 'finalized');
+        $this->assertSame(8, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
+        $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
+    }
+
     public function test_category_draft_rejects_variants_outside_the_selected_category_tree(): void
     {
         try {
