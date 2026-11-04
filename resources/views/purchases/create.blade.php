@@ -969,7 +969,7 @@ $productsPayload = $products->map(function ($p) {
 					const baselinePrice = hasPersistedBaseline ? Number(original) : livePrice;
 					const proposedPrice = Number(item.sell_price || 0);
 
-					if (proposedPrice === baselinePrice) return [];
+					if (proposedPrice <= 0 || proposedPrice === baselinePrice) return [];
 
 					const card = row.closest('[data-product-card]');
 					return [{
@@ -1000,7 +1000,7 @@ $productsPayload = $products->map(function ($p) {
 						+ ' | ' + escapeHtml(change.variantCode) + '</div>';
 					const originalLabel = change.originalPrice === null ? '—' : formatMoney(change.originalPrice);
 					const catalogEffect = change.changesCatalog
-						? '<span class="badge text-bg-warning">قیمت جاری کالا تغییر می‌کند</span>'
+						? '<span class="badge text-bg-warning">درخواست تغییر قیمت جاری کالا</span>'
 						: '<span class="badge text-bg-success">فقط سابقه سند اصلاح می‌شود</span>';
 
 					return '<tr>'
