@@ -130,6 +130,28 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(0, StockCountDocumentItem::count());
     }
 
+    public function test_active_parent_draft_prevents_an_overlapping_child_draft(): void
+    {
+        $this->saveCategory([101 => 8]);
+
+        $this->expectException(\\Symfony\\Component\\HttpKernel\\Exception\\HttpException::class);
+        $this->saveCategory([101 => 7], ['category_id' => 11]);
+    }
+
+    public function test_category_draft_update_rejects_a_stale_review_token(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $service = app(StockCountDocumentService::class);
+        $token = $service->reviewToken($document);
+        $document->update(['description' => 'تغییر خارج از صفحه بررسی']);
+
+        $this->expectException(\\Symfony\\Component\\HttpKernel\\Exception\\HttpException::class);
+        $this->saveCategory([101 => 9], [
+            'document_id' => $document->id,
+            'expected_review_token' => $token,
+        ]);
+    }
+
     public function test_new_category_draft_requires_at_least_one_explicit_count(): void
     {
         $this->expectException(ValidationException::class);
