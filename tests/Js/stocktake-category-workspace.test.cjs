@@ -52,5 +52,9 @@ test('category counting is embedded in the product form and has an explicit retu
     assert.match(formSource, /id="stocktakeCategoryApp"[^>]*data-embedded="1"/s);
     assert.match(formSource, /id="scShow"/);
     assert.match(formSource, /id="scClose"/);
+    assert.match(formSource, /id="scZeroAll"/);
+    assert.match(workspaceSource, /async function loadAllRemaining\(/);
+    assert.match(workspaceSource, /fa\(row\.bundle_free\)/);
+    assert.match(workspaceSource, /fa\(row\.site_held\)/);
     assert.doesNotMatch(formSource, /id="stocktakeInlinePreview"/);
 });
