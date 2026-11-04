@@ -142,7 +142,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $user = new User();
         $user->forceFill(['id' => 1]);
         $service = app(StockCountDocumentService::class);
-        $request = \\Illuminate\\Http\\Request::create(
+        $request = \Illuminate\Http\Request::create(
             route('stock-count-documents.category-document.finalize', $document),
             'POST',
             ['expected_review_token' => $service->reviewToken($document)],
@@ -152,7 +152,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         );
         $request->setUserResolver(fn () => $user);
 
-        $response = app(\\App\\Http\\Controllers\\CategoryStocktakeController::class)->finalize($request, $document);
+        $response = app(\App\Http\Controllers\CategoryStocktakeController::class)->finalize($request, $document);
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('finalized', $response->getData(true)['document']['status']);
