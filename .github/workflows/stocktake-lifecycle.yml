@@ -8,6 +8,7 @@ on:
     paths:
       - 'app/Services/StockCountDocumentService.php'
       - 'tests/Feature/StockCountLifecycleSafetyTest.php'
+      - 'tests/Feature/StocktakeArchiveFiltersTest.php'
       - '.github/workflows/stocktake-lifecycle.yml'
 
 permissions:
@@ -24,4 +25,4 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
           coverage: none
       - run: composer install --prefer-dist --no-interaction --no-progress
-      - run: php vendor/bin/pest tests/Feature/StockCountLifecycleSafetyTest.php --stop-on-failure --display-errors
+      - run: php vendor/bin/pest tests/Feature/StockCountLifecycleSafetyTest.php tests/Feature/StocktakeArchiveFiltersTest.php --stop-on-failure --display-errors
