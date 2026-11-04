@@ -987,7 +987,12 @@ $productsPayload = $products->map(function ($p) {
 
 			function salePriceChangeSignature(changes) {
 				return changes
-					.map((change) => Number(change.item.variant_id) + ':' + change.proposedPrice)
+					.map((change) => [
+						Number(change.item.variant_id),
+						change.originalPrice === null ? 'new' : change.originalPrice,
+						change.livePrice,
+						change.proposedPrice,
+					].join(':'))
 					.sort()
 					.join('|');
 			}
