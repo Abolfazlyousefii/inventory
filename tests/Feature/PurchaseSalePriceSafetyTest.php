@@ -97,7 +97,8 @@ it('rejects an intentional change without explicit confirmation and rolls back t
 
     expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000)
         ->and((int) $f['item']->fresh()->quantity)->toBe(3)
-        ->and((int) $f['item']->fresh()->sell_price)->toBe(5_000_000);
+        ->and((int) $f['item']->fresh()->sell_price)->toBe(5_000_000)
+        ->and(WarehouseStockService::available($this->warehouseId, $f['product']->id, $f['variant']->id))->toBe(5);
 });
 
 it('applies an approved price change and logs the old and new prices and actor', function (): void {
@@ -205,4 +206,33 @@ it('rejects an approved price that conflicts with product-wide uniform pricing',
 
     expect((int) $f['variant']->fresh()->sell_price)->toBe(4_800_000)
         ->and((int) $f['item']->fresh()->quantity)->toBe(3);
+});
+
+
+it('keeps the database purchase price as the UI baseline after a validation redirect', function (): void {
+    $f = purchasePriceFixture();
+    $payload = purchasePricePayload($f, [
+        'sell_price' => 5_300_000,
+        // A client-supplied baseline must never replace the persisted snapshot.
+        'original_sell_price' => 5_300_000,
+    ]);
+
+    $this->from(route('purchases.edit', $f['purchase']))
+        ->put(route('purchases.update', $f['purchase']), $payload)
+        ->assertSessionHasErrors('sale_price_change_confirmed');
+
+    $this->get(route('purchases.edit', $f['purchase']))
+        ->assertOk()
+        ->assertSee('"sell_price":5300000', false)
+        ->assertSee('"original_sell_price":5000000', false);
+});
+
+it('uses an in-app sale-price confirmation modal with a required reason field', function (): void {
+    $f = purchasePriceFixture();
+
+    $this->get(route('purchases.edit', $f['purchase']))
+        ->assertOk()
+        ->assertSee('id="salePriceChangeModal"', false)
+        ->assertSee('id="salePriceChangeReasonInput"', false)
+        ->assertDontSee("prompt('دلیل تغییر قیمت فروش برای ثبت در تاریخچه:')", false);
 });
