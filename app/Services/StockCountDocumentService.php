@@ -254,7 +254,13 @@ class StockCountDocumentService
                     ]);
                 }
 
-                $remainingCount = $existingItems->count() - count($removedIds) + count(array_diff($actualIds, $existingIds));
+                $existingCountedIds = $existingItems->filter(fn ($item) => $item->actual_quantity !== null)
+                    ->keys()->map(fn ($id) => (int) $id)->all();
+                $remainingIds = array_values(array_unique(array_merge(
+                    array_diff($existingCountedIds, $removedIds),
+                    $actualIds,
+                )));
+                $remainingCount = count($remainingIds);
                 if ($remainingCount < 1) {
                     throw ValidationException::withMessages([
                         'actual_quantities' => 'برای نگهداری پیش‌نویس، حداقل یک تنوع باید صریحاً شمارش شده باشد.',
@@ -280,7 +286,7 @@ class StockCountDocumentService
                     ->where('type', 'category')
                     ->where('status', 'draft')
                     ->whereNull('superseded_by_id')
-                    ->whereNotNull('category_id')
+                    ->whereIn('category_id', array_values(array_unique($categoryLockIds)))
                     ->orderBy('id')
                     ->lockForUpdate()
                     ->get(['id', 'category_id']);
