@@ -23,6 +23,7 @@ class StockCountLifecycleSafetyTest extends TestCase
             Schema::create($model->getTable(),function(Blueprint $table)use($model){
                 $table->id();
                 foreach(array_unique(array_merge($model->getFillable(),['created_at','updated_at'])) as $column) if($column!=='id')$table->text($column)->nullable();
+                if ($model instanceof StockCountDocument) $table->unsignedBigInteger('superseded_by_id')->nullable();
             });
         }
         // The stock-count service must read the real bundle and Site-hold
@@ -118,6 +119,85 @@ class StockCountLifecycleSafetyTest extends TestCase
         app(StockCountDocumentService::class)->finalize($draft,1,true);
         $this->unchangedStock(8);
         $this->assertSame(0,StockMovement::count());
+    }
+
+
+    public function test_superseded_draft_cannot_be_finalized_or_change_stock(): void
+    {
+        $draft = $this->draft();
+        $draft->forceFill(['superseded_by_id' => 209])->save();
+
+        try {
+            app(StockCountDocumentService::class)->finalize($draft, 1, true);
+            $this->fail('Superseded child draft was finalized again');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+
+        $this->assertSame('draft', $draft->fresh()->status);
+        $this->assertSame(209, (int) $draft->fresh()->superseded_by_id);
+        $this->unchangedStock(10);
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(0, StockCountDocumentHistory::where('action_type', 'finalized')->count());
+    }
+
+    public function test_superseded_draft_cannot_be_updated(): void
+    {
+        $draft = $this->draft();
+        $draft->forceFill(['superseded_by_id' => 209])->save();
+
+        try {
+            app(StockCountDocumentService::class)->updateProductDraft($draft, [
+                'document_date' => '2026-10-19',
+                'actual_quantities' => [1 => 99],
+            ], 1);
+            $this->fail('Superseded child draft was updated');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+
+        $this->assertSame(8, $draft->fresh()->items()->first()->actual_quantity);
+        $this->unchangedStock(10);
+        $this->assertSame(0, StockCountDocumentHistory::where('action_type', 'updated')->count());
+    }
+
+    public function test_superseded_draft_cannot_be_cancelled(): void
+    {
+        $draft = $this->draft();
+        $draft->forceFill(['superseded_by_id' => 209])->save();
+
+        try {
+            app(StockCountDocumentService::class)->cancel($draft, 1, 'old document');
+            $this->fail('Superseded child draft was cancelled');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+
+        $this->assertSame('draft', $draft->fresh()->status);
+        $this->unchangedStock(10);
+        $this->assertSame(0, StockCountDocumentHistory::where('action_type', 'cancelled')->count());
+    }
+
+    public function test_stale_review_token_rejects_edits_without_mutating_counts(): void
+    {
+        $draft = $this->draft();
+        $service = app(StockCountDocumentService::class);
+        $staleToken = $service->reviewToken($draft);
+        $draft->update(['description' => 'another page updated description']);
+
+        try {
+            $service->updateProductDraft($draft, [
+                'document_date' => '2026-10-19',
+                'actual_quantities' => [1 => 99],
+                'expected_review_token' => $staleToken,
+            ], 1);
+            $this->fail('Stale review token was accepted');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+
+        $this->assertSame(8, $draft->fresh()->items()->first()->actual_quantity);
+        $this->unchangedStock(10);
     }
 
     public function test_stale_cancel_cannot_relabel_an_applied_stocktake(): void
