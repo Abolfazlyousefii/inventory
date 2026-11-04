@@ -5,12 +5,14 @@ on:
     paths:
       - 'database/migrations/2026_10_29_000001_add_bundle_snapshots_to_stock_count_items.php'
       - 'tests/Feature/StocktakeSnapshotSchemaMigrationTest.php'
+      - 'tests/Integration/stocktake_snapshot_mariadb_smoke.php'
       - '.github/workflows/stocktake-snapshot-schema.yml'
   push:
     branches: [main]
     paths:
       - 'database/migrations/2026_10_29_000001_add_bundle_snapshots_to_stock_count_items.php'
       - 'tests/Feature/StocktakeSnapshotSchemaMigrationTest.php'
+      - 'tests/Integration/stocktake_snapshot_mariadb_smoke.php'
       - '.github/workflows/stocktake-snapshot-schema.yml'
 
 permissions:
@@ -45,3 +47,45 @@ jobs:
           CACHE_STORE: array
           SESSION_DRIVER: array
           QUEUE_CONNECTION: sync
+
+  mariadb-fixture:
+    name: Existing snapshot migration on disposable MariaDB 10.11
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: ci-only-password
+          MARIADB_DATABASE: stocktake_snapshot_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      CI: 'true'
+      APP_ENV: testing
+      APP_KEY: 'base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE='
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: stocktake_snapshot_ci
+      DB_USERNAME: root
+      DB_PASSWORD: ci-only-password
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, pdo_mysql
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Verify database smoke script syntax
+        run: php -l tests/Integration/stocktake_snapshot_mariadb_smoke.php
+      - name: Run real MariaDB protected-snapshot migration on fixture rows
+        run: php tests/Integration/stocktake_snapshot_mariadb_smoke.php
