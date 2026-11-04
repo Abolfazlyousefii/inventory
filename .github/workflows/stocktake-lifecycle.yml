@@ -1,0 +1,24 @@
+name: Stocktake lifecycle regression
+
+on:
+  pull_request:
+    paths:
+      - 'app/Services/StockCountDocumentService.php'
+      - 'tests/Feature/StockCountLifecycleSafetyTest.php'
+      - '.github/workflows/stocktake-lifecycle.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: php vendor/bin/pest tests/Feature/StockCountLifecycleSafetyTest.php --stop-on-failure --display-errors
