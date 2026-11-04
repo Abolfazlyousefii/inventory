@@ -105,16 +105,16 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
 
     public function test_category_draft_contains_only_explicitly_counted_variants_and_keeps_explicit_zero(): void
     {
-        $document = $this->saveCategory([101 => 8, 201 => 0]);
+        $document = $this->saveCategory([101 => 8, 102 => 0]);
 
         $this->assertSame('category', $document->type);
         $this->assertSame(10, (int) $document->category_id);
         $this->assertNull($document->product_id);
-        $this->assertSame([101, 201], $document->items()->orderBy('product_variant_id')->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all());
+        $this->assertSame([101, 102], $document->items()->orderBy('product_variant_id')->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all());
         $this->assertSame(2, (int) $document->counted_count);
         $this->assertSame(1, (int) $document->zeroed_count);
         $this->assertSame(8, (int) $document->total_actual);
-        $this->assertSame(10, (int) $document->variants_count);
+        $this->assertSame(2, (int) $document->variants_count);
     }
 
     public function test_category_draft_rejects_variants_outside_the_selected_category_tree(): void
@@ -138,7 +138,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
 
     public function test_editing_a_category_draft_can_remove_a_previously_counted_variant(): void
     {
-        $document = $this->saveCategory([101 => 8, 201 => 0], [
+        $document = $this->saveCategory([101 => 8, 102 => 0], [
             'category_id' => 10,
         ]);
         $token = app(StockCountDocumentService::class)->reviewToken($document);
@@ -146,12 +146,12 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $updated = $this->saveCategory([101 => 9], [
             'document_id' => $document->id,
             'expected_review_token' => $token,
-            'removed_variant_ids' => [201],
+            'removed_variant_ids' => [102],
         ]);
 
         $this->assertSame([101], $updated->items()->pluck('product_variant_id')->map(fn ($id) => (int) $id)->all());
         $this->assertSame(9, (int) $updated->items()->first()->actual_quantity);
-        $this->assertSame(20, (int) DB::table('warehouse_stocks')->where('product_variant_id', 201)->value('quantity'));
+        $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
     }
 
     public function test_finalization_changes_only_counted_variants_and_leaves_empty_variants_untouched(): void
