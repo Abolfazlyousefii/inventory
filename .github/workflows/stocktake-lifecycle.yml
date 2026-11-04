@@ -1,6 +1,9 @@
 name: Stocktake lifecycle regression
 
 on:
+  push:
+    branches:
+      - 'fix/restore-per-product-stocktake-workspace-20261104'
   pull_request:
     paths:
       - 'app/Services/StockCountDocumentService.php'
