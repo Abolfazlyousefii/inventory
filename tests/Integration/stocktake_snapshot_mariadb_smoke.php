@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
 /*
  * Only for the disposable MariaDB 10.11 GitHub Actions service.
  * Explicit environment guards prevent accidental execution on a real server.
@@ -20,10 +24,6 @@ require dirname(__DIR__, 2).'/vendor/autoload.php';
 
 $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 $check = static function (bool $ok, string $message): void {
     if (!$ok) {
