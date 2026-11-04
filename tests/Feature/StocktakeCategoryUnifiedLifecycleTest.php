@@ -176,7 +176,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $user = new User();
         $user->forceFill(['id' => 1]);
         $requestId = '2c9e4f16-8c0d-4c4b-9e2d-7d89a3b5c104';
-        $request = \\Illuminate\\Http\\Request::create('/stock-count-documents/category-document', 'POST', [
+        $request = \Illuminate\Http\Request::create('/stock-count-documents/category-document', 'POST', [
             'request_id' => $requestId,
             'category_id' => 10,
             'actual_quantities' => ['101' => 0],
@@ -186,7 +186,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $response = app(CategoryStocktakeController::class)->store($request);
         $response->assertOk();
 
-        $statusRequest = \\Illuminate\\Http\\Request::create('/stock-count-documents/requests/'.$requestId, 'GET', [
+        $statusRequest = \Illuminate\Http\Request::create('/stock-count-documents/requests/'.$requestId, 'GET', [
             'operation' => 'unified_save',
         ], [], [], ['HTTP_ACCEPT' => 'application/json']);
         $statusRequest->setUserResolver(fn () => $user);
