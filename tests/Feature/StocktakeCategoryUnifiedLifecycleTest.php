@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Exceptions\StockCountFinalizeValidationException;
 use App\Models\{Product, ProductVariant, StockCountDocument, StockCountDocumentHistory, StockCountDocumentItem, StockMovement, User, Warehouse, WarehouseStock};
-use App\Services\{ReservationQueryService, StockCountDocumentService};
+use App\Services\{ReservationQueryService, StockCountDocumentService, StocktakeRequestService};
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB, Event, Http, Schema};
 use Illuminate\Validation\ValidationException;
