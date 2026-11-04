@@ -277,6 +277,7 @@ class StocktakeController extends Controller
 
     public function update(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_if($stockCountDocument->type === 'category', 405, 'ویرایش سند دسته‌ای فقط از فرم انبارگردانی دسته انجام می‌شود.');
         $request->merge(['document_date' => $stockCountDocument->document_date?->format('Y-m-d')
             ?? now('Asia/Tehran')->toDateString()]);
         $data = $this->validatedPayload($request, true);
@@ -286,6 +287,7 @@ class StocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_if($stockCountDocument->type === 'category', 405, 'ثبت نهایی سند دسته‌ای فقط از صفحهٔ بررسی سند انجام می‌شود.');
         $request->merge(['document_date' => $stockCountDocument->document_date?->format('Y-m-d')
             ?? now('Asia/Tehran')->toDateString()]);
         try {
@@ -318,6 +320,7 @@ class StocktakeController extends Controller
 
     public function cancel(Request $request, StockCountDocument $stockCountDocument)
     {
+        // The historical category draft has one atomic finalize endpoint; cancellation remains blocked until a dedicated audited flow exists.
         abort_if($stockCountDocument->type === 'category', 403, 'لغو اسناد دسته‌ای در نسخهٔ آزمایشی غیرفعال است.');
         $cancelled = $this->service->cancel($stockCountDocument, (int) auth()->id(), $request->input('cancel_reason'));
         return back()->with('success', 'پیش‌نویس لغو شد.');
