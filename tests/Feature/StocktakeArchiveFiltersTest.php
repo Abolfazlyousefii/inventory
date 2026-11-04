@@ -106,6 +106,35 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertTrue($document->relationLoaded('category'));
         $this->assertSame('Header Holder', $document->archive_subject_name);
         $this->assertSame('انبارگردانی زیردسته‌ای', $document->archive_scope_label);
+
+        $html = $view->render();
+        $this->assertStringContainsString('Header Holder', $html);
+        $this->assertStringContainsString('انبارگردانی زیردسته‌ای', $html);
+    }
+
+    public function test_category_archive_falls_back_to_category_name_when_snapshot_is_empty(): void
+    {
+        DB::table('categories')->insert([
+            ['id'=>7,'name'=>'لوازم جانبی','parent_id'=>null],
+            ['id'=>28,'name'=>'نگهدارنده','parent_id'=>7],
+        ]);
+        DB::table('stock_count_documents')->insert([
+            'document_number'=>'STC-CATEGORY-FALLBACK',
+            'type'=>'category',
+            'document_date'=>'2026-10-31',
+            'status'=>'finalized',
+            'product_id'=>null,
+            'category_id'=>28,
+            'scope_name'=>null,
+            'warehouse_id'=>1,
+            'created_by'=>1,
+        ]);
+
+        $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET'));
+        $document = $view->getData()['documents']->firstWhere('document_number', 'STC-CATEGORY-FALLBACK');
+
+        $this->assertSame('نگهدارنده', $document->archive_subject_name);
+        $this->assertSame('انبارگردانی زیردسته‌ای', $document->archive_scope_label);
     }
 
     public function test_archive_search_matches_category_scope_snapshot(): void
