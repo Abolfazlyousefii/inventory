@@ -14,6 +14,8 @@ final class StocktakeUnifiedDocumentTest extends TestCase
 
     private function fixture(): array
     {
+        // Unit/feature tests render Blade without a production Vite build artifact.
+        $this->withoutVite();
         // Match the nullable production draft schema; recovered SQLite legacy
         // migrations still declare the original non-null count column.
         \Illuminate\Support\Facades\Schema::table('stock_count_document_items',
