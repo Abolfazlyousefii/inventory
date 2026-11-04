@@ -62,9 +62,25 @@ test('category counting is embedded in the product form and has an explicit retu
     assert.match(formSource, /id="scClose"/);
     assert.match(formSource, /id="scZeroAll"/);
     assert.match(workspaceSource, /async function loadAllRemaining\(/);
-    assert.match(workspaceSource, /fa\(row\.bundle_free\)/);
-    assert.match(workspaceSource, /fa\(row\.site_held\)/);
+    assert.match(workspaceSource, /Number\(row\.bundle_free \|\| 0\)/);
+    assert.match(workspaceSource, /Number\(row\.site_held \|\| 0\)/);
     assert.doesNotMatch(formSource, /id="stocktakeInlinePreview"/);
+});
+
+test('category count table shows only central stock, collection queue, actual count and difference', () => {
+    const header = workspaceSource.match(/\['تنوع کالا'[\s\S]*?\]\.forEach\(label =>/);
+    assert.ok(header, 'category workspace must define its visible table columns');
+    const labels = Array.from(header[0].matchAll(/'([^']+)'/g), match => match[1]);
+
+    assert.deepEqual(labels, [
+        'تنوع کالا',
+        'موجودی انبار مرکزی',
+        'در صف جمع‌آوری',
+        'موجودی واقعی',
+        'اختلاف',
+    ]);
+    assert.doesNotMatch(header[0], /رزرو فعال|سهم سبد|رزرو سایت/);
+    assert.match(workspaceSource, /queue\.dataset\.label = 'موجودی در صف جمع‌آوری'/);
 });
 
 test('protected stock quantities block a physical count below reserved components', () => {
