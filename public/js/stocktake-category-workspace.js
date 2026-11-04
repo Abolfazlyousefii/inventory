@@ -9,6 +9,13 @@
         });
     }
 
+    function isBelowProtectedQuantity(row, actual) {
+        if (actual === undefined || actual === null || actual === '') return false;
+        const protectedTotal = Number(row.active_reserved || 0) + Number(row.bundle_free || 0) +
+            Number(row.bundle_reserved || 0) + Number(row.site_held || 0);
+        return Number(actual) < protectedTotal;
+    }
+
 document.addEventListener('DOMContentLoaded', () => {
     'use strict';
 
@@ -45,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const documentIds = new Map();
     const knownProducts = new Map();
     const invalidCounts = new Map();
+    const protectedConflicts = new Set();
     const dirtyProducts = new Set();
     const savedMetadata = new Map();
     const finalized = new Set();
@@ -72,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!storageKey) return null;
         try {
             const value = JSON.parse(globalThis.sessionStorage.getItem(storageKey) || 'null');
-            return value && value.version === 1 && value.ownerId === ownerId &&
+            return value && [1,2].includes(value.version) && value.ownerId === ownerId &&
                 Number.isSafeInteger(value.selectionId) && value.selectionId > 0 &&
                 Array.isArray(value.rows) && value.rows.length <= 20000 && Array.isArray(value.entered) &&
                 Array.isArray(value.metadata) ? value : null;
@@ -83,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!storageKey || !selectionId) return true;
         try {
             globalThis.sessionStorage.setItem(storageKey, JSON.stringify({
-                version:1, ownerId, selectionId, scopeCategory, scopeSubcategory, date:date.value,
+                version:2, ownerId, selectionId, scopeCategory, scopeSubcategory, date:date.value,
                 rows:[...loadedRows.values()], entered:[...entered].map(([id, values]) => [id,[...values]]),
                 metadata:[...savedMetadata], knownProducts:[...knownProducts], invalidCounts:[...invalidCounts],
                 dirtyProducts:[...dirtyProducts], finalized:[...finalized], saved:[...saved],
@@ -139,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         documentIds.clear();
         knownProducts.clear();
         invalidCounts.clear();
+        protectedConflicts.clear();
         dirtyProducts.clear();
         savedMetadata.clear();
         finalized.clear();
@@ -290,12 +299,24 @@ document.addEventListener('DOMContentLoaded', () => {
             .find(x => x.dataset.differenceFor === String(variantId));
         if (!cell || !variant) return;
         if (actual === undefined || actual === '') {
+            protectedConflicts.delete(variantId);
             cell.textContent = '—';
+            cell.title = 'شمارش نشده';
             cell.classList.remove('sc-diff-up','sc-diff-down');
             return;
         }
+        if (isBelowProtectedQuantity(variant, actual)) {
+            protectedConflicts.add(variantId);
+            cell.textContent = 'کمتر از سهم محفوظ';
+            cell.title = 'موجودی واقعی از مجموع رزروها، سهم سبد و رزرو سایت کمتر است.';
+            cell.classList.remove('sc-diff-up');
+            cell.classList.add('sc-diff-down');
+            return;
+        }
+        protectedConflicts.delete(variantId);
         const difference = Number(actual) - Number(variant.expected_physical);
         cell.textContent = (difference > 0 ? '+' : '') + fa(difference);
+        cell.title = '';
         cell.classList.toggle('sc-diff-up',difference > 0);
         cell.classList.toggle('sc-diff-down',difference < 0);
     }
@@ -341,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function canFinalize() {
         return reviewAcknowledged && Boolean(selectionId) && allCategoryLoaded && !loading && !hasMore && !bulkSaving &&
             !bulkFinalizing && !containsUnsavedCounts() && pendingProducts().length === 0 &&
-            savedMetadata.size > 0 && savedMetadata.size <= 500 &&
+            savedMetadata.size > 0 && savedMetadata.size <= 500 && protectedConflicts.size === 0 &&
             [...savedMetadata.entries()].every(([id, meta]) => !finalized.has(id) && completeDraft(meta));
     }
 
@@ -371,6 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ' · شمارش واقعی: ' + fa(totals.actual) + ' · افزایش: ' + fa(totals.increase) + ' · کاهش: ' + fa(totals.decrease) +
             (allCategoryLoaded ? '' : ' · دریافت کل دسته هنوز کامل نیست.') +
             (dirtyProducts.size ? ' · ابتدا تغییرات را دوباره ذخیره کنید.' : '') +
+            (protectedConflicts.size ? ' · ' + fa(protectedConflicts.size) + ' تنوع کمتر از سهم محافظت‌شده شمارش شده است.' : '') +
             ([...savedMetadata.values()].some(meta => !completeDraft(meta)) ? ' · برای ثبت نهایی، تمام تنوع‌های شمارش‌نشده را تکمیل کنید.' : '');
     }
 
@@ -460,7 +482,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const restoredEntered = snapshot.entered.map(([id, values]) => [Number(id),new Map(values)]);
             const restoredMeta = snapshot.metadata.map(([id, meta]) => [Number(id),meta]);
-            const restoredRows = snapshot.rows;
+            // Version 1 snapshots did not include the protected quantity fields.
+            // Re-fetch rows from the server while retaining the user's entered counts.
+            const restoredRows = snapshot.version === 1 ? [] : snapshot.rows;
             if (restoredRows.some(row => !Number.isSafeInteger(Number(row.variant_id)) || !Number.isSafeInteger(Number(row.product_id)))) throw new Error('نسخه بازیابی معتبر نیست.');
             const pending = snapshot.pendingOperation;
             if (pending && (!['drafts','finalize'].includes(pending.operation) ||
