@@ -75,8 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.LoadAll.hidden = !hasMore && !loadingAll;
         ui.LoadAll.disabled = locked;
         ui.LoadAll.textContent = loadingAll ? 'توقف دریافت' : 'نمایش همه کالاها';
-        ui.Save.disabled = saving || navigating || Boolean(recovery) || (!pending && (!categoryId || loading || loadingAll || invalid.size > 0));
-        ui.Save.textContent = pending ? 'بازیابی نتیجه ذخیره' : 'ذخیره یک سند و بررسی شمارش';
+        // Preview stage: never allow client-side save even if the controller guard is bypassed.
+        ui.Save.disabled = true;
+        ui.Save.textContent = 'ذخیره در نسخه آزمایشی غیرفعال است';
         for (const input of ui.Rows.querySelectorAll('[data-count]')) input.disabled = locked;
         const positive = [...counts.values()].filter(value=>Number(value)>0).length;
         ui.Summary.textContent = fa(rows.size)+' ردیف دریافت‌شده · '+fa(positive)+' ردیف با موجودی مثبت' +
