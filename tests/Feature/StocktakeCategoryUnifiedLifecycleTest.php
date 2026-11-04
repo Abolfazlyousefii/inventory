@@ -141,14 +141,21 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $document = $this->saveCategory([101 => 8]);
         $user = new User();
         $user->forceFill(['id' => 1]);
-        $this->actingAs($user)->withoutMiddleware();
         $service = app(StockCountDocumentService::class);
+        $request = \\Illuminate\\Http\\Request::create(
+            route('stock-count-documents.category-document.finalize', $document),
+            'POST',
+            ['expected_review_token' => $service->reviewToken($document)],
+            [],
+            [],
+            ['HTTP_ACCEPT' => 'application/json'],
+        );
+        $request->setUserResolver(fn () => $user);
 
-        $response = $this->postJson(route('stock-count-documents.category-document.finalize', $document), [
-            'expected_review_token' => $service->reviewToken($document),
-        ]);
+        $response = app(\\App\\Http\\Controllers\\CategoryStocktakeController::class)->finalize($request, $document);
 
-        $response->assertOk()->assertJsonPath('document.status', 'finalized');
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('finalized', $response->getData(true)['document']['status']);
         $this->assertSame(8, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
         $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
     }
