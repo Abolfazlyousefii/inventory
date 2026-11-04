@@ -1,0 +1,47 @@
+name: Stocktake snapshot schema safety
+
+on:
+  pull_request:
+    paths:
+      - 'database/migrations/2026_10_29_000001_add_bundle_snapshots_to_stock_count_items.php'
+      - 'tests/Feature/StocktakeSnapshotSchemaMigrationTest.php'
+      - '.github/workflows/stocktake-snapshot-schema.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'database/migrations/2026_10_29_000001_add_bundle_snapshots_to_stock_count_items.php'
+      - 'tests/Feature/StocktakeSnapshotSchemaMigrationTest.php'
+      - '.github/workflows/stocktake-snapshot-schema.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  migration-fixture:
+    name: Existing snapshot migration on isolated SQLite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Ensure non-production test configuration
+        run: |
+          test ! -f .env
+          test "$(php -r 'echo extension_loaded("pdo_sqlite") ? "yes" : "no";')" = "yes"
+      - name: Verify migration and fixture syntax
+        run: |
+          php -l database/migrations/2026_10_29_000001_add_bundle_snapshots_to_stock_count_items.php
+          php -l tests/Feature/StocktakeSnapshotSchemaMigrationTest.php
+      - name: Verify legacy count preservation and idempotence
+        run: php artisan test --filter=StocktakeSnapshotSchemaMigrationTest
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
