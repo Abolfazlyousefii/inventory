@@ -299,32 +299,43 @@ class StockCountDocumentService
             }
 
             $existingIds = $existingItems->keys()->map(fn ($id) => (int) $id)->all();
-            $allIds = array_values(array_unique(array_merge($actualIds, $removedIds, $existingIds)));
-            if ($allIds === []) {
+            // Unchanged saved rows are not revalidated against today's category
+            // tree. Only new or changed counts need a current scope check; this
+            // lets a user remove a stale row without refreshing its snapshot.
+            $idsToValidate = array_values(array_filter($actualIds, function (int $id) use ($actuals, $existingItems) {
+                $existing = $existingItems->get($id);
+                return ! $existing || $existing->actual_quantity === null
+                    || (int) $existing->actual_quantity !== (int) $actuals[$id];
+            }));
+            if ($idsToValidate === [] && ! $document && $actualIds === []) {
                 throw ValidationException::withMessages([
                     'actual_quantities' => 'هیچ تنوعی برای ذخیرهٔ شمارش وجود ندارد.',
                 ]);
             }
 
-            // Lock products before variants, matching ProductVariant's save lock order.
-            $productIdsByVariant = ProductVariant::query()->whereIn('id', $allIds)->pluck('product_id', 'id');
-            if ($productIdsByVariant->count() !== count($allIds)) {
-                throw ValidationException::withMessages([
-                    'actual_quantities' => 'یکی از تنوع‌های انتخاب‌شده دیگر وجود ندارد؛ شمارش را تازه‌سازی کنید.',
-                ]);
-            }
-            $productIds = $productIdsByVariant->values()->map(fn ($id) => (int) $id)->unique()->sort()->values()->all();
-            $products = Product::query()->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-            $variants = ProductVariant::query()->whereIn('id', $allIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-
-            foreach ($variants as $variant) {
-                $product = $products->get((int) $variant->product_id);
-                if (! $product || ! in_array((int) $product->category_id, $categoryIds, true)) {
+            $products = collect();
+            $variants = collect();
+            if ($idsToValidate !== []) {
+                // Lock products before variants, matching ProductVariant's save lock order.
+                $productIdsByVariant = ProductVariant::query()->whereIn('id', $idsToValidate)->pluck('product_id', 'id');
+                if ($productIdsByVariant->count() !== count($idsToValidate)) {
                     throw ValidationException::withMessages([
-                        'actual_quantities' => 'یکی از تنوع‌ها خارج از دسته یا زیردستهٔ انتخاب‌شده است؛ هیچ تغییری ذخیره نشد.',
+                        'actual_quantities' => 'یکی از تنوع‌های انتخاب‌شده دیگر وجود ندارد؛ شمارش را تازه‌سازی کنید.',
                     ]);
                 }
-                $this->assertCountableProduct($product);
+                $productIds = $productIdsByVariant->values()->map(fn ($id) => (int) $id)->unique()->sort()->values()->all();
+                $products = Product::query()->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+                $variants = ProductVariant::query()->whereIn('id', $idsToValidate)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+
+                foreach ($variants as $variant) {
+                    $product = $products->get((int) $variant->product_id);
+                    if (! $product || ! in_array((int) $product->category_id, $categoryIds, true)) {
+                        throw ValidationException::withMessages([
+                            'actual_quantities' => 'یکی از تنوع‌ها خارج از دسته یا زیردستهٔ انتخاب‌شده است؛ هیچ تغییری ذخیره نشد.',
+                        ]);
+                    }
+                    $this->assertCountableProduct($product);
+                }
             }
 
             $warehouse = $this->centralWarehouse();
@@ -366,8 +377,6 @@ class StockCountDocumentService
             }
 
             foreach ($actualIds as $variantId) {
-                $variant = $variants->get($variantId);
-                $product = $products->get((int) $variant->product_id);
                 $actual = (int) $actuals[$variantId];
                 $item = $existingItems->get($variantId);
 
@@ -383,6 +392,8 @@ class StockCountDocumentService
                     continue;
                 }
 
+                $variant = $variants->get($variantId);
+                $product = $products->get((int) $variant->product_id);
                 $stock = $this->lockOrCreateStock((int) $warehouse->id, (int) $product->id, (int) $variant->id, true);
                 $available = (int) $stock->quantity;
                 $reserved = $this->activeReserved($variant);
