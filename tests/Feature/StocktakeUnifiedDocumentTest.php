@@ -20,6 +20,46 @@ final class StocktakeUnifiedDocumentTest extends TestCase
             fn (\Illuminate\Database\Schema\Blueprint $table) =>
                 $table->integer('actual_quantity')->nullable()->change()
         );
+        // The historical SQLite migration baseline intentionally lacks the later
+        // bundle and Site hold ledgers. Build only the minimal real-query schema
+        // for this in-memory feature fixture; never create tables in production.
+        $schema = \Illuminate\Support\Facades\Schema::getFacadeRoot();
+        if (! $schema->hasTable('product_bundle_components')) {
+            $schema->create('product_bundle_components', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('bundle_variant_id');
+                $table->unsignedBigInteger('component_variant_id');
+                $table->unsignedInteger('quantity');
+            });
+        }
+        if (! $schema->hasTable('bundle_component_allocations')) {
+            $schema->create('bundle_component_allocations', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('bundle_variant_id');
+                $table->unsignedBigInteger('component_variant_id');
+                $table->unsignedInteger('remaining');
+            });
+        }
+        if (! $schema->hasTable('site_stock_holds')) {
+            $schema->create('site_stock_holds', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->string('status');
+                $table->unsignedBigInteger('invoice_id')->nullable();
+            });
+        }
+        if (! $schema->hasTable('site_stock_hold_lines')) {
+            $schema->create('site_stock_hold_lines', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('hold_id');
+                $table->unsignedBigInteger('variant_id');
+                $table->unsignedInteger('quantity');
+            });
+        }
+        if (! $schema->hasColumn('invoices', 'shipped_at')) {
+            $schema->table('invoices', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->timestamp('shipped_at')->nullable();
+            });
+        }
         $user = User::factory()->create(['is_active'=>true, 'can_access_erp'=>true]);
         $user->assignRole(Role::findOrCreate('Owner', 'web'));
         $this->actingAs($user);
