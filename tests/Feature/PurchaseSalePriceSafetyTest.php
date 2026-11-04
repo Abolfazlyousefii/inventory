@@ -234,5 +234,7 @@ it('uses an in-app sale-price confirmation modal with a required reason field', 
         ->assertOk()
         ->assertSee('id="salePriceChangeModal"', false)
         ->assertSee('id="salePriceChangeReasonInput"', false)
-        ->assertDontSee("prompt('دلیل تغییر قیمت فروش برای ثبت در تاریخچه:')", false);
+        ->assertSee('aria-required="true"', false)
+        ->assertDontSee("prompt('دلیل تغییر قیمت فروش برای ثبت در تاریخچه:')", false)
+        ->assertDontSee("confirm('تغییر قیمت فروش جاری", false);
 });
