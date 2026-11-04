@@ -17,7 +17,7 @@ class StocktakeArchiveFiltersTest extends TestCase
         Schema::create('stock_count_documents', function (Blueprint $t) {
             $t->id(); $t->string('document_number'); $t->date('document_date'); $t->string('status'); $t->string('description')->nullable();
             $t->integer('product_id'); $t->integer('warehouse_id'); $t->integer('created_by');
-            $t->integer('total_increase')->default(0); $t->integer('total_decrease')->default(0); $t->timestamps();
+            $t->integer('total_increase')->default(0); $t->integer('total_decrease')->default(0); $t->integer('superseded_by_id')->nullable(); $t->timestamps();
         });
         Schema::create('stock_count_document_items', function (Blueprint $t) { $t->id(); $t->integer('document_id'); });
         DB::table('products')->insert([['id'=>1,'name'=>'گارد سیلیکونی'],['id'=>2,'name'=>'Charger']]);
@@ -25,6 +25,24 @@ class StocktakeArchiveFiltersTest extends TestCase
         DB::table('users')->insert(['id'=>1,'name'=>'Seller']);
         for ($i=1; $i<=17; $i++) DB::table('stock_count_documents')->insert(['document_number'=>'STC-'.$i,'document_date'=>'2026-10-15','status'=>'finalized','product_id'=>1,'warehouse_id'=>1,'created_by'=>1,'total_increase'=>2,'total_decrease'=>3,'created_at'=>'2026-10-16']);
         DB::table('stock_count_documents')->insert(['document_number'=>'STC-18','document_date'=>'2026-10-16','status'=>'draft','product_id'=>2,'warehouse_id'=>2,'created_by'=>1,'total_increase'=>5]);
+        DB::table('stock_count_documents')->insert(['document_number'=>'STC-SUPERSEDED','document_date'=>'2026-10-16','status'=>'draft',
+            'product_id'=>2,'warehouse_id'=>2,'created_by'=>1,'total_increase'=>500, 'superseded_by_id'=>1]);
+    }
+
+    public function test_superseded_draft_is_excluded_from_archive_but_preserved_in_database(): void
+    {
+        $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', []))->getData();
+        $this->assertSame(18, $view['documents']->total());
+        $this->assertSame(17, $view['summary']['finalized']);
+        $this->assertSame(39, $view['summary']['increase']);
+        $this->assertFalse($view['documents']->contains('document_number', 'STC-SUPERSEDED'));
+
+        $draftView = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', ['status'=>'draft']))->getData();
+        $this->assertSame(1, $draftView['documents']->total());
+        $this->assertSame('STC-18', $draftView['documents']->first()->document_number);
+
+        $this->assertSame('draft', DB::table('stock_count_documents')->where('document_number', 'STC-SUPERSEDED')->value('status'));
+        $this->assertSame(1, DB::table('stock_count_documents')->where('document_number', 'STC-SUPERSEDED')->value('superseded_by_id'));
     }
 
     public function test_filters_and_summaries_cover_all_matching_documents_before_pagination(): void
