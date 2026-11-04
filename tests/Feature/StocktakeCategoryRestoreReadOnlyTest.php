@@ -6,8 +6,8 @@ use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 /**
- * Phase-one recovery: all category write endpoints must stay closed until the
- * category stocktake is reconciled with protected reserve/bundle snapshots.
+ * Category stocktake write routes are enabled only after counted-only snapshots
+ * and protected reserve/bundle validation are implemented.
  */
 final class StocktakeCategoryRestoreReadOnlyTest extends TestCase
 {
@@ -22,13 +22,12 @@ final class StocktakeCategoryRestoreReadOnlyTest extends TestCase
         }
     }
 
-    public function test_category_save_is_blocked_in_preview_without_writing_stock(): void
+    public function test_category_save_endpoint_reaches_validation_instead_of_preview_block(): void
     {
         $this->withoutMiddleware();
 
-        $this->postJson('/stock-count-documents/category-document', [
-            'category_id' => 1,
-            'actual_quantities' => ['100' => 0],
-        ])->assertStatus(503);
+        $this->postJson('/stock-count-documents/category-document', [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['category_id']);
     }
 }
