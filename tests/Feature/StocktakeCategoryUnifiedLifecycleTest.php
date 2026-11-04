@@ -376,6 +376,27 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(0, StockMovement::count());
     }
 
+    public function test_one_conflict_prevents_every_counted_variant_from_being_applied(): void
+    {
+        $document = $this->saveCategory([101 => 8, 102 => 4]);
+        DB::table('warehouse_stocks')->where('product_variant_id', 102)->update(['quantity' => 6]);
+        $service = app(StockCountDocumentService::class);
+
+        try {
+            $service->finalize($document, 1, false, [
+                'expected_review_token' => $service->reviewToken($document),
+            ]);
+            $this->fail('One stale counted row must roll back the whole category document.');
+        } catch (StockCountFinalizeValidationException $exception) {
+            $this->assertContains('stock_changed', array_column($exception->conflicts(), 'reason_code'));
+        }
+
+        $this->assertSame(10, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
+        $this->assertSame(6, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame('draft', $document->fresh()->status);
+    }
+
     public function test_stock_change_on_a_counted_variant_blocks_the_whole_category_document(): void
     {
         $document = $this->saveCategory([101 => 8]);
