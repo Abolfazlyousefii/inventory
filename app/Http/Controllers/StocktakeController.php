@@ -329,8 +329,7 @@ class StocktakeController extends Controller
 
     public function cancel(Request $request, StockCountDocument $stockCountDocument)
     {
-        abort_if($stockCountDocument->type === 'category', 403, 'لغو اسناد دسته‌ای در نسخهٔ آزمایشی غیرفعال است.');
-        $cancelled = $this->service->cancel($stockCountDocument, (int) auth()->id(), $request->input('cancel_reason'));
+        $this->service->cancel($stockCountDocument, (int) auth()->id(), $request->input('cancel_reason'));
         return back()->with('success', 'پیش‌نویس لغو شد.');
     }
 
