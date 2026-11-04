@@ -25,7 +25,7 @@ test('new product drafts are created only after at least one explicit count, inc
         [3, new Map([[31, '4'], [32, '']])],
     ]);
 
-    assert.deepEqual(productsToSave(known, entered, new Map(), new Set(), new Set()), [2, 3]);
+    assert.deepEqual(Array.from(productsToSave(known, entered, new Map(), new Set(), new Set())), [2, 3]);
 });
 
 test('dirty saved drafts remain saveable when the user clears every entered count', () => {
@@ -37,7 +37,7 @@ test('dirty saved drafts remain saveable when the user clears every entered coun
     ]);
     const saved = new Map([[1, '/draft/1'], [2, '/draft/2']]);
 
-    assert.deepEqual(productsToSave(known, entered, saved, new Set([1]), new Set()), [1]);
+    assert.deepEqual(Array.from(productsToSave(known, entered, saved, new Set([1]), new Set())), [1]);
 });
 
 test('finalized products are never selected for another draft save', () => {
@@ -45,7 +45,7 @@ test('finalized products are never selected for another draft save', () => {
     const known = new Map([[1, 'Finalized'], [2, 'New count']]);
     const entered = new Map([[1, new Map([[11, '3']])], [2, new Map([[21, '0']])]]);
 
-    assert.deepEqual(productsToSave(known, entered, new Map(), new Set(), new Set([1])), [2]);
+    assert.deepEqual(Array.from(productsToSave(known, entered, new Map(), new Set(), new Set([1]))), [2]);
 });
 
 test('category counting is embedded in the product form and has an explicit return action', () => {
