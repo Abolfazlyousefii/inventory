@@ -180,15 +180,17 @@
   <section id="stocktakeInlinePreview" class="card stocktake-card mb-3" hidden
     data-rows-url="{{ route('stock-count-documents.category-variants') }}" aria-labelledby="stocktakeInlinePreviewHeading">
     <div class="card-header bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-      <strong id="stocktakeInlinePreviewHeading">کالاهای دسته یا زیردسته انتخابی — در همین صفحه</strong>
+      <strong id="stocktakeInlinePreviewHeading">شمارش همه تنوع‌های دسته یا زیردسته — در همین صفحه</strong>
       <button type="button" id="stocktakeInlinePreviewClose" class="btn btn-sm btn-outline-secondary">بازگشت به شمارش محصولی</button>
     </div>
     <div class="card-body">
-      <div class="alert alert-info small mb-3">این مرحله فقط پیش‌نمایش خواندنی تنوع‌های قابل‌شمارش این محدوده است. بسته‌های خودکار از شمارش مستقیم حذف می‌شوند. ستون‌های موجودی، همه سهم‌های سبد و رزرو سایت را نشان نمی‌دهند و مبنای تأیید فیزیکی نیستند. هیچ سند یا موجودی‌ای تغییر نمی‌کند؛ ذخیره و نهایی‌سازی کلی پس از تست ایمنی اضافه می‌شود.</div>
+      <div class="alert alert-info small mb-3">در این مرحله می‌توانی موجودی واقعی تنوع‌ها را وارد کنی، اما اعداد فقط تا وقتی همین صفحه باز است در حافظه مرورگر حفظ می‌شوند و هنوز سندی ذخیره یا نهایی نمی‌شود. مقدار خالی یعنی شمارش‌نشده و عدد صفر باید صریحاً وارد شود. بسته‌های خودکار مستقیم شمرده نمی‌شوند؛ اعداد موجودی نمایشی هنوز همه سهم‌های سبد و رزرو سایت را شامل نمی‌شوند و مبنای تأیید نهایی نیستند.</div>
       <div id="stocktakeInlinePreviewStatus" role="status" aria-live="polite" class="small text-secondary mb-2">برای نمایش کالاها، دسته یا زیردسته را انتخاب کن.</div>
+      <label for="stocktakeInlinePreviewSearch" class="form-label fw-bold">جستجو در محصولات و تنوع‌های همین محدوده</label>
+      <input id="stocktakeInlinePreviewSearch" type="search" maxlength="80" autocomplete="off" class="form-control mb-3" placeholder="نام، کد یا تنوع کالا؛ شمارش‌های قبلی حفظ می‌شوند">
       <div class="table-responsive" style="max-height:60vh;overflow:auto">
         <table class="table table-sm table-striped align-middle">
-          <thead class="table-light"><tr><th>محصول</th><th>تنوع</th><th>کد</th><th>موجودی آزاد مرکزی</th><th>رزرو فعال</th><th>آزاد + رزرو عادی (نمایش اولیه)</th><th>صف جمع‌آوری</th></tr></thead>
+          <thead class="table-light"><tr><th>محصول</th><th>تنوع</th><th>کد</th><th>موجودی آزاد مرکزی</th><th>رزرو فعال</th><th>آزاد + رزرو عادی (نمایش اولیه)</th><th>صف جمع‌آوری</th><th>موجودی واقعی شمارش‌شده (ذخیره‌نشده)</th></tr></thead>
           <tbody id="stocktakeInlinePreviewRows"></tbody>
         </table>
       </div>
