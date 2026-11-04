@@ -436,9 +436,28 @@ class StockCountDocumentService
         return app(InventoryCountFreezeService::class)->forStocktake(fn () => DB::transaction(function () use ($document, $userId, $payload) {
             app(InventoryCountFreezeService::class)->fence();
 
-            $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
-            if ($document->type !== 'category') {
-                abort(404);
+            // Use the same category-scope -> document lock order as draft saves.
+            $preflight = StockCountDocument::query()->findOrFail($document->id);
+            abort_unless($preflight->type === 'category' && $preflight->category_id, 404);
+            $categoryId = (int) $preflight->category_id;
+            $categoryTree = Category::query()->get(['id', 'parent_id'])->keyBy('id');
+            $category = $categoryTree->get($categoryId);
+            abort_unless($category, 404);
+            $categoryIds = array_map('intval', Category::selfAndDescendantIds($categoryId));
+            $categoryLockIds = $categoryIds;
+            $parentId = (int) ($category->parent_id ?? 0);
+            $seenParents = [];
+            while ($parentId > 0 && ! isset($seenParents[$parentId]) && $categoryTree->has($parentId)) {
+                $seenParents[$parentId] = true;
+                $categoryLockIds[] = $parentId;
+                $parentId = (int) ($categoryTree->get($parentId)->parent_id ?? 0);
+            }
+            Category::query()->whereIn('id', array_values(array_unique($categoryLockIds)))
+                ->orderBy('id')->lockForUpdate()->get();
+
+            $document = StockCountDocument::query()->lockForUpdate()->findOrFail($preflight->id);
+            if ($document->type !== 'category' || (int) $document->category_id !== $categoryId) {
+                abort(409, 'محدودهٔ سند هنگام ثبت نهایی تغییر کرده است؛ صفحه را تازه‌سازی کنید.');
             }
             if ($document->status !== 'draft') {
                 abort(422, 'فقط پیش‌نویس دسته‌ای قابل نهایی‌سازی است.');
@@ -449,8 +468,8 @@ class StockCountDocumentService
             }
             $this->assertExpectedReview($document, $payload);
 
-            $category = Category::query()->findOrFail((int) $document->category_id);
-            $categoryIds = array_map('intval', Category::selfAndDescendantIds((int) $category->id));
+            $category = Category::query()->findOrFail($categoryId);
+            $categoryIds = array_map('intval', Category::selfAndDescendantIds($categoryId));
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) {
                 abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
