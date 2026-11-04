@@ -121,7 +121,9 @@ class StocktakeController extends Controller
 
     private function performStoreCategoryDrafts(Request $request)
     {
-        $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
+        if (! $request->filled('document_date')) {
+            $request->merge(['document_date' => now('Asia/Tehran')->toDateString()]);
+        }
         $data = $request->validate([
             'category_id' => ['required', 'integer', 'exists:categories,id'],
             'document_date' => ['required', 'date'],
@@ -134,6 +136,21 @@ class StocktakeController extends Controller
             'products.*.notes' => ['nullable', 'array', 'max:5000'],
             'products.*.notes.*' => ['nullable', 'string', 'max:1000'],
         ]);
+
+        foreach ($data['products'] as $index => $entry) {
+            if (! empty($entry['document_id'])) {
+                continue;
+            }
+
+            $hasExplicitCount = collect($entry['actual_quantities'] ?? [])
+                ->contains(static fn ($value) => $value !== null && $value !== '');
+
+            if (! $hasExplicitCount) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "products.$index.actual_quantities" => 'برای ایجاد پیش‌نویس، حداقل یک تنوع باید صریحاً شمارش شود؛ عدد صفر نیز شمارش معتبر است.',
+                ]);
+            }
+        }
 
         $modern = $request->filled('request_id') || $request->hasHeader('Idempotency-Key');
         $documents = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $modern) {

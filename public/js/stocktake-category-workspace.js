@@ -1,3 +1,21 @@
+    function productsToSave(knownProducts, entered, saved, dirtyProducts, finalized) {
+        return [...knownProducts.keys()].filter(id => {
+            if (finalized.has(id)) return false;
+            if (saved.has(id)) return dirtyProducts.has(id);
+            const quantities = entered.get(id);
+            return Boolean(quantities && [...quantities.values()].some(value =>
+                value !== '' && value !== null && value !== undefined
+            ));
+        });
+    }
+
+    function isBelowProtectedQuantity(row, actual) {
+        if (actual === undefined || actual === null || actual === '') return false;
+        const protectedTotal = Number(row.active_reserved || 0) + Number(row.bundle_free || 0) +
+            Number(row.bundle_reserved || 0) + Number(row.site_held || 0);
+        return Number(actual) < protectedTotal;
+    }
+
 document.addEventListener('DOMContentLoaded', () => {
     'use strict';
 
@@ -14,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const productsNode = document.getElementById('scProducts');
     const liveSearch = document.getElementById('scLiveSearch');
     const saveAll = document.getElementById('scSaveAll');
+    const zeroAll = document.getElementById('scZeroAll');
     const draftList = document.getElementById('scDraftList');
     const finalizeAll = document.getElementById('scFinalizeAll');
     const reviewSummary = document.getElementById('scReviewSummary');
@@ -33,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const documentIds = new Map();
     const knownProducts = new Map();
     const invalidCounts = new Map();
+    const protectedConflicts = new Set();
     const dirtyProducts = new Set();
     const savedMetadata = new Map();
     const finalized = new Set();
@@ -40,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const knownVariantCounts = new Map();
     let bulkSaving = false;
     let bulkFinalizing = false;
+    let loadingAllPages = false;
     let allCategoryLoaded = false;
     let reviewAcknowledged = false;
     let activeQuery = '';
@@ -59,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!storageKey) return null;
         try {
             const value = JSON.parse(globalThis.sessionStorage.getItem(storageKey) || 'null');
-            return value && value.version === 1 && value.ownerId === ownerId &&
+            return value && [1,2].includes(value.version) && value.ownerId === ownerId &&
                 Number.isSafeInteger(value.selectionId) && value.selectionId > 0 &&
                 Array.isArray(value.rows) && value.rows.length <= 20000 && Array.isArray(value.entered) &&
                 Array.isArray(value.metadata) ? value : null;
@@ -70,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!storageKey || !selectionId) return true;
         try {
             globalThis.sessionStorage.setItem(storageKey, JSON.stringify({
-                version:1, ownerId, selectionId, scopeCategory, scopeSubcategory, date:date.value,
+                version:2, ownerId, selectionId, scopeCategory, scopeSubcategory, date:date.value,
                 rows:[...loadedRows.values()], entered:[...entered].map(([id, values]) => [id,[...values]]),
                 metadata:[...savedMetadata], knownProducts:[...knownProducts], invalidCounts:[...invalidCounts],
                 dirtyProducts:[...dirtyProducts], finalized:[...finalized], saved:[...saved],
@@ -114,8 +135,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function containsUnsavedCounts() {
-        return Boolean(pendingOperation) || dirtyProducts.size > 0 || invalidCounts.size > 0 || [...entered].some(([productId, values]) => !saved.has(productId) &&
-            [...values.values()].some(v => v !== ''));
+        return Boolean(pendingOperation) || invalidCounts.size > 0 ||
+            productsToSave(knownProducts, entered, saved, dirtyProducts, finalized).length > 0;
     }
 
     function reset() {
@@ -126,12 +147,14 @@ document.addEventListener('DOMContentLoaded', () => {
         documentIds.clear();
         knownProducts.clear();
         invalidCounts.clear();
+        protectedConflicts.clear();
         dirtyProducts.clear();
         savedMetadata.clear();
         finalized.clear();
         loadedRows.clear();
         knownVariantCounts.clear();
         pendingOperation = null;
+        loadingAllPages = false;
         allCategoryLoaded = false;
         reviewAcknowledged = false;
         date.disabled = false;
@@ -175,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const table = make('table');
         const head = make('thead');
         const trHead = make('tr');
-        ['تنوع کالا','موجودی انبار مرکزی','رزرو فعال','موجودی در صف جمع‌آوری','موجودی واقعی','اختلاف'].forEach(label =>
+        ['تنوع کالا','موجودی آزاد مرکزی','رزرو فعال','سهم سبد (آزاد / رزرو)','رزرو سایت','در صف جمع‌آوری','موجودی واقعی','اختلاف'].forEach(label =>
             trHead.append(make('th','',label)));
         head.append(trHead);
         const tbody = make('tbody');
@@ -226,6 +249,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const reservedCell = make('td','sc-number',fa(row.active_reserved));
         reservedCell.dataset.label = 'رزرو فعال';
         tr.append(reservedCell);
+        const bundleCell = make('td','sc-number',fa(row.bundle_free) + ' / ' + fa(row.bundle_reserved));
+        bundleCell.dataset.label = 'سهم سبد (آزاد / رزرو)';
+        tr.append(bundleCell);
+        const siteCell = make('td','sc-number',fa(row.site_held));
+        siteCell.dataset.label = 'رزرو سایت';
+        tr.append(siteCell);
         const queue = make('td','sc-number');
         queue.dataset.label = 'موجودی در صف جمع‌آوری';
         queue.append(make('span',Number(row.queue_total)>0?'sc-badge':'sc-muted',fa(row.queue_total)));
@@ -270,12 +299,24 @@ document.addEventListener('DOMContentLoaded', () => {
             .find(x => x.dataset.differenceFor === String(variantId));
         if (!cell || !variant) return;
         if (actual === undefined || actual === '') {
+            protectedConflicts.delete(variantId);
             cell.textContent = '—';
+            cell.title = 'شمارش نشده';
             cell.classList.remove('sc-diff-up','sc-diff-down');
             return;
         }
+        if (isBelowProtectedQuantity(variant, actual)) {
+            protectedConflicts.add(variantId);
+            cell.textContent = 'کمتر از سهم محفوظ';
+            cell.title = 'موجودی واقعی از مجموع رزروها، سهم سبد و رزرو سایت کمتر است.';
+            cell.classList.remove('sc-diff-up');
+            cell.classList.add('sc-diff-down');
+            return;
+        }
+        protectedConflicts.delete(variantId);
         const difference = Number(actual) - Number(variant.expected_physical);
         cell.textContent = (difference > 0 ? '+' : '') + fa(difference);
+        cell.title = '';
         cell.classList.toggle('sc-diff-up',difference > 0);
         cell.classList.toggle('sc-diff-down',difference < 0);
     }
@@ -288,8 +329,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 'شمارش‌ها را با دکمه ذخیره یکجا ثبت کنید. مقدار خالی یعنی شمارش‌نشده.');
         }
         more.hidden = !hasMore && allCategoryLoaded;
-        more.textContent = hasMore ? 'دریافت ادامه کالاها' : 'دریافت ادامه کل دسته';
-        more.disabled = loading || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        more.textContent = hasMore ? 'بارگذاری همه محصولات باقی‌مانده' : 'بارگذاری همه محصولات';
+        more.disabled = loading || loadingAllPages || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        if (zeroAll) {
+            const hasMutableRows = [...groups.values()].some(group => !finalized.has(group.id) && group.rows.size > 0);
+            zeroAll.disabled = !allCategoryLoaded || !hasMutableRows || loading || loadingAllPages ||
+                bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        }
         if (saveAll) saveAll.disabled = pendingOperation?.operation === 'drafts'
             ? bulkSaving || bulkFinalizing : !selectionId || loading || hasMore || bulkSaving || bulkFinalizing || Boolean(pendingOperation) ||
             invalidCounts.size > 0 ||
@@ -300,11 +346,12 @@ document.addEventListener('DOMContentLoaded', () => {
             finalizeAll.textContent = pendingOperation?.operation === 'finalize' ? 'بازیابی نتیجه ثبت نهایی' : 'ثبت نهایی همه';
         }
         if (reviewButton) reviewButton.disabled = savedMetadata.size === 0 || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
+        if (liveSearch) liveSearch.disabled = loading || loadingAllPages || bulkSaving || bulkFinalizing || Boolean(pendingOperation);
         if (toolbar) toolbar.hidden = !selectionId;
     }
 
     function pendingProducts() {
-        return [...knownProducts.keys()].filter(id => !finalized.has(id) && (!saved.has(id) || dirtyProducts.has(id)));
+        return productsToSave(knownProducts, entered, saved, dirtyProducts, finalized);
     }
 
     function completeDraft(meta) {
@@ -316,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function canFinalize() {
         return reviewAcknowledged && Boolean(selectionId) && allCategoryLoaded && !loading && !hasMore && !bulkSaving &&
             !bulkFinalizing && !containsUnsavedCounts() && pendingProducts().length === 0 &&
-            savedMetadata.size > 0 && savedMetadata.size <= 500 &&
+            savedMetadata.size > 0 && savedMetadata.size <= 500 && protectedConflicts.size === 0 &&
             [...savedMetadata.entries()].every(([id, meta]) => !finalized.has(id) && completeDraft(meta));
     }
 
@@ -346,6 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ' · شمارش واقعی: ' + fa(totals.actual) + ' · افزایش: ' + fa(totals.increase) + ' · کاهش: ' + fa(totals.decrease) +
             (allCategoryLoaded ? '' : ' · دریافت کل دسته هنوز کامل نیست.') +
             (dirtyProducts.size ? ' · ابتدا تغییرات را دوباره ذخیره کنید.' : '') +
+            (protectedConflicts.size ? ' · ' + fa(protectedConflicts.size) + ' تنوع کمتر از سهم محافظت‌شده شمارش شده است.' : '') +
             ([...savedMetadata.values()].some(meta => !completeDraft(meta)) ? ' · برای ثبت نهایی، تمام تنوع‌های شمارش‌نشده را تکمیل کنید.' : '');
     }
 
@@ -366,9 +414,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setBulkControls(disabled) {
         disabled = disabled || Boolean(pendingOperation);
-        [show, more, category, subcategory, date, liveSearch, document.getElementById('scClose')]
-            .filter(Boolean).forEach(node => { node.disabled = disabled; });
-        date.disabled = disabled || (knownProducts.size > 0 && finalized.size === knownProducts.size);
+        const scopeLocked = embedded && selectionId > 0;
+        const scopeControls = new Set([show, category, subcategory]);
+        [show, more, zeroAll, category, subcategory, date, liveSearch, document.getElementById('scClose')]
+            .filter(Boolean).forEach(node => {
+                node.disabled = disabled || (scopeLocked && scopeControls.has(node));
+            });
+        date.disabled = disabled || (savedMetadata.size > 0 && finalized.size === savedMetadata.size);
         for (const group of groups.values()) {
             group.tbody.querySelectorAll('.sc-actual').forEach(input => {
                 input.disabled = disabled || finalized.has(group.id);
@@ -431,7 +483,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const restoredEntered = snapshot.entered.map(([id, values]) => [Number(id),new Map(values)]);
             const restoredMeta = snapshot.metadata.map(([id, meta]) => [Number(id),meta]);
-            const restoredRows = snapshot.rows;
+            // Version 1 snapshots did not include the protected quantity fields.
+            // Re-fetch rows from the server while retaining the user's entered counts.
+            const restoredRows = snapshot.version === 1 ? [] : snapshot.rows;
             if (restoredRows.some(row => !Number.isSafeInteger(Number(row.variant_id)) || !Number.isSafeInteger(Number(row.product_id)))) throw new Error('نسخه بازیابی معتبر نیست.');
             const pending = snapshot.pendingOperation;
             if (pending && (!['drafts','finalize'].includes(pending.operation) ||
@@ -595,12 +649,12 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingController = controller;
         show.disabled = true;
         updateButtons();
-        notice('در حال دریافت تنوع‌های دسته... (هر درخواست حداکثر ۶۰ ردیف)');
+        notice(loadingAllPages ? 'در حال بارگذاری همه محصولات و تنوع‌ها...' : 'در حال دریافت تنوع‌های دسته... (هر درخواست حداکثر ۱۰۰ ردیف)');
         try {
             const url = new URL(app.dataset.rowsUrl, location.origin);
             url.searchParams.set('category_id',String(selectionId));
             url.searchParams.set('after_id',String(afterId));
-            url.searchParams.set('limit','60');
+            url.searchParams.set('limit','100');
         if (activeQuery) url.searchParams.set('q',activeQuery);
             const response = await fetch(url, {
                 method:'GET',credentials:'same-origin',
@@ -621,9 +675,12 @@ document.addEventListener('DOMContentLoaded', () => {
             afterId = next;
             hasMore = Boolean(payload.has_more);
             if (!activeQuery && !hasMore) allCategoryLoaded = true;
-            notice(hasMore
-                ? fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0)) + ' تنوع دریافت شد. برای ادامه «نمایش تنوع‌های بیشتر» را بزنید.'
-                : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
+            const loadedCount = fa([...groups.values()].reduce((n,g)=>n+g.rows.size,0));
+            notice(loadingAllPages
+                ? loadedCount + ' تنوع بارگذاری شد؛ دریافت ادامه دارد...'
+                : hasMore
+                    ? loadedCount + ' تنوع دریافت شد. برای دریافت باقی محصولات، «بارگذاری همه محصولات باقی‌مانده» را بزنید.'
+                    : (activeQuery ? 'نتایج جستجو کامل شد. مقادیر شمارش در جستجوهای بعدی حفظ می‌شوند.' :
                     'همه تنوع‌های دسته دریافت شدند. شمارش‌ها را وارد کنید و در پایان «ذخیره یکجای پیش‌نویس‌ها» را بزنید.'));
         } catch(error) {
             if (current===sequence && error.name !== 'AbortError') {
@@ -635,6 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (current===sequence) {
                 loading = false;
                 loadingController = null;
+                setBulkControls(false);
                 show.disabled = false;
                 updateButtons();
                 renderDraftList();
@@ -663,6 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scopeCategory = String(category.value || '');
         scopeSubcategory = String(subcategory.value || '');
         hasMore = true;
+        setBulkControls(false);
         await requestPage();
     }
 
@@ -725,17 +784,64 @@ document.addEventListener('DOMContentLoaded', () => {
         checkpointWorkspace();
     });
 
-    show.addEventListener('click',begin);
-    more.addEventListener('click',async () => {
-        if (loading || bulkSaving || bulkFinalizing || pendingOperation) return;
-        if (!hasMore && !allCategoryLoaded) {
+    async function loadAllRemaining() {
+        if (loading || loadingAllPages || bulkSaving || bulkFinalizing || pendingOperation || !selectionId) return;
+        if (activeQuery || (!hasMore && !allCategoryLoaded)) {
             clearTimeout(searchTimer);
             if (liveSearch) liveSearch.value = '';
             activeQuery = '';
             clearListing();
             hasMore = true;
         }
-        await requestPage();
+        if (!hasMore) return;
+
+        loadingAllPages = true;
+        updateButtons();
+        notice('در حال بارگذاری همه محصولات و تنوع‌ها...');
+        try {
+            while (hasMore && !bulkSaving && !bulkFinalizing && !pendingOperation) {
+                const previousCursor = afterId;
+                await requestPage();
+                if (hasMore && afterId === previousCursor) break;
+            }
+            if (allCategoryLoaded) {
+                notice(fa(loadedRows.size) + ' تنوع از کل محدوده بارگذاری شد. حالا می‌توانی شمارش کنی یا همه را صریحاً صفرگذاری کنی.');
+            }
+        } finally {
+            loadingAllPages = false;
+            updateButtons();
+            renderDraftList();
+            checkpointWorkspace();
+        }
+    }
+
+    show.addEventListener('click',begin);
+    more.addEventListener('click',loadAllRemaining);
+    zeroAll?.addEventListener('click',() => {
+        if (zeroAll.disabled || !allCategoryLoaded || bulkSaving || bulkFinalizing || pendingOperation) return;
+        if (!window.confirm('موجودی واقعی تمام تنوع‌های محصولات بارگذاری‌شده صفر شود؟ این کار فقط مقدار شمارش را صفر می‌کند و تا ثبت نهایی موجودی مرکزی تغییر نمی‌کند.')) return;
+
+        for (const group of groups.values()) {
+            if (finalized.has(group.id)) continue;
+            for (const variantId of group.rows.keys()) {
+                group.quantities.set(variantId,'0');
+                invalidCounts.delete(variantId);
+                const input = group.tbody.querySelector('.sc-actual[data-variant="' + variantId + '"]');
+                if (input) {
+                    input.value = '0';
+                    input.setCustomValidity('');
+                }
+                updateDifference(group,variantId);
+            }
+            entered.set(group.id,group.quantities);
+            dirtyProducts.add(group.id);
+            group.flag.textContent = 'تغییرات ذخیره‌نشده';
+        }
+        reviewAcknowledged = false;
+        updateButtons();
+        renderDraftList();
+        checkpointWorkspace();
+        notice('صفر برای همه تنوع‌های غیرنهایی ثبت شد؛ برای ذخیره، دکمه «ذخیره یکجای پیش‌نویس‌ها» را بزن.');
     });
     saveAll?.addEventListener('click',saveAllDrafts);
     date.addEventListener('change',() => {
@@ -774,6 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bulkSaving || bulkFinalizing || pendingOperation) return;
             if (containsUnsavedCounts() && !window.confirm('شمارش‌های ذخیره‌نشده رها می‌شوند. به فرم محصول تکی برگردیم؟')) return;
             reset();
+            setBulkControls(false);
             app.hidden = true;
             document.querySelectorAll('[data-stocktake-single]').forEach(node => { node.hidden = false; });
             delete originalForm.dataset.categoryMode;
@@ -782,7 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('beforeunload',event => {
-        if (!containsUnsavedCounts() && invalidCounts.size === 0 && !bulkSaving && !bulkFinalizing) return;
+        if (!containsUnsavedCounts() && invalidCounts.size === 0 && !bulkSaving && !bulkFinalizing && !loadingAllPages) return;
         event.preventDefault();
         event.returnValue = '';
     });

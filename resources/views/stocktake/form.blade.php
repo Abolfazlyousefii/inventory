@@ -106,15 +106,17 @@
 .stocktake-page .sc-product-head strong{line-height:1.7;overflow-wrap:anywhere}
 .stocktake-page .sc-product-head>.sc-muted{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:5px 10px;border-radius:999px;border:1px solid #d8e8f0;background:#eef7fa;white-space:nowrap;color:#315771;font-weight:700;font-size:.75rem}
 .stocktake-page .sc-table-wrap{display:block;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-.stocktake-page .sc-table-wrap table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse}
+.stocktake-page .sc-table-wrap table{width:100%;min-width:1120px;max-width:none;table-layout:fixed;border-collapse:collapse}
 .stocktake-page .sc-table-wrap td,.stocktake-page .sc-table-wrap th{padding:10px 11px;line-height:1.8;vertical-align:middle;overflow-wrap:anywhere}
 .stocktake-page .sc-table-wrap th{background:#f4f8fb;font-size:.76rem;white-space:normal}
-.stocktake-page .sc-table-wrap th:nth-child(1){width:29%}
-.stocktake-page .sc-table-wrap th:nth-child(2){width:12%}
-.stocktake-page .sc-table-wrap th:nth-child(3){width:10%}
-.stocktake-page .sc-table-wrap th:nth-child(4){width:21%}
-.stocktake-page .sc-table-wrap th:nth-child(5){width:18%}
-.stocktake-page .sc-table-wrap th:nth-child(6){width:10%}
+.stocktake-page .sc-table-wrap th:nth-child(1){width:24%}
+.stocktake-page .sc-table-wrap th:nth-child(2){width:10%}
+.stocktake-page .sc-table-wrap th:nth-child(3){width:8%}
+.stocktake-page .sc-table-wrap th:nth-child(4){width:12%}
+.stocktake-page .sc-table-wrap th:nth-child(5){width:10%}
+.stocktake-page .sc-table-wrap th:nth-child(6){width:14%}
+.stocktake-page .sc-table-wrap th:nth-child(7){width:14%}
+.stocktake-page .sc-table-wrap th:nth-child(8){width:8%}
 .stocktake-page .sc-variant{min-width:0;overflow-wrap:anywhere}
 .stocktake-page .sc-variant small{max-width:100%;overflow-wrap:anywhere}
 .stocktake-page .sc-actual{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:185px;min-height:42px;margin-inline:auto}
@@ -123,7 +125,7 @@
 .stocktake-page .sc-feedback{min-width:0;overflow-wrap:anywhere;line-height:1.9}
 .stocktake-page .sc-footer .btn{justify-self:end;white-space:normal}
 .stocktake-page .sc-status,.stocktake-page .sc-warning,.stocktake-page .sc-live-search{min-width:0;max-width:100%;overflow-wrap:anywhere}
-@media(max-width:900px){.stocktake-page{padding-inline:12px}.stocktake-page .sc-table-wrap table{min-width:800px}}
+@media(max-width:900px){.stocktake-page{padding-inline:12px}.stocktake-page .sc-table-wrap table{min-width:1120px}}
 @media(max-width:720px){
 .stocktake-page{padding-inline:10px}
 .stocktake-page__header{grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch}
@@ -139,7 +141,7 @@
 .stocktake-page .sc-product tbody tr:last-child{border-bottom:0}
 .stocktake-page .sc-product tbody td{display:flex;flex-direction:column;gap:4px;justify-content:center;align-items:stretch;min-width:0;width:100%;padding:9px 11px;border:1px solid #e8eef5;border-radius:10px;background:#fbfdff;text-align:right}
 .stocktake-page .sc-product tbody td::before{content:attr(data-label);display:block;color:#6b7f91;font-size:.73rem;font-weight:700;line-height:1.65}
-.stocktake-page .sc-product tbody td:first-child,.stocktake-page .sc-product tbody td:nth-child(4),.stocktake-page .sc-product tbody td:nth-child(5),.stocktake-page .sc-product tbody td:nth-child(6){grid-column:1/-1}
+.stocktake-page .sc-product tbody td:first-child,.stocktake-page .sc-product tbody td:nth-child(6),.stocktake-page .sc-product tbody td:nth-child(7),.stocktake-page .sc-product tbody td:nth-child(8){grid-column:1/-1}
 .stocktake-page .sc-product tbody td.sc-number{text-align:right}
 .stocktake-page .sc-product .sc-actual{max-width:none;min-height:44px;margin:0}
 .stocktake-page .sc-footer{grid-template-columns:minmax(0,1fr);padding:12px}
@@ -175,14 +177,65 @@
  <form id="stocktakeForm" method="post" action="{{ $mode==='edit' ? route('stock-count-documents.update',$document) : route('stock-count-documents.store') }}">@csrf @if($mode==='edit') @method('PUT') @endif
   <div id="actualHiddenInputs"></div>
   <div class="card stocktake-card stocktake-compact mb-3"><div class="card-body row g-2 align-items-end"><div class="col-6 col-lg"><label class="form-label">نوع سند</label><input class="form-control form-control-sm" value="انبارگردانی محصولی" readonly></div><div class="col-6 col-lg"><label class="form-label">انبار مرکزی</label><input class="form-control form-control-sm" value="{{ $centralWarehouse->name }}" readonly></div><div class="col-6 col-lg"><label class="form-label">شماره سند</label><input class="form-control form-control-sm" value="{{ $document?->document_number ?? 'پس از ذخیره ایجاد می‌شود' }}" readonly></div><div class="col-6 col-lg"><label class="form-label">تاریخ سند</label><input type="date" name="document_date" class="form-control form-control-sm" value="{{ old('document_date', optional($document?->document_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" required></div><div class="col-6 col-lg"><label class="form-label">وضعیت</label><input class="form-control form-control-sm" value="پیش‌نویس" readonly></div></div></div>
-  <div class="card stocktake-card mb-3"><div class="card-header bg-white">انتخاب کالا</div><div class="card-body row g-3"><div class="col-md-4"><label class="form-label">دسته‌بندی اصلی</label><select id="category" class="form-select" {{ $mode==='edit'?'disabled':'' }}><option value="">انتخاب دسته‌بندی اصلی</option>@foreach($rootCategories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select></div><div class="col-md-4"><label class="form-label">زیر‌دسته‌بندی</label><select id="subcategory" class="form-select" disabled><option value="">انتخاب زیر‌دسته‌بندی</option></select></div><div class="col-md-4"><label class="form-label">محصول</label><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select><input id="productSearch" class="form-control mt-2" placeholder="جستجوی نام، کد، SKU یا بارکد" {{ $mode==='edit'?'disabled':'' }}></div></div></div>
+  <div class="card stocktake-card mb-3"><div class="card-header bg-white">انتخاب محدوده و محصول</div><div class="card-body row g-3">
+    <div class="col-md-4"><label class="form-label">دسته‌بندی اصلی</label><select id="category" class="form-select" {{ $mode==='edit'?'disabled':'' }}><option value="">انتخاب دسته‌بندی اصلی</option>@foreach($rootCategories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select></div>
+    <div class="col-md-4"><label class="form-label">زیر‌دسته‌بندی</label><select id="subcategory" class="form-select" disabled><option value="">انتخاب زیر‌دسته‌بندی</option></select>
+      @if($mode==='create')<button type="button" id="scShow" class="btn btn-sm btn-outline-success mt-2 w-100">بارگذاری همه محصولات این دسته / زیردسته برای شمارش</button>@endif
+    </div>
+    <div class="col-md-4" data-stocktake-single><label class="form-label">محصول</label><select id="product" name="product_id" class="form-select" {{ $mode==='edit'?'readonly':'' }} required>@if($document?->product)<option value="{{ $document->product->id }}" selected>{{ $document->product->name }}</option>@else<option value="">انتخاب محصول</option>@endif</select><input id="productSearch" class="form-control mt-2" placeholder="جستجوی نام، کد، SKU یا بارکد" {{ $mode==='edit'?'disabled':'' }}></div>
+  </div></div>
+  @if($mode==='create')
+  <div id="scRecovery" class="alert alert-info d-flex gap-2 align-items-center flex-wrap" hidden>
+    <span>شمارش قبلی در این مرورگر ذخیره شده است؛ می‌توانی آن را بازیابی کنی.</span>
+    <button type="button" id="scRestore" class="btn btn-sm btn-primary">بازیابی شمارش قبلی</button>
+    <button type="button" id="scDiscardRecovery" class="btn btn-sm btn-outline-secondary">کنارگذاشتن نسخه مرورگر</button>
+  </div>
+  <section class="stocktake-category stocktake-workspace" id="stocktakeCategoryApp" data-embedded="1" hidden
+      data-user-id="{{ auth()->id() }}"
+      data-rows-url="{{ route('stock-count-documents.category-variants') }}"
+      data-subcategories-url="{{ route('stock-count-documents.subcategories') }}"
+      data-bulk-store-url="{{ route('stock-count-documents.category-drafts.store') }}"
+      data-bulk-finalize-url="{{ route('stock-count-documents.category-finalize') }}"
+      data-store-url="{{ route('stock-count-documents.store') }}">
+    <header class="sc-top sc-panel">
+      <div><div class="stocktake-eyebrow">انبارگردانی در فرم اصلی</div><h5 class="mb-1">شمارش همه محصولات محدوده انتخاب‌شده</h5>
+        <p class="sc-subtitle mb-0">فقط محصولاتی که حداقل یک تنوع آن‌ها شمارش شده باشد پیش‌نویس می‌گیرند.</p>
+      </div>
+      <button type="button" id="scClose" class="btn btn-outline-secondary">بازگشت به انبارگردانی تک‌محصولی</button>
+    </header>
+    <div class="sc-warning"><strong>روش کار:</strong> همه تنوع‌های محصول را بررسی کن. مقدار خالی یعنی شمارش‌نشده و عدد صفر یعنی موجودی واقعی صفر. برای نهایی‌سازی، تمام تنوع‌های هر محصولی که وارد پیش‌نویس کرده‌ای باید تعیین تکلیف شوند. ذخیره پیش‌نویس موجودی انبار مرکزی را تغییر نمی‌دهد.</div>
+    <div class="sc-panel">
+      <label class="sc-control" for="scLiveSearch"><span>جستجو در محصولات و تنوع‌ها</span>
+        <input id="scLiveSearch" type="search" placeholder="نام محصول، تنوع یا کد کالا">
+      </label>
+    </div>
+    <div id="scStatus" role="status" class="sc-status" aria-live="polite">در حال آماده‌سازی محدوده شمارش...</div>
+    <div id="scProducts"></div>
+    <div id="scBulkToolbar" class="sc-bulk-toolbar" role="toolbar" aria-label="عملیات گروهی انبارگردانی" hidden>
+      <div id="scToolbarStatus" class="sc-toolbar-status" role="status" aria-live="polite">ابتدا محصولات محدوده را بارگذاری کن.</div>
+      <button type="button" id="scMore" class="btn btn-outline-primary" hidden>بارگذاری همه محصولات باقی‌مانده</button>
+      <button type="button" id="scZeroAll" class="btn btn-outline-danger" disabled>صفرگذاری همه تنوع‌ها</button>
+      <button type="button" id="scSaveAll" class="btn btn-success" disabled>ذخیره یکجای پیش‌نویس‌ها</button>
+      <button type="button" id="scReview" class="btn btn-outline-secondary" disabled>بررسی جمع‌بندی</button>
+      <button type="button" id="scFinalizeAll" class="btn btn-primary" disabled>ثبت نهایی همه</button>
+    </div>
+    <section class="sc-panel mt-3" id="scReviewPanel">
+      <h6>جمع‌بندی و پیش‌نویس‌های ذخیره‌شده</h6>
+      <div id="scReviewSummary" class="sc-review-summary" aria-live="polite">پس از ذخیره گروهی، فقط محصولات شمارش‌شده اینجا نمایش داده می‌شوند.</div>
+      <ul id="scDraftList" class="mb-0" aria-live="polite"></ul>
+    </section>
+  </section>
+  @endif
+  <div data-stocktake-single>
+	 <div class="alert alert-warning py-2">
 	 <div class="alert alert-warning py-2">توجه: در ثبت نهایی، موجودی واقعی تمام تنوع‌هایی که مقدار آن‌ها خالی باشد صفر در نظر گرفته می‌شود. شمارش فیزیکی شامل قطعات اختصاص‌یافته به سبدهای خودکار، رزروهای سایت و رزروهای عادی است. کالای فروخته‌شده اما ارسال‌نشده نیز باید در محدوده شمارش تعیین تکلیف شود. قطعات خارج از محدوده شمارش باید پیش از نهایی‌سازی تعیین تکلیف شوند.</div>
 	 <div class="card stocktake-card mb-3"><div class="card-body stocktake-tools"><input id="variantSearch" class="form-control variant-search" placeholder="جستجو در تنوع‌ها"><button type="button" class="btn btn-sm btn-outline-primary" data-tool="fillExpected">پرکردن با موجودی فعلی</button><button type="button" class="btn btn-sm btn-outline-danger" data-tool="zeroAll">صفرکردن همه</button><button type="button" class="btn btn-sm btn-outline-secondary" data-tool="clearAll">پاک‌کردن مقدارها</button><div class="btn-group btn-group-sm" role="group"><button type="button" class="btn btn-outline-secondary active" data-filter="all">نمایش همه</button><button type="button" class="btn btn-outline-secondary" data-filter="diff">فقط اختلاف‌دارها</button><button type="button" class="btn btn-outline-secondary" data-filter="uncounted">فقط شمارش‌نشده‌ها</button></div></div></div>
 	 <div class="card stocktake-card mb-3"><div class="card-body p-0 stocktake-table-wrap" id="variantScroller"><table class="table stocktake-table align-middle"><thead><tr><th class="col-variant">تنوع کالا</th><th class="col-central text-center">موجودی انبار مرکزی</th><th class="col-reserved text-center">رزرو فعال</th><th class="text-center">سهم سبد (آزاد / رزرو)</th><th class="text-center">رزرو سایت</th><th class="col-actual text-center">موجودی واقعی</th><th class="col-diff text-center">اختلاف</th></tr></thead><tbody id="variantRows"><tr><td colspan="7" class="text-center text-muted py-4">محصول را انتخاب کنید.</td></tr></tbody></table><div id="loadState" class="text-center p-2 text-muted small"></div></div></div>
 	 <div class="card stocktake-card mb-3"><div class="card-body"><div class="summary-line" id="summary"></div><div class="summary-details" id="summaryDetails"></div></div></div>
   <div class="card stocktake-card mb-3"><div class="card-body"><label class="form-label fw-bold">توضیح کلی انبارگردانی</label><textarea name="description" class="form-control" rows="3" placeholder="مثلاً شمارش مجدد موجودی پس از جابه‌جایی قفسه‌ها">{{ old('description',$document?->description) }}</textarea></div></div>
   <div class="stocktake-actions"><div><a href="{{ route('stocktake.index') }}" class="btn btn-outline-secondary">بازگشت</a><button class="btn btn-primary" type="submit">ذخیره پیش‌نویس</button></div><div class="d-flex align-items-center gap-3 flex-wrap"><div class="form-check m-0"><input class="form-check-input" type="checkbox" value="1" id="confirmEmpty" name="confirm_empty_as_zero"><label class="form-check-label" for="confirmEmpty">تأیید می‌کنم موجودی واقعی تنوع‌های بدون مقدار، هنگام ثبت نهایی صفر در نظر گرفته شود.</label></div>@if($mode==='edit')<button class="btn btn-success" id="applyBtn" formaction="{{ route('stock-count-documents.finalize',$document) }}" formmethod="post" disabled onclick="event.preventDefault();showApplyModal();">ثبت نهایی و اعمال موجودی</button>@endif</div></div>
- </form>
+   </div>
+</form>
 </div>
 <script>
 const app=document.getElementById('stocktakeApp'), docId=app.dataset.documentId||'', serverConflicts=@json($stockCountConflicts->values()), oldActuals=@json($oldActualQuantities), serverConflictsByVariant=Object.fromEntries(serverConflicts.filter(c=>c.variant_id).map(c=>[String(c.variant_id),c])), state={rows:[],page:1,hasMore:false,loading:false,actual:{},filter:'all',submitting:false};
