@@ -1,14 +1,14 @@
 <?php
 
-namespace Tests\\Feature;
+namespace Tests\Feature;
 
-use App\\Exceptions\\StockCountFinalizeValidationException;
-use App\\Models\\{Product, ProductVariant, StockCountDocument, StockCountDocumentHistory, StockCountDocumentItem, StockMovement, Warehouse, WarehouseStock};
-use App\\Services\\{ReservationQueryService, StockCountDocumentService};
-use Illuminate\\Database\\Schema\\Blueprint;
-use Illuminate\\Support\\Facades\\{DB, Event, Http, Schema};
-use Illuminate\\Validation\\ValidationException;
-use Tests\\TestCase;
+use App\Exceptions\StockCountFinalizeValidationException;
+use App\Models\{Product, ProductVariant, StockCountDocument, StockCountDocumentHistory, StockCountDocumentItem, StockMovement, Warehouse, WarehouseStock};
+use App\Services\{ReservationQueryService, StockCountDocumentService};
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\{DB, Event, Http, Schema};
+use Illuminate\Validation\ValidationException;
+use Tests\TestCase;
 
 final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
 {
