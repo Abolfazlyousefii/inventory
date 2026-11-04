@@ -11,6 +11,8 @@ class StockCountDocument extends Model
         'type',
         'warehouse_id',
         'product_id',
+        'category_id',
+        'scope_name',
         'document_date',
         'status',
         'description',
@@ -48,9 +50,40 @@ class StockCountDocument extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function category()
+    {
+        return $this->belongsTo(Category::class, 'category_id');
+    }
+
     public function items()
     {
         return $this->hasMany(StockCountDocumentItem::class, 'document_id');
+    }
+
+    public function getArchiveSubjectNameAttribute(): string
+    {
+        if (($this->type ?? 'product') === 'product') {
+            return $this->product?->name ?: 'کالای نامشخص';
+        }
+
+        return trim((string) $this->scope_name) !== ''
+            ? trim((string) $this->scope_name)
+            : ($this->category?->name ?: 'محدوده نامشخص');
+    }
+
+    public function getArchiveScopeLabelAttribute(): string
+    {
+        if (($this->type ?? 'product') === 'product') {
+            return 'انبارگردانی محصولی';
+        }
+
+        if (($this->type ?? '') === 'category') {
+            return $this->category?->parent_id
+                ? 'انبارگردانی زیردسته‌ای'
+                : 'انبارگردانی دسته‌ای';
+        }
+
+        return 'انبارگردانی محدوده‌ای';
     }
 
     public function creator()

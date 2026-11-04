@@ -17,7 +17,7 @@
         @endforeach
     </div>
     <form method="get" action="{{ route('stocktake.index') }}" class="sa-filters">
-        <div class="sa-search"><label for="sa-q">جست‌وجو در اسناد</label><input id="sa-q" name="q" type="search" class="form-control" value="{{ $filters['q'] ?? '' }}" placeholder="شماره سند، نام کالا، ثبت‌کننده یا توضیحات"></div>
+        <div class="sa-search"><label for="sa-q">جست‌وجو در اسناد</label><input id="sa-q" name="q" type="search" class="form-control" value="{{ $filters['q'] ?? '' }}" placeholder="شماره سند، نام کالا یا محدوده، ثبت‌کننده یا توضیحات"></div>
         <div><label for="sa-warehouse">انبار</label><select id="sa-warehouse" name="warehouse_id" class="form-select"><option value="">همه انبارها</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}" @selected((string)($filters['warehouse_id'] ?? '') === (string)$warehouse->id)>{{ $warehouse->name }}</option>@endforeach</select></div>
         <div><label for="sa-status">وضعیت</label><select id="sa-status" name="status" class="form-select"><option value="">همه وضعیت‌ها</option>@foreach($statuses as $key=>$label)<option value="{{ $key }}" @selected(($filters['status'] ?? '') === $key)>{{ $label }}</option>@endforeach</select></div>
         <div><label for="sa-from">از تاریخ سند</label><input id="sa-from" data-jdp data-jdp-only-date name="date_from" class="form-control" value="{{ $filters['date_from'] ?? '' }}" placeholder="۱۴۰۵/۰۷/۰۱" dir="ltr" inputmode="numeric" autocomplete="off"></div>
@@ -31,7 +31,7 @@
             @foreach($documents as $doc)
             <tr>
                 <td data-label="سند"><a class="sa-code" href="{{ route('stock-count-documents.view',$doc) }}"><bdi>{{ $fa($doc->document_number) }}</bdi></a><time class="sa-subtitle" dir="ltr">{{ $fa(\App\Support\JalaliDate::date($doc->document_date)) }}</time></td>
-                <td data-label="محصول / محدوده"><strong class="sa-product">{{ $doc->product?->name ?? '—' }}</strong><span class="sa-subtitle">{{ ($doc->type ?? 'product') === 'product' ? 'انبارگردانی محصولی' : 'انبارگردانی نقشه‌ای' }}</span></td>
+                <td data-label="محصول / محدوده"><strong class="sa-product">{{ $doc->archive_subject_name }}</strong><span class="sa-subtitle">{{ $doc->archive_scope_label }}</span></td>
                 <td data-label="انبار / ثبت‌کننده"><span>{{ $doc->warehouse?->name ?? '—' }}</span><span class="sa-subtitle">{{ $doc->creator?->name ?? '—' }}</span></td>
                 <td data-label="شمارش"><strong>{{ $number($doc->variants_count ?: $doc->items_count) }} تنوع</strong><span class="sa-subtitle">{{ $number($doc->zeroed_count) }} صفرشده</span></td>
                 <td data-label="افزایش"><span class="sa-delta positive">{{ $doc->total_increase > 0 ? '+' : '' }}{{ $number($doc->total_increase) }}</span></td>
