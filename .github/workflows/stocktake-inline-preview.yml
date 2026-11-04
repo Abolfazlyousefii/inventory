@@ -1,0 +1,33 @@
+name: Stocktake inline preview (isolated)
+
+on:
+  pull_request:
+    paths:
+      - 'public/js/stocktake-inline-category-preview.js'
+      - 'resources/views/stocktake/form.blade.php'
+      - 'tests/Js/stocktake-inline-category-preview.test.cjs'
+      - '.github/workflows/stocktake-inline-preview.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'public/js/stocktake-inline-category-preview.js'
+      - 'resources/views/stocktake/form.blade.php'
+      - 'tests/Js/stocktake-inline-category-preview.test.cjs'
+      - '.github/workflows/stocktake-inline-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preview-contract:
+    name: Preview JavaScript safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check browser script syntax
+        run: node --check public/js/stocktake-inline-category-preview.js
+      - name: Verify paginated read-only inline preview
+        run: node --test tests/Js/stocktake-inline-category-preview.test.cjs
