@@ -200,6 +200,40 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(1, StockCountDocument::count());
     }
 
+    public function test_unified_finalize_request_status_recovers_without_reapplying_stock(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $user = new User();
+        $user->forceFill(['id' => 1]);
+        $requestId = 'a2d8d39a-b7a4-4dd7-b48f-42c0a0d12f90';
+        $service = app(StockCountDocumentService::class);
+        $request = \\Illuminate\\Http\\Request::create(
+            route('stock-count-documents.category-document.finalize', $document),
+            'POST',
+            [
+                'request_id' => $requestId,
+                'expected_review_token' => $service->reviewToken($document),
+            ],
+            [],
+            [],
+            ['HTTP_ACCEPT' => 'application/json'],
+        );
+        $request->setUserResolver(fn () => $user);
+
+        $response = app(\\App\\Http\\Controllers\\CategoryStocktakeController::class)->finalize($request, $document);
+        $this->assertSame(200, $response->getStatusCode());
+
+        $statusRequest = \\Illuminate\\Http\\Request::create('/stock-count-documents/requests/'.$requestId, 'GET', [
+            'operation' => 'unified_finalize',
+        ], [], [], ['HTTP_ACCEPT' => 'application/json']);
+        $statusRequest->setUserResolver(fn () => $user);
+        $status = app(StocktakeRequestService::class)->status($statusRequest, $requestId);
+
+        $this->assertSame('finalized', $status->getData(true)['document']['status']);
+        $this->assertSame(8, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
+        $this->assertSame(1, StockMovement::count());
+    }
+
     public function test_category_draft_rejects_variants_outside_the_selected_category_tree(): void
     {
         try {
