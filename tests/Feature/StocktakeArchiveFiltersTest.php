@@ -14,9 +14,10 @@ class StocktakeArchiveFiltersTest extends TestCase
     {
         parent::setUp();
         foreach (['products','warehouses','users'] as $name) Schema::create($name, function (Blueprint $t) { $t->id(); $t->string('name'); });
+        Schema::create('categories', function (Blueprint $t) { $t->id(); $t->string('name'); $t->integer('parent_id')->nullable(); });
         Schema::create('stock_count_documents', function (Blueprint $t) {
-            $t->id(); $t->string('document_number'); $t->date('document_date'); $t->string('status'); $t->string('description')->nullable();
-            $t->integer('product_id'); $t->integer('warehouse_id'); $t->integer('created_by');
+            $t->id(); $t->string('document_number'); $t->string('type')->default('product'); $t->date('document_date'); $t->string('status'); $t->string('description')->nullable();
+            $t->integer('product_id')->nullable(); $t->integer('category_id')->nullable(); $t->string('scope_name')->nullable(); $t->integer('warehouse_id'); $t->integer('created_by');
             $t->integer('total_increase')->default(0); $t->integer('total_decrease')->default(0); $t->integer('superseded_by_id')->nullable(); $t->timestamps();
         });
         Schema::create('stock_count_document_items', function (Blueprint $t) { $t->id(); $t->integer('document_id'); });
@@ -77,6 +78,56 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame(1,$data['total']);
         $this->assertCount(1,$data['data']);
         $this->assertSame('draft',$data['data'][0]['status']);
+    }
+
+    public function test_category_archive_uses_saved_scope_name_and_identifies_subcategory(): void
+    {
+        DB::table('categories')->insert([
+            ['id'=>7,'name'=>'لوازم جانبی','parent_id'=>null],
+            ['id'=>28,'name'=>'نگهدارنده','parent_id'=>7],
+        ]);
+        DB::table('stock_count_documents')->insert([
+            'document_number'=>'STC-CATEGORY-HEADER-HOLDER',
+            'type'=>'category',
+            'document_date'=>'2026-10-31',
+            'status'=>'finalized',
+            'product_id'=>null,
+            'category_id'=>28,
+            'scope_name'=>'Header Holder',
+            'warehouse_id'=>1,
+            'created_by'=>1,
+            'created_at'=>'2026-10-31 09:35:55',
+        ]);
+
+        $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET'));
+        $document = $view->getData()['documents']->firstWhere('document_number', 'STC-CATEGORY-HEADER-HOLDER');
+
+        $this->assertNotNull($document);
+        $this->assertTrue($document->relationLoaded('category'));
+        $this->assertSame('Header Holder', $document->archive_subject_name);
+        $this->assertSame('انبارگردانی زیردسته‌ای', $document->archive_scope_label);
+    }
+
+    public function test_archive_search_matches_category_scope_snapshot(): void
+    {
+        DB::table('categories')->insert(['id'=>28,'name'=>'نگهدارنده','parent_id'=>7]);
+        DB::table('stock_count_documents')->insert([
+            'document_number'=>'STC-CATEGORY-SEARCH',
+            'type'=>'category',
+            'document_date'=>'2026-10-31',
+            'status'=>'finalized',
+            'product_id'=>null,
+            'category_id'=>28,
+            'scope_name'=>'Header Holder',
+            'warehouse_id'=>1,
+            'created_by'=>1,
+            'created_at'=>'2026-10-31 09:35:55',
+        ]);
+
+        $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', ['q'=>'Header Holder']));
+
+        $this->assertSame(1, $view->getData()['documents']->total());
+        $this->assertSame('STC-CATEGORY-SEARCH', $view->getData()['documents']->first()->document_number);
     }
 
     public function test_reversed_date_range_is_rejected(): void
