@@ -441,6 +441,9 @@ class StockCountDocumentService
                 abort(422, 'فقط پیش‌نویس دسته‌ای قابل نهایی‌سازی است.');
             }
             $this->assertNotSuperseded($document);
+            if (empty($payload['expected_review_token'])) {
+                abort(409, 'برای ثبت نهایی، صفحه بررسی را تازه‌سازی کنید تا توکن تأیید دریافت شود.');
+            }
             $this->assertExpectedReview($document, $payload);
 
             $category = Category::query()->findOrFail((int) $document->category_id);
