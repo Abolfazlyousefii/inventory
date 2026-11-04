@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded',() => {
     let pending = null, busy = false, navigating = false;
     const notice = text => {status.textContent = text;};
     try {pending = JSON.parse(sessionStorage.getItem(key) || 'null');} catch (_) {}
-    function controls() {button.disabled = busy || navigating; button.textContent = pending ? 'بازیابی نتیجهٔ ثبت نهایی' : 'تأیید شمارش و اعمال کل سند';}
+    function controls() {button.disabled = busy || navigating; button.textContent = pending ? 'بازیابی نتیجهٔ ثبت نهایی' : 'تأیید شمارش و اعمال تنوع‌های ثبت‌شده';}
     function finish(result) {
         if (Number(result.document_id) !== Number(form.dataset.documentId) || result.document?.status !== 'finalized') throw new Error('پاسخ معتبر نیست؛ وضعیت سند را در آرشیو بررسی کنید.');
         const target = new URL(result.view_url,location.origin);
@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded',() => {
     }
     button.addEventListener('click',async () => {
         if (busy || navigating) return;
-        if (!pending && !confirm('کل '+form.dataset.totalCount+' ردیف این سند، شامل '+form.dataset.zeroCount+' ردیف با موجودی صفر، اعمال شود؟ پس از تأیید، موجودی مرکزی تغییر می‌کند.')) return;
+        if (!pending && !confirm('فقط '+form.dataset.totalCount+' تنوعِ صریحاً شمارش‌شده، شامل '+form.dataset.zeroCount+' مقدار صفر، اعمال شوند؟ تنوع‌های شمارش‌نشده تغییر نمی‌کنند. پس از تأیید، موجودی مرکزی تغییر می‌کند.')) return;
         busy = true;
         try {
             if (!pending) pending = {request_id:crypto.randomUUID(),expected_review_token:form.dataset.reviewToken};
