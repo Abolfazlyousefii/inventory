@@ -37,7 +37,7 @@ final class CategoryStocktakeController extends Controller
             'category_name'=>$document?->scope_name ?? $category?->name ?? '',
             'review_token'=>$document ? $this->service->reviewToken($document) : null,
             'items'=>$document ? $document->items()->orderBy('product_variant_id')->get()->map(fn ($item) => [
-                'variant_id'=>(int) $item->product_variant_id, 'actual_quantity'=>(int) $item->actual_quantity,
+                'variant_id'=>(int) $item->product_variant_id, 'actual_quantity'=>$item->actual_quantity === null ? null : (int) $item->actual_quantity,
             ])->all() : [],
             'rows_url'=>route('stock-count-documents.category-variants'),
             'save_url'=>route('stock-count-documents.category-document.store'),
@@ -50,7 +50,6 @@ final class CategoryStocktakeController extends Controller
 
     public function store(Request $request)
     {
-        abort(503, 'بخش ذخیرهٔ انبارگردانی دسته‌ای در مرحلهٔ آزمایش نمایشی غیرفعال است.');
         return app(StocktakeRequestService::class)->run($request, 'unified_save', function () use ($request) {
             $data = $request->validate([
                 'category_id'=>['required','integer','exists:categories,id'],
@@ -75,7 +74,6 @@ final class CategoryStocktakeController extends Controller
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
-        abort(503, 'ثبت نهایی در مرحلهٔ آزمایش نمایشی غیرفعال است.');
         abort_unless($stockCountDocument->type === 'category', 404);
         return app(StocktakeRequestService::class)->run($request, 'unified_finalize', function () use ($request, $stockCountDocument) {
             $data = $request->validate(['expected_review_token'=>['required','string','size:64']]);
@@ -101,7 +99,7 @@ final class CategoryStocktakeController extends Controller
             'total_actual'=>(int) $document->total_actual, 'total_increase'=>(int) $document->total_increase,
             'total_decrease'=>(int) $document->total_decrease,
             'items'=>$document->items()->orderBy('product_variant_id')->get()->map(fn ($item) => [
-                'variant_id'=>(int) $item->product_variant_id, 'actual_quantity'=>(int) $item->actual_quantity,
+                'variant_id'=>(int) $item->product_variant_id, 'actual_quantity'=>$item->actual_quantity === null ? null : (int) $item->actual_quantity,
             ])->all(),
         ];
         return ['document_id'=>(int) $document->id,'view_url'=>$resource['review_url'],'review_token'=>$token,'document'=>$resource];
