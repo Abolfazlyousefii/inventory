@@ -270,7 +270,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $token = $service->reviewToken($document);
         $document->update(['description' => 'تغییر خارج از صفحه بررسی']);
 
-        $this->expectException(\\Symfony\\Component\\HttpKernel\\Exception\\HttpException::class);
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
         try {
             $service->finalize($document, 1, false, ['expected_review_token' => $token]);
         } finally {
@@ -281,7 +281,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
 
     public function test_changed_reservation_on_a_counted_variant_blocks_category_finalization(): void
     {
-        $reservations = \\Mockery::mock(ReservationQueryService::class);
+        $reservations = \Mockery::mock(ReservationQueryService::class);
         $reservations->shouldReceive('quantitiesByVariant')->twice()
             ->andReturn(collect([101 => 2]), collect([101 => 3]));
         $this->app->instance(ReservationQueryService::class, $reservations);
