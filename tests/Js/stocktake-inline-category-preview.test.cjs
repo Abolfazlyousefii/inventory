@@ -10,7 +10,7 @@ const read = file => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8'
 const previewModule = { exports: {} };
 const browserSource = read('public/js/stocktake-inline-category-preview.js');
 Function('module', browserSource)(previewModule);
-const { validatePage, PAGE_SIZE } = previewModule.exports;
+const { validatePage, PAGE_SIZE, normalizeActualCount, summarizeCounts } = previewModule.exports;
 
 test('category preview uses bounded pages with an advancing cursor', () => {
     assert.equal(PAGE_SIZE, 60);
@@ -59,4 +59,38 @@ test('preview code reads category variant endpoint, never makes stock writes', (
     assert.match(script, /event\.stopImmediatePropagation\(\)/);
     assert.doesNotMatch(script, /method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/i);
     assert.doesNotMatch(script, /(?:bulkFinalize|saveCategoryDraft|stocktake_adjustment|warehouse_stocks)/);
+});
+
+
+test('physical count treats explicit zero differently from blank and validates digits', () => {
+    assert.equal(normalizeActualCount(''), null);
+    assert.equal(normalizeActualCount('   '), null);
+    assert.equal(normalizeActualCount('۰'), '0');
+    assert.equal(normalizeActualCount('٠٠١۲'), '12');
+    assert.equal(normalizeActualCount('0000'), '0');
+    assert.equal(normalizeActualCount('2147483647'), '2147483647');
+    assert.throws(() => normalizeActualCount('-1'));
+    assert.throws(() => normalizeActualCount('2.5'));
+    assert.throws(() => normalizeActualCount('2147483648'));
+    assert.throws(() => normalizeActualCount('abc'));
+});
+
+test('counts persist by variant key and include zero in counted total', () => {
+    const countValues = new Map([[100, '0'], [101, '5'], [102, '']]);
+    assert.deepEqual(summarizeCounts(countValues, new Set([100, 101, 102, 103])), {
+        seen: 4, counted: 2, zero: 1, uncounted: 2,
+    });
+});
+
+test('in-page counting has search, numeric inputs and no write endpoint', () => {
+    const view = read('resources/views/stocktake/form.blade.php');
+    const script = read('public/js/stocktake-inline-category-preview.js');
+    assert.match(view, /id="stocktakeInlinePreviewSearch"/);
+    assert.match(view, /id="stocktakeInlinePreviewSummary"/);
+    assert.match(script, /className\s*=\s*'form-control stocktake-inline-actual'/);
+    assert.match(script, /const entered = new Map\(\)/);
+    assert.match(script, /entered\.set\(variantId,/);
+    assert.match(script, /const stored = entered\.get\(variantId\)/);
+    assert.match(script, /searchInput\.addEventListener\('input'/);
+    assert.doesNotMatch(script, /method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/i);
 });
