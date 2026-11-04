@@ -258,11 +258,22 @@ class StockCountDocumentService
             app(InventoryCountFreezeService::class)->fence();
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
             if ($document->status !== 'draft') abort(422, 'فقط سند پیش‌نویس قابل نهایی‌سازی است.');
-            if (($document->type ?? 'product') !== 'product') abort(422, 'در این نسخه فقط انبارگردانی محصولی قابل اعمال است.');
+            $this->assertNotSuperseded($document);
+            abort_unless(in_array($document->type ?? 'product', ['product','category'], true), 422, 'نوع سند قابل اعمال نیست.');
+            $categoryDocument = $document->type === 'category';
             $this->assertExpectedReview($document, $payload);
-            $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
-            $this->validateCounts((int) $document->product_id, $payload);
-            $this->assertNoSiteHolds((int) $document->product_id);
+            $productIds = $categoryDocument
+                ? $document->items()->distinct()->pluck('product_id')->map(fn ($id) => (int) $id)->all()
+                : [(int) $document->product_id];
+            foreach (Product::query()->whereIn('id', $productIds)->get() as $product) {
+                $this->assertCountableProduct($product);
+            }
+            if ($categoryDocument) {
+                $payload = $this->validateCategoryCounts($document->items()->pluck('product_variant_id')->all(), $payload);
+            } else {
+                $this->validateCounts((int) $document->product_id, $payload);
+            }
+            $this->assertNoSiteHoldsForProducts($productIds);
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -299,12 +310,12 @@ class StockCountDocumentService
                 );
             }
             $variantIds = $items->pluck('product_variant_id')->map(fn($v)=>(int)$v)->all();
-            $currentIds = ProductVariant::query()->where('product_id', (int) $document->product_id)->orderBy('id')->pluck('id')->map(fn($v)=>(int)$v)->all();
+            $currentIds = ($categoryDocument ? $this->categoryVariantsQuery((int) $document->category_id) : ProductVariant::query()->where('product_id', (int) $document->product_id)->orderBy('id'))->pluck('id')->map(fn($v)=>(int)$v)->all();
             $conflicts = [];
             if ($currentIds !== $variantIds) {
                 $conflicts[] = [
                     'variant_id' => null,
-                    'variant_name' => $document->product?->name ?: 'محصول سند',
+                    'variant_name' => $categoryDocument ? ($document->scope_name ?: 'دسته سند') : ($document->product?->name ?: 'محصول سند'),
                     'sku' => null,
                     'reason_code' => 'variant_set_changed',
                     'reason' => 'مجموعه تنوع‌های محصول پس از شروع انبارگردانی تغییر کرده است. سند را به‌روزرسانی کنید.',
@@ -316,12 +327,14 @@ class StockCountDocumentService
             // Lock bundle product rows BEFORE central stock rows, matching the
             // order used by allocation changes and bundle checkout.
             $bundleQuantities = $this->bundleStocktake->quantitiesByComponent($variantIds, true);
+            $categoryReservations = $categoryDocument ? $this->reservations->quantitiesByVariant(variantIds: $variantIds) : null;
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->lockForUpdate()->get()->keyBy('id');
             $stocks = WarehouseStock::query()->where('warehouse_id', $warehouse->id)->whereIn('product_variant_id', $variantIds)->lockForUpdate()->get()->keyBy('product_variant_id');
-            foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$document->product_id, (int)$item->product_variant_id, true);
+            foreach ($items as $item) if (! $stocks->has((int)$item->product_variant_id)) $stocks[(int)$item->product_variant_id] = $this->lockOrCreateStock($warehouse->id, (int)$item->product_id, (int)$item->product_variant_id, true);
             foreach ($items as $item) {
                 $variant = $variants[(int)$item->product_variant_id] ?? null; $stock = $stocks[(int)$item->product_variant_id];
-                $reserved = $variant ? $this->activeReserved($variant) : 0; $available = (int)$stock->quantity; $actual = $item->actual_quantity === null ? 0 : (int)$item->actual_quantity;
+                $reserved = $categoryDocument ? (int) $categoryReservations->get($item->product_variant_id, 0) : ($variant ? $this->activeReserved($variant) : 0);
+                $available = (int)$stock->quantity; $actual = (int)$item->actual_quantity;
                 if ($available !== (int)$item->system_available_at_start) $conflicts[] = $this->finalizeConflict($item, 'stock_changed', 'موجودی این تنوع پس از شروع شمارش تغییر کرده است. اطلاعات را تازه‌سازی کنید.', $actual, $reserved, $available);
                 if ($item->warehouse_stock_updated_at_start && $stock->updated_at && ! $item->warehouse_stock_updated_at_start->equalTo($stock->updated_at)) {
                     $conflicts[] = $this->finalizeConflict($item, 'stock_changed_since_snapshot', 'موجودی این تنوع پس از شروع شمارش جابه‌جا شده است؛ حتی اگر دوباره به همان عدد برگشته باشد، شمارش باید بازبینی شود.', $actual, $reserved, $available);
@@ -351,12 +364,12 @@ class StockCountDocumentService
                 $item->update(['actual_quantity'=>$actual, 'new_available'=>$newAvailable, 'difference_quantity'=>$diff, 'system_quantity'=>(int)$item->system_available_at_start]);
                 if ($diff !== 0) StockMovement::create(['product_id'=>(int)$item->product_id,'product_variant_id'=>(int)$item->product_variant_id,'warehouse_id'=>(int)$warehouse->id,'user_id'=>$userId,'type'=>$diff>0?'in':'out','reason'=>'adjustment','transaction_type'=>'stocktake_adjustment','quantity'=>abs($newAvailable-$before),'stock_before'=>$before,'stock_after'=>$newAvailable,'note'=>'تعدیل ناشی از انبارگردانی سند '.$document->document_number,'reference'=>$document->document_number,'reference_type'=>'stock_count_document','reference_id'=>$document->id]);
             }
-            WarehouseStockService::syncProductStockFromCentral((int)$document->product_id);
+            foreach ($productIds as $productId) WarehouseStockService::syncProductStockFromCentral((int)$productId);
             $this->refreshSummary($document);
             $document->update(['status'=>'finalized','finalized_by'=>$userId,'finalized_at'=>now(),'updated_by'=>$userId]);
-            $this->addHistory($document->id, 'finalized', null, ['status'=>'finalized'], 'اعمال انبارگردانی محصولی در انبار مرکزی', $userId);
+            $this->addHistory($document->id, 'finalized', null, ['status'=>'finalized'], $categoryDocument ? 'اعمال سند واحد انبارگردانی دسته در انبار مرکزی' : 'اعمال انبارگردانی محصولی در انبار مرکزی', $userId);
             DB::afterCommit(fn() => logger()->info('سند انبارگردانی اعمال شد', ['document_id'=>$document->id,'document_number'=>$document->document_number]));
-            return $document->fresh(['warehouse','product','items.variant','creator','finalizer']);
+            return $document->fresh(['warehouse','product','category','items.variant','creator','finalizer']);
         }));
     }
 
@@ -364,6 +377,7 @@ class StockCountDocumentService
     {
         return DB::transaction(function () use ($document, $userId, $reason) {
             $document = StockCountDocument::query()->lockForUpdate()->findOrFail($document->id);
+            $this->assertNotSuperseded($document);
             if ($document->status === 'cancelled') return $document;
             if ($document->status !== 'draft') abort(422, 'لغو سند اعمال‌شده مجاز نیست.');
             $document->update(['status'=>'cancelled','cancelled_by'=>$userId,'cancelled_at'=>now(),'cancel_reason'=>$reason,'updated_by'=>$userId]);
