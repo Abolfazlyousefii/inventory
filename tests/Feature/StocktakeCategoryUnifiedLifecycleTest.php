@@ -19,6 +19,17 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         Http::fake();
 
         Schema::create('users', fn (Blueprint $table) => $table->id());
+        Schema::create('stocktake_requests', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('operation', 16);
+            $table->uuid('request_id');
+            $table->char('payload_hash', 64);
+            $table->longText('response')->nullable();
+            $table->unsignedSmallInteger('response_status')->nullable();
+            $table->timestamps();
+            $table->unique(['user_id', 'operation', 'request_id']);
+        });
         Schema::create('categories', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -158,6 +169,35 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame('finalized', $response->getData(true)['document']['status']);
         $this->assertSame(8, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
         $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
+    }
+
+    public function test_unified_save_request_status_recovers_the_saved_category_document(): void
+    {
+        $user = new User();
+        $user->forceFill(['id' => 1]);
+        $requestId = '2c9e4f16-8c0d-4c4b-9e2d-7d89a3b5c104';
+        $request = \\Illuminate\\Http\\Request::create('/stock-count-documents/category-document', 'POST', [
+            'request_id' => $requestId,
+            'category_id' => 10,
+            'actual_quantities' => ['101' => 0],
+        ], [], [], ['HTTP_ACCEPT' => 'application/json']);
+        $request->setUserResolver(fn () => $user);
+
+        $response = app(CategoryStocktakeController::class)->store($request);
+        $response->assertOk();
+
+        $statusRequest = \\Illuminate\\Http\\Request::create('/stock-count-documents/requests/'.$requestId, 'GET', [
+            'operation' => 'unified_save',
+        ], [], [], ['HTTP_ACCEPT' => 'application/json']);
+        $statusRequest->setUserResolver(fn () => $user);
+        $status = app(StocktakeRequestService::class)->status($statusRequest, $requestId);
+
+        $this->assertSame(200, $status->getStatusCode());
+        $this->assertSame(
+            $response->getData(true)['document_id'],
+            $status->getData(true)['document_id'],
+        );
+        $this->assertSame(1, StockCountDocument::count());
     }
 
     public function test_category_draft_rejects_variants_outside_the_selected_category_tree(): void
