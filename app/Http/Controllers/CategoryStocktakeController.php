@@ -16,9 +16,18 @@ final class CategoryStocktakeController extends Controller
     {
         $data = $request->validate(['category_id'=>['nullable','integer','exists:categories,id']]);
         $category = !empty($data['category_id']) ? Category::findOrFail($data['category_id']) : null;
-        if ($category && ($draft = StockCountDocument::query()->where('type','category')->where('category_id',$category->id)
-            ->where('status','draft')->whereNull('superseded_by_id')->latest('id')->first())) {
-            return redirect()->route('stock-count-documents.edit',$draft);
+        if ($category) {
+            $selectedScope = array_map('intval', Category::selfAndDescendantIds((int) $category->id));
+            $drafts = StockCountDocument::query()->where('type', 'category')
+                ->where('status', 'draft')->whereNull('superseded_by_id')
+                ->whereNotNull('category_id')->latest('id')->get();
+            foreach ($drafts as $draft) {
+                $draftScope = array_map('intval', Category::selfAndDescendantIds((int) $draft->category_id));
+                if (array_intersect($selectedScope, $draftScope) !== []) {
+                    return redirect()->route('stock-count-documents.edit', $draft)
+                        ->with('warning', 'برای جلوگیری از شمارش تکراری در محدوده‌های هم‌پوشان، همان پیش‌نویس قبلی باز شد.');
+                }
+            }
         }
         return $this->editor(null, $category);
     }
