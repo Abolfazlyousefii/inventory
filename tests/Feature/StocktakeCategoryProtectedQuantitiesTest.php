@@ -156,6 +156,41 @@ final class StocktakeCategoryProtectedQuantitiesTest extends TestCase
         $this->assertSame([], $outside['rows']);
     }
 
+    public function test_unshipped_consumed_site_hold_is_still_physical_but_shipped_hold_is_not(): void
+    {
+        DB::table('invoices')->insert(['id'=>2,'status'=>Invoice::STATUS_PENDING_COLLECTION]);
+        DB::table('site_stock_holds')->insert(['id'=>2,'status'=>'consumed','invoice_id'=>2]);
+        DB::table('site_stock_hold_lines')->insert([
+            'hold_id'=>2, 'variant_id'=>1, 'quantity'=>4,
+        ]);
+
+        $unshipped = app(StocktakeCategoryWorkspaceService::class)->rows(10, 0, 60);
+        $this->assertSame(7, $unshipped['rows'][0]['site_held']);
+        $this->assertSame(22, $unshipped['rows'][0]['expected_physical']);
+
+        DB::table('invoices')->where('id',2)->update([
+            'status'=>Invoice::STATUS_SHIPPED,'shipped_at'=>'2026-11-04 12:00:00',
+        ]);
+
+        $shipped = app(StocktakeCategoryWorkspaceService::class)->rows(10, 0, 60);
+        $this->assertSame(3, $shipped['rows'][0]['site_held']);
+        $this->assertSame(18, $shipped['rows'][0]['expected_physical']);
+        $this->assertSame(10, (int) DB::table('warehouse_stocks')
+            ->where('product_variant_id',1)->value('quantity'));
+    }
+
+    public function test_untraceable_consumed_site_hold_fails_closed(): void
+    {
+        DB::table('site_stock_holds')->insert(['id'=>2,'status'=>'consumed','invoice_id'=>9999]);
+        DB::table('site_stock_hold_lines')->insert([
+            'hold_id'=>2,'variant_id'=>1,'quantity'=>4,
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Consumed site hold has no traceable invoice');
+        app(StocktakeCategoryWorkspaceService::class)->rows(10, 0, 60);
+    }
+
     public function test_missing_central_warehouse_fails_without_creating_one(): void
     {
         DB::table('warehouses')->delete();
