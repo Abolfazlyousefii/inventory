@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let categoryId = Number(seed.category_id) || 0;
     let afterId = 0, hasMore = false, loading = false, saving = false, loadingAll = false;
     let dirty = false, query = '', timer = null, controller = null, generation = 0, pending = null, navigating = false;
-    const storageKey = 'inventory.stocktake.category-document.v1:' + seed.user_id + ':' + (documentId || 'new');
+    const storageKey = 'inventory.stocktake.category-document.v2:' + seed.user_id + ':' + (documentId || 'new');
     const fa = value => Number(value || 0).toLocaleString('fa-IR');
     const make = (tag,className,text) => {
         const node = document.createElement(tag);
@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function readRecovery() {
         try {
             const snapshot = JSON.parse(globalThis.sessionStorage.getItem(storageKey) || 'null');
-            return snapshot && snapshot.version === 1 && snapshot.user_id === seed.user_id &&
+            return snapshot && snapshot.version === 2 && snapshot.user_id === seed.user_id &&
                 Number(snapshot.document_id || 0) === Number(seed.id || 0) &&
                 Array.isArray(snapshot.counts) && snapshot.counts.length <= 20000 ? snapshot : null;
         } catch (_) { return null; }
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!categoryId) return true;
         if (recovery) return true;
         try {
-            globalThis.sessionStorage.setItem(storageKey,JSON.stringify({version:1,user_id:seed.user_id,
+            globalThis.sessionStorage.setItem(storageKey,JSON.stringify({version:2,user_id:seed.user_id,
                 document_id:documentId,category_id:categoryId,review_token:reviewToken,
                 counts:[...counts],invalid:[...invalid],rows:[...rows.values()],pending,
             }));
