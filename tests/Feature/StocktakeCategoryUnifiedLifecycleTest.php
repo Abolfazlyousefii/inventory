@@ -263,6 +263,45 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(77, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
     }
 
+    public function test_category_finalization_rejects_a_stale_review_token_without_changing_stock(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $service = app(StockCountDocumentService::class);
+        $token = $service->reviewToken($document);
+        $document->update(['description' => 'تغییر خارج از صفحه بررسی']);
+
+        $this->expectException(\\Symfony\\Component\\HttpKernel\\Exception\\HttpException::class);
+        try {
+            $service->finalize($document, 1, false, ['expected_review_token' => $token]);
+        } finally {
+            $this->assertSame(10, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
+            $this->assertSame(0, StockMovement::count());
+        }
+    }
+
+    public function test_changed_reservation_on_a_counted_variant_blocks_category_finalization(): void
+    {
+        $reservations = \\Mockery::mock(ReservationQueryService::class);
+        $reservations->shouldReceive('quantitiesByVariant')->twice()
+            ->andReturn(collect([101 => 2]), collect([101 => 3]));
+        $this->app->instance(ReservationQueryService::class, $reservations);
+
+        $document = $this->saveCategory([101 => 12]);
+        $service = app(StockCountDocumentService::class);
+
+        try {
+            $service->finalize($document, 1, false, [
+                'expected_review_token' => $service->reviewToken($document),
+            ]);
+            $this->fail('A changed reservation must block category finalization.');
+        } catch (StockCountFinalizeValidationException $exception) {
+            $this->assertContains('reservation_changed', array_column($exception->conflicts(), 'reason_code'));
+        }
+
+        $this->assertSame(10, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
+        $this->assertSame(0, StockMovement::count());
+    }
+
     public function test_stock_change_on_a_counted_variant_blocks_the_whole_category_document(): void
     {
         $document = $this->saveCategory([101 => 8]);
