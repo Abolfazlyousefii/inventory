@@ -186,8 +186,24 @@ class StockCountDocumentService
             ])->validate();
 
             $categoryId = (int) $data['category_id'];
-            $category = Category::query()->lockForUpdate()->findOrFail($categoryId);
+            $categoryTree = Category::query()->get(['id', 'parent_id'])->keyBy('id');
+            $category = $categoryTree->get($categoryId);
+            abort_unless($category, 404);
             $categoryIds = array_map('intval', Category::selfAndDescendantIds($categoryId));
+
+            // Lock both the selected scope and its ancestors. A parent-scope
+            // draft and a child-scope draft must not be created concurrently.
+            $categoryLockIds = $categoryIds;
+            $parentId = (int) ($category->parent_id ?? 0);
+            $seenParents = [];
+            while ($parentId > 0 && ! isset($seenParents[$parentId]) && $categoryTree->has($parentId)) {
+                $seenParents[$parentId] = true;
+                $categoryLockIds[] = $parentId;
+                $parentId = (int) ($categoryTree->get($parentId)->parent_id ?? 0);
+            }
+            Category::query()->whereIn('id', array_values(array_unique($categoryLockIds)))
+                ->orderBy('id')->lockForUpdate()->get();
+            $category = Category::query()->findOrFail($categoryId);
             $actuals = $data['actual_quantities'] ?? [];
             $notes = $data['notes'] ?? [];
             $removedIds = array_map('intval', $data['removed_variant_ids'] ?? []);
