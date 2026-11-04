@@ -109,6 +109,7 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame('انبارگردانی زیردسته‌ای', $document->archive_scope_label);
 
         view()->share('errors', new ViewErrorBag());
+        $this->withoutVite();
         $html = $view->render();
         $this->assertStringContainsString('Header Holder', $html);
         $this->assertStringContainsString('انبارگردانی زیردسته‌ای', $html);
