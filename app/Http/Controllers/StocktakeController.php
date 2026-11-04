@@ -23,7 +23,7 @@ class StocktakeController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'finalized', 'cancelled'])],
             'date_from' => ['nullable', 'string', 'max:10'], 'date_to' => ['nullable', 'string', 'max:10'],
         ]);
-        $query = StockCountDocument::query()->with(['warehouse','product','creator'])->withCount('items');
+        $query = StockCountDocument::query()->with(['warehouse','product','category','creator'])->withCount('items');
         if (! empty($filters['status'])) $query->where('status', $filters['status']);
         if (! empty($filters['warehouse_id'])) $query->where('warehouse_id', $filters['warehouse_id']);
         $normalize = fn ($value) => strtr(trim($value), ['ي'=>'ی','ك'=>'ک','۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
@@ -66,12 +66,9 @@ class StocktakeController extends Controller
      * Category-wide counting workspace. No stock writes are performed here:
      * each product gets its own existing draft document upon explicit save.
      */
-    public function categoryWorkspace()
+    public function categoryWorkspace(Request $request)
     {
-        return view('stocktake.category-workspace', [
-            'rootCategories' => Category::query()
-                ->whereNull('parent_id')->orderBy('name')->get(['id','name']),
-        ]);
+        return app(CategoryStocktakeController::class)->create($request);
     }
 
     public function categoryVariants(
@@ -260,6 +257,9 @@ class StocktakeController extends Controller
 
     public function show(Request $request, StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->type === 'category') {
+            return app(CategoryStocktakeController::class)->review($stockCountDocument);
+        }
         $stockCountDocument->load(['warehouse','product','items.variant','creator','updater','finalizer','canceller','history.doer']);
         return $request->expectsJson() ? response()->json($stockCountDocument) : view('stocktake.show', ['document'=>$stockCountDocument]);
     }
@@ -267,6 +267,9 @@ class StocktakeController extends Controller
 
     public function edit(StockCountDocument $stockCountDocument)
     {
+        if ($stockCountDocument->type === 'category') {
+            return app(CategoryStocktakeController::class)->edit($stockCountDocument);
+        }
         if ($stockCountDocument->status !== 'draft') return redirect()->route('stock-count-documents.view', $stockCountDocument);
         $stockCountDocument->load(['warehouse','product']);
         return view('stocktake.form', ['mode'=>'edit','document'=>$stockCountDocument,'centralWarehouse'=>$this->service->centralWarehouse(),'rootCategories'=>Category::query()->whereNull('parent_id')->orderBy('name')->get()]);
@@ -315,6 +318,7 @@ class StocktakeController extends Controller
 
     public function cancel(Request $request, StockCountDocument $stockCountDocument)
     {
+        abort_if($stockCountDocument->type === 'category', 403, 'لغو اسناد دسته‌ای در نسخهٔ آزمایشی غیرفعال است.');
         $cancelled = $this->service->cancel($stockCountDocument, (int) auth()->id(), $request->input('cancel_reason'));
         return back()->with('success', 'پیش‌نویس لغو شد.');
     }
