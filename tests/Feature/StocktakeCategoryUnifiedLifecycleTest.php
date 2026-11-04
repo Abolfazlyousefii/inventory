@@ -134,7 +134,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
     {
         $this->saveCategory([101 => 8]);
 
-        $this->expectException(\\Symfony\\Component\\HttpKernel\\Exception\\HttpException::class);
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
         $this->saveCategory([101 => 7], ['category_id' => 11]);
     }
 
@@ -145,7 +145,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $token = $service->reviewToken($document);
         $document->update(['description' => 'تغییر خارج از صفحه بررسی']);
 
-        $this->expectException(\\Symfony\\Component\\HttpKernel\\Exception\\HttpException::class);
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
         $this->saveCategory([101 => 9], [
             'document_id' => $document->id,
             'expected_review_token' => $token,
