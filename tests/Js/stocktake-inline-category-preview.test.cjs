@@ -2,9 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { validatePage, PAGE_SIZE } = require('../../public/js/stocktake-inline-category-preview.js');
-
 const read = file => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+
+// package.json uses "type": "module", while this script is loaded as a classic
+// browser script. Evaluate it as a classic script with an isolated CommonJS shim,
+// so tests exercise the same implementation without relying on ESM require().
+const previewModule = { exports: {} };
+const browserSource = read('public/js/stocktake-inline-category-preview.js');
+Function('module', browserSource)(previewModule);
+const { validatePage, PAGE_SIZE } = previewModule.exports;
 
 test('category preview uses bounded pages with an advancing cursor', () => {
     assert.equal(PAGE_SIZE, 60);
