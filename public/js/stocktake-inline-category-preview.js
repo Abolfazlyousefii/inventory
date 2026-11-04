@@ -143,6 +143,17 @@
             }
         }
 
+        // Preview mode must never fall through to the existing single-product submit path.
+        const form = document.getElementById('stocktakeForm');
+        form?.addEventListener('submit', function (event) {
+            if (panel.hidden) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            message('پیش‌نمایش دسته‌ای فقط خواندنی است. برای ثبت محصولی ابتدا به فرم محصولی برگرد.', true);
+        }, true);
+
+        document.getElementById('stocktakeInlinePreviewClose')?.addEventListener('click', reset);
+        document.getElementById('product')?.addEventListener('change', reset);
         category.addEventListener('change', reset);
         subcategory.addEventListener('change', reset);
         button.addEventListener('click', function () {
