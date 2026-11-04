@@ -313,10 +313,22 @@ class StockCountDocumentService
                 ]);
             }
 
+            $newIds = array_values(array_diff($actualIds, $existingIds));
+            $warehouse = $this->centralWarehouse();
+            Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
+            if ($document && (int) $document->warehouse_id !== (int) $warehouse->id) {
+                abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
+            }
+
+            // Lock automatic bundle products before target products, variants,
+            // and central warehouse stock rows.
+            $bundleQuantities = $newIds === []
+                ? []
+                : $this->bundleStocktake->quantitiesByComponent($newIds, true);
+
             $products = collect();
             $variants = collect();
             if ($idsToValidate !== []) {
-                // Lock products before variants, matching ProductVariant's save lock order.
                 $productIdsByVariant = ProductVariant::query()->whereIn('id', $idsToValidate)->pluck('product_id', 'id');
                 if ($productIdsByVariant->count() !== count($idsToValidate)) {
                     throw ValidationException::withMessages([
@@ -337,17 +349,6 @@ class StockCountDocumentService
                     $this->assertCountableProduct($product);
                 }
             }
-
-            $warehouse = $this->centralWarehouse();
-            Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
-            if ($document && (int) $document->warehouse_id !== (int) $warehouse->id) {
-                abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
-            }
-
-            $newIds = array_values(array_diff($actualIds, $existingIds));
-            $bundleQuantities = $newIds === []
-                ? []
-                : $this->bundleStocktake->quantitiesByComponent($newIds, true);
 
             if (! $document) {
                 $documentDate = $data['document_date'] ?? now('Asia/Tehran')->toDateString();
@@ -476,6 +477,10 @@ class StockCountDocumentService
 
             $productIdsByVariant = ProductVariant::query()->whereIn('id', $variantIds)->pluck('product_id', 'id');
             $productIds = $items->pluck('product_id')->map(fn ($id) => (int) $id)->unique()->sort()->values()->all();
+
+            // Match the bundle checkout lock order: bundle products first,
+            // then counted products, variants, and central warehouse stocks.
+            $bundleQuantities = $this->bundleStocktake->quantitiesByComponent($variantIds, true);
             $products = Product::query()->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $variants = ProductVariant::query()->whereIn('id', $variantIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
@@ -520,8 +525,6 @@ class StockCountDocumentService
                 );
             }
 
-            // Keep automatic-bundle product locks ahead of central stock locks.
-            $bundleQuantities = $this->bundleStocktake->quantitiesByComponent($variantIds, true);
             $stocks = WarehouseStock::query()
                 ->where('warehouse_id', $warehouse->id)
                 ->whereIn('product_variant_id', $variantIds)
