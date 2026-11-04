@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - 'app/Services/StockCountDocumentService.php'
+      - 'app/Services/StocktakeCategoryWorkspaceService.php'
       - 'app/Http/Controllers/StocktakeController.php'
       - 'resources/views/stocktake/form.blade.php'
       - 'resources/views/stocktake/index.blade.php'
