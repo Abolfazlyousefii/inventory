@@ -1,18 +1,24 @@
 <?php
 
-it('submits purchase form normally after an authorized explicit price confirmation', function (): void {
+it('uses the in-app modal for explicit sale-price approval and does not use browser prompts', function (): void {
     $view = file_get_contents(resource_path('views/purchases/create.blade.php'));
 
-    expect($view)->toContain("if (saleChanges.length) {\n                    if (!CAN_CHANGE_SALE_PRICE)")
-        ->toContain("document.getElementById('salePriceChangeConfirmed').value = '1';")
-        ->toContain("document.getElementById('salePriceChangeReason').value = reason.trim().slice(0, 500);")
-        ->toContain("                }\n\n                purchaseForm.dataset.submitting = '1';");
+    expect($view)
+        ->toContain('id="salePriceChangeModal"')
+        ->toContain('id="salePriceChangeReasonInput"')
+        ->toContain('aria-required="true"')
+        ->toContain("salePriceChangeConfirmedInput.value = '1';")
+        ->toContain('salePriceChangeReasonHidden.value = reason.slice(0, 500);')
+        ->toContain('approvedSalePriceSignature')
+        ->not->toContain("prompt('دلیل تغییر قیمت فروش برای ثبت در تاریخچه:')")
+        ->not->toContain("confirm('تغییر قیمت فروش جاری");
+});
 
-    // The successful branch must NOT call preventDefault: that would cancel
-    // the native submit and silently discard the approved price change.
-    $successBranch = explode("                }\n\n                purchaseForm.dataset.submitting = '1';",
-        explode("document.getElementById('salePriceChangeReason').value = reason.trim().slice(0, 500);", $view)[1]
-    )[0];
+it('restores the purchase price baseline from the persisted item after a validation redirect', function (): void {
+    $view = file_get_contents(resource_path('views/purchases/create.blade.php'));
 
-    expect($successBranch)->not->toContain('event.preventDefault()');
+    expect($view)
+        ->toContain("$item['original_sell_price'] = (int) $storedItem->sell_price;")
+        ->toContain("row.dataset.originalPurchaseSellPrice = String(parseNumericInput(item.original_sell_price));")
+        ->toContain('const baselinePrice = hasPersistedBaseline ? Number(original) : livePrice;');
 });
