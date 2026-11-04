@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let seed;
     try { seed = JSON.parse(document.getElementById('categoryDocumentSeed').textContent); }
     catch (_) { return; }
-    const ids = ['Category','Subcategory','Show','Search','Rows','More','LoadAll','Save','Status','Summary','Recovery','Restore','Discard'];
+    const ids = ['Category','Subcategory','Show','Search','Rows','More','LoadAll','ZeroVisible','Save','Status','Summary','Recovery','Restore','Discard'];
     const ui = Object.fromEntries(ids.map(id => [id,document.getElementById('cd'+id)]));
     const counts = new Map();
     const invalid = new Map();
@@ -24,11 +24,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return node;
     };
     const normalize = value => String(value ?? '').replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-        .replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim() || '0';
+        .replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
     const validCount = value => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) <= 2147483647;
     for (const item of seed.items || []) {
-        const id = Number(item.variant_id), quantity = normalize(item.actual_quantity);
-        if (Number.isSafeInteger(id) && id > 0 && validCount(quantity)) counts.set(id,quantity);
+        const id = Number(item.variant_id), quantity = item.actual_quantity === null ? null : normalize(item.actual_quantity);
+        if (Number.isSafeInteger(id) && id > 0 && quantity !== null && validCount(quantity)) counts.set(id,quantity);
     }
     function notice(message,error=false) {
         ui.Status.textContent = message;
@@ -75,19 +75,19 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.LoadAll.hidden = !hasMore && !loadingAll;
         ui.LoadAll.disabled = locked;
         ui.LoadAll.textContent = loadingAll ? 'توقف دریافت' : 'نمایش همه کالاها';
-        // Preview stage: never allow client-side save even if the controller guard is bypassed.
-        ui.Save.disabled = true;
-        ui.Save.textContent = 'ذخیره در نسخه آزمایشی غیرفعال است';
+        ui.Save.disabled = saving || navigating || Boolean(recovery) || (!pending && (!categoryId || loading || loadingAll || invalid.size > 0 || !rows.size));
+        ui.Save.textContent = pending ? 'بازیابی نتیجهٔ ذخیره' : 'ذخیرهٔ یک سند برای بررسی شمارش';
+        ui.ZeroVisible.disabled = locked || loading || loadingAll || !rows.size;
         for (const input of ui.Rows.querySelectorAll('[data-count]')) input.disabled = locked;
-        const positive = [...counts.values()].filter(value=>Number(value)>0).length;
-        ui.Summary.textContent = fa(rows.size)+' ردیف دریافت‌شده · '+fa(positive)+' ردیف با موجودی مثبت' +
-            (hasMore ? (documentId ? ' · شمارش ذخیره‌شدهٔ باقی ردیف‌ها حفظ می‌شود.' : ' · باقی کالاهای همین دسته نیز در سند با صفر ثبت می‌شوند.') : '');
+        const positive = [...counts.values()].filter(value=>value !== null && Number(value)>0).length;
+        const explicit = [...counts.values()].filter(value=>value !== null).length;
+        ui.Summary.textContent = fa(rows.size)+' ردیف دریافت‌شده · '+fa(explicit)+' ردیف شمارش‌شده · '+fa(positive)+' ردیف با موجودی مثبت' +
+            (hasMore ? ' · ردیف‌های مشاهده‌نشده بدون شمارش باقی می‌مانند.' : '');
     }
     function renderRow(row) {
         const id = Number(row.variant_id);
         if (rows.has(id)) return;
         rows.set(id,row);
-        if (!counts.has(id)) counts.set(id,'0');
         const tr = make('tr');
         const name = make('td','cd-name');
         name.dataset.label='کالا و تنوع';
@@ -99,13 +99,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const actual=make('td','cd-actual');actual.dataset.label='شمارش واقعی';
         const input=make('input','form-control');input.type='text';input.inputMode='numeric';input.autocomplete='off';
-        input.maxLength=12;input.dataset.count=String(id);input.value=invalid.get(id) ?? counts.get(id);
+        input.maxLength=12;input.dataset.count=String(id);input.value=invalid.get(id) ?? counts.get(id) ?? '';
         input.setAttribute('aria-label','شمارش '+row.product_name+' '+(row.name||''));
         if (invalid.has(id)) input.setCustomValidity('عدد صحیح نامنفی وارد کنید.');
         actual.append(input);tr.append(actual);
         const diff=make('td','cd-diff');diff.dataset.label='اختلاف';diff.dataset.diff=String(id);
-        const difference=Number(counts.get(id))-Number(row.expected_physical || 0);
-        diff.textContent=(difference>0?'+':'')+fa(difference);tr.append(diff);
+        const entered=counts.get(id);
+        const difference=Number(entered)-Number(row.expected_physical || 0);
+        diff.textContent=entered === null || entered === undefined ? '—' : (difference>0?'+':'')+fa(difference);tr.append(diff);
         ui.Rows.append(tr);
     }
     function resetListing() {
@@ -127,8 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if(current!==generation)return false;
             result.rows.forEach(renderRow);afterId=Number.isFinite(next)?next:afterId;hasMore=Boolean(result.has_more);
             notice(documentId ? 'شمارش ذخیره‌شده از سرور دریافت شد؛ فقط ردیف‌های موردنظر را اصلاح و همان سند را ذخیره کنید.' :
-                hasMore ? 'بخش اول کالاها دریافت شد. می‌توانید ادامه را ببینید یا همین حالا یک سند برای تمام دسته ذخیره کنید.' :
-                'کالاها دریافت شدند؛ مقدار پیش‌فرض صفر است. فقط موجودی‌های واقعی را اصلاح و یک سند ذخیره کنید.');
+                hasMore ? 'بخش اول کالاها دریافت شد؛ شمارش ردیف‌های دیگر نامشخص باقی می‌ماند.' :
+                'کالاها دریافت شدند؛ هر ردیف باید شمارش شود یا عدد صفر را صریحاً وارد کنید.');
             checkpoint();return true;
         }catch(error){
             if(current===generation)notice(error.name==='AbortError'?'دریافت متوقف شد؛ شمارش‌های واردشده حفظ شدند.':error.message,true);
@@ -187,8 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!recovery || saving || pending)return;
         try {
             const snapshot=recovery;
-            const restored=new Map(snapshot.counts.map(([id,value])=>[Number(id),String(value)]));
-            if([...restored].some(([id,value])=>!Number.isSafeInteger(id)||id<1||!validCount(value)))throw new Error('نسخه بازیابی معتبر نیست.');
+            const restored=new Map(snapshot.counts.map(([id,value])=>[Number(id),value === null ? null : String(value)]));
+            if([...restored].some(([id,value])=>!Number.isSafeInteger(id)||id<1||(value !== null && !validCount(value))))throw new Error('نسخه بازیابی معتبر نیست.');
             if(snapshot.pending && (!/^[0-9a-f-]{36}$/i.test(snapshot.pending.request_id || '') || Number(snapshot.pending.category_id)!==Number(snapshot.category_id)))throw new Error('شناسه درخواست بازیابی معتبر نیست.');
             counts.clear();for(const [id,value] of restored)counts.set(id,value);
             invalid.clear();for(const [id,value] of snapshot.invalid||[])invalid.set(Number(id),String(value));
@@ -211,8 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ui.Rows.addEventListener('input',event=>{
         const field=event.target.closest('[data-count]');if(!field || saving || pending || navigating || recovery)return;
         const id=Number(field.dataset.count),value=normalize(field.value);dirty=true;
-        if(!validCount(value)){invalid.set(id,field.value);field.setCustomValidity('فقط عدد صحیح نامنفی مجاز است.');}
-        else{invalid.delete(id);field.setCustomValidity('');field.value=value;counts.set(id,value);}
+        if(value !== '' && !validCount(value)){invalid.set(id,field.value);field.setCustomValidity('فقط عدد صحیح نامنفی مجاز است.');}
+        else{invalid.delete(id);field.setCustomValidity('');field.value=value;counts.set(id,value === '' ? null : value);}
         controls();checkpoint();
         // Update only the changed difference; never rebuild the focused input.
         const row=rows.get(id);
@@ -220,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const tr of cells)for(const cell of tr.children||[]){
             if(cell.dataset?.diff===String(id)){
                 const difference=Number(value)-Number(row?.expected_physical||0);
-                cell.textContent=validCount(value)?(difference>0?'+':'')+fa(difference):'—';
+                cell.textContent=value !== '' && validCount(value)?(difference>0?'+':'')+fa(difference):'—';
             }
         }
     });
@@ -257,6 +258,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if(ui.Category.value!==selected)return;
             for(const item of result){const option=make('option','',item.name);option.value=String(item.id);ui.Subcategory.append(option);}
         }catch(error){notice(error.message,true);}
+    });
+    ui.ZeroVisible.addEventListener('click',() => {
+        if(saving || pending || navigating || recovery || !rows.size)return;
+        const uncounted=[...rows.keys()].filter(id=>!counts.has(id)||counts.get(id)===null);
+        if(!uncounted.length){notice('همهٔ ردیف‌های نمایش‌داده‌شده قبلاً شمارش شده‌اند.');return;}
+        if(!window.confirm('برای '+fa(uncounted.length)+' ردیفِ نمایش‌داده‌شده که هنوز شمارش ندارند، عدد صفر ثبت شود؟ این کار فقط پیش‌نویس شمارش را آماده می‌کند.'))return;
+        for(const id of uncounted){counts.set(id,'0');invalid.delete(id);}
+        for(const input of ui.Rows.querySelectorAll('[data-count]')){
+            const id=Number(input.dataset.count);if(uncounted.includes(id)){input.value='0';input.setCustomValidity('');}
+        }
+        for(const cell of ui.Rows.querySelectorAll('[data-diff]')){
+            const id=Number(cell.dataset.diff);
+            if(uncounted.includes(id)){const difference=-Number(rows.get(id)?.expected_physical || 0);cell.textContent=(difference>0?'+':'')+fa(difference);}
+        }
+        dirty=true;controls();checkpoint();notice('صفرهای انتخاب‌شده صریحاً در شمارش ثبت شدند؛ برای ذخیرهٔ پیش‌نویس دکمه ذخیره را بزنید.');
     });
     ui.Save.addEventListener('click',save);ui.Restore.addEventListener('click',restore);
     ui.Discard.addEventListener('click',()=>{
