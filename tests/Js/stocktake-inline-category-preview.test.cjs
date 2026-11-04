@@ -44,7 +44,7 @@ test('preview renders inside the original stocktake create form and nowhere else
     assert.match(form, /id="stocktakeInlinePreviewMore"/);
     assert.match(form, /stocktake-inline-category-preview\.js/);
     assert.match(form, /@if\(\$mode==='create'\)/);
-    assert.match(form, /در این مرحله می‌توانی موجودی واقعی تنوع‌ها را وارد کنی/);
+    assert.match(form, /هنوز هیچ سندی ساخته یا نهایی نمی‌شود/);
     assert.doesNotMatch(form, /id="stocktakeInlinePreviewSave"/);
     assert.doesNotMatch(form, /id="stocktakeInlinePreviewFinalize"/);
 });
