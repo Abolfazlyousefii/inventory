@@ -63,7 +63,7 @@
     </div>
 
     <div class="sc-live-search"><label for="cdSearch" class="form-label fw-bold">جستجوی کالا یا تنوع در همین محدوده</label><input id="cdSearch" class="form-control" type="search" maxlength="80" autocomplete="off" placeholder="نام کالا، مدل، SKU یا کد تنوع..." disabled><div class="sc-subtitle">با تغییر جستجو، شمارش‌های واردشده حفظ می‌شوند.</div></div>
-    <div class="cd-table-wrap"><table><thead><tr><th>کالا و تنوع</th><th>موجودی انبار مرکزی</th><th>رزرو فعال</th><th>صف جمع‌آوری</th><th>شمارش واقعی</th><th>اختلاف</th></tr></thead><tbody id="cdRows"></tbody></table></div>
+    <div class="cd-table-wrap"><table><thead><tr><th>کالا و تنوع</th><th>موجودی آزاد انبار مرکزی</th><th>رزرو + سهم سبد و سایت</th><th>صف جمع‌آوری</th><th>شمارش واقعی</th><th>اختلاف</th></tr></thead><tbody id="cdRows"></tbody></table></div>
 
     <div class="cd-toolbar" role="toolbar" aria-label="ذخیره سند انبارگردانی دسته‌ای">
         <div class="cd-toolbar-message"><strong id="cdSummary">ابتدا محدوده شمارش را انتخاب کنید.</strong><div id="cdStatus" role="status" aria-live="polite">مقدار خالی یعنی شمارش‌نشده؛ ذخیره، صفحه بررسی یک سند را باز می‌کند.</div></div>
