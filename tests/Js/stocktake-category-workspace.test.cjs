@@ -16,6 +16,14 @@ function loadProductsToSave() {
     return context.productsToSave;
 }
 
+function loadIsBelowProtectedQuantity() {
+    const match = workspaceSource.match(/function isBelowProtectedQuantity\([\s\S]*?\n    \}/);
+    assert.ok(match, 'workspace must expose the protected-quantity validation rule');
+    const context = {};
+    vm.runInNewContext(match[0] + '\nthis.isBelowProtectedQuantity = isBelowProtectedQuantity;', context);
+    return context.isBelowProtectedQuantity;
+}
+
 test('new product drafts are created only after at least one explicit count, including zero', () => {
     const productsToSave = loadProductsToSave();
     const known = new Map([[1, 'No count'], [2, 'Explicit zero'], [3, 'Positive']]);
@@ -57,4 +65,13 @@ test('category counting is embedded in the product form and has an explicit retu
     assert.match(workspaceSource, /fa\(row\.bundle_free\)/);
     assert.match(workspaceSource, /fa\(row\.site_held\)/);
     assert.doesNotMatch(formSource, /id="stocktakeInlinePreview"/);
+});
+
+test('protected stock quantities block a physical count below reserved components', () => {
+    const isBelowProtectedQuantity = loadIsBelowProtectedQuantity();
+    const row = {active_reserved: 2, bundle_free: 3, bundle_reserved: 1, site_held: 4};
+    assert.equal(isBelowProtectedQuantity(row, 9), true);
+    assert.equal(isBelowProtectedQuantity(row, 10), false);
+    assert.equal(isBelowProtectedQuantity(row, '0'), true);
+    assert.equal(isBelowProtectedQuantity(row, ''), false);
 });
