@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Schema;
  * Never edits document headers, document items, stock movements or warehouse stock.
  * A group is eligible only if every saved source document is still present,
  * finalized and belongs to exactly one product per document in one category,
- * warehouse, day and submitting user.
+ * warehouse and document date.
  */
 final class StocktakeLegacyArchiveService
 {
@@ -67,7 +67,6 @@ final class StocktakeLegacyArchiveService
             $first = $members->first();
             $categoryId = (int) ($first->product?->category_id ?? 0);
             $warehouseId = (int) $first->warehouse_id;
-            $userId = (int) $request->user_id;
             $day = $first->document_date?->toDateString();
             if ($categoryId < 1 || ! $day) {
                 continue;
@@ -79,7 +78,6 @@ final class StocktakeLegacyArchiveService
                 && $document->product !== null
                 && (int) $document->product->category_id === $categoryId
                 && (int) $document->warehouse_id === $warehouseId
-                && (int) $document->created_by === $userId
                 && $document->document_date?->toDateString() === $day
             );
             if (! $valid || $members->pluck('product_id')->unique()->count() !== count($ids)) {
@@ -101,7 +99,7 @@ final class StocktakeLegacyArchiveService
                 'product' => null,
                 'warehouse_id' => $warehouseId,
                 'warehouse' => $first->warehouse,
-                'created_by' => $userId,
+                'created_by' => $first->created_by,
                 'creator' => $first->creator,
                 'document_date' => $first->document_date,
                 'status' => 'finalized',
