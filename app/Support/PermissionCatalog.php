@@ -1043,6 +1043,8 @@ class PermissionCatalog
             'finance.cheques.registered' => 'cheques.view',
             'finance.cheques.index' => 'cheques.view',
             'finance.reports.index' => 'finance.reports.view',
+            'finance.reports.payment-calculator.index' => 'finance.reports.view',
+            'finance.reports.payment-calculator.calculate' => 'finance.reports.view',
             'finance.reports.receipts' => 'finance.reports.view',
             'finance.reports.receipts.detail' => 'finance.reports.view',
             'finance.reports.receipts.export' => 'finance.reports.view',
