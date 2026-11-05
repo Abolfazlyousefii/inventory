@@ -31,11 +31,16 @@
         </div>
     </div>
 
-    <div class="alert alert-warning">
-        فقط تنوع‌هایی که برای آن‌ها عدد صریح وارد شده در این سند قرار دارند.
-        <strong>خانه‌های خالی و تنوع‌های شمارش‌نشده در ثبت نهایی تغییر نمی‌کنند.</strong>
-        عدد ۰ یک شمارش معتبر است و در صورت تأیید، موجودی همان تنوع را صفر می‌کند.
-    </div>
+    @if($document->status === 'draft')
+        <div class="alert alert-warning">
+            برای ثبت نهایی این انبارگردانی، همهٔ تنوع‌های واجد شرایط محدوده باید صریحاً شمارش شده باشند؛ عدد ۰ شمارش معتبر است.
+            @if($missingCount > 0)
+                <strong>{{ $fa($missingCount) }} تنوع هنوز شمارش نشده است. برای تکمیل شمارش به ویرایش سند برگردید.</strong>
+            @else
+                <strong>همهٔ تنوع‌های محدوده تعیین تکلیف شده‌اند؛ اکنون می‌توانید نتیجه را تأیید کنید.</strong>
+            @endif
+        </div>
+    @endif
 
     <div class="card mb-3">
         <div class="card-header fw-bold">تنوع‌های شمارش‌شده و اختلاف موجودی</div>
@@ -80,7 +85,7 @@
     </div>
 
     @if($document->status === 'draft')
-        @if($countedItems->isNotEmpty())
+        @if($countedItems->isNotEmpty() && $missingCount === 0)
             <form id="categoryFinalizeForm" class="card"
                   data-document-id="{{ $document->id }}"
                   data-user-id="{{ auth()->id() }}"
@@ -91,20 +96,20 @@
                 @csrf
                 <div class="card-body">
                     <p class="mb-3">
-                        با تأیید، فقط <strong>{{ $fa($countedItems->count()) }} تنوع شمارش‌شده</strong>
-                        شامل <strong>{{ $fa($document->zeroed_count) }} تنوع با مقدار صفر</strong> اعمال می‌شوند.
-                        سایر تنوع‌های محدوده در این عملیات دست‌نخورده می‌مانند.
+                        با تأیید، شمارش کامل <strong>{{ $fa($countedItems->count()) }} تنوع محدوده</strong>
+                        شامل <strong>{{ $fa($document->zeroed_count) }} تنوع با مقدار صفر</strong> اعمال می‌شود.
+                        پس از بررسی، موجودی انبار مرکزی بر اساس این شمارش اصلاح خواهد شد.
                     </p>
                     <div id="categoryFinalizeStatus" role="status" aria-live="polite" class="mb-2"></div>
-                    <button type="button" id="categoryFinalizeButton" class="btn btn-success">تأیید شمارش و اعمال تنوع‌های ثبت‌شده</button>
+                    <button type="button" id="categoryFinalizeButton" class="btn btn-success">تأیید شمارش کامل و اعمال موجودی</button>
                 </div>
             </form>
             <script>{!! file_get_contents(public_path('js/stocktake-category-finalize.js')) !!}</script>
         @else
-            <div class="alert alert-secondary">برای فعال‌شدن ثبت نهایی، ابتدا حداقل یک تنوع را با عدد صریح شمارش کنید.</div>
+            <div class="alert alert-secondary">برای فعال‌شدن ثبت نهایی، تمام تنوع‌های محدوده را با مقدار واقعی یا صفر مشخص و پیش‌نویس را ذخیره کنید. {{ $fa($missingCount) }} تنوع هنوز شمارش نشده است.</div>
         @endif
     @elseif($document->status === 'finalized')
-        <div class="alert alert-success">ثبت نهایی این سند انجام شده است. تنوع‌های خارج از شمارش در این سند تغییر نکرده‌اند.</div>
+        <div class="alert alert-success">ثبت نهایی این سند انجام شده است. سوابق و تعدیل‌های ثبت‌شده حفظ شده‌اند.</div>
     @endif
 </div>
 @endsection

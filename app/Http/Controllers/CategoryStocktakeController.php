@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\StockCountFinalizeValidationException;
 use App\Models\{Category, StockCountDocument};
-use App\Services\{StockCountDocumentService, StocktakeRequestService};
+use App\Services\{StockCountDocumentService, StocktakeCategoryWorkspaceService, StocktakeRequestService};
 use App\Support\ReservationSideEffects;
 use Illuminate\Http\Request;
 
@@ -83,7 +83,14 @@ final class CategoryStocktakeController extends Controller
         $document->load(['warehouse','category','creator']);
         $countedItems = $document->items()->whereNotNull('actual_quantity')->orderBy('product_name_snapshot')->orderBy('product_variant_id')->get();
         $reviewToken = $this->service->reviewToken($document);
-        return view('stocktake.category-review', compact('document','countedItems','reviewToken'));
+        $missingCount = 0;
+        if ($document->status === 'draft') {
+            $scopeVariantIds = app(StocktakeCategoryWorkspaceService::class)
+                ->countableVariantIds((int) $document->category_id);
+            $countedVariantIds = $countedItems->pluck('product_variant_id')->map(static fn ($id) => (int) $id)->all();
+            $missingCount = count(array_diff($scopeVariantIds, $countedVariantIds));
+        }
+        return view('stocktake.category-review', compact('document','countedItems','reviewToken','missingCount'));
     }
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)

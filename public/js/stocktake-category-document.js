@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const ids = ['Category','Subcategory','Show','Search','Rows','More','LoadAll','Save','Status','Summary','Recovery','Restore','Discard'];
+    const ids = ['Category','Subcategory','Show','Search','Rows','More','LoadAll','ZeroAll','Save','Status','Summary','Recovery','Restore','Discard'];
     const ui = Object.fromEntries(ids.map(id => ['cd' + id, document.getElementById('cd' + id)]).map(([key, value]) => [key.replace('cd', ''), value]));
     const counts = new Map();
     const savedVariantIds = new Set();
@@ -130,8 +130,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.LoadAll.hidden = !hasMore && !loadingAll;
         ui.LoadAll.disabled = fieldsLocked;
         ui.LoadAll.textContent = loadingAll ? 'توقف دریافت' : 'نمایش همه کالاها';
-        ui.Save.disabled = saving || navigating || Boolean(recovery) || invalid.size > 0
+        ui.Save.disabled = saving || loading || loadingAll || navigating || Boolean(recovery) || invalid.size > 0
             || !categoryId || (!pending && counts.size === 0);
+        ui.ZeroAll.disabled = saving || loading || loadingAll || navigating || Boolean(pending)
+            || Boolean(recovery) || !categoryId;
         ui.Save.textContent = pending ? 'بازیابی نتیجه ذخیره' : 'ذخیره یک سند و بررسی شمارش';
         ui.Discard.disabled = Boolean(recovery?.pending);
         for (const input of ui.Rows.querySelectorAll('[data-count]')) {
@@ -261,6 +263,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 controller = null;
                 controls();
             }
+        }
+    }
+
+    async function zeroAllCounts() {
+        if (ui.ZeroAll.disabled || saving || loading || loadingAll || pending || navigating || recovery) return;
+        if (!window.confirm('همه تنوع‌های این دسته، حتی ردیف‌هایی که هنوز بارگذاری نشده‌اند، با عدد صفر شمارش شوند؟ مقادیر مثبتی که وارد کرده‌اید هم صفر می‌شوند و بعد می‌توانید آن‌ها را دوباره اصلاح کنید. موجودی انبار در این مرحله تغییر نمی‌کند.')) return;
+
+        loadingAll = true;
+        controls();
+        try {
+            clearTimeout(timer);
+            // A filtered search cannot define a complete physical stocktake.
+            if (query) {
+                query = '';
+                ui.Search.value = '';
+                resetListing();
+            }
+            while (hasMore) {
+                if (!await page()) throw new Error('دریافت تمام تنوع‌ها کامل نشد؛ هیچ شمارشی صفر نشد. دوباره تلاش کنید.');
+                if (rows.size > 50000) throw new Error('محدوده بیش از ۵۰ هزار تنوع دارد؛ به زیردسته‌های کوچک‌تر تقسیم کنید.');
+            }
+            if (!rows.size) throw new Error('تنوعی برای شمارش در این محدوده پیدا نشد.');
+
+            // Stage a reversible in-browser change; never touch server stock here.
+            const previousCounts = new Map(counts);
+            const previousRemoved = new Set(removed);
+            const previousInvalid = new Map(invalid);
+            for (const id of rows.keys()) {
+                counts.set(id, '0');
+                removed.delete(id);
+                invalid.delete(id);
+            }
+            if (!persist()) {
+                counts.clear();
+                for (const [id, count] of previousCounts) counts.set(id, count);
+                removed.clear();
+                for (const id of previousRemoved) removed.add(id);
+                invalid.clear();
+                for (const [id, value] of previousInvalid) invalid.set(id, value);
+                throw new Error('ذخیره نسخه بازیابی ممکن نشد؛ مقدارهای قبلی حفظ شدند.');
+            }
+            dirty = true;
+            for (const input of ui.Rows.querySelectorAll('[data-count]')) {
+                const id = Number(input.dataset.count);
+                input.value = counts.get(id) ?? '';
+                input.setCustomValidity('');
+            }
+            for (const cell of ui.Rows.querySelectorAll('[data-diff]')) {
+                const id = Number(cell.dataset.diff);
+                const diff = -Number(rows.get(id)?.expected_physical || 0);
+                cell.textContent = (diff > 0 ? '+' : '') + fa(diff);
+            }
+            notice('همه ' + fa(rows.size) + ' تنوع محدوده با شمارش صریح صفر مشخص شدند. موجودی‌های مثبت را وارد کنید و سپس پیش‌نویس را ذخیره کنید.');
+        } catch (error) {
+            notice(error.message || 'صفر کردن همه تنوع‌ها انجام نشد.', true);
+        } finally {
+            loadingAll = false;
+            controls();
         }
     }
 
@@ -543,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    ui.ZeroAll.addEventListener('click', zeroAllCounts);
     ui.Save.addEventListener('click', save);
     ui.Restore.addEventListener('click', restore);
     ui.Discard.addEventListener('click', () => {

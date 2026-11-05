@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\StockCountDocument;
 use App\Models\Warehouse;
 use App\Support\StockCountQuantityCalculator as Quantities;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -26,7 +27,6 @@ final class StocktakeCategoryWorkspaceService
         string $search = '',
         ?StockCountDocument $document = null,
     ): array {
-        $categories = Category::selfAndDescendantIds($categoryId);
         if ($document) {
             abort_unless($document->type === 'category' && (int) $document->category_id === $categoryId, 404);
         }
@@ -36,21 +36,8 @@ final class StocktakeCategoryWorkspaceService
             ->where('type', 'central')->where('name', 'انبار مرکزی')->value('id') ?? 0);
         abort_if($warehouseId < 1, 503, 'انبار مرکزی یافت نشد؛ گزارش موجودی قابل اتکا نیست.');
 
-        $variantsQuery = DB::table('product_variants as v')
-            ->join('products as p', 'p.id', '=', 'v.product_id')
-            ->whereIn('p.category_id', $categories)
+        $variantsQuery = $this->countableVariantsQuery($categoryId)
             ->where('v.id', '>', $afterId);
-
-        // Virtual bundle availability is derived from components; counting it
-        // would adjust the same physical goods twice. Filter before pagination.
-        if (Schema::hasColumn('products', 'is_bundle') && Schema::hasColumn('products', 'bundle_stock_mode')) {
-            $variantsQuery->where(function ($query) {
-                $query->where('p.is_bundle', false)
-                    ->orWhereNull('p.is_bundle')
-                    ->orWhere('p.bundle_stock_mode', '<>', 'automatic')
-                    ->orWhereNull('p.bundle_stock_mode');
-            });
-        }
 
         if ($search !== '') {
             $like = '%'.addcslashes($search, '%_\\\\').'%';
@@ -139,4 +126,36 @@ final class StocktakeCategoryWorkspaceService
             'has_more' => $hasMore,
         ];
     }
+    /**
+     * The same eligible category scope used by the browser and finalization.
+     * One beyond the document ceiling ensures oversized scopes remain incomplete.
+     *
+     * @return list<int>
+     */
+    public function countableVariantIds(int $categoryId): array
+    {
+        return $this->countableVariantsQuery($categoryId)
+            ->orderBy('v.id')->limit(50001)->pluck('v.id')
+            ->map(static fn ($id) => (int) $id)->all();
+    }
+
+    private function countableVariantsQuery(int $categoryId): Builder
+    {
+        $query = DB::table('product_variants as v')
+            ->join('products as p', 'p.id', '=', 'v.product_id')
+            ->whereIn('p.category_id', Category::selfAndDescendantIds($categoryId));
+
+        // Automatic bundles have virtual stock: never count the same goods twice.
+        if (Schema::hasColumn('products', 'is_bundle') && Schema::hasColumn('products', 'bundle_stock_mode')) {
+            $query->where(function ($builder) {
+                $builder->where('p.is_bundle', false)
+                    ->orWhereNull('p.is_bundle')
+                    ->orWhere('p.bundle_stock_mode', '<>', 'automatic')
+                    ->orWhereNull('p.bundle_stock_mode');
+            });
+        }
+
+        return $query;
+    }
+
 }
