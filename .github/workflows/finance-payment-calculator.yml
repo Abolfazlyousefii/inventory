@@ -6,6 +6,7 @@ on:
       - 'app/Http/Controllers/FinancePaymentCalculatorController.php'
       - 'app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php'
       - 'app/Services/Finance/PaymentScheduleCalculator.php'
+      - 'app/Services/Finance/PaymentScenarioCalculator.php'
       - 'app/Support/PageAccessCatalog.php'
       - 'app/Support/PermissionCatalog.php'
       - 'resources/views/finance/payment-calculator/**'
@@ -24,6 +25,7 @@ on:
       - 'app/Http/Controllers/FinancePaymentCalculatorController.php'
       - 'app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php'
       - 'app/Services/Finance/PaymentScheduleCalculator.php'
+      - 'app/Services/Finance/PaymentScenarioCalculator.php'
       - 'resources/views/finance/payment-calculator/**'
       - 'public/js/finance-payment-calculator.js'
       - 'public/css/finance-payment-calculator.css'
@@ -56,6 +58,7 @@ jobs:
       - name: Syntax-check PHP sources
         run: |
           php -l app/Services/Finance/PaymentScheduleCalculator.php
+          php -l app/Services/Finance/PaymentScenarioCalculator.php
           php -l app/Http/Controllers/FinancePaymentCalculatorController.php
           php -l app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php
       - name: Payment schedule engine tests
@@ -66,6 +69,8 @@ jobs:
         run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorTest.php
       - name: Print report and invalid schedule tests
         run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorPrintTest.php
+      - name: Reverse scenario and printable-cash feature tests
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorModesTest.php
 
   javascript:
     name: Finance calculator JavaScript syntax
