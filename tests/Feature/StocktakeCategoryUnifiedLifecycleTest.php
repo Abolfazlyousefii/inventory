@@ -458,8 +458,9 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
     public function test_changed_reservation_on_a_counted_variant_blocks_category_finalization(): void
     {
         $reservations = \Mockery::mock(ReservationQueryService::class);
-        $reservations->shouldReceive('quantitiesByVariant')->twice()
-            ->andReturn(collect([101 => 2]), collect([101 => 3]));
+        $reservations->shouldReceive('quantitiesByVariant')->times(4)
+            ->andReturn(collect([101 => 2]), collect([101 => 2]),
+                collect([101 => 3]), collect([101 => 3]));
         $this->app->instance(ReservationQueryService::class, $reservations);
 
         $document = $this->saveCategory([101 => 12, 102 => 5]);
