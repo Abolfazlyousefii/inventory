@@ -34,7 +34,7 @@
                         </label>
                         <label class="pc-field">
                             <span>تاریخ مبنای محاسبه <small>(شمسی)</small></span>
-                            <input id="pc-base-date" type="text" inputmode="numeric" value="{{ $todayJalali }}" placeholder="۱۴۰۵/۰۸/۱۴" data-jdp required>
+                            <input id="pc-base-date" type="text" inputmode="numeric" value="{{ $todayJalali }}" placeholder="۱۴۰۵/۰۸/۱۴" data-jdp data-jdp-only-date required>
                         </label>
                         <label class="pc-field">
                             <span>نام مشتری <small>(اختیاری؛ فقط نمایشی)</small></span>
@@ -89,12 +89,12 @@
         </form>
         <template id="pc-fixed-template"><tr class="pc-input-row">
             <td><select class="pc-kind" aria-label="نوع پیش‌پرداخت"><option value="cash">نقدی</option><option value="cheque">چک با مبلغ مشخص</option></select></td>
-            <td><input class="pc-due" type="text" inputmode="numeric" data-jdp aria-label="تاریخ پیش‌پرداخت شمسی" placeholder="۱۴۰۵/۰۸/۱۴"></td>
+            <td><input class="pc-due" type="text" inputmode="numeric" data-jdp data-jdp-only-date aria-label="تاریخ پیش‌پرداخت شمسی" placeholder="۱۴۰۵/۰۸/۱۴"></td>
             <td><input class="pc-amount" type="text" inputmode="numeric" data-rial aria-label="مبلغ پیش‌پرداخت ریال" placeholder="مبلغ"></td>
             <td><button type="button" class="pc-remove" aria-label="حذف پیش‌پرداخت">×</button></td>
         </tr></template>
         <template id="pc-weighted-template"><tr class="pc-input-row">
-            <td><input class="pc-due" type="text" inputmode="numeric" data-jdp aria-label="تاریخ سررسید چک شمسی" placeholder="۱۴۰۵/۰۸/۱۴"></td>
+            <td><input class="pc-due" type="text" inputmode="numeric" data-jdp data-jdp-only-date aria-label="تاریخ سررسید چک شمسی" placeholder="۱۴۰۵/۰۸/۱۴"></td>
             <td><input class="pc-weight" type="text" inputmode="decimal" aria-label="وزن چک" value="1"></td>
             <td class="pc-row-result">پس از محاسبه</td>
             <td><button type="button" class="pc-remove" aria-label="حذف چک">×</button></td>
