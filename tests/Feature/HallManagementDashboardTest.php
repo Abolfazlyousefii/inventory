@@ -439,6 +439,32 @@ class HallManagementDashboardTest extends TestCase
             ->getJson('/hall/history?key=order%3Ainvoice%3A999999')->assertNotFound();
     }
 
+    public function test_conversion_timeline_connects_known_preinvoice_stage_to_new_invoice_stage(): void
+    {
+        (require database_path('migrations/2026_11_01_120000_create_hall_queue_transitions_table.php'))->up();
+        $orderId = $this->order(['status'=>'converted_to_invoice'], false);
+        $invoiceId = $this->invoice(['status'=>'pending_collection', 'preinvoice_order_id'=>$orderId]);
+        $key = 'order:'.$orderId;
+        DB::table('hall_queue_transitions')->insert([
+            ['workflow_key'=>$key, 'source_type'=>'preinvoice', 'source_id'=>$orderId,
+                'document_number'=>'P-parent', 'from_stage'=>'reserved', 'to_stage'=>'finance',
+                'status_from'=>'pending_finance', 'status_to'=>'finance_reviewing',
+                'entered_at'=>now()->subHour()],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$invoiceId,
+                'document_number'=>'F-child', 'from_stage'=>null, 'to_stage'=>'warehouse',
+                'status_from'=>null, 'status_to'=>'pending_collection',
+                'entered_at'=>now()->subMinutes(10)],
+        ]);
+
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key='.urlencode($key))
+            ->assertOk()->assertJsonPath('transfer_count', 2)
+            ->assertJsonPath('events.0.from_stage', 'finance')
+            ->assertJsonPath('events.0.to_stage', 'warehouse')
+            ->assertJsonPath('events.1.from_stage', 'reserved');
+    }
+
     public function test_legacy_timeline_keeps_older_status_history_without_fabricating_events(): void
     {
         $orderId = $this->order(['status'=>'converted_to_invoice'], false);
