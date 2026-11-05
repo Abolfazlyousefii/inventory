@@ -31,3 +31,5 @@ jobs:
         run: node --check public/js/stocktake-inline-category-preview.js
       - name: Verify paginated read-only inline preview
         run: node --test tests/Js/stocktake-inline-category-preview.test.cjs
+      - name: Verify editable embedded category count and draft save
+        run: node --test tests/Js/stocktake-embedded-count-runtime.test.cjs
