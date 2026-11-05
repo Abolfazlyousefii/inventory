@@ -5,6 +5,7 @@ namespace App\Http\Requests\Finance;
 use App\Support\JalaliDate;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
+use Illuminate\Validation\Rule;
 
 final class CalculatePaymentScheduleRequest extends FormRequest
 {
@@ -40,7 +41,8 @@ final class CalculatePaymentScheduleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'price_rial' => ['required', 'regex:/^[0-9]{1,15}$/D', 'integer', 'min:1'],
+            'mode' => ['sometimes', 'in:schedule,cash_needed,cash_value'],
+            'price_rial' => [Rule::requiredIf(fn (): bool => $this->input('mode', 'schedule') !== 'cash_value'), 'nullable', 'regex:/^[0-9]{1,15}$/D', 'integer', 'min:1'],
             'monthly_percent' => ['required', 'regex:/^[0-9]{1,3}(?:\.[0-9]{1,4})?$/D', 'numeric', 'between:0,100'],
             'base_date' => ['required', 'string'],
             'customer_name' => ['sometimes', 'nullable', 'string', 'max:100'],

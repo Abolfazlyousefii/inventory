@@ -27,30 +27,11 @@ final class PaymentScheduleCalculator
         if ($totalPriceRial <= 0) {
             throw new InvalidArgumentException('مبلغ پایه باید بیشتر از صفر باشد.');
         }
-        if (! is_finite($monthlyRate) || $monthlyRate < 0 || $monthlyRate > 1) {
-            throw new InvalidArgumentException('نرخ ماهانه باید بین صفر تا یک باشد.');
-        }
-
-        $dailyRate = (1 + $monthlyRate) ** (1 / self::DAYS_PER_MONTH) - 1;
-        $fixedTotal = 0;
-        $fixedPresentValue = 0.0;
-        $fixedRows = [];
-
-        foreach ($fixedPayments as $payment) {
-            $day = $this->day($payment);
-            $amount = $payment['amount_rial'] ?? null;
-            if (! is_int($amount) || $amount < 0) {
-                throw new InvalidArgumentException('مبلغ پرداخت ثابت باید عدد صحیح ریالی غیرمنفی باشد.');
-            }
-            $fixedTotal = $this->sumRials($fixedTotal, $amount);
-            $presentValue = $amount / ((1 + $dailyRate) ** $day);
-            $fixedPresentValue += $presentValue;
-            $fixedRows[] = [
-                'day' => $day,
-                'amount_rial' => $amount,
-                'present_value_rial' => $presentValue,
-            ];
-        }
+        $known = $this->summarizeKnownPayments($monthlyRate, $fixedPayments);
+        $dailyRate = $known['daily_rate'];
+        $fixedTotal = $known['fixed_total_rial'];
+        $fixedPresentValue = $known['fixed_present_value_rial'];
+        $fixedRows = $known['fixed_payments'];
 
         $remaining = $totalPriceRial - $fixedPresentValue;
         // Floating-point computations may produce tiny negative residuals at exact equality.
@@ -116,6 +97,48 @@ final class PaymentScheduleCalculator
             'total_nominal_rial' => $nominalTotal,
             'nominal_increase_rial' => $nominalTotal - $totalPriceRial,
             'overall_rate' => $nominalTotal / $totalPriceRial - 1,
+        ];
+    }
+
+    /**
+     * Evaluate known cash/cheque payments without assuming a contract price.
+     * This is the current_value_calculator() operation in the original Python file.
+     *
+     * @param array<int,array{day:int,amount_rial:int}> $payments
+     * @return array<string,mixed>
+     */
+    public function summarizeKnownPayments(float $monthlyRate, array $payments): array
+    {
+        if (! is_finite($monthlyRate) || $monthlyRate < 0 || $monthlyRate > 1) {
+            throw new InvalidArgumentException('نرخ ماهانه باید بین صفر تا یک باشد.');
+        }
+
+        $dailyRate = (1 + $monthlyRate) ** (1 / self::DAYS_PER_MONTH) - 1;
+        $total = 0;
+        $presentValue = 0.0;
+        $rows = [];
+
+        foreach ($payments as $payment) {
+            $day = $this->day($payment);
+            $amount = $payment['amount_rial'] ?? null;
+            if (! is_int($amount) || $amount < 0) {
+                throw new InvalidArgumentException('مبلغ پرداخت باید عدد صحیح ریالی غیرمنفی باشد.');
+            }
+            $total = $this->sumRials($total, $amount);
+            $discounted = $amount / ((1 + $dailyRate) ** $day);
+            $presentValue += $discounted;
+            $rows[] = [
+                'day' => $day,
+                'amount_rial' => $amount,
+                'present_value_rial' => $discounted,
+            ];
+        }
+
+        return [
+            'daily_rate' => $dailyRate,
+            'fixed_total_rial' => $total,
+            'fixed_present_value_rial' => $presentValue,
+            'fixed_payments' => $rows,
         ];
     }
 

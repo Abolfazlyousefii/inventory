@@ -57,11 +57,17 @@
             </div>
         </header>
 
+        <h2>{{ $scenarioTitle }}</h2>
+        <section class="info">
+            <div class="item primary"><span class="label">{{ $answerTitle }} (ریال)</span><strong>{{ number_format($answerAmount) }}</strong></div>
+            <div class="item"><span class="label">جمع اسمی پرداخت‌ها (ریال)</span><strong>{{ number_format($result['total_nominal_rial']) }}</strong></div>
+            <div class="item"><span class="label">مبنای محاسبه</span><strong>سود مرکب با ماه ۳۰ روزه</strong></div>
+        </section>
         <h2>اطلاعات محاسبه</h2>
         <section class="info">
             <div class="item"><span class="label">نام / شرح مشتری</span><strong>{{ $customerName ?: 'ثبت نشده' }}</strong></div>
             <div class="item"><span class="label">تاریخ مبنا (شمسی)</span><strong>{{ $baseDate }}</strong></div>
-            <div class="item"><span class="label">مبلغ پایه قرارداد (ریال)</span><strong>{{ number_format($result['total_price_rial']) }}</strong></div>
+            <div class="item"><span class="label">{{ $mode === 'cash_value' ? 'ارزش نقدی معادل (ریال)' : 'مبلغ پایه قرارداد (ریال)' }}</span><strong>{{ number_format($result['total_price_rial']) }}</strong></div>
             <div class="item"><span class="label">سود ماهانه</span><strong>{{ number_format($result['monthly_rate'] * 100, 4) }}٪</strong></div>
             <div class="item"><span class="label">نرخ مؤثر روزانه</span><strong>{{ number_format($result['daily_rate'] * 100, 4) }}٪</strong></div>
             <div class="item"><span class="label">مبنای تبدیل نرخ</span><strong>ماه ۳۰ روزه</strong></div>
@@ -103,15 +109,19 @@
         <section class="stats">
             <div class="item primary"><span class="label">مجموع پرداخت‌ها (ریال)</span><strong>{{ number_format($result['total_nominal_rial']) }}</strong></div>
             <div class="item"><span class="label">مجموع مبالغ مشخص (ریال)</span><strong>{{ number_format($result['fixed_total_rial']) }}</strong></div>
-            <div class="item"><span class="label">مجموع چک‌های محاسبه‌شده (ریال)</span><strong>{{ number_format($result['flexible_total_rial']) }}</strong></div>
-            <div class="item"><span class="label">اختلاف مبلغ با قیمت پایه (ریال)</span><strong>{{ number_format($result['nominal_increase_rial']) }}</strong></div>
+            <div class="item"><span class="label">{{ match ($mode) { 'cash_needed' => 'نقدی محاسبه‌شده (ریال)', 'cash_value' => 'ارزش نقدی امروز (ریال)', default => 'مجموع چک‌های محاسبه‌شده (ریال)' } }}</span><strong>{{ number_format(match ($mode) { 'cash_needed' => $result['calculated_cash_rial'], 'cash_value' => $result['cash_equivalent_rial'], default => $result['flexible_total_rial'] }) }}</strong></div>
+            <div class="item"><span class="label">{{ $mode === 'cash_value' ? 'اختلاف مبلغ اسمی و ارزش نقدی (ریال)' : 'اختلاف مبلغ با قیمت پایه (ریال)' }}</span><strong>{{ number_format($result['nominal_increase_rial']) }}</strong></div>
             <div class="item"><span class="label">درصد افزایش کل</span><strong>{{ number_format($result['overall_rate'] * 100, 2) }}٪</strong></div>
             <div class="item"><span class="label">ارزش فعلی پرداخت‌ها (ریال)</span><strong>{{ number_format(round($result['present_value_rounded_rial'])) }}</strong></div>
         </section>
         <div class="note">
             این گزارش صرفاً نتیجه محاسبات پیشنهادی است؛ سند حسابداری یا تأیید وصول چک محسوب نمی‌شود.
             مقادیر چک به ریال صحیح گرد شده‌اند؛ بنابراین ارزش فعلی جمع پرداخت‌های گرد شده ممکن است تفاوت جزئی داشته باشد.
-            وزن مساوی به معنای ارزش فعلی مساوی است و لزوماً مبلغ اسمی چک‌ها مساوی نیست.
+            @if ($mode === 'schedule')
+                وزن مساوی به معنای ارزش فعلی مساوی است و لزوماً مبلغ اسمی چک‌ها مساوی نیست.
+            @else
+                ارزش امروز چک‌ها از تنزیل مبلغ هر پرداخت تا تاریخ مبنا محاسبه شده است.
+            @endif
         </div>
         <footer>تهیه‌شده توسط ماژول محاسبه‌گر نقد و چک ERP · فاقد ثبت مالی و تغییر در اسناد اصلی</footer>
     </main>
