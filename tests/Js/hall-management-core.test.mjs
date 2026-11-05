@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatDuration, compactDuration, diffDocuments, normalizeSnapshot, elapsedSeconds } from '../../public/hall-management/core.js';
 
 const document = (key, stage, extra = {}) => ({ key, stage, number: '123', customer: 'نمونه', amount_rial: 123456789, item_count: 2, unit_count: 80, ...extra });
-const snapshot = (documents) => ({ version: 2, documents, stages: ['reserved','finance','warehouse','shipping'].map(key=>({key, count: documents.filter(x=>x.stage===key).length})), metrics: {sales_rial:0,sales_count:0,cash_rial:0,cheque_rial:0,cheque_count:0}, updated_at:'2026-11-01T14:00:00+03:30' });
+const snapshot = (documents) => ({ version: 3, documents, stages: ['reserved','finance','warehouse','reapproval','shipping'].map(key=>({key, count: documents.filter(x=>x.stage===key).length})), metrics: {sales_rial:0,sales_count:0,cash_rial:0,cheque_rial:0,cheque_count:0,month_invoice_count:0,month_jalali:'1405/08'}, updated_at:'2026-11-01T14:00:00+03:30' });
 
 test('long elapsed durations never wrap after a day', () => {
     assert.equal(formatDuration(90061), '۲۵:۰۱:۰۱');
@@ -62,4 +62,18 @@ test('draft cards and the obsolete draft-queue payload are rejected', () => {
     assert.throws(()=>normalizeSnapshot({...snapshot([]),version:1}));
     const current=normalizeSnapshot(snapshot([document('real-hold','reserved')]));
     assert.equal(current.documents[0].stage,'reserved');
+});
+
+test('a reapproval invoice is valid only in the fifth queue', () => {
+    const result = normalizeSnapshot(snapshot([document('order:99','reapproval',{entry_token:'hall:17',transfer_count:2})]));
+    assert.equal(result.documents[0].stage,'reapproval');
+    assert.equal(result.documents[0].entry_token,'hall:17');
+    assert.equal(result.documents[0].transfer_count,2);
+    assert.throws(() => normalizeSnapshot({...snapshot([]),stages:snapshot([]).stages.slice(0,4)}));
+    assert.throws(() => normalizeSnapshot({...snapshot([]),version:2}));
+});
+
+test('month invoice count cannot be negative or fabricated', () => {
+    assert.throws(() => normalizeSnapshot({...snapshot([]),metrics:{...snapshot([]).metrics,month_invoice_count:-1}}));
+    assert.throws(() => normalizeSnapshot({...snapshot([]),metrics:{...snapshot([]).metrics,month_invoice_count:'12'}}));
 });
