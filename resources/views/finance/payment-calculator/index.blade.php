@@ -86,6 +86,7 @@
     </section>
     @push('scripts')
         <script src="{{ asset('js/finance-payment-date-utils.js') }}?v={{ filemtime(public_path('js/finance-payment-date-utils.js')) }}" defer></script>
+        <script src="{{ asset('js/finance-payment-quick-adapter.js') }}?v={{ filemtime(public_path('js/finance-payment-quick-adapter.js')) }}" defer></script>
         <script src="{{ asset('js/finance-payment-quick.js') }}?v={{ filemtime(public_path('js/finance-payment-quick.js')) }}" defer></script>
     @endpush
 </x-app-layout>
