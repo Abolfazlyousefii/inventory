@@ -6,6 +6,7 @@
   const price=el('pc-price'),rate=el('pc-rate'),base=el('pc-base-date'),customer=el('pc-customer');
   const format=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0});
   const digits=s=>String(s??'').replace(/[۰-۹]/g,x=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(x)).replace(/[٠-٩]/g,x=>'٠١٢٣٤٥٦٧٨٩'.indexOf(x)).replace(/[,٬\s\u200e\u200f]/g,'').replace(/٫/g,'.').trim();
+  const decimal=s=>digits(String(s??'').replace(/[,٬]/g,'.'));
   const integer=n=>format.format(n);
   const percentage=(v,dec=4)=>(100*v).toLocaleString('fa-IR',{maximumFractionDigits:dec})+'٪';
   let pending=null,seq=0,timer=null;
@@ -23,7 +24,7 @@
   function collect(){
     return {
       price_rial:digits(price.value),
-      monthly_percent:digits(rate.value).replace(/[٪%]/g,''),
+      monthly_percent:decimal(rate.value).replace(/[٪%]/g,''),
       base_date:base.value.trim(),
       fixed_payments:[...fixed.rows].map(row=>({
         kind:row.querySelector('.pc-kind').value,
@@ -32,7 +33,7 @@
       })),
       weighted_payments:[...weighted.rows].map(row=>({
         due_date:row.querySelector('.pc-due').value.trim(),
-        weight:digits(row.querySelector('.pc-weight').value)
+        weight:decimal(row.querySelector('.pc-weight').value)
       }))
     };
   }
