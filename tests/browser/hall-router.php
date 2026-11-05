@@ -31,6 +31,33 @@ if ($path === '/hall/data') {
     echo json_encode($state, JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($path === '/hall/history') {
+    $state = json_decode(file_get_contents($root.'/storage/logs/hall-browser-state.json'), true);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    if (($state['test_mode'] ?? '') === 'forbidden') {
+        http_response_code(403);
+        echo '{}';
+        exit;
+    }
+    $key = $_GET['key'] ?? '';
+    if (! is_string($key) || ! in_array($key, array_column($state['documents'], 'key'), true)) {
+        http_response_code(404);
+        echo '{}';
+        exit;
+    }
+    echo json_encode([
+        'document_key' => $key, 'transfer_count' => 2, 'record_count' => 3,
+        'page' => 1, 'has_more' => false,
+        'events' => [
+            ['id' => 'fixture:2', 'at' => date(DATE_ATOM, time() - 60), 'from_label' => 'انبار',
+                'to_label' => 'تأیید مجدد مالی', 'status_label' => 'در انتظار تایید مجدد مالی'],
+            ['id' => 'fixture:1', 'at' => date(DATE_ATOM, time() - 3600), 'from_label' => 'مالی',
+                'to_label' => 'انبار', 'status_label' => 'در حال جمع‌آوری'],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($path === '/hall/unlock') {
     echo '<h1>ورود مدیریت</h1>';
     exit;
