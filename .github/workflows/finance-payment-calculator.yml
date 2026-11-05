@@ -1,0 +1,70 @@
+name: Finance payment calculator safety
+
+on:
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/FinancePaymentCalculatorController.php'
+      - 'app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php'
+      - 'app/Services/Finance/PaymentScheduleCalculator.php'
+      - 'app/Support/PageAccessCatalog.php'
+      - 'app/Support/PermissionCatalog.php'
+      - 'resources/views/finance/payment-calculator/**'
+      - 'public/js/finance-payment-calculator.js'
+      - 'public/css/finance-payment-calculator.css'
+      - 'routes/web.php'
+      - 'tests/Feature/FinancePaymentCalculator*.php'
+      - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
+      - '.github/workflows/finance-payment-calculator.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/Http/Controllers/FinancePaymentCalculatorController.php'
+      - 'app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php'
+      - 'app/Services/Finance/PaymentScheduleCalculator.php'
+      - 'resources/views/finance/payment-calculator/**'
+      - 'public/js/finance-payment-calculator.js'
+      - 'public/css/finance-payment-calculator.css'
+      - 'tests/Feature/FinancePaymentCalculator*.php'
+      - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
+      - '.github/workflows/finance-payment-calculator.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: Finance calculator PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Syntax-check PHP sources
+        run: |
+          php -l app/Services/Finance/PaymentScheduleCalculator.php
+          php -l app/Http/Controllers/FinancePaymentCalculatorController.php
+          php -l app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php
+      - name: Payment schedule engine tests
+        run: php tests/run.php --configuration phpunit.xml tests/Unit/Finance/PaymentScheduleCalculatorTest.php
+      - name: Auth and Persian form feature tests
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorTest.php
+      - name: Print report and invalid schedule tests
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorPrintTest.php
+
+  javascript:
+    name: Finance calculator JavaScript syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check public/js/finance-payment-calculator.js
