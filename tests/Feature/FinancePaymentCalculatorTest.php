@@ -36,7 +36,9 @@ it('calculates Persian amounts and Jalali cheque due dates for permitted finance
     $user->assignRole($role);
 
     $this->actingAs($user)->get(route('finance.reports.payment-calculator.index'))
-        ->assertOk()->assertSee('ماشین‌حساب نقد و چک');
+        ->assertOk()->assertSee('ماشین‌حساب نقد و چک')
+        ->assertSee('tab-cheque')->assertSee('tab-cash')->assertSee('tab-value')
+        ->assertSee('calendarDialog')->assertSee('finance-payment-quick-adapter.js');
 
     $this->actingAs($user)->postJson(route('finance.reports.payment-calculator.calculate'), [
         'price_rial' => '۱٬۰۰۰٬۰۰۰',
