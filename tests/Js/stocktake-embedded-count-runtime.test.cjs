@@ -92,7 +92,15 @@ test('embedded category selector renders editable counts and saves 0 and positiv
             }]})};
         }
         assert.match(url, /category-variants/);
-        const cursor = new URL(url).searchParams.get('after_id');
+        const params = new URL(url).searchParams;
+        const cursor = params.get('after_id');
+        if (params.get('q') === 'White') {
+            return {ok:true, json:async()=>({
+                rows:[{product_id:1,product_name:'AirPods',variant_id:102,name:'White',sku:'X2',
+                    system_available:3,active_reserved:0,expected_physical:3,queue_total:0}],
+                next_cursor:102, has_more:false,
+            })};
+        }
         return {ok:true, json:async()=> cursor === '0' ? {
             rows:[{product_id:1,product_name:'AirPods',variant_id:101,name:'Black',sku:'X1',
                 system_available:6,active_reserved:0,expected_physical:6,queue_total:0}],
@@ -147,9 +155,33 @@ test('embedded category selector renders editable counts and saves 0 and positiv
         el('scProducts').listeners.input({target:field});
     }
     assert.equal(el('scSaveAll').disabled,false, 'correcting the count permits saving');
+
+    // Filtering must not silently discard input from a variant not in the results.
+    const search = el('scLiveSearch');
+    search.value = 'White';
+    search.listeners.input();
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const filtered = el('scProducts').querySelectorAll('.sc-actual');
+    assert.equal(filtered.length,1, 'only the matching variant should remain visible');
+    assert.equal(filtered[0].dataset.variant,'102');
+    assert.equal(filtered[0].value,'5', 'the searched count must be preserved');
+
+    search.value = '';
+    search.listeners.input();
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await el('scMore').listeners.click();
+    const restored = el('scProducts').querySelectorAll('.sc-actual');
+    assert.equal(restored.length,2, 'the full category should return');
+    assert.equal(restored[0].value,'0', 'zero input survives filtering');
+    assert.equal(restored[1].value,'5', 'positive input survives filtering');
+    assert.equal(el('scFinalizeAll').disabled,true, 'filtering must not finalize stock');
     await el('scSaveAll').listeners.click();
-    assert.deepEqual(requests.map(x=>x.method), ['GET','GET','POST'],
-        'saving a draft sends only one POST, never a finalization request');
+    assert.equal(requests.filter(x=>x.method === 'POST').length,1,
+        'saving a draft sends only one POST');
+    assert.equal(requests.filter(x=>x.method !== 'GET' && x.method !== 'POST').length,0,
+        'no finalization or stock write request may be sent');
+    assert.ok(requests.filter(x=>x.method === 'GET').length >= 5,
+        'pagination and search remain read-only requests');
     assert.equal(el('scFinalizeAll').disabled,true, 'saving a draft is not finalization');
 
     assert.equal(sentDraft.category_id,11);
