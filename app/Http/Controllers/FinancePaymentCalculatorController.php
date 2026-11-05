@@ -22,6 +22,7 @@ final class FinancePaymentCalculatorController extends Controller
             'todayJalali' => JalaliDate::date($today),
             'firstDueJalali' => JalaliDate::date($today->addDays(30)),
             'secondDueJalali' => JalaliDate::date($today->addDays(60)),
+            'thirdDueJalali' => JalaliDate::date($today->addDays(90)),
         ]);
     }
 
