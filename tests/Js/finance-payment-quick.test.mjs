@@ -23,6 +23,9 @@ test('three tabs remain visible, but only the Laravel calculator owns amount com
   assert.match(view, /data-calculate-url/);
   assert.match(view, /data-print-url/);
   assert.match(view, /id="printBtn"/);
+  assert.match(view, /finance-payment-quick-adapter\.js/);
+  assert.ok(view.indexOf('finance-payment-date-utils.js') < view.indexOf('finance-payment-quick-adapter.js'));
+  assert.ok(view.indexOf('finance-payment-quick-adapter.js') < view.indexOf('finance-payment-quick.js'));
   assert.match(script, /FinancePaymentQuickAdapter/);
   assert.match(script, /fetch\(/);
   assert.doesNotMatch(script, /FinanceMath\.calculate|F\.calculate\(/);
