@@ -85,12 +85,12 @@ final class StocktakeSingleArchiveDocumentTest extends TestCase
         ]);
         DB::table('warehouses')->insert(['id' => 1, 'name' => 'انبار مرکزی']);
         DB::table('users')->insert(['id' => 1, 'name' => 'انباردار']);
-        DB::table('stock_count_documents')->insert([
+        foreach ([
             ['id' => 101, 'document_number' => 'STC-101', 'type' => 'product', 'warehouse_id' => 1, 'product_id' => 11, 'document_date' => '2026-11-05', 'status' => 'finalized', 'created_by' => 1, 'variants_count' => 1, 'counted_count' => 1, 'total_increase' => 3],
             ['id' => 102, 'document_number' => 'STC-102', 'type' => 'product', 'warehouse_id' => 1, 'product_id' => 12, 'document_date' => '2026-11-05', 'status' => 'finalized', 'created_by' => 1, 'variants_count' => 1, 'counted_count' => 1, 'total_decrease' => 2],
             ['id' => 103, 'document_number' => 'STC-103', 'type' => 'category', 'warehouse_id' => 1, 'category_id' => 28, 'scope_name' => 'پاوربانک', 'document_date' => '2026-11-05', 'status' => 'finalized', 'created_by' => 1, 'variants_count' => 1, 'counted_count' => 1, 'total_increase' => 4],
             ['id' => 104, 'document_number' => 'STC-104', 'type' => 'product', 'warehouse_id' => 1, 'product_id' => 13, 'document_date' => '2026-11-05', 'status' => 'draft', 'created_by' => 1],
-        ]);
+        ] as $row) DB::table('stock_count_documents')->insert($row);
         DB::table('stock_count_document_items')->insert([
             ['id' => 1, 'document_id' => 101, 'product_id' => 11, 'product_variant_id' => 501, 'product_name_snapshot' => 'ساعت A', 'variant_name_snapshot' => 'مشکی', 'actual_quantity' => 7, 'expected_physical_at_start' => 4, 'difference_quantity' => 3],
             ['id' => 2, 'document_id' => 102, 'product_id' => 12, 'product_variant_id' => 502, 'product_name_snapshot' => 'ساعت B', 'variant_name_snapshot' => 'سفید', 'actual_quantity' => 2, 'expected_physical_at_start' => 4, 'difference_quantity' => -2],
