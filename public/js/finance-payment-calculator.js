@@ -42,6 +42,7 @@
     if(body.rows.length>=40){error('حداکثر ۴۰ ردیف در هر بخش قابل ثبت است.');return null;}
     const row=el(template).content.firstElementChild.cloneNode(true);
     row.querySelector('.pc-due').value=due||base.value;
+    if(template==='pc-fixed-template'&&mode!=='schedule')row.querySelector('.pc-kind').value='cheque';
     row.querySelector('.pc-remove').addEventListener('click',()=>{row.remove();el('pc-fixed-empty').hidden=fixed.rows.length>0;queue();});
     body.appendChild(row);el('pc-fixed-empty').hidden=fixed.rows.length>0;return row;
   }
