@@ -24,6 +24,7 @@ on:
       - 'tests/Js/finance-payment-calculator.test.mjs'
       - 'tests/Js/finance-payment-calendar.test.mjs'
       - 'tests/Js/finance-payment-quick.test.mjs'
+      - 'tests/Js/finance-payment-quick-style.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
   push:
     branches: [main]
@@ -46,6 +47,7 @@ on:
       - 'tests/Js/finance-payment-calculator.test.mjs'
       - 'tests/Js/finance-payment-calendar.test.mjs'
       - 'tests/Js/finance-payment-quick.test.mjs'
+      - 'tests/Js/finance-payment-quick-style.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
 
 permissions:
@@ -102,3 +104,5 @@ jobs:
         run: node --test tests/Js/finance-payment-calculator.test.mjs tests/Js/finance-payment-calendar.test.mjs
       - name: Exercise three quick tabs and calendar tests
         run: node --test tests/Js/finance-payment-quick.test.mjs
+      - name: Guard accessible and responsive calculator styling
+        run: node --test tests/Js/finance-payment-quick-style.test.mjs
