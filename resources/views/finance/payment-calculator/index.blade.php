@@ -7,6 +7,7 @@
 
     <section class="pc" id="pc-calculator" dir="rtl"
              data-calculate-url="{{ route('finance.reports.payment-calculator.calculate') }}"
+             data-print-url="{{ route('finance.reports.payment-calculator.print') }}"
              data-first-due="{{ $firstDueJalali }}" data-second-due="{{ $secondDueJalali }}">
         <header class="pc-heading">
             <div>
@@ -70,7 +71,7 @@
                         <p class="pc-customer-label" id="pc-result-customer"></p>
                         <div class="pc-metric-main"><span>مجموع مبالغ پرداختی</span><strong id="pc-nominal">—</strong><small>ریال</small></div>
                         <div class="pc-metrics">
-                            <div><span>مجموع پیش‌پرداخت</span><strong id="pc-fixed-total">—</strong></div>
+                            <div><span>مجموع پرداخت‌های با مبلغ مشخص</span><strong id="pc-fixed-total">—</strong></div>
                             <div><span>مجموع چک‌ها</span><strong id="pc-cheques-total">—</strong></div>
                             <div><span>اختلاف با قیمت پایه</span><strong id="pc-increase">—</strong></div>
                             <div><span>درصد افزایش کل</span><strong id="pc-overall">—</strong></div>
@@ -78,9 +79,9 @@
                             <div><span>ارزش فعلی پرداخت‌ها</span><strong id="pc-present">—</strong></div>
                         </div>
                         <h3>جدول مبالغ پرداخت</h3>
-                        <div class="pc-table-scroll"><table class="pc-table pc-result-table"><thead><tr><th>نوع</th><th>روز</th><th>مبلغ (ریال)</th></tr></thead><tbody id="pc-result-rows"></tbody></table></div>
+                        <div class="pc-table-scroll"><table class="pc-table pc-result-table"><thead><tr><th>نوع</th><th>سررسید</th><th>روز</th><th>مبلغ (ریال)</th></tr></thead><tbody id="pc-result-rows"></tbody></table></div>
                         <p class="pc-hint">مبالغ به ریال صحیح گرد شده‌اند. نتیجه صرفاً محاسبات پیشنهادی است و به معنی ثبت یا وصول چک نیست.</p>
-                        <button type="button" id="pc-print" class="pc-print" disabled title="چاپ در فاز گزارش نهایی فعال می‌شود">چاپ / PDF (فاز بعد)</button>
+                        <button type="button" id="pc-print" class="pc-print" disabled>چاپ گزارش / ذخیره PDF</button>
                     </div>
                     <div id="pc-error" class="pc-error" role="alert" hidden></div>
                 </div>

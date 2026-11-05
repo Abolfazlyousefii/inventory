@@ -1045,6 +1045,7 @@ class PermissionCatalog
             'finance.reports.index' => 'finance.reports.view',
             'finance.reports.payment-calculator.index' => 'finance.reports.view',
             'finance.reports.payment-calculator.calculate' => 'finance.reports.view',
+            'finance.reports.payment-calculator.print' => 'finance.reports.view',
             'finance.reports.receipts' => 'finance.reports.view',
             'finance.reports.receipts.detail' => 'finance.reports.view',
             'finance.reports.receipts.export' => 'finance.reports.view',

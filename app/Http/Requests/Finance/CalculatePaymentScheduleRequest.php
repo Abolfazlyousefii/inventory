@@ -43,6 +43,7 @@ final class CalculatePaymentScheduleRequest extends FormRequest
             'price_rial' => ['required', 'regex:/^[0-9]{1,15}$/D', 'integer', 'min:1'],
             'monthly_percent' => ['required', 'regex:/^[0-9]{1,3}(?:\.[0-9]{1,4})?$/D', 'numeric', 'between:0,100'],
             'base_date' => ['required', 'string'],
+            'customer_name' => ['sometimes', 'nullable', 'string', 'max:100'],
             'fixed_payments' => ['sometimes', 'array', 'max:40'],
             'fixed_payments.*' => ['required', 'array'],
             'fixed_payments.*.kind' => ['required', 'in:cash,cheque'],

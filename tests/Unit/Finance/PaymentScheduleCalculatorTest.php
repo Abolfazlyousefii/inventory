@@ -33,7 +33,7 @@ it('preserves amounts when the interest rate is zero', function () {
     expect($result['flexible_payments'][0]['amount_rial'])->toBe(200)
         ->and($result['flexible_payments'][1]['amount_rial'])->toBe(600)
         ->and($result['total_nominal_rial'])->toBe(1_000)
-        ->and($result['overall_rate'])->toBe(0.0);
+        ->and($result['overall_rate'])->toEqual(0.0);
 });
 
 it('supports a fully covered contract without weighted cheques', function () {

@@ -8,6 +8,11 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    // UI layout references @vite; these tests exercise the application without a built frontend.
+    $this->withoutVite();
+});
+
 it('maps calculator routes to the existing financial report permission', function () {
     foreach (['finance.reports.payment-calculator.index', 'finance.reports.payment-calculator.calculate'] as $name) {
         expect(route($name))->toBeString()

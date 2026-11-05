@@ -346,6 +346,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         ->group(function () {
             Route::get('/payment-calculator', [\App\Http\Controllers\FinancePaymentCalculatorController::class, 'index'])->name('payment-calculator.index');
             Route::post('/payment-calculator/calculate', [\App\Http\Controllers\FinancePaymentCalculatorController::class, 'calculate'])->middleware('throttle:60,1')->name('payment-calculator.calculate');
+            Route::post('/payment-calculator/print', [\App\Http\Controllers\FinancePaymentCalculatorController::class, 'printReport'])->middleware('throttle:20,1')->name('payment-calculator.print');
             Route::get('/top-products', [\App\Http\Controllers\TopProductsReportController::class, 'index'])->name('top-products');
             Route::get('/top-products/detail', [\App\Http\Controllers\TopProductsReportController::class, 'detail'])->name('top-products.detail');
             Route::get('/top-products/export', [\App\Http\Controllers\TopProductsReportController::class, 'export'])->name('top-products.export');
