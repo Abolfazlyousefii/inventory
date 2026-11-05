@@ -498,23 +498,6 @@ class StockCountDocumentService
                 abort(409, 'یک تنوع بیش از یک‌بار در سند ثبت شده است؛ ثبت نهایی متوقف شد.');
             }
 
-            // A category stocktake is a complete physical count. A draft may be
-            // partial, but never apply stock until every eligible variant has
-            // an explicit non-null count (including zero).
-            $requiredIds = app(StocktakeCategoryWorkspaceService::class)->countableVariantIds($categoryId);
-            $missingIds = array_values(array_diff($requiredIds, $variantIds));
-            if ($missingIds !== []) {
-                throw new StockCountFinalizeValidationException(
-                    'ثبت نهایی ممکن نیست؛ '.count($missingIds).' تنوع محدوده هنوز شمارش نشده است. برای موجودی صفر، عدد ۰ را صریحاً ثبت کنید.',
-                    array_map(static fn ($id) => [
-                        'variant_id' => (int) $id,
-                        'variant_name' => '#'.$id,
-                        'reason_code' => 'uncounted_variant',
-                        'reason' => 'این تنوع هنوز شمارش نشده است؛ ابتدا مقدار واقعی یا صفر را در پیش‌نویس ثبت کنید.',
-                    ], array_slice($missingIds, 0, 30)),
-                );
-            }
-
             $productIdsByVariant = ProductVariant::query()->whereIn('id', $variantIds)->pluck('product_id', 'id');
             $productIds = $items->pluck('product_id')->map(fn ($id) => (int) $id)->unique()->sort()->values()->all();
 
