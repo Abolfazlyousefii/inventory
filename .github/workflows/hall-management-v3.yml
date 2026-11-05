@@ -44,9 +44,10 @@ jobs:
           node --check public/hall-management/core.js
           node --check public/hall-management/reports.js
           node --check public/hall-management/seen.js
+          node --check public/hall-management/motion.js
           node --check public/hall-management/dashboard.js
       - name: Run Hall client regressions
-        run: node --test tests/Js/hall-management-core.test.mjs tests/Js/hall-management-reports.test.mjs tests/Js/hall-management-seen.test.mjs
+        run: node --test tests/Js/hall-management-*.test.mjs
 
   php:
     name: Hall PHP feature safety
