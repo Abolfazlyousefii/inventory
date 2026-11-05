@@ -1,0 +1,67 @@
+name: Hall management v3 safety
+
+on:
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/Tracking/HallTrackingController.php'
+      - 'app/Services/Tracking/**'
+      - 'resources/views/tracking/hall-management.blade.php'
+      - 'public/hall-management/**'
+      - 'config/hall_display.php'
+      - 'routes/web.php'
+      - 'tests/Feature/HallManagementDashboardTest.php'
+      - 'tests/Feature/HallQueueRecorderTest.php'
+      - 'tests/Js/hall-management-*.test.mjs'
+      - '.github/workflows/hall-management-v3.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/Http/Controllers/Tracking/HallTrackingController.php'
+      - 'app/Services/Tracking/**'
+      - 'resources/views/tracking/hall-management.blade.php'
+      - 'public/hall-management/**'
+      - 'config/hall_display.php'
+      - 'routes/web.php'
+      - 'tests/Feature/HallManagementDashboardTest.php'
+      - 'tests/Feature/HallQueueRecorderTest.php'
+      - 'tests/Js/hall-management-*.test.mjs'
+      - '.github/workflows/hall-management-v3.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  javascript:
+    name: Hall JS contracts and local-seen behavior
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate dashboard assets
+        run: |
+          node --check public/hall-management/core.js
+          node --check public/hall-management/reports.js
+          node --check public/hall-management/seen.js
+          node --check public/hall-management/dashboard.js
+      - name: Run Hall client regressions
+        run: node --test tests/Js/hall-management-core.test.mjs tests/Js/hall-management-reports.test.mjs tests/Js/hall-management-seen.test.mjs
+
+  php:
+    name: Hall PHP feature safety
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Verify Hall PHP feature contracts in isolated SQLite
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/HallManagementDashboardTest.php tests/Feature/HallQueueRecorderTest.php
