@@ -110,7 +110,7 @@
             <div class="item primary"><span class="label">مجموع پرداخت‌ها (ریال)</span><strong>{{ number_format($result['total_nominal_rial']) }}</strong></div>
             <div class="item"><span class="label">مجموع مبالغ مشخص (ریال)</span><strong>{{ number_format($result['fixed_total_rial']) }}</strong></div>
             <div class="item"><span class="label">{{ match ($mode) { 'cash_needed' => 'نقدی محاسبه‌شده (ریال)', 'cash_value' => 'ارزش نقدی امروز (ریال)', default => 'مجموع چک‌های محاسبه‌شده (ریال)' } }}</span><strong>{{ number_format(match ($mode) { 'cash_needed' => $result['calculated_cash_rial'], 'cash_value' => $result['cash_equivalent_rial'], default => $result['flexible_total_rial'] }) }}</strong></div>
-            <div class="item"><span class="label">اختلاف مبلغ با قیمت پایه (ریال)</span><strong>{{ number_format($result['nominal_increase_rial']) }}</strong></div>
+            <div class="item"><span class="label">{{ $mode === 'cash_value' ? 'اختلاف مبلغ اسمی و ارزش نقدی (ریال)' : 'اختلاف مبلغ با قیمت پایه (ریال)' }}</span><strong>{{ number_format($result['nominal_increase_rial']) }}</strong></div>
             <div class="item"><span class="label">درصد افزایش کل</span><strong>{{ number_format($result['overall_rate'] * 100, 2) }}٪</strong></div>
             <div class="item"><span class="label">ارزش فعلی پرداخت‌ها (ریال)</span><strong>{{ number_format(round($result['present_value_rounded_rial'])) }}</strong></div>
         </section>
