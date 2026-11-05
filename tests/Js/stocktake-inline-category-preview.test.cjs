@@ -44,13 +44,14 @@ test('October 29 inline stocktake supports editing and saving a draft for each p
     assert.match(form, /id="stocktakeCategoryApp" data-embedded="1"/);
     assert.match(form, /id="scProducts"/);
     assert.match(form, /data-store-url=/);
-    assert.match(form, /stocktake-category-workspace\.js/);
+    assert.match(form, /stocktake-embedded-counting-oct29\.js/);
     assert.doesNotMatch(form, /stocktakeInlinePreview|stocktake-inline-category-preview\.js/);
 
-    const script = read('public/js/stocktake-category-workspace.js');
+    const script = read('public/js/stocktake-embedded-counting-oct29.js');
     assert.match(script, /ذخیره پیش‌نویس این محصول/);
     assert.match(script, /dataset\.saveProduct/);
     assert.match(script, /async function saveProduct\(id\)/);
+    assert.match(script, /group\.button\.disabled\s*=\s*group\.saved/);
     assert.match(script, /method:\s*'POST'/);
     assert.match(script, /group\.quantities\.set\(Number\(field\.dataset\.variant\),normalized\)/);
     assert.match(script, /document\.getElementById\('stocktakeForm'\)\.dataset\.categoryMode/);
