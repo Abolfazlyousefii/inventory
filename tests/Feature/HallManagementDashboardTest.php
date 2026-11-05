@@ -213,6 +213,20 @@ class HallManagementDashboardTest extends TestCase
         $this->assertSame('1405/08', $metrics['month_jalali']);
     }
 
+    public function test_monthly_issued_invoices_span_all_31_days_of_farvardin_without_crossing_next_month(): void
+    {
+        $this->travelTo(now('Asia/Tehran')->setDate(2026, 4, 5)->setTime(14, 0));
+        // 1405/01/01 = 2026-03-21 and 1405/02/01 = 2026-04-21.
+        $this->invoice(['document_date'=>'2026-03-20 23:59:59']);
+        $this->invoice(['document_date'=>'2026-03-21 00:00:00']);
+        $this->invoice(['document_date'=>'2026-04-20 23:59:59']);
+        $this->invoice(['document_date'=>'2026-04-21 00:00:00']);
+
+        $metrics = app(HallManagementDashboard::class)->snapshot()['metrics'];
+        $this->assertSame(2, $metrics['month_invoice_count']);
+        $this->assertSame('1405/01', $metrics['month_jalali']);
+    }
+
     public function test_real_statuses_map_to_five_queues(): void
     {
         $map = [
