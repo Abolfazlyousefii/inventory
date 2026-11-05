@@ -1,6 +1,7 @@
 import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261105-hallv3';
 import { buildReport } from './reports.js?v=20261105-hallv3';
 import { createSeenTracker, HALL_SEEN_STORAGE_KEY } from './seen.js?v=20261105-hallv3';
+import { arrivalKeys } from './motion.js?v=20261105-hall-motion';
 
 const root = document.getElementById('hall-dashboard');
 const byId = id => document.getElementById(id);
@@ -17,7 +18,8 @@ let historyController = null, historyPage = 1, historyKey = null;
 let selectedReport = null;
 let snapshot = null, receivedAt = 0, pollTimer, controller, fetching = false, disposed = false;
 let refreshSeconds = Math.max(5, Number(document.querySelector('meta[name="hall-refresh-seconds"]').content) || 15);
-let paused = reducedMotion, moving = false, selectedKey = null, visibleSlots = 4, flights = [], lastServerEventId = null;
+let paused = reducedMotion || window.matchMedia('(pointer: coarse)').matches, moving = false, selectedKey = null, visibleSlots = 4, flights = [], lastServerEventId = null;
+let arrivingKeys = new Set();
 
 function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -32,6 +34,7 @@ function currentSeconds(doc, name) { return elapsedSeconds(doc[name], receivedAt
 function card(doc) {
     const button = element('button', 'order-card');
     button.type = 'button'; button.dataset.key = doc.key;
+    if (arrivingKeys.has(doc.key)) button.classList.add('is-arrival');
     const main = element('span');
     const customer = element('span', 'card-customer', doc.customer); customer.title = doc.customer;
     main.append(customer, element('span', 'card-number', `${doc.type === 'preinvoice' ? 'پیش‌فاکتور' : 'فاکتور'} ${doc.number}`));
@@ -69,6 +72,8 @@ function updateCardTimer(node, doc) {
 
 function renderLane(key) {
     const lane = lanes.get(key), docs = queueDocuments(key), track = lane.querySelector('.lane-track');
+    const focusedCard = track.contains(document.activeElement) ? document.activeElement.closest('.order-card') : null;
+    const focusedKey = focusedCard?.dataset.key ?? null;
     const offset = docs.length ? positions.get(key) % docs.length : 0;
     positions.set(key, offset);
     const visible = docs.length ? Array.from({ length: Math.min(visibleSlots + (docs.length > visibleSlots ? 1 : 0), docs.length) }, (_, i) => docs[(offset + i) % docs.length]) : [];
@@ -77,7 +82,11 @@ function renderLane(key) {
         if (index >= visibleSlots) { node.tabIndex = -1; node.setAttribute('aria-hidden', 'true'); }
         return node;
     }));
-    lane.querySelector('[data-count]').textContent = fa.format(docs.length);
+    if (focusedKey) [...track.children].find(node => node.dataset.key === focusedKey && node.tabIndex !== -1)?.focus({preventScroll:true});
+    const counter = lane.querySelector('[data-count]');
+    const nextCount = fa.format(docs.length);
+    counter.classList.toggle('count-updated', counter.textContent !== '—' && counter.textContent !== nextCount);
+    counter.textContent = nextCount;
     lane.querySelector('.lane-empty').hidden = docs.length > 0;
     lane.querySelector('.lane-empty').textContent = 'سفارشی در این صف نیست';
     lane.querySelector('[data-visible]').textContent = docs.length ? `${fa.format(Math.min(visibleSlots, docs.length))} از ${fa.format(docs.length)}` : '';
@@ -238,6 +247,7 @@ function changeMessage(change) {
 
 async function applySnapshot(next) {
     const previous = snapshot?.documents ?? null;
+    arrivingKeys = new Set(arrivalKeys(previous, next.documents));
     const changes = diffDocuments(previous, next.documents);
     const moves = changes.filter(c => c.kind === 'moved');
     const origins = new Map();
@@ -258,6 +268,8 @@ async function applySnapshot(next) {
     byId('month-jalali').textContent = `ماه ${next.metrics.month_jalali.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d])}`;
     byId('document-total').textContent = `/ ${fa.format(next.documents.length)} سند`;
     for (const key of stageKeys) renderLane(key);
+    // One-shot entrance: timers, pagination and the next poll must not replay it.
+    arrivingKeys.clear();
     if (detail.open) renderDetail();
     if (reportDialog?.open) renderReport();
     byId('attention-count').textContent=fa.format(buildReport(next,'attention').documents.length);
@@ -285,7 +297,7 @@ async function applySnapshot(next) {
                 await node.animate([
                     { transform: 'translate(0,0)', borderRightColor: fromColor },
                     { transform: `translate(${dest.left - origin.rect.left}px,${dest.top - origin.rect.top}px)`, borderRightColor: toColor },
-                ], { duration: 1600, easing: 'ease-in-out', fill: 'forwards' }).finished;
+                ], { duration: 780, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' }).finished;
             } finally { node.remove(); target.style.visibility = ''; }
         }));
         flights = []; moving = false;
