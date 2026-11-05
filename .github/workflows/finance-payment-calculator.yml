@@ -11,7 +11,11 @@ on:
       - 'app/Support/PermissionCatalog.php'
       - 'resources/views/finance/payment-calculator/**'
       - 'public/js/finance-payment-calculator.js'
+      - 'public/js/finance-payment-quick.js'
+      - 'public/js/finance-payment-date-utils.js'
+      - 'public/js/finance-payment-quick-adapter.js'
       - 'public/css/finance-payment-calculator.css'
+      - 'public/css/finance-payment-quick.css'
       - 'routes/web.php'
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
@@ -19,6 +23,7 @@ on:
       - 'tests/Unit/Finance/PaymentScenarioCalculatorTest.php'
       - 'tests/Js/finance-payment-calculator.test.mjs'
       - 'tests/Js/finance-payment-calendar.test.mjs'
+      - 'tests/Js/finance-payment-quick.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
   push:
     branches: [main]
@@ -29,13 +34,18 @@ on:
       - 'app/Services/Finance/PaymentScenarioCalculator.php'
       - 'resources/views/finance/payment-calculator/**'
       - 'public/js/finance-payment-calculator.js'
+      - 'public/js/finance-payment-quick.js'
+      - 'public/js/finance-payment-date-utils.js'
+      - 'public/js/finance-payment-quick-adapter.js'
       - 'public/css/finance-payment-calculator.css'
+      - 'public/css/finance-payment-quick.css'
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php'
       - 'tests/Unit/Finance/PaymentScenarioCalculatorTest.php'
       - 'tests/Js/finance-payment-calculator.test.mjs'
       - 'tests/Js/finance-payment-calendar.test.mjs'
+      - 'tests/Js/finance-payment-quick.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
 
 permissions:
@@ -85,5 +95,10 @@ jobs:
         with:
           node-version: '22'
       - run: node --check public/js/finance-payment-calculator.js
+      - run: node --check public/js/finance-payment-quick.js
+      - run: node --check public/js/finance-payment-date-utils.js
+      - run: node --check public/js/finance-payment-quick-adapter.js
       - name: Exercise cheque form and date-only contract tests
         run: node --test tests/Js/finance-payment-calculator.test.mjs tests/Js/finance-payment-calendar.test.mjs
+      - name: Exercise three quick tabs and calendar tests
+        run: node --test tests/Js/finance-payment-quick.test.mjs
