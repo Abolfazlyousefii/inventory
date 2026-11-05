@@ -34,11 +34,12 @@
             <p class="pc-mode-help" id="pc-mode-help">قیمت نقدی کالا و مبلغ‌های مشخص را بنویسید؛ تاریخ و وزن چک‌های باقیمانده را وارد کنید تا مبلغشان محاسبه شود.</p>
             <div class="pc-examples" role="group" aria-label="مثال‌های آماده">
                 <span>نمونه سریع:</span>
-                <button type="button" data-pc-example="schedule">۵۰ نقد + چک</button>
-                <button type="button" data-pc-example="last_cheque">نقد + چک معلوم + چک آخر</button>
-                <button type="button" data-pc-example="cash_needed">۸۰ میلیون چک، نقدی لازم؟</button>
-                <button type="button" data-pc-example="cash_value">سه چک؛ ارزش نقدی؟</button>
+                <button type="button" data-pc-example="schedule">۵۰ میلیون ریال نقد + چک</button>
+                <button type="button" data-pc-example="last_cheque">۲۰ نقد + ۳۰ چک + چک آخر (میلیون ریال)</button>
+                <button type="button" data-pc-example="cash_needed">۸۰ میلیون ریال چک؛ نقدی لازم؟</button>
+                <button type="button" data-pc-example="cash_value">چک‌های ۲۰، ۳۰ و ۸۰ میلیون ریالی</button>
             </div>
+            <p class="pc-hint">تمام ورودی‌ها و نتایج به ریال هستند؛ ۱۰۰ میلیون تومان معادل ۱٬۰۰۰٬۰۰۰٬۰۰۰ ریال است. محاسبات بدون ثبت مالی انجام می‌شوند.</p>
         </section>
         <form id="pc-form" class="pc-layout" autocomplete="off" novalidate>
             @csrf
