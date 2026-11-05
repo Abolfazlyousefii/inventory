@@ -32,6 +32,16 @@
                     <span class="finance-directory-card-link">{{ $isSalesChart ? 'مشاهده گزارش' : 'مشاهده اسناد' }} <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10H5m5-5-5 5 5 5"/></svg></span>
                 </a>
             @endforeach
+            <a class="finance-report-directory-card is-sales" href="{{ route('finance.reports.payment-calculator.index') }}">
+                <div class="finance-directory-card-top">
+                    <span class="finance-directory-icon" aria-hidden="true">
+                        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="6" y="3" width="20" height="26" rx="3"/><path d="M10 9h12M11 15h3m4 0h3m-10 5h3m4 0h3m-10 5h3m4 0h3"/></svg>
+                    </span>
+                    <span class="finance-directory-tag">ابزار محاسبات مالی</span>
+                </div>
+                <div><h2>ماشین‌حساب نقد و چک</h2><p>محاسبه پیش‌پرداخت، سررسید و مبلغ چک‌های مشتری، سود روزانه و ماهانه و جمع پرداخت‌ها.</p></div>
+                <span class="finance-directory-card-link">شروع محاسبه <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10H5m5-5-5 5 5 5"/></svg></span>
+            </a>
         </div>
     </div>
 </x-app-layout>
