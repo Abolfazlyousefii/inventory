@@ -36,25 +36,17 @@ test('category preview rejects invalid or stalled paginated responses', () => {
     assert.throws(() => validatePage({ rows: [], next_cursor: 1, has_more: 0 }, 0));
 });
 
-test('October 29 inline stocktake supports editing and saving a draft for each product', () => {
+test('preview renders inside the original stocktake create form and nowhere else', () => {
     const form = read('resources/views/stocktake/form.blade.php');
     assert.match(form, /id="stocktakeForm"/);
+    assert.match(form, /id="stocktakeInlinePreviewShow"/);
+    assert.match(form, /id="stocktakeInlinePreview"/);
+    assert.match(form, /id="stocktakeInlinePreviewMore"/);
+    assert.match(form, /stocktake-inline-category-preview\.js/);
     assert.match(form, /@if\(\$mode==='create'\)/);
-    assert.match(form, /id="scShow"/);
-    assert.match(form, /id="stocktakeCategoryApp" data-embedded="1"/);
-    assert.match(form, /id="scProducts"/);
-    assert.match(form, /data-store-url=/);
-    assert.match(form, /stocktake-embedded-counting-oct29\.js/);
-    assert.doesNotMatch(form, /stocktakeInlinePreview|stocktake-inline-category-preview\.js/);
-
-    const script = read('public/js/stocktake-embedded-counting-oct29.js');
-    assert.match(script, /ذخیره پیش‌نویس این محصول/);
-    assert.match(script, /dataset\.saveProduct/);
-    assert.match(script, /async function saveProduct\(id\)/);
-    assert.match(script, /group\.button\.disabled\s*=\s*group\.saved/);
-    assert.match(script, /method:\s*'POST'/);
-    assert.match(script, /group\.quantities\.set\(Number\(field\.dataset\.variant\),normalized\)/);
-    assert.match(script, /document\.getElementById\('stocktakeForm'\)\.dataset\.categoryMode/);
+    assert.match(form, /این مرحله فقط پیش‌نمایش خواندنی/);
+    assert.doesNotMatch(form, /id="stocktakeInlinePreviewSave"/);
+    assert.doesNotMatch(form, /id="stocktakeInlinePreviewFinalize"/);
 });
 
 test('preview code reads category variant endpoint, never makes stock writes', () => {
