@@ -115,6 +115,125 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         ], $extra), 1);
     }
 
+    /**
+     * Build an isolated eight-variant category like the mobile subcategory used
+     * during live read-only QA. No production product IDs or database is used.
+     */
+    private function seedMobileLikeVariantBrowser(): void
+    {
+        Schema::create('invoice_items', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('invoice_id');
+            $table->unsignedBigInteger('variant_id');
+            $table->unsignedInteger('quantity');
+        });
+
+        $products = [];
+        $variants = [];
+        $stocks = [];
+        foreach (range(3, 8) as $id) {
+            $variantId = 100 + $id;
+            $products[] = [
+                'id' => $id,
+                'name' => $id === 5 ? 'موبایل آزمایشی NOVA' : 'موبایل آزمایشی شماره ' . $id,
+                'category_id' => 11,
+                'is_bundle' => 0,
+            ];
+            $variants[] = [
+                'id' => $variantId, 'product_id' => $id,
+                'variant_name' => 'تنوع اصلی', 'variant_code' => 'M-' . $variantId,
+                'stock' => 0, 'is_active' => 1, 'sales_enabled' => 1,
+            ];
+            $stocks[] = [
+                'id' => $id + 1, 'warehouse_id' => 1,
+                'product_id' => $id, 'product_variant_id' => $variantId,
+                'quantity' => $id,
+            ];
+        }
+        DB::table('products')->insert($products);
+        DB::table('product_variants')->insert($variants);
+        DB::table('warehouse_stocks')->insert($stocks);
+    }
+
+    public function test_mobile_like_subcategory_api_returns_cursor_pages_without_duplicate_variants_or_writes(): void
+    {
+        $this->seedMobileLikeVariantBrowser();
+        $this->withoutMiddleware();
+
+        $beforeStocks = DB::table('warehouse_stocks')->orderBy('id')->get()->toArray();
+        $beforeDocuments = StockCountDocument::count();
+        $beforeMovements = StockMovement::count();
+
+        $all = [];
+        $cursor = 0;
+        for ($page = 0; $page < 5; $page++) {
+            $response = $this->getJson('/stock-count-documents/category-variants?category_id=11&limit=2&after_id=' . $cursor)
+                ->assertOk()
+                ->assertJsonStructure(['rows', 'next_cursor', 'has_more']);
+            $rows = $response->json('rows');
+            $this->assertCount(2, $rows, 'Eight variants should occupy four complete two-item pages.');
+            foreach ($rows as $row) {
+                $this->assertArrayHasKey('product_name', $row);
+                $this->assertArrayHasKey('sku', $row);
+                $this->assertArrayHasKey('system_available', $row);
+                $this->assertArrayHasKey('expected_physical', $row);
+                $this->assertArrayHasKey('actual_physical', $row);
+                $this->assertNull($row['actual_physical'], 'Opening the category must never write a count.');
+                $all[] = (int) $row['variant_id'];
+            }
+            $next = (int) $response->json('next_cursor');
+            $this->assertGreaterThan($cursor, $next);
+            $cursor = $next;
+
+            if (! $response->json('has_more')) {
+                break;
+            }
+        }
+
+        $this->assertSame([101, 102, 103, 104, 105, 106, 107, 108], $all);
+        $this->assertSame(count($all), count(array_unique($all)));
+        $this->assertSame(108, $cursor);
+
+        // Parent scope includes the descendant, but never the unrelated category.
+        $parent = $this->getJson('/stock-count-documents/category-variants?category_id=10&limit=60&after_id=0')
+            ->assertOk();
+        $this->assertCount(8, $parent->json('rows'));
+        $this->assertFalse($parent->json('has_more'));
+        $this->assertNotContains(201, array_column($parent->json('rows'), 'variant_id'));
+
+        $this->assertEquals($beforeStocks, DB::table('warehouse_stocks')->orderBy('id')->get()->toArray());
+        $this->assertSame($beforeDocuments, StockCountDocument::count());
+        $this->assertSame($beforeMovements, StockMovement::count());
+    }
+
+    public function test_mobile_like_subcategory_api_live_search_and_paging_validation(): void
+    {
+        $this->seedMobileLikeVariantBrowser();
+        $this->withoutMiddleware();
+
+        $response = $this->getJson('/stock-count-documents/category-variants?category_id=11&limit=60&after_id=0&q=NOVA')
+            ->assertOk()
+            ->assertJsonPath('has_more', false)
+            ->assertJsonPath('next_cursor', 105)
+            ->assertJsonPath('rows.0.product_name', 'موبایل آزمایشی NOVA');
+        $this->assertCount(1, $response->json('rows'));
+        $this->assertSame(105, (int) $response->json('rows.0.variant_id'));
+
+        $empty = $this->getJson('/stock-count-documents/category-variants?category_id=11&limit=60&after_id=108')
+            ->assertOk();
+        $this->assertSame([], $empty->json('rows'));
+        $this->assertFalse($empty->json('has_more'));
+        $this->assertSame(108, $empty->json('next_cursor'));
+
+        $this->getJson('/stock-count-documents/category-variants?category_id=11&limit=101')
+            ->assertUnprocessable()->assertJsonValidationErrors(['limit']);
+        $this->getJson('/stock-count-documents/category-variants?category_id=11&after_id=-1')
+            ->assertUnprocessable()->assertJsonValidationErrors(['after_id']);
+
+        $this->assertSame(0, StockCountDocument::count());
+        $this->assertSame(0, StockMovement::count());
+    }
+
     public function test_category_draft_contains_only_explicitly_counted_variants_and_keeps_explicit_zero(): void
     {
         $document = $this->saveCategory([101 => 8, 102 => 0]);
