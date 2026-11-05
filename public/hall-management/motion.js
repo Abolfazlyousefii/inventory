@@ -21,3 +21,18 @@ export function arrivalKeys(previousDocuments, nextDocuments) {
 
     return [...arrivals];
 }
+
+/**
+ * Tablet/phone users scroll the complete queue; a TV keeps a bounded
+ * rotating window and one extra off-screen card for the animation.
+ */
+export function visibleQueueDocuments(documents, offset, slots, compact) {
+    if (!Array.isArray(documents) || documents.length === 0) return [];
+    if (compact) return documents;
+
+    const start = ((offset % documents.length) + documents.length) % documents.length;
+    const visibleSlots = Math.max(1, Math.floor(slots) || 1);
+    const total = Math.min(documents.length, visibleSlots + (documents.length > visibleSlots ? 1 : 0));
+
+    return Array.from({length:total}, (_, index) => documents[(start + index) % documents.length]);
+}
