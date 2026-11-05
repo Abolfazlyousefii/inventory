@@ -8,6 +8,8 @@ use App\Models\StockCountDocument;
 use App\Exceptions\StockCountFinalizeValidationException;
 use App\Services\StockCountDocumentService;
 use App\Services\WarehouseStockFlowReportService;
+use App\Services\StocktakeLegacyArchiveService;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -23,8 +25,8 @@ class StocktakeController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'finalized', 'cancelled'])],
             'date_from' => ['nullable', 'string', 'max:10'], 'date_to' => ['nullable', 'string', 'max:10'],
         ]);
-        // Consolidated child drafts remain in the database for audit, but must not appear as active archive documents.
-        $query = StockCountDocument::query()->whereNull('superseded_by_id')->with(['warehouse','product','category','creator'])->withCount('items');
+        // The physical historical documents remain unchanged and queryable by their own URLs.
+        $query = StockCountDocument::query()->whereNull('superseded_by_id');
         if (! empty($filters['status'])) $query->where('status', $filters['status']);
         if (! empty($filters['warehouse_id'])) $query->where('warehouse_id', $filters['warehouse_id']);
         $normalize = fn ($value) => strtr(trim($value), ['ي'=>'ی','ك'=>'ک','۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
@@ -49,11 +51,68 @@ class StocktakeController extends Controller
         if (isset($dates['date_from'], $dates['date_to']) && $dates['date_from'] > $dates['date_to']) {
             throw \Illuminate\Validation\ValidationException::withMessages(['date_to'=>'تاریخ پایان باید بعد از تاریخ شروع باشد.']);
         }
-        $documents = (clone $query)->latest('id')->paginate(15)->withQueryString();
-        // Keep the existing JSON response shape for archive API consumers.
-        if ($request->expectsJson()) return response()->json($documents);
-        $summary = ['total'=>(clone $query)->count(), 'finalized'=>(clone $query)->where('status','finalized')->count(),
-            'increase'=>(int)(clone $query)->sum('total_increase'), 'decrease'=>(int)(clone $query)->sum('total_decrease')];
+
+        // Preserve the original individual-document JSON API contract.
+        if ($request->expectsJson()) {
+            return response()->json(
+                (clone $query)->with(['warehouse','product','category','creator'])
+                    ->withCount('items')->latest('id')->paginate(15)->withQueryString()
+            );
+        }
+
+        // Pagination runs over logical archive entries, so a 25-document historical
+        // category count occupies ONE row and cannot leak onto subsequent pages.
+        // Explicit text/number searches keep the old per-document semantics.
+        $headers = (clone $query)->latest('id')->get(['id', 'status']);
+        $groupByDocument = [];
+        if (empty($filters['q']) && empty($filters['document_number'])) {
+            $visibleIds = array_fill_keys($headers->pluck('id')->map(fn ($id) => (int) $id)->all(), true);
+            foreach (app(StocktakeLegacyArchiveService::class)->eligibleGroups() as $group) {
+                if (count(array_intersect_key(array_fill_keys($group->child_document_ids, true), $visibleIds))
+                    !== count($group->child_document_ids)) {
+                    continue; // Never show a partial group under an archive filter.
+                }
+                foreach ($group->child_document_ids as $id) {
+                    $groupByDocument[$id] = $group;
+                }
+            }
+        }
+
+        $descriptors = collect();
+        $seenGroups = [];
+        foreach ($headers as $document) {
+            $group = $groupByDocument[(int) $document->id] ?? null;
+            if ($group) {
+                if (! isset($seenGroups[$group->batch_id])) {
+                    $descriptors->push(['kind'=>'group', 'group'=>$group, 'status'=>'finalized']);
+                    $seenGroups[$group->batch_id] = true;
+                }
+            } else {
+                $descriptors->push(['kind'=>'document', 'id'=>(int) $document->id, 'status'=>$document->status]);
+            }
+        }
+
+        $perPage = 15;
+        $page = max(1, (int) $request->query('page', 1));
+        $current = $descriptors->forPage($page, $perPage)->values();
+        $ids = $current->where('kind', 'document')->pluck('id')->all();
+        $originals = $ids === [] ? collect() : StockCountDocument::query()
+            ->with(['warehouse','product','category','creator'])->withCount('items')
+            ->whereIntegerInRaw('id', $ids)->get()->keyBy('id');
+        $rows = $current->map(fn ($entry) => $entry['kind'] === 'group'
+            ? $entry['group'] : $originals->get($entry['id']))->filter()->values();
+
+        $documents = new LengthAwarePaginator($rows, $descriptors->count(), $perPage, $page, [
+            'path' => $request->url(),
+            'query' => $request->query(),
+        ]);
+        $summary = [
+            'total' => $descriptors->count(),
+            'finalized' => $descriptors->where('status', 'finalized')->count(),
+            // These are the original physical stock changes; do not re-apply or double-count them.
+            'increase' => (int) (clone $query)->sum('total_increase'),
+            'decrease' => (int) (clone $query)->sum('total_decrease'),
+        ];
         $warehouses = \App\Models\Warehouse::query()->orderBy('name')->get(['id','name']);
         return view('stocktake.index', compact('documents','summary','filters','warehouses'));
     }
