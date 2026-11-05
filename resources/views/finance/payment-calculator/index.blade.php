@@ -69,8 +69,8 @@
                 <article class="pc-panel">
                     <header class="pc-panel-head"><span class="pc-step">۲</span><div><h2 id="pc-fixed-title">پیش‌پرداخت و مبالغ مشخص</h2><p id="pc-fixed-help">پرداخت نقدی یا چکی را که مبلغش از قبل معلوم است اضافه کنید.</p></div></header>
                     <div class="pc-table-scroll"><table class="pc-table"><thead><tr><th>نوع</th><th>تاریخ پرداخت</th><th>مبلغ (ریال)</th><th>حذف</th></tr></thead><tbody id="pc-fixed-body"></tbody></table></div>
-                    <p id="pc-fixed-empty" class="pc-muted">هنوز پیش‌پرداختی اضافه نشده است.</p>
-                    <button class="pc-add" id="pc-add-fixed" type="button">+ افزودن پیش‌پرداخت</button>
+                    <p id="pc-fixed-empty" class="pc-muted">هنوز پرداخت نقدی یا چکی با مبلغ معلوم اضافه نشده است.</p>
+                    <button class="pc-add" id="pc-add-fixed" type="button">+ افزودن پرداخت / چک معلوم</button>
                 </article>
 
                 <article class="pc-panel" id="pc-weighted-panel">
