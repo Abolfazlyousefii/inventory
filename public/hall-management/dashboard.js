@@ -1,6 +1,6 @@
 import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261105-hallv3';
 import { buildReport } from './reports.js?v=20261105-hallv3';
-import { createSeenTracker } from './seen.js?v=20261105-hallv3';
+import { createSeenTracker, HALL_SEEN_STORAGE_KEY } from './seen.js?v=20261105-hallv3';
 
 const root = document.getElementById('hall-dashboard');
 const byId = id => document.getElementById(id);
@@ -163,9 +163,12 @@ async function loadHistory(doc, page) {
         byId('history-status').textContent = data.record_count
             ? fa.format(data.record_count) + ' رویداد ثبت‌شده'
             : 'برای این سند سابقه انتقال ثبت نشده است.';
+        byId('history-more').textContent = 'نمایش رویدادهای قدیمی‌تر';
         byId('history-more').hidden = !data.has_more;
     } catch (error) {
         if (!signal.aborted && selectedKey === doc.key) {
+            historyPage = page - 1;
+            byId('history-more').textContent = 'تلاش مجدد';
             byId('history-status').textContent = 'دریافت تاریخچه ناموفق بود؛ دوباره تلاش کنید.';
             byId('history-more').hidden = false;
         }
@@ -378,6 +381,12 @@ document.addEventListener('fullscreenchange', () => { byId('fullscreen').textCon
 document.addEventListener('visibilitychange', () => { clearTimeout(pollTimer); if (document.hidden) controller?.abort(); else { poll(); measure(); } });
 const observer = new ResizeObserver(measure); observer.observe(byId('board'));
 for (const lane of lanes.values()) observer.observe(lane.querySelector('.lane-window'));
+window.addEventListener('storage', event => {
+    if (event.key === HALL_SEEN_STORAGE_KEY && snapshot) {
+        seenTracker.refresh();
+        for (const key of stageKeys) renderLane(key);
+    }
+});
 window.addEventListener('resize', measure);
 document.fonts?.ready.then(measure);
 setInterval(() => {
