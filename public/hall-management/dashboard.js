@@ -1,7 +1,7 @@
 import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261105-hallv3';
 import { buildReport } from './reports.js?v=20261105-hallv3';
 import { createSeenTracker, HALL_SEEN_STORAGE_KEY } from './seen.js?v=20261105-hallv3';
-import { arrivalKeys } from './motion.js?v=20261105-hall-motion';
+import { arrivalKeys, visibleQueueDocuments } from './motion.js?v=20261105-hall-motion';
 
 const root = document.getElementById('hall-dashboard');
 const byId = id => document.getElementById(id);
@@ -80,7 +80,7 @@ function renderLane(key) {
     // Touch/tablet layouts expose the complete list in a scrollable lane.
     // Large wallboards retain the existing economical rotating window.
     const tablet = isTabletLayout();
-    const visible = tablet ? docs : docs.length ? Array.from({ length: Math.min(visibleSlots + (docs.length > visibleSlots ? 1 : 0), docs.length) }, (_, i) => docs[(offset + i) % docs.length]) : [];
+    const visible = visibleQueueDocuments(docs, offset, visibleSlots, tablet);
     track.replaceChildren(...visible.map((doc, index) => {
         const node = card(doc);
         if (!tablet && index >= visibleSlots) { node.tabIndex = -1; node.setAttribute('aria-hidden', 'true'); }
