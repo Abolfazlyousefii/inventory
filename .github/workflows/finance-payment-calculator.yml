@@ -14,7 +14,9 @@ on:
       - 'routes/web.php'
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
+      - 'tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php'
       - 'tests/Js/finance-payment-calculator.test.mjs'
+      - 'tests/Js/finance-payment-calendar.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
   push:
     branches: [main]
@@ -27,7 +29,9 @@ on:
       - 'public/css/finance-payment-calculator.css'
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
+      - 'tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php'
       - 'tests/Js/finance-payment-calculator.test.mjs'
+      - 'tests/Js/finance-payment-calendar.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
 
 permissions:
@@ -56,6 +60,8 @@ jobs:
           php -l app/Http/Requests/Finance/CalculatePaymentScheduleRequest.php
       - name: Payment schedule engine tests
         run: php tests/run.php --configuration phpunit.xml tests/Unit/Finance/PaymentScheduleCalculatorTest.php
+      - name: Reference scenarios against Python formulas
+        run: php tests/run.php --configuration phpunit.xml tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php
       - name: Auth and Persian form feature tests
         run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorTest.php
       - name: Print report and invalid schedule tests
@@ -70,5 +76,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --check public/js/finance-payment-calculator.js
-      - name: Exercise cheque form interactions
-        run: node --test tests/Js/finance-payment-calculator.test.mjs
+      - name: Exercise cheque form and date-only contract tests
+        run: node --test tests/Js/finance-payment-calculator.test.mjs tests/Js/finance-payment-calendar.test.mjs
