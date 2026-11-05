@@ -79,7 +79,9 @@ test('embedded category selector renders editable counts and saves 0 and positiv
         querySelectorAll(selector) { return selector === '[data-stocktake-single]' ? singleProductControls : []; },
     };
     let sentDraft;
+    const requests = [];
     const fetch = async (input, options = {}) => {
+        requests.push({url:String(input),method:options.method || 'GET'});
         const url = String(input);
         if (options.method === 'POST') {
             assert.match(url, /category-drafts/);
@@ -90,15 +92,16 @@ test('embedded category selector renders editable counts and saves 0 and positiv
             }]})};
         }
         assert.match(url, /category-variants/);
-        return {ok:true, json:async()=>({
-            rows:[
-                {product_id:1,product_name:'AirPods',variant_id:101,name:'Black',sku:'X1',
-                    system_available:6,active_reserved:0,expected_physical:6,queue_total:0},
-                {product_id:1,product_name:'AirPods',variant_id:102,name:'White',sku:'X2',
-                    system_available:3,active_reserved:0,expected_physical:3,queue_total:0},
-            ],
+        const cursor = new URL(url).searchParams.get('after_id');
+        return {ok:true, json:async()=> cursor === '0' ? {
+            rows:[{product_id:1,product_name:'AirPods',variant_id:101,name:'Black',sku:'X1',
+                system_available:6,active_reserved:0,expected_physical:6,queue_total:0}],
+            next_cursor:101, has_more:true,
+        } : {
+            rows:[{product_id:1,product_name:'AirPods',variant_id:102,name:'White',sku:'X2',
+                system_available:3,active_reserved:0,expected_physical:3,queue_total:0}],
             next_cursor:102, has_more:false,
-        })};
+        }};
     };
     const context = {document, window:{addEventListener(){},confirm:()=>true},
         fetch, location:{origin:'https://example.test'}, URL, AbortController,
@@ -111,20 +114,43 @@ test('embedded category selector renders editable counts and saves 0 and positiv
     assert.equal(root.hidden,false);
     assert.equal(originalForm.dataset.categoryMode,'1');
     assert.equal(singleProductControls.every(x=>x.hidden),true);
+    assert.equal(el('scSaveAll').disabled,true, 'cannot save a partially loaded category');
+    assert.equal(el('scFinalizeAll').disabled,true);
+    assert.deepEqual(requests.map(x=>x.method), ['GET'], 'opening category is read-only');
 
+    // The original product form is not allowed to submit a category count.
+    const prevented = [];
+    originalForm.listeners.submit({
+        preventDefault:()=>prevented.push('prevented'),
+        stopImmediatePropagation:()=>prevented.push('stopped'),
+    });
+    assert.deepEqual(prevented,['prevented','stopped']);
+
+    await el('scMore').listeners.click();
     const inputs = el('scProducts').querySelectorAll('.sc-actual');
     assert.equal(inputs.length,2);
     assert.equal(inputs[0].type,'text');
     assert.equal(inputs[0].inputMode,'numeric');
     assert.equal(inputs[0].disabled,false);
     assert.equal(el('scSaveAll').disabled,false);
+    assert.deepEqual(requests.map(x=>x.method), ['GET','GET'],
+        'loading more variants must not save or finalize stock');
+
+    // Negative counts must not leave the draft button enabled.
+    inputs[0].value = '-1';
+    el('scProducts').listeners.input({target:inputs[0]});
+    assert.equal(el('scSaveAll').disabled,true, 'invalid number blocks saving');
 
     for (const [index, value] of [['0', 0], ['5', 1]]) {
         const field = inputs[value];
         field.value = index;
         el('scProducts').listeners.input({target:field});
     }
+    assert.equal(el('scSaveAll').disabled,false, 'correcting the count permits saving');
     await el('scSaveAll').listeners.click();
+    assert.deepEqual(requests.map(x=>x.method), ['GET','GET','POST'],
+        'saving a draft sends only one POST, never a finalization request');
+    assert.equal(el('scFinalizeAll').disabled,true, 'saving a draft is not finalization');
 
     assert.equal(sentDraft.category_id,11);
     assert.equal(sentDraft.products.length,1);
