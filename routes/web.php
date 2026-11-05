@@ -590,6 +590,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/inventory-stock-flow/rows', [\App\Http\Controllers\WarehouseStockFlowController::class, 'rows'])->name('warehouse.stock-flow.rows');
     Route::get('/stocktake', [StocktakeController::class, 'index'])->name('stocktake.index');
     Route::get('/stock-count-documents', [StocktakeController::class, 'index'])->name('stock-count-documents.index');
+    // Read-only grouping of legacy per-product documents finalized in one request.
+    Route::get('/stock-count-documents/batches', [\App\Http\Controllers\StocktakeBatchArchiveController::class, 'index'])->name('stock-count-documents.batches');
     Route::get('/stock-count-documents/category-workspace', [StocktakeController::class, 'categoryWorkspace'])->name('stock-count-documents.category-workspace');
     Route::get('/stock-count-documents/category-variants', [StocktakeController::class, 'categoryVariants'])->name('stock-count-documents.category-variants');
     Route::post('/stock-count-documents/category-document', [\App\Http\Controllers\CategoryStocktakeController::class, 'store'])->name('stock-count-documents.category-document.store');
