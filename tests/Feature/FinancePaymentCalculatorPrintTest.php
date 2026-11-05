@@ -8,6 +8,11 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    // UI layout references @vite; these tests exercise the application without a built frontend.
+    $this->withoutVite();
+});
+
 function financeCalculatorPrintReader(): User
 {
     PermissionCatalog::syncToDatabase();
