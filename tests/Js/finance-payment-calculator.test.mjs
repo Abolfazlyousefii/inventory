@@ -11,6 +11,8 @@ class FakeElement {
         this.listeners = {};
         this.fields = {};
         this.dataset = {};
+        this.attributes = {};
+        this.classList = { toggle: () => {} };
         this.hidden = false;
         this.disabled = false;
         this.textContent = '';
@@ -19,12 +21,15 @@ class FakeElement {
     }
     get rows() { return this.children; }
     addEventListener(event, handler) { this.listeners[event] = handler; }
+    setAttribute(name, value) { this.attributes[name] = value; }
     fire(event) { return this.listeners[event]?.({ preventDefault() {} }); }
     appendChild(item) { this.children.push(item); item.parent = this; return item; }
     replaceChildren(...children) { this.children = []; children.forEach(item => this.appendChild(item)); }
     querySelector(selector) { return this.fields[selector] || null; }
     querySelectorAll(selector) {
         if (selector === '.pc-row-result') return this.rows.map(row => row.querySelector(selector)).filter(Boolean);
+        if (selector === '[data-pc-mode]') return this.children.filter(item => Boolean(item.dataset.pcMode));
+        if (selector === '[data-pc-example]') return this.children.filter(item => Boolean(item.dataset.pcExample));
         return [];
     }
     remove() {
@@ -68,7 +73,10 @@ function mount(response = () => ({
         'pc-fixed-empty', 'pc-fixed-template', 'pc-weighted-template',
         'pc-result-customer', 'pc-result-rows', 'pc-nominal',
         'pc-fixed-total', 'pc-cheques-total', 'pc-increase', 'pc-present',
-        'pc-overall', 'pc-daily', 'pc-add-fixed', 'pc-add-weighted', 'pc-reset'
+        'pc-overall', 'pc-daily', 'pc-add-fixed', 'pc-add-weighted', 'pc-reset',
+        'pc-price-field', 'pc-weighted-panel', 'pc-mode-help', 'pc-fixed-title',
+        'pc-fixed-help', 'pc-price-label', 'pc-answer', 'pc-answer-title',
+        'pc-answer-help', 'pc-increase-label'
     ];
     const elements = Object.fromEntries(ids.map(key => [key, new FakeElement()]));
     const el = key => elements[key];
@@ -76,8 +84,19 @@ function mount(response = () => ({
         calculateUrl: '/finance/reports/payment-calculator/calculate',
         printUrl: '/finance/reports/payment-calculator/print',
         firstDue: '۱۴۰۵/۰۹/۱۴',
-        secondDue: '۱۴۰۵/۱۰/۱۴'
+        secondDue: '۱۴۰۵/۱۰/۱۴',
+        thirdDue: '۱۴۰۵/۱۱/۱۴'
     };
+    for (const mode of ['schedule', 'cash_needed', 'cash_value']) {
+        const button = new FakeElement();
+        button.dataset.pcMode = mode;
+        el('pc-calculator').appendChild(button);
+    }
+    for (const scenario of ['schedule', 'last_cheque', 'cash_needed', 'cash_value']) {
+        const button = new FakeElement();
+        button.dataset.pcExample = scenario;
+        el('pc-calculator').appendChild(button);
+    }
     el('pc-base-date').value = '۱۴۰۵/۰۸/۱۴';
     el('pc-print').disabled = true;
     el('pc-result').hidden = true;
@@ -115,7 +134,7 @@ function mount(response = () => ({
         clearTimeout: () => {},
         console
     }, { filename: 'finance-payment-calculator.js' });
-    return { el, posted, submitted };
+    return { el, posted, submitted, modeButton: value => el('pc-calculator').children.find(button => button.dataset.pcMode === value), exampleButton: value => el('pc-calculator').children.find(button => button.dataset.pcExample === value) };
 }
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -172,4 +191,61 @@ test('an invalid response keeps the print button disabled', async () => {
     assert.equal(el('pc-print').disabled, true);
     assert.equal(el('pc-error').hidden, false);
     assert.match(el('pc-error').textContent, /برنامه پرداخت معتبر نیست/);
+});
+
+
+test('cash-needed and cash-value modes send only the relevant input rows', async () => {
+    const { el, posted, modeButton, exampleButton } = mount(() => ({
+        ok: true,
+        result: {
+            mode: 'cash_needed', fixed_payments: [{ day: 90, amount_rial: 80000000 }],
+            flexible_payments: [], computed_payments: [{ day: 0, amount_rial: 32830457 }],
+            calculated_cash_rial: 32830457, cash_equivalent_rial: 0,
+            total_nominal_rial: 112830457, fixed_total_rial: 80000000,
+            flexible_total_rial: 0, total_cheques_rial: 80000000,
+            nominal_increase_rial: 12830457, present_value_rounded_rial: 100000000,
+            overall_rate: 0.12830457, daily_rate: 0.00194
+        }
+    }));
+    exampleButton('cash_needed').fire('click');
+    assert.equal(el('pc-weighted-panel').hidden, true);
+    assert.equal(el('pc-fixed-body').rows.length, 1);
+    assert.equal(el('pc-fixed-body').rows[0].querySelector('.pc-amount').value, '80000000');
+    el('pc-form').fire('submit');
+    await flush();
+    assert.equal(posted.length, 1);
+    const payload = JSON.parse(posted[0].options.body);
+    assert.equal(payload.mode, 'cash_needed');
+    assert.equal(payload.weighted_payments.length, 0);
+    assert.equal(payload.price_rial, '100000000');
+    assert.equal(el('pc-print').disabled, false);
+
+    modeButton('cash_value').fire('click');
+    assert.equal(el('pc-price-field').hidden, true);
+    assert.equal(el('pc-print').disabled, true);
+    exampleButton('cash_value').fire('click');
+    assert.equal(el('pc-fixed-body').rows.length, 3);
+    el('pc-form').fire('submit');
+    await flush();
+    const second = JSON.parse(posted[1].options.body);
+    assert.equal(second.mode, 'cash_value');
+    assert.equal(second.price_rial, null);
+    assert.equal(second.weighted_payments.length, 0);
+    assert.deepEqual(second.fixed_payments.map(x => x.amount_rial), ['20000000', '30000000', '80000000']);
+});
+
+test('last-cheque example fills a known advance, known cheque, and one computed cheque', async () => {
+    const { el, posted, exampleButton } = mount();
+    exampleButton('last_cheque').fire('click');
+    assert.equal(el('pc-fixed-body').rows.length, 2);
+    assert.equal(el('pc-weighted-body').rows.length, 1);
+    assert.equal(el('pc-weighted-panel').hidden, false);
+    el('pc-form').fire('submit');
+    await flush();
+    const data = JSON.parse(posted[0].options.body);
+    assert.equal(data.mode, 'schedule');
+    assert.equal(data.fixed_payments[0].amount_rial, '20000000');
+    assert.equal(data.fixed_payments[1].kind, 'cheque');
+    assert.equal(data.fixed_payments[1].amount_rial, '30000000');
+    assert.equal(data.weighted_payments[0].due_date, '۱۴۰۵/۱۰/۱۴');
 });
