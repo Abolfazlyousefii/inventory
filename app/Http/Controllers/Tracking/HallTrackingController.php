@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tracking;
 
 use App\Http\Controllers\Controller;
 use App\Services\Tracking\HallManagementDashboard;
+use App\Services\Tracking\HallMovementTimeline;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -50,6 +51,26 @@ final class HallTrackingController extends Controller
             'dataUrl' => route('hall.data', absolute: false),
             'refreshSeconds' => max(5, (int) config('hall_display.refresh_seconds', 15)),
         ])->header('Cache-Control', 'private, no-store, max-age=0')
+            ->header('X-Robots-Tag', 'noindex, nofollow, noarchive')
+            ->header('Referrer-Policy', 'no-referrer');
+    }
+
+    /**
+     * The key must refer to an active document in the same protected Hall feed.
+     * There is no free-form invoice lookup and no operational write.
+     */
+    public function history(Request $request, HallManagementDashboard $dashboard, HallMovementTimeline $timeline): JsonResponse
+    {
+        $input = $request->validate([
+            'key' => ['required', 'string', 'max:100', 'regex:/^order:(?:[0-9]+|invoice:[0-9]+)$/'],
+            'page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        $document = collect($dashboard->snapshot()['documents'])->firstWhere('key', $input['key']);
+        abort_unless($document !== null, 404);
+
+        return response()->json($timeline->page($document, (int) ($input['page'] ?? 1)))
+            ->header('Cache-Control', 'private, no-store, max-age=0')
             ->header('X-Robots-Tag', 'noindex, nofollow, noarchive')
             ->header('Referrer-Policy', 'no-referrer');
     }
