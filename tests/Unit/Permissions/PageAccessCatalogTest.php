@@ -50,3 +50,9 @@ it('does not infer runtime route ownership from legacy permission prefixes', fun
     expect($source)->toContain('private const ROUTE_OWNERS')
         ->and(PageAccessCatalog::permissionsForRoute('products.future-action'))->toBe([]);
 });
+
+
+it('allows users with warehouse stocktake page access to open grouped batch archive', function () {
+    expect(PageAccessCatalog::permissionsForRoute('stock-count-documents.batches'))
+        ->toBe(['page.warehouse.stocktake']);
+});
