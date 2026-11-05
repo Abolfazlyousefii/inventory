@@ -1,33 +1,110 @@
 @extends('layouts.app')
 @section('title', 'بررسی سند انبارگردانی دسته')
 @section('content')
-@php $fa = fn($n) => strtr(number_format((int)$n), ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']); @endphp
-<div class="alert alert-info mx-3 mt-2">نمایش آزمایشی: ثبت نهایی از این صفحه غیرفعال است.</div>
-<div class="container-fluid py-3" dir="rtl" style="max-width:1400px">
- <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-  <div><h4>بررسی شمارش {{ $document->scope_name }}</h4><p class="text-muted mb-0">یک سند برای همهٔ کالاهای دسته و زیردسته‌های آن · {{ $document->document_number }}</p></div>
-  <div class="d-flex gap-2">@if($document->status==='draft')<a class="btn btn-outline-primary" href="{{ route('stock-count-documents.edit',$document) }}">ادامه و ویرایش همین سند</a>@endif<a class="btn btn-outline-secondary" href="{{ route('stocktake.index') }}">آرشیو انبارگردانی</a></div>
- </div>
- <div class="card mb-3"><div class="card-body d-flex flex-wrap gap-4">
-  <span>وضعیت: <strong>{{ $document->status==='draft'?'پیش‌نویس':($document->status==='finalized'?'نهایی‌شده':'لغوشده') }}</strong></span>
-  <span>کل تنوع‌ها: <strong>{{ $fa($document->variants_count) }}</strong></span><span>ردیف‌های دارای موجودی: <strong>{{ $fa($positiveItems->count()) }}</strong></span>
-  <span>ردیف‌های صفر: <strong>{{ $fa($document->zeroed_count) }}</strong></span><span>جمع شمارش واقعی: <strong>{{ $fa($document->total_actual) }}</strong></span>
-  <span>افزایش: <strong>{{ $fa($document->total_increase) }}</strong></span><span>کاهش: <strong>{{ $fa($document->total_decrease) }}</strong></span>
- </div></div>
- <div class="alert alert-warning">برای تطبیق با برگه، فقط ردیف‌های دارای عدد مثبت نمایش داده می‌شوند. <strong>{{ $fa($document->zeroed_count) }} ردیفِ صفر هم جزو همین سند است</strong> و با ثبت نهایی، موجودی آن‌ها نیز صفر اعمال می‌شود. ذخیرهٔ پیش‌نویس موجودی را تغییر نمی‌دهد.</div>
- <div class="card mb-3"><div class="card-header">کالاهایی که موجودی واقعی دارند</div><div class="card-body table-responsive">
-  <table class="table table-bordered table-striped align-middle"><thead><tr><th>کالا</th><th>تنوع</th><th>کد کالا</th><th>موجودی قبل</th><th>رزرو</th><th>شمارش واقعی</th><th>اختلاف</th></tr></thead><tbody>
-   @forelse($positiveItems as $item)<tr><td>{{ $item->product_name_snapshot }}</td><td>{{ $item->variant_name_snapshot }}</td><td>{{ $item->sku_snapshot }}</td><td>{{ $fa($item->expected_physical_at_start) }}</td><td>{{ $fa($item->reserved_at_start) }}</td><td><strong>{{ $fa($item->actual_quantity) }}</strong></td><td dir="ltr">{{ $fa($item->actual_quantity-$item->expected_physical_at_start) }}</td></tr>
-   @empty<tr><td colspan="7" class="text-center p-4">هیچ ردیف مثبتی ثبت نشده است؛ موجودی واقعی همهٔ ردیف‌های این سند صفر است.</td></tr>@endforelse
-  </tbody></table>
- </div></div>
- @if(false){{-- نهایی‌سازی تا پایان آزمون ایمنی غیرفعال است --}}
- <form id="categoryFinalizeForm" class="card" data-document-id="{{ $document->id }}" data-user-id="{{ auth()->id() }}" data-review-token="{{ $reviewToken }}" data-zero-count="{{ $document->zeroed_count }}" data-total-count="{{ $document->variants_count }}" data-finalize-url="{{ route('stock-count-documents.category-document.finalize',$document) }}">@csrf
-  <div class="card-body"><p>برگهٔ شمارش و ردیف‌های مثبت را بررسی کنید؛ تأیید زیر تمام ردیف‌های همین سند، شامل صفرها را یکجا اعمال می‌کند. دستهٔ بسته‌شده تا بازگشایی صریح بسته می‌ماند.</p>
-   <div id="categoryFinalizeStatus" role="status" aria-live="polite" class="mb-2"></div><button type="button" id="categoryFinalizeButton" class="btn btn-success">تأیید شمارش و اعمال کل سند</button>
-  </div>
- </form>
- <script>{!! file_get_contents(public_path('js/stocktake-category-finalize.js')) !!}</script>
- @endif
+@php
+    $fa = fn($n) => strtr(number_format((int) $n), ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']);
+@endphp
+<div class="container-fluid py-3" dir="rtl" style="max-width:1450px">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div>
+            <div class="text-muted small">کنترل موجودی انبار مرکزی</div>
+            <h4 class="mb-1">بررسی شمارش {{ $document->scope_name }}</h4>
+            <p class="text-muted mb-0">یک سند برای کل محدوده · {{ $document->document_number }}</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            @if($document->status === 'draft')
+                <a class="btn btn-outline-primary" href="{{ route('stock-count-documents.edit', $document) }}">ادامه و ویرایش شمارش</a>
+            @endif
+            <a class="btn btn-outline-secondary" href="{{ route('stocktake.index') }}">آرشیو انبارگردانی</a>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body d-flex flex-wrap gap-3 gap-lg-4">
+            <span>وضعیت: <strong>{{ $document->status === 'draft' ? 'پیش‌نویس' : ($document->status === 'finalized' ? 'اعمال‌شده' : 'لغوشده') }}</strong></span>
+            <span>تنوع‌های شمارش‌شده: <strong>{{ $fa($countedItems->count()) }}</strong></span>
+            <span>شمارش صریح صفر: <strong>{{ $fa($document->zeroed_count) }}</strong></span>
+            <span>جمع شمارش واقعی: <strong>{{ $fa($document->total_actual) }}</strong></span>
+            <span>جمع موجودی فیزیکی مبنا: <strong>{{ $fa($document->total_before) }}</strong></span>
+            <span>افزایش: <strong>{{ $fa($document->total_increase) }}</strong></span>
+            <span>کاهش: <strong>{{ $fa($document->total_decrease) }}</strong></span>
+        </div>
+    </div>
+
+    <div class="alert alert-warning">
+        فقط تنوع‌هایی که برای آن‌ها عدد صریح وارد شده در این سند قرار دارند.
+        <strong>خانه‌های خالی و تنوع‌های شمارش‌نشده در ثبت نهایی تغییر نمی‌کنند.</strong>
+        عدد ۰ یک شمارش معتبر است و در صورت تأیید، موجودی همان تنوع را صفر می‌کند.
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-bold">تنوع‌های شمارش‌شده و اختلاف موجودی</div>
+        <div class="card-body table-responsive">
+            <table class="table table-bordered table-striped align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>کالا</th>
+                        <th>تنوع</th>
+                        <th>کد کالا</th>
+                        <th>موجودی فیزیکی مبنا</th>
+                        <th>رزرو فعال</th>
+                        <th>شمارش واقعی</th>
+                        <th>اختلاف</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($countedItems as $item)
+                        @php $difference = (int) $item->actual_quantity - (int) $item->expected_physical_at_start; @endphp
+                        <tr>
+                            <td>{{ $item->product_name_snapshot }}</td>
+                            <td>{{ $item->variant_name_snapshot }}</td>
+                            <td><bdi>{{ $item->sku_snapshot }}</bdi></td>
+                            <td>{{ $fa($item->expected_physical_at_start) }}</td>
+                            <td>{{ $fa($item->reserved_at_start) }}</td>
+                            <td>
+                                <strong>{{ $fa($item->actual_quantity) }}</strong>
+                                @if((int) $item->actual_quantity === 0)
+                                    <span class="badge text-bg-warning">صفر صریح</span>
+                                @endif
+                            </td>
+                            <td dir="ltr">{{ $difference > 0 ? '+' : '' }}{{ $fa($difference) }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" class="text-center p-4">هنوز هیچ تنوعی با عدد صریح شمارش نشده است؛ ثبت نهایی در دسترس نیست.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if($document->status === 'draft')
+        @if($countedItems->isNotEmpty())
+            <form id="categoryFinalizeForm" class="card"
+                  data-document-id="{{ $document->id }}"
+                  data-user-id="{{ auth()->id() }}"
+                  data-review-token="{{ $reviewToken }}"
+                  data-zero-count="{{ $document->zeroed_count }}"
+                  data-total-count="{{ $countedItems->count() }}"
+                  data-finalize-url="{{ route('stock-count-documents.category-document.finalize', $document) }}">
+                @csrf
+                <div class="card-body">
+                    <p class="mb-3">
+                        با تأیید، فقط <strong>{{ $fa($countedItems->count()) }} تنوع شمارش‌شده</strong>
+                        شامل <strong>{{ $fa($document->zeroed_count) }} تنوع با مقدار صفر</strong> اعمال می‌شوند.
+                        سایر تنوع‌های محدوده در این عملیات دست‌نخورده می‌مانند.
+                    </p>
+                    <div id="categoryFinalizeStatus" role="status" aria-live="polite" class="mb-2"></div>
+                    <button type="button" id="categoryFinalizeButton" class="btn btn-success">تأیید شمارش و اعمال تنوع‌های ثبت‌شده</button>
+                </div>
+            </form>
+            <script>{!! file_get_contents(public_path('js/stocktake-category-finalize.js')) !!}</script>
+        @else
+            <div class="alert alert-secondary">برای فعال‌شدن ثبت نهایی، ابتدا حداقل یک تنوع را با عدد صریح شمارش کنید.</div>
+        @endif
+    @elseif($document->status === 'finalized')
+        <div class="alert alert-success">ثبت نهایی این سند انجام شده است. تنوع‌های خارج از شمارش در این سند تغییر نکرده‌اند.</div>
+    @endif
 </div>
 @endsection

@@ -16,9 +16,18 @@ final class CategoryStocktakeController extends Controller
     {
         $data = $request->validate(['category_id'=>['nullable','integer','exists:categories,id']]);
         $category = !empty($data['category_id']) ? Category::findOrFail($data['category_id']) : null;
-        if ($category && ($draft = StockCountDocument::query()->where('type','category')->where('category_id',$category->id)
-            ->where('status','draft')->whereNull('superseded_by_id')->latest('id')->first())) {
-            return redirect()->route('stock-count-documents.edit',$draft);
+        if ($category) {
+            $selectedScope = array_map('intval', Category::selfAndDescendantIds((int) $category->id));
+            $drafts = StockCountDocument::query()->where('type', 'category')
+                ->where('status', 'draft')->whereNull('superseded_by_id')
+                ->whereNotNull('category_id')->latest('id')->get();
+            foreach ($drafts as $draft) {
+                $draftScope = array_map('intval', Category::selfAndDescendantIds((int) $draft->category_id));
+                if (array_intersect($selectedScope, $draftScope) !== []) {
+                    return redirect()->route('stock-count-documents.edit', $draft)
+                        ->with('warning', 'برای جلوگیری از شمارش تکراری در محدوده‌های هم‌پوشان، همان پیش‌نویس قبلی باز شد.');
+                }
+            }
         }
         return $this->editor(null, $category);
     }
@@ -36,7 +45,7 @@ final class CategoryStocktakeController extends Controller
             'id'=>$document?->id, 'category_id'=>$category?->id,
             'category_name'=>$document?->scope_name ?? $category?->name ?? '',
             'review_token'=>$document ? $this->service->reviewToken($document) : null,
-            'items'=>$document ? $document->items()->orderBy('product_variant_id')->get()->map(fn ($item) => [
+            'items'=>$document ? $document->items()->whereNotNull('actual_quantity')->orderBy('product_variant_id')->get()->map(fn ($item) => [
                 'variant_id'=>(int) $item->product_variant_id, 'actual_quantity'=>(int) $item->actual_quantity,
             ])->all() : [],
             'rows_url'=>route('stock-count-documents.category-variants'),
@@ -50,14 +59,18 @@ final class CategoryStocktakeController extends Controller
 
     public function store(Request $request)
     {
-        abort(503, 'بخش ذخیرهٔ انبارگردانی دسته‌ای در مرحلهٔ آزمایش نمایشی غیرفعال است.');
         return app(StocktakeRequestService::class)->run($request, 'unified_save', function () use ($request) {
             $data = $request->validate([
                 'category_id'=>['required','integer','exists:categories,id'],
                 'document_id'=>['nullable','integer','exists:stock_count_documents,id'],
                 'expected_review_token'=>['nullable','string','size:64'],
-                'actual_quantities'=>['sometimes','array','max:50000'],
-                'notes'=>['sometimes','array','max:50000'],
+                'document_date'=>['nullable','date'],
+                'actual_quantities'=>['nullable','array','max:50000'],
+                'actual_quantities.*'=>['required','integer','min:0','max:2147483647'],
+                'removed_variant_ids'=>['nullable','array','max:50000'],
+                'removed_variant_ids.*'=>['required','integer','distinct','min:1'],
+                'notes'=>['nullable','array','max:50000'],
+                'notes.*'=>['nullable','string','max:1000'],
             ]);
             $document = $this->service->saveCategoryDraft($data, (int) $request->user()->id);
             return response()->json($this->responsePayload($document))->header('Cache-Control','private, no-store');
@@ -68,21 +81,20 @@ final class CategoryStocktakeController extends Controller
     {
         abort_unless($document->type === 'category', 404);
         $document->load(['warehouse','category','creator']);
-        $positiveItems = $document->items()->where('actual_quantity','>',0)->orderBy('product_name_snapshot')->orderBy('product_variant_id')->get();
+        $countedItems = $document->items()->whereNotNull('actual_quantity')->orderBy('product_name_snapshot')->orderBy('product_variant_id')->get();
         $reviewToken = $this->service->reviewToken($document);
-        return view('stocktake.category-review', compact('document','positiveItems','reviewToken'));
+        return view('stocktake.category-review', compact('document','countedItems','reviewToken'));
     }
 
     public function finalize(Request $request, StockCountDocument $stockCountDocument)
     {
-        abort(503, 'ثبت نهایی در مرحلهٔ آزمایش نمایشی غیرفعال است.');
         abort_unless($stockCountDocument->type === 'category', 404);
         return app(StocktakeRequestService::class)->run($request, 'unified_finalize', function () use ($request, $stockCountDocument) {
             $data = $request->validate(['expected_review_token'=>['required','string','size:64']]);
             try {
                 $document = ReservationSideEffects::transaction(fn () => $this->service->finalize($stockCountDocument, (int) $request->user()->id, false, $data));
             } catch (StockCountFinalizeValidationException $exception) {
-                return response()->json(['message'=>'ثبت نهایی انجام نشد؛ موجودی هیچ ردیفی تغییر نکرد.',
+                return response()->json(['message'=>'ثبت نهایی انجام نشد؛ هیچ ردیفی از موجودی تغییر نکرد.',
                     'errors'=>['finalize'=>[$exception->getMessage()]], 'conflicts'=>$exception->conflicts()],422);
             }
             return response()->json($this->responsePayload($document))->header('Cache-Control','private, no-store');
@@ -100,7 +112,7 @@ final class CategoryStocktakeController extends Controller
             'zeroed_count'=>(int) $document->zeroed_count, 'total_before'=>(int) $document->total_before,
             'total_actual'=>(int) $document->total_actual, 'total_increase'=>(int) $document->total_increase,
             'total_decrease'=>(int) $document->total_decrease,
-            'items'=>$document->items()->orderBy('product_variant_id')->get()->map(fn ($item) => [
+            'items'=>$document->items()->whereNotNull('actual_quantity')->orderBy('product_variant_id')->get()->map(fn ($item) => [
                 'variant_id'=>(int) $item->product_variant_id, 'actual_quantity'=>(int) $item->actual_quantity,
             ])->all(),
         ];

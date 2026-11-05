@@ -64,8 +64,8 @@ class StocktakeController extends Controller
     }
 
     /**
-     * Category-wide counting workspace. No stock writes are performed here:
-     * each product gets its own existing draft document upon explicit save.
+     * Category-wide counting workspace. Counts are saved into one scoped
+     * category document; stock changes only after explicit finalization.
      */
     public function categoryWorkspace(Request $request)
     {
@@ -78,16 +78,26 @@ class StocktakeController extends Controller
     ) {
         $validated = $request->validate([
             'category_id' => ['required','integer','exists:categories,id'],
+            'document_id' => ['nullable','integer','exists:stock_count_documents,id'],
             'after_id' => ['nullable','integer','min:0'],
             'limit' => ['nullable','integer','min:1','max:100'],
             'q' => ['nullable','string','max:80'],
         ]);
+
+        $document = ! empty($validated['document_id'])
+            ? StockCountDocument::query()->findOrFail((int) $validated['document_id'])
+            : null;
+        if ($document) {
+            abort_unless($document->type === 'category'
+                && (int) $document->category_id === (int) $validated['category_id'], 404);
+        }
 
         return response()->json($browser->rows(
             (int) $validated['category_id'],
             (int) ($validated['after_id'] ?? 0),
             (int) ($validated['limit'] ?? \App\Services\StocktakeCategoryWorkspaceService::PAGE_SIZE),
             trim((string) ($validated['q'] ?? '')),
+            $document,
         ))->header('Cache-Control', 'private, no-store');
     }
 
@@ -319,8 +329,7 @@ class StocktakeController extends Controller
 
     public function cancel(Request $request, StockCountDocument $stockCountDocument)
     {
-        abort_if($stockCountDocument->type === 'category', 403, 'لغو اسناد دسته‌ای در نسخهٔ آزمایشی غیرفعال است.');
-        $cancelled = $this->service->cancel($stockCountDocument, (int) auth()->id(), $request->input('cancel_reason'));
+        $this->service->cancel($stockCountDocument, (int) auth()->id(), $request->input('cancel_reason'));
         return back()->with('success', 'پیش‌نویس لغو شد.');
     }
 

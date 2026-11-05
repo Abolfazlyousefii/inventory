@@ -3,13 +3,15 @@
 namespace App\Services;
 
 use App\Models\Category;
+use App\Models\StockCountDocument;
 use App\Models\Warehouse;
+use App\Support\StockCountQuantityCalculator as Quantities;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Read-only category variant browser for stocktaking. The existing
- * product-level document workflow remains the only write path.
+ * Paginated category variant browser for stocktaking. Existing counted rows
+ * reuse their original server snapshot when a draft is reopened.
  */
 final class StocktakeCategoryWorkspaceService
 {
@@ -17,9 +19,17 @@ final class StocktakeCategoryWorkspaceService
     public const MAX_PAGE_SIZE = 100;
 
     /** @return array{rows:array,next_cursor:int,has_more:bool} */
-    public function rows(int $categoryId, int $afterId, int $limit, string $search = ''): array
-    {
+    public function rows(
+        int $categoryId,
+        int $afterId,
+        int $limit,
+        string $search = '',
+        ?StockCountDocument $document = null,
+    ): array {
         $categories = Category::selfAndDescendantIds($categoryId);
+        if ($document) {
+            abort_unless($document->type === 'category' && (int) $document->category_id === $categoryId, 404);
+        }
 
         // Do not create a warehouse merely to display a category.
         $warehouseId = (int) (Warehouse::query()
@@ -43,9 +53,7 @@ final class StocktakeCategoryWorkspaceService
         }
 
         if ($search !== '') {
-            // Search is restricted to the selected category and descendants.
-            // Never load all matching variants into memory.
-            $like = '%'.addcslashes($search, '%_\\').'%';
+            $like = '%'.addcslashes($search, '%_\\\\').'%';
             $variantsQuery->where(function ($query) use ($like) {
                 $query->where('p.name', 'like', $like)
                     ->orWhere('p.sku', 'like', $like)
@@ -80,13 +88,22 @@ final class StocktakeCategoryWorkspaceService
             ->pluck('qty', 'product_variant_id');
 
         $reserved = app(ReservationQueryService::class)->quantitiesByVariant(variantIds: $ids);
+        $bundleQuantities = app(BundleComponentStocktakeService::class)->quantitiesByComponent($ids);
         $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds($ids);
+        $savedItems = $document
+            ? $document->items()->whereIn('product_variant_id', $ids)->get()->keyBy('product_variant_id')
+            : collect();
 
-        $rows = $page->map(static function ($variant) use ($free, $reserved, $queue) {
+        $rows = $page->map(static function ($variant) use ($free, $reserved, $bundleQuantities, $queue, $savedItems) {
             $id = (int) $variant->variant_id;
-            $available = (int) ($free->get($id) ?? 0);
-            $held = (int) ($reserved->get($id) ?? 0);
+            $saved = $savedItems->get($id);
+            $available = $saved ? (int) $saved->system_available_at_start : (int) ($free->get($id) ?? 0);
+            $held = $saved ? (int) $saved->reserved_at_start : (int) ($reserved->get($id) ?? 0);
+            $bundleFree = $saved ? (int) $saved->bundle_free_at_start : (int) ($bundleQuantities[$id]['free'] ?? 0);
+            $bundleReserved = $saved ? (int) $saved->bundle_reserved_at_start : (int) ($bundleQuantities[$id]['reserved'] ?? 0);
+            $siteHeld = $saved ? (int) $saved->site_held_at_start : (int) ($bundleQuantities[$id]['site_held'] ?? 0);
             $flow = $queue->get($id);
+
             return [
                 'variant_id' => $id,
                 'product_id' => (int) $variant->product_id,
@@ -95,7 +112,17 @@ final class StocktakeCategoryWorkspaceService
                 'sku' => (string) ($variant->variant_code ?: $variant->variety_code ?: ''),
                 'system_available' => $available,
                 'active_reserved' => $held,
-                'expected_physical' => $available + $held,
+                'bundle_free' => $bundleFree,
+                'bundle_reserved' => $bundleReserved,
+                'site_held' => $siteHeld,
+                'expected_physical' => $saved
+                    ? (int) $saved->expected_physical_at_start
+                    : Quantities::expectedPhysical($available, $held, $bundleFree, $bundleReserved, $siteHeld),
+                'stock_updated_at' => $saved
+                    ? $saved->warehouse_stock_updated_at_start?->toDateTimeString()
+                    : null,
+                'actual_physical' => $saved?->actual_quantity === null ? null : (int) $saved->actual_quantity,
+                'is_counted' => $saved !== null && $saved->actual_quantity !== null,
                 'pending_collection' => (int) ($flow->pending_collection ?? 0),
                 'warehouse_received' => (int) ($flow->warehouse_received ?? 0),
                 'collecting' => (int) ($flow->collecting ?? 0),
