@@ -9,9 +9,11 @@ use Illuminate\Contracts\View\View;
 /** A single read-only view of a historical category count finalized as multiple product documents. */
 final class StocktakeLegacyArchiveController extends Controller
 {
-    public function show(int $batchId, StocktakeLegacyArchiveService $archive): View
+    public function __construct(private readonly StocktakeLegacyArchiveService $archive) {}
+
+    public function show(int $batchId): View
     {
-        $group = $archive->find($batchId);
+        $group = $this->archive->find($batchId);
         abort_unless($group, 404, 'این عملیات یک سند تاریخی یکپارچه قابل تأیید ندارد.');
 
         $items = StockCountDocumentItem::query()
