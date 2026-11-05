@@ -79,6 +79,36 @@ class StockCountLifecycleSafetyTest extends TestCase
         DB::table('products')->where('id',1)->update(['stock'=>8]);
     }
 
+    public function test_saving_a_count_with_explicit_zero_and_positive_numbers_only_creates_a_draft(): void
+    {
+        // This is the same payload the inline category counter sends for one
+        // product: zero is an explicit count, never an omitted quantity.
+        DB::table('product_variants')->insert([
+            'id' => 2, 'product_id' => 1, 'variant_name' => 'White',
+            'stock' => 5, 'reserved' => 0,
+        ]);
+        DB::table('warehouse_stocks')->insert([
+            'id' => 2, 'warehouse_id' => 1, 'product_id' => 1,
+            'product_variant_id' => 2, 'quantity' => 5,
+        ]);
+
+        $document = app(StockCountDocumentService::class)->createProductDraft([
+            'product_id' => 1,
+            'document_date' => '2026-11-05',
+            'actual_quantities' => [1 => 0, 2 => 7],
+        ], 1);
+
+        $this->assertSame('draft', $document->fresh()->status);
+        $this->assertSame(2, $document->items()->count());
+        $this->assertSame(0, (int) $document->items()->where('product_variant_id', 1)->value('actual_quantity'));
+        $this->assertSame(7, (int) $document->items()->where('product_variant_id', 2)->value('actual_quantity'));
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(10, (int) DB::table('warehouse_stocks')->where('product_variant_id', 1)->value('quantity'));
+        $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 2)->value('quantity'));
+        $this->assertSame(10, (int) DB::table('product_variants')->where('id', 1)->value('stock'));
+        $this->assertSame(5, (int) DB::table('product_variants')->where('id', 2)->value('stock'));
+    }
+
     public function test_bundle_component_is_not_recreated_as_free_stock_by_a_physical_count(): void
     {
         $this->makeAllocatedBundle(2);

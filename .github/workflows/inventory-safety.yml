@@ -34,7 +34,7 @@ jobs:
       - name: Check stocktake category browser JavaScript
         run: node --check public/js/stocktake-category-document.js && node --check public/js/stocktake-category-finalize.js
       - name: Run focused category stocktake regression tests
-        run: php tests/run.php --configuration phpunit.xml tests/Feature/StocktakeCategoryUnifiedLifecycleTest.php tests/Feature/StocktakeCategoryRestoreReadOnlyTest.php
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/StocktakeCategoryUnifiedLifecycleTest.php tests/Feature/StocktakeCategoryRestoreReadOnlyTest.php tests/Feature/StockCountLifecycleSafetyTest.php
       - name: Check purchase form inline JavaScript
         run: node --test tests/Js/purchase-sale-price-approval.test.cjs
       - name: Run focused purchase sale-price regression tests
