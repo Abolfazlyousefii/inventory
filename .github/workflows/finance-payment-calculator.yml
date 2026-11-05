@@ -68,3 +68,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --check public/js/finance-payment-calculator.js
+      - name: Exercise cheque form interactions
+        run: node --test tests/Js/finance-payment-calculator.test.mjs
