@@ -185,6 +185,34 @@ class HallManagementDashboardTest extends TestCase
         ], $overrides));
     }
 
+    public function test_reapproval_has_an_independent_fifth_queue_without_duplicating_the_invoice(): void
+    {
+        $invoiceId = $this->invoice(['status' => 'pending_finance_reapproval']);
+        $this->order(['status' => 'finance_reviewing']);
+
+        $data = app(HallManagementDashboard::class)->snapshot();
+        $this->assertCount(5, $data['stages']);
+        $this->assertSame('reapproval', HallManagementDashboard::stage('invoice', 'pending_finance_reapproval'));
+        $this->assertSame('finance', HallManagementDashboard::stage('preinvoice', 'finance_reviewing'));
+        $this->assertSame(1, collect($data['stages'])->firstWhere('key', 'reapproval')['count']);
+        $this->assertSame(1, collect($data['stages'])->firstWhere('key', 'finance')['count']);
+        $this->assertCount(1, array_filter($data['documents'], fn ($d) => $d['type'] === 'invoice' && $d['source_id'] === $invoiceId));
+    }
+
+    public function test_monthly_issued_invoice_count_uses_tehran_jalali_boundaries_and_excludes_cancelled(): void
+    {
+        // 1405/08/01 = 2026-10-23; 1405/09/01 = 2026-11-22.
+        $this->invoice(['document_date' => '2026-10-22 23:59:59']);
+        $this->invoice(['document_date' => '2026-10-23 00:00:00']);
+        $this->invoice(['document_date' => '2026-11-05 09:20:00']);
+        $this->invoice(['document_date' => '2026-11-22 00:00:00']);
+        $this->invoice(['document_date' => '2026-11-04 12:00:00', 'status' => 'not_shipped']);
+
+        $metrics = app(HallManagementDashboard::class)->snapshot()['metrics'];
+        $this->assertSame(2, $metrics['month_invoice_count']);
+        $this->assertSame('1405/08', $metrics['month_jalali']);
+    }
+
     public function test_real_statuses_map_to_exactly_four_queues(): void
     {
         $map = [
