@@ -73,6 +73,7 @@ Route::post('/hall/unlock', [\App\Http\Controllers\Tracking\HallTrackingControll
 Route::prefix('hall')->name('hall.')->middleware([\App\Http\Middleware\EnsureHallDisplayAccess::class, 'throttle:120,1'])->group(function () {
     Route::get('/', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'show'])->name('show');
     Route::get('/data', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'data'])->name('data');
+    Route::get('/history', [\App\Http\Controllers\Tracking\HallTrackingController::class, 'history'])->name('history');
 });
 
 Route::prefix('portal')->name('portal.')->group(function () {
