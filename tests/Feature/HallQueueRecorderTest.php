@@ -72,6 +72,26 @@ class HallQueueRecorderTest extends TestCase
         $this->assertSame('warehouse', $row->to_stage);
     }
 
+    public function test_reapproval_transition_is_its_own_stage_and_keeps_parent_workflow_key(): void
+    {
+        $invoice = new Invoice;
+        $invoice->setRawAttributes([
+            'id' => 456, 'preinvoice_order_id' => 123,
+            'status' => 'pending_collection', 'uuid' => 'F-456',
+        ], true);
+        $invoice->status = Invoice::STATUS_PENDING_FINANCE_REAPPROVAL;
+        $invoice->syncChanges();
+
+        DB::transaction(fn () => app(HallQueueObserver::class)->updated($invoice));
+
+        $event = DB::table('hall_queue_transitions')->first();
+        $this->assertSame(1, DB::table('hall_queue_transitions')->count());
+        $this->assertSame('order:123', $event->workflow_key);
+        $this->assertSame('warehouse', $event->from_stage);
+        $this->assertSame('reapproval', $event->to_stage);
+        $this->assertSame('pending_finance_reapproval', $event->status_to);
+    }
+
     public function test_deleted_invoice_retains_its_number_without_requiring_the_original_row(): void
     {
         $model = new Invoice;
