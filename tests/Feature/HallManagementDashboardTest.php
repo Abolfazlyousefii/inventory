@@ -245,7 +245,7 @@ class HallManagementDashboardTest extends TestCase
         $payload = app(HallManagementDashboard::class)->snapshot();
         $this->assertCount(131, $payload['documents']);
         $this->assertSame(131, $payload['summary']['total']);
-        $this->assertCount(4, $payload['stages']);
+        $this->assertCount(5, $payload['stages']);
     }
 
     public function test_amount_is_raw_rial_and_line_count_is_not_sum_of_units(): void
@@ -419,7 +419,7 @@ class HallManagementDashboardTest extends TestCase
             ->assertJsonPath('record_count', 4)
             ->assertJsonPath('events.0.to_stage', 'reapproval')
             ->assertJsonPath('events.1.to_stage', 'warehouse')
-            ->assertHeader('Cache-Control', 'private, no-store, max-age=0');
+            ->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
 
         $this->withCredentials()->withCookie('hall_management_access', $proof)
             ->getJson('/hall/history?key=order%3Ainvoice%3A999999')->assertNotFound();
