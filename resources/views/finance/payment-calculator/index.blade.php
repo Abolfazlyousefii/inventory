@@ -22,7 +22,7 @@
    </button>
   </header>
   <main class="calculator" aria-label="محاسبه سریع شرایط فروش">
-    <div class="lead"><div><h2>چی می‌خوای حساب کنی؟</h2><p>نوع محاسبه رو انتخاب کن؛ فقط مبلغ‌ها و تاریخ‌ها رو بنویس.</p></div><span class="demo-badge">فقط محاسبه، بدون ثبت سند</span></div>
+    <div class="lead"><div><h2>چه چیزی را حساب کنیم؟</h2><p>نوع محاسبه را انتخاب کنید؛ مبلغ و سررسید را وارد کنید.</p></div><span class="demo-badge">بدون ثبت سند مالی</span></div>
     <div class="tabs" role="tablist" aria-label="نوع محاسبه">
       <button type="button" class="tab active" role="tab" id="tab-cheque" data-mode="cheque" aria-selected="true" aria-controls="inputPanel">مبلغ چک آخر</button>
       <button type="button" class="tab" role="tab" id="tab-cash" data-mode="cash" aria-selected="false" aria-controls="inputPanel">نقدی باقیمانده</button>
