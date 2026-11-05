@@ -55,28 +55,29 @@
         </div>
     </section>
 
-    <div class="alert alert-info" role="status">خانهٔ خالی یعنی شمارش‌نشده؛ فقط عددی که صریحاً وارد می‌کنید، حتی صفر، وارد سند می‌شود.</div>
+    <div class="alert alert-info" role="status">خانهٔ خالی یعنی شمارش‌نشده. برای ثبت نهایی همه تنوع‌های محدوده باید صفر یا تعداد واقعی داشته باشند؛ ذخیره پیش‌نویس حتی با شمارش ناقص مجاز است.</div>
     <div class="cd-warning" role="note">
         @if(!empty($categoryDocumentSeed['id']))
         <strong>شمارش‌های ذخیره‌شدهٔ این سند حفظ می‌شوند.</strong>
-        فقط ردیف‌هایی که می‌خواهید تغییر دهید اصلاح کنید؛ تغییر جستجو یا صفحه، شمارش‌های قبلی را پاک نمی‌کند. برای خارج‌کردن یک ردیف مقدار آن را خالی کنید؛ سند باید دست‌کم یک تنوع شمارش‌شده داشته باشد.
+        تغییر جستجو یا صفحه، شمارش‌های قبلی را پاک نمی‌کند. برای خارج‌کردن یک ردیف مقدار آن را خالی کنید؛ اما ثبت نهایی نیازمند شمارش تمام تنوع‌های محدوده است.
         @else
         <strong>هیچ تنوعی از ابتدا صفر یا شمارش‌شده محسوب نمی‌شود.</strong>
-        فقط تعدادهای واقعی را وارد کنید. خانهٔ خالی یعنی آن تنوع شمارش نشده است؛ اگر موجودی واقعاً صفر است، عدد ۰ را صریحاً وارد کنید.
+        موجودی‌های واقعی را وارد کنید. برای موارد ناموجود صفر بزنید یا از دکمه «صفر کردن همه تنوع‌ها» استفاده کنید، سپس مقدارهای مثبت را اصلاح کنید.
         @endif
-        ذخیره یک پیش‌نویس واحد برای همین محدوده می‌سازد و موجودی را تغییر نمی‌دهد. در صفحهٔ بررسی، فقط تنوع‌های صریحاً شمارش‌شده، شامل صفر، نمایش داده می‌شوند و فقط همان‌ها در ثبت نهایی اعمال خواهند شد.
+        ذخیره یک پیش‌نویس واحد برای همین محدوده می‌سازد و موجودی را تغییر نمی‌دهد. فقط پس از تکمیل شمارش تمام تنوع‌ها و بررسی سند، ثبت نهایی مجاز خواهد بود.
     </div>
 
     <div class="sc-live-search"><label for="cdSearch" class="form-label fw-bold">جستجوی کالا یا تنوع در همین محدوده</label><input id="cdSearch" class="form-control" type="search" maxlength="80" autocomplete="off" placeholder="نام کالا، مدل، SKU یا کد تنوع..." disabled><div class="sc-subtitle">با تغییر جستجو، شمارش‌های واردشده حفظ می‌شوند.</div></div>
     <div class="cd-table-wrap"><table><thead><tr><th>کالا و تنوع</th><th>موجودی انبار مرکزی</th><th>رزرو فعال</th><th>صف جمع‌آوری</th><th>شمارش واقعی</th><th>اختلاف</th></tr></thead><tbody id="cdRows"></tbody></table></div>
 
     <div class="cd-toolbar" role="toolbar" aria-label="ذخیره سند انبارگردانی دسته‌ای">
-        <div class="cd-toolbar-message"><strong id="cdSummary">ابتدا محدوده شمارش را انتخاب کنید.</strong><div id="cdStatus" role="status" aria-live="polite">فقط مقادیر صریح ذخیره می‌شوند؛ خانهٔ خالی به موجودی دست نمی‌زند.</div></div>
+        <div class="cd-toolbar-message"><strong id="cdSummary">ابتدا محدوده شمارش را انتخاب کنید.</strong><div id="cdStatus" role="status" aria-live="polite">مقدار خالی شمارش‌نشده است؛ ثبت نهایی تا تکمیل همه تنوع‌ها ممنوع است.</div></div>
         <button type="button" id="cdMore" class="btn btn-outline-primary" hidden>دریافت ادامه کالاها</button>
         <button type="button" id="cdLoadAll" class="btn btn-outline-secondary" hidden>نمایش همه کالاها</button>
+        <button type="button" id="cdZeroAll" class="btn btn-outline-danger" disabled>صفر کردن همه تنوع‌ها</button>
         <button type="button" id="cdSave" class="btn btn-success" disabled>ذخیره شمارش‌ها و بررسی سند</button>
     </div>
 </div>
 <script type="application/json" id="categoryDocumentSeed">@json($categoryDocumentSeed)</script>
-<script src="{{ asset('js/stocktake-category-document.js') }}?v=20261105-1"></script>
+<script src="{{ asset('js/stocktake-category-document.js') }}?v=20261105-2"></script>
 @endsection
