@@ -36,17 +36,25 @@ test('category preview rejects invalid or stalled paginated responses', () => {
     assert.throws(() => validatePage({ rows: [], next_cursor: 1, has_more: 0 }, 0));
 });
 
-test('preview renders inside the original stocktake create form and nowhere else', () => {
+test('original stocktake form exposes editable category counts and bulk draft controls', () => {
     const form = read('resources/views/stocktake/form.blade.php');
     assert.match(form, /id="stocktakeForm"/);
-    assert.match(form, /id="stocktakeInlinePreviewShow"/);
-    assert.match(form, /id="stocktakeInlinePreview"/);
-    assert.match(form, /id="stocktakeInlinePreviewMore"/);
-    assert.match(form, /stocktake-inline-category-preview\.js/);
     assert.match(form, /@if\(\$mode==='create'\)/);
-    assert.match(form, /این مرحله فقط پیش‌نمایش خواندنی/);
-    assert.doesNotMatch(form, /id="stocktakeInlinePreviewSave"/);
-    assert.doesNotMatch(form, /id="stocktakeInlinePreviewFinalize"/);
+    assert.match(form, /id="scShow"/);
+    assert.match(form, /id="stocktakeCategoryApp" data-embedded="1"/);
+    assert.match(form, /id="scProducts"/);
+    assert.match(form, /id="scSaveAll"/);
+    assert.match(form, /id="scReview"/);
+    assert.match(form, /id="scFinalizeAll"/);
+    assert.match(form, /data-bulk-store-url=/);
+    assert.match(form, /data-bulk-finalize-url=/);
+    assert.match(form, /stocktake-category-workspace\.js/);
+    assert.doesNotMatch(form, /stocktakeInlinePreview|stocktake-inline-category-preview\.js/);
+
+    const script = read('public/js/stocktake-category-workspace.js');
+    assert.match(script, /\.addEventListener\('click',saveAllDrafts\)/);
+    assert.match(script, /\.addEventListener\('click',finalizeAllDrafts\)/);
+    assert.match(script, /group\.quantities\.set\(Number\(field\.dataset\.variant\),normalized\)/);
 });
 
 test('preview code reads category variant endpoint, never makes stock writes', () => {
