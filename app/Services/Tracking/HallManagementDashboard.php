@@ -4,6 +4,7 @@ namespace App\Services\Tracking;
 
 use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Morilog\Jalali\Jalalian;
 use Illuminate\Support\Collection;
@@ -213,7 +214,7 @@ final class HallManagementDashboard
         // latest cheque metadata, cheque received date rather than its due date.
         $day = $now->setTimezone('Asia/Tehran')->toDateString();
         $end = CarbonImmutable::parse($day, 'Asia/Tehran')->addDay()->toDateString();
-        $jalali = Jalalian::fromCarbon($now->setTimezone('Asia/Tehran'));
+        $jalali = Jalalian::fromCarbon(Carbon::parse($now->setTimezone('Asia/Tehran')->toIso8601String()));
         $year = $jalali->getYear();
         $month = $jalali->getMonth();
         $monthStartDate = (new Jalalian($year, $month, 1))->toCarbon()->format('Y-m-d');
