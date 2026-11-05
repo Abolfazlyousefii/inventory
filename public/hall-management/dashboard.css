@@ -217,7 +217,7 @@ body {
   background:linear-gradient(150deg,#fff8e9,#ffefc6);
   box-shadow:0 10px 25px rgb(177 119 15 / 18%);
 }
-.order-card.is-arrival { animation:hall-arrive .68s var(--hall-ease) both; }
+.order-card.is-arrival { animation:hall-arrive .68s var(--hall-ease) backwards; }
 .card-customer {
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
   white-space:normal; overflow:hidden; line-height:1.45;
