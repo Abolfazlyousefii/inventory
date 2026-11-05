@@ -343,6 +343,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('finance/reports')
         ->name('finance.reports.')
         ->group(function () {
+            Route::get('/payment-calculator', [\App\Http\Controllers\FinancePaymentCalculatorController::class, 'index'])->name('payment-calculator.index');
+            Route::post('/payment-calculator/calculate', [\App\Http\Controllers\FinancePaymentCalculatorController::class, 'calculate'])->middleware('throttle:60,1')->name('payment-calculator.calculate');
             Route::get('/top-products', [\App\Http\Controllers\TopProductsReportController::class, 'index'])->name('top-products');
             Route::get('/top-products/detail', [\App\Http\Controllers\TopProductsReportController::class, 'detail'])->name('top-products.detail');
             Route::get('/top-products/export', [\App\Http\Controllers\TopProductsReportController::class, 'export'])->name('top-products.export');
