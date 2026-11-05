@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildReport } from '../../public/hall-management/reports.js';
 
 const doc = (key,stage,seconds,extra={}) => ({key,stage,number:key,customer:'مشتری',seller:'فروشنده',amount_rial:100,item_count:2,unit_count:40,stage_seconds:seconds,total_seconds:300,...extra});
-const snapshot = documents => ({updated_at:'2026-11-01T12:00:00+03:30',metrics:{sales_rial:9000,sales_count:7,cash_rial:3000,cheque_rial:2000,cheque_count:2},stages:['reserved','finance','warehouse','shipping'].map(key=>({key,label:key,warning_minutes:30})),documents});
+const snapshot = documents => ({updated_at:'2026-11-01T12:00:00+03:30',metrics:{sales_rial:9000,sales_count:7,cash_rial:3000,cheque_rial:2000,cheque_count:2,month_invoice_count:28,month_jalali:'1405/08'},stages:['reserved','finance','warehouse','reapproval','shipping'].map(key=>({key,label:key,warning_minutes:30})),documents});
 
 test('sales report uses day metrics rather than summing open orders as sales',()=>{
     const data=snapshot([doc('a','reserved',20)]);
@@ -33,4 +33,10 @@ test('seller grouping preserves all documents and separates unknown sellers',()=
 test('empty queues do not invent zero wait times',()=>{
     assert.equal(buildReport(snapshot([]),'shipping').metrics[1].value,null);
     assert.throws(()=>buildReport(snapshot([]),'invented'));
+});
+
+test('reapproval report shows only pending reapproval documents', () => {
+    const report=buildReport(snapshot([doc('a','reapproval',200),doc('b','finance',20),doc('c','reapproval',300)]),'reapproval');
+    assert.equal(report.documents.length,2);
+    assert.deepEqual(report.documents.map(row=>row.key),['c','a']);
 });
