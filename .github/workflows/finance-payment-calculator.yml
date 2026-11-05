@@ -14,6 +14,7 @@ on:
       - 'routes/web.php'
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
+      - 'tests/Js/finance-payment-calculator.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
   push:
     branches: [main]
@@ -26,6 +27,7 @@ on:
       - 'public/css/finance-payment-calculator.css'
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
+      - 'tests/Js/finance-payment-calculator.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
 
 permissions:
