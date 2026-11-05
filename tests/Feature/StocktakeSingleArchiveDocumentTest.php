@@ -157,6 +157,15 @@ final class StocktakeSingleArchiveDocumentTest extends TestCase
         app(StocktakeLegacyArchiveController::class)->show(16);
     }
 
+    public function test_an_operation_remains_one_archive_entry_if_a_different_user_finalized_the_saved_drafts(): void
+    {
+        DB::table('stocktake_requests')->where('id', 16)->update(['user_id' => 2]);
+
+        $entries = $this->archive()->getData()['documents'];
+        $this->assertSame(3, $entries->total());
+        $this->assertSame(16, $entries->first(fn ($entry) => ($entry->is_archive_group ?? false) === true)->batch_id);
+    }
+
     public function test_precise_document_search_and_json_consumers_keep_original_documents(): void
     {
         $found = $this->archive(['document_number' => 'STC-101'])->getData()['documents'];
