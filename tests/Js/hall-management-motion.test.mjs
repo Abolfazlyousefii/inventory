@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalKeys } from '../../public/hall-management/motion.js';
+import { arrivalKeys, visibleQueueDocuments } from '../../public/hall-management/motion.js';
 
 const doc = (key, stage, entry_token, extra={}) => ({
     key, stage, entry_token, amount_rial:1000, item_count:1, ...extra,
@@ -37,4 +37,27 @@ test('legacy documents without a trustworthy entry token do not receive invented
 });
 test('malformed legacy input is safely treated as no prior snapshot', () => {
     assert.deepEqual(arrivalKeys(undefined,[doc('order:2','finance','hall:2')]),[]);
+});
+
+test('tablet queues expose every document without hidden or repeated cards', () => {
+    const docs=Array.from({length:26},(_,i)=>doc('order:'+i,'shipping','hall:'+i));
+    const shown=visibleQueueDocuments(docs,9,3,true);
+    assert.equal(shown.length,26);
+    assert.deepEqual(shown.map(d=>d.key),docs.map(d=>d.key));
+});
+
+test('wallboard rotation remains bounded and wraps without losing invoices', () => {
+    const docs=Array.from({length:8},(_,i)=>doc('order:'+i,'shipping','hall:'+i));
+    assert.deepEqual(visibleQueueDocuments(docs,6,4,false).map(d=>d.key),[
+        'order:6','order:7','order:0','order:1','order:2',
+    ]);
+    assert.deepEqual(visibleQueueDocuments(docs,0,4,false).map(d=>d.key),[
+        'order:0','order:1','order:2','order:3','order:4',
+    ]);
+});
+
+test('small and empty queues keep exactly the available invoices', () => {
+    const docs=[doc('order:1','reserved','hall:1'),doc('order:2','reserved','hall:2')];
+    assert.deepEqual(visibleQueueDocuments(docs,0,4,false),docs);
+    assert.deepEqual(visibleQueueDocuments([],0,4,true),[]);
 });
