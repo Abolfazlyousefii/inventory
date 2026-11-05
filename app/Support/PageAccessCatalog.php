@@ -227,6 +227,8 @@ class PageAccessCatalog
         'finance.invoices.return-to-sales' => ['sales.preinvoice_finance_review'],
         'finance.cheques.registered' => ['finance.payments'],
         'finance.reports.index' => ['finance.accounts'],
+        'finance.reports.payment-calculator.index' => ['finance.accounts'],
+        'finance.reports.payment-calculator.calculate' => ['finance.accounts'],
         'finance.reports.receipts' => ['finance.accounts'],
         'finance.reports.receipts.detail' => ['finance.accounts'],
         'finance.reports.receipts.export' => ['finance.accounts'],
