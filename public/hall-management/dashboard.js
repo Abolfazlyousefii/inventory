@@ -29,6 +29,7 @@ function element(tag, className, text) {
 }
 
 function queueDocuments(key) { return snapshot?.documents.filter(doc => doc.stage === key) ?? []; }
+function isTabletLayout() { return window.matchMedia('(max-width: 1099px)').matches; }
 function currentSeconds(doc, name) { return elapsedSeconds(doc[name], receivedAt, performance.now()); }
 
 function card(doc) {
@@ -76,10 +77,13 @@ function renderLane(key) {
     const focusedKey = focusedCard?.dataset.key ?? null;
     const offset = docs.length ? positions.get(key) % docs.length : 0;
     positions.set(key, offset);
-    const visible = docs.length ? Array.from({ length: Math.min(visibleSlots + (docs.length > visibleSlots ? 1 : 0), docs.length) }, (_, i) => docs[(offset + i) % docs.length]) : [];
+    // Touch/tablet layouts expose the complete list in a scrollable lane.
+    // Large wallboards retain the existing economical rotating window.
+    const tablet = isTabletLayout();
+    const visible = tablet ? docs : docs.length ? Array.from({ length: Math.min(visibleSlots + (docs.length > visibleSlots ? 1 : 0), docs.length) }, (_, i) => docs[(offset + i) % docs.length]) : [];
     track.replaceChildren(...visible.map((doc, index) => {
         const node = card(doc);
-        if (index >= visibleSlots) { node.tabIndex = -1; node.setAttribute('aria-hidden', 'true'); }
+        if (!tablet && index >= visibleSlots) { node.tabIndex = -1; node.setAttribute('aria-hidden', 'true'); }
         return node;
     }));
     if (focusedKey) [...track.children].find(node => node.dataset.key === focusedKey && node.tabIndex !== -1)?.focus({preventScroll:true});
@@ -89,8 +93,8 @@ function renderLane(key) {
     counter.textContent = nextCount;
     lane.querySelector('.lane-empty').hidden = docs.length > 0;
     lane.querySelector('.lane-empty').textContent = 'سفارشی در این صف نیست';
-    lane.querySelector('[data-visible]').textContent = docs.length ? `${fa.format(Math.min(visibleSlots, docs.length))} از ${fa.format(docs.length)}` : '';
-    lane.querySelector('[data-rotation]').textContent = docs.length > visibleSlots ? 'مرور آرام ↓' : '';
+    lane.querySelector('[data-visible]').textContent = docs.length ? `${fa.format(tablet ? docs.length : Math.min(visibleSlots, docs.length))} از ${fa.format(docs.length)}` : '';
+    lane.querySelector('[data-rotation]').textContent = tablet ? (docs.length > 3 ? 'برای مشاهده بیشتر، پیمایش کنید' : '') : (docs.length > visibleSlots ? 'مرور آرام ↓' : '');
     updateAverage(key);
 }
 
@@ -350,7 +354,7 @@ async function poll() {
 }
 
 function rotate(manual = false) {
-    if (!snapshot || moving || detail.open || reportDialog?.open || (!manual && (paused || document.hidden))) return;
+    if (!snapshot || isTabletLayout() || moving || detail.open || reportDialog?.open || (!manual && (paused || document.hidden))) return;
     for (const key of stageKeys) {
         const lane = lanes.get(key), docs = queueDocuments(key);
         if (docs.length <= visibleSlots || (!manual && (lane.matches(':hover') || lane.contains(document.activeElement)))) continue;
