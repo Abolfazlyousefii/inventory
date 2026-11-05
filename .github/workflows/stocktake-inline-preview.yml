@@ -6,6 +6,7 @@ on:
       - 'public/js/stocktake-inline-category-preview.js'
       - 'resources/views/stocktake/form.blade.php'
       - 'tests/Js/stocktake-inline-category-preview.test.cjs'
+      - 'tests/Js/stocktake-embedded-count-runtime.test.cjs'
       - '.github/workflows/stocktake-inline-preview.yml'
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - 'public/js/stocktake-inline-category-preview.js'
       - 'resources/views/stocktake/form.blade.php'
       - 'tests/Js/stocktake-inline-category-preview.test.cjs'
+      - 'tests/Js/stocktake-embedded-count-runtime.test.cjs'
       - '.github/workflows/stocktake-inline-preview.yml'
 
 permissions:
