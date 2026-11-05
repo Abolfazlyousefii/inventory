@@ -29,9 +29,16 @@ final class HallMovementTimeline
             : collect();
 
         $events = [];
+        $previousStage = null;
         foreach ($ledger as $event) {
             $from = $event->from_stage;
             $to = $event->to_stage;
+            // A converted invoice starts a new source row with from_stage=NULL.
+            // The same workflow key may have a known previous preinvoice stage.
+            if ($from === null && $previousStage !== null && $previousStage !== $to) {
+                $from = $previousStage;
+            }
+            $previousStage = $to;
             if ($from === $to) {
                 continue;
             }
