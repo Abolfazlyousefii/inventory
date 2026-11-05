@@ -16,6 +16,7 @@ on:
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php'
+      - 'tests/Unit/Finance/PaymentScenarioCalculatorTest.php'
       - 'tests/Js/finance-payment-calculator.test.mjs'
       - 'tests/Js/finance-payment-calendar.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
@@ -32,6 +33,7 @@ on:
       - 'tests/Feature/FinancePaymentCalculator*.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorTest.php'
       - 'tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php'
+      - 'tests/Unit/Finance/PaymentScenarioCalculatorTest.php'
       - 'tests/Js/finance-payment-calculator.test.mjs'
       - 'tests/Js/finance-payment-calendar.test.mjs'
       - '.github/workflows/finance-payment-calculator.yml'
@@ -65,6 +67,8 @@ jobs:
         run: php tests/run.php --configuration phpunit.xml tests/Unit/Finance/PaymentScheduleCalculatorTest.php
       - name: Reference scenarios against Python formulas
         run: php tests/run.php --configuration phpunit.xml tests/Unit/Finance/PaymentScheduleCalculatorScenariosTest.php
+      - name: Cash and cheque inverse calculation unit tests
+        run: php tests/run.php --configuration phpunit.xml tests/Unit/Finance/PaymentScenarioCalculatorTest.php
       - name: Auth and Persian form feature tests
         run: php tests/run.php --configuration phpunit.xml tests/Feature/FinancePaymentCalculatorTest.php
       - name: Print report and invalid schedule tests
