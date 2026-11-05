@@ -55,6 +55,8 @@ it('recalculates the print report using original inputs and includes every payme
         ->assertSee('103,000,000')
         ->assertSee('53,000,000')
         ->assertSee('50,000,000')
+        ->assertSee('3,000,000')
+        ->assertSee('3.00٪')
         ->assertSee('1405/09/14');
 });
 
