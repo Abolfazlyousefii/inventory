@@ -1,5 +1,5 @@
 // Browser-local state. Never store customer names, amounts, or financial payloads.
-const STORAGE_KEY = 'hall-seen-entries-v3';
+export const HALL_SEEN_STORAGE_KEY = 'hall-seen-entries-v3';
 
 export function createSeenTracker(storage) {
     const seen = new Set();
@@ -7,7 +7,7 @@ export function createSeenTracker(storage) {
 
     function load() {
         try {
-            const raw = storage?.getItem(STORAGE_KEY);
+            const raw = storage?.getItem(HALL_SEEN_STORAGE_KEY);
             if (raw === null || raw === undefined) return;
             const value = JSON.parse(raw);
             if (!Array.isArray(value)) return;
@@ -17,7 +17,7 @@ export function createSeenTracker(storage) {
         } catch { /* Storage can be disabled; the current page still works. */ }
     }
     function save() {
-        try { storage?.setItem(STORAGE_KEY, JSON.stringify([...seen].slice(-2500))); }
+        try { storage?.setItem(HALL_SEEN_STORAGE_KEY, JSON.stringify([...seen].slice(-2500))); }
         catch { /* A private TV must not fail when storage is unavailable. */ }
     }
     function identity(doc) {
