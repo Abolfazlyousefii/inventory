@@ -36,19 +36,29 @@ test('category preview rejects invalid or stalled paginated responses', () => {
     assert.throws(() => validatePage({ rows: [], next_cursor: 1, has_more: 0 }, 0));
 });
 
-test('preview renders inside the original stocktake create form and nowhere else', () => {
+test('the original category selector opens editable counting and saves drafts, not a read-only preview', () => {
     const form = read('resources/views/stocktake/form.blade.php');
-    assert.match(form, /id="stocktakeForm"/);
-    assert.match(form, /id="stocktakeInlinePreviewShow"/);
-    assert.match(form, /id="stocktakeInlinePreview"/);
-    assert.match(form, /id="stocktakeInlinePreviewMore"/);
-    assert.match(form, /stocktake-inline-category-preview\.js/);
-    assert.match(form, /@if\(\$mode==='create'\)/);
-    assert.match(form, /این مرحله فقط پیش‌نمایش خواندنی/);
-    assert.doesNotMatch(form, /id="stocktakeInlinePreviewSave"/);
-    assert.doesNotMatch(form, /id="stocktakeInlinePreviewFinalize"/);
-});
+    const categoryScript = read('public/js/stocktake-category-workspace.js');
 
+    assert.match(form, /id="stocktakeForm"/);
+    assert.match(form, /id="scShow"/);
+    assert.match(form, /id="stocktakeCategoryApp" data-embedded="1"/);
+    assert.match(form, /data-bulk-store-url=/);
+    assert.match(form, /data-bulk-finalize-url=/);
+    assert.match(form, /id="scProducts"/);
+    assert.match(form, /id="scMore"/);
+    assert.match(form, /id="scSaveAll"/);
+    assert.match(form, /id="scReview"/);
+    assert.match(form, /id="scFinalizeAll"/);
+    assert.match(form, /id="scRecovery"/);
+    assert.match(form, /data-stocktake-single/);
+    assert.match(form, /stocktake-category-workspace\.js/);
+    assert.doesNotMatch(form, /stocktakeInlinePreview|stocktake-inline-category-preview\.js/);
+    assert.match(categoryScript, /const input = make\('input','sc-actual'\)/);
+    assert.match(categoryScript, /group\.quantities\.set\(Number\(field\.dataset\.variant\),normalized\)/);
+    assert.match(categoryScript, /saveAll\?\.addEventListener\('click',saveAllDrafts\)/);
+    assert.match(categoryScript, /app\.dataset\.bulkStoreUrl/);
+});
 test('preview code reads category variant endpoint, never makes stock writes', () => {
     const script = read('public/js/stocktake-inline-category-preview.js');
     assert.match(script, /method:\s*'GET'/);
