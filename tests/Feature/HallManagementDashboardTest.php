@@ -391,6 +391,63 @@ class HallManagementDashboardTest extends TestCase
         $this->assertSame(780, $doc['stage_seconds']);
     }
 
+    public function test_timeline_requires_hall_access_and_counts_each_real_queue_transfer_once(): void
+    {
+        (require database_path('migrations/2026_11_01_120000_create_hall_queue_transitions_table.php'))->up();
+        $id = $this->invoice(['status' => 'pending_finance_reapproval']);
+        $key = 'order:invoice:'.$id;
+        DB::table('hall_queue_transitions')->insert([
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>null, 'to_stage'=>'warehouse',
+                'status_from'=>null, 'status_to'=>'pending_collection', 'entered_at'=>now()->subMinutes(15)],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>'warehouse', 'to_stage'=>'reapproval',
+                'status_from'=>'pending_collection', 'status_to'=>'pending_finance_reapproval', 'entered_at'=>now()->subMinutes(10)],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>'reapproval', 'to_stage'=>'warehouse',
+                'status_from'=>'pending_finance_reapproval', 'status_to'=>'pending_collection', 'entered_at'=>now()->subMinutes(5)],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>'warehouse', 'to_stage'=>'reapproval',
+                'status_from'=>'pending_collection', 'status_to'=>'pending_finance_reapproval', 'entered_at'=>now()->subMinute()],
+        ]);
+
+        $this->getJson('/hall/history?key='.urlencode($key))->assertForbidden();
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key='.urlencode($key))
+            ->assertOk()->assertJsonPath('transfer_count', 3)
+            ->assertJsonPath('record_count', 4)
+            ->assertJsonPath('events.0.to_stage', 'reapproval')
+            ->assertJsonPath('events.1.to_stage', 'warehouse')
+            ->assertHeader('Cache-Control', 'private, no-store, max-age=0');
+
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key=order%3Ainvoice%3A999999')->assertNotFound();
+    }
+
+    public function test_legacy_timeline_keeps_older_status_history_without_fabricating_events(): void
+    {
+        $orderId = $this->order(['status'=>'converted_to_invoice'], false);
+        $invoiceId = $this->invoice(['status'=>'pending_finance_reapproval', 'preinvoice_order_id'=>$orderId]);
+        DB::table('warehouse_review_logs')->insert([
+            'preinvoice_order_id'=>$orderId, 'status_from'=>'pending_finance',
+            'status_to'=>'finance_reviewing', 'created_at'=>now()->subHours(4),
+            'updated_at'=>now()->subHours(4),
+        ]);
+        DB::table('sales_havaleh_histories')->insert([
+            'invoice_id'=>$invoiceId, 'field_name'=>'status', 'old_value'=>'pending_collection',
+            'new_value'=>'pending_finance_reapproval', 'done_at'=>now()->subHour(),
+        ]);
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $key = 'order:'.$orderId;
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key='.urlencode($key))
+            ->assertOk()->assertJsonPath('transfer_count', 2)
+            ->assertJsonPath('record_count', 2)
+            ->assertJsonPath('events.0.to_stage', 'reapproval')
+            ->assertJsonPath('events.1.to_stage', 'finance');
+    }
+
     public function test_lock_revokes_the_scoped_cookie_and_wrong_keys_are_rejected(): void
     {
         $this->post('/hall/unlock', ['access_key' => 'wrong'])->assertSessionHasErrors('access_key');
