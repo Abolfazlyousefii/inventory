@@ -213,14 +213,14 @@ class HallManagementDashboardTest extends TestCase
         $this->assertSame('1405/08', $metrics['month_jalali']);
     }
 
-    public function test_real_statuses_map_to_exactly_four_queues(): void
+    public function test_real_statuses_map_to_five_queues(): void
     {
         $map = [
             ['preinvoice', 'draft', 'draft'], ['preinvoice', 'returned_to_sales', 'draft'],
             ['preinvoice', 'pending_finance', 'reserved'], ['preinvoice', 'finance_reviewing', 'finance'],
             ['preinvoice', 'warehouse_approved_waiting_finance', 'finance'],
             ['preinvoice', 'reserved_waiting_warehouse', 'reserved'], ['preinvoice', 'returned_to_warehouse', 'warehouse'],
-            ['invoice', 'pending_finance_reapproval', 'finance'], ['invoice', 'returned_to_sales_after_collection', 'draft'],
+            ['invoice', 'pending_finance_reapproval', 'reapproval'], ['invoice', 'returned_to_sales_after_collection', 'draft'],
             ['invoice', 'pending_collection', 'warehouse'], ['invoice', 'collecting', 'warehouse'],
             ['invoice', 'checking_discrepancy', 'warehouse'], ['invoice', 'final_check', 'warehouse'],
             ['invoice', 'packing', 'shipping'], ['invoice', 'ready_to_ship', 'shipping'],
