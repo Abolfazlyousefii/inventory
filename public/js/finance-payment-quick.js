@@ -86,6 +86,8 @@
  }
  function invalidate(){
    lastResult=null;lastPayload=null;$('printBtn').disabled=true;
+   $('errorBox').hidden=true;$('errorBox').textContent='';
+   $('detailsRows').replaceChildren();
    $('answerAmount').textContent='…';$('answerHint').textContent='در حال محاسبه…';
    $('statOne').textContent='—';$('statTwo').textContent='—';
  }
