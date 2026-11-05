@@ -1,4 +1,6 @@
-# Hall management display
+# Hall management display — v2 reference (2026-11-01)
+
+> This is the historical v2 release reference. For the five-queue v3 implementation, see [hall-management-v3.md](hall-management-v3.md).
 
 The management-only display replaces `/hall` on `main` and was published with user
 approval on 2026-11-01; see `hall-management-release-2026-11-01.md`. Customer tracking
