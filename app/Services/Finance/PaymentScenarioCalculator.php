@@ -59,6 +59,9 @@ final class PaymentScenarioCalculator
                 throw new InvalidArgumentException('برای محاسبه ارزش نقدی، حداقل یک مبلغ پرداختی مثبت لازم است.');
             }
             $cashEquivalent = $this->roundedRials($knownPresentValue);
+            if ($cashEquivalent === 0) {
+                throw new InvalidArgumentException('ارزش نقدی این پرداخت‌ها کمتر از یک ریال است.');
+            }
             $effectivePrice = $cashEquivalent;
             $presentValue = $knownPresentValue;
             $nominalTotal = $knownNominal;
