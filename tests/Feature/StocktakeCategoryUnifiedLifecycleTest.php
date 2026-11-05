@@ -172,6 +172,40 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
     }
 
+    public function test_category_finalize_route_returns_422_for_an_incomplete_draft(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $user = new User();
+        $user->forceFill(['id' => 1]);
+        $service = app(StockCountDocumentService::class);
+        $request = \Illuminate\Http\Request::create(
+            route('stock-count-documents.category-document.finalize', $document),
+            'POST',
+            ['expected_review_token' => $service->reviewToken($document)],
+            [],
+            [],
+            ['HTTP_ACCEPT' => 'application/json'],
+        );
+        $request->setUserResolver(fn () => $user);
+
+        $response = app(CategoryStocktakeController::class)->finalize($request, $document);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertContains('uncounted_variant', array_column($response->getData(true)['conflicts'], 'reason_code'));
+        $this->assertSame('draft', $document->fresh()->status);
+        $this->assertSame(10, (int) DB::table('warehouse_stocks')->where('product_variant_id', 101)->value('quantity'));
+        $this->assertSame(5, (int) DB::table('warehouse_stocks')->where('product_variant_id', 102)->value('quantity'));
+        $this->assertSame(0, StockMovement::count());
+    }
+
+    public function test_category_review_shows_missing_count_for_partial_draft(): void
+    {
+        $document = $this->saveCategory([101 => 8]);
+        $review = app(CategoryStocktakeController::class)->review($document);
+
+        $this->assertSame(1, $review->getData()['missingCount']);
+    }
+
     public function test_unified_save_request_status_recovers_the_saved_category_document(): void
     {
         $user = new User();
