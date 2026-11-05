@@ -12,6 +12,7 @@ if ($action !== 'reset') {
             if ($doc['key'] === 'order:6') {
                 $doc['stage'] = 'warehouse';
                 $doc['stage_seconds'] = 0;
+                $doc['entry_token'] = 'fixture:'.$doc['key'].':warehouse:'.date('His');
                 $doc['status_label'] = 'در انتظار جمع‌آوری';
             }
         }
@@ -30,11 +31,11 @@ if ($action !== 'reset') {
         $data['test_mode'] = $action === 'live' ? '' : $action;
     }
 } else {
-    $data = ['version' => 2, 'refresh_seconds' => 5, 'updated_at' => date(DATE_ATOM),
-        'metrics' => ['sales_rial' => 12840000000, 'sales_count' => 48, 'cash_rial' => 8460000000, 'cheque_rial' => 3200000000, 'cheque_count' => 12],
-        'summary' => ['total' => 29], 'stages' => [], 'documents' => [], 'events' => []];
+    $data = ['version' => 3, 'refresh_seconds' => 5, 'updated_at' => date(DATE_ATOM),
+        'metrics' => ['sales_rial' => 12840000000, 'sales_count' => 48, 'cash_rial' => 8460000000, 'cheque_rial' => 3200000000, 'cheque_count' => 12, 'month_invoice_count' => 78, 'month_jalali' => '1405/08'],
+        'summary' => ['total' => 34], 'stages' => [], 'documents' => [], 'events' => []];
     $id = 0;
-    foreach (['reserved' => ['رزرو فعال', 5], 'finance' => ['صف مالی', 9], 'warehouse' => ['صف انبار', 8], 'shipping' => ['صف ارسال', 7]] as $key => [$label, $count]) {
+    foreach (['reserved' => ['رزرو فعال', 5], 'finance' => ['صف مالی', 9], 'warehouse' => ['صف انبار', 8], 'reapproval' => ['تأیید مجدد مالی', 5], 'shipping' => ['صف ارسال', 7]] as $key => [$label, $count]) {
         $data['stages'][] = ['key' => $key, 'label' => $label, 'count' => $count, 'warning_minutes' => 45];
         for ($i = 0; $i < $count; $i++) {
             $id++;
@@ -42,7 +43,7 @@ if ($action !== 'reset') {
                 'number' => (string) (4500 + $id), 'stage' => $key, 'status' => $key, 'status_label' => $label,
                 'customer' => ['موبایل پارسا', 'فروشگاه آوا', 'تجارت نوین', 'پخش نگین', 'دیجیتال باران'][$i % 5],
                 'seller' => 'فروشندهٔ نمونه', 'amount_rial' => 122590000 + $i * 12000000, 'item_count' => 4 + $i * 3,
-                'unit_count' => 12 + $i * 20, 'stage_time_known' => true, 'stage_seconds' => 420 + $i * 420, 'total_seconds' => 1800 + $i * 900];
+                'unit_count' => 12 + $i * 20, 'entry_token' => 'fixture:'.$id.':'.$key, 'transfer_count' => $i, 'stage_time_known' => true, 'stage_seconds' => 420 + $i * 420, 'total_seconds' => 1800 + $i * 900];
         }
     }
 }

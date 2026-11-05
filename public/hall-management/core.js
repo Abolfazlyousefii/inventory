@@ -1,4 +1,4 @@
-export const stageKeys = ['reserved', 'finance', 'warehouse', 'shipping'];
+export const stageKeys = ['reserved', 'finance', 'warehouse', 'reapproval', 'shipping'];
 
 export function formatDuration(seconds, includeSeconds = true) {
     if (seconds == null || !Number.isFinite(seconds)) return '—';
@@ -38,13 +38,14 @@ export function diffDocuments(previous, current) {
 }
 
 export function normalizeSnapshot(input) {
-    if (!input || input.version !== 2 || !Array.isArray(input.documents) || !Array.isArray(input.stages)
+    if (!input || input.version !== 3 || !Array.isArray(input.documents) || !Array.isArray(input.stages)
         || !Number.isFinite(Date.parse(input.updated_at)) || !input.metrics || typeof input.metrics !== 'object') {
         throw new Error('Invalid hall snapshot');
     }
-    for (const field of ['sales_rial', 'sales_count', 'cash_rial', 'cheque_rial', 'cheque_count']) {
+    for (const field of ['sales_rial', 'sales_count', 'cash_rial', 'cheque_rial', 'cheque_count', 'month_invoice_count']) {
         if (!Number.isSafeInteger(input.metrics[field]) || input.metrics[field] < 0) throw new Error('Invalid dashboard metric');
     }
+    if (!/^\d{4}\/\d{2}$/.test(input.metrics.month_jalali)) throw new Error('Invalid Jalali month');
     const keys = new Set();
     const documents = input.documents.map(doc => {
         if (!doc || typeof doc.key !== 'string' || keys.has(doc.key) || !stageKeys.includes(doc.stage)
@@ -55,10 +56,12 @@ export function normalizeSnapshot(input) {
         for (const name of ['stage_seconds', 'total_seconds']) {
             if (doc[name] != null && (!Number.isSafeInteger(doc[name]) || doc[name] < 0)) throw new Error('Invalid duration');
         }
+        if (doc.entry_token != null && (typeof doc.entry_token !== 'string' || doc.entry_token.length > 140 || !doc.entry_token)) throw new Error('Invalid entry token');
+        if (doc.transfer_count != null && (!Number.isSafeInteger(doc.transfer_count) || doc.transfer_count < 0)) throw new Error('Invalid movement count');
         keys.add(doc.key);
-        return { ...doc, stage_seconds: doc.stage_seconds ?? null, total_seconds: doc.total_seconds ?? null };
+        return { ...doc, stage_seconds: doc.stage_seconds ?? null, total_seconds: doc.total_seconds ?? null, entry_token: doc.entry_token ?? null, transfer_count: doc.transfer_count ?? 0 };
     });
-    if (input.stages.length !== 4 || new Set(input.stages.map(s => s.key)).size !== 4) throw new Error('Invalid queues');
+    if (input.stages.length !== stageKeys.length || new Set(input.stages.map(s => s.key)).size !== stageKeys.length) throw new Error('Invalid queues');
     for (const stage of input.stages) {
         if (!stageKeys.includes(stage.key) || stage.count !== documents.filter(doc => doc.stage === stage.key).length) throw new Error('Invalid queue counts');
     }

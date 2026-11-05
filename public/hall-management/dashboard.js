@@ -1,5 +1,6 @@
-import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261101-reserved';
-import { buildReport } from './reports.js?v=20261101-minimal';
+import { stageKeys, formatDuration, compactDuration, elapsedSeconds, diffDocuments, normalizeSnapshot } from './core.js?v=20261105-hallv3';
+import { buildReport } from './reports.js?v=20261105-hallv3';
+import { createSeenTracker, HALL_SEEN_STORAGE_KEY } from './seen.js?v=20261105-hallv3';
 
 const root = document.getElementById('hall-dashboard');
 const byId = id => document.getElementById(id);
@@ -11,6 +12,8 @@ const lanes = new Map(stageKeys.map(key => [key, root.querySelector(`[data-stage
 const positions = new Map(stageKeys.map(key => [key, 0]));
 const detail = byId('document-detail');
 const reportDialog = byId('management-report');
+const seenTracker = createSeenTracker((() => { try { return window.localStorage; } catch { return null; } })());
+let historyController = null, historyPage = 1, historyKey = null;
 let selectedReport = null;
 let snapshot = null, receivedAt = 0, pollTimer, controller, fetching = false, disposed = false;
 let refreshSeconds = Math.max(5, Number(document.querySelector('meta[name="hall-refresh-seconds"]').content) || 15);
@@ -32,6 +35,7 @@ function card(doc) {
     const main = element('span');
     const customer = element('span', 'card-customer', doc.customer); customer.title = doc.customer;
     main.append(customer, element('span', 'card-number', `${doc.type === 'preinvoice' ? 'پیش‌فاکتور' : 'فاکتور'} ${doc.number}`));
+    if (seenTracker.isNew(doc)) { button.classList.add('is-new'); main.append(element('span', 'card-new-tag', 'جدید')); }
     const timer = element('span', 'card-timer');
     timer.append(element('span', 'timer-label', 'زمان صف'), element('span', 'timer-value'), element('span', 'timer-remainder'), element('span', 'timer-total'));
     if (!doc.stage_time_known) timer.title = 'سابقهٔ معتبر ورود این سند به صف در دسترس نیست.';
@@ -40,7 +44,7 @@ function card(doc) {
     bottom.append(amount, element('span', 'card-items', `${fa.format(doc.item_count)} قلم`));
     button.append(main, timer, bottom);
     button.setAttribute('aria-label', `${doc.customer}، سند ${doc.number}، ${fa.format(doc.amount_rial)} ریال، ${fa.format(doc.item_count)} قلم؛ نمایش جزئیات`);
-    button.addEventListener('click', () => { selectedKey = doc.key; renderDetail(); if (!detail.open) detail.showModal(); });
+    button.addEventListener('click', () => openDocument(doc));
     updateCardTimer(button, doc);
     return button;
 }
@@ -101,6 +105,76 @@ function renderDetail() {
     target.replaceChildren(...rows.flatMap(([key, value]) => [element('dt', '', key), element('dd', '', value)]));
 }
 
+function openDocument(doc) {
+    selectedKey = doc.key;
+    renderDetail();
+    if (!detail.open) detail.showModal();
+    if (detail.open) {
+        seenTracker.markSeen(doc);
+        renderLane(doc.stage);
+        loadHistory(doc, 1);
+    }
+}
+
+async function loadHistory(doc, page) {
+    historyController?.abort();
+    historyController = new AbortController();
+    const signal = historyController.signal;
+    if (page === 1) {
+        historyKey = doc.key;
+        historyPage = 1;
+        byId('history-events').replaceChildren();
+        byId('history-title').textContent = 'تاریخچه انتقال‌ها';
+    }
+    byId('history-status').textContent = 'در حال دریافت تاریخچه…';
+    byId('history-more').hidden = true;
+    try {
+        const url = new URL(document.querySelector('meta[name="hall-history-url"]').content, location.href);
+        if (url.origin !== location.origin) throw new Error('Invalid history origin');
+        url.searchParams.set('key', doc.key);
+        url.searchParams.set('page', String(page));
+        const response = await fetch(url, {
+            credentials: 'same-origin', cache: 'no-store', headers: {Accept: 'application/json'}, signal,
+        });
+        if (response.status === 401 || response.status === 403 || response.redirected) {
+            disposed = true; clearPrivateScreen();
+            location.replace(document.querySelector('meta[name="hall-unlock-url"]').content);
+            return;
+        }
+        if (!response.ok) throw new Error('History unavailable');
+        const data = await response.json();
+        if (signal.aborted || !detail.open || selectedKey !== doc.key || historyKey !== doc.key) return;
+        if (data.document_key !== doc.key || !Array.isArray(data.events) ||
+            !Number.isSafeInteger(data.transfer_count) || data.transfer_count < 0 ||
+            !Number.isSafeInteger(data.record_count) || data.record_count < 0 ||
+            data.page !== page || typeof data.has_more !== 'boolean') throw new Error('Invalid movement history');
+
+        for (const item of data.events) {
+            if (typeof item.from_label !== 'string' || typeof item.to_label !== 'string' ||
+                typeof item.status_label !== 'string' || !Number.isFinite(Date.parse(item.at))) continue;
+            const entry = element('li');
+            entry.append(element('div', 'history-route', item.from_label + ' ← ' + item.to_label));
+            entry.append(element('div', 'history-status-label', item.status_label));
+            entry.append(element('time', 'history-time', dateFormat.format(new Date(item.at)) + ' · ' + timeFormat.format(new Date(item.at))));
+            byId('history-events').append(entry);
+        }
+        historyPage = page;
+        byId('history-title').textContent = 'تاریخچه انتقال‌ها · ' + fa.format(data.transfer_count) + ' انتقال ثبت‌شده';
+        byId('history-status').textContent = data.record_count
+            ? fa.format(data.record_count) + ' رویداد ثبت‌شده'
+            : 'برای این سند سابقه انتقال ثبت نشده است.';
+        byId('history-more').textContent = 'نمایش رویدادهای قدیمی‌تر';
+        byId('history-more').hidden = !data.has_more;
+    } catch (error) {
+        if (!signal.aborted && selectedKey === doc.key) {
+            historyPage = page - 1;
+            byId('history-more').textContent = 'تلاش مجدد';
+            byId('history-status').textContent = 'دریافت تاریخچه ناموفق بود؛ دوباره تلاش کنید.';
+            byId('history-more').hidden = false;
+        }
+    }
+}
+
 function renderReport() {
     if (!snapshot || !selectedReport) return;
     const live = {...snapshot, documents:snapshot.documents.map(doc=>({...doc,stage_seconds:currentSeconds(doc,'stage_seconds')}))};
@@ -126,7 +200,7 @@ function renderReport() {
         for (const doc of report.documents) {
             const tr=element('tr'), cell=element('td');
             const open=element('button','report-document',`${doc.number} · ${doc.customer}`);open.type='button';open.dataset.documentKey=doc.key;
-            open.addEventListener('click',()=>{selectedKey=doc.key;renderDetail();if(!detail.open)detail.showModal();});
+            open.addEventListener('click',()=>openDocument(doc));
             cell.append(open);tr.append(cell,element('td','',doc.status_label||snapshot.stages.find(s=>s.key===doc.stage)?.label||''),element('td','',fa.format(doc.amount_rial)),element('td','',formatDuration(doc.stage_seconds)));body.append(tr);
         }
     }
@@ -173,12 +247,15 @@ async function applySnapshot(next) {
         const index = next.documents.filter(d => d.stage === move.to).findIndex(d => d.key === move.document.key);
         if (index >= 0) positions.set(move.to, index);
     }
+    if (previous === null) seenTracker.prime(next.documents);
     snapshot = next; receivedAt = performance.now();
     byId('sales-amount').textContent = fa.format(next.metrics.sales_rial ?? 0);
     byId('cash-amount').textContent = fa.format(next.metrics.cash_rial ?? 0);
     byId('cheque-amount').textContent = fa.format(next.metrics.cheque_rial ?? 0);
     byId('sales-count').textContent = `${fa.format(next.metrics.sales_count ?? 0)} فاکتور امروز`;
     byId('cheque-count').textContent = `${fa.format(next.metrics.cheque_count ?? 0)} فقره`;
+    byId('month-invoice-count').textContent = fa.format(next.metrics.month_invoice_count);
+    byId('month-jalali').textContent = `ماه ${next.metrics.month_jalali.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d])}`;
     byId('document-total').textContent = `/ ${fa.format(next.documents.length)} سند`;
     for (const key of stageKeys) renderLane(key);
     if (detail.open) renderDetail();
@@ -226,10 +303,12 @@ function connection(state, message) {
 function clearPrivateScreen() {
     snapshot = null;
     for (const node of flights) node.remove();
+    historyController?.abort();
     if (detail.open) detail.close(); byId('detail-content').replaceChildren();
+    byId('history-events').replaceChildren(); byId('history-status').textContent = '—'; byId('history-more').hidden = true;
     if(reportDialog?.open)reportDialog.close();byId('management-report-content').replaceChildren();byId('management-report-title').textContent='';byId('report-freshness').textContent='';byId('attention-count').textContent='—';
     for (const lane of lanes.values()) { lane.querySelector('.lane-track').replaceChildren(); lane.querySelector('[data-count]').textContent = '—'; lane.querySelector('[data-average]').textContent = '—'; }
-    for (const id of ['sales-amount', 'cash-amount', 'cheque-amount', 'sales-count', 'cheque-count', 'document-total', 'event-text']) byId(id).textContent = '—';
+    for (const id of ['sales-amount', 'cash-amount', 'cheque-amount', 'sales-count', 'cheque-count', 'month-invoice-count', 'month-jalali', 'document-total', 'event-text']) byId(id).textContent = '—';
 }
 
 async function poll() {
@@ -291,12 +370,23 @@ function paintPause() { pause.textContent = paused ? 'شروع مرور' : 'تو
 pause.addEventListener('click', () => { paused = !paused; paintPause(); }); paintPause();
 byId('next').addEventListener('click', () => rotate(true));
 byId('close-detail').addEventListener('click', () => detail.close());
+detail.addEventListener('close', () => { historyController?.abort(); historyKey = null; });
+byId('history-more').addEventListener('click', () => {
+    const doc = snapshot?.documents.find(row => row.key === selectedKey);
+    if (doc && detail.open && historyKey === doc.key) loadHistory(doc, historyPage + 1);
+});
 byId('fullscreen').hidden = !document.fullscreenEnabled;
 byId('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { /* Browser may deny fullscreen; normal display stays usable. */ } });
 document.addEventListener('fullscreenchange', () => { byId('fullscreen').textContent = document.fullscreenElement ? 'خروج از تمام‌صفحه' : 'تمام‌صفحه'; });
 document.addEventListener('visibilitychange', () => { clearTimeout(pollTimer); if (document.hidden) controller?.abort(); else { poll(); measure(); } });
 const observer = new ResizeObserver(measure); observer.observe(byId('board'));
 for (const lane of lanes.values()) observer.observe(lane.querySelector('.lane-window'));
+window.addEventListener('storage', event => {
+    if (event.key === HALL_SEEN_STORAGE_KEY && snapshot) {
+        seenTracker.refresh();
+        for (const key of stageKeys) renderLane(key);
+    }
+});
 window.addEventListener('resize', measure);
 document.fonts?.ready.then(measure);
 setInterval(() => {

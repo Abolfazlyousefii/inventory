@@ -6,6 +6,7 @@
     <meta name="robots" content="noindex,nofollow,noarchive">
     <meta name="referrer" content="no-referrer">
     <meta name="hall-data-url" content="{{ $dataUrl }}">
+    <meta name="hall-history-url" content="{{ route('hall.history', absolute: false) }}">
     <meta name="hall-unlock-url" content="{{ route('hall.unlock', absolute: false) }}">
     <meta name="hall-refresh-seconds" content="{{ $refreshSeconds }}">
     <title>نبض آریا | داشبورد مدیریتی</title>
@@ -24,12 +25,14 @@
         <button type="button" class="metric" data-report="sales"><span>فروش قطعی امروز</span><div><strong id="sales-amount">—</strong><small>ریال</small></div><small id="sales-count">—</small></button>
         <button type="button" class="metric" data-report="finance"><span>وصول نقد و واریز امروز</span><div><strong id="cash-amount">—</strong><small>ریال</small></div><small>مستقل از تاریخ صدور فاکتور</small></button>
         <button type="button" class="metric" data-report="finance"><span>چک دریافت‌شدهٔ امروز</span><div><strong id="cheque-amount">—</strong><small>ریال</small></div><small id="cheque-count">—</small></button>
+        <div class="metric metric-month" aria-label="فاکتورهای صادرشده ماه شمسی جاری"><span>فاکتورهای صادرشده این ماه</span><div><strong id="month-invoice-count">—</strong><small>فاکتور</small></div><small id="month-jalali">ماه شمسی جاری</small></div>
     </section>
     <nav class="management-nav" aria-label="گزارش‌های مدیریت">
         <span class="management-nav-label">گزارش‌های مدیریت</span>
         <button type="button" data-report="sales">فروش و فروشندگان <span>↗</span></button>
         <button type="button" data-report="finance">مالی و وصول <span>↗</span></button>
         <button type="button" data-report="warehouse">عملکرد انبار <span>↗</span></button>
+        <button type="button" data-report="reapproval">تأیید مجدد مالی <span>↗</span></button>
         <button type="button" data-report="shipping">ارسال بار <span>↗</span></button>
         <a href="{{ route('warehouse.stock-flow.index') }}" target="_blank" rel="noopener noreferrer">موجودی و گردش کالا <span>↗</span></a>
         <a href="{{ url('/vouchers/section/return-from-sale') }}" target="_blank" rel="noopener noreferrer">برگشتی و اصلاحات <span>↗</span></a>
@@ -42,8 +45,8 @@
     <section class="operations" aria-label="سفارش‌های در جریان">
         <div class="operations-heading"><h2>جریان سفارش‌ها <span id="document-total">—</span></h2><span class="rotation-label">مرور هر ۲ ثانیه · مبلغ‌ها به ریال</span></div>
         <div class="connection-alert" id="connection-alert" role="alert" hidden></div>
-        <div class="board" id="board" aria-label="چهار صف سفارش‌ها">
-            @foreach (['reserved' => 'رزرو فعال', 'finance' => 'صف مالی', 'warehouse' => 'صف انبار', 'shipping' => 'صف ارسال'] as $key => $label)
+        <div class="board" id="board" aria-label="پنج صف سفارش‌ها">
+            @foreach (['reserved' => 'رزرو فعال', 'finance' => 'صف مالی', 'warehouse' => 'صف انبار', 'reapproval' => 'تأیید مجدد مالی', 'shipping' => 'صف ارسال'] as $key => $label)
             <section class="lane lane-{{ $key }}" data-stage="{{ $key }}" aria-label="{{ $label }}">
                 <header class="lane-heading"><h3>{{ $label }}</h3><strong data-count>—</strong></header>
                 <div class="lane-summary"><span>میانگین انتظار</span><span data-average>—</span></div>
@@ -67,7 +70,7 @@
         </footer>
         <p class="report-access-note">گزارش‌های کامل در پنجرهٔ جدا و با حساب و دسترسی نرم‌افزار باز می‌شوند.</p>
     </dialog>
-    <dialog id="document-detail"><div class="detail-heading"><h2>جزئیات سفارش</h2><button id="close-detail" type="button" aria-label="بستن جزئیات">×</button></div><dl id="detail-content"></dl><p>این نمایشگر فقط برای مشاهده است.</p></dialog>
+    <dialog id="document-detail"><div class="detail-heading"><h2>جزئیات سفارش</h2><button id="close-detail" type="button" aria-label="بستن جزئیات">×</button></div><dl id="detail-content"></dl><section class="detail-history" aria-label="تاریخچه انتقال سند"><h3 id="history-title">تاریخچه انتقال‌ها</h3><p id="history-status" role="status">در انتظار دریافت تاریخچه</p><ol id="history-events"></ol><button type="button" id="history-more" hidden>نمایش رویدادهای قدیمی‌تر</button><p class="history-note">تنها انتقال‌های ثبت‌شده نمایش داده می‌شوند؛ برای سوابق ناقص تعداد یا زمان فرضی ساخته نمی‌شود.</p></section><p>این نمایشگر فقط برای مشاهده است.</p></dialog>
 </main>
 </body>
 </html>

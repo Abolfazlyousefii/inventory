@@ -1,6 +1,6 @@
 // Read-only summaries of the same authorized Hall snapshot. No extra private API.
 export function buildReport(snapshot, kind) {
-    const titles = {sales:'فروش و فروشندگان',finance:'مالی و وصول',reserved:'رزروهای فعال',warehouse:'عملکرد انبار',shipping:'ارسال بار',attention:'اسناد نیازمند توجه'};
+    const titles = {sales:'فروش و فروشندگان',finance:'مالی و وصول',reapproval:'تأیید مجدد مالی',reserved:'رزروهای فعال',warehouse:'عملکرد انبار',shipping:'ارسال بار',attention:'اسناد نیازمند توجه'};
     if (!titles[kind]) throw new Error('Unknown report');
     const all = snapshot.documents;
     let documents = all.filter(d => kind === 'sales' || kind === 'attention' || d.stage === kind);
@@ -11,7 +11,7 @@ export function buildReport(snapshot, kind) {
     const average = timed.length ? Math.round(timed.reduce((sum,d)=>sum+d.stage_seconds,0)/timed.length) : null;
     const metric = (label,value,unit) => ({label,value,unit});
     let metrics = [metric('اسناد در جریان',documents.length,'سند'),metric('میانگین انتظارِ زمان‌های معلوم',average,'duration'),metric('بالاتر از زمان تعیین‌شده',documents.filter(late).length,'سند')];
-    if (kind === 'sales') metrics = [metric('فروش قطعی امروز',snapshot.metrics.sales_rial,'ریال'),metric('فاکتورهای امروز',snapshot.metrics.sales_count,'فاکتور'),metric('اسناد در جریان',all.length,'سند')];
+    if (kind === 'sales') metrics = [metric('فروش قطعی امروز',snapshot.metrics.sales_rial,'ریال'),metric('فاکتورهای امروز',snapshot.metrics.sales_count,'فاکتور'),metric('اسناد در جریان',all.length,'سند'),metric('فاکتورهای صادرشده ماه شمسی',snapshot.metrics.month_invoice_count,'فاکتور')];
     if (kind === 'finance') metrics = [metric('وصول نقد و واریز امروز',snapshot.metrics.cash_rial,'ریال'),metric('چک دریافت‌شده امروز',snapshot.metrics.cheque_rial,'ریال'),metric('تعداد چک دریافتی امروز',snapshot.metrics.cheque_count,'فقره')];
     const groups = [];
     if (kind === 'sales') {

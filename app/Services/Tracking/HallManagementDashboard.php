@@ -4,7 +4,9 @@ namespace App\Services\Tracking;
 
 use App\Models\Invoice;
 use App\Models\PreinvoiceOrder;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Morilog\Jalali\Jalalian;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -14,7 +16,8 @@ final class HallManagementDashboard
 {
     private const STAGES = [
         'reserved' => 'رزرو فعال', 'finance' => 'صف مالی',
-        'warehouse' => 'صف انبار', 'shipping' => 'صف ارسال',
+        'warehouse' => 'صف انبار', 'reapproval' => 'تأیید مجدد مالی',
+        'shipping' => 'صف ارسال',
     ];
 
     public static function stage(string $type, string $status): ?string
@@ -31,7 +34,7 @@ final class HallManagementDashboard
 
         return match ($status) {
             'returned_to_sales_after_collection' => 'draft',
-            'pending_finance_reapproval' => 'finance',
+            'pending_finance_reapproval' => 'reapproval',
             'pending_warehouse_approval', 'pending_collection', 'warehouse_received',
             'collecting', 'checking_discrepancy', 'final_check' => 'warehouse',
             'packing', 'ready_to_ship' => 'shipping',
@@ -67,12 +70,17 @@ final class HallManagementDashboard
             $entries = DB::table('hall_queue_transitions')->whereIn('workflow_key', $documents->pluck('key'))
                 ->orderByDesc('entered_at')->orderByDesc('id')->get()->groupBy('workflow_key');
             $documents = $documents->map(function (array $doc) use ($entries, $now): array {
-                $entry = $entries->get($doc['key'])?->first();
+                $workflow = $entries->get($doc['key'], collect());
+                $entry = $workflow->first();
+                // Count recorded transitions; status changes within one queue do not count.
+                $doc['transfer_count'] = max($doc['transfer_count'], $workflow->filter(fn ($row) => $row->from_stage !== null
+                    && $row->to_stage !== null && $row->from_stage !== $row->to_stage)->count());
                 if ($entry && $doc['stage'] !== 'reserved' && $entry->source_type === $doc['type'] && (int) $entry->source_id === $doc['source_id'] && self::stage($entry->source_type, $entry->status_to) === $doc['stage']) {
                     $entered = $this->time($entry->entered_at);
                     $doc['stage_entered_at'] = $entered->toIso8601String();
                     $doc['stage_time_known'] = true;
                     $doc['stage_seconds'] = max(0, $now->timestamp - $entered->timestamp);
+                    $doc['entry_token'] = 'hall:'.$entry->id;
                 }
 
                 return $doc;
@@ -80,7 +88,7 @@ final class HallManagementDashboard
         }
 
         return [
-            'version' => 2,
+            'version' => 3,
             'updated_at' => $now->toIso8601String(),
             'refresh_seconds' => max(5, (int) config('hall_display.refresh_seconds', 15)),
             'metrics' => $this->metrics($now),
@@ -191,6 +199,12 @@ final class HallManagementDashboard
             'stage_time_known' => $entered !== null,
             'stage_seconds' => $entered ? max(0, $now->timestamp - $entered->timestamp) : null,
             'total_seconds' => $created ? max(0, $now->timestamp - $created->timestamp) : null,
+            'entry_token' => $entered ? 'history:'.$type.':'.$row->id.':'.$stage.':'.$entered->format('YmdHis') : null,
+            'transfer_count' => $history->filter(function ($event) use ($type) {
+                $from = self::stage($type, (string) ($event->old_value ?? $event->status_from ?? ''));
+                $to = self::stage($type, (string) ($event->new_value ?? $event->status_to ?? ''));
+                return $from !== null && $to !== null && $from !== $to;
+            })->count(),
         ];
     }
 
@@ -200,6 +214,14 @@ final class HallManagementDashboard
         // latest cheque metadata, cheque received date rather than its due date.
         $day = $now->setTimezone('Asia/Tehran')->toDateString();
         $end = CarbonImmutable::parse($day, 'Asia/Tehran')->addDay()->toDateString();
+        $jalali = Jalalian::fromCarbon(Carbon::parse($now->setTimezone('Asia/Tehran')->toIso8601String()));
+        $year = $jalali->getYear();
+        $month = $jalali->getMonth();
+        $monthStartDate = (new Jalalian($year, $month, 1))->toCarbon()->format('Y-m-d');
+        $monthEndDate = (new Jalalian($month === 12 ? $year + 1 : $year, $month === 12 ? 1 : $month + 1, 1))->toCarbon()->format('Y-m-d');
+        $monthInvoices = DB::table('invoices')->where('status', '!=', 'not_shipped')
+            ->whereRaw('COALESCE(document_date, created_at) >= ?', [$monthStartDate])
+            ->whereRaw('COALESCE(document_date, created_at) < ?', [$monthEndDate]);
         $sales = DB::table('invoices')->where('status', '!=', 'not_shipped')
             ->whereRaw('COALESCE(document_date, created_at) >= ?', [$day])
             ->whereRaw('COALESCE(document_date, created_at) < ?', [$end]);
@@ -214,6 +236,7 @@ final class HallManagementDashboard
 
         return [
             'day' => $day, 'sales_rial' => (int) (clone $sales)->sum('total'), 'sales_count' => (clone $sales)->count(),
+            'month_invoice_count' => (clone $monthInvoices)->count(), 'month_jalali' => sprintf('%04d/%02d', $year, $month),
             'cash_rial' => (int) ($receipts->get('cash')->amount ?? 0) + (int) ($receipts->get('online')->amount ?? 0),
             'cheque_rial' => (int) ($receipts->get('cheque')->amount ?? 0),
             'cheque_count' => (int) ($receipts->get('cheque')->count ?? 0),

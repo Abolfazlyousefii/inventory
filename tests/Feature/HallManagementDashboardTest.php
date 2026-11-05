@@ -185,14 +185,56 @@ class HallManagementDashboardTest extends TestCase
         ], $overrides));
     }
 
-    public function test_real_statuses_map_to_exactly_four_queues(): void
+    public function test_reapproval_has_an_independent_fifth_queue_without_duplicating_the_invoice(): void
+    {
+        $invoiceId = $this->invoice(['status' => 'pending_finance_reapproval']);
+        $this->order(['status' => 'finance_reviewing']);
+
+        $data = app(HallManagementDashboard::class)->snapshot();
+        $this->assertCount(5, $data['stages']);
+        $this->assertSame('reapproval', HallManagementDashboard::stage('invoice', 'pending_finance_reapproval'));
+        $this->assertSame('finance', HallManagementDashboard::stage('preinvoice', 'finance_reviewing'));
+        $this->assertSame(1, collect($data['stages'])->firstWhere('key', 'reapproval')['count']);
+        $this->assertSame(1, collect($data['stages'])->firstWhere('key', 'finance')['count']);
+        $this->assertCount(1, array_filter($data['documents'], fn ($d) => $d['type'] === 'invoice' && $d['source_id'] === $invoiceId));
+    }
+
+    public function test_monthly_issued_invoice_count_uses_tehran_jalali_boundaries_and_excludes_cancelled(): void
+    {
+        // 1405/08/01 = 2026-10-23; 1405/09/01 = 2026-11-22.
+        $this->invoice(['document_date' => '2026-10-22 23:59:59']);
+        $this->invoice(['document_date' => '2026-10-23 00:00:00']);
+        $this->invoice(['document_date' => '2026-11-05 09:20:00']);
+        $this->invoice(['document_date' => '2026-11-22 00:00:00']);
+        $this->invoice(['document_date' => '2026-11-04 12:00:00', 'status' => 'not_shipped']);
+
+        $metrics = app(HallManagementDashboard::class)->snapshot()['metrics'];
+        $this->assertSame(2, $metrics['month_invoice_count']);
+        $this->assertSame('1405/08', $metrics['month_jalali']);
+    }
+
+    public function test_monthly_issued_invoices_span_all_31_days_of_farvardin_without_crossing_next_month(): void
+    {
+        $this->travelTo(now('Asia/Tehran')->setDate(2026, 4, 5)->setTime(14, 0));
+        // 1405/01/01 = 2026-03-21 and 1405/02/01 = 2026-04-21.
+        $this->invoice(['document_date'=>'2026-03-20 23:59:59']);
+        $this->invoice(['document_date'=>'2026-03-21 00:00:00']);
+        $this->invoice(['document_date'=>'2026-04-20 23:59:59']);
+        $this->invoice(['document_date'=>'2026-04-21 00:00:00']);
+
+        $metrics = app(HallManagementDashboard::class)->snapshot()['metrics'];
+        $this->assertSame(2, $metrics['month_invoice_count']);
+        $this->assertSame('1405/01', $metrics['month_jalali']);
+    }
+
+    public function test_real_statuses_map_to_five_queues(): void
     {
         $map = [
             ['preinvoice', 'draft', 'draft'], ['preinvoice', 'returned_to_sales', 'draft'],
             ['preinvoice', 'pending_finance', 'reserved'], ['preinvoice', 'finance_reviewing', 'finance'],
             ['preinvoice', 'warehouse_approved_waiting_finance', 'finance'],
             ['preinvoice', 'reserved_waiting_warehouse', 'reserved'], ['preinvoice', 'returned_to_warehouse', 'warehouse'],
-            ['invoice', 'pending_finance_reapproval', 'finance'], ['invoice', 'returned_to_sales_after_collection', 'draft'],
+            ['invoice', 'pending_finance_reapproval', 'reapproval'], ['invoice', 'returned_to_sales_after_collection', 'draft'],
             ['invoice', 'pending_collection', 'warehouse'], ['invoice', 'collecting', 'warehouse'],
             ['invoice', 'checking_discrepancy', 'warehouse'], ['invoice', 'final_check', 'warehouse'],
             ['invoice', 'packing', 'shipping'], ['invoice', 'ready_to_ship', 'shipping'],
@@ -217,7 +259,7 @@ class HallManagementDashboardTest extends TestCase
         $payload = app(HallManagementDashboard::class)->snapshot();
         $this->assertCount(131, $payload['documents']);
         $this->assertSame(131, $payload['summary']['total']);
-        $this->assertCount(4, $payload['stages']);
+        $this->assertCount(5, $payload['stages']);
     }
 
     public function test_amount_is_raw_rial_and_line_count_is_not_sum_of_units(): void
@@ -361,6 +403,89 @@ class HallManagementDashboardTest extends TestCase
         $doc = app(HallManagementDashboard::class)->snapshot()['documents'][0];
         $this->assertTrue($doc['stage_time_known']);
         $this->assertSame(780, $doc['stage_seconds']);
+    }
+
+    public function test_timeline_requires_hall_access_and_counts_each_real_queue_transfer_once(): void
+    {
+        (require database_path('migrations/2026_11_01_120000_create_hall_queue_transitions_table.php'))->up();
+        $id = $this->invoice(['status' => 'pending_finance_reapproval']);
+        $key = 'order:invoice:'.$id;
+        DB::table('hall_queue_transitions')->insert([
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>null, 'to_stage'=>'warehouse',
+                'status_from'=>null, 'status_to'=>'pending_collection', 'entered_at'=>now()->subMinutes(15)],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>'warehouse', 'to_stage'=>'reapproval',
+                'status_from'=>'pending_collection', 'status_to'=>'pending_finance_reapproval', 'entered_at'=>now()->subMinutes(10)],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>'reapproval', 'to_stage'=>'warehouse',
+                'status_from'=>'pending_finance_reapproval', 'status_to'=>'pending_collection', 'entered_at'=>now()->subMinutes(5)],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$id,
+                'document_number'=>'F-test', 'from_stage'=>'warehouse', 'to_stage'=>'reapproval',
+                'status_from'=>'pending_collection', 'status_to'=>'pending_finance_reapproval', 'entered_at'=>now()->subMinute()],
+        ]);
+
+        $this->getJson('/hall/history?key='.urlencode($key))->assertForbidden();
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key='.urlencode($key))
+            ->assertOk()->assertJsonPath('transfer_count', 3)
+            ->assertJsonPath('record_count', 4)
+            ->assertJsonPath('events.0.to_stage', 'reapproval')
+            ->assertJsonPath('events.1.to_stage', 'warehouse')
+            ->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key=order%3Ainvoice%3A999999')->assertNotFound();
+    }
+
+    public function test_conversion_timeline_connects_known_preinvoice_stage_to_new_invoice_stage(): void
+    {
+        (require database_path('migrations/2026_11_01_120000_create_hall_queue_transitions_table.php'))->up();
+        $orderId = $this->order(['status'=>'converted_to_invoice'], false);
+        $invoiceId = $this->invoice(['status'=>'pending_collection', 'preinvoice_order_id'=>$orderId]);
+        $key = 'order:'.$orderId;
+        DB::table('hall_queue_transitions')->insert([
+            ['workflow_key'=>$key, 'source_type'=>'preinvoice', 'source_id'=>$orderId,
+                'document_number'=>'P-parent', 'from_stage'=>'reserved', 'to_stage'=>'finance',
+                'status_from'=>'pending_finance', 'status_to'=>'finance_reviewing',
+                'entered_at'=>now()->subHour()],
+            ['workflow_key'=>$key, 'source_type'=>'invoice', 'source_id'=>$invoiceId,
+                'document_number'=>'F-child', 'from_stage'=>null, 'to_stage'=>'warehouse',
+                'status_from'=>null, 'status_to'=>'pending_collection',
+                'entered_at'=>now()->subMinutes(10)],
+        ]);
+
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key='.urlencode($key))
+            ->assertOk()->assertJsonPath('transfer_count', 2)
+            ->assertJsonPath('events.0.from_stage', 'finance')
+            ->assertJsonPath('events.0.to_stage', 'warehouse')
+            ->assertJsonPath('events.1.from_stage', 'reserved');
+    }
+
+    public function test_legacy_timeline_keeps_older_status_history_without_fabricating_events(): void
+    {
+        $orderId = $this->order(['status'=>'converted_to_invoice'], false);
+        $invoiceId = $this->invoice(['status'=>'pending_finance_reapproval', 'preinvoice_order_id'=>$orderId]);
+        DB::table('warehouse_review_logs')->insert([
+            'preinvoice_order_id'=>$orderId, 'status_from'=>'pending_finance',
+            'status_to'=>'finance_reviewing', 'created_at'=>now()->subHours(4),
+            'updated_at'=>now()->subHours(4),
+        ]);
+        DB::table('sales_havaleh_histories')->insert([
+            'invoice_id'=>$invoiceId, 'field_name'=>'status', 'old_value'=>'pending_collection',
+            'new_value'=>'pending_finance_reapproval', 'done_at'=>now()->subHour(),
+        ]);
+        $proof = hash_hmac('sha256', 'hall-management-v1', 'test-manager-key');
+        $key = 'order:'.$orderId;
+        $this->withCredentials()->withCookie('hall_management_access', $proof)
+            ->getJson('/hall/history?key='.urlencode($key))
+            ->assertOk()->assertJsonPath('transfer_count', 2)
+            ->assertJsonPath('record_count', 2)
+            ->assertJsonPath('events.0.to_stage', 'reapproval')
+            ->assertJsonPath('events.1.to_stage', 'finance');
     }
 
     public function test_lock_revokes_the_scoped_cookie_and_wrong_keys_are_rejected(): void
