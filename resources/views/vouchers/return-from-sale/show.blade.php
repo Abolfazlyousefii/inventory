@@ -5,19 +5,24 @@
         @php
             $protectedReturn=$document->isApplied() && app(\App\Services\SalesReturnCorrectionService::class)->requiresWarehouse($document);
             $canDirectReturn=$document->isApplied() && auth()->user() && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),$protectedReturn?'warehouse.inbound.receive':'vouchers.return-from-sale.applied.update');
+            $canVoidReturn=$document->isApplied() && \App\Support\SalesReturnVoidAccess::allowed(auth()->user(), $protectedReturn);
         @endphp
         @if($document->isApplied())
         <div class="alert alert-info">
             <div>{{ $protectedReturn ? 'دریافت انباری این سند ثبت شده است؛ تغییر تعداد و ابطال فقط توسط مسئول مجاز انبار انجام می‌شود.' : 'این سند مرجوعی قابل ویرایش و ابطال با حفظ سابقه است؛ موجودی مرکزی بدون تأیید دریافت افزایش نمی‌یابد.' }}</div>
             @if($pendingCorrection ?? null)
                 <strong>درخواست قبلی {{ $pendingCorrection->id }}: {{ \App\Models\SalesReturnCorrection::statusLabels()[$pendingCorrection->status] }} — ابتدا این درخواست تعیین تکلیف شود.</strong>
-            @elseif($canDirectReturn)
-                <a class="btn btn-sm btn-primary mt-2" href="{{ route('vouchers.return-from-sale.applied.edit',$document) }}">{{ $protectedReturn ? 'اصلاح دریافت' : 'ویرایش مرجوعی' }}</a>
+            @else
+                @if($canDirectReturn)
+                    <a class="btn btn-sm btn-primary mt-2" href="{{ route('vouchers.return-from-sale.applied.edit',$document) }}">{{ $protectedReturn ? 'اصلاح دریافت' : 'ویرایش مرجوعی' }}</a>
+                @endif
+                @if($canVoidReturn)
                 <details class="mt-3"><summary>ابطال سند با حفظ سابقه</summary><form method="POST" action="{{ route('vouchers.return-from-sale.applied.void',$document) }}" class="mt-2">@csrf
                     <input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}">
                     <label class="form-label">دلیل ابطال</label><textarea name="reason" class="form-control" required minlength="3" maxlength="1000"></textarea>
                     <p class="small mt-2">فقط اثر ثبت‌شدهٔ همین سند برمی‌گردد. کمبود موجودی آزاد، کل عملیات را متوقف می‌کند.</p><button class="btn btn-sm btn-danger">تأیید ابطال</button>
                 </form></details>
+                @endif
             @endif
             <a class="d-inline-block mt-2" href="{{ route('sales-return-corrections.index',['document_id'=>$document->id,'status'=>'all']) }}">سوابق اصلاح و درخواست‌های قبلی</a>
         </div>
