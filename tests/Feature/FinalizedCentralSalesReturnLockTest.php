@@ -3,6 +3,14 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\VoucherSalesReturnController;
+use App\Models\Warehouse;
+use App\Models\Customer;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Services\Commissions\CommissionReturnSyncOutboxService;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Http;
 use App\Models\CustomerLedger;
 use App\Models\SalesReturnCorrection;
 use App\Models\SalesReturnDocument;
@@ -15,17 +23,63 @@ use App\Support\InboundReviewVersion;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
-class FinalizedCentralSalesReturnLockTest extends PendingSalesReturnEditTest
+class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/purchase-returns-20261011'));
+        Http::fake();
+        Schema::create('site_stock_sync_outbox', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('variant_id')->default(0);
+            $table->string('origin', 16)->default('inventory');
+            $table->dateTime('created_at');
+            $table->dateTime('available_at');
+            $table->unsignedSmallInteger('attempts')->default(0);
+            $table->string('claimed_by', 36)->nullable();
+            $table->dateTime('locked_until')->nullable();
+            $table->string('last_error', 500)->nullable();
+            $table->index(
+                ['available_at', 'id'],
+                'site_stock_outbox_due_idx'
+            );
+        });
+        $models = ['SalesReturnDocument', 'SalesReturnDocumentItem', 'SalesReturnDocumentRevision', 'WarehouseInboundReceipt', 'WarehouseInboundReceiptItem', 'Customer', 'CustomerLedger', 'ActivityLog', 'StockMovement', 'Warehouse', 'WarehouseStock', 'Product', 'ProductVariant', 'Category', 'Invoice', 'InvoiceItem', 'WarehouseTransfer', 'WarehouseTransferItem', 'Color', 'ModelList', 'User'];
+        foreach ($models as $name) {
+            $class = 'App\\Models\\'.$name;
+            $m = new $class;
+            $table = $m->getTable();
+            if (Schema::hasTable($table)) {
+                continue;
+            }$fields = array_unique(array_merge($m->getFillable(), ['created_at', 'updated_at', 'deleted_at']));
+            Schema::create($table, function (Blueprint $t) use ($fields) {
+                $t->id();
+                foreach ($fields as $f) {
+                    if ($f !== 'id') {
+                        $t->text($f)->nullable();
+                    }
+                }
+            });
+        }
+        Schema::create('document_sequences', function (Blueprint $t) {
+            $t->id();
+            $t->string('type')->unique();
+            $t->integer('last_number')->default(0);
+            $t->timestamps();
+        });
+        $this->mock(CommissionReturnSyncOutboxService::class, fn ($m) => $m->shouldReceive('stage')->andReturnNull());
+        Warehouse::create(['id' => 1, 'name' => 'انبار مرکزی', 'type' => 'central', 'is_active' => true]);
+        Warehouse::create(['id' => 2, 'name' => 'مرجوعی', 'type' => 'return', 'is_active' => true]);
+        Customer::create(['name' => 'مشتری نمونه', 'mobile' => '09121111111', 'opening_balance' => 0]);
+        $p = Product::create(['name' => 'کالای نمونه', 'stock' => 0, 'reserved' => 0]);
+        ProductVariant::create(['product_id' => $p->id, 'variant_name' => 'مشکی', 'variant_code' => '123', 'stock' => 0, 'reserved' => 0]);
         (require database_path('migrations/2026_10_13_160000_create_sales_return_corrections_table.php'))->up();
         foreach ([1, 2, 3] as $id) {
             User::create(['id' => $id, 'name' => 'Reviewer '.$id, 'password' => 'test']);
         }
     }
-
     private function document(bool $central = true): SalesReturnDocument
     {
         $warehouse = $central ? 1 : 2;
