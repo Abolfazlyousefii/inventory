@@ -1,7 +1,7 @@
 # Sales return editing and inventory safeguards
 
-Direct edits and voids are allowed only for applied **return-only** documents without central warehouse receipt history.
-After a central warehouse receipt is confirmed, the return is immutable for every user, including administrators and warehouse managers. Historical correction requests for a locked central return remain visible and can be rejected, but cannot be approved. No existing business records are deleted or migrated.
+Direct edits and voids are allowed only for applied **return-only** documents without a manager-approved inbound receipt or historical central warehouse stock effects.
+After an inbound receipt is approved by the warehouse manager, the return is immutable for every user, including administrators and warehouse managers, even when inspection redirects every line to the returns warehouse. Historical correction requests for a locked central return remain visible and can be rejected, but cannot be approved. No existing business records are deleted or migrated.
 
 ## Access and stock effects
 
@@ -11,15 +11,10 @@ After a central warehouse receipt is confirmed, the return is immutable for ever
 - Pending central receipts: existing versioned editing updates the same receipt.
   Cancellation additionally cancels the pending receipt, and requires a reason,
   matching version, zero receipt stock effects and zero net posted customer credit.
-- Received central documents: warranty cannot edit/void. The received-return
-  endpoints require existing warehouse receiving access. Read-only form helpers
-  are explicitly shared with that page; no write access to unrelated returns or
-  configuration pages is granted.
+- Manager-approved inbound returns: no user, including a warehouse manager, may edit, void, or approve historical corrections. Only display, printing, history review and rejection of pending historical corrections remain available.
 - Central history remains protected after reclassification into a return
   warehouse. Checking the current destination alone would allow a bypass.
-- Direct inventory edits reconcile traceable net stock movements against current
-  document quantities. Missing/inconsistent historical central stock evidence or
-  inconsistent net customer credit blocks the edit, instead of guessing a repair.
+- Previous inventory edit reconciliation is retained for historical understanding, but confirmed inbound returns never enter it under the current immutable-document policy. Any necessary future stock fix must be a separate audited adjustment.
 - For mixed documents, financial-only return groups do not acquire stock simply
   because another line has a physical central receipt. Existing tracked stock
   groups and newly received physical groups use only their required differences.
