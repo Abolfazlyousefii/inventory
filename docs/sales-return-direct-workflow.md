@@ -1,10 +1,7 @@
 # Sales return editing and inventory safeguards
 
-New edits use `SalesReturnCorrectionService::updateDirect`/`voidDirect`; they do
-not create a warehouse/finance approval chain. Existing correction requests and
-approval endpoints remain unchanged for historical compatibility. A pending old
-request blocks a direct change until explicitly resolved; deployment does not
-approve, reject, delete, or migrate business records.
+Direct edits and voids are allowed only for applied **return-only** documents without central warehouse receipt history.
+After a central warehouse receipt is confirmed, the return is immutable for every user, including administrators and warehouse managers. Historical correction requests for a locked central return remain visible and can be rejected, but cannot be approved. No existing business records are deleted or migrated.
 
 ## Access and stock effects
 
