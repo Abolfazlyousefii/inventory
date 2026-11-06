@@ -164,8 +164,8 @@ class SalesReturnCorrectionWorkflowTest extends PendingSalesReturnEditTest
             'suggested_warehouse_id' => 1, 'received_warehouse_id' => 1,
             'expected_quantity' => 2, 'accepted_quantity' => 2,
         ]);
-        $beforeReceipt = $receipt->getAttributes();
-        $beforeItem = $received->getAttributes();
+        $beforeReceipt = $receipt->fresh()->getAttributes();
+        $beforeItem = $received->fresh()->getAttributes();
         $this->expectFinalized(fn () => app(SalesReturnCorrectionService::class)->request(
             $doc, $this->proposal($doc), 1, 'اصلاح رسید'
         ));
