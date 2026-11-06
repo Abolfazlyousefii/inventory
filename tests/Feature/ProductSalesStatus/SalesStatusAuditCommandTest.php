@@ -33,16 +33,16 @@ it('reports all inconsistency classes in dry run without changing data', functio
         ->and($invalid->fresh()->sales_enabled)->toBeTrue();
 });
 
-it('repairs only documented status fields and is idempotent on a second audit', function (): void {
+it('rejects --apply rather than silently modifying commercial status without documents', function (): void {
     [$product, $variant] = auditStatusFixture(true, false, true);
-    $before = [$product->stock, $variant->stock, $variant->reserved, $variant->is_active];
+    $before = [$product->is_sellable, $variant->sales_enabled, $variant->is_active, $variant->stock];
 
-    $this->artisan('product-sales-status:audit --apply')->assertSuccessful();
-    expect($variant->fresh()->sales_enabled)->toBeFalse()
-        ->and($product->fresh()->is_sellable)->toBeFalse()
-        ->and([$product->fresh()->stock, $variant->fresh()->stock, $variant->fresh()->reserved, $variant->fresh()->is_active])->toBe($before);
+    $this->artisan('product-sales-status:audit --apply')->assertFailed();
 
-    $this->artisan('product-sales-status:audit')->assertSuccessful();
-    expect($variant->fresh()->sales_enabled)->toBeFalse()
-        ->and($product->fresh()->is_sellable)->toBeFalse();
+    expect([
+        $product->fresh()->is_sellable,
+        $variant->fresh()->sales_enabled,
+        $variant->fresh()->is_active,
+        $variant->fresh()->stock,
+    ])->toBe($before);
 });
