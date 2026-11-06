@@ -3,6 +3,8 @@
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Sales\SalePriceGuard;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -36,48 +38,46 @@ function inv05Variant(Product $product, int $price): ProductVariant
     ]);
 }
 
-it('quarantines a newly created sale-enabled variant without a selling price', function () {
+it('preserves an explicitly enabled sales flag when a new variant has no price', function () {
     $variant = inv05Variant(inv05Product(), 0);
 
-    expect($variant->fresh()->sales_enabled)->toBeFalse()
+    expect($variant->fresh()->sales_enabled)->toBeTrue()
         ->and((int) $variant->fresh()->sell_price)->toBe(0);
 });
 
-it('disables sales if an existing priced variant is changed to zero', function () {
+it('does not secretly disable a variant when its sale price changes to zero', function () {
     $variant = inv05Variant(inv05Product(), 1_000_000);
 
-    expect($variant->fresh()->sales_enabled)->toBeTrue();
+    $variant->update(['sell_price' => 0]);
 
-    $variant->sell_price = 0;
-    $variant->save();
-
-    expect($variant->fresh()->sales_enabled)->toBeFalse()
+    expect($variant->fresh()->sales_enabled)->toBeTrue()
         ->and((int) $variant->fresh()->sell_price)->toBe(0);
 });
 
-it('does not enable sale automatically merely because pricing was completed', function () {
+it('does not override an explicit sales deactivation when pricing is completed', function () {
     $variant = inv05Variant(inv05Product(), 0);
+    $variant->update(['sales_enabled' => false]);
 
-    $variant->sell_price = 1_000_000;
-    $variant->save();
+    $variant->update(['sell_price' => 1_000_000]);
 
     expect($variant->fresh()->sales_enabled)->toBeFalse()
         ->and((int) $variant->fresh()->sell_price)->toBe(1_000_000);
-
-    $variant->sales_enabled = true;
-    $variant->save();
-    expect($variant->fresh()->sales_enabled)->toBeTrue();
 });
 
-it('keeps an already zero-priced legacy variant unsellable when stock is later received', function () {
-    $product = inv05Product();
-    $variant = ProductVariant::withoutEvents(fn () => inv05Variant($product, 0));
+it('does not alter the manual sales flag when stock arrives for an unpriced variant', function () {
+    $variant = inv05Variant(inv05Product(), 0);
+
+    $variant->update(['stock' => 2]);
+
+    expect($variant->fresh()->sales_enabled)->toBeTrue()
+        ->and((int) $variant->fresh()->stock)->toBe(2);
+});
+
+it('rejects operational selling of an enabled variant until its price is set', function () {
+    $variant = inv05Variant(inv05Product(), 0);
 
     expect($variant->fresh()->sales_enabled)->toBeTrue();
 
-    $variant->stock = 2;
-    $variant->save();
-
-    expect($variant->fresh()->sales_enabled)->toBeFalse()
-        ->and((int) $variant->fresh()->stock)->toBe(2);
+    expect(fn () => app(SalePriceGuard::class)->assertVariantHasSalePrice($variant))
+        ->toThrow(ValidationException::class);
 });

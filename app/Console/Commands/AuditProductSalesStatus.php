@@ -5,11 +5,10 @@ namespace App\Console\Commands;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class AuditProductSalesStatus extends Command
 {
-    protected $signature = 'product-sales-status:audit {--apply : Repair aggregate and structurally invalid sales flags}';
+    protected $signature = 'product-sales-status:audit {--apply : DEPRECATED: refused; use audited sales-status documents}';
 
     protected $description = 'Audit product and variant sales-status consistency (dry-run by default)';
 
@@ -22,22 +21,13 @@ class AuditProductSalesStatus extends Command
         })->count();
 
         $this->table(['ناسازگاری', 'تعداد'], [['تنوع ساختاری غیرفعال ولی قابل فروش', $invalidVariants], ['وضعیت تجمیعی نادرست کالا', $badAggregates]]);
-        if (! $this->option('apply')) {
-            $this->warn('Dry-run: هیچ داده‌ای تغییر نکرد. برای اصلاح از --apply استفاده کنید.');
+        if ($this->option('apply')) {
+            $this->error('اعمال خودکار وضعیت فروش بدون سند مجاز نیست. از بخش مدیریت وضعیت فروش و سند ثبت‌شده استفاده کنید.');
 
-            return self::SUCCESS;
+            return self::FAILURE;
         }
 
-        DB::transaction(function (): void {
-            ProductVariant::query()->where('is_active', false)->where('sales_enabled', true)->update(['sales_enabled' => false]);
-            Product::query()->select('id')->orderBy('id')->chunkById(200, function ($products): void {
-                foreach ($products as $product) {
-                    $sellable = ProductVariant::query()->where('product_id', $product->id)->where('is_active', true)->where('sales_enabled', true)->exists();
-                    Product::query()->whereKey($product->id)->update(['is_sellable' => $sellable]);
-                }
-            });
-        });
-        $this->info('اصلاح وضعیت فروش انجام شد.');
+        $this->warn('Dry-run: هیچ داده‌ای تغییر نکرد. برای اصلاح وضعیت فروش، سند مدیریتی ثبت کنید.');
 
         return self::SUCCESS;
     }
