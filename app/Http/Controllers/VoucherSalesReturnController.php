@@ -192,13 +192,10 @@ class VoucherSalesReturnController extends Controller
     {
         $user = auth()->user();
         $protected = app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
-        if ($protected) {
-            abort_unless($user && PageAccessCatalog::userCanRoute($user, 'warehouse.inbound.receive'), 403, 'اصلاح سند دریافت‌شدهٔ مرکزی فقط برای مسئول مجاز انبار امکان‌پذیر است.');
-        } else {
-            abort_unless($user && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index'), 403);
-        }
+        abort_if($document->isApplied() && $protected, 403, \App\Support\SalesReturnFinalization::MESSAGE);
+        abort_unless($user && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index'), 403);
 
-        return $protected;
+        return false;
     }
 
     private function voidAccess(SalesReturnDocument $document): bool
@@ -206,6 +203,7 @@ class VoucherSalesReturnController extends Controller
         abort_unless($document->isApplied(), 403);
 
         $protected = app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
+        abort_if($protected, 403, \App\Support\SalesReturnFinalization::MESSAGE);
         abort_unless(
             \App\Support\SalesReturnVoidAccess::allowed(auth()->user(), $protected),
             403,
