@@ -3,6 +3,8 @@
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Sales\SalePriceGuard;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -69,4 +71,13 @@ it('does not alter the manual sales flag when stock arrives for an unpriced vari
 
     expect($variant->fresh()->sales_enabled)->toBeTrue()
         ->and((int) $variant->fresh()->stock)->toBe(2);
+});
+
+it('rejects operational selling of an enabled variant until its price is set', function () {
+    $variant = inv05Variant(inv05Product(), 0);
+
+    expect($variant->fresh()->sales_enabled)->toBeTrue();
+
+    expect(fn () => app(SalePriceGuard::class)->assertVariantHasSalePrice($variant))
+        ->toThrow(ValidationException::class);
 });
