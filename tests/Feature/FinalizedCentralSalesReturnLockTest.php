@@ -282,6 +282,96 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(1, StockMovement::count());
     }
 
+    public function test_warehouse_discrepancy_confirmation_also_finalizes_a_return(): void
+    {
+        // A warehouse manager has completed inspection, but the received
+        // quantity or destination differed from the original request.
+        $document = $this->document(false);
+        \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'LOCK-DISCREPANCY-1',
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'discrepancy',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 1,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+
+        $this->assertTrue(\App\Support\SalesReturnFinalization::isLocked($document));
+
+        $this->assertDenied(fn () => app(SalesReturnCorrectionService::class)->updateDirect(
+            $document, $this->payload($document), 2, 'اصلاح سند با مغایرت', true
+        ));
+        $this->assertDenied(fn () => app(SalesReturnCorrectionService::class)->voidDirect(
+            $document, 2, 'ابطال سند با مغایرت', InboundReviewVersion::token($document), true
+        ));
+
+        $this->assertSame('applied', $document->fresh()->status);
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+    }
+
+    public function test_unconfirmed_inbound_receipt_does_not_lock_return_only_document(): void
+    {
+        $document = $this->document(false);
+        \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'LOCK-PENDING-1',
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'pending',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 0,
+        ]);
+
+        $this->assertFalse(\App\Support\SalesReturnFinalization::isLocked($document));
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, StockMovement::count());
+    }
+
+    public function test_cancelled_inbound_receipt_does_not_lock_return_only_document(): void
+    {
+        $document = $this->document(false);
+        \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'LOCK-CANCELLED-1',
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'cancelled',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 0,
+            'cancelled_by' => 2,
+            'cancelled_at' => now(),
+        ]);
+
+        $this->assertFalse(\App\Support\SalesReturnFinalization::isLocked($document));
+        $this->assertSame('applied', $document->fresh()->status);
+    }
+
+    public function test_receipt_from_another_operation_does_not_lock_sales_return_with_same_numeric_id(): void
+    {
+        $document = $this->document(false);
+        \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'LOCK-UNRELATED-1',
+            'source_type' => 'invoice_cancel',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'received',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+
+        $this->assertFalse(\App\Support\SalesReturnFinalization::isLocked($document));
+        $this->assertSame(0, StockMovement::count());
+        $this->assertSame(1, CustomerLedger::count());
+    }
+
     public function test_return_only_document_still_allows_direct_edit_without_creating_stock(): void
     {
         $document = $this->document(false);
