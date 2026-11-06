@@ -223,6 +223,43 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         }
     }
 
+    public function test_approved_inbound_remains_locked_when_all_items_are_received_into_returns_warehouse(): void
+    {
+        $document = $this->document(false);
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-RECLASS-1',
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'source_document_number' => $document->document_number,
+            'operation_key' => 'initial',
+            'status' => 'received',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'suggested_warehouse_id' => 1,
+            'received_warehouse_id' => 2,
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+        ]);
+        $this->assertTrue(\App\Support\SalesReturnFinalization::isLocked($document));
+        $this->assertDenied(fn () => app(SalesReturnCorrectionService::class)->updateDirect(
+            $document, $this->payload($document), 2, 'اصلاح پس از دریافت در مرجوعی', true
+        ));
+        $this->assertDenied(fn () => app(SalesReturnCorrectionService::class)->voidDirect(
+            $document, 2, 'ابطال پس از دریافت', InboundReviewVersion::token($document), true
+        ));
+        $this->assertSame('applied', $document->fresh()->status);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, StockMovement::count());
+    }
+
     public function test_confirmed_central_void_endpoint_returns_forbidden_even_with_admin_permissions(): void
     {
         $document = $this->document();
