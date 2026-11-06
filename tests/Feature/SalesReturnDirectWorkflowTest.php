@@ -286,4 +286,66 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $this->assertSame(200, (int) $doc->fresh()->total_refund_amount);
         $this->assertSame(1, CustomerLedger::count());
     }
+
+    public function test_void_only_permission_shows_return_only_void_without_granting_edit(): void
+    {
+        $doc = $this->document();
+        $user = $this->actorWithAccess(['sales_returns.view', 'sales_returns.void_applied']);
+        $this->actingAs($user);
+
+        $row = app(\App\Services\SalesReturnReportService::class)->normalizeNewRow($doc);
+
+        $this->assertTrue($row['can_cancel']);
+        $this->assertFalse($row['can_edit']);
+        $this->assertSame(route('vouchers.return-from-sale.applied.void', $doc), $row['cancel_url']);
+    }
+
+    public function test_edit_only_permission_does_not_show_return_only_void(): void
+    {
+        $doc = $this->document();
+        $user = $this->actorWithAccess(['sales_returns.view', 'sales_returns.edit_applied']);
+        $this->actingAs($user);
+
+        $row = app(\App\Services\SalesReturnReportService::class)->normalizeNewRow($doc);
+
+        $this->assertFalse($row['can_cancel']);
+        $this->assertTrue($row['can_edit']);
+    }
+
+    public function test_applied_central_return_needs_warehouse_permission_for_void_button_and_endpoint(): void
+    {
+        $doc = $this->document(true);
+        $user = $this->actorWithAccess(['sales_returns.view', 'sales_returns.void_applied']);
+        $this->actingAs($user);
+
+        $row = app(\App\Services\SalesReturnReportService::class)->normalizeNewRow($doc);
+        $this->assertFalse($row['can_cancel']);
+
+        try {
+            app(VoucherSalesReturnController::class)->voidApplied(
+                new \App\Http\Requests\VoidAppliedSalesReturnRequest(),
+                $doc
+            );
+            $this->fail('Expected a 403 for voiding a received return without warehouse access.');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+
+        $this->assertSame('applied', $doc->fresh()->status);
+        $this->assertSame(1, StockMovement::count());
+    }
+
+    private function actorWithAccess(array $permissions): User
+    {
+        $user = \Mockery::mock(User::class)->makePartial();
+        $user->id = 1;
+        $user->shouldReceive('isAdministrator')->andReturn(false);
+        $user->shouldReceive('hasRole')->andReturn(false);
+        $user->shouldReceive('hasPermission')->andReturnUsing(
+            static fn (string $permission): bool => in_array($permission, $permissions, true)
+        );
+
+        return $user;
+    }
+
 }

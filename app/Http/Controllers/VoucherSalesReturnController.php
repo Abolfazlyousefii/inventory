@@ -151,7 +151,7 @@ class VoucherSalesReturnController extends Controller
 
     public function voidApplied(VoidAppliedSalesReturnRequest $request, SalesReturnDocument $document)
     {
-        $warehouseMode = $this->appliedAccess($document);
+        $warehouseMode = $this->voidAccess($document);
         $doc = app(SalesReturnCorrectionService::class)->voidDirect($document, (int) auth()->id(), $request->validated('reason'), $request->validated('document_version'), $warehouseMode);
 
         return redirect()->route('vouchers.return-from-sale.index')->with('success', 'سند ابطال شد و آثار آن برگشت خورد.');
@@ -197,6 +197,20 @@ class VoucherSalesReturnController extends Controller
         } else {
             abort_unless($user && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index'), 403);
         }
+
+        return $protected;
+    }
+
+    private function voidAccess(SalesReturnDocument $document): bool
+    {
+        abort_unless($document->isApplied(), 403);
+
+        $protected = app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
+        abort_unless(
+            \App\Support\SalesReturnVoidAccess::allowed(auth()->user(), $protected),
+            403,
+            'شما مجوز ابطال این سند برگشت از فروش را ندارید.'
+        );
 
         return $protected;
     }
