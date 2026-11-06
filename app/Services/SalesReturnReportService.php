@@ -133,21 +133,22 @@ class SalesReturnReportService extends SalesReturnQueryService
         $returnedAt = $document->applied_at ?: $document->created_at;
         $user=auth()->user();
         $protected=$document->isApplied() && app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
-        $canApplied=$user && \App\Support\PageAccessCatalog::userCanRoute($user,$protected?'warehouse.inbound.receive':'vouchers.return-from-sale.applied.update');
-        $canVoid=$document->isApplied() && \App\Support\SalesReturnVoidAccess::allowed($user, $protected);
+        $canApplied=!$protected && $user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.applied.update');
+        $canVoid=$document->isApplied() && !$protected && \App\Support\SalesReturnVoidAccess::allowed($user, false);
 
         return [
             'row_key' => 'new-'.$document->id,
             'source' => 'new',
             'source_id' => $document->id,
             'status' => $document->status,
-            'status_label' => SalesReturnDocument::statusLabels()[$document->status] ?? $document->status,
+            'status_label' => $protected ? 'نهایی شده؛ غیرقابل اصلاح' : (SalesReturnDocument::statusLabels()[$document->status] ?? $document->status),
+            'is_locked' => $protected,
             'is_draft' => $document->isDraft(),
             'is_applied' => $document->isApplied(),
             'is_cancelled' => $document->isCancelled(),
             'can_edit' => ($document->isDraft() || $document->isPendingWarehouse()) ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.edit')) : ($document->isApplied() && $canApplied),
             'can_cancel' => $document->isDraft() ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.cancel')) : $canVoid,
-            'edit_label' => $protected?'اصلاح دریافت':'ویرایش',
+            'edit_label' => 'ویرایش',
             'document_version' => \App\Support\InboundReviewVersion::token($document),
             'edit_url' => ($document->isDraft() || $document->isPendingWarehouse()) ? route('vouchers.return-from-sale.edit', $document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.edit', $document) : null),
             'cancel_url' => $document->isDraft() ? route('vouchers.return-from-sale.cancel',$document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.void',$document) : null),
