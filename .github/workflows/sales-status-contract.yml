@@ -45,6 +45,7 @@ jobs:
             tests/Feature/ZeroPriceVariantSalesEligibilityTest.php \
             tests/Feature/ProductSalesStatusManagementTest.php \
             tests/Feature/ProductSalesStatus/SalesStatusAuditCommandTest.php \
+            tests/Feature/ProductSalesStatus/InventoryProductsSyncSalesStatusTest.php \
             tests/Feature/ProductEditSalesStatusIsolationTest.php \
             tests/Feature/NoImplicitProductDeactivationTest.php \
             tests/Feature/PurchaseSalePriceSafetyTest.php
