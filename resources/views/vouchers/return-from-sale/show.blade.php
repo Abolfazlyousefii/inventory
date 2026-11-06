@@ -3,7 +3,7 @@
 @section('content')
 	<div class="container-fluid" dir="rtl">
         @php
-            $protectedReturn=$document->isApplied() && app(\App\Services\SalesReturnCorrectionService::class)->requiresWarehouse($document);
+            $protectedReturn=\App\Support\SalesReturnFinalization::isLocked($document);
             $canDirectReturn=$document->isApplied() && !$protectedReturn && auth()->user() && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),'vouchers.return-from-sale.applied.update');
             $canVoidReturn=$document->isApplied() && !$protectedReturn && \App\Support\SalesReturnVoidAccess::allowed(auth()->user(), false);
         @endphp
