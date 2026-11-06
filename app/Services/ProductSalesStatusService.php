@@ -105,7 +105,12 @@ class ProductSalesStatusService
                     'variant_name_snapshot' => $variant->variant_name,
                 ]);
                 $variant->update(['sales_enabled' => $desired]);
-                $variant->sales_enabled = $desired;
+                // Never calculate the parent's status from a value that a model
+                // observer might have changed during persistence.
+                $variant->refresh();
+                if ((bool) $variant->sales_enabled !== $desired) {
+                    throw new \RuntimeException('وضعیت واقعی تنوع با سند تغییر وضعیت فروش مطابقت ندارد.');
+                }
             }
 
             $aggregate = $variants->contains(fn (ProductVariant $variant) => (bool) $variant->is_active && (bool) $variant->sales_enabled);
