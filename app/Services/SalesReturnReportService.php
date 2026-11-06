@@ -134,6 +134,7 @@ class SalesReturnReportService extends SalesReturnQueryService
         $user=auth()->user();
         $protected=$document->isApplied() && app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
         $canApplied=$user && \App\Support\PageAccessCatalog::userCanRoute($user,$protected?'warehouse.inbound.receive':'vouchers.return-from-sale.applied.update');
+        $canVoid=$document->isApplied() && \App\Support\SalesReturnVoidAccess::allowed($user, $protected);
 
         return [
             'row_key' => 'new-'.$document->id,
@@ -145,7 +146,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             'is_applied' => $document->isApplied(),
             'is_cancelled' => $document->isCancelled(),
             'can_edit' => ($document->isDraft() || $document->isPendingWarehouse()) ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.edit')) : ($document->isApplied() && $canApplied),
-            'can_cancel' => $document->isDraft() ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.cancel')) : ($document->isApplied() && $canApplied),
+            'can_cancel' => $document->isDraft() ? ($user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.cancel')) : $canVoid,
             'edit_label' => $protected?'اصلاح دریافت':'ویرایش',
             'document_version' => \App\Support\InboundReviewVersion::token($document),
             'edit_url' => ($document->isDraft() || $document->isPendingWarehouse()) ? route('vouchers.return-from-sale.edit', $document) : ($document->isApplied() ? route('vouchers.return-from-sale.applied.edit', $document) : null),
