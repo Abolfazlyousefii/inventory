@@ -18,7 +18,7 @@ class SalesReturnCorrectionController extends Controller
         $canWarranty = PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.index');
         abort_unless($canWarehouse || $canFinance || $canWarranty, 403);
         $filters = $request->validate(['status' => ['nullable', 'in:pending_warehouse,pending_finance,applied,rejected,all'], 'document_id' => ['nullable', 'integer', 'min:1']]);
-        $corrections = SalesReturnCorrection::with(['document:id,document_number', 'requester:id,name', 'warehouseApprover:id,name', 'financeApprover:id,name', 'rejecter:id,name'])
+        $corrections = SalesReturnCorrection::with(['document:id,document_number,status', 'document.items.destinationWarehouse', 'requester:id,name', 'warehouseApprover:id,name', 'financeApprover:id,name', 'rejecter:id,name'])
             ->when(isset($filters['document_id']), fn ($q) => $q->where('document_id', $filters['document_id']))
             ->when(($filters['status'] ?? 'pending_warehouse') !== 'all', fn ($q) => $q->where('status', $filters['status'] ?? 'pending_warehouse'))
             ->latest('id')->paginate(15)->withQueryString();
