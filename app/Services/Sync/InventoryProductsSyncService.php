@@ -190,7 +190,13 @@ class InventoryProductsSyncService {
                         'stock'              => (int) ( $stockMap[$variant->id] ?? 0 ),
                         'reserved'           => (int) ( $variant->reserved ?? 0 ),
                         'is_active'          => (bool) $variant->is_active,
-                        'sales_enabled'      => (bool) ( $variant->sales_enabled ?? true ),
+                        // The transport flag represents operational sellability;
+                        // never mutate the managerial sales_enabled field merely
+                        // because the SKU is awaiting an initial sale price.
+                        'sales_enabled'      => (bool) $product->is_sellable
+                            && (bool) $variant->is_active
+                            && (bool) ($variant->sales_enabled ?? true)
+                            && (int) ($variant->sell_price ?? 0) > 0,
                     ];
                 }
 
