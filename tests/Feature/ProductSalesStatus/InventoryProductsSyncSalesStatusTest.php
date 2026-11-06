@@ -56,3 +56,44 @@ it('does not make an immediate external call when a local sales status changes',
     Http::assertNothingSent();
     expect($product->fresh()->inventory_to_site_synced)->toBeFalse();
 });
+
+it('keeps local managerial permission while withholding zero-price variants from site sales', function (): void {
+    config()->set('services.sales_server.sync_enabled', true);
+    config()->set('services.sales_server.api_url', 'https://sales.test/products/sync');
+    config()->set('services.sales_server.api_token', 'test-token');
+    Http::fake(['https://sales.test/*' => Http::response(['ok' => true])]);
+
+    $category = Category::query()->create(['name' => 'Zero-price sync', 'code' => uniqid('ZS-')]);
+    $product = Product::query()->create([
+        'category_id' => $category->id,
+        'name' => 'Pending price',
+        'sku' => uniqid('ZP-'),
+        'stock' => 0,
+        'price' => 0,
+        'is_sellable' => true,
+        'inventory_to_site_synced' => false,
+        'site_to_inventory_verified' => false,
+    ]);
+    $variant = ProductVariant::query()->create([
+        'product_id' => $product->id,
+        'variant_name' => 'Unpriced',
+        'variant_code' => uniqid('ZV-'),
+        'sell_price' => 0,
+        'stock' => 0,
+        'reserved' => 0,
+        'is_active' => true,
+        'sales_enabled' => true,
+    ]);
+
+    app(InventoryProductsSyncService::class)->syncAll();
+
+    expect($variant->fresh()->sales_enabled)->toBeTrue();
+    Http::assertSent(function (Request $request) use ($product, $variant): bool {
+        $sentProduct = collect($request['products'])->firstWhere('id', $product->id);
+        $sentVariant = collect($sentProduct['variants'] ?? [])->firstWhere('id', $variant->id);
+
+        return (bool) ($sentProduct['is_sellable'] ?? false) === true
+            && (int) ($sentVariant['sell_price'] ?? -1) === 0
+            && ($sentVariant['sales_enabled'] ?? null) === false;
+    });
+});
