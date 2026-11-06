@@ -79,45 +79,41 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $this->assertSame(1, SalesReturnCorrection::count());
     }
 
-    public function test_warranty_cannot_edit_received_central_but_warehouse_applies_only_delta(): void
+    public function test_confirmed_central_cannot_be_edited_by_warranty_or_warehouse(): void
     {
         $doc = $this->document(true);
         $service = app(SalesReturnCorrectionService::class);
         $data = $this->payload($doc, 1, 1);
-        try {
-            $service->updateDirect($doc, $data, 1, 'تغییر غیرمجاز');
-            $this->fail('Warranty changed central stock');
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('document', $e->errors());
+        foreach ([false, true] as $warehouseMode) {
+            try {
+                $service->updateDirect($doc, $data, 2, 'اصلاح پس از دریافت', $warehouseMode);
+                $this->fail('Finalized central document was edited.');
+            } catch (ValidationException $e) {
+                $this->assertArrayHasKey('document', $e->errors());
+            }
         }
-        $service->updateDirect($doc, $data, 2, 'اصلاح دریافت', true);
-        $this->assertSame(1, (int) WarehouseStock::first()->quantity);
-        $this->assertSame(2, StockMovement::count());
-        $this->assertSame(100, (int) CustomerLedger::where('type', 'debit')->sum('amount'));
-        try {
-            $service->updateDirect($doc, $data, 2, 'تکرار ذخیره', true);
-            $this->fail('Stale edit accepted');
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('document', $e->errors());
-        }
-        $this->assertSame(2, StockMovement::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertSame(1, StockMovement::count());
+        $this->assertSame(200, (int) $doc->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
     }
-
-    public function test_insufficient_central_stock_rolls_back_document_ledger_and_correction(): void
+    public function test_confirmed_central_cannot_be_edited_even_if_stock_is_already_zero(): void
     {
         $doc = $this->document(true);
         WarehouseStock::first()->update(['quantity' => 0]);
         try {
             app(SalesReturnCorrectionService::class)->updateDirect($doc, $this->payload($doc, 1, 1), 2, 'اصلاح دریافت', true);
-            $this->fail('Stock below zero accepted');
+            $this->fail('Confirmed central edit accepted.');
         } catch (ValidationException $e) {
-            $this->assertArrayHasKey('stock', $e->errors());
+            $this->assertArrayHasKey('document', $e->errors());
         }
+        $this->assertSame(0, (int) WarehouseStock::first()->quantity);
         $this->assertSame(200, (int) $doc->fresh()->total_refund_amount);
+        $this->assertSame(1, StockMovement::count());
         $this->assertSame(1, CustomerLedger::count());
         $this->assertSame(0, SalesReturnCorrection::count());
     }
-
     public function test_return_to_central_requeues_without_increasing_stock_or_leaving_old_credit(): void
     {
         $doc = $this->document();
@@ -190,26 +186,27 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $this->assertSame(0, StockMovement::count());
     }
 
-    public function test_financial_failure_rolls_back_central_stock_and_audit(): void
+    public function test_confirmed_central_lock_prevents_any_ledger_attempt(): void
     {
         $doc = $this->document(true);
-        CustomerLedger::creating(function () {
-            throw new \RuntimeException('Injected ledger failure');
+        $attempted = false;
+        CustomerLedger::creating(function () use (&$attempted): void {
+            $attempted = true;
         });
         try {
             app(SalesReturnCorrectionService::class)->updateDirect($doc, $this->payload($doc, 1, 1), 2, 'اصلاح دریافت', true);
-            $this->fail('Expected failure');
-        } catch (\RuntimeException $e) {
-            $this->assertSame('Injected ledger failure', $e->getMessage());
+            $this->fail('Confirmed central edit accepted.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('document', $e->errors());
         } finally {
             CustomerLedger::flushEventListeners();
         }
+        $this->assertFalse($attempted);
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
         $this->assertSame(200, (int) $doc->fresh()->total_refund_amount);
         $this->assertSame(0, SalesReturnCorrection::count());
         $this->assertSame(1, StockMovement::count());
     }
-
     public function test_central_edit_page_denies_warranty_even_if_the_return_page_is_allowed(): void
     {
         $doc = $this->document(true);
@@ -226,37 +223,44 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         }
     }
 
-    public function test_reclassification_after_central_receiving_never_unlocks_warranty_editing(): void
+    public function test_reclassification_after_central_receiving_does_not_unlock_the_document(): void
     {
         $doc = $this->document(true);
-        $service = app(SalesReturnCorrectionService::class);
-        $service->updateDirect($doc, $this->payload($doc, 2, 2), 2, 'انتقال دریافت به مرجوعی', true);
-        $this->assertSame(0, (int) WarehouseStock::where('warehouse_id', 1)->value('quantity'));
-        $this->assertSame(2, (int) WarehouseStock::where('warehouse_id', 2)->value('quantity'));
+        $doc->items()->first()->update(['destination_warehouse_id' => 2, 'item_condition' => 'damaged']);
         $doc = $doc->fresh('items');
+        $service = app(SalesReturnCorrectionService::class);
         $this->assertTrue($service->requiresWarehouse($doc));
         try {
-            $service->updateDirect($doc, $this->payload($doc, 1, 2), 1, 'ویرایش گارانتی');
-            $this->fail('Central history protection bypassed');
+            $service->updateDirect($doc, $this->payload($doc, 1, 2), 2, 'ویرایش پس از تغییر مقصد', true);
+            $this->fail('Historical central receipt unlocked.');
         } catch (ValidationException $e) {
             $this->assertArrayHasKey('document', $e->errors());
         }
-        $service->voidDirect($doc, 2, 'ابطال دریافت', InboundReviewVersion::token($doc), true);
-        $this->assertSame(0, (int) WarehouseStock::where('warehouse_id', 2)->value('quantity'));
-        $this->assertSame(0, (int) CustomerLedger::where('type', 'credit')->sum('amount') - (int) CustomerLedger::where('type', 'debit')->sum('amount'));
+        try {
+            $service->voidDirect($doc, 2, 'ابطال پس از تغییر مقصد', InboundReviewVersion::token($doc), true);
+            $this->fail('Historical central receipt voided.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('document', $e->errors());
+        }
+        $this->assertSame(2, (int) WarehouseStock::where('warehouse_id', 1)->value('quantity'));
+        $this->assertSame('applied', $doc->fresh()->status);
+        $this->assertSame(1, StockMovement::count());
     }
-
-    public function test_price_only_edit_does_not_change_central_stock_or_add_stock_movements(): void
+    public function test_confirmed_central_is_immutable_even_for_price_only_edits(): void
     {
         $doc = $this->document(true);
         $data = $this->payload($doc, 2, 1);
         $data['items'][0]['refund_unit_price'] = 150;
-        app(SalesReturnCorrectionService::class)->updateDirect($doc, $data, 2, 'اصلاح مبلغ دریافت', true);
+        try {
+            app(SalesReturnCorrectionService::class)->updateDirect($doc, $data, 2, 'اصلاح مبلغ دریافت', true);
+            $this->fail('Financial-only edit changed a confirmed central document.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('document', $e->errors());
+        }
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
         $this->assertSame(1, StockMovement::count());
-        $this->assertSame(300, (int) $doc->fresh()->total_refund_amount);
+        $this->assertSame(200, (int) $doc->fresh()->total_refund_amount);
     }
-
     public function test_applied_request_keeps_legacy_null_policy_and_cannot_change_source_customer(): void
     {
         $doc = $this->document();
