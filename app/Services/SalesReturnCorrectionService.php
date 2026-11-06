@@ -239,6 +239,9 @@ class SalesReturnCorrectionService
         if (! $doc->isApplied()) {
             $this->fail('document', 'درخواست اصلاح فقط برای سند دریافت‌شده است؛ سند در انتظار انبار از مسیر ویرایش معمول اصلاح می‌شود.');
         }
+        // Enforce the post-receipt lock inside the document transaction. This
+        // also blocks legacy request/approval APIs and direct service callers.
+        \App\Support\SalesReturnFinalization::assertMutable($doc);
         Customer::whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
         if ($doc->isInternal()) {
             Invoice::whereKey($doc->invoice_id)->lockForUpdate()->firstOrFail();

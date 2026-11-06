@@ -1,0 +1,53 @@
+name: Sales return finalization
+
+on:
+  pull_request:
+    paths:
+      - 'app/Services/SalesReturnCorrectionService.php'
+      - 'app/Services/SalesReturnReportService.php'
+      - 'app/Http/Controllers/VoucherSalesReturnController.php'
+      - 'app/Http/Controllers/SalesReturnCorrectionController.php'
+      - 'app/Support/SalesReturnFinalization.php'
+      - 'app/Support/SalesReturnVoidAccess.php'
+      - 'resources/views/vouchers/return-from-sale/**'
+      - 'tests/Feature/FinalizedCentralSalesReturnLockTest.php'
+      - 'tests/Feature/SalesReturnCorrectionWorkflowTest.php'
+      - 'tests/Feature/SalesReturnDirectWorkflowTest.php'
+      - 'tests/Feature/SalesReturnVoidAccessTest.php'
+      - '.github/workflows/sales-return-finalization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  confirmed-central-returns:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    name: Central return lock (PHP ${{ matrix.php }})
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Verify sales return finalization and pending-receipt regressions
+        run: |
+          php tests/run.php --configuration phpunit.xml \
+            tests/Feature/FinalizedCentralSalesReturnLockTest.php \
+            tests/Feature/SalesReturnVoidAccessTest.php \
+            tests/Feature/SalesReturnDirectWorkflowTest.php \
+            tests/Feature/SalesReturnCorrectionWorkflowTest.php \
+            tests/Feature/PendingSalesReturnEditTest.php \
+            tests/Feature/SalesReturnAppliedVoidInventoryTest.php

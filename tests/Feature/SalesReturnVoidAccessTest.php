@@ -37,7 +37,7 @@ class SalesReturnVoidAccessTest extends TestCase
         $this->assertFalse(SalesReturnVoidAccess::allowed($user, true));
     }
 
-    public function test_protected_return_can_be_voided_with_return_and_warehouse_authorization(): void
+    public function test_protected_return_remains_locked_with_return_and_warehouse_authorization(): void
     {
         $user = $this->actor([
             'sales_returns.view',
@@ -45,14 +45,14 @@ class SalesReturnVoidAccessTest extends TestCase
             'page.warehouse.inbound_queue',
         ]);
 
-        $this->assertTrue(SalesReturnVoidAccess::allowed($user, true));
+        $this->assertFalse(SalesReturnVoidAccess::allowed($user, true));
     }
 
-    public function test_warehouse_page_grant_preserves_existing_linked_received_return_authorization(): void
+    public function test_warehouse_page_grant_cannot_unlock_received_central_return(): void
     {
         $user = $this->actor(['page.warehouse.inbound_queue']);
 
-        $this->assertTrue(SalesReturnVoidAccess::allowed($user, true));
+        $this->assertFalse(SalesReturnVoidAccess::allowed($user, true));
         $this->assertFalse(SalesReturnVoidAccess::allowed($user, false));
     }
 
@@ -61,7 +61,7 @@ class SalesReturnVoidAccessTest extends TestCase
         $admin = $this->actor([], true);
 
         $this->assertTrue(SalesReturnVoidAccess::allowed($admin, false));
-        $this->assertTrue(SalesReturnVoidAccess::allowed($admin, true));
+        $this->assertFalse(SalesReturnVoidAccess::allowed($admin, true));
     }
 
     public function test_guest_cannot_void_returns(): void

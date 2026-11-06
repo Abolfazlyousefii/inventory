@@ -1,4 +1,6 @@
-# Sales-return corrections after warehouse receipt
+# Archived correction workflow (superseded for received central returns)
+
+**Current rule:** After central receiving is confirmed, the original sales-return document is locked for everyone. No direct edit, direct void, new correction request, or approval of an old pending correction may change the document. Historical requests remain visible and can be rejected. The workflow below describes the former approval process, not a currently permitted path for confirmed central returns.
 
 ## Workflow
 
