@@ -119,3 +119,17 @@ it('audits inconsistencies without mutation by default', function (): void {
     $this->artisan('product-sales-status:audit')->assertSuccessful();
     expect($variant->fresh()->sales_enabled)->toBeTrue()->and($product->fresh()->is_sellable)->toBeTrue();
 });
+
+it('records and persists explicit activation for an unpriced variant without altering its price', function (): void {
+    $product = statusProduct(['is_sellable' => false]);
+    $variant = statusVariant($product, 'Unpriced', true, false);
+    $variant->update(['sell_price' => 0]);
+
+    $document = changeStatus($product, 'activate', 'variants', [$variant]);
+
+    expect($document->items->first()->previous_sales_enabled)->toBeFalse()
+        ->and($document->items->first()->new_sales_enabled)->toBeTrue()
+        ->and($variant->fresh()->sales_enabled)->toBeTrue()
+        ->and((int) $variant->fresh()->sell_price)->toBe(0)
+        ->and($product->fresh()->is_sellable)->toBeTrue();
+});
