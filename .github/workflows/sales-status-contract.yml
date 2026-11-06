@@ -1,0 +1,50 @@
+name: Sales status contract
+
+on:
+  pull_request:
+    paths:
+      - 'app/Models/ProductVariant.php'
+      - 'app/Console/Commands/AuditProductSalesStatus.php'
+      - 'app/Services/ProductSalesStatusService.php'
+      - 'tests/Feature/ZeroPriceVariantSalesEligibilityTest.php'
+      - 'tests/Feature/ProductSalesStatusManagementTest.php'
+      - 'tests/Feature/ProductSalesStatus/**'
+      - 'tests/Feature/ProductEditSalesStatusIsolationTest.php'
+      - 'tests/Feature/NoImplicitProductDeactivationTest.php'
+      - '.github/workflows/sales-status-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sales-status:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    name: Sales status (PHP ${{ matrix.php }})
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Verify managerial sales flags and zero-price protection
+        run: |
+          php tests/run.php --configuration phpunit.xml \
+            tests/Feature/ZeroPriceVariantSalesEligibilityTest.php \
+            tests/Feature/ProductSalesStatusManagementTest.php \
+            tests/Feature/ProductSalesStatus/SalesStatusAuditCommandTest.php \
+            tests/Feature/ProductEditSalesStatusIsolationTest.php \
+            tests/Feature/NoImplicitProductDeactivationTest.php \
+            tests/Feature/PurchaseSalePriceSafetyTest.php
