@@ -132,7 +132,7 @@ class SalesReturnReportService extends SalesReturnQueryService
         $warehouses = $document->items->pluck('destinationWarehouse.name')->filter()->unique()->values();
         $returnedAt = $document->applied_at ?: $document->created_at;
         $user=auth()->user();
-        $protected=$document->isApplied() && app(SalesReturnCorrectionService::class)->requiresWarehouse($document);
+        $protected=\App\Support\SalesReturnFinalization::isLocked($document);
         $canApplied=!$protected && $user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.applied.update');
         $canVoid=$document->isApplied() && !$protected && \App\Support\SalesReturnVoidAccess::allowed($user, false);
 
