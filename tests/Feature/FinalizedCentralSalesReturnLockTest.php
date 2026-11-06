@@ -210,12 +210,39 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertTrue($row['is_locked']);
         $this->assertStringContainsString('نهایی', $row['status_label']);
 
+        $html = view('vouchers.return-from-sale.partials.index-results', ['returnRows' => collect([$row])])->render();
+        $this->assertStringContainsString('نهایی شده؛ غیرقابل اصلاح', $html);
+        $this->assertStringNotContainsString('data-void-url=', $html);
+        $this->assertStringNotContainsString('href="'.route('vouchers.return-from-sale.applied.edit', $document).'"', $html);
+
         try {
             app(VoucherSalesReturnController::class)->editApplied($document);
             $this->fail('Admin opened locked editor.');
         } catch (HttpException $exception) {
             $this->assertSame(403, $exception->getStatusCode());
         }
+    }
+
+    public function test_confirmed_central_void_endpoint_returns_forbidden_even_with_admin_permissions(): void
+    {
+        $document = $this->document();
+        $admin = \Mockery::mock(User::class)->makePartial();
+        $admin->id = 3;
+        $admin->shouldReceive('isAdministrator')->andReturn(true);
+        auth()->setUser($admin);
+
+        try {
+            app(VoucherSalesReturnController::class)->voidApplied(
+                new \App\Http\Requests\VoidAppliedSalesReturnRequest(),
+                $document
+            );
+            $this->fail('Admin voided a received central return.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertSame('applied', $document->fresh()->status);
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertSame(1, StockMovement::count());
     }
 
     public function test_return_only_document_still_allows_direct_edit_without_creating_stock(): void
