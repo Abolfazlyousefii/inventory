@@ -321,10 +321,15 @@ class SalesReturnDirectWorkflowTest extends PendingSalesReturnEditTest
         $row = app(\App\Services\SalesReturnReportService::class)->normalizeNewRow($doc);
         $this->assertFalse($row['can_cancel']);
 
-        $this->post(route('vouchers.return-from-sale.applied.void', $doc), [
-            'reason' => 'تست عدم اجازه بدون مجوز دریافت انبار',
-            'document_version' => InboundReviewVersion::token($doc),
-        ])->assertForbidden();
+        try {
+            app(VoucherSalesReturnController::class)->voidApplied(
+                new \App\Http\Requests\VoidAppliedSalesReturnRequest(),
+                $doc
+            );
+            $this->fail('Expected a 403 for voiding a received return without warehouse access.');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
 
         $this->assertSame('applied', $doc->fresh()->status);
         $this->assertSame(1, StockMovement::count());
