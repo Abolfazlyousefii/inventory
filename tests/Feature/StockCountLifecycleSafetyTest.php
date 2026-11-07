@@ -23,6 +23,7 @@ class StockCountLifecycleSafetyTest extends TestCase
             Schema::create($model->getTable(),function(Blueprint $table)use($model){
                 $table->id();
                 foreach(array_unique(array_merge($model->getFillable(),['created_at','updated_at'])) as $column) if($column!=='id')$table->text($column)->nullable();
+                if ($model instanceof StockCountDocument) $table->unsignedBigInteger('superseded_by_id')->nullable();
             });
         }
         // The stock-count service must read the real bundle and Site-hold
@@ -149,6 +150,7 @@ class StockCountLifecycleSafetyTest extends TestCase
         $this->unchangedStock(8);
         $this->assertSame(0,StockMovement::count());
     }
+
 
     public function test_superseded_draft_cannot_be_finalized_or_change_stock(): void
     {

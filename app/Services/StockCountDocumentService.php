@@ -79,7 +79,7 @@ class StockCountDocumentService
             $product = Product::query()->findOrFail((int) $payload['product_id']);
             $this->assertCountableProduct($product);
             $this->validateCounts((int) $product->id, $payload);
-            // Active site holds are accounted for by the protected site_held snapshot.
+            // Active site holds are captured in the protected site_held snapshot.
             Warehouse::query()->whereKey($warehouse->id)->lockForUpdate()->first();
             $document = StockCountDocument::create([
                 'document_number' => $this->nextDocumentNumber(), 'type' => 'product', 'warehouse_id' => $warehouse->id,
@@ -701,7 +701,7 @@ class StockCountDocumentService
             $this->assertExpectedReview($document, $payload);
             $this->assertCountableProduct(Product::query()->findOrFail($document->product_id));
             $this->validateCounts((int) $document->product_id, $payload);
-            // Site-held quantities are validated against the saved snapshot below.
+            // Site-held quantities are checked against the saved protected snapshot below.
             $warehouse = $this->centralWarehouse();
             if ((int) $document->warehouse_id !== (int) $warehouse->id) abort(422, 'انبار سند با انبار مرکزی پروژه همخوان نیست.');
             $items = $document->items()->lockForUpdate()->orderBy('product_variant_id')->get();
@@ -984,14 +984,14 @@ class StockCountDocumentService
         }
     }
 
-    /** Reject stale pages before any write to a child document merged into a category count. */
+    /** Reject writes to a child draft that has been superseded by a consolidated count. */
     private function assertNotSuperseded(StockCountDocument $document): void
     {
         abort_if((bool) $document->superseded_by_id, 409,
-            'این پیش‌نویس در سند انبارگردانی یکپارچه تجمیع شده است؛ از سند اصلی استفاده کنید.');
+            'این پیش‌نویس در سند انبارگردانی تجمیع شده است؛ از سند اصلی استفاده کنید.');
     }
 
-    /** A review token binds the user's approval to the saved document snapshot. */
+    /** Bind edits/finalization to the exact snapshot the user reviewed. */
     private function assertExpectedReview(StockCountDocument $document, array $payload): void
     {
         if (array_key_exists('expected_review_token', $payload)

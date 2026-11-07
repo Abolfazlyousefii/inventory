@@ -1,0 +1,28 @@
+name: Stocktake lifecycle regression
+
+on:
+  push:
+    branches:
+      - 'fix/restore-per-product-stocktake-workspace-20261104'
+  pull_request:
+    paths:
+      - 'app/Services/StockCountDocumentService.php'
+      - 'tests/Feature/StockCountLifecycleSafetyTest.php'
+      - 'tests/Feature/StocktakeArchiveFiltersTest.php'
+      - '.github/workflows/stocktake-lifecycle.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: php vendor/bin/pest tests/Feature/StockCountLifecycleSafetyTest.php tests/Feature/StocktakeArchiveFiltersTest.php --stop-on-failure --display-errors
