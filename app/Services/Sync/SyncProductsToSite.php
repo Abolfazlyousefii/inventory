@@ -165,17 +165,7 @@ class SyncProductsToSite {
                     ->values()
                     ->all();
 
-                $stockRows = WarehouseStock::query()
-                    ->whereIn('warehouse_id', WarehouseStockService::siteSellableWarehouseIds())
-                    ->whereIn('product_variant_id', $variantIds)
-                    ->groupBy('product_variant_id')
-                    ->select([
-                        'product_variant_id',
-                        DB::raw('SUM(quantity) as total_stock'),
-                        DB::raw('MAX(updated_at) as stock_updated_at'),
-                    ])
-                    ->get()
-                    ->keyBy('product_variant_id');
+                $stockRows = $this->stockRowsForVariants($variantIds);
 
                 $sitePrices = SitePrice::withTrashed()
                     ->whereIn('id', $variantIds)
@@ -217,8 +207,9 @@ class SyncProductsToSite {
                     $bundleQuote = null;
                     if ($sourceProduct?->is_bundle && $sourceProduct->bundle_stock_mode === 'automatic'
                         && $sourceProduct->bundle_discount_value !== null && $sourceProduct->bundle_discount_type !== null) {
+                        // A disabled component removes bundle availability, not its pricing snapshot.
                         $bundleQuote = app(BundleDiscountService::class)->quoteForBundle(
-                            $variantId, (string) $sourceProduct->bundle_discount_type, (int) $sourceProduct->bundle_discount_value
+                            $variantId, (string) $sourceProduct->bundle_discount_type, (int) $sourceProduct->bundle_discount_value, false
                         );
                         if ((int) $variant->sell_price !== $bundleQuote['final']) {
                             $variant->forceFill(['sell_price' => $bundleQuote['final']])->save();
@@ -293,20 +284,15 @@ class SyncProductsToSite {
     }
 
     /**
-     * Customer-visible ordinary stock is sellable central-warehouse stock only.
-     * Return, scrap and personnel warehouses must never be published to Site.
+     * Customer-visible ordinary stock comes exclusively from explicitly
+     * authorized, active sellable warehouses (central only by default).
      *
      * @param array<int, int> $variantIds
      */
     private function stockRowsForVariants(array $variantIds): \Illuminate\Support\Collection
     {
-        $centralWarehouseIds = DB::table('warehouses')
-            ->where('type', 'central')
-            ->where('is_active', true)
-            ->pluck('id');
-
         return WarehouseStock::query()
-            ->whereIn('warehouse_id', $centralWarehouseIds)
+            ->whereIn('warehouse_id', WarehouseStockService::siteSellableWarehouseIds())
             ->whereIn('product_variant_id', $variantIds)
             ->groupBy('product_variant_id')
             ->select([
@@ -341,12 +327,15 @@ class SyncProductsToSite {
             && (!$this->siteSupportsBundleFields() || !DB::connection('site')->getSchemaBuilder()->hasColumn('products', 'bundle_stock_mode'))) {
             throw new \RuntimeException('Site products.bundle_stock_mode column is required before synchronizing automatic bundles.');
         }
-        // Only opted-in automatic bundles are published from Inventory.
-        // Legacy products and physical bundles retain their Site-admin publication status.
+        // Inventory can always unpublish an unsellable item. Keep Site-admin
+        // publication control for otherwise sellable legacy/physical products.
+        if (!$source->is_sellable) {
+            $data['published'] = false;
+        }
         if ($source->is_bundle && $source->bundle_stock_mode === 'automatic'
             && $source->bundle_site_auto_publish !== null) {
-            $data['published'] = (bool) $source->bundle_site_auto_publish;
-            if ($source->bundle_site_auto_publish) $data['publish_date'] = null;
+            $data['published'] = (bool) $source->is_sellable && (bool) $source->bundle_site_auto_publish;
+            if ($data['published']) $data['publish_date'] = null;
         }
         if ($this->siteSupportsBundleFields()) {
             $data['is_bundle'] = (bool) $source->is_bundle;

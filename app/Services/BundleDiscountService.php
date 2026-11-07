@@ -8,17 +8,18 @@ use Illuminate\Validation\ValidationException;
 final class BundleDiscountService
 {
     /** @param int[] $componentIds @param array<int,int> $quantitiesByVariantId */
-    public function regularPrice(array $componentIds, array $quantitiesByVariantId = []): int
+    public function regularPrice(array $componentIds, array $quantitiesByVariantId = [], bool $requireSellable = true): int
     {
         $ids = array_values(array_unique(array_map('intval', $componentIds)));
         if (!$ids) throw ValidationException::withMessages(['components' => 'حداقل یک تنوع انتخاب کنید.']);
-        $prices = DB::table('product_variants')->join('products', 'products.id', '=', 'product_variants.product_id')
-            ->whereIn('product_variants.id', $ids)
-            ->where('product_variants.is_active', 1)
-            ->where('product_variants.sales_enabled', 1)
-            ->where('products.is_sellable', 1)
-            ->where('products.is_bundle', 0)
-            ->get(['product_variants.*'])->keyBy('id');
+        $query = DB::table('product_variants')->join('products', 'products.id', '=', 'product_variants.product_id')
+            ->whereIn('product_variants.id', $ids)->where('products.is_bundle', 0);
+        if ($requireSellable) {
+            $query->where('product_variants.is_active', 1)
+                ->where('product_variants.sales_enabled', 1)
+                ->where('products.is_sellable', 1);
+        }
+        $prices = $query->get(['product_variants.*'])->keyBy('id');
         if ($prices->count() !== count($ids)) throw ValidationException::withMessages(['components' => 'تنوع نامعتبر یا غیرقابل فروش انتخاب شده است.']);
         $total = 0;
         foreach ($ids as $id) {
@@ -89,11 +90,11 @@ final class BundleDiscountService
      * @param array<int,array{variant_id:int,quantity:int,discount_type?:string,discount_value?:int}> $components
      * @return array{regular:int,final:int,savings:int,discount_percent:int}
      */
-    public function quoteForComponents(array $components, string $type, int $value): array
+    public function quoteForComponents(array $components, string $type, int $value, bool $requireSellable = true): array
     {
         $ids = array_column($components, 'variant_id');
         $quantities = array_column($components, 'quantity', 'variant_id');
-        $regular = $this->regularPrice($ids, $quantities);
+        $regular = $this->regularPrice($ids, $quantities, $requireSellable);
         $variantPrices = DB::table('product_variants')->whereIn('id', $ids)
             ->get(['id', 'sell_price'])->keyBy('id');
         $componentSavings = 0;
@@ -115,8 +116,10 @@ final class BundleDiscountService
             'discount_percent' => (int) round($savings / $regular * 100, 0, PHP_ROUND_HALF_UP)];
     }
 
-    /** @return array{regular:int,final:int,savings:int,discount_percent:int} */
-    public function quoteForBundle(int $bundleVariantId, string $type, int $value): array
+    /** Existing bundle snapshots may be priced with disabled components; sales availability is checked separately.
+     * @return array{regular:int,final:int,savings:int,discount_percent:int}
+     */
+    public function quoteForBundle(int $bundleVariantId, string $type, int $value, bool $requireSellable = true): array
     {
         $parts = DB::table('product_bundle_components')->where('bundle_variant_id', $bundleVariantId)
             ->get(['component_variant_id', 'quantity', 'discount_type', 'discount_value']);
@@ -128,6 +131,6 @@ final class BundleDiscountService
             'quantity' => (int) $part->quantity,
             'discount_type' => (string) ($part->discount_type ?? 'percent'),
             'discount_value' => (int) ($part->discount_value ?? 0),
-        ])->all(), $type, $value);
+        ])->all(), $type, $value, $requireSellable);
     }
 }
