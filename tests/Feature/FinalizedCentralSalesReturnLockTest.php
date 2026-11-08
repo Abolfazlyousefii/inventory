@@ -428,6 +428,11 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame('applied', $fresh->status);
         $this->assertSame(2, (int) $fresh->total_quantity);
         $this->assertSame(350, (int) $fresh->total_refund_amount);
+        $this->assertSame(2, (int) $fresh->items->first()->return_quantity);
+        $this->assertSame(1, (int) $fresh->items->first()->product_id);
+        $this->assertSame(1, (int) $fresh->items->first()->product_variant_id);
+        $this->assertSame(1, (int) $fresh->items->first()->destination_warehouse_id);
+        $this->assertSame('healthy', $fresh->items->first()->item_condition);
         $this->assertSame(175, (int) $fresh->items->first()->refund_unit_price);
         $this->assertSame(350, (int) $fresh->items->first()->refund_amount);
         $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
@@ -440,6 +445,10 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
         $this->assertSame(1, SalesReturnCorrection::where('status', 'applied')->count());
         $this->assertSame(1, \App\Models\SalesReturnDocumentRevision::where('action', 'received_price_corrected')->count());
+        $audit = \App\Models\ActivityLog::where('action', 'sales_return.received_price_corrected')->firstOrFail();
+        $this->assertSame(0, (int) data_get($audit->properties, 'stock_change'));
+        $this->assertSame(150, (int) data_get($audit->properties, 'ledger_delta'));
+        $this->assertSame(1, (int) data_get($audit->properties, 'quantity'));
     }
 
     public function test_duplicate_or_stale_price_correction_does_not_create_another_credit(): void
