@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\WarehouseInboundReceipt;
 use App\Models\WarehouseInboundReceiptItem;
 use App\Support\InboundReviewVersion;
+use App\Support\PageAccessCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -25,16 +26,11 @@ final class ReceivedSalesReturnPriceCorrectionService
 {
     public const PERMISSION = 'sales_returns.correct_received_price';
 
-    /** Editing a financial document requires an explicit action permission. */
+    /** Price-only corrections use the same access as editing applied returns. */
     public static function allowed(?User $user): bool
     {
-        return $user !== null && (
-            $user->isAdministrator()
-            || $user->getAllPermissions()->contains(
-                fn ($permission) => ($permission->name ?? null) === self::PERMISSION
-                    || ($permission->key ?? null) === self::PERMISSION
-            )
-        );
+        return $user !== null
+            && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.applied.update');
     }
 
     /** @return array<int, int> IDs of items physically accepted in central warehouse. */

@@ -814,6 +814,7 @@ class PermissionCatalog
             'vouchers.return-from-sale.update' => 'sales_returns.edit_draft',
             'vouchers.return-from-sale.applied.edit' => 'sales_returns.edit_applied',
             'vouchers.return-from-sale.applied.update' => 'sales_returns.edit_applied',
+            'vouchers.return-from-sale.applied.price' => 'sales_returns.edit_applied',
             'vouchers.return-from-sale.applied.void' => 'sales_returns.void_applied',
             'vouchers.return-from-sale.apply' => 'sales_returns.apply',
             'vouchers.return-from-sale.cancel' => 'sales_returns.cancel_draft',

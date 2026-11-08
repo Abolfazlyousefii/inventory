@@ -1,6 +1,6 @@
 # Archived correction workflow (superseded for received central returns)
 
-**Current rule:** After central receiving is confirmed, the original sales-return document is locked for everyone. No direct edit, direct void, new correction request, or approval of an old pending correction may change the document. Historical requests remain visible and can be rejected. The workflow below describes the former approval process, not a currently permitted path for confirmed central returns.
+**Current rule:** After central receiving is confirmed, full document editing and voiding are locked for everyone. The narrowly scoped [received Sazeh return price correction](received-sales-return-price-correction.md) is the monetary-only exception; it preserves all quantities, receipts and stock. No general direct edit, direct void, new correction request, or approval of an old pending correction may change the document. Historical requests remain visible and can be rejected. The workflow below describes the former approval process, not a currently permitted path for confirmed central returns.
 
 ## Workflow
 

@@ -177,6 +177,14 @@ class VoucherSalesReturnController extends Controller
             'refund_unit_price' => ['required', 'integer', 'min:1', 'max:1000000000000'],
             'document_version' => ['required', 'string', 'size:64'],
             'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            'items' => ['prohibited'],
+            'return_quantity' => ['prohibited'],
+            'total_quantity' => ['prohibited'],
+            'product_id' => ['prohibited'],
+            'product_variant_id' => ['prohibited'],
+            'destination_warehouse_id' => ['prohibited'],
+            'customer_id' => ['prohibited'],
+            'total_refund_amount' => ['prohibited'],
         ]);
 
         $service->correct(
