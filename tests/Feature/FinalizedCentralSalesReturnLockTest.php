@@ -667,7 +667,9 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
 
     public function test_price_correction_permission_uses_the_erp_permission_catalog(): void
     {
-        $user = \Mockery::mock(User::class);
+        $user = \Mockery::mock(User::class)->makePartial();
+        $user->shouldReceive('isAdministrator')->once()->andReturn(false);
+        $user->shouldReceive('getAllPermissions')->once()->andReturn(collect());
         $user->shouldReceive('hasPermission')
             ->once()
             ->with(\App\Services\ReceivedSalesReturnPriceCorrectionService::PERMISSION)
@@ -678,7 +680,9 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
 
     public function test_price_correction_permission_denies_users_without_catalog_permission(): void
     {
-        $user = \Mockery::mock(User::class);
+        $user = \Mockery::mock(User::class)->makePartial();
+        $user->shouldReceive('isAdministrator')->once()->andReturn(false);
+        $user->shouldReceive('getAllPermissions')->once()->andReturn(collect());
         $user->shouldReceive('hasPermission')
             ->once()
             ->with(\App\Services\ReceivedSalesReturnPriceCorrectionService::PERMISSION)
