@@ -309,6 +309,7 @@ class PageAccessCatalog
         'sales-return-corrections.reject' => ['sales.returns', 'warehouse.inbound_queue', 'finance.payments'],
         'vouchers.return-from-sale.applied.edit' => ['sales.returns'],
         'vouchers.return-from-sale.applied.update' => ['sales.returns'],
+        'vouchers.return-from-sale.applied.price' => ['sales.returns'],
         'vouchers.return-from-sale.applied.void' => ['sales.returns'],
         'vouchers.return-from-sale.update' => ['sales.returns'],
         'vouchers.return-from-sale.apply' => ['sales.returns'],

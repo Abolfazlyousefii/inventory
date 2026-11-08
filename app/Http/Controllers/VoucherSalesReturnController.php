@@ -22,6 +22,7 @@ use App\Services\SalesReturnAppliedAdjustmentService;
 use App\Services\SalesReturnCorrectionService;
 use App\Services\SalesReturnReportService;
 use App\Services\SalesReturnService;
+use App\Services\ReceivedSalesReturnPriceCorrectionService;
 use App\Support\PageAccessCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -101,7 +102,7 @@ class VoucherSalesReturnController extends Controller
         return $this->savedResponse($request, $doc, $message);
     }
 
-    public function show(SalesReturnDocument $document, SalesDocumentAccessService $accessService)
+    public function show(SalesReturnDocument $document, SalesDocumentAccessService $accessService, ReceivedSalesReturnPriceCorrectionService $priceCorrections)
     {
         $document->load('customer', 'invoice', 'items.destinationWarehouse', 'items.product', 'items.variant', 'creator', 'applier');
         $healthCheck = $this->reports->appliedHealthCheck($document);
@@ -111,7 +112,16 @@ class VoucherSalesReturnController extends Controller
             ? SalesReturnCorrection::where('document_id', $document->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->first()
             : null;
 
-        return view('vouchers.return-from-sale.show', compact('document', 'healthCheck', 'canViewSourceInvoice', 'pendingCorrection'));
+        $canCorrectReceivedPrice = $pendingCorrection === null
+            && ReceivedSalesReturnPriceCorrectionService::allowed($user)
+            && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.applied.price');
+        $correctablePriceItemIds = $canCorrectReceivedPrice
+            ? $priceCorrections->eligibleItemIds($document) : [];
+
+        return view('vouchers.return-from-sale.show', compact(
+            'document', 'healthCheck', 'canViewSourceInvoice', 'pendingCorrection',
+            'correctablePriceItemIds'
+        ));
     }
 
     public function edit(SalesReturnDocument $document)
@@ -147,6 +157,39 @@ class VoucherSalesReturnController extends Controller
         $doc = app(SalesReturnCorrectionService::class)->updateDirect($document, $this->enrich($request) + $data, (int) auth()->id(), $data['adjustment_reason'], $warehouseMode);
 
         return $this->savedResponse($request, $doc, $doc->isPendingWarehouse() ? 'تغییرات ذخیره شد؛ کالای سالم پس از تأیید دریافت وارد موجودی مرکزی می‌شود.' : 'اصلاح ثبت شد؛ فقط اختلاف لازم در موجودی و حساب مشتری اعمال شد.');
+    }
+
+    /**
+     * A locked central receipt remains immutable. Only the financial price of
+     * one received row is corrected, with its ledger delta and audit history.
+     */
+    public function correctReceivedPrice(Request $request, SalesReturnDocument $document, ReceivedSalesReturnPriceCorrectionService $service)
+    {
+        abort_unless(ReceivedSalesReturnPriceCorrectionService::allowed($request->user())
+            && PageAccessCatalog::userCanRoute($request->user(), 'vouchers.return-from-sale.applied.price'), 403);
+
+        // The application's global CSRF exception currently includes all web routes.
+        // Require the actual form/session token for this new financial mutation.
+        abort_unless(hash_equals((string) $request->session()->token(), (string) $request->input('_token')), 419);
+
+        $data = $request->validate([
+            'item_id' => ['required', 'integer', 'min:1'],
+            'refund_unit_price' => ['required', 'integer', 'min:1', 'max:1000000000000'],
+            'document_version' => ['required', 'string', 'size:64'],
+            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+        ]);
+
+        $service->correct(
+            $document,
+            (int) $data['item_id'],
+            (int) $data['refund_unit_price'],
+            $data['document_version'],
+            $data['reason'],
+            (int) $request->user()->id
+        );
+
+        return redirect()->route('vouchers.return-from-sale.show', $document)
+            ->with('success', 'قیمت برگشت و اختلاف حساب مشتری با حفظ سابقه اصلاح شد؛ موجودی انبار تغییری نکرد.');
     }
 
     public function voidApplied(VoidAppliedSalesReturnRequest $request, SalesReturnDocument $document)
