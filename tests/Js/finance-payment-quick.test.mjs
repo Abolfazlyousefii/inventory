@@ -98,3 +98,54 @@ test('free-date Jalali calendar computes non-round 10-day maturities',()=>{
   assert.throws(()=>calendar.dayDifference('1405/08/14','1405/08/10'),/سررسید/);
   assert.throws(()=>calendar.toGregorianDay('1405/13/01'),/تاریخ/);
 });
+
+test('changing cheque type twice preserves entered amount and edited due date',()=>{
+  const state={known:[{amount:30000000,due:'1405/09/14'}],future:[]};
+  adapter.moveCheque(state,'known',0,'future');
+  assert.equal(state.known.length,0);
+  assert.equal(state.future[0].weight,1);
+  state.future[0].due='1405/10/14';
+  adapter.moveCheque(state,'future',0,'known');
+  assert.equal(state.known[0].amount,30000000);
+  assert.equal(state.known[0].due,'1405/10/14');
+});
+
+test('weighted cheque retains its weight when temporarily given a fixed amount',()=>{
+  const state={known:[],future:[{weight:3,due:'1405/09/14'}]};
+  adapter.moveCheque(state,'future',0,'known');
+  assert.equal(state.known[0].amount,null);
+  state.known[0].amount=12000000;
+  adapter.moveCheque(state,'known',0,'future');
+  assert.equal(state.future[0].weight,3);
+  adapter.moveCheque(state,'future',0,'known');
+  assert.equal(state.known[0].amount,12000000);
+});
+
+test('failed type changes leave every cheque intact at the 40-row limit',()=>{
+  const state={known:[{amount:0,due:'1405/09/14'}],future:Array.from({length:40},()=>({weight:1,due:'1405/10/14'}))};
+  const before=JSON.stringify(state);
+  assert.throws(()=>adapter.moveCheque(state,'known',0,'future'),/۴۰/);
+  assert.equal(JSON.stringify(state),before);
+});
+
+test('invalid row or type cannot remove another cheque',()=>{
+  const state={known:[{amount:0,due:'1405/09/14'}],future:[]};
+  const before=JSON.stringify(state);
+  for(const index of [-1,1,NaN,0.5])assert.throws(()=>adapter.moveCheque(state,'known',index,'future'));
+  assert.throws(()=>adapter.moveCheque(state,'cash',0,'future'));
+  assert.throws(()=>adapter.moveCheque(state,'known',0,'known'));
+  assert.equal(JSON.stringify(state),before);
+});
+
+test('temporary saved amounts never enter weighted API payloads',()=>{
+  const state={price:100000000,cash:20000000,known:[{amount:30000000,due:'1405/09/14'}],future:[]};
+  adapter.moveCheque(state,'known',0,'future');
+  const data=adapter.buildPayload('cheque',state,config,'');
+  assert.equal(data.fixed_payments.length,1);
+  assert.equal(data.weighted_payments.length,1);
+  assert.equal(data.weighted_payments[0].weight,'1');
+  assert.equal(data.weighted_payments[0].amount_rial,undefined);
+  assert.equal(data.weighted_payments[0].savedAmount,undefined);
+  adapter.moveCheque(state,'future',0,'known');
+  assert.equal(state.known[0].amount,30000000);
+});

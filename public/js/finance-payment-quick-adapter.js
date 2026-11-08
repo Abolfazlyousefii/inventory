@@ -65,7 +65,21 @@
       daily:result.daily_rate
     };
   }
-  const api={buildPayload,toViewModel};
+  // Keep entered values while changing a cheque's role; never move a partial row on failure.
+  function moveCheque(state,from,index,to){
+    if(!['known','future'].includes(from)||!['known','future'].includes(to)||from===to)
+      throw Error('نوع چک نامعتبر است.');
+    if(!Number.isInteger(index)||index<0||index>=state[from].length)
+      throw Error('ردیف چک معتبر نیست.');
+    if(state[to].length>=40)throw Error('حداکثر ۴۰ چک از هر نوع مجاز است.');
+    const item=state[from][index];
+    const moved=to==='known'
+      ?{due:item.due,amount:item.savedAmount??null,savedWeight:item.weight}
+      :{due:item.due,weight:item.savedWeight??1,savedAmount:item.amount};
+    state[from].splice(index,1);
+    state[to].push(moved);
+  }
+  const api={buildPayload,toViewModel,moveCheque};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.FinancePaymentQuickAdapter=api;
 })(typeof window!=='undefined'?window:globalThis);
