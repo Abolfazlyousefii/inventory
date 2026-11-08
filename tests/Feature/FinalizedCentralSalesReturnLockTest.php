@@ -916,4 +916,106 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(0, SalesReturnCorrection::count());
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
     }
+
+    private function priceCorrectionHttpUser(bool $canCorrect): User
+    {
+        $user = \Mockery::mock(User::class)->makePartial();
+        $user->id = 2;
+        $user->shouldReceive('isAdministrator')->andReturn(false);
+        $user->shouldReceive('hasRole')->andReturn(false);
+        $user->shouldReceive('hasPermission')->andReturnUsing(
+            static fn (string $permission): bool => $permission === 'page.sales.returns'
+                || ($canCorrect && $permission === \App\Services\ReceivedSalesReturnPriceCorrectionService::PERMISSION)
+        );
+
+        return $user;
+    }
+
+    private function priceCorrectionHttpPayload(SalesReturnDocument $document, string $csrfToken): array
+    {
+        return [
+            '_token' => $csrfToken,
+            'item_id' => (int) $document->items->first()->id,
+            'refund_unit_price' => 175,
+            'document_version' => InboundReviewVersion::token($document),
+            'reason' => 'اصلاح قیمت اشتباه ثبت‌شده',
+        ];
+    }
+
+    public function test_price_correction_http_endpoint_requires_explicit_action_permission(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $token = str_repeat('a', 40);
+
+        $this->actingAs($this->priceCorrectionHttpUser(false))
+            ->withSession(['_token' => $token])
+            ->patch(
+                route('vouchers.return-from-sale.applied.price', $document),
+                $this->priceCorrectionHttpPayload($document, $token)
+            )
+            ->assertForbidden();
+
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(100, (int) $document->fresh('items')->items->first()->refund_unit_price);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertSame(1, StockMovement::count());
+    }
+
+    public function test_price_correction_http_endpoint_rejects_invalid_csrf_token(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $sessionToken = str_repeat('b', 40);
+        $invalidToken = str_repeat('c', 40);
+
+        $this->actingAs($this->priceCorrectionHttpUser(true))
+            ->withSession(['_token' => $sessionToken])
+            ->patch(
+                route('vouchers.return-from-sale.applied.price', $document),
+                $this->priceCorrectionHttpPayload($document, $invalidToken)
+            )
+            ->assertStatus(419);
+
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertSame(1, StockMovement::count());
+    }
+
+    public function test_price_correction_http_endpoint_applies_only_the_financial_delta(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $token = str_repeat('d', 40);
+        $beforeStock = WarehouseStock::first()->getAttributes();
+        $beforeMovement = StockMovement::first()->getAttributes();
+        $beforeReceipt = \App\Models\WarehouseInboundReceipt::first()->getAttributes();
+        $beforeReceiptItem = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
+
+        $this->actingAs($this->priceCorrectionHttpUser(true))
+            ->withSession(['_token' => $token])
+            ->patch(
+                route('vouchers.return-from-sale.applied.price', $document),
+                $this->priceCorrectionHttpPayload($document, $token)
+            )
+            ->assertRedirect(route('vouchers.return-from-sale.show', $document));
+
+        $fresh = $document->fresh('items');
+        $this->assertSame(350, (int) $fresh->total_refund_amount);
+        $this->assertSame(2, (int) $fresh->total_quantity);
+        $this->assertSame(175, (int) $fresh->items->first()->refund_unit_price);
+        $this->assertSame(2, (int) $fresh->items->first()->return_quantity);
+        $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
+            ->where('type', 'credit')->sum('amount'));
+        $this->assertSame(1, SalesReturnCorrection::where('status', 'applied')->count());
+        $this->assertSame($beforeStock, WarehouseStock::first()->getAttributes());
+        $this->assertSame($beforeMovement, StockMovement::first()->getAttributes());
+        $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
+        $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
+    }
+
 }
