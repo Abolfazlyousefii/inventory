@@ -55,6 +55,8 @@ final class ReceivedSalesReturnPriceCorrectionService
             ->select([
                 'warehouse_inbound_receipt_items.*',
                 'receipts.status as receipt_status',
+                'receipts.expected_quantity as receipt_expected_quantity',
+                'receipts.accepted_quantity as receipt_accepted_quantity',
                 'received_warehouse.type as received_warehouse_type',
             ])
             ->join('warehouse_inbound_receipts as receipts', 'receipts.id', '=', 'warehouse_inbound_receipt_items.receipt_id')
@@ -68,6 +70,18 @@ final class ReceivedSalesReturnPriceCorrectionService
         }
 
         $receiptRows = $query->get();
+        // A line is not trusted if the receipt header totals do not reconcile
+        // to its complete set of source-item rows.
+        $invalidReceiptIds = $receiptRows->groupBy('receipt_id')
+            ->filter(function ($rows) {
+                $header = $rows->first();
+
+                return (int) $rows->sum(fn ($row) => (int) $row->expected_quantity) !== (int) $header->receipt_expected_quantity
+                    || (int) $rows->sum(fn ($row) => (int) $row->accepted_quantity) !== (int) $header->receipt_accepted_quantity;
+            })
+            ->keys()
+            ->map(fn ($id) => (int) $id)
+            ->all();
         $eligible = [];
 
         foreach ($document->items as $item) {
@@ -77,7 +91,8 @@ final class ReceivedSalesReturnPriceCorrectionService
             }
 
             $rows = $receiptRows->where('source_item_id', (int) $item->id);
-            if ($rows->isEmpty()) {
+            if ($rows->isEmpty()
+                || $rows->contains(fn ($row) => in_array((int) $row->receipt_id, $invalidReceiptIds, true))) {
                 continue;
             }
 
