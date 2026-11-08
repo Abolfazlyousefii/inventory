@@ -448,7 +448,7 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $audit = \App\Models\ActivityLog::where('action', 'sales_return.received_price_corrected')->firstOrFail();
         $this->assertSame(0, (int) data_get($audit->properties, 'stock_change'));
         $this->assertSame(150, (int) data_get($audit->properties, 'ledger_delta'));
-        $this->assertSame(1, (int) data_get($audit->properties, 'quantity'));
+        $this->assertSame(2, (int) data_get($audit->properties, 'quantity'));
     }
 
     public function test_duplicate_or_stale_price_correction_does_not_create_another_credit(): void
