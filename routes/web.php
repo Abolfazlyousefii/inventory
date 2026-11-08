@@ -442,6 +442,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
             Route::get('/{document}/edit', [VoucherSalesReturnController::class, 'edit'])->whereNumber('document')->name('edit');
             Route::get('/{document}/applied-edit', [VoucherSalesReturnController::class, 'editApplied'])->whereNumber('document')->name('applied.edit');
             Route::patch('/{document}/applied-update', [VoucherSalesReturnController::class, 'updateApplied'])->whereNumber('document')->name('applied.update');
+            Route::patch('/{document}/received-price', [VoucherSalesReturnController::class, 'correctReceivedPrice'])->whereNumber('document')->name('applied.price');
             Route::post('/{document}/void', [VoucherSalesReturnController::class, 'voidApplied'])->whereNumber('document')->name('applied.void');
             Route::patch('/{document}', [VoucherSalesReturnController::class, 'update'])->whereNumber('document')->name('update');
             Route::post('/{document}/apply', [VoucherSalesReturnController::class, 'apply'])->whereNumber('document')->name('apply');
