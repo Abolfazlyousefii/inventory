@@ -798,4 +798,36 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
             app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
         );
     }
+
+
+    public function test_other_central_type_warehouse_is_not_mistaken_for_the_canonical_central_warehouse(): void
+    {
+        $document = $this->document();
+        Warehouse::create(['id' => 3, 'name' => 'انبار مرکزی فرعی', 'type' => 'central', 'is_active' => true]);
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-OTHER-CENTRAL-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'received',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 3,
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
 }
