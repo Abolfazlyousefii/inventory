@@ -29,7 +29,7 @@ class StocktakeArchiveFiltersTest extends TestCase
             'product_id'=>2,'warehouse_id'=>2,'created_by'=>1,'total_increase'=>500, 'superseded_by_id'=>1]);
     }
 
-    public function test_superseded_draft_is_excluded_from_archive_but_preserved_in_database(): void
+    public function test_superseded_draft_is_excluded_from_archive_summary_and_preserved_in_database(): void
     {
         $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', []))->getData();
         $this->assertSame(18, $view['documents']->total());
