@@ -22,8 +22,18 @@ class StockCountLifecycleSafetyTest extends TestCase
             $model=new $class;
             Schema::create($model->getTable(),function(Blueprint $table)use($model){
                 $table->id();
-                foreach(array_unique(array_merge($model->getFillable(),['created_at','updated_at'])) as $column) if($column!=='id')$table->text($column)->nullable();
-                if ($model instanceof StockCountDocument) $table->unsignedBigInteger('superseded_by_id')->nullable();
+                $columns = array_unique(array_merge($model->getFillable(), ['created_at', 'updated_at']));
+                if ($model instanceof StockCountDocument) {
+                    $columns = array_diff($columns, ['superseded_by_id']);
+                }
+                foreach ($columns as $column) {
+                    if ($column !== 'id') {
+                        $table->text($column)->nullable();
+                    }
+                }
+                if ($model instanceof StockCountDocument) {
+                    $table->unsignedBigInteger('superseded_by_id')->nullable();
+                }
             });
         }
         // The stock-count service must read the real bundle and Site-hold
