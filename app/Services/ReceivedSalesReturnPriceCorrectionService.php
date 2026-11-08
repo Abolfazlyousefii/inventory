@@ -100,6 +100,15 @@ final class ReceivedSalesReturnPriceCorrectionService
             if ($rows->contains(fn ($row) => $row->receipt_status === WarehouseInboundReceipt::STATUS_PENDING)) {
                 continue;
             }
+            // A finalized zero-acceptance row for this same source item means
+            // the receipt still records an unresolved physical discrepancy.
+            if ($rows->contains(fn ($row) =>
+                in_array($row->receipt_status, [WarehouseInboundReceipt::STATUS_RECEIVED, WarehouseInboundReceipt::STATUS_DISCREPANCY], true)
+                && (int) $row->expected_quantity > 0
+                && (int) $row->accepted_quantity === 0
+            )) {
+                continue;
+            }
 
             $acceptedRows = $rows->filter(fn ($row) => (int) $row->accepted_quantity > 0);
             if ($acceptedRows->isEmpty()) {
@@ -120,10 +129,9 @@ final class ReceivedSalesReturnPriceCorrectionService
                 && (int) $row->accepted_quantity <= (int) $row->expected_quantity
             );
             $acceptedQuantity = (int) $acceptedRows->sum(fn ($row) => (int) $row->accepted_quantity);
-            $expectedQuantity = (int) $acceptedRows->sum(fn ($row) => (int) $row->expected_quantity);
 
             if ($allFinal && $allCentral && $sameProduct && $acceptedWithinExpected
-                && $acceptedQuantity === $quantity && $expectedQuantity === $quantity) {
+                && $acceptedQuantity === $quantity) {
                 $eligible[] = (int) $item->id;
             }
         }
