@@ -442,6 +442,7 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(1, StockMovement::count());
         $this->assertSame(200, (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->sum('amount'));
         $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'credit')->sum('amount'));
+        $this->assertSame(-350, (int) Customer::findOrFail(1)->balance);
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
         $this->assertSame(1, SalesReturnCorrection::where('status', 'applied')->count());
         $this->assertSame(1, \App\Models\SalesReturnDocumentRevision::where('action', 'received_price_corrected')->count());
@@ -522,6 +523,7 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(2, (int) $fresh->total_quantity);
         $this->assertSame(50, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
             ->where('type', 'debit')->sum('amount'));
+        $this->assertSame(-150, (int) Customer::findOrFail(1)->balance);
         $this->assertSame($movementBefore, StockMovement::first()->getAttributes());
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
@@ -671,6 +673,7 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(150, (int) $fresh->items->first()->refund_unit_price);
         $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'credit')->sum('amount'));
         $this->assertSame(50, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'debit')->sum('amount'));
+        $this->assertSame(-300, (int) Customer::findOrFail(1)->balance);
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
         $this->assertSame(1, StockMovement::count());
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
