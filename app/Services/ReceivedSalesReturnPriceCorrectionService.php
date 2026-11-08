@@ -100,9 +100,15 @@ final class ReceivedSalesReturnPriceCorrectionService
                 (int) $row->product_id === (int) $item->product_id
                 && (int) $row->product_variant_id === (int) $item->product_variant_id
             );
+            $acceptedWithinExpected = $acceptedRows->every(fn ($row) =>
+                (int) $row->expected_quantity > 0
+                && (int) $row->accepted_quantity <= (int) $row->expected_quantity
+            );
             $acceptedQuantity = (int) $acceptedRows->sum(fn ($row) => (int) $row->accepted_quantity);
+            $expectedQuantity = (int) $acceptedRows->sum(fn ($row) => (int) $row->expected_quantity);
 
-            if ($allFinal && $allCentral && $sameProduct && $acceptedQuantity === $quantity) {
+            if ($allFinal && $allCentral && $sameProduct && $acceptedWithinExpected
+                && $acceptedQuantity === $quantity && $expectedQuantity === $quantity) {
                 $eligible[] = (int) $item->id;
             }
         }
