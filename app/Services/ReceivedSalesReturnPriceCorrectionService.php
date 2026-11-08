@@ -164,14 +164,18 @@ final class ReceivedSalesReturnPriceCorrectionService
                 $this->fail('document', 'این سند درخواست اصلاح در انتظار بررسی دارد.');
             }
 
+            // Keep the same lock order as WarehouseInboundService:
+            // document -> customer -> receipt header/items -> return item.
+            Customer::query()->whereKey($document->customer_id)->lockForUpdate()->firstOrFail();
+
+            if (! in_array($itemId, $this->eligibleItemIds($document, true), true)) {
+                $this->fail('item_id', 'تمام تعداد این قلم باید در رسید نهایی انبار مرکزی دریافت شده باشد.');
+            }
+
             $item = SalesReturnDocumentItem::query()
                 ->where('document_id', $document->id)->whereKey($itemId)->lockForUpdate()->first();
             if (! $item || (int) $item->return_quantity <= 0) {
                 $this->fail('item_id', 'قلم انتخاب‌شده در این سند معتبر نیست.');
-            }
-
-            if (! in_array($itemId, $this->eligibleItemIds($document, true), true)) {
-                $this->fail('item_id', 'تمام تعداد این قلم باید در رسید نهایی انبار مرکزی دریافت شده باشد.');
             }
 
             if ($unitPrice < 1 || $unitPrice > 1_000_000_000_000) {
@@ -182,7 +186,6 @@ final class ReceivedSalesReturnPriceCorrectionService
                 $this->fail('reason', 'دلیل اصلاح باید بین ۳ تا ۱۰۰۰ نویسه باشد.');
             }
 
-            Customer::query()->whereKey($document->customer_id)->lockForUpdate()->firstOrFail();
             $currentLedger = app(SalesReturnQueryService::class)->appliedHealthCheck($document)['ledger_amount'];
             if ((int) $currentLedger !== (int) $document->total_refund_amount
                 || (int) $document->items->sum('refund_amount') !== (int) $document->total_refund_amount) {
