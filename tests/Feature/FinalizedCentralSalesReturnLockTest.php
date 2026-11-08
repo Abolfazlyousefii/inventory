@@ -492,4 +492,47 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
         $this->assertSame(0, SalesReturnCorrection::count());
     }
+
+
+    public function test_decreasing_a_received_central_return_price_creates_debit_not_stock_movement(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $movementBefore = StockMovement::first()->getAttributes();
+
+        app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+            $document, $document->items->first()->id, 75,
+            InboundReviewVersion::token($document), 'اصلاح قیمت برگشتی', 2
+        );
+
+        $fresh = $document->fresh('items');
+        $this->assertSame(150, (int) $fresh->total_refund_amount);
+        $this->assertSame(2, (int) $fresh->total_quantity);
+        $this->assertSame(50, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
+            ->where('type', 'debit')->sum('amount'));
+        $this->assertSame($movementBefore, StockMovement::first()->getAttributes());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
+    }
+
+    public function test_internal_invoice_return_is_not_subject_to_sazeh_price_override(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $document->update(['source_type' => 'internal_invoice']);
+        $this->assertSame([], app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)
+            ->eligibleItemIds($document->fresh('items')));
+
+        try {
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+                $document, $document->items->first()->id, 175,
+                InboundReviewVersion::token($document->fresh('items')), 'اصلاح قیمت', 2
+            );
+            $this->fail('Internal invoice price override was accepted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('document', $exception->errors());
+        }
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+    }
 }
