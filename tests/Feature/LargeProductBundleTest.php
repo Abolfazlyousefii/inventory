@@ -18,10 +18,17 @@ class LargeProductBundleTest extends TestCase
     {
         parent::setUp();
         // Bundle tables are provisioned separately in production, outside the recovered baseline.
-        Schema::table('products', function(Blueprint $t) {
-            $t->boolean('is_bundle')->default(false); $t->string('bundle_stock_mode')->default('physical');
-            $t->string('bundle_discount_type')->nullable(); $t->bigInteger('bundle_discount_value')->nullable();
-        });
+        $bundleColumns = [
+            'is_bundle' => fn (Blueprint $t) => $t->boolean('is_bundle')->default(false),
+            'bundle_stock_mode' => fn (Blueprint $t) => $t->string('bundle_stock_mode')->default('physical'),
+            'bundle_discount_type' => fn (Blueprint $t) => $t->string('bundle_discount_type')->nullable(),
+            'bundle_discount_value' => fn (Blueprint $t) => $t->bigInteger('bundle_discount_value')->nullable(),
+        ];
+        foreach ($bundleColumns as $column => $addColumn) {
+            if (! Schema::hasColumn('products', $column)) {
+                Schema::table('products', $addColumn);
+            }
+        }
         Schema::create('product_bundle_components', function(Blueprint $t) {
             $t->id(); $t->integer('bundle_variant_id'); $t->integer('component_variant_id'); $t->integer('quantity');
             $t->string('discount_type')->default('percent'); $t->bigInteger('discount_value')->default(0); $t->timestamps();
