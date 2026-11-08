@@ -102,7 +102,7 @@ class VoucherSalesReturnController extends Controller
         return $this->savedResponse($request, $doc, $message);
     }
 
-    public function show(SalesReturnDocument $document, SalesDocumentAccessService $accessService)
+    public function show(SalesReturnDocument $document, SalesDocumentAccessService $accessService, ReceivedSalesReturnPriceCorrectionService $priceCorrections)
     {
         $document->load('customer', 'invoice', 'items.destinationWarehouse', 'items.product', 'items.variant', 'creator', 'applier');
         $healthCheck = $this->reports->appliedHealthCheck($document);
