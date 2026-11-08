@@ -416,6 +416,8 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $version = InboundReviewVersion::token($document);
         $beforeMovement = StockMovement::first()->getAttributes();
         $beforeStock = WarehouseStock::first()->getAttributes();
+        $beforeReceipt = \App\Models\WarehouseInboundReceipt::first()->getAttributes();
+        $beforeReceiptItem = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
         $itemId = $document->items->first()->id;
 
         app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
@@ -428,7 +430,8 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(350, (int) $fresh->total_refund_amount);
         $this->assertSame(175, (int) $fresh->items->first()->refund_unit_price);
         $this->assertSame(350, (int) $fresh->items->first()->refund_amount);
-        $this->assertSame(2, (int) \App\Models\WarehouseInboundReceipt::first()->accepted_quantity);
+        $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
+        $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
         $this->assertSame($beforeStock, WarehouseStock::first()->getAttributes());
         $this->assertSame($beforeMovement, StockMovement::first()->getAttributes());
         $this->assertSame(1, StockMovement::count());
@@ -660,7 +663,7 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'credit')->sum('amount'));
         $this->assertSame(50, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'debit')->sum('amount'));
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
-        $this->assertSame(2, StockMovement::count());
+        $this->assertSame(1, StockMovement::count());
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
         $this->assertSame(2, (int) \App\Models\WarehouseInboundReceipt::first()->accepted_quantity);
     }
