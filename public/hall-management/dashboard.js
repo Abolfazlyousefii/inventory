@@ -36,17 +36,23 @@ function card(doc) {
     const button = element('button', 'order-card');
     button.type = 'button'; button.dataset.key = doc.key;
     if (arrivingKeys.has(doc.key)) button.classList.add('is-arrival');
-    const main = element('span');
+    const heading = element('span', 'card-heading');
     const customer = element('span', 'card-customer', doc.customer); customer.title = doc.customer;
-    main.append(customer, element('span', 'card-number', `${doc.type === 'preinvoice' ? 'پیش‌فاکتور' : 'فاکتور'} ${doc.number}`));
-    if (seenTracker.isNew(doc)) { button.classList.add('is-new'); main.append(element('span', 'card-new-tag', 'جدید')); }
+    heading.append(customer);
+    if (seenTracker.isNew(doc)) { button.classList.add('is-new'); heading.append(element('span', 'card-new-tag', 'جدید')); }
+    const main = element('span', 'card-meta');
+    const kind = doc.type === 'preinvoice' ? 'پیش‌فاکتور' : 'فاکتور';
+    const number = element('span', 'card-number');
+    number.append(element('span', 'card-kind', kind), element('span', 'card-reference', doc.number));
+    number.title = `${kind} ${doc.number}`;
+    main.append(number, element('span', 'card-items', `${fa.format(doc.item_count)} قلم`));
     const timer = element('span', 'card-timer');
     timer.append(element('span', 'timer-label', 'زمان صف'), element('span', 'timer-value'), element('span', 'timer-remainder'), element('span', 'timer-total'));
     if (!doc.stage_time_known) timer.title = 'سابقهٔ معتبر ورود این سند به صف در دسترس نیست.';
     const bottom = element('span', 'card-bottom');
     const amount = element('span', 'card-amount', fa.format(doc.amount_rial)); amount.append(element('small', '', 'ریال'));
-    bottom.append(amount, element('span', 'card-items', `${fa.format(doc.item_count)} قلم`));
-    button.append(main, timer, bottom);
+    bottom.append(amount);
+    button.append(heading, main, timer, bottom);
     button.setAttribute('aria-label', `${doc.customer}، سند ${doc.number}، ${fa.format(doc.amount_rial)} ریال، ${fa.format(doc.item_count)} قلم؛ نمایش جزئیات`);
     button.addEventListener('click', () => openDocument(doc));
     updateCardTimer(button, doc);
