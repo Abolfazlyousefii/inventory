@@ -830,4 +830,62 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
             app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
         );
     }
+
+
+    public function test_real_document_377_price_change_keeps_63_units_and_posts_exact_ledger_delta(): void
+    {
+        $document = $this->document();
+        $item = $document->items->first();
+        $item->update([
+            'return_quantity' => 63,
+            'refund_unit_price' => 690000,
+            'refund_amount' => 43470000,
+        ]);
+        $document->update(['total_quantity' => 63, 'total_refund_amount' => 43470000]);
+        CustomerLedger::where('reference_type', SalesReturnDocument::class)
+            ->where('reference_id', $document->id)
+            ->update(['amount' => 43470000]);
+        WarehouseStock::where('warehouse_id', 1)->where('product_variant_id', 1)->update(['quantity' => 63]);
+        StockMovement::where('reference_type', SalesReturnDocument::class)
+            ->where('reference_id', $document->id)
+            ->update(['quantity' => 63, 'stock_after' => 63]);
+        $this->confirmCentralPriceOnlyReceipt($document);
+        \App\Models\WarehouseInboundReceipt::first()->update([
+            'expected_quantity' => 63,
+            'accepted_quantity' => 63,
+        ]);
+        \App\Models\WarehouseInboundReceiptItem::first()->update([
+            'expected_quantity' => 63,
+            'accepted_quantity' => 63,
+        ]);
+
+        $beforeStock = WarehouseStock::first()->getAttributes();
+        $beforeMovement = StockMovement::first()->getAttributes();
+        $beforeReceipt = \App\Models\WarehouseInboundReceipt::first()->getAttributes();
+        $beforeReceiptItem = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
+
+        app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+            $document->fresh('items'),
+            $item->id,
+            1750000,
+            InboundReviewVersion::token($document->fresh('items')),
+            'اصلاح قیمت سند ۳۷۷ از ۶۹ هزار به ۱۷۵ هزار تومان',
+            2
+        );
+
+        $fresh = $document->fresh('items');
+        $this->assertSame(63, (int) $fresh->total_quantity);
+        $this->assertSame(110250000, (int) $fresh->total_refund_amount);
+        $this->assertSame(63, (int) $fresh->items->first()->return_quantity);
+        $this->assertSame(1750000, (int) $fresh->items->first()->refund_unit_price);
+        $this->assertSame(110250000, (int) $fresh->items->first()->refund_amount);
+        $this->assertSame(66780000, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
+            ->where('type', 'credit')->sum('amount'));
+        $this->assertSame(-110250000, (int) Customer::findOrFail(1)->balance);
+        $this->assertSame($beforeStock, WarehouseStock::first()->getAttributes());
+        $this->assertSame($beforeMovement, StockMovement::first()->getAttributes());
+        $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
+        $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
+        $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
+    }
 }
