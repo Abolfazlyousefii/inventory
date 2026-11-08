@@ -762,4 +762,37 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
             app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
         );
     }
+
+
+    public function test_multiple_finalized_central_receipts_can_cover_the_full_return_quantity(): void
+    {
+        $document = $this->document();
+        foreach ([1, 2] as $sequence) {
+            $receipt = \App\Models\WarehouseInboundReceipt::create([
+                'receipt_number' => 'WI-SPLIT-'.$document->id.'-'.$sequence,
+                'source_type' => 'sales_return',
+                'source_id' => $document->id,
+                'operation_key' => 'split-'.$sequence,
+                'status' => 'received',
+                'expected_quantity' => 1,
+                'accepted_quantity' => 1,
+                'reviewed_by' => 2,
+                'reviewed_at' => now(),
+            ]);
+            $receipt->items()->create([
+                'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+                'source_item_id' => $document->items->first()->id,
+                'product_id' => 1,
+                'product_variant_id' => 1,
+                'received_warehouse_id' => 1,
+                'expected_quantity' => 1,
+                'accepted_quantity' => 1,
+            ]);
+        }
+
+        $this->assertContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
 }
