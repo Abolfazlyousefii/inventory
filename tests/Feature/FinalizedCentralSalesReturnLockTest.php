@@ -698,4 +698,68 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
 
         $this->assertFalse(\App\Services\ReceivedSalesReturnPriceCorrectionService::allowed($user));
     }
+
+
+    public function test_receipt_header_must_reconcile_with_its_item_rows_before_price_correction(): void
+    {
+        $document = $this->document();
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-HEADER-MISMATCH-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'discrepancy',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 1,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 1,
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+    }
+
+    public function test_accepted_quantity_cannot_exceed_receipt_line_expected_quantity(): void
+    {
+        $document = $this->document();
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-OVER-ACCEPTED-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'received',
+            'expected_quantity' => 1,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 1,
+            'expected_quantity' => 1,
+            'accepted_quantity' => 2,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
 }
