@@ -22,6 +22,7 @@ use App\Services\SalesReturnAppliedAdjustmentService;
 use App\Services\SalesReturnCorrectionService;
 use App\Services\SalesReturnReportService;
 use App\Services\SalesReturnService;
+use App\Services\ReceivedSalesReturnPriceCorrectionService;
 use App\Support\PageAccessCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
