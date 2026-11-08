@@ -190,10 +190,11 @@ final class ReceivedSalesReturnPriceCorrectionService
                 $this->fail('reason', 'دلیل اصلاح باید بین ۳ تا ۱۰۰۰ نویسه باشد.');
             }
 
-            $currentLedger = app(SalesReturnQueryService::class)->appliedHealthCheck($document)['ledger_amount'];
-            if ((int) $currentLedger !== (int) $document->total_refund_amount
-                || (int) $document->items->sum('refund_amount') !== (int) $document->total_refund_amount) {
-                $this->fail('document', 'مبلغ سند با سوابق مالی آن همخوانی ندارد؛ ابتدا مغایرت بررسی شود.');
+            $healthCheck = app(SalesReturnQueryService::class)->appliedHealthCheck($document);
+            if ((int) $healthCheck['ledger_amount'] !== (int) $document->total_refund_amount
+                || (int) $document->items->sum('refund_amount') !== (int) $document->total_refund_amount
+                || ! ($healthCheck['checks']['stock_movements_complete'] ?? false)) {
+                $this->fail('document', 'مبلغ سند یا سوابق گردش انبار با یکدیگر همخوانی ندارند؛ ابتدا مغایرت بررسی شود.');
             }
 
             $quantity = (int) $item->return_quantity;
