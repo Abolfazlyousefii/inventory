@@ -112,7 +112,16 @@ class VoucherSalesReturnController extends Controller
             ? SalesReturnCorrection::where('document_id', $document->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->first()
             : null;
 
-        return view('vouchers.return-from-sale.show', compact('document', 'healthCheck', 'canViewSourceInvoice', 'pendingCorrection'));
+        $canCorrectReceivedPrice = $pendingCorrection === null
+            && ReceivedSalesReturnPriceCorrectionService::allowed($user)
+            && PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.applied.price');
+        $correctablePriceItemIds = $canCorrectReceivedPrice
+            ? $priceCorrections->eligibleItemIds($document) : [];
+
+        return view('vouchers.return-from-sale.show', compact(
+            'document', 'healthCheck', 'canViewSourceInvoice', 'pendingCorrection',
+            'correctablePriceItemIds'
+        ));
     }
 
     public function edit(SalesReturnDocument $document)
