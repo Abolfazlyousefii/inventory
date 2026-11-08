@@ -28,39 +28,86 @@ final class ReceivedSalesReturnPriceCorrectionService
     /** Editing a financial document requires an explicit action permission. */
     public static function allowed(?User $user): bool
     {
-        return $user !== null && (
-            $user->isAdministrator()
-            || $user->getAllPermissions()->contains(
-                fn ($permission) => ($permission->name ?? null) === self::PERMISSION
-                    || ($permission->key ?? null) === self::PERMISSION
-            )
-        );
+        // User::hasPermission reads the ERP's AccessPermission catalog and
+        // also preserves the administrator-role bypass used throughout the app.
+        return $user !== null && $user->hasPermission(self::PERMISSION);
     }
 
-    /** @return array<int, int> IDs of items physically accepted in central warehouse. */
-    public function eligibleItemIds(SalesReturnDocument $document): array
+    /**
+     * Return only rows whose complete returned quantity was physically accepted
+     * in the central warehouse. Partial, split, pending, cancelled-with-stock,
+     * or mismatched receipt rows are deliberately not eligible.
+     *
+     * When called during a correction, FOR UPDATE locks the joined receipt
+     * headers and item rows for the duration of the financial transaction.
+     *
+     * @return array<int, int> IDs of fully accepted central-warehouse items.
+     */
+    public function eligibleItemIds(SalesReturnDocument $document, bool $lockReceipts = false): array
     {
         if (! $document->isApplied() || ! $document->isSazehHesab()) {
             // Internal invoice returns derive their refund from historical invoice discounts.
             return [];
         }
 
-        return WarehouseInboundReceiptItem::query()
+        $document->loadMissing('items');
+        $query = WarehouseInboundReceiptItem::query()
+            ->select([
+                'warehouse_inbound_receipt_items.*',
+                'receipts.status as receipt_status',
+                'received_warehouse.type as received_warehouse_type',
+            ])
             ->join('warehouse_inbound_receipts as receipts', 'receipts.id', '=', 'warehouse_inbound_receipt_items.receipt_id')
             ->join('warehouses as received_warehouse', 'received_warehouse.id', '=', 'warehouse_inbound_receipt_items.received_warehouse_id')
             ->where('receipts.source_type', WarehouseInboundReceipt::SOURCE_SALES_RETURN)
             ->where('receipts.source_id', $document->id)
-            ->whereIn('receipts.status', [
+            ->where('warehouse_inbound_receipt_items.source_item_type', SalesReturnDocumentItem::class);
+
+        if ($lockReceipts) {
+            $query->lockForUpdate();
+        }
+
+        $receiptRows = $query->get();
+        $eligible = [];
+
+        foreach ($document->items as $item) {
+            $quantity = (int) $item->return_quantity;
+            if ($quantity < 1) {
+                continue;
+            }
+
+            $rows = $receiptRows->where('source_item_id', (int) $item->id);
+            if ($rows->isEmpty()) {
+                continue;
+            }
+
+            // An outstanding receipt may still change the physical quantity.
+            if ($rows->contains(fn ($row) => $row->receipt_status === WarehouseInboundReceipt::STATUS_PENDING)) {
+                continue;
+            }
+
+            $acceptedRows = $rows->filter(fn ($row) => (int) $row->accepted_quantity > 0);
+            if ($acceptedRows->isEmpty()) {
+                continue;
+            }
+
+            $allFinal = $acceptedRows->every(fn ($row) => in_array($row->receipt_status, [
                 WarehouseInboundReceipt::STATUS_RECEIVED,
                 WarehouseInboundReceipt::STATUS_DISCREPANCY,
-            ])
-            ->where('warehouse_inbound_receipt_items.source_item_type', SalesReturnDocumentItem::class)
-            ->where('warehouse_inbound_receipt_items.accepted_quantity', '>', 0)
-            ->where('received_warehouse.type', 'central')
-            ->distinct()
-            ->pluck('warehouse_inbound_receipt_items.source_item_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+            ], true));
+            $allCentral = $acceptedRows->every(fn ($row) => $row->received_warehouse_type === 'central');
+            $sameProduct = $acceptedRows->every(fn ($row) =>
+                (int) $row->product_id === (int) $item->product_id
+                && (int) $row->product_variant_id === (int) $item->product_variant_id
+            );
+            $acceptedQuantity = (int) $acceptedRows->sum(fn ($row) => (int) $row->accepted_quantity);
+
+            if ($allFinal && $allCentral && $sameProduct && $acceptedQuantity === $quantity) {
+                $eligible[] = (int) $item->id;
+            }
+        }
+
+        return $eligible;
     }
 
     public function correct(
@@ -88,14 +135,14 @@ final class ReceivedSalesReturnPriceCorrectionService
                 $this->fail('document', 'این سند درخواست اصلاح در انتظار بررسی دارد.');
             }
 
-            if (! in_array($itemId, $this->eligibleItemIds($document), true)) {
-                $this->fail('item_id', 'این قلم دریافت تأییدشده در انبار مرکزی ندارد.');
-            }
-
             $item = SalesReturnDocumentItem::query()
                 ->where('document_id', $document->id)->whereKey($itemId)->lockForUpdate()->first();
             if (! $item || (int) $item->return_quantity <= 0) {
                 $this->fail('item_id', 'قلم انتخاب‌شده در این سند معتبر نیست.');
+            }
+
+            if (! in_array($itemId, $this->eligibleItemIds($document, true), true)) {
+                $this->fail('item_id', 'تمام تعداد این قلم باید در رسید نهایی انبار مرکزی دریافت شده باشد.');
             }
 
             if ($unitPrice < 1 || $unitPrice > 1_000_000_000_000) {
