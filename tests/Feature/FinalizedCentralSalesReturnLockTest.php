@@ -888,4 +888,29 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
     }
+
+
+    public function test_price_correction_rejects_incomplete_historical_stock_movement_history(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        StockMovement::where('reference_type', SalesReturnDocument::class)
+            ->where('reference_id', $document->id)
+            ->delete();
+
+        try {
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+                $document, $document->items->first()->id, 175,
+                InboundReviewVersion::token($document), 'اصلاح قیمت', 2
+            );
+            $this->fail('Price correction must not bypass an incomplete central stock history.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('document', $exception->errors());
+        }
+
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+    }
 }
