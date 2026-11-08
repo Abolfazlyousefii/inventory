@@ -58,6 +58,7 @@ final class ReceivedSalesReturnPriceCorrectionService
                 'receipts.expected_quantity as receipt_expected_quantity',
                 'receipts.accepted_quantity as receipt_accepted_quantity',
                 'received_warehouse.type as received_warehouse_type',
+                'received_warehouse.name as received_warehouse_name',
             ])
             ->join('warehouse_inbound_receipts as receipts', 'receipts.id', '=', 'warehouse_inbound_receipt_items.receipt_id')
             ->join('warehouses as received_warehouse', 'received_warehouse.id', '=', 'warehouse_inbound_receipt_items.received_warehouse_id')
@@ -119,7 +120,10 @@ final class ReceivedSalesReturnPriceCorrectionService
                 WarehouseInboundReceipt::STATUS_RECEIVED,
                 WarehouseInboundReceipt::STATUS_DISCREPANCY,
             ], true));
-            $allCentral = $acceptedRows->every(fn ($row) => $row->received_warehouse_type === 'central');
+            $allCentral = $acceptedRows->every(fn ($row) =>
+                $row->received_warehouse_type === 'central'
+                && $row->received_warehouse_name === 'انبار مرکزی'
+            );
             $sameProduct = $acceptedRows->every(fn ($row) =>
                 (int) $row->product_id === (int) $item->product_id
                 && (int) $row->product_variant_id === (int) $item->product_variant_id
