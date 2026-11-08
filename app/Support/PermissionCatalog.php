@@ -253,6 +253,7 @@ class PermissionCatalog
                 'sales_returns.create' => 'ثبت برگشت از فروش',
                 'sales_returns.edit_draft' => 'ویرایش پیش‌نویس برگشت از فروش',
                 'sales_returns.edit_applied' => 'ویرایش سند ثبت‌نهایی‌شده برگشت از فروش',
+                'sales_returns.correct_received_price' => 'اصلاح صرفاً قیمت برگشت دریافت‌شده در انبار مرکزی',
                 'sales_returns.apply' => 'ثبت نهایی برگشت از فروش',
                 'sales_returns.cancel_draft' => 'لغو پیش‌نویس برگشت از فروش',
                 'sales_returns.void_applied' => 'ابطال سند ثبت‌نهایی‌شده برگشت از فروش',
