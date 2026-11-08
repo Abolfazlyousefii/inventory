@@ -443,7 +443,10 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(200, (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->sum('amount'));
         $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'credit')->sum('amount'));
         $this->assertSame(-350, (int) Customer::findOrFail(1)->balance);
-        $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
+        $health = app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh);
+        $this->assertTrue($health['checks']['ledger_amount_matches']);
+        $this->assertTrue($health['checks']['stock_movements_complete']);
+        $this->assertTrue($health['ok']);
         $this->assertSame(1, SalesReturnCorrection::where('status', 'applied')->count());
         $this->assertSame(1, \App\Models\SalesReturnDocumentRevision::where('action', 'received_price_corrected')->count());
         $audit = \App\Models\ActivityLog::where('action', 'sales_return.received_price_corrected')->firstOrFail();
