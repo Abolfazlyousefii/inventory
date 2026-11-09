@@ -9,8 +9,17 @@
         @forelse($adjustments as $adjustment)
             <div class="border rounded p-3 mb-2">
                 <div class="d-flex justify-content-between gap-2 flex-wrap mb-2"><strong>{{ $adjustment->user?->name ?: 'سیستم' }}</strong><span class="small text-muted">{{ \App\Support\JalaliDate::dateTime($adjustment->occurred_at) }}</span></div>
-                <div class="small">قبل: {{ $balanceLabel(data_get($adjustment->properties, 'balance_before', 0)) }} | بعد: {{ $balanceLabel(data_get($adjustment->properties, 'balance_after', 0)) }}</div>
+                <div class="small">هنگام ثبت اولیه — قبل: {{ $balanceLabel(data_get($adjustment->properties, 'balance_before', 0)) }} | بعد: {{ $balanceLabel(data_get($adjustment->properties, 'balance_after', 0)) }}</div>
                 <div class="mt-2" style="white-space:pre-wrap">{{ data_get($adjustment->properties, 'reason', '—') }}</div>
+                @if(data_get($adjustment->properties, 'deleted_at'))
+                    <span class="badge bg-secondary mt-2">حذف‌شده؛ بدون اثر در مانده</span>
+                @else
+                    @if(data_get($adjustment->properties, 'current_amount') !== null)
+                        <div class="small mt-2">مبلغ فعلی سند: {{ \App\Support\Currency::formatRial(data_get($adjustment->properties, 'current_amount')) }} {{ data_get($adjustment->properties, 'current_type') === 'debit' ? 'بدهکار' : 'بستانکار' }}</div>
+                    @endif
+                    @if($canAdjustBalance)<a class="btn btn-sm btn-outline-primary mt-2" href="{{ route('account-statements.adjustments.edit', [$customer, $adjustment]) }}">ویرایش / حذف سند اصلاحی</a>@endif
+                @endif
+                @if(data_get($adjustment->properties, 'last_change_reason'))<div class="small text-muted mt-2">دلیل آخرین تغییر: {{ data_get($adjustment->properties, 'last_change_reason') }}</div>@endif
             </div>
         @empty
             <p class="text-muted mb-0">اصلاح مانده‌ای ثبت نشده است.</p>

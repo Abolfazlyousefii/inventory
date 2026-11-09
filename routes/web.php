@@ -720,6 +720,9 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::delete('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'destroyForCustomer'])->name('account-statements.payments.destroy');
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
     Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
+    Route::get('/account-statements/{customer}/adjustments/{adjustment}/edit', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'edit'])->name('account-statements.adjustments.edit');
+    Route::put('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'update'])->name('account-statements.adjustments.update');
+    Route::delete('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'destroy'])->name('account-statements.adjustments.destroy');
     Route::get('/account-statements/documents/invoices/{uuid}', [AccountStatementController::class, 'showInvoice'])->name('account-statements.documents.invoices.show');
     Route::get('/account-statements/documents/returns/{voucher}', [AccountStatementController::class, 'showReturnFromSale'])->name('account-statements.documents.returns.show');
     Route::get('/account-statements/documents/payments/{payment}', [AccountStatementController::class, 'showPayment'])->name('account-statements.documents.payments.show');

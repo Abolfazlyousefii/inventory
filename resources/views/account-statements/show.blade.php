@@ -8,8 +8,9 @@
     $rial = fn ($value) => \App\Support\Currency::formatRial(abs((int) $value));
     $financeActor = auth()->user();
     $canAddPayment = $financeActor && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.store');
-    $canManagePayments = $financeActor && ($financeActor->hasAnyRole(['admin','Admin','Manager','manager','finance','Accountant']) || $financeActor->can('finance.approve')) && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.edit');
+    $canManagePayments = $financeActor && !\App\Support\AccountStatementAccess::readOnly($financeActor) && ($financeActor->isAdministrator() || $financeActor->hasAnyRole(['Manager','manager','finance','Accountant']) || $financeActor->can('finance.approve')) && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.edit');
     $balanceText = fn ($value) => $value > 0 ? 'بدهکار' : ($value < 0 ? 'بستانکار' : 'تسویه');
+    $canManageDocuments = $canManagePayments || $canAdjustBalance;
 @endphp
 <div class="as-document">
     <header class="asd-toolbar">
@@ -33,12 +34,13 @@
         <div class="asd-book-heading"><h2>گردش حساب</h2><span>بر اساس تاریخ سند، جدیدترین ابتدا · مبالغ به ریال</span></div>
         <div class="asd-table-wrap">
             <table class="asd-table">
-                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از سند</th>@if($canManagePayments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات پرداخت</span></th>@endif</tr></thead>
+                <thead><tr><th>تاریخ سند</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده پس از سند</th>@if($canManageDocuments)<th class="asd-operations-heading"><span class="visually-hidden">عملیات سند</span></th>@endif</tr></thead>
                 <tbody>
                 @forelse($ledgers as $ledger)
                     @php
                         $invoice = $ledger->reference_type === \App\Models\Invoice::class ? ($invoices[$ledger->reference_id] ?? null) : null;
                         $payment = $ledger->reference_type === \App\Models\InvoicePayment::class ? ($payments[$ledger->reference_id] ?? null) : null;
+                        $adjustmentDocument = $ledger->reference_type === \App\Models\ActivityLog::class ? ($adjustmentDocuments[$ledger->reference_id] ?? null) : null;
                         $transfer = $ledger->reference_type === \App\Models\WarehouseTransfer::class ? ($transfers[$ledger->reference_id] ?? null) : null;
                         $salesReturn = $ledger->reference_type === \App\Models\SalesReturnDocument::class ? ($salesReturnDocuments[$ledger->reference_id] ?? null) : null;
                         $effective = $effectiveLedgerIds->has($ledger->id);
@@ -101,10 +103,13 @@
                         <td class="asd-money" data-label="بدهکار">{{ $ledger->type === 'debit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-money" data-label="بستانکار">{{ $ledger->type === 'credit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از سند"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
-                        @if($canManagePayments)<td class="asd-operations" data-label="عملیات">@if($payment) @include('payments.manage-link', ['payment' => $payment, 'compactPaymentLink' => true]) @endif</td>@endif
+                        @if($canManageDocuments)<td class="asd-operations" data-label="عملیات">
+                            @if($payment && $canManagePayments) @include('payments.manage-link', ['payment' => $payment, 'compactPaymentLink' => true]) @endif
+                            @if($adjustmentDocument && $canAdjustBalance && !data_get($adjustmentDocument->properties, 'deleted_at'))<a class="asd-payment-action" href="{{ route('account-statements.adjustments.edit', [$customer, $adjustmentDocument]) }}">ویرایش / حذف</a>@endif
+                        </td>@endif
                     </tr>
                 @empty
-                    <tr><td colspan="{{ $canManagePayments ? 7 : 6 }}" class="asd-empty">گردشی برای این شخص ثبت نشده است.</td></tr>
+                    <tr><td colspan="{{ $canManageDocuments ? 7 : 6 }}" class="asd-empty">گردشی برای این شخص ثبت نشده است.</td></tr>
                 @endforelse
                 </tbody>
             </table>

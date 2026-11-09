@@ -13,16 +13,24 @@ class RegisterPaidStoreOrderController extends Controller
     {
         $this->authorizeRequest($request);
 
-        $payload = $request->validate([
+        $rules = [
             'event' => ['required', 'string', 'in:order.paid'],
             'crm_order_id' => ['required', 'integer', 'min:1'],
             'occurred_at' => ['nullable', 'date'],
+            'currency' => ['nullable', 'string', 'in:IRR,IRT,rial,toman'],
+            'order.currency' => ['nullable', 'string', 'in:IRR,IRT,rial,toman'],
             'user' => ['nullable', 'array'],
             'customer' => ['nullable', 'array'],
             'address' => ['nullable', 'array'],
             'shipping_address' => ['nullable', 'array'],
             'order' => ['required', 'array'],
             'order.stock_hold_id' => ['nullable', 'integer', 'min:0'],
+            'order.transactions' => ['nullable', 'array'],
+            'order.shipping_address' => ['nullable', 'array'],
+            'order.address_details' => ['nullable', 'array'],
+            'order.paid_at' => ['nullable', 'date'],
+            'order.updated_at' => ['nullable', 'date'],
+            'order.created_at' => ['nullable', 'date'],
             'items' => ['required', 'array', 'min:1', 'max:500'],
             'items.*' => ['required', 'array'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
@@ -31,7 +39,12 @@ class RegisterPaidStoreOrderController extends Controller
             'items.*.discount_amount' => ['nullable', 'integer', 'min:0'],
             'items.*.product' => ['nullable', 'array'],
             'items.*.price_variant' => ['required', 'array'],
-        ]);
+        ];
+        // Nested validation must retain every financial field consumed by the importer.
+        foreach (ExternalPaidOrderService::ORDER_MONEY_FIELDS as $field) {
+            $rules['order.'.$field] = ['nullable', 'integer', 'min:0', 'max:1000000000000000'];
+        }
+        $payload = $request->validate($rules);
 
         $result = $service->import($payload);
         $invoice = $result['invoice'];

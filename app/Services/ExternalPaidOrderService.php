@@ -19,6 +19,11 @@ use Illuminate\Validation\ValidationException;
 class ExternalPaidOrderService
 {
     private const SITE_SELLER_USERNAME = 'ariya_site';
+    public const ORDER_MONEY_FIELDS = [
+        'shipping_price', 'shipping_amount', 'carrier_price', 'delivery_price', 'postage', 'carrier.price',
+        'discount_amount', 'discount_price', 'discount.amount', 'payable_amount', 'payable_price',
+        'final_price', 'total_price', 'total', 'amount', 'price',
+    ];
     public function __construct(
         private readonly CustomerLedgerService $customerLedgerService,
         private readonly PaymentRegistrationService $paymentRegistrationService,
@@ -37,6 +42,8 @@ class ExternalPaidOrderService
         if ($existing) {
             return ['invoice' => $existing, 'created' => false];
         }
+
+        $payload = $this->normalizeCurrency($payload);
 
         try {
             return DB::transaction(function () use ($payload, $externalOrderId, $startCollection): array {
@@ -193,6 +200,9 @@ class ExternalPaidOrderService
             $quantity = (int) $item['quantity'];
             $price = (int) $item['price'];
             $gross = $quantity * $price;
+            if ($gross > 1_000_000_000_000_000) {
+                throw ValidationException::withMessages(["items.{$index}.price" => 'مبلغ ردیف بیش از حد مجاز است.']);
+            }
             $discount = min(max((int) ($item['discount_amount'] ?? 0), 0), $gross);
 
             $resolved[] = [
@@ -431,6 +441,9 @@ class ExternalPaidOrderService
 
     private function calculateTotals(array $payload, array $items): array
     {
+        if (collect($items)->sum(fn (array $row) => $row['quantity'] * $row['price']) > 1_000_000_000_000_000) {
+            throw ValidationException::withMessages(['items' => 'جمع مبلغ سفارش بیش از حد مجاز است.']);
+        }
         $subtotal = (int) collect($items)->sum(
             fn (array $row): int => $row['quantity'] * $row['price']
         );
@@ -669,6 +682,44 @@ class ExternalPaidOrderService
         }
 
         return null;
+    }
+
+    /** Site amounts are toman by default. Convert once, before invoice/payment/ledger creation. */
+    private function normalizeCurrency(array $payload): array
+    {
+        $top = $payload['currency'] ?? null;
+        $nested = data_get($payload, 'order.currency');
+        $factorFor = static function ($currency): int {
+            return match ($currency) {
+                'IRT', 'toman' => 10,
+                'IRR', 'rial' => 1,
+                default => throw ValidationException::withMessages(['currency' => 'واحد پول سفارش معتبر نیست.']),
+            };
+        };
+        $factor = $factorFor($top ?? $nested ?? 'IRT');
+        if ($top !== null && $nested !== null && $factorFor($top) !== $factorFor($nested)) {
+            throw ValidationException::withMessages(['currency' => 'واحد پول سفارش و درخواست یکسان نیست.']);
+        }
+        $convert = static function ($value) use ($factor): int {
+            if (!is_scalar($value) || !preg_match('/^\d+$/', (string) $value)
+                || strlen((string) $value) > 16 || (int) $value > intdiv(1_000_000_000_000_000, $factor)) {
+                throw ValidationException::withMessages(['currency' => 'مبلغ سفارش باید عدد صحیح و در محدوده مجاز باشد.']);
+            }
+            return (int) $value * $factor;
+        };
+        foreach ($payload['items'] as &$item) {
+            foreach (['price', 'discount_amount', 'line_total'] as $key) {
+                if (isset($item[$key])) $item[$key] = $convert($item[$key]);
+            }
+        }
+        unset($item);
+        foreach (self::ORDER_MONEY_FIELDS as $path) {
+            $value = data_get($payload, 'order.'.$path);
+            if ($value !== null) data_set($payload, 'order.'.$path, $convert($value));
+        }
+        $payload['currency'] = 'IRR';
+        data_set($payload, 'order.currency', 'IRR');
+        return $payload;
     }
 
     private function firstMoney(array $payload, array $paths): ?int

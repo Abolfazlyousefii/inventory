@@ -110,7 +110,8 @@ class InvoicePaymentController extends Controller
         abort_unless($this->canHandleFinanceActions(), 403);
         abort_unless((int) $payment->customer_id === (int) $customer->id, 404);
         $data = $request->validate([
-            'method' => ['required', Rule::in(array_unique(['cash', 'cheque', $payment->method]))],
+            'method' => ['required', Rule::in($payment->method === 'online' && $payment->invoice?->external_order_id
+                ? ['online'] : array_unique(['cash', 'cheque', $payment->method]))],
             'amount' => 'required|integer|min:1',
             'payment_date' => 'required_unless:method,cheque|nullable|string|max:20',
             'bank_name' => 'nullable|string|max:255',
@@ -130,7 +131,8 @@ class InvoicePaymentController extends Controller
 
         DB::transaction(function () use ($customer, $payment, $data) {
             [$invoice, $payment, $ledger] = $this->lockPayment($customer, $payment, $data['version']);
-            $invoice->assertNotCancelled();
+            // A cancelled site order can still have a real payment in the customer's ledger.
+            if (!($payment->method === 'online' && $invoice->external_order_id)) $invoice->assertNotCancelled();
             $before = $this->paymentSnapshot($payment, $payment->cheque);
             $data = $this->normalizeEditPaymentPayload($data, $invoice);
             $payment->update([
@@ -349,6 +351,6 @@ class InvoicePaymentController extends Controller
         $user = auth()->user();
 
         return $user && ! \App\Support\AccountStatementAccess::readOnly($user)
-            && ($user->hasAnyRole(['admin', 'Admin', 'Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve'));
+            && ($user->isAdministrator() || $user->hasAnyRole(['Manager', 'manager', 'finance', 'Accountant']) || $user->can('finance.approve'));
     }
 }

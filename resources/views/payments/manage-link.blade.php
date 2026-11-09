@@ -1,6 +1,6 @@
 @php
     $financeActor = auth()->user();
-    $canManagePayment = $financeActor && ($financeActor->hasAnyRole(['admin','Admin','Manager','manager','finance','Accountant']) || $financeActor->can('finance.approve'));
+    $canManagePayment = $financeActor && !\App\Support\AccountStatementAccess::readOnly($financeActor) && ($financeActor->isAdministrator() || $financeActor->hasAnyRole(['Manager','manager','finance','Accountant']) || $financeActor->can('finance.approve'));
 @endphp
 @if($canManagePayment && $payment->customer_id && \App\Support\PageAccessCatalog::userCanRoute($financeActor, 'account-statements.payments.edit'))
 @if($compactPaymentLink ?? false)

@@ -18,6 +18,10 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     config(['services.external_sync.token' => 'shared-secret']);
     Http::fake();
+    // The recovered baseline predates the production bundle snapshot column.
+    if (!\Illuminate\Support\Facades\Schema::hasColumn('invoice_items', 'bundle_components_snapshot')) {
+        \Illuminate\Support\Facades\Schema::table('invoice_items', fn ($table) => $table->json('bundle_components_snapshot')->nullable());
+    }
 });
 
 function externalPaidOrderCatalog(int $stock = 10): array
@@ -63,6 +67,7 @@ function externalPaidOrderPayload(array $overrides = []): array
 
     return array_replace_recursive([
         'event' => 'order.paid',
+        'currency' => 'IRR',
         'crm_order_id' => '4242',
         'occurred_at' => '2026-07-27T12:30:00+03:30',
         'user' => [
@@ -110,6 +115,65 @@ function externalPaidOrderPayload(array $overrides = []): array
         ],
     ], $overrides);
 }
+
+it('converts default site toman consistently to rial and does not reconvert duplicate imports', function (): void {
+    externalPaidOrderCatalog();
+    $payload = externalPaidOrderPayload();
+    unset($payload['currency']);
+    $this->withHeader('X-CRM-Token', 'shared-secret')->postJson('/api/external/orders', $payload)->assertCreated();
+    $invoice = Invoice::with(['items', 'payments'])->sole();
+    expect($invoice->total)->toBe(2_100_000)
+        ->and($invoice->subtotal)->toBe(2_000_000)
+        ->and($invoice->shipping_price)->toBe(200_000)
+        ->and($invoice->items->sole()->price)->toBe(1_000_000)
+        ->and($invoice->items->sole()->line_discount_amount)->toBe(100_000)
+        ->and($invoice->payments->sole()->amount)->toBe(2_100_000);
+    expect((int) \App\Models\CustomerLedger::where('type', 'debit')->sum('amount'))->toBe(2_100_000);
+    expect((int) \App\Models\CustomerLedger::where('type', 'credit')->sum('amount'))->toBe(2_100_000);
+    $this->postJson('/api/external/orders', $payload)->assertOk()->assertJsonPath('created', false);
+    expect(Invoice::count())->toBe(1);
+    expect($invoice->fresh()->total)->toBe(2_100_000);
+});
+
+it('rejects conflicting currency and monetary overflow without importing any financial rows', function (): void {
+    externalPaidOrderCatalog();
+    $payload = externalPaidOrderPayload(['currency' => 'IRT', 'order' => ['currency' => 'IRR']]);
+    $this->withHeader('X-CRM-Token', 'shared-secret')->postJson('/api/external/orders', $payload)->assertUnprocessable()->assertJsonValidationErrors('currency');
+    unset($payload['order']['currency']);
+    $payload['items'][0]['price'] = 1_000_000_000_000_000;
+    $this->postJson('/api/external/orders', $payload)->assertUnprocessable();
+    expect(Invoice::count())->toBe(0);
+    expect(\App\Models\CustomerLedger::count())->toBe(0);
+});
+
+it('records ten million site tomans as one hundred million rials', function (): void {
+    externalPaidOrderCatalog();
+    $payload = externalPaidOrderPayload();
+    unset($payload['currency']);
+    $payload['items'][0]['quantity'] = 1;
+    $payload['items'][0]['price'] = 10_000_000;
+    $payload['items'][0]['discount_amount'] = 0;
+    $payload['items'][0]['line_total'] = 10_000_000;
+    $payload['order']['shipping_price'] = 0;
+    $payload['order']['total'] = 10_000_000;
+    $this->withHeader('X-CRM-Token', 'shared-secret')->postJson('/api/external/orders', $payload)->assertCreated();
+    $invoice = Invoice::with('payments')->sole();
+    expect($invoice->total)->toBe(100_000_000)
+        ->and($invoice->payments->sole()->amount)->toBe(100_000_000);
+    expect((int) \App\Models\CustomerLedger::where('type', 'credit')->sum('amount'))->toBe(100_000_000);
+});
+
+it('accepts an explicit nested toman currency and keeps invoice-wide discounts and shipping in rial', function (): void {
+    externalPaidOrderCatalog();
+    $payload = externalPaidOrderPayload(['order' => ['currency' => 'IRT', 'total' => 200_000]]);
+    unset($payload['currency']);
+    $this->withHeader('X-CRM-Token', 'shared-secret')->postJson('/api/external/orders', $payload)->assertCreated();
+    $invoice = Invoice::sole();
+    expect($invoice->total)->toBe(2_000_000)
+        ->and($invoice->invoice_discount_amount)->toBe(100_000)
+        ->and($invoice->product_discount_amount)->toBe(100_000)
+        ->and($invoice->shipping_price)->toBe(200_000);
+});
 
 it('registers a paid store order with its variant in collecting status', function (): void {
     [$product, $variant, $warehouseId] = externalPaidOrderCatalog();

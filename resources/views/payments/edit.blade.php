@@ -6,6 +6,7 @@
     $value = fn($name, $default = '') => old($name, $default);
     $methods = ['cash'=>'نقدی', 'cheque'=>'چک'];
     if (!isset($methods[$payment->method])) $methods[$payment->method] = match($payment->method) {'card'=>'کارت','bank_transfer'=>'حواله بانکی','online'=>'آنلاین','wallet'=>'کیف پول', default=>$payment->method};
+    if ($payment->method === 'online' && $payment->invoice?->external_order_id) $methods = ['online' => 'آنلاین / سایت'];
     $returnToAccount = request('return_to') === 'account-statement';
     $backRoute = !$returnToAccount && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'invoices.show') ? route('invoices.show', $payment->invoice->uuid) : route('account-statements.show', $customer->id);
 @endphp
@@ -18,6 +19,7 @@
     @if($errors->any())<div class="alert alert-danger" role="alert"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if($managementIssue)<div class="alert alert-warning" role="alert">سوابق مالی این پرداخت هماهنگ نیست. ویرایش و حذف آن تا بررسی سند گردش حساب غیرفعال است.</div>@endif
     <div class="pm-summary"><span>مبلغ ثبت‌شده</span><strong>{{ \App\Support\Currency::formatRial($payment->amount) }}</strong></div>
+    @if($payment->method === 'online' && $payment->invoice?->external_order_id)<p class="text-muted">پرداخت سفارش سایت #{{ $payment->invoice->external_order_id }} · ویرایش و حذف فقط در حساب داخلی اعمال می‌شود؛ وضعیت سفارش سایت تغییر نمی‌کند.</p>@endif
     <form action="{{ route('account-statements.payments.update', [$customer->id, $payment->id]) }}" method="POST" class="pm-card" data-payment-edit>
         @csrf @method('PUT')
         @if($returnToAccount)<input type="hidden" name="return_to" value="account-statement">@endif

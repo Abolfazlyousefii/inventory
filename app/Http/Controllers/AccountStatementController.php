@@ -147,6 +147,10 @@ class AccountStatementController extends Controller
 
         $invoiceIds = $ledgers->getCollection()->where('reference_type', Invoice::class)->pluck('reference_id')->filter()->unique()->values();
         $paymentIds = $ledgers->getCollection()->where('reference_type', InvoicePayment::class)->pluck('reference_id')->filter()->unique()->values();
+        $adjustmentDocuments = ActivityLog::query()->where('action', 'customer_balance_adjusted')
+            ->where('subject_type', Customer::class)->where('subject_id', $customer->id)
+            ->whereIn('id', $ledgers->getCollection()->where('reference_type', ActivityLog::class)->pluck('reference_id'))
+            ->get()->keyBy('id');
         $transferIds = $ledgers->getCollection()->where('reference_type', WarehouseTransfer::class)->pluck('reference_id')->filter()->unique()->values();
         $salesReturnIds = $ledgers->getCollection()->where('reference_type', SalesReturnDocument::class)->pluck('reference_id')->filter()->unique()->values();
 
@@ -374,6 +378,7 @@ class AccountStatementController extends Controller
             'ledgerBalances',
             'invoices',
             'payments',
+            'adjustmentDocuments',
             'transfers',
             'salesReturnDocuments',
             'netBalance',
