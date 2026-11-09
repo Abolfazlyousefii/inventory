@@ -20,7 +20,8 @@ class CustomerBalanceAdjustmentService
         if ($rows->count() !== 1 || (int) $row->customer_id !== (int) $customer->id
             || !in_array($row->type, ['debit', 'credit'], true)
             || (int) $row->amount <= 0
-            || (int) data_get($adjustment->properties, 'ledger_id') !== (int) $row->id) {
+            || (data_get($adjustment->properties, 'ledger_id') !== null
+                && (int) data_get($adjustment->properties, 'ledger_id') !== (int) $row->id)) {
             throw ValidationException::withMessages(['adjustment' => 'سند اصلاحی با گردش حساب هماهنگ نیست؛ ابتدا سوابق بررسی شود.']);
         }
         return $row;
@@ -46,7 +47,14 @@ class CustomerBalanceAdjustmentService
             }
             $before = $ledger->only(['id', 'type', 'amount', 'note']);
             $balanceBefore = (int) Customer::query()->withBalance()->findOrFail($customer->id)->balance;
-            $properties = $adjustment->properties;
+            $properties = $adjustment->properties ?? [];
+            // Legacy logs may have no properties. The unique ledger's explicit
+            // reference and verified customer identify the existing document.
+            if (!isset($properties['ledger_id'])) {
+                $properties['ledger_id'] = $ledger->id;
+                $properties['legacy_metadata_recovered_at'] = now()->toIso8601String();
+                $properties['recovered_ledger_snapshot'] = $before;
+            }
             if ($delete) {
                 $ledger->delete();
                 $properties['deleted_at'] = now()->toIso8601String();

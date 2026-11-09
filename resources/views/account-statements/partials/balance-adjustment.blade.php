@@ -9,7 +9,11 @@
         @forelse($adjustments as $adjustment)
             <div class="border rounded p-3 mb-2">
                 <div class="d-flex justify-content-between gap-2 flex-wrap mb-2"><strong>{{ $adjustment->user?->name ?: 'سیستم' }}</strong><span class="small text-muted">{{ \App\Support\JalaliDate::dateTime($adjustment->occurred_at) }}</span></div>
-                <div class="small">هنگام ثبت اولیه — قبل: {{ $balanceLabel(data_get($adjustment->properties, 'balance_before', 0)) }} | بعد: {{ $balanceLabel(data_get($adjustment->properties, 'balance_after', 0)) }}</div>
+                @if(data_get($adjustment->properties, 'balance_before') !== null && data_get($adjustment->properties, 'balance_after') !== null)
+                    <div class="small">هنگام ثبت اولیه — قبل: {{ $balanceLabel(data_get($adjustment->properties, 'balance_before')) }} | بعد: {{ $balanceLabel(data_get($adjustment->properties, 'balance_after')) }}</div>
+                @else
+                    <div class="small text-muted">جزئیات ماندهٔ قبل و بعدِ ثبت اولیه در سابقهٔ این سند موجود نیست؛ مبلغ سند از ردیف مرتبط گردش حساب خوانده می‌شود.</div>
+                @endif
                 <div class="mt-2" style="white-space:pre-wrap">{{ data_get($adjustment->properties, 'reason', '—') }}</div>
                 @if(data_get($adjustment->properties, 'deleted_at'))
                     <span class="badge bg-secondary mt-2">حذف‌شده؛ بدون اثر در مانده</span>

@@ -140,3 +140,45 @@ it('allows correction of actual site receipts after order cancellation without r
     expect((int) $invoice->fresh()->total)->toBe(2000);
     expect(Customer::withBalance()->find($this->customer->id)->balance)->toBe(-1000);
 });
+
+it('manages a legacy adjustment with empty metadata without replacing its document or ledger', function () {
+    $doc = statementAdjustmentDocument($this);
+    $ledgerId = $doc->properties['ledger_id'];
+    $doc->update(['properties' => null]);
+    $edit = $this->get(route('account-statements.adjustments.edit', [$this->customer, $doc]))->assertOk();
+    expect($edit->viewData('ledger')->id)->toBe($ledgerId);
+    expect($doc->fresh()->properties)->toBeNull();
+    $this->put(route('account-statements.adjustments.update', [$this->customer, $doc]), [
+        'type' => 'credit', 'amount' => 300, 'reason' => 'اصلاح سند قدیمی طبق تأیید مالی', 'version' => $edit->viewData('version'),
+    ])->assertSessionHasNoErrors()->assertRedirect();
+    expect(CustomerLedger::find($ledgerId)->reference_id)->toBe($doc->id);
+    expect(CustomerLedger::find($ledgerId)->type)->toBe('credit');
+    expect(CustomerLedger::where('reference_type', ActivityLog::class)->where('reference_id', $doc->id)->count())->toBe(1);
+    expect($doc->fresh()->properties['ledger_id'])->toBe($ledgerId);
+    expect($doc->fresh()->properties['recovered_ledger_snapshot']['amount'])->toBe(200);
+    expect(Customer::withBalance()->find($this->customer->id)->balance)->toBe(700);
+});
+
+it('still rejects explicit wrong ledger metadata and ambiguous legacy references', function () {
+    $doc = statementAdjustmentDocument($this);
+    $doc->update(['properties' => ['ledger_id' => 999999]]);
+    $this->get(route('account-statements.adjustments.edit', [$this->customer, $doc]))->assertSessionHasErrors('adjustment');
+    $doc->update(['properties' => null]);
+    CustomerLedger::create(['customer_id' => $this->customer->id, 'type' => 'credit', 'amount' => 200,
+        'reference_type' => ActivityLog::class, 'reference_id' => $doc->id]);
+    $this->get(route('account-statements.adjustments.edit', [$this->customer, $doc]))->assertSessionHasErrors('adjustment');
+});
+
+it('deletes only the effect of a legacy adjustment and keeps the original log and snapshot', function () {
+    $doc = statementAdjustmentDocument($this);
+    $ledgerId = $doc->properties['ledger_id'];
+    $doc->update(['properties' => null]);
+    $version = $this->get(route('account-statements.adjustments.edit', [$this->customer, $doc]))->assertOk()->viewData('version');
+    $this->delete(route('account-statements.adjustments.destroy', [$this->customer, $doc]), [
+        'version' => $version, 'reason' => 'حذف اثر سند قدیمی با تأیید مالی',
+    ])->assertSessionHasNoErrors();
+    expect(CustomerLedger::find($ledgerId))->toBeNull();
+    expect($doc->fresh()->properties['deleted_at'])->not->toBeNull();
+    expect($doc->fresh()->properties['recovered_ledger_snapshot']['id'])->toBe($ledgerId);
+    expect(Customer::withBalance()->find($this->customer->id)->balance)->toBe(1000);
+});
