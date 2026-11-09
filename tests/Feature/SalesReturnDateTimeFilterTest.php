@@ -81,6 +81,46 @@ class SalesReturnDateTimeFilterTest extends TestCase
         $this->assertStringNotContainsString('const qs=window.location.search||\'\'', $blade);
     }
 
+    public function test_registration_date_stays_fixed_after_approval_edit_and_repeated_filtering(): void
+    {
+        $customer = Customer::factory()->create();
+        $document = $this->createDocument('60101', $customer, SalesReturnDocument::STATUS_APPLIED, '1405/05/06 09:45:00');
+        $registeredAt = $document->created_at->copy();
+        $document->update(['applied_at' => $registeredAt->copy()->addDays(5)]);
+        $service = app(SalesReturnReportService::class);
+        $filters = ['date_from' => '1405/05/06', 'date_to' => '1405/05/06', 'customer_id' => $customer->id];
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $rows = collect($service->getPaginatedRows($filters)->items());
+            $this->assertSame([$document->id], $rows->pluck('source_id')->all());
+            $this->assertSame('1405/05/06 09:45', $rows->first()['returned_at_display']);
+        }
+        $document->update(['return_reason' => 'توضیح ویرایش‌شده']);
+        $this->assertSame([$document->id], $service->getPdfRows($filters)->pluck('source_id')->all());
+        $this->assertSame([$document->id], $service->getExcelRows($filters)->pluck('source_id')->all());
+        $this->assertCount(0, $service->getPdfRows(['date_from' => '1405/05/11', 'date_to' => '1405/05/11']));
+        $this->assertSame($registeredAt->toDateTimeString(), $document->fresh()->created_at->toDateTimeString());
+    }
+
+    public function test_legacy_return_uses_original_registration_instead_of_transfer_date(): void
+    {
+        $customer = Customer::factory()->create();
+        $registeredAt = Jalalian::fromFormat('Y/m/d H:i:s', '1405/05/06 09:45:00')->toCarbon();
+        $warehouse = \App\Models\Warehouse::create(['name' => 'انبار تاریخ', 'type' => 'return', 'is_active' => true]);
+        $transfer = \App\Models\WarehouseTransfer::create([
+            'from_warehouse_id' => $warehouse->id, 'to_warehouse_id' => $warehouse->id,
+            'reference' => 'LEGACY-DATE-1', 'voucher_type' => \App\Models\WarehouseTransfer::TYPE_CUSTOMER_RETURN,
+            'customer_id' => $customer->id, 'transferred_at' => $registeredAt->copy()->addDays(5),
+            'total_amount' => 5000,
+        ]);
+        $transfer->forceFill(['created_at' => $registeredAt])->save();
+        $service = app(SalesReturnReportService::class);
+        $filters = ['date_from' => '1405/05/06', 'date_to' => '1405/05/06', 'customer_id' => $customer->id];
+        $rows = collect($service->getPaginatedRows($filters)->items());
+        $this->assertSame([$transfer->id], $rows->pluck('source_id')->all());
+        $this->assertSame('1405/05/06 09:45', $rows->first()['returned_at_display']);
+        $this->assertSame([$transfer->id], $service->getPdfRows($filters)->pluck('source_id')->all());
+    }
+
     private function createDocument(
         string $number,
         Customer $customer,

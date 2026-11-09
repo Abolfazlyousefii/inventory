@@ -11,6 +11,8 @@ use Morilog\Jalali\Jalalian;
 
 class SalesReturnReportService extends SalesReturnQueryService
 {
+    // Registration is the document date for old and new returns. Approval/transfer
+    // timestamps are only a fallback for historical rows missing created_at.
     public function buildReportQuery(array $filters = []): Collection
     {
         return $this->getOfficialRows($filters);
@@ -27,25 +29,25 @@ class SalesReturnReportService extends SalesReturnQueryService
         $new = DB::table('sales_return_documents as d')
             ->leftJoin('customers as c', 'c.id', '=', 'd.customer_id')
             ->where('d.status', '!=', SalesReturnDocument::STATUS_CANCELLED)
-            ->selectRaw("'new' as source, d.id as source_id, d.document_number, d.customer_id, '' as customer_name, COALESCE(d.applied_at, d.created_at) as canonical_date, d.status, d.total_quantity, d.total_refund_amount as total_amount, CASE WHEN d.document_number = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm])
+            ->selectRaw("'new' as source, d.id as source_id, d.document_number, d.customer_id, '' as customer_name, COALESCE(d.created_at, d.applied_at) as canonical_date, d.status, d.total_quantity, d.total_refund_amount as total_amount, CASE WHEN d.document_number = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm])
             ->when($like, fn($q) => $q->where('d.document_number', 'like', $like))
             ->when(($filters['status'] ?? null) && ($filters['status'] ?? 'all') !== 'all', fn($q) => $q->where('d.status', $filters['status']))
             ->when(($filters['official_only'] ?? false), fn($q) => $q->where('d.status', SalesReturnDocument::STATUS_APPLIED)->whereNotExists(function($sub){ $sub->selectRaw('1')->from('warehouse_transfers as dup')->whereColumn('dup.reference', 'd.reference_number')->whereNotNull('d.reference_number')->where('dup.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN); }))
             ->when($filters['customer_name'] ?? null, fn($q,$v) => $q->where(fn($name) => $name->where('c.first_name', 'like', "%{$v}%")->orWhere('c.last_name', 'like', "%{$v}%")))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('d.customer_id', $v))
-            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
-            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]));
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.created_at, d.applied_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.created_at, d.applied_at) <= ?', [$d]));
 
         $legacy = DB::table('warehouse_transfers as w')
             ->leftJoin('customers as c', 'c.id', '=', 'w.customer_id')
             ->leftJoin('warehouse_transfer_items as wi', 'wi.warehouse_transfer_id', '=', 'w.id')
             ->where('w.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
-            ->selectRaw("'legacy' as source, w.id as source_id, COALESCE(w.reference, CAST(w.id as CHAR)) as document_number, w.customer_id, COALESCE(w.beneficiary_name, '') as customer_name, COALESCE(w.transferred_at, w.created_at) as canonical_date, 'legacy' as status, COALESCE(SUM(wi.quantity),0) as total_quantity, COALESCE(w.total_amount, SUM(wi.line_total),0) as total_amount, CASE WHEN w.reference = ? OR CAST(w.id as CHAR) = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm, $docTerm])
+            ->selectRaw("'legacy' as source, w.id as source_id, COALESCE(w.reference, CAST(w.id as CHAR)) as document_number, w.customer_id, COALESCE(w.beneficiary_name, '') as customer_name, COALESCE(w.created_at, w.transferred_at) as canonical_date, 'legacy' as status, COALESCE(SUM(wi.quantity),0) as total_quantity, COALESCE(w.total_amount, SUM(wi.line_total),0) as total_amount, CASE WHEN w.reference = ? OR CAST(w.id as CHAR) = ? THEN 1 ELSE 0 END as exact_rank", [$docTerm, $docTerm])
             ->when($like, fn($q) => $q->where(function($qq) use ($like) { $qq->where('w.reference', 'like', $like)->orWhere('w.id', 'like', $like); }))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('w.customer_id', $v))
             ->when($filters['customer_name'] ?? null, fn($q,$v) => $q->where(fn($name) => $name->where('c.first_name', 'like', "%{$v}%")->orWhere('c.last_name', 'like', "%{$v}%")->orWhere('w.beneficiary_name', 'like', "%{$v}%")))
-            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
-            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.created_at, w.transferred_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.created_at, w.transferred_at) <= ?', [$d]))
             ->groupBy('w.id','w.reference','w.customer_id','w.beneficiary_name','w.transferred_at','w.created_at','w.total_amount');
 
         $union = $new->unionAll($legacy);
@@ -89,7 +91,7 @@ class SalesReturnReportService extends SalesReturnQueryService
             $damagedAmount = $warehouseName !== '—' && str_contains($warehouseName, 'مرجوع') ? $amount : 0;
             $healthyAmount = $damagedAmount === 0 ? $amount : 0;
         }
-        $returnedAt = $transfer->transferred_at ?: $transfer->created_at;
+        $returnedAt = $transfer->created_at ?: $transfer->transferred_at;
 
         return [
             'row_key' => 'legacy-'.$transfer->id,
@@ -130,7 +132,7 @@ class SalesReturnReportService extends SalesReturnQueryService
         $healthy = (int) $document->items->where('item_condition', SalesReturnDocumentItem::CONDITION_HEALTHY)->sum('refund_amount');
         $damaged = (int) $document->items->where('item_condition', SalesReturnDocumentItem::CONDITION_DAMAGED)->sum('refund_amount');
         $warehouses = $document->items->pluck('destinationWarehouse.name')->filter()->unique()->values();
-        $returnedAt = $document->applied_at ?: $document->created_at;
+        $returnedAt = $document->created_at ?: $document->applied_at;
         $user=auth()->user();
         $protected=\App\Support\SalesReturnFinalization::isLocked($document);
         $canApplied=!$protected && $user && \App\Support\PageAccessCatalog::userCanRoute($user,'vouchers.return-from-sale.applied.update');
@@ -270,9 +272,9 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->whereNotExists(function($sub){ $sub->selectRaw('1')->from('warehouse_transfers as dup')->whereColumn('dup.reference', 'd.reference_number')->whereNotNull('d.reference_number')->where('dup.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN); })
             ->when($like, fn($q) => $q->where('d.document_number', 'like', $like))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('d.customer_id', $v))
-            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
-            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]))
-            ->selectRaw("'new' as source, i.product_variant_id, i.product_id, COALESCE(i.product_name_snapshot, p.name, '') as product_name, COALESCE(i.variant_name_snapshot, pv.variant_name, '') as variant_name, COALESCE(i.sku_snapshot, i.barcode_snapshot, pv.variant_code, '') as sku, SUM(i.return_quantity) as total_quantity, SUM(CASE WHEN i.item_condition = 'healthy' THEN i.return_quantity ELSE 0 END) as healthy_quantity, SUM(CASE WHEN i.item_condition = 'damaged' THEN i.return_quantity ELSE 0 END) as damaged_quantity, SUM(i.refund_amount) as total_refund_amount, GROUP_CONCAT(DISTINCT d.id) as document_keys, GROUP_CONCAT(DISTINCT d.customer_id) as customer_ids, MIN(COALESCE(d.applied_at, d.created_at)) as first_return_at, MAX(COALESCE(d.applied_at, d.created_at)) as last_return_at")
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.created_at, d.applied_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.created_at, d.applied_at) <= ?', [$d]))
+            ->selectRaw("'new' as source, i.product_variant_id, i.product_id, COALESCE(i.product_name_snapshot, p.name, '') as product_name, COALESCE(i.variant_name_snapshot, pv.variant_name, '') as variant_name, COALESCE(i.sku_snapshot, i.barcode_snapshot, pv.variant_code, '') as sku, SUM(i.return_quantity) as total_quantity, SUM(CASE WHEN i.item_condition = 'healthy' THEN i.return_quantity ELSE 0 END) as healthy_quantity, SUM(CASE WHEN i.item_condition = 'damaged' THEN i.return_quantity ELSE 0 END) as damaged_quantity, SUM(i.refund_amount) as total_refund_amount, GROUP_CONCAT(DISTINCT d.id) as document_keys, GROUP_CONCAT(DISTINCT d.customer_id) as customer_ids, MIN(COALESCE(d.created_at, d.applied_at)) as first_return_at, MAX(COALESCE(d.created_at, d.applied_at)) as last_return_at")
             ->groupBy('i.product_variant_id','i.product_id','i.product_name_snapshot','p.name','i.variant_name_snapshot','pv.variant_name','i.sku_snapshot','i.barcode_snapshot','pv.variant_code');
 
         $legacy = DB::table('warehouse_transfer_items as wi')
@@ -283,9 +285,9 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->where('w.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
             ->when($like, fn($q) => $q->where('w.reference', 'like', $like))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('w.customer_id', $v))
-            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
-            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
-            ->selectRaw("'legacy' as source, wi.product_variant_id, wi.product_id, COALESCE(p.name, '') as product_name, COALESCE(pv.variant_name, wi.variant_name, '') as variant_name, COALESCE(wi.variant_code, pv.variant_code, '') as sku, SUM(wi.quantity) as total_quantity, SUM(CASE WHEN {$legacyCondition} = 'healthy' THEN wi.quantity ELSE 0 END) as healthy_quantity, SUM(CASE WHEN {$legacyCondition} = 'damaged' THEN wi.quantity ELSE 0 END) as damaged_quantity, SUM(COALESCE(wi.line_total, wi.quantity * COALESCE(wi.unit_price, 0))) as total_refund_amount, GROUP_CONCAT(DISTINCT w.id) as document_keys, GROUP_CONCAT(DISTINCT w.customer_id) as customer_ids, MIN(COALESCE(w.transferred_at, w.created_at)) as first_return_at, MAX(COALESCE(w.transferred_at, w.created_at)) as last_return_at")
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.created_at, w.transferred_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.created_at, w.transferred_at) <= ?', [$d]))
+            ->selectRaw("'legacy' as source, wi.product_variant_id, wi.product_id, COALESCE(p.name, '') as product_name, COALESCE(pv.variant_name, wi.variant_name, '') as variant_name, COALESCE(wi.variant_code, pv.variant_code, '') as sku, SUM(wi.quantity) as total_quantity, SUM(CASE WHEN {$legacyCondition} = 'healthy' THEN wi.quantity ELSE 0 END) as healthy_quantity, SUM(CASE WHEN {$legacyCondition} = 'damaged' THEN wi.quantity ELSE 0 END) as damaged_quantity, SUM(COALESCE(wi.line_total, wi.quantity * COALESCE(wi.unit_price, 0))) as total_refund_amount, GROUP_CONCAT(DISTINCT w.id) as document_keys, GROUP_CONCAT(DISTINCT w.customer_id) as customer_ids, MIN(COALESCE(w.created_at, w.transferred_at)) as first_return_at, MAX(COALESCE(w.created_at, w.transferred_at)) as last_return_at")
             ->groupBy('wi.product_variant_id','wi.product_id','p.name','pv.variant_name','wi.variant_name','wi.variant_code','pv.variant_code');
 
         return $new->get()->concat($legacy->get());
@@ -307,8 +309,8 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->whereNotExists(function($sub){ $sub->selectRaw('1')->from('warehouse_transfers as dup')->whereColumn('dup.reference', 'd.reference_number')->whereNotNull('d.reference_number')->where('dup.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN); })
             ->when($like, fn($q) => $q->where('d.document_number', 'like', $like))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('d.customer_id', $v))
-            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) >= ?', [$d]))
-            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.applied_at, d.created_at) <= ?', [$d]))
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(d.created_at, d.applied_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(d.created_at, d.applied_at) <= ?', [$d]))
             ->selectRaw("i.product_variant_id, i.product_id, COALESCE(i.product_name_snapshot, p.name, '') as product_name, COALESCE(i.variant_name_snapshot, pv.variant_name, '') as variant_name, COALESCE(i.sku_snapshot, i.barcode_snapshot, pv.variant_code, '') as sku, COALESCE(wh.name, '—') as warehouse_name, SUM(i.return_quantity) as quantity")
             ->groupBy('i.product_variant_id','i.product_id','i.product_name_snapshot','p.name','i.variant_name_snapshot','pv.variant_name','i.sku_snapshot','i.barcode_snapshot','pv.variant_code','wh.name');
 
@@ -320,8 +322,8 @@ class SalesReturnReportService extends SalesReturnQueryService
             ->where('w.voucher_type', WarehouseTransfer::TYPE_CUSTOMER_RETURN)
             ->when($like, fn($q) => $q->where('w.reference', 'like', $like))
             ->when($filters['customer_id'] ?? null, fn($q,$v) => $q->where('w.customer_id', $v))
-            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) >= ?', [$d]))
-            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.transferred_at, w.created_at) <= ?', [$d]))
+            ->when($from, fn($q,$d) => $q->whereRaw('COALESCE(w.created_at, w.transferred_at) >= ?', [$d]))
+            ->when($to, fn($q,$d) => $q->whereRaw('COALESCE(w.created_at, w.transferred_at) <= ?', [$d]))
             ->selectRaw("wi.product_variant_id, wi.product_id, COALESCE(p.name, '') as product_name, COALESCE(pv.variant_name, wi.variant_name, '') as variant_name, COALESCE(wi.variant_code, pv.variant_code, '') as sku, COALESCE(wh.name, '—') as warehouse_name, SUM(wi.quantity) as quantity")
             ->groupBy('wi.product_variant_id','wi.product_id','p.name','pv.variant_name','wi.variant_name','wi.variant_code','pv.variant_code','wh.name');
 
@@ -361,7 +363,7 @@ class SalesReturnReportService extends SalesReturnQueryService
         $query->when($filters['document_number'] ?? null, fn ($q, $v) => $q->where('reference', 'like', "%{$v}%"))
             ->when($filters['customer_id'] ?? null, fn ($q, $v) => $q->where('customer_id', $v))
             ->when($filters['destination_warehouse_id'] ?? null, fn ($q, $v) => $q->where('to_warehouse_id', $v))
-            ->when($this->dateBoundary($filters['date_from'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) >= ?', [$d]))
-            ->when($this->dateBoundary($filters['date_to'] ?? null, true), fn ($q, $d) => $q->whereRaw('COALESCE(transferred_at, created_at) <= ?', [$d]));
+            ->when($this->dateBoundary($filters['date_from'] ?? null), fn ($q, $d) => $q->whereRaw('COALESCE(created_at, transferred_at) >= ?', [$d]))
+            ->when($this->dateBoundary($filters['date_to'] ?? null, true), fn ($q, $d) => $q->whereRaw('COALESCE(created_at, transferred_at) <= ?', [$d]));
     }
 }
