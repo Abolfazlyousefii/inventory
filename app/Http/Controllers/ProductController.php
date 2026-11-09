@@ -199,12 +199,7 @@ class ProductController extends Controller {
         $summaryReserved  = (int) $reservedTotalByVariant->sum();
         $summaryTotal     = $summaryAvailable + $summaryReserved;
 
-        $warehousesCount = WarehouseStock::query()
-            ->where('product_id', $product->id)
-            ->when($hasVariants, fn( $query ) => $query->whereIn('product_variant_id', $allVariantIds))
-            ->when(!$hasVariants, fn( $query ) => $query->whereNull('product_variant_id'))
-            ->distinct('warehouse_id')
-            ->count('warehouse_id');
+        $warehousesCount = app(\App\Services\ProductWarehouseStockOverview::class)->groups()->count();
 
         $productPayload = [
             'id'              => (int) $product->id,
@@ -294,6 +289,7 @@ class ProductController extends Controller {
                     'reserved_quantity'  => (int) $row['reserved_quantity'],
                     'available_quantity' => (int) $row['available_quantity'],
                     'has_warning'        => (bool) $row['has_over_reserved_warning'],
+                    'children'           => $row['children'],
                 ])
                     ->values(),
             ];
@@ -323,79 +319,10 @@ class ProductController extends Controller {
     }
 
     private function warehouseStockRows( Product $product, $variantIds, $reservedTotalByVariant, int $centralWarehouseId, bool $hasVariants ) {
-        $variantIds = collect($variantIds)
-            ->map(fn( $id ) => (int) $id)
-            ->filter()
-            ->values();
-
-        $warehouses = Warehouse::query()
-            ->orderByDesc('type')
-            ->orderBy('name')
-            ->get([ 'id', 'name', 'type' ]);
-
-        $stockRows = WarehouseStock::query()
-            ->where('product_id', $product->id)
-            ->when($hasVariants, fn( $query ) => $query->whereIn('product_variant_id', $variantIds))
-            ->when(!$hasVariants, fn( $query ) => $query->whereNull('product_variant_id'))
-            ->select('warehouse_id', 'product_variant_id')
-            ->selectRaw('SUM(quantity) as quantity')
-            ->groupBy('warehouse_id', 'product_variant_id')
-            ->get();
-
-        if ( !$hasVariants ) {
-            return $stockRows->map(function ( $stock ) use ( $warehouses ) {
-                $warehouse = $warehouses->firstWhere('id', (int) $stock->warehouse_id);
-                $available = (int) $stock->quantity;
-
-                return [
-                    'variant_id'                => null,
-                    'variant_title'             => 'کل کالا',
-                    'display_code'              => null,
-                    'warehouse_id'              => (int) $stock->warehouse_id,
-                    'warehouse_name'            => (string) ( $warehouse?->name ? : '—' ),
-                    'total_quantity'            => $available,
-                    'reserved_quantity'         => 0,
-                    'available_quantity'        => $available,
-                    'has_over_reserved_warning' => false,
-                ];
-            })
-                ->filter(fn( $row ) => (int) $row['available_quantity'] > 0)
-                ->values();
-        }
-
-        $stocksByVariantWarehouse = $stockRows->groupBy(fn( $stock ) => ( (int) $stock->product_variant_id ) . ':' . ( (int) $stock->warehouse_id ));
-
-        $rows = collect();
-        foreach ( $variantIds as $variantId ) {
-            $reservedForVariant = (int) ( $reservedTotalByVariant[(int) $variantId] ?? 0 );
-
-            foreach ( $warehouses as $warehouse ) {
-                $key                  = ( (int) $variantId ) . ':' . ( (int) $warehouse->id );
-                $availableInWarehouse = (int) ( $stocksByVariantWarehouse->get($key, collect())
-                    ->sum('quantity') );
-                $reservedInWarehouse  = (int) $warehouse->id === $centralWarehouseId ? $reservedForVariant : 0;
-
-                if ( $availableInWarehouse === 0 && $reservedInWarehouse === 0 ) {
-                    continue;
-                }
-
-                $physicalTotal = $availableInWarehouse + $reservedInWarehouse;
-
-                $rows->push([
-                    'variant_id'                => (int) $variantId,
-                    'variant_title'             => null,
-                    'display_code'              => null,
-                    'warehouse_id'              => (int) $warehouse->id,
-                    'warehouse_name'            => (string) $warehouse->name,
-                    'total_quantity'            => $physicalTotal,
-                    'reserved_quantity'         => $reservedInWarehouse,
-                    'available_quantity'        => $availableInWarehouse,
-                    'has_over_reserved_warning' => $reservedInWarehouse > $physicalTotal,
-                ]);
-            }
-        }
-
-        return $rows->values();
+        return app(\App\Services\ProductWarehouseStockOverview::class)->rows(
+            $product, collect($variantIds)->map(fn ($id) => (int) $id)->filter()->values(),
+            collect($reservedTotalByVariant), $centralWarehouseId, $hasVariants,
+        );
     }
 
     public function create() {
