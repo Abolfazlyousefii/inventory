@@ -14,6 +14,7 @@ final class AccountStatementAccess
         'account-statements.payments.update', 'account-statements.payments.destroy',
         'account-statements.adjustments.store', 'invoices.payments.store', 'cheques.store',
         'account-statements.adjustments.edit', 'account-statements.adjustments.update', 'account-statements.adjustments.destroy',
+        'account-statements.personnel.store',
     ];
 
     private const WRITE_PERMISSIONS = [

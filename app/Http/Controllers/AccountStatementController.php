@@ -145,6 +145,8 @@ class AccountStatementController extends Controller
             ->pluck('id')
             ->mapWithKeys(fn ($id) => [$id => true]);
 
+        $personnelDocuments = \App\Models\PersonnelAccountDocument::with('creator:id,name')->where('customer_id', $customer->id)
+            ->whereIn('id', $ledgers->getCollection()->where('reference_type', \App\Models\PersonnelAccountDocument::class)->pluck('reference_id'))->get()->keyBy('id');
         $invoiceIds = $ledgers->getCollection()->where('reference_type', Invoice::class)->pluck('reference_id')->filter()->unique()->values();
         $paymentIds = $ledgers->getCollection()->where('reference_type', InvoicePayment::class)->pluck('reference_id')->filter()->unique()->values();
         $adjustmentDocuments = ActivityLog::query()->where('action', 'customer_balance_adjusted')
@@ -379,6 +381,7 @@ class AccountStatementController extends Controller
             'invoices',
             'payments',
             'adjustmentDocuments',
+            'personnelDocuments',
             'transfers',
             'salesReturnDocuments',
             'netBalance',

@@ -501,6 +501,7 @@ class PageAccessCatalog
         'cheques.store' => ['finance.payments'],
         'account-statements.index' => ['finance.accounts'],
         'account-statements.adjustments.store' => ['finance.accounts'],
+        'account-statements.personnel.store' => ['finance.accounts'],
         'account-statements.adjustments.edit' => ['finance.accounts'],
         'account-statements.adjustments.update' => ['finance.accounts'],
         'account-statements.adjustments.destroy' => ['finance.accounts'],

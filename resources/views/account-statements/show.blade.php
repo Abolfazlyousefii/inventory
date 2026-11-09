@@ -17,6 +17,7 @@
         <div><span class="asd-eyebrow">دفتر حساب شخص</span><h1>{{ $customer->display_name ?: 'شخص' }}</h1><div class="asd-identity"><span>کد: {{ $customer->crm_customer_id ?: $customer->id }}</span><span dir="ltr">{{ $customer->mobile ?: '—' }}</span></div></div>
         <div class="asd-actions">
             @if($canAddPayment)<button type="button" class="btn asd-primary" id="openPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#paymentModal">+ افزودن پرداخت</button>@endif
+            @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#personnelDocumentModal">+ افزودن سند پرسنلی</button>@endif
             @if($financeActor && \App\Support\AccountStatementAccess::readOnly($financeActor))<span class="badge bg-light text-secondary">فقط مشاهده</span>@endif
             @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#balanceAdjustmentModal">اصلاح مانده</button>@endif
             <a href="{{ route('account-statements.index') }}" class="btn asd-secondary">بازگشت</a>
@@ -73,6 +74,11 @@
                             $description = \App\Models\WarehouseTransfer::typeOptions()[$transfer->voucher_type] ?? 'سند انتقال';
                             if ($transfer->voucher_type === \App\Models\WarehouseTransfer::TYPE_CUSTOMER_RETURN) $url = route('account-statements.documents.returns.show', $transfer->id);
                         }
+                        $personnelDocument = $ledger->reference_type === \App\Models\PersonnelAccountDocument::class ? ($personnelDocuments[$ledger->reference_id] ?? null) : null;
+                        if ($personnelDocument) {
+                            $reference = 'PER-'.$personnelDocument->id;
+                            $description = 'سند پرسنلی · '.$personnelDocument->description;
+                        }
                     @endphp
                     <tr class="asd-entry {{ !$effective ? 'asd-ineffective' : ($ledger->type === 'debit' ? 'asd-entry-debit' : 'asd-entry-credit') }}" data-ledger-id="{{ $ledger->id }}">
                         @include('account-statements.partials.entry-date', ['ledger' => $ledger, 'payment' => $payment])
@@ -95,6 +101,10 @@
                         </td>
                         <td class="asd-description" data-label="شرح">
                             <span>{{ $description }}</span>
+                            @if($personnelDocument)
+                                @if($personnelDocument->reference)<small>ارجاع سازه‌حساب: {{ $personnelDocument->reference }}</small>@endif
+                                <small>ثبت‌کننده: {{ $personnelDocument->creator?->name ?: '—' }}</small>
+                            @endif
                             @if($invoice)
                                 <small class="asd-invoice-customer">مشتری فاکتور: {{ $invoiceCustomerName !== '' ? $invoiceCustomerName : 'نام مشتری ثبت نشده' }}</small>
                             @endif
@@ -119,6 +129,7 @@
     @include('account-statements.partials.balance-adjustment', ['collapseBalanceHistory' => true])
 </div>
 @if($canAddPayment)@include('payments.entry-modal', ['paymentModalId' => 'paymentModal', 'paymentAction' => route('account-statements.payments.store', $customer->id), 'paymentInvoiceOptions' => $paymentInvoiceOptions])@endif
+@if($canAdjustBalance)@include('account-statements.partials.personnel-document')@endif
 @endsection
 
 @push('scripts')<script src="{{ asset('js/account-statement-display.js') }}?v=20261011" defer></script>@endpush

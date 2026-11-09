@@ -720,6 +720,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::delete('/account-statements/{customer}/payments/{payment}', [InvoicePaymentController::class, 'destroyForCustomer'])->name('account-statements.payments.destroy');
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
     Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
+    Route::post('/account-statements/{customer}/personnel-documents', [\App\Http\Controllers\PersonnelAccountDocumentController::class, 'store'])->name('account-statements.personnel.store');
     Route::get('/account-statements/{customer}/adjustments/{adjustment}/edit', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'edit'])->name('account-statements.adjustments.edit');
     Route::put('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'update'])->name('account-statements.adjustments.update');
     Route::delete('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'destroy'])->name('account-statements.adjustments.destroy');

@@ -4,6 +4,7 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\InvoicePayment;
+use App\Models\PersonnelAccountDocument;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -17,7 +18,10 @@ class AccountStatementPresentationService
             ->select('customer_ledgers.*')
             ->selectRaw('DATE(COALESCE((SELECT invoice_payments.paid_at FROM invoice_payments
                 WHERE invoice_payments.id = customer_ledgers.reference_id
-                AND customer_ledgers.reference_type = ?), customer_ledgers.created_at)) AS statement_date', [InvoicePayment::class]);
+                AND customer_ledgers.reference_type = ?),
+                (SELECT personnel_account_documents.document_date FROM personnel_account_documents
+                WHERE personnel_account_documents.id = customer_ledgers.reference_id
+                AND customer_ledgers.reference_type = ?), customer_ledgers.created_at)) AS statement_date', [InvoicePayment::class, PersonnelAccountDocument::class]);
 
         return CustomerLedger::query()->fromSub($datedEntries, 'customer_ledgers');
     }
