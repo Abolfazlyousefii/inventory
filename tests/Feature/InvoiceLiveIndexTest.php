@@ -21,11 +21,12 @@ class InvoiceLiveIndexTest extends TestCase
         $this->assertStringContainsString("'invoices.customers.search' => 'invoices.view'", $catalog);
     }
 
-    public function test_index_is_simple_and_has_no_numbered_paginator_or_report_exports(): void
+    public function test_index_has_compact_report_actions_without_numbered_pagination(): void
     {
         $view = $this->indexViewSource();
         $this->assertStringNotContainsString('->links(', $view);
-        $this->assertStringNotContainsString('خروجی Excel', $view);
+        $this->assertStringContainsString('id="invoicePrintList"', $view);
+        $this->assertStringContainsString('id="invoiceExportExcel"', $view);
         $this->assertStringNotContainsString('خروجی CSV', $view);
         $this->assertStringNotContainsString('چاپ گزارش', $view);
         $this->assertStringContainsString("route('invoices.cancelled')", $view);
@@ -49,7 +50,7 @@ class InvoiceLiveIndexTest extends TestCase
     public function test_query_filters_exact_customer_and_excludes_cancelled_invoices(): void
     {
         $controller = $this->controller();
-        $this->assertStringContainsString('Invoice::query()->active()', $controller);
+        $this->assertMatchesRegularExpression('/Invoice::query\(\)\s*->active\(\)/', $controller);
         $this->assertStringContainsString("where('invoices.customer_id', (int) \$filters['customer_id'])", $controller);
         $this->assertStringNotContainsString("payments.cheque", substr($controller, strpos($controller, 'public function data'), strpos($controller, 'public function salesVouchers') - strpos($controller, 'public function data')));
     }

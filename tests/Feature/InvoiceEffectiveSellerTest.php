@@ -44,6 +44,11 @@ class InvoiceEffectiveSellerTest extends TestCase
             $this->assertStringNotContainsString($excludedTwo->uuid, $payload['desktop_html']);
             $this->assertStringContainsString('1,000 ریال', $payload['summary_html']);
             $this->assertSame((string) $seller->id, $payload['filters']['seller_id']);
+            $this->get(route('invoices.list.print', ['seller_id'=>$seller->id]))
+                ->assertOk()->assertViewHas('summary',fn($summary)=>$summary['invoice_count']===1)
+                ->assertSee('data-invoice-number="'.$included->uuid.'"',false)
+                ->assertDontSee('data-invoice-number="'.$excludedOne->uuid.'"',false)
+                ->assertDontSee('data-invoice-number="'.$excludedTwo->uuid.'"',false);
         }
     }
 

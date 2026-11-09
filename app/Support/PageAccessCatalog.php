@@ -486,6 +486,8 @@ class PageAccessCatalog
         'archive.invoices.show' => ['sales.invoices'],
         'invoices.index' => ['sales.invoices'],
         'invoices.data' => ['sales.invoices'],
+        'invoices.list.print' => ['sales.invoices'],
+        'invoices.list.excel' => ['sales.invoices'],
         'invoices.customers.search' => ['sales.invoices', 'customers'],
         'invoices.cancelled' => ['sales.invoices'],
         'invoices.bulk.reassign-seller' => ['sales.invoices'],

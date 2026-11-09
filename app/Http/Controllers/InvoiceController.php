@@ -311,26 +311,8 @@ class InvoiceController extends Controller
         $query   = $this->liveInvoiceQuery($filters, $dateFrom, $dateTo);
         $summary = $request->boolean('include_summary') ? $this->liveInvoiceSummary(clone $query) : null;
 
-        $query->with([
-            'customer:id,crm_customer_id,first_name,last_name,mobile',
-            'preinvoiceOrder:id,uuid,created_by,seller_id',
-            'preinvoiceOrder.seller:id,name',
-            'preinvoiceOrder.creator:id,name',
-            'seller:id,name',
-        ])
-            ->withSum('payments as paid_total', 'amount');
-
-        $orderCode = (string) ( $filters['order_code'] ?? '' );
-        if ( $orderCode !== '' ) {
-            $query->select('invoices.*')
-                ->selectRaw('case when invoices.uuid = ? then 0 when exists (select 1 from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id and preinvoice_orders.uuid = ?) then 1 when invoices.uuid like ? then 2 when exists (select 1 from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id and preinvoice_orders.uuid like ?) then 3 else 4 end as code_match_priority', [
-                    $orderCode,
-                    $orderCode,
-                    $orderCode . '%',
-                    $orderCode . '%',
-                ])
-                ->orderBy('code_match_priority');
-        }
+        $query = $this->prepareLiveInvoiceRows($query, $filters);
+        $orderCode = (string) ($filters['order_code'] ?? '');
 
         $paginator   = $query->orderByDesc('invoices.created_at')
             ->orderByDesc('invoices.id')
@@ -362,6 +344,41 @@ class InvoiceController extends Controller
                 'quick_range' => $filters['quick_range'] ?? null,
             ], fn( $value ) => $value !== null && $value !== ''),
         ]);
+    }
+
+    public function listPrint(InvoiceLiveFilterRequest $request) {
+        [$query, $summary, $filterDescription] = $this->invoiceListReportData($request);
+        return view('invoices.list-print', [
+            'invoices' => $query->lazy(500), 'summary' => $summary,
+            'filterDescription' => $filterDescription, 'statusLabels' => $this->statusService->labels(),
+            'printedAt' => \App\Support\JalaliDate::dateTime(now()),
+        ]);
+    }
+
+    public function listExcel(InvoiceLiveFilterRequest $request) {
+        [$query, $summary, $filterDescription] = $this->invoiceListReportData($request);
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\InvoiceListExport($query, $summary, $filterDescription, $this->statusService->labels()),
+            'invoices-'.now()->format('Ymd-His').'.xlsx'
+        );
+    }
+
+    private function invoiceListReportData(InvoiceLiveFilterRequest $request): array {
+        $filters = $request->validated();
+        [$from, $to] = $this->liveInvoiceDateRange($request);
+        $query = $this->liveInvoiceQuery($filters, $from, $to);
+        $summary = $this->liveInvoiceSummary(clone $query);
+        // List exports need the same filters, without the screen's diagnostic subqueries.
+        $query->select('invoices.*');
+        $query = $this->prepareLiveInvoiceRows($query, $filters)->orderByDesc('invoices.created_at')->orderByDesc('invoices.id');
+        $description = [
+            'از: '.($from ? Jalalian::fromCarbon($from)->format('Y/m/d') : 'ابتدا'),
+            'تا: '.($to ? Jalalian::fromCarbon($to)->format('Y/m/d') : 'امروز'),
+            'مشتری: '.(!empty($filters['customer_id']) ? Customer::find($filters['customer_id'])?->display_name : 'همه'),
+            'فروشنده: '.(!empty($filters['seller_id']) ? User::find($filters['seller_id'])?->name : 'همه'),
+        ];
+        if (!empty($filters['order_code'])) $description[] = 'کد سفارش: '.$filters['order_code'];
+        return [$query, $summary, implode(' | ', $description)];
     }
 
     public function customersSearch( Request $request ) {
@@ -1379,6 +1396,30 @@ class InvoiceController extends Controller
         return back()->with('success', '✅ کنسلی فاکتور لغو شد و سند دوباره به صف تایید انبار برگشت.');
     }
 
+    private function prepareLiveInvoiceRows($query, array $filters) {
+        $query->with([
+            'customer:id,crm_customer_id,first_name,last_name,mobile',
+            'preinvoiceOrder:id,uuid,created_by,seller_id',
+            'preinvoiceOrder.seller:id,name',
+            'preinvoiceOrder.creator:id,name',
+            'seller:id,name',
+        ])
+            ->withSum('payments as paid_total', 'amount');
+
+        $orderCode = (string) ( $filters['order_code'] ?? '' );
+        if ( $orderCode !== '' ) {
+            $query->selectRaw('case when invoices.uuid = ? then 0 when exists (select 1 from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id and preinvoice_orders.uuid = ?) then 1 when invoices.uuid like ? then 2 when exists (select 1 from preinvoice_orders where preinvoice_orders.id = invoices.preinvoice_order_id and preinvoice_orders.uuid like ?) then 3 else 4 end as code_match_priority', [
+                    $orderCode,
+                    $orderCode,
+                    $orderCode . '%',
+                    $orderCode . '%',
+                ])
+                ->orderBy('code_match_priority');
+        }
+
+        return $query;
+    }
+
     private function liveInvoiceQuery( array $filters, ?Carbon $dateFrom, ?Carbon $dateTo ) {
         $query = Invoice::query()
             ->active()
@@ -1449,6 +1490,7 @@ class InvoiceController extends Controller
         $summaryQuery->getQuery()->columns = null;
         $row                               = $summaryQuery->reorder()
             ->selectRaw("count(*) as invoice_count, coalesce(sum(invoices.total), 0) as total_sales, coalesce(sum({$paidExpression}), 0) as paid_amount, coalesce(sum(case when invoices.total - {$paidExpression} > 0 then invoices.total - {$paidExpression} else 0 end), 0) as remaining_amount")
+            ->toBase()
             ->first();
 
         return [

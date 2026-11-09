@@ -697,6 +697,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::prefix('invoices')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('invoices.index');
         Route::get('/data', [InvoiceController::class, 'data'])->name('invoices.data');
+        Route::get('/list/print', [InvoiceController::class, 'listPrint'])->name('invoices.list.print');
+        Route::get('/list/excel', [InvoiceController::class, 'listExcel'])->name('invoices.list.excel');
         Route::get('/customers/search', [InvoiceController::class, 'customersSearch'])->name('invoices.customers.search');
         Route::get('/cancelled', [InvoiceController::class, 'cancelled'])->name('invoices.cancelled');
         Route::post('/bulk/reassign-seller', [InvoiceController::class, 'bulkReassignSeller'])->name('invoices.bulk.reassign-seller');

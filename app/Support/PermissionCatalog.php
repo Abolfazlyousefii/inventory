@@ -1031,6 +1031,8 @@ class PermissionCatalog
             'archive.invoices.show' => 'invoices.print',
             'invoices.index' => 'invoices.view',
             'invoices.data' => 'invoices.view',
+            'invoices.list.print' => 'invoices.view',
+            'invoices.list.excel' => 'invoices.view',
             'invoices.customers.search' => 'invoices.view',
             'invoices.print' => 'invoices.print',
             'invoices.edit' => 'invoices.edit',

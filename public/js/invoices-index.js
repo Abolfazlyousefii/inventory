@@ -17,6 +17,18 @@
     let filters = Object.assign({order_code:'', customer_id:'', seller_id:'', date_from:'', date_to:'', quick_range:''}, initial.filters || {});
     let cursor = null, hasMore = false, loading = false, requestId = 0, controller = null, customerController = null;
     let debounceTimer = null, customerTimer = null;
+    const printListButton = document.getElementById('invoicePrintList');
+    const excelButton = document.getElementById('invoiceExportExcel');
+    let filterVersion = 0;
+    function setReportReady(ready) { [printListButton, excelButton].forEach(button => { if (button) button.disabled = !ready; }); }
+    function markFiltersChanged() { filterVersion++; setReportReady(false); }
+    function reportUrl(endpoint) {
+        const url = new URL(endpoint, location.origin);
+        Object.entries(currentFilters()).forEach(([key,value]) => { if (value !== '' && value != null) url.searchParams.set(key,value); });
+        return url.href;
+    }
+    printListButton?.addEventListener('click', () => window.open(reportUrl(app.dataset.printUrl), '_blank', 'noopener'));
+    excelButton?.addEventListener('click', () => window.location.assign(reportUrl(app.dataset.excelUrl)));
     const digits = value => String(value || '').replace(/[۰-۹٠-٩]/g, char => '۰۱۲۳۴۵۶۷۸۹'.includes(char) ? '۰۱۲۳۴۵۶۷۸۹'.indexOf(char) : '٠١٢٣٤٥٦٧٨٩'.indexOf(char));
     const debounceLoad = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => load(false), 320); };
 
@@ -45,7 +57,8 @@
     async function load(append) {
         if (loading && append) return;
         if (controller) controller.abort();
-        controller = new AbortController(); const id = ++requestId; loading = true;
+        controller = new AbortController(); const id = ++requestId; const version = filterVersion; loading = true;
+        if (!append) setReportReady(false);
         if (!append) { cursor = null; el.skeleton.hidden = false; el.empty.hidden = true; showErrors(); }
         else el.loadStatus.textContent = 'در حال دریافت فاکتورهای بیشتر...';
         el.error.hidden = true; el.results.setAttribute('aria-busy', 'true');
@@ -56,6 +69,7 @@
             const payload = await response.json();
             if (id !== requestId) return;
             if (!response.ok) { if (response.status === 422) showErrors(payload.errors); throw new Error('request_failed'); }
+            if (version === filterVersion) setReportReady(true);
             if (append) { el.desktop.insertAdjacentHTML('beforeend', payload.desktop_html); el.mobile.insertAdjacentHTML('beforeend', payload.mobile_html); }
             else { el.desktop.innerHTML = payload.desktop_html; el.mobile.innerHTML = payload.mobile_html; el.summary.innerHTML = payload.summary_html || ''; }
             cursor = payload.next_cursor; hasMore = Boolean(payload.has_more); filters = Object.assign(filters, payload.filters || {});
@@ -68,7 +82,7 @@
             if (id === requestId) { loading = false; el.skeleton.hidden = true; el.results.setAttribute('aria-busy', 'false'); el.more.hidden = !hasMore || 'IntersectionObserver' in window; }
         }
     }
-    [el.code, el.from, el.to].forEach(input => input.addEventListener('input', () => { filters.quick_range = ''; setActiveRange(); debounceLoad(); }));
+    [el.code, el.from, el.to].forEach(input => ['input','change'].forEach(event => input.addEventListener(event, () => { markFiltersChanged(); filters.quick_range = ''; setActiveRange(); debounceLoad(); })));
     el.seller.addEventListener('change', () => load(false));
     app.querySelectorAll('[data-range]').forEach(button => button.addEventListener('click', () => { filters.quick_range = button.dataset.range; el.from.value = ''; el.to.value = ''; setActiveRange(); load(false); }));
     el.clear.addEventListener('click', () => { filters = {order_code:'',customer_id:'',seller_id:'',date_from:'',date_to:'',quick_range:''}; el.code.value='';el.customerId.value='';el.customerSearch.value='';el.customerClear.hidden=true;el.seller.value='';el.from.value='';el.to.value='';setActiveRange();load(false);el.code.focus(); });
@@ -76,7 +90,7 @@
     el.retry.addEventListener('click', () => load(false)); el.more.addEventListener('click', () => hasMore && load(true));
 
     el.customerSearch.addEventListener('input', () => {
-        if (el.customerId.value) { el.customerId.value = ''; filters.customer_id = ''; debounceLoad(); }
+        if (el.customerId.value) { markFiltersChanged(); el.customerId.value = ''; filters.customer_id = ''; debounceLoad(); }
         clearTimeout(customerTimer); const q = el.customerSearch.value.trim(); if (q.length < 2) return closeCustomers();
         customerTimer = setTimeout(() => searchCustomers(q), 250);
     });

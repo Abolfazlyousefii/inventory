@@ -3,22 +3,28 @@
 @section('title', 'فاکتورهای فروش')
 
 @push('styles')
-    <link rel="stylesheet" href="{{ asset('css/invoices-index.css') }}?v=20261015-2">
+    <link rel="stylesheet" href="{{ asset('css/invoices-index.css') }}?v={{ filemtime(public_path('css/invoices-index.css')) }}">
 @endpush
 
 @section('content')
 <main class="invoice-live" id="invoiceLiveApp"
       data-endpoint="{{ route('invoices.data') }}"
       data-customers-endpoint="{{ route('invoices.customers.search') }}"
+      data-print-url="{{ route('invoices.list.print') }}"
+      data-excel-url="{{ route('invoices.list.excel') }}"
       data-index-url="{{ route('invoices.index') }}">
     <header class="invoice-live__header">
         <div class="invoice-live__heading"><span class="invoice-live__icon" aria-hidden="true">▤</span><div><span class="invoice-live__eyebrow">مدیریت و پیگیری اسناد فروش</span>
             <h1>فاکتورهای فروش</h1>
             <p>جست‌وجو و پیگیری سریع فاکتورهای ثبت‌شده</p>
         </div></div>
+        <div class="invoice-live__actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="invoicePrintList" disabled title="تمام نتایج فیلترشده">چاپ لیست</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="invoiceExportExcel" disabled title="تمام نتایج فیلترشده">خروجی اکسل</button>
         @if($canViewCancelled)
             <a class="btn btn-outline-danger" href="{{ route('invoices.cancelled') }}">بایگانی لغوشده‌ها</a>
         @endif
+        </div>
     </header>
 
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
@@ -114,5 +120,5 @@
 @endsection
 
 @push('scripts')
-    <script src="{{ asset('js/invoices-index.js') }}" defer></script>
+    <script src="{{ asset('js/invoices-index.js') }}?v={{ filemtime(public_path('js/invoices-index.js')) }}" defer></script>
 @endpush
