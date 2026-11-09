@@ -460,6 +460,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         ->whereNumber('product')
         ->name('vouchers.personnel.products.variants');
 
+    Route::get('/vouchers/section/showroom/catalog', \App\Http\Controllers\ShowroomCatalogController::class)->name('vouchers.showroom.catalog');
     Route::get('/vouchers/section/{type}', [VoucherController::class, 'sectionIndex'])->name('vouchers.section.index');
     Route::get('/vouchers/section/{type}/create', [VoucherController::class, 'sectionCreate'])->name('vouchers.section.create');
     Route::post('/vouchers/section/{type}', [VoucherController::class, 'sectionStore'])->name('vouchers.section.store');

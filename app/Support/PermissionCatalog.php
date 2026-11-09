@@ -913,6 +913,7 @@ class PermissionCatalog
             'vouchers.sales.print' => 'issues.print',
             'vouchers.section.index' => 'issues.view',
             'vouchers.section.create' => 'issues.create',
+            'vouchers.showroom.catalog' => 'issues.create',
             'vouchers.section.store' => 'issues.create',
             'vouchers.create' => 'issues.create',
             'vouchers.store' => 'issues.create',

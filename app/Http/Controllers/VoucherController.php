@@ -561,18 +561,32 @@ class VoucherController extends Controller
             $request->merge(['voucher_type' => $fixedVoucherType]);
         }
 
-        $data = $this->validateTransfer($request);
-        $transferredAt = $this->resolveTransferredAtFromRequest($request);
-
-        if($type==='showroom'){
-            $request->validate(['request_token'=>'required|uuid']);
-            $this->storeShowroomTransfer($data,$transferredAt,(string)$request->input('request_token'));
-        }else{
-            DB::transaction(function () use ($data, $transferredAt) {
-                $this->createTransfer($data, $transferredAt);
-            });
+        if($type==='showroom' && is_array($request->input('items'))) {
+            $request->validate(['items'=>['required','array','min:1','max:100']]);
+            $items=$request->input('items');
+            foreach($items as &$item) if(is_array($item) && is_string($item['quantity']??null)) {
+                $item['quantity']=strtr($item['quantity'],array_combine(preg_split('//u','۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩',-1,PREG_SPLIT_NO_EMPTY),str_split('01234567890123456789')));
+            }
+            unset($item);$request->merge(['items'=>$items]);
         }
+        try {
+            $data = $this->validateTransfer($request);
+            $transferredAt = $this->resolveTransferredAtFromRequest($request);
 
+            if($type==='showroom'){
+                $request->validate(['request_token'=>'required|uuid']);
+                $this->storeShowroomTransfer($data,$transferredAt,(string)$request->input('request_token'));
+            }else{
+                DB::transaction(function () use ($data, $transferredAt) {
+                    $this->createTransfer($data, $transferredAt);
+                });
+            }
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            if($type==='showroom' && in_array($e->getStatusCode(),[422,409],true)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['showroom'=>$e->getMessage() ?: 'حواله ثبت نشد؛ اقلام را بررسی کنید.']);
+            }
+            throw $e;
+        }
         $message = $type === 'personnel' ? 'حواله پرسنل ثبت شد.' : 'سند حواله ثبت شد.';
 
         return redirect()->route('vouchers.section.index', $type)->with('success', $message);
@@ -1651,7 +1665,23 @@ class VoucherController extends Controller
         $centralWarehouse=Warehouse::findOrFail(WarehouseStockService::centralWarehouseId());
         $showroomWarehouse=Warehouse::where('type','showroom')->where('is_active',true)->orderBy('id')->firstOrFail();
         $categories=Category::with('parent:id,name')->orderBy('name')->get();
-        return view('vouchers.showroom.create',compact('centralWarehouse','showroomWarehouse','categories'));
+        $oldInput=old('items',[]);
+        $oldItems=collect(is_array($oldInput)?$oldInput:[])->filter(fn($item)=>is_array($item))->take(100)
+            ->map(function($item){
+                foreach(['variant_id','product_id','category_id'] as $key) $item[$key]=is_scalar($item[$key]??null) ? (int)$item[$key] : 0;
+                $item['quantity']=is_scalar($item['quantity']??null) ? (string)$item['quantity'] : '';
+                return $item;
+            });
+        $catalog=app(\App\Services\ShowroomCatalogService::class);
+        $variants=$catalog->query($centralWarehouse->id,$showroomWarehouse->id,false)
+            ->whereIn('product_variants.id',$oldItems->pluck('variant_id'))->get()->keyBy('id');
+        $selectedRows=$oldItems->map(function($item,$index)use($variants,$catalog){
+            $v=$variants->get($item['variant_id']??0);
+            return ($v ? $catalog->row($v) : ['id'=>(int)($item['variant_id']??0),'product_id'=>(int)($item['product_id']??0),
+                'category_id'=>(int)($item['category_id']??0),'product_name'=>'کالای در دسترس نیست','variant_title'=>'مدل را حذف و دوباره انتخاب کنید','code'=>'',
+                'available'=>0,'showroom_quantity'=>0,'selectable'=>false]) + ['quantity'=>(string)($item['quantity']??'')];
+        })->values();
+        return view('vouchers.showroom.create',compact('centralWarehouse','showroomWarehouse','categories','selectedRows'));
     }
 
     private function storeShowroomTransfer(array $data,$at,string $token): void

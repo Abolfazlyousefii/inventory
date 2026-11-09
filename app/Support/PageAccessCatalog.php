@@ -10,6 +10,7 @@ class PageAccessCatalog
      * These dependencies must never be added to write/confirm/delete routes.
      */
     private const FORM_LOOKUP_DEPENDENCIES = [
+        'vouchers.showroom.catalog' => ['vouchers.section.create'],
         'vouchers.personnel.categories.children' => ['vouchers.section.create', 'vouchers.edit'],
         'vouchers.personnel.products.search' => ['vouchers.section.create', 'vouchers.edit'],
         'vouchers.personnel.products.variants' => ['vouchers.section.create', 'vouchers.edit'],
@@ -318,6 +319,7 @@ class PageAccessCatalog
         'vouchers.return-from-sale.pdf' => ['sales.returns'],
         'vouchers.personnel.categories.children' => ['warehouse.issues'],
         'vouchers.personnel.products.search' => ['warehouse.issues'],
+        'vouchers.showroom.catalog' => ['warehouse.issues'],
         'vouchers.personnel.products.variants' => ['warehouse.issues'],
         'vouchers.section.index' => ['warehouse.issues'],
         'vouchers.section.create' => ['warehouse.issues'],
