@@ -6,6 +6,8 @@
     supplier?.addEventListener('change', () => { document.querySelector('[data-pr-purchase]').value = ''; supplier.form.submit(); });
     const purchase = document.querySelector('[data-pr-purchase]');
     purchase?.addEventListener('change', () => purchase.form.submit());
+    const warehouse = document.querySelector('[data-pr-warehouse]');
+    warehouse?.addEventListener('change', () => warehouse.form.submit());
     const entry = document.querySelector('[data-pr-entry]');
     const recalculate = () => {
         let total = 0;
@@ -33,7 +35,7 @@
         entry.querySelector('button[type="submit"]').disabled = true;
     });
     document.querySelector('[data-pr-delete]')?.addEventListener('submit', event => {
-        if (!window.confirm('سند حذف شود و کالاها به موجودی آزاد مرکزی برگردند؟')) event.preventDefault();
+        if (!window.confirm('سند حذف شود و کالاها به همان انبار مبدأ برگردند؟')) event.preventDefault();
         else event.currentTarget.querySelector('button').disabled = true;
     });
 })();

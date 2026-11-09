@@ -13,5 +13,6 @@ class PurchaseReturn extends Model
     public function items() { return $this->hasMany(PurchaseReturnItem::class); }
     public function purchase() { return $this->belongsTo(Purchase::class); }
     public function supplier() { return $this->belongsTo(Supplier::class); }
+    public function warehouse() { return $this->belongsTo(Warehouse::class); }
     public function revisions() { return $this->hasMany(PurchaseReturnRevision::class)->latest('id'); }
 }

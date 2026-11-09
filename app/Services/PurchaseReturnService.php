@@ -6,13 +6,20 @@ use App\Models\{Product, ProductVariant, Purchase, PurchaseReturn, StockMovement
 use Illuminate\Support\Facades\{DB, Schema};
 use Illuminate\Validation\ValidationException;
 
-/** A return changes only central free stock. Purchase and financial rows are immutable here. */
+/** A return changes free stock in its recorded source warehouse; financial rows remain immutable. */
 class PurchaseReturnService
 {
     private function fail(string $message): never { throw ValidationException::withMessages(['items'=>$message]); }
 
-    public function warehouseId(): int
+    public function warehouseId(?int $selected=null): int
     {
+        if ($selected !== null) {
+            $warehouse=Warehouse::whereKey($selected)->first();
+            if (!$warehouse || !$warehouse->is_active) {
+                throw ValidationException::withMessages(['warehouse_id'=>'انبار مبدأ باید معتبر و فعال باشد.']);
+            }
+            return (int)$warehouse->id;
+        }
         $warehouses=Warehouse::where('type','central')->get();
         if ($warehouses->count() !== 1 || !$warehouses->first()->is_active || $warehouses->first()->name !== 'انبار مرکزی') {
             $this->fail('انبار مرکزی استاندارد و فعال باید به‌صورت یکتا تعریف شده باشد.');
@@ -36,6 +43,7 @@ class PurchaseReturnService
             $existing=PurchaseReturn::withTrashed()->where('submission_token',$data['submission_token'])->first();
             if ($existing) {
                 if ((int)$existing->created_by !== $userId || $existing->trashed()) $this->fail('درخواست قبلاً استفاده شده است؛ صفحه را تازه کنید.');
+                if (isset($data['warehouse_id']) && (int)$data['warehouse_id'] !== (int)$existing->warehouse_id) $this->fail('این درخواست قبلاً برای انبار دیگری ثبت شده است؛ صفحه را تازه کنید.');
                 return $existing;
             }
             $purchase=Purchase::whereKey($data['purchase_id'])->lockForUpdate()->firstOrFail();
@@ -45,7 +53,7 @@ class PurchaseReturnService
             $doc=PurchaseReturn::create([
                 'document_number'=>str_pad((string)$number,5,'0',STR_PAD_LEFT), 'submission_token'=>$data['submission_token'],
                 'purchase_id'=>$purchase->id,'supplier_id'=>$purchase->supplier_id,'supplier_name'=>$purchase->supplier?->name ?? 'تأمین‌کننده',
-                'warehouse_id'=>$this->warehouseId(),'returned_at'=>$data['returned_at'],'note'=>$data['note']??null,
+                'warehouse_id'=>$this->warehouseId(isset($data['warehouse_id']) ? (int)$data['warehouse_id'] : null),'returned_at'=>$data['returned_at'],'note'=>$data['note']??null,
                 'created_by'=>$userId,'updated_by'=>$userId,'version'=>1,
             ]);
             $this->applyLines($doc,$lines,[],$userId,'ثبت برگشت از خرید');
@@ -62,6 +70,7 @@ class PurchaseReturnService
             $purchase=Purchase::whereKey($document->purchase_id)->lockForUpdate()->firstOrFail();
             $doc=$this->lockedDocument($document,(int)$data['version']);
             if ((int)$data['purchase_id'] !== (int)$doc->purchase_id || (int)$data['supplier_id'] !== (int)$doc->supplier_id) $this->fail('تأمین‌کننده و خریدِ سند برگشت قابل جابه‌جایی نیستند.');
+            if (isset($data['warehouse_id']) && (int)$data['warehouse_id'] !== (int)$doc->warehouse_id) $this->fail('انبار مبدأ سند ثبت‌شده قابل تغییر نیست؛ برای انتخاب انبار دیگر، سند را حذف و دوباره ثبت کنید.');
             $before=$this->snapshot($doc);$old=$doc->items()->get()->keyBy('purchase_item_id')->map->toArray()->all();
             $lines=$this->lines($purchase,$data['items'],$doc,$old);
             $this->applyLines($doc,$lines,$old,$userId,'ویرایش برگشت از خرید');
@@ -146,7 +155,7 @@ class PurchaseReturnService
             $stocks=WarehouseStock::where('warehouse_id',$doc->warehouse_id)->where('product_id',$row['product_id'])->where('product_variant_id',$row['variant_id'])->lockForUpdate()->get();
             if ($stocks->count()>1) $this->fail('موجودی این کالا رکورد تکراری دارد؛ ابتدا بررسی شود.');
             $before=(int)($stocks->first()?->quantity??0);
-            if ($before+$row['delta']<0) $this->fail('موجودی آزاد انبار مرکزی کافی نیست؛ رزرو کالا قابل برگشت نیست.');
+            if ($before+$row['delta']<0) $this->fail('موجودی آزاد انبار مبدأ کافی نیست؛ موجودی سایر انبارها و کالای رزروشده قابل استفاده نیست.');
             WarehouseStockService::change((int)$doc->warehouse_id,$row['product_id'],$row['delta'],$row['variant_id']);
             StockMovement::create(['product_id'=>$row['product_id'],'product_variant_id'=>$row['variant_id'],'warehouse_id'=>$doc->warehouse_id,
                 'user_id'=>$userId,'type'=>$row['delta']>0?'in':'out','reason'=>$row['delta']>0?'purchase_return_restore':'purchase_return',

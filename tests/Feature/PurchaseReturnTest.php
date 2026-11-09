@@ -54,6 +54,112 @@ class PurchaseReturnTest extends TestCase
         DB::table('purchase_items')->insert([['id'=>1,'purchase_id'=>1,'product_id'=>1,'product_variant_id'=>1,'quantity'=>10,'buy_price'=>1000,'product_name'=>'کالا','variant_name'=>'مشکی'],['id'=>2,'purchase_id'=>2,'product_id'=>1,'product_variant_id'=>1,'quantity'=>10,'buy_price'=>1000,'product_name'=>'دیگر','variant_name'=>'مشکی']]);
     }
 
+    private function secondaryWarehouse(int $quantity=5, bool $active=true): void
+    {
+        DB::table('warehouses')->insert(['id'=>2,'name'=>'انبار مرجوعی','type'=>'return','is_active'=>$active]);
+        DB::table('warehouse_stocks')->insert(['warehouse_id'=>2,'product_id'=>1,'product_variant_id'=>1,'quantity'=>$quantity]);
+    }
+
+    public function test_return_from_selected_warehouse_leaves_central_and_reservations_unchanged(): void
+    {
+        $this->secondaryWarehouse();
+        $doc=$this->service()->create($this->payload(2,['warehouse_id'=>2]),1);
+        $this->assertSame(2,(int)$doc->warehouse_id);
+        $this->assertSame(3,(int)DB::table('warehouse_stocks')->where('warehouse_id',2)->value('quantity'));
+        $this->assertSame(6,$this->quantity());
+        $this->assertSame(6,(int)DB::table('product_variants')->value('stock'));
+        $this->assertSame(4,(int)DB::table('product_variants')->value('reserved'));
+        $this->assertDatabaseHas('stock_movements',['warehouse_id'=>2,'type'=>'out','quantity'=>2]);
+        $this->assertDatabaseCount('supplier_ledgers',0);$this->assertDatabaseCount('customer_ledgers',0);
+    }
+
+    public function test_insufficient_selected_warehouse_does_not_borrow_central_stock(): void
+    {
+        $this->secondaryWarehouse(1);
+        $this->invalid(fn()=> $this->service()->create($this->payload(2,['warehouse_id'=>2]),1));
+        $this->assertSame(6,$this->quantity());$this->assertDatabaseCount('purchase_returns',0);
+        $this->assertDatabaseCount('stock_movements',0);
+    }
+
+    public function test_edit_and_delete_restore_only_the_original_selected_warehouse_even_if_inactive(): void
+    {
+        $this->secondaryWarehouse();
+        $doc=$this->service()->create($this->payload(2,['warehouse_id'=>2]),1);
+        $doc=$this->service()->update($doc,$this->payload(4,['warehouse_id'=>2,'version'=>1]),1);
+        $this->assertSame(1,(int)DB::table('warehouse_stocks')->where('warehouse_id',2)->value('quantity'));
+        $this->invalid(fn()=> $this->service()->update($doc,$this->payload(1,['warehouse_id'=>1,'version'=>2]),1));
+        DB::table('warehouses')->where('id',2)->update(['is_active'=>false]);
+        $this->service()->delete($doc,2,1,'بازگرداندن به همان مبدأ');
+        $this->assertSame(5,(int)DB::table('warehouse_stocks')->where('warehouse_id',2)->value('quantity'));
+        $this->assertSame(6,$this->quantity());
+    }
+
+    public function test_inactive_or_missing_warehouse_cannot_create_a_return(): void
+    {
+        $this->secondaryWarehouse(5,false);
+        $this->invalid(fn()=> $this->service()->create($this->payload(1,['warehouse_id'=>2]),1));
+        $this->invalid(fn()=> $this->service()->create($this->payload(1,['warehouse_id'=>999]),1));
+        $this->assertDatabaseCount('purchase_returns',0);$this->assertSame(6,$this->quantity());
+    }
+
+    public function test_same_submission_cannot_silently_switch_warehouses(): void
+    {
+        $this->secondaryWarehouse();$data=$this->payload(1,['warehouse_id'=>2]);
+        $doc=$this->service()->create($data,1);
+        $this->assertSame($doc->id,$this->service()->create($data,1)->id);
+        $this->invalid(fn()=> $this->service()->create(array_replace($data,['warehouse_id'=>1]),1));
+        $this->assertDatabaseCount('purchase_returns',1);$this->assertDatabaseCount('stock_movements',1);
+    }
+
+    public function test_purchase_return_limit_is_shared_across_warehouses(): void
+    {
+        $this->secondaryWarehouse(20);
+        $this->service()->create($this->payload(6,['warehouse_id'=>1]),1);
+        $this->invalid(fn()=> $this->service()->create($this->payload(5,['warehouse_id'=>2]),1));
+        $this->service()->create($this->payload(4,['warehouse_id'=>2]),1);
+        $this->assertSame(10,$this->service()->returnedQuantity(1));
+        $this->assertSame(16,(int)DB::table('warehouse_stocks')->where('warehouse_id',2)->value('quantity'));
+    }
+
+    public function test_form_loads_capacity_for_selected_source_and_edit_keeps_its_source(): void
+    {
+        $this->secondaryWarehouse(3);
+        $controller=app(\App\Http\Controllers\PurchaseReturnController::class);
+        $request=\Illuminate\Http\Request::create('/purchase-returns/create','GET',['supplier_id'=>1,'purchase_id'=>1,'warehouse_id'=>2]);
+        $data=$controller->create($request)->getData();
+        $this->assertSame(2,(int)$data['warehouseId']);$this->assertSame(3,$data['rows']->first()->free);
+        $this->assertSame(3,$data['rows']->first()->limit);
+        $doc=$this->service()->create($this->payload(2,['warehouse_id'=>2]),1);
+        $edit=$controller->edit(\Illuminate\Http\Request::create('/edit','GET',['warehouse_id'=>1]),$doc)->getData();
+        $this->assertSame(2,(int)$edit['warehouseId']);$this->assertSame(3,$edit['rows']->first()->capacity);
+    }
+
+    public function test_controller_requires_and_forwards_the_selected_warehouse(): void
+    {
+        $this->secondaryWarehouse();
+        $data=$this->payload(2,['warehouse_id'=>2])+['returned_at_fa'=>'1405/07/19'];
+        $request=\Illuminate\Http\Request::create('/purchase-returns','POST',$data);
+        $request->setUserResolver(fn()=> (object)['id'=>1]);
+        $response=app(\App\Http\Controllers\PurchaseReturnController::class)->store($request);
+        $this->assertSame(302,$response->getStatusCode());
+        $this->assertSame(2,(int)PurchaseReturn::firstOrFail()->warehouse_id);
+        $missing=\Illuminate\Http\Request::create('/purchase-returns','POST',$this->payload()+['returned_at_fa'=>'1405/07/19']);
+        $this->invalid(fn()=> app(\App\Http\Controllers\PurchaseReturnController::class)->store($missing));
+        $this->assertDatabaseCount('purchase_returns',1);
+    }
+
+    public function test_inactive_source_form_fails_without_redirecting_back_to_itself(): void
+    {
+        $this->secondaryWarehouse(3,false);
+        $request=\Illuminate\Http\Request::create('/purchase-returns/create','GET',['warehouse_id'=>2]);
+        try {
+            app(\App\Http\Controllers\PurchaseReturnController::class)->create($request);
+            $this->fail('Inactive warehouse must not be selected');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            $this->assertSame(422,$e->getStatusCode());
+        }
+    }
+
     private function payload(int $qty = 2, array $extra = []): array
     {
         return $extra + ['supplier_id'=>1,'purchase_id'=>1,'returned_at'=>'2026-10-11','submission_token'=>(string) \Illuminate\Support\Str::uuid(),'items'=>[['purchase_item_id'=>1,'quantity'=>$qty]],'note'=>'نمونه'];
@@ -134,21 +240,28 @@ class PurchaseReturnTest extends TestCase
         Schema::create('permissions',function(Blueprint $t){$t->id();$t->string('name')->nullable();$t->string('key')->nullable();$t->string('guard_name')->nullable();});
         DB::table('users')->insert(['id'=>1,'name'=>'انبار']);
         DB::table('purchase_items')->where('id',1)->update(['product_name'=>'کالا <script>alert(1)</script>']);
-        $doc=$this->service()->create($this->payload(),1);
+        $this->secondaryWarehouse(3);
+        DB::table('warehouses')->insert([['id'=>3,'name'=>'انبار ضایعات','type'=>'scrap'],['id'=>4,'name'=>'انبار پرسنل','type'=>'personnel'],['id'=>5,'name'=>'انبار شوروم','type'=>'showroom']]);
+        $doc=$this->service()->create($this->payload(2,['warehouse_id'=>2]),1);
         DB::enableQueryLog();DB::flushQueryLog();
         $controller=app(\App\Http\Controllers\PurchaseReturnController::class);
-        $request=\Illuminate\Http\Request::create('/purchase-returns/create','GET',['supplier_id'=>1,'purchase_id'=>1]);
+        $request=\Illuminate\Http\Request::create('/purchase-returns/create','GET',['supplier_id'=>1,'purchase_id'=>1,'warehouse_id'=>2]);
         app()->instance('request',$request);
         $form=$controller->create($request)->render();
         $this->assertStringContainsString('data-pr-quantity',$form);$this->assertStringContainsString('&lt;script&gt;',$form);
         $this->assertStringNotContainsString('<script>alert(1)</script>',$form);
+        $this->assertStringContainsString('data-pr-warehouse',$form);$this->assertStringContainsString('name="warehouse_id" value="2"',$form);
         $show=$controller->show($doc)->render();$this->assertStringContainsString('۰۰۰۰۱',$show);$this->assertStringContainsString('۱۴۰۵/۰۷/۱۹',$show);
         $print=$controller->print($doc)->render();$this->assertStringContainsString('۰۰۰۰۱',$print);
         $this->assertStringContainsString('۱۴۰۵/۰۷/۱۹',$print);
+        $this->assertStringContainsString('انبار مبدأ: انبار مرجوعی',$print);
         $index=$controller->index(\Illuminate\Http\Request::create('/purchase-returns'))->render();$this->assertStringContainsString('برگشت جدید',$index);
         $writes=array_filter(DB::getQueryLog(),fn($q)=>preg_match('/^\s*(insert|update|delete|alter|create|drop)/i',$q['query']));$this->assertEmpty($writes);
         $dir=storage_path('app/purchase-returns-20261011');
         foreach(['form'=>$form,'show'=>$show,'print'=>$print,'index'=>$index] as $name=>$html)file_put_contents($dir.'/'.$name.'.html',$html);
+        $central=\Illuminate\Http\Request::create('/purchase-returns/create','GET',['supplier_id'=>1,'purchase_id'=>1,'warehouse_id'=>1]);
+        app()->instance('request',$central);
+        file_put_contents($dir.'/form-central.html',$controller->create($central)->render());
     }
 
     public function test_http_requires_authentication_and_jalali_validation_preserves_inventory(): void
