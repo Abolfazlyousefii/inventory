@@ -21,6 +21,8 @@ class PurchaseItem extends Model
         'product_code',
         'variant_name',
         'quantity',
+        'buy_cny_units',
+        'cny_policy',
         'buy_price',
         'sell_price',
         'line_subtotal',

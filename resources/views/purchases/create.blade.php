@@ -3,6 +3,9 @@
 @section('content')
 	@php
 		$isEdit = isset($purchase) && $purchase;
+		$cnyEnabled = config('cny_pricing.enabled') || ($purchase->purchase_origin ?? '') === 'china';
+        $cnyRate = ($purchase->purchase_origin ?? '') === 'china' ? optional(\App\Models\CnyExchangeRate::find($purchase->cny_rate_id))->toArray() : app(\App\Services\CnyPricingService::class)->previewRate();
+        if ($isEdit && $cnyRate) $cnyRate['sample'] = ($cnyRate['provider']??'') === 'sample';
 		$formAction = $isEdit ? route('purchases.update', $purchase) : route('purchases.store');
 		$initialItems = old('items');
 		$purchaseItemsById = $isEdit ? $purchase->items->keyBy('id') : collect();
@@ -12,6 +15,7 @@
 			$initialItems = $isEdit
 				? $purchase->items->map(fn ($it) => [
 					'id' => $it->id,
+                    'buy_cny' => $it->buy_cny_units ? app(\App\Services\CnyPriceCalculator::class)->amount((int)$it->buy_cny_units) : '',
 					'product_id' => $it->product_id,
 					'category_id' => $it->product?->category_id,
 					'variant_id' => $it->product_variant_id,
@@ -23,6 +27,7 @@
 					'buy_price' => \App\Support\Currency::toRial($it->buy_price),
 					'sell_price' => \App\Support\Currency::toRial($it->sell_price),
 					'original_sell_price' => \App\Support\Currency::toRial($it->sell_price),
+                    'original_buy_price' => (int)$it->buy_price,
 					'product_buy_price' => \App\Support\Currency::toRial($it->buy_price),
 					'product_sell_price' => \App\Support\Currency::toRial($it->sell_price),
 					'price_overridden' => true,
@@ -48,6 +53,7 @@
 
 				if ($storedItem) {
 					$item['original_sell_price'] = (int) $storedItem->sell_price;
+                    $item['original_buy_price'] = (int)$storedItem->buy_price;
 				} else {
 					unset($item['original_sell_price']);
 				}
@@ -191,6 +197,7 @@ $productsPayload = $products->map(function ($p) {
 
 		<form method="POST" action="{{ $formAction }}" id="purchaseForm">
 			@csrf
+            <input type="hidden" name="uniform_product_prices" value="1">
 			@if($isEdit)
 				@method('PUT')
 			@endif
@@ -208,6 +215,7 @@ $productsPayload = $products->map(function ($p) {
             @if($errors->has('sale_price_change_confirmed') || $errors->has('items'))
                 <div class="alert alert-danger small mt-2" role="alert">{{ $errors->first('sale_price_change_confirmed') ?: $errors->first('items') }}</div>
             @endif
+
 
 			<div class="card purchase-main-card mb-3">
 				<div class="card-body">
@@ -244,8 +252,22 @@ $productsPayload = $products->map(function ($p) {
 							<input class="form-control form-control-sm" value="انبار مرکزی" readonly>
 						</div>
 						<div class="col-md-{{ $isEdit ? '3' : '6' }}">
-							<label class="form-label">توضیحات خرید</label>
-							<input class="form-control form-control-sm" name="note" value="{{ old('note', $purchase->note ?? '') }}" placeholder="اختیاری">
+                            <div class="cny-note-heading">
+                                <label class="form-label" for="purchaseNote">توضیحات خرید</label>
+                                @if($cnyEnabled)
+                                <label class="cny-toggle" for="purchaseCnyEnabled"><input type="checkbox" id="purchaseCnyEnabled" @checked(old('purchase_origin',$purchase->purchase_origin??'domestic')==='china') @disabled($isEdit)> قیمت‌گذاری با یوان</label>
+                                <input type="hidden" id="purchaseOrigin" name="purchase_origin" value="{{ old('purchase_origin',$purchase->purchase_origin??'domestic') }}">
+                                <input type="hidden" name="cny_rate_id" value="{{ $cnyRate['id']??'' }}">
+                                <small id="cny-rate-panel" class="cny-inline-rate" hidden>
+                                    @if($cnyRate)
+                                        هر یوان: <strong>{{ number_format(($cnyRate['rate_rial']??0)/10) }} تومان</strong>
+                                        @if($cnyRate['sample']??false)<span class="cny-sample-badge">نمونه</span>@endif
+                                    @else <span class="text-warning">نرخ معتبر در دسترس نیست</span> @endif
+                                </small>
+                                @endif
+                            </div>
+							<input class="form-control form-control-sm" id="purchaseNote" name="note" value="{{ old('note', $purchase->note ?? '') }}" placeholder="اختیاری">
+                            @error('cny_pricing')<div class="text-danger small mt-1" role="alert">{{ $message }}</div>@enderror
 						</div>
 						@if($isEdit)
 							<div class="col-md-3">
@@ -348,11 +370,11 @@ $productsPayload = $products->map(function ($p) {
 							<div class="fw-bold"><span id="summaryVariantCount">0</span> ردیف</div>
 						</div>
 						<div class="col-md-2">
-							<div class="small text-muted">جمع قبل تخفیف</div>
+							<div class="small text-muted">جمع قبل تخفیف کلی</div>
 							<div class="fw-bold"><span id="subtotalAmount">0</span> ریال</div>
 						</div>
 						<div class="col-md-2">
-							<label class="form-label small mb-1">نوع تخفیف کلی</label>
+							<label class="form-label small mb-1" for="invoiceDiscountType">نوع تخفیف کلی</label>
 							<select class="form-select form-select-sm" name="invoice_discount_type" id="invoiceDiscountType">
 								<option value="">بدون تخفیف</option>
 								<option value="amount" @selected(old('invoice_discount_type', $purchase->discount_type ?? '')==='amount')>مبلغی</option>
@@ -360,7 +382,7 @@ $productsPayload = $products->map(function ($p) {
 							</select>
 						</div>
 						<div class="col-md-2">
-							<label class="form-label small mb-1">مقدار تخفیف</label>
+							<label class="form-label small mb-1" for="invoiceDiscountValue">مقدار تخفیف</label>
 							<input data-rial data-rial-kind-source="#invoiceDiscountType" type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" id="invoiceDiscountValue" name="invoice_discount_value" value="{{ old('invoice_discount_value', ($purchase->discount_type ?? null) === 'amount' ? \App\Support\Currency::toRial($purchase->discount_value ?? 0) : ($purchase->discount_value ?? 0)) }}">
 						</div>
 						<div class="col-md-2 text-end">
@@ -371,11 +393,17 @@ $productsPayload = $products->map(function ($p) {
 					</div>
 				</div>
 			</div>
+            <div id="purchaseSummarySpace" aria-hidden="true"></div>
 		</form>
 	</div>
 
+    <link rel="stylesheet" href="{{ asset('css/cny-purchase.css') }}?v={{ filemtime(public_path('css/cny-purchase.css')) }}">
+    <script src="{{ asset('js/cny-pricing.js') }}?v={{ filemtime(public_path('js/cny-pricing.js')) }}"></script>
 	<script>
 		(function () {
+			const cnyRate = @json($cnyRate);
+            const originEl = document.getElementById('purchaseOrigin');
+            const isCny = () => originEl?.value === 'china';
 			const products = @json($productsPayload);
 			const categories = @json($categoriesPayload);
 			const initialItems = @json($initialItems);
@@ -399,6 +427,24 @@ $productsPayload = $products->map(function ($p) {
 			const subtotalEl = document.getElementById('subtotalAmount');
 			const totalDiscountEl = document.getElementById('totalDiscountAmount');
 			const totalEl = document.getElementById('totalAmount');
+
+            // Reserve the floating panel's actual height so the last item remains reachable.
+            const summaryPanel = purchaseForm.querySelector('.summary-sticky');
+            const summarySpace = document.getElementById('purchaseSummarySpace');
+            function positionPurchaseSummary() {
+                const bounds = purchaseForm.getBoundingClientRect();
+                summaryPanel.style.setProperty('--summary-left', `${Math.max(6, bounds.left)}px`);
+                summaryPanel.style.setProperty('--summary-width', `${Math.min(bounds.width, window.innerWidth - 12)}px`);
+                summaryPanel.classList.add('is-floating');
+                summarySpace.style.height = `${summaryPanel.getBoundingClientRect().height + 24}px`;
+            }
+            if (window.ResizeObserver) {
+                const summaryObserver = new ResizeObserver(positionPurchaseSummary);
+                summaryObserver.observe(purchaseForm);
+                summaryObserver.observe(summaryPanel);
+            }
+            window.addEventListener('resize', positionPurchaseSummary);
+            positionPurchaseSummary();
 
 			function escapeHtml(value) {
 				return String(value ?? '')
@@ -550,6 +596,7 @@ $productsPayload = $products->map(function ($p) {
 
 				const payload = await response.json();
 				product.variants = realVariantsForProduct(product, payload.variants || []);
+                product.prices = payload.product_prices || {};
 				return product.variants;
 			}
 
@@ -691,12 +738,12 @@ $productsPayload = $products->map(function ($p) {
 					const shouldApplyToActiveRow = includeActiveRows && isActiveRow;
 
 					if (fields.includes('buy') && (force || shouldApplyToActiveRow || row.dataset.buyOverridden !== '1')) {
-						buyEl.value = defaults.buy === '' ? '' : formatNumericInput(defaults.buy);
+						buyEl.value = defaults.buy === '' && card.dataset.buyMixed==='1' && row.dataset.originalPurchaseBuyPrice!==undefined ? formatNumericInput(row.dataset.originalPurchaseBuyPrice) : (defaults.buy === '' ? '' : formatNumericInput(defaults.buy));
 						row.dataset.buyOverridden = (force || shouldApplyToActiveRow) ? '0' : (row.dataset.buyOverridden || '0');
 					}
 
 					if (fields.includes('sell') && (force || shouldApplyToActiveRow || row.dataset.sellOverridden !== '1')) {
-						sellEl.value = defaults.sell === '' ? '' : formatNumericInput(defaults.sell);
+						sellEl.value = defaults.sell === '' && card.dataset.sellMixed==='1' && row.dataset.originalPurchaseSellPrice!==undefined ? formatNumericInput(row.dataset.originalPurchaseSellPrice) : (defaults.sell === '' ? '' : formatNumericInput(defaults.sell));
 						row.dataset.sellOverridden = (force || shouldApplyToActiveRow) ? '0' : (row.dataset.sellOverridden || '0');
 					}
 
@@ -718,15 +765,15 @@ $productsPayload = $products->map(function ($p) {
                 <td class="mono small">${escapeHtml(variant.code || '—')}</td>
                 <td>${formatFa(variant.stock || 0)}</td>
                 <td><input type="number" min="0" class="form-control form-control-sm qty-input" data-qty value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
-                <td><input data-rial type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-buy value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
-                <td><input data-rial type="text" inputmode="numeric" class="form-control form-control-sm formatted-number price-input" data-sell value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
-                <td><span class="current-sale-price ${Number(variant.sell_price || 0) > 0 ? '' : 'missing'}" data-current-sale-price data-sale-price="${Number(variant.sell_price || 0)}">${escapeHtml(currentSalePriceMessage(variant.sell_price))}</span></td>
-                <td><span class="badge text-bg-warning d-none" data-price-badge>قیمت اختصاصی</span></td>
+                <td class="purchase-price-cell"><input type="hidden" data-buy value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
+                <td class="purchase-price-cell"><input type="hidden" data-sell value="" ${variant.purchase_blocked ? 'disabled' : ''}></td>
+                <td class="purchase-price-cell"><span class="current-sale-price ${Number(variant.sell_price || 0) > 0 ? '' : 'missing'}" data-current-sale-price data-sale-price="${Number(variant.sell_price || 0)}">${escapeHtml(currentSalePriceMessage(variant.sell_price))}</span></td>
+                <td class="purchase-price-cell"><span class="badge text-bg-warning d-none" data-price-badge>قیمت اختصاصی</span></td>
                 <td><button type="button" class="btn btn-sm btn-outline-secondary" data-clear-row ${variant.purchase_blocked ? 'disabled' : ''}>خالی</button></td>
             </tr>
         `).join('') : `
             <tr>
-                <td colspan="9" class="text-center text-muted py-3">برای این محصول تنوعی ثبت نشده است؛ ابتدا برای محصول یک تنوع عمومی تعریف کنید.</td>
+                <td colspan="5" class="text-center text-muted py-3">برای این محصول تنوعی ثبت نشده است؛ ابتدا برای محصول یک تنوع عمومی تعریف کنید.</td>
             </tr>
         `;
 
@@ -745,23 +792,26 @@ $productsPayload = $products->map(function ($p) {
                 </div>
 
                 <div class="p-3">
-                    <div class="price-panel mb-3">
+                    <div class="cny-product-panel mb-3" data-cny-panel hidden>
+                        <label class="form-label" for="cny-buy-${product.id}">قیمت خرید کل کالا <small>یوان · یکسان برای تمام تنوع‌ها</small></label>
+                        <input id="cny-buy-${product.id}" type="text" inputmode="decimal" class="form-control" data-cny-buy autocomplete="off" placeholder="مثلاً ۵ یا ۵٫۲۵" maxlength="16">
+                        <div class="cny-product-quote" data-cny-quote aria-live="polite">مبلغ یوانی را وارد کنید.</div>
+                    </div>
+                    <div class="price-panel mb-3" data-domestic-price-panel>
                         <div class="row g-2 align-items-end">
-                            <div class="col-md-3">
-                                <label class="form-label small mb-1">قیمت خرید کلی محصول</label>
-                                <input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" data-product-buy placeholder="مثلاً 200,000">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-1" for="product-buy-${product.id}">قیمت خرید کالا <small>ریال</small></label>
+                                <input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" id="product-buy-${product.id}" data-product-buy placeholder="مثلاً 200,000">
                             </div>
-                            <div class="col-md-3">
-                                <label class="form-label small mb-1">قیمت فروش کلی محصول</label>
-                                <input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" data-product-sell placeholder="مثلاً 250,000">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-1" for="product-sell-${product.id}">قیمت فروش کالا <small>ریال</small></label>
+                                <input type="text" inputmode="numeric" class="form-control form-control-sm formatted-number" id="product-sell-${product.id}" data-product-sell placeholder="مثلاً 250,000">
                             </div>
-                            <div class="col-md-3 d-grid">
-                                <button type="button" class="btn btn-sm btn-outline-primary" data-apply-all>اعمال قیمت روی همه تنوع‌ها</button>
-                            </div>
-                            <div class="col-md-3 small text-muted">این قیمت به‌صورت پیش‌فرض روی همه تنوع‌های این محصول اعمال می‌شود.</div>
+                            <div class="col-md-4 small text-muted">یک قیمت برای کل کالا؛ در جدول پایین فقط تعداد هر تنوع را وارد کنید.</div>
                         </div>
                     </div>
 
+                    <p class="small text-warning" data-legacy-price-note hidden>قیمت‌های این سند قدیمی متفاوت‌اند. خالی‌ماندن قیمت کالا، مبلغ‌های قبلی را حفظ می‌کند؛ ورود قیمت جدید روی همهٔ ردیف‌های این کالا اعمال می‌شود.</p>
                     <div class="purchase-variant-filter mb-3" data-variant-filter>
                         <div class="row g-2 align-items-center">
                             <div class="col-md-6">
@@ -790,10 +840,10 @@ $productsPayload = $products->map(function ($p) {
                                     <th>کد تنوع / بارکد</th>
                                     <th>موجودی فعلی</th>
                                     <th>تعداد خرید</th>
-                                    <th>قیمت خرید</th>
-                                    <th>قیمت فروش خرید</th>
-                                    <th>قیمت فروش فعلی سیستم</th>
-                                    <th>وضعیت قیمت</th>
+                                    <th class="purchase-price-cell">قیمت خرید</th>
+                                    <th class="purchase-price-cell">قیمت فروش خرید</th>
+                                    <th class="purchase-price-cell">قیمت فروش فعلی سیستم</th>
+                                    <th class="purchase-price-cell">وضعیت قیمت</th>
                                     <th>عملیات</th>
                                 </tr>
                             </thead>
@@ -835,16 +885,24 @@ $productsPayload = $products->map(function ($p) {
 
 				if (initialRows.length) {
 					const first = initialRows[0];
-					card.querySelector('[data-product-buy]').value = formatNumericInput(first.product_buy_price || first.buy_price || '');
-					card.querySelector('[data-product-sell]').value = formatNumericInput(first.product_sell_price || first.sell_price || '');
+                    card.querySelector('[data-cny-buy]').value = first.buy_cny || '';
+                    for (const field of ['buy','sell']) {
+                        const prices=[...new Set(initialRows.map(row=>String(row[field+'_price']??'')))];
+                        card.dataset[field+'Mixed']=IS_EDIT_PURCHASE && prices.length>1?'1':'0';
+                        card.querySelector('[data-product-'+field+']').value=prices.length===1?formatNumericInput(prices[0]):'';
+                    }
+                    card.querySelector('[data-legacy-price-note]').hidden=card.dataset.buyMixed!=='1' && card.dataset.sellMixed!=='1';
 
 					initialRows.forEach((item) => {
 						const row = card.querySelector(`[data-variant-row][data-variant-id="${item.variant_id}"]`);
 						if (!row) return;
 
 						row.dataset.purchaseItemId = item.id || '';
+                        row.dataset.lineDiscountType = item.discount_type || '';
+                        row.dataset.lineDiscountValue = String(parseNumericInput(item.discount_value || 0));
 						if (item.original_sell_price !== undefined && item.original_sell_price !== null && item.original_sell_price !== '') {
 							row.dataset.originalPurchaseSellPrice = String(parseNumericInput(item.original_sell_price));
+                            row.dataset.originalPurchaseBuyPrice = String(parseNumericInput(item.original_buy_price ?? item.buy_price));
 						} else {
 							delete row.dataset.originalPurchaseSellPrice;
 						}
@@ -852,7 +910,7 @@ $productsPayload = $products->map(function ($p) {
 						row.querySelector('[data-buy]').value = formatNumericInput(item.buy_price || '');
 						row.querySelector('[data-sell]').value = formatNumericInput(item.sell_price || '');
 						const livePrice = Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0);
-						if (Number(item.sell_price || 0) !== livePrice) {
+						if (Number(item.sell_price || 0) !== livePrice && (!isCny() || IS_EDIT_PURCHASE)) {
 							row.querySelector('[data-current-sale-price]')?.insertAdjacentHTML('afterend',
 								'<div class="small text-warning mt-1">قیمت این سند با قیمت فعلی فرق دارد؛ بدون تغییر عمدی قیمت فعلی محفوظ می‌ماند.</div>');
 						}
@@ -862,23 +920,82 @@ $productsPayload = $products->map(function ($p) {
 					});
 				}
 
+                if (!initialRows.length) {
+                    card.querySelector('[data-product-buy]').value=product.prices.buy_price===null || product.prices.buy_price===undefined?'':formatNumericInput(product.prices.buy_price);
+                    card.querySelector('[data-product-sell]').value=product.prices.sell_price===null || product.prices.sell_price===undefined?'':formatNumericInput(product.prices.sell_price);
+                    applyDefaultsToCard(card,true);
+                }
+                refreshCnyCard(card);
 				updateVariantFilter(card);
 				recalc();
 				return card;
 			}
+
+            const domesticPrices = new WeakMap();
+            function refreshCnyCard(card) {
+                const enabled = isCny(), input = card.querySelector('[data-cny-buy]');
+                card.querySelector('[data-cny-panel]').hidden = !enabled;
+                card.querySelector('[data-domestic-price-panel]').hidden = enabled;
+                input.readOnly = IS_EDIT_PURCHASE;
+                input.required = enabled && [...card.querySelectorAll('[data-qty]')].some(el => Number(el.value) > 0);
+                if (!enabled) {
+                    if (card.classList.contains('is-cny')) {
+                        domesticPrices.get(card)?.forEach(([el,value]) => { if (el.isConnected) el.value=value; });
+                        card.querySelectorAll('[data-buy],[data-sell]').forEach(el => el.readOnly=false);
+                    }
+                    card.classList.remove('is-cny'); card.querySelectorAll('[data-current-sale-price]').forEach(el=>el.textContent=currentSalePriceMessage(el.dataset.salePrice)); input.setCustomValidity(''); return;
+                }
+                if (!card.classList.contains('is-cny')) domesticPrices.set(card,[...card.querySelectorAll('[data-buy],[data-sell],[data-product-buy],[data-product-sell]')].map(el=>[el,el.value]));
+                card.classList.add('is-cny');card.querySelectorAll('[data-buy],[data-sell]').forEach(el => el.readOnly=true);
+                card.querySelectorAll('[data-current-sale-price]').forEach(el=>el.textContent='قیمت فروش فعلی: '+(Number(el.dataset.salePrice)/10).toLocaleString('fa-IR')+' تومان');
+                try {
+                    if (!cnyRate) throw Error('نرخ معتبر در دسترس نیست؛ نرخ را به‌روز کنید.');
+                    const quote = window.AriyaCny.quote(input.value, Number(cnyRate.rate_rial));
+                    if (!IS_EDIT_PURCHASE) {
+                        card.querySelector('[data-product-buy]').value=formatNumericInput(quote.buy);
+                        card.querySelector('[data-product-sell]').value=formatNumericInput(quote.sale);
+                        card.querySelectorAll('[data-buy]').forEach(el=>el.value=formatNumericInput(quote.buy));
+                        card.querySelectorAll('[data-sell]').forEach(el=>el.value=formatNumericInput(quote.sale));
+                    }
+                    const price = value => (Number(value)/10).toLocaleString('fa-IR',{maximumFractionDigits:1})+' تومان';
+                    card.querySelector('[data-cny-quote]').innerHTML=`<div><small>قیمت خرید</small><strong>${price(quote.buy)}</strong></div><div><small>قیمت فروش یوانی با احتیاط و سود</small><strong>${Number(quote.saleCny).toLocaleString('fa-IR',{maximumFractionDigits:6})} یوان</strong></div><div class="cny-sale-result"><small>قیمت فروش نهایی</small><strong>${price(quote.sale)}</strong></div>`;
+                    input.setCustomValidity('');
+                } catch(error) {
+                    input.setCustomValidity(input.required ? error.message : '');
+                    card.querySelector('[data-cny-quote]').textContent=error.message;
+                    if (!IS_EDIT_PURCHASE) card.querySelectorAll('[data-buy],[data-sell],[data-product-buy],[data-product-sell]').forEach(el=>el.value='');
+                }
+            }
+            function refreshCnyMode() {
+                productCardsEl.closest('.purchase-fast-page')?.classList.toggle('is-cny-mode',isCny());
+                productCardsEl.closest('.purchase-fast-page')?.classList.toggle('has-cny-pricing',!!originEl);
+                const panel=document.getElementById('cny-rate-panel'); if(panel)panel.hidden=!isCny();
+                productCardsEl.querySelectorAll('[data-product-card]').forEach(refreshCnyCard); recalc();
+            }
+            document.getElementById('purchaseCnyEnabled')?.addEventListener('change',event=>{
+                originEl.value=event.target.checked?'china':'domestic'; refreshCnyMode();
+            });
 
 			function recalc() {
 				let subtotal = 0;
 				let activeVariantCount = 0;
 
 				productCardsEl.querySelectorAll('[data-product-card]').forEach((card) => {
+                    const anyQuantity=[...card.querySelectorAll('[data-qty]')].some(el=>Number(el.value)>0);
+                    const newRows=[...card.querySelectorAll('[data-variant-row]')].some(row=>Number(row.querySelector('[data-qty]').value)>0 && !row.dataset.purchaseItemId);
+                    const sellInput=card.querySelector('[data-product-sell]'),buyInput=card.querySelector('[data-product-buy]');
+                    buyInput.required=sellInput.required=!isCny() && anyQuantity && (!IS_EDIT_PURCHASE || newRows);
+                    sellInput.setCustomValidity(sellInput.required && parseNumericInput(sellInput.value)<=0?'قیمت فروش کالا باید بیشتر از صفر باشد.':'');
+                    const p=productById(card.dataset.productId), desired=parseNumericInput(sellInput.value);
+                    card.dataset.saleGroupChange=!IS_EDIT_PURCHASE && desired>0 && ((p?.variants||[]).some(v=>Number(v.sell_price)!==desired) || (!isCny() && p?.prices?.cny_enabled))?'1':'0';
 					let cardQty = 0;
 					let cardTotal = 0;
 
 					card.querySelectorAll('[data-variant-row]').forEach((row) => {
 						const qty = Number(row.querySelector('[data-qty]')?.value || 0);
 						const buy = parseNumericInput(row.querySelector('[data-buy]')?.value || 0);
-						const lineTotal = qty > 0 ? qty * buy : 0;
+						const lineSubtotal = qty > 0 ? qty * buy : 0;
+                        const lineTotal = Math.max(0, lineSubtotal - calculateDiscount(lineSubtotal, row.dataset.lineDiscountType || '', Number(row.dataset.lineDiscountValue || 0)));
 
 						if (qty > 0) {
 							activeVariantCount++;
@@ -935,8 +1052,12 @@ $productsPayload = $products->map(function ($p) {
 							...(purchaseItemId ? { id: purchaseItemId } : {}),
 							client_key: `product-${productId}-variant-${row.dataset.variantId}`,
 							product_id: productId,
+                            product_price_version: product?.prices?.version || '',
+                            ...(isCny() ? {buy_cny: window.AriyaCny.latin(card.querySelector('[data-cny-buy]').value)} : {}),
 							variant_id: row.dataset.variantId,
 							quantity: qty,
+                            discount_type: row.dataset.lineDiscountType || null,
+                            discount_value: Number(row.dataset.lineDiscountValue || 0),
 							buy_price: numericPayloadValue(row.querySelector('[data-buy]')?.value || ''),
 							sell_price: numericPayloadValue(row.querySelector('[data-sell]')?.value || ''),
                             expected_current_sell_price: Number(row.querySelector('[data-current-sale-price]')?.dataset.salePrice || 0),
@@ -958,7 +1079,7 @@ $productsPayload = $products->map(function ($p) {
 					.find((row) => Number(row.dataset.variantId) === Number(item.variant_id)) || null;
 			}
 
-			function getSalePriceChanges(rows) {
+			function getSalePriceChanges(rows, forceApproval = false) {
 				return rows.flatMap((item) => {
 					const row = findVariantRow(item);
 					if (!row || Number(item.quantity) <= 0) return [];
@@ -969,9 +1090,9 @@ $productsPayload = $products->map(function ($p) {
 					const baselinePrice = hasPersistedBaseline ? Number(original) : livePrice;
 					const proposedPrice = Number(item.sell_price || 0);
 
-					if (proposedPrice <= 0 || proposedPrice === baselinePrice) return [];
-
 					const card = row.closest('[data-product-card]');
+                    const groupNeedsApproval=card?.dataset?.saleGroupChange==='1';
+                    if (proposedPrice <= 0 || (proposedPrice === baselinePrice && !forceApproval && !groupNeedsApproval)) return [];
 					return [{
 						item,
 						productName: card?.querySelector('.product-card-head .h6')?.textContent?.trim() || 'کالای بدون نام',
@@ -980,7 +1101,7 @@ $productsPayload = $products->map(function ($p) {
 						originalPrice: hasPersistedBaseline ? baselinePrice : null,
 						livePrice,
 						proposedPrice,
-						changesCatalog: proposedPrice !== livePrice,
+						changesCatalog: proposedPrice !== livePrice || groupNeedsApproval,
 					}];
 				});
 			}
@@ -992,6 +1113,7 @@ $productsPayload = $products->map(function ($p) {
 						change.originalPrice === null ? 'new' : change.originalPrice,
 						change.livePrice,
 						change.proposedPrice,
+                        isCny() ? String(change.item.buy_cny)+':'+cnyRate?.id : 'domestic',
 					].join(':'))
 					.sort()
 					.join('|');
@@ -999,20 +1121,23 @@ $productsPayload = $products->map(function ($p) {
 
 			function renderSalePriceChangeRows(changes) {
 				const body = document.getElementById('salePriceChangeRows');
-				body.innerHTML = changes.map((change) => {
+                const groups=new Map();
+                changes.forEach(change=>{const key=change.item.product_id??change.productName;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(change);});
+                body.innerHTML = [...groups.values()].map((group) => {
+                    const change=group[0];
+                    const priceLabel=values=>{const unique=[...new Set(values)];return unique.length===1?(unique[0]===null?'—':formatMoney(unique[0])):'قیمت‌های قبلی متفاوت';};
 					const productLabel = escapeHtml(change.productName)
-						+ '<div class="small text-muted">' + escapeHtml(change.variantName)
-						+ ' | ' + escapeHtml(change.variantCode) + '</div>';
-					const originalLabel = change.originalPrice === null ? '—' : formatMoney(change.originalPrice);
-					const catalogEffect = change.changesCatalog
+						+ '<div class="small text-muted">' + group.length.toLocaleString('fa-IR') + ' تنوع دارای تغییر قیمت</div>';
+					const originalLabel = priceLabel(group.map(row=>row.originalPrice));
+					const catalogEffect = isCny() && !IS_EDIT_PURCHASE ? '<span class="badge text-bg-primary">تأیید قیمت و فعال‌کردن به‌روزرسانی خودکار یوانی</span>' : group.some(row=>row.changesCatalog)
 						? '<span class="badge text-bg-warning">درخواست تغییر قیمت جاری کالا</span>'
 						: '<span class="badge text-bg-success">فقط سابقه سند اصلاح می‌شود</span>';
 
 					return '<tr>'
 						+ '<td>' + productLabel + '</td>'
 						+ '<td class="text-nowrap">' + originalLabel + '</td>'
-						+ '<td class="text-nowrap">' + formatMoney(change.livePrice) + '</td>'
-						+ '<td class="text-nowrap fw-bold">' + formatMoney(change.proposedPrice) + '</td>'
+						+ '<td class="text-nowrap">' + priceLabel(group.map(row=>row.livePrice)) + '</td>'
+						+ '<td class="text-nowrap fw-bold">' + priceLabel(group.map(row=>row.proposedPrice)) + '</td>'
 						+ '<td>' + catalogEffect + '</td>'
 						+ '</tr>';
 				}).join('');
@@ -1056,7 +1181,7 @@ $productsPayload = $products->map(function ($p) {
 				// Rebuild the payload and re-check the exact changes shown in the modal.
 				buildPayload();
 				const latestRows = JSON.parse(payloadEl.value || '[]');
-				const latestChanges = getSalePriceChanges(latestRows);
+				const latestChanges = getSalePriceChanges(latestRows, isCny() && !IS_EDIT_PURCHASE);
 				const latestSignature = salePriceChangeSignature(latestChanges);
 
 				if (latestSignature !== pendingSalePriceChangeSignature) {
@@ -1095,6 +1220,7 @@ $productsPayload = $products->map(function ($p) {
 				const card = target.closest('[data-product-card]');
 				if (!card) return;
 
+                if (isCny() && target.matches('[data-cny-buy],[data-qty]')) { refreshCnyCard(card); recalc(); return; }
 				if (target.classList.contains('formatted-number')) {
 					formatInputElement(target);
 				}
@@ -1114,7 +1240,7 @@ $productsPayload = $products->map(function ($p) {
 				}
 
 				if (target.matches('[data-product-buy], [data-product-sell]')) {
-					applyDefaultsToCard(card, false, true, [target.matches('[data-product-buy]') ? 'buy' : 'sell']);
+					applyDefaultsToCard(card, true, true, [target.matches('[data-product-buy]') ? 'buy' : 'sell']);
 					return;
 				}
 
@@ -1166,13 +1292,6 @@ $productsPayload = $products->map(function ($p) {
 					return;
 				}
 
-				if (event.target.matches('[data-apply-all]')) {
-					if (confirm('قیمت همه تنوع‌های این محصول با قیمت کلی جایگزین شود؟')) {
-						applyDefaultsToCard(card, true);
-					}
-					return;
-				}
-
 				if (event.target.matches('[data-clear-row]')) {
 					const row = event.target.closest('[data-variant-row]');
 					if (!row) return;
@@ -1218,6 +1337,7 @@ $productsPayload = $products->map(function ($p) {
 				}
 
 				invoiceDiscountValueEl.value = String(invoiceDiscountValueEl.value || '').trim() === '' ? '' : parseNumericInput(invoiceDiscountValueEl.value);
+                if (isCny()) { productCardsEl.querySelectorAll('[data-product-card]').forEach(refreshCnyCard); if(!purchaseForm.reportValidity()){event.preventDefault();return;} }
 				const count = buildPayload();
 				if (count === 0) {
 					event.preventDefault();
@@ -1226,7 +1346,7 @@ $productsPayload = $products->map(function ($p) {
 				}
 
 				const rows = JSON.parse(payloadEl.value || '[]');
-				const saleChanges = getSalePriceChanges(rows);
+				const saleChanges = getSalePriceChanges(rows, isCny() && !IS_EDIT_PURCHASE);
 				if (saleChanges.length) {
 					if (!CAN_CHANGE_SALE_PRICE) {
 						event.preventDefault();
@@ -1276,6 +1396,7 @@ $productsPayload = $products->map(function ($p) {
 				}
 			}
 
+            refreshCnyMode();
 			initPurchaseSupplierSearch();
 			renderProductOptions();
 			hydrateInitialItems();

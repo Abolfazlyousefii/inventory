@@ -10,7 +10,7 @@ class ProductVariant extends Model
 {
     public function save(array $options = []): bool
     {
-        if (! $this->exists || $this->isDirty('sell_price') || $this->isDirty('product_id')) {
+        if (! $this->exists || $this->isDirty('sell_price') || $this->isDirty('buy_price') || $this->isDirty('product_id')) {
             // Keep the parent-price lock through INSERT/UPDATE even outside a caller transaction.
             return $this->getConnection()->transaction(fn () => parent::save($options), 3);
         }
@@ -21,8 +21,11 @@ class ProductVariant extends Model
     protected static function booted(): void
     {
         static::saving(function (self $variant): void {
-            if (! $variant->exists || $variant->isDirty('sell_price') || $variant->isDirty('product_id')) {
+            if (! $variant->exists || $variant->isDirty('sell_price') || $variant->isDirty('buy_price') || $variant->isDirty('product_id')) {
                 $product = Product::query()->whereKey($variant->product_id)->lockForUpdate()->first();
+                if ($product?->uniform_buy_price !== null) {
+                    $variant->buy_price = (int) $product->uniform_buy_price;
+                }
                 if ($product?->uniform_sale_price !== null) {
                     $variant->sell_price = (int) $product->uniform_sale_price;
                 }

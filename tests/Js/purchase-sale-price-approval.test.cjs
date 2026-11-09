@@ -16,6 +16,7 @@ function inlinePurchaseScript() {
 
     let normalized = script;
     const bindings = {
+        cnyRate: 'null',
         products: '[]',
         categories: '[]',
         initialItems: '[]',

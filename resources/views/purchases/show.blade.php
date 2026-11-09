@@ -86,6 +86,16 @@
         </div>
     </div>
 
+    @if(($purchase->purchase_origin??'domestic')==='china')
+        @php
+            $cnySnapshotRate=\App\Models\CnyExchangeRate::find($purchase->cny_rate_id);
+        @endphp
+        <div class="ps-card"><div class="ps-card-body">
+            <strong>خرید از چین · مبنای یوانی</strong>
+            <div class="ps-hint mt-1">نرخ ثبت‌شدهٔ هر یوان: {{ number_format(($cnySnapshotRate?->rate_rial??0)/10) }} تومان · احتیاط ۲٪ · سهم سود از فروش ۳۰٪</div>
+            <div class="ps-hint">مبالغ این سند با نرخ زمان ثبت ثابت‌اند؛ تغییر نرخ ارز فقط قیمت فروش جاری کالا را به‌روز می‌کند.</div>
+        </div></div>
+    @endif
     <div class="ps-card">
         <div class="ps-card-body">
             <div class="row g-3">
@@ -170,6 +180,7 @@
                             <td class="row-index">{{ $loop->iteration }}</td>
                             <td>
                                 <div class="product-name">{{ $item->product_name ?: ($item->product?->name ?? '—') }}</div>
+                                @if($item->buy_cny_units)<div class="ps-hint">خرید واحد: {{ app(\App\Services\CnyPriceCalculator::class)->amount((int)$item->buy_cny_units) }} یوان</div>@endif
                                 @if($item->product_code)<span class="code">{{ $item->product_code }}</span>@endif
                             </td>
                             <td>

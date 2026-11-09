@@ -66,6 +66,7 @@ class UniformProductPriceService
                 throw new RuntimeException('قیمت فروش باید بزرگ‌تر از صفر باشد.');
             }
             // Price history remains on the document items. No stock or historical sales rows are updated.
+            app(CnyPricingService::class)->pauseForManualPrice((int)$product->id);
             $product->forceFill(['uniform_sale_price' => $price, 'price' => $price])->save();
             $product->variants()->update(['sell_price' => $price, 'updated_at' => now()]);
             // Preserve every history row, but avoid one UPDATE per variant on large documents.

@@ -158,6 +158,16 @@ class InventoryReconciliationService
         $out = [];
         DB::table('purchase_items')->whereNotNull('product_variant_id')->where('sell_price','>',0)->when($productId, fn($q)=>$q->where('product_id',$productId))->orderByDesc('id')->get(['product_variant_id','buy_price','sell_price'])->each(function($r) use (&$out){ $out[$r->product_variant_id] ??= ['buy_price'=>(int)$r->buy_price,'sell_price'=>(int)$r->sell_price,'source'=>'purchase_item']; });
         DB::table('invoice_items')->whereNotNull('variant_id')->where('price','>',0)->when($productId, fn($q)=>$q->where('product_id',$productId))->orderByDesc('id')->get(['variant_id','price'])->each(function($r) use (&$out){ $out[$r->variant_id] ??= ['buy_price'=>null,'sell_price'=>(int)$r->price,'source'=>'invoice_item']; });
+        // Product-priced purchases supersede per-variant historical references for current catalog prices.
+        if (Schema::hasColumn('products','uniform_buy_price')) {
+            DB::table('product_variants AS pv')->join('products AS p','p.id','=','pv.product_id')
+                ->whereNotNull('p.uniform_buy_price')->when($productId,fn($q)=>$q->where('p.id',$productId))
+                ->get(['pv.id','p.uniform_buy_price','p.uniform_sale_price'])->each(function($row)use(&$out){
+                    $out[$row->id]=['buy_price'=>(int)$row->uniform_buy_price,
+                        'sell_price'=>$row->uniform_sale_price===null?($out[$row->id]['sell_price']??null):(int)$row->uniform_sale_price,
+                        'source'=>'product_uniform_price'];
+                });
+        }
         return $out;
     }
 

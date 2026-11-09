@@ -37,6 +37,7 @@ class Product extends Model
         // خلاصه‌ی محاسبه‌شده از variants (مثلاً کمترین قیمت فروش)
         'price',
         'uniform_sale_price',
+        'uniform_buy_price',
 
         // اختیاری/قدیمی
         'sale_retail',
@@ -69,6 +70,7 @@ class Product extends Model
         'reserved'   => 'integer',
         'price'      => 'integer',
         'uniform_sale_price' => 'integer',
+        'uniform_buy_price' => 'integer',
 
         'sale_retail'     => 'integer',
         'sale_wholesale'  => 'integer',

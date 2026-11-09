@@ -257,8 +257,14 @@ class PurchaseController extends Controller
             'duration_ms' => round((microtime(true) - $requestStartedAt) * 1000, 2),
         ]);
 
+        $priceVariants=$product->variants()->orderBy('id')->get(['id','buy_price','sell_price']);
+        $buys=$priceVariants->pluck('buy_price')->map(fn($v)=>(int)$v)->unique();
+        $sales=$priceVariants->pluck('sell_price')->map(fn($v)=>(int)$v)->unique();
         return response()->json([
             'product_id' => (int) $product->id,
+            'product_prices'=>['cny_enabled'=>\App\Models\ProductCnyPricing::where('product_id',$product->id)->where('enabled',true)->exists(),'buy_price'=>$product->uniform_buy_price??($buys->count()===1?$buys->first():null),
+                'sell_price'=>$product->uniform_sale_price??($sales->count()===1?$sales->first():null),
+                'version'=>app(\App\Services\UniformPurchasePriceService::class)->version($product,$priceVariants)],
             'variants' => $variants,
         ]);
     }
@@ -330,6 +336,9 @@ class PurchaseController extends Controller
                     'total_amount' => 0,
                 ]));
 
+                $data=app(\App\Services\UniformPurchasePriceService::class)->apply($purchase,$data);
+                app(\App\Services\CnyPricingService::class)->activate($data,auth()->user());
+                $purchase->forceFill(['purchase_origin'=>$data['purchase_origin']??'domestic','cny_rate_id'=>($data['purchase_origin']??'domestic')==='china'?$data['cny_rate_id']:null])->save();
                 $summary = $this->applyItems($purchase, $data, $centralWarehouseId);
                 $purchase->update($this->purchaseTablePayload($summary));
 
@@ -350,6 +359,7 @@ class PurchaseController extends Controller
             $request->merge(['supplier_id' => $purchase->supplier_id]);
         }
 
+        if (!$request->has('purchase_origin')) $request->merge(['purchase_origin'=>$purchase->purchase_origin??'domestic']);
         $data = $this->validatePayload($request, true, $purchase);
         $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
@@ -370,6 +380,7 @@ class PurchaseController extends Controller
                     'discount_value' => (int) ($data['invoice_discount_value'] ?? 0),
                 ]));
 
+                $data=app(\App\Services\UniformPurchasePriceService::class)->apply($purchase,$data,true);
                 $summary = $this->syncPurchaseItems($purchase, $data, (int) $data['warehouse_id']);
                 $purchase->update($this->purchaseTablePayload($summary));
 
@@ -579,8 +590,17 @@ class PurchaseController extends Controller
         $invoiceDiscountValue = $this->filledNumber($invoiceDiscountRaw) ? $this->normalizeNumber($invoiceDiscountRaw) : null;
         $note = $this->resolveNote($request);
 
+        // The compact form has no line-discount editor. Omission must preserve
+        // a historical discount; explicit fields still permit an intentional change.
+        $historicalItems = $purchase?->items()->get()->keyBy('id') ?? collect();
+
         $items = collect((array) $request->input('items', []))
-            ->map(function ($item) {
+            ->map(function ($item) use ($historicalItems) {
+                $stored = $historicalItems->get((int) ($item['id'] ?? 0));
+                if ($stored && !array_key_exists('discount_type', $item) && !array_key_exists('discount_value', $item)) {
+                    $item['discount_type'] = $stored->discount_type;
+                    $item['discount_value'] = $stored->discount_value;
+                }
                 if (array_key_exists('quantity', $item)) {
                     $item['quantity'] = $this->normalizeNumber($item['quantity']);
                 }
@@ -615,6 +635,11 @@ class PurchaseController extends Controller
         ]);
 
         $data = $request->validate([
+            'uniform_product_prices' => ['nullable','boolean'],
+            'items.*.product_price_version' => ['nullable','string','size:64'],
+            'purchase_origin' => ['nullable','in:domestic,china'],
+            'cny_rate_id' => ['nullable','integer'],
+            'items.*.buy_cny' => ['nullable','string','max:32'],
             'submission_token' => ['required', 'uuid'],
             'sale_price_change_confirmed' => ['nullable', 'boolean'],
             'sale_price_change_reason' => ['nullable', 'string', 'max:500'],
@@ -659,6 +684,7 @@ class PurchaseController extends Controller
             'items.min' => 'حداقل یک تنوع را برای خرید انتخاب کنید.',
         ]);
 
+        $data = app(\App\Services\CnyPricingService::class)->prepare($data,$purchase);
         $data['items'] = array_values(array_map(function ($item, $index) use ($allowZeroExistingItems) {
             $qty = $this->normalizeNumber($item['quantity'] ?? $item['qty'] ?? 0);
             $variantId = $item['variant_id'] ?? $item['product_variant_id'] ?? null;
@@ -754,6 +780,7 @@ class PurchaseController extends Controller
             $seenVariants[$key] = true;
         }
 
+        app(\App\Services\UniformPurchasePriceService::class)->validateRows($data,$purchase);
         return $data;
     }
 
@@ -1022,7 +1049,6 @@ class PurchaseController extends Controller
             $lineTotal = max(0, $lineSubtotal - $itemDiscountAmount);
 
             $product = Product::whereKey($item['product_id'])->lockForUpdate()->firstOrFail();
-            $sellPrice = (int) ($product->uniform_sale_price ?? $sellPrice);
 
             $variant = ProductVariant::where('product_id', $product->id)
                 ->whereKey($item['variant_id'])
@@ -1063,6 +1089,8 @@ class PurchaseController extends Controller
                 'quantity' => $quantity,
                 'buy_price' => $buyPrice,
                 'sell_price' => $sellPrice,
+                'buy_cny_units' => $item['buy_cny_units']??null,
+                'cny_policy' => $item['cny_policy']??null,
                 'line_subtotal' => $lineSubtotal,
                 'discount_type' => $itemDiscountType,
                 'discount_value' => $itemDiscountValue,
@@ -1309,6 +1337,8 @@ class PurchaseController extends Controller
         array $row,
         array $requestData
     ): void {
+        if (!empty($requestData['_product_prices_applied'])) return;
+        if (($requestData['purchase_origin']??'domestic')==='china' && $oldItem===null) return;
         $decision = app(PurchaseCatalogPriceDecision::class);
         $currentSellPrice = (int) $variant->sell_price;
         $salePriceEdited = $decision->isExplicitChange(
@@ -1383,6 +1413,7 @@ class PurchaseController extends Controller
 
 
                 // Variant is row-locked by the caller before this method.
+                app(\App\Services\CnyPricingService::class)->pauseForManualPrice((int)$product->id);
                 $variant->update(['sell_price' => $sellPrice]);
                 ActivityLogger::log('purchase_sale_price_explicitly_changed', $variant,
                     'تغییر قیمت فروش تنوع از مسیر ثبت یا ویرایش سند خرید.', [

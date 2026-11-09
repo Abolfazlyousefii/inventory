@@ -110,3 +110,7 @@ if (!config('services.request_driven_site_stock', false)) {
         app(\App\Services\SiteOrderStockHoldService::class)->expireUnpaid();
     })->name('site-stock-hold-expiry')->everyFiveMinutes()->withoutOverlapping(10);
 }
+
+if (config('cny_pricing.enabled') && config('cny_pricing.schedule_enabled')) {
+    Schedule::command('cny:reprice')->everyFiveMinutes()->withoutOverlapping(10);
+}
