@@ -95,7 +95,6 @@ final class FinancePaymentCalculatorController extends Controller
                 default => $result['total_nominal_rial'],
             },
             'rows' => $rows,
-            'customerName' => $data['customer_name'] ?? '',
             'baseDate' => $data['base_date'],
             'printedAt' => JalaliDate::dateTime(now()),
         ]);

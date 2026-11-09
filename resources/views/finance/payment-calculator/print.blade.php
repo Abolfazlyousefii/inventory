@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>گزارش شرایط پرداخت | {{ $customerName ?: 'ماشین‌حساب نقد و چک' }}</title>
+    <title>گزارش شرایط پرداخت | ماشین‌حساب نقد و چک</title>
     <link rel="stylesheet" href="{{ asset('css/Vazirmatn.css') }}">
     <style>
         :root { color-scheme: light; }
@@ -19,6 +19,8 @@
         .head-aside { text-align: left; font-size: 11px; color: #627889; }
         h2 { font-size: 15px; margin: 24px 0 11px; }
         .info, .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+        .calculation-info { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        .calculation-info .item:last-child { grid-column: 1 / -1; }
         .item { border: 1px solid #dce5eb; border-radius: 8px; padding: 12px 14px; break-inside: avoid; }
         .item .label { color: #6a7f8d; display: block; margin-bottom: 4px; font-size: 11px; }
         .item strong { font-size: 15px; font-weight: 750; overflow-wrap: anywhere; }
@@ -64,8 +66,7 @@
             <div class="item"><span class="label">مبنای محاسبه</span><strong>سود مرکب با ماه ۳۰ روزه</strong></div>
         </section>
         <h2>اطلاعات محاسبه</h2>
-        <section class="info">
-            <div class="item"><span class="label">نام / شرح مشتری</span><strong>{{ $customerName ?: 'ثبت نشده' }}</strong></div>
+        <section class="info calculation-info">
             <div class="item"><span class="label">تاریخ مبنا (شمسی)</span><strong>{{ $baseDate }}</strong></div>
             <div class="item"><span class="label">{{ $mode === 'cash_value' ? 'ارزش نقدی معادل (ریال)' : 'مبلغ پایه قرارداد (ریال)' }}</span><strong>{{ number_format($result['total_price_rial']) }}</strong></div>
             <div class="item"><span class="label">سود ماهانه</span><strong>{{ number_format($result['monthly_rate'] * 100, 4) }}٪</strong></div>

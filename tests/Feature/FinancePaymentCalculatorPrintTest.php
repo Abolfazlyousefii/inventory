@@ -51,7 +51,9 @@ it('recalculates the print report using original inputs and includes every payme
                 ['due_date' => '۱۴۰۵/۰۹/۱۴', 'weight' => '۱'],
             ],
         ])->assertOk()->assertViewIs('finance.payment-calculator.print')
-        ->assertSee('مشتری نمونه')
+        ->assertDontSee('مشتری نمونه')
+        ->assertDontSee('نام / شرح مشتری')
+        ->assertSee('<title>گزارش شرایط پرداخت | ماشین‌حساب نقد و چک</title>', false)
         ->assertSee('103,000,000')
         ->assertSee('53,000,000')
         ->assertSee('50,000,000')
