@@ -74,8 +74,45 @@ it('preserves quantities-only edits and never rewrites current prices from an ol
         ->and((int)$first->items()->first()->buy_price)->toBe(800000);
     $edit['submission_token']=(string)Str::uuid();$version=app(UniformPurchasePriceService::class)->version($this->product->fresh());
     foreach($edit['items'] as &$row){$row['buy_price']=1000000;$row['expected_current_sell_price']=1300000;$row['product_price_version']=$version;}unset($row);
+    $this->put(route('purchases.update',$first),$edit)->assertSessionHasNoErrors();
+    expect($this->product->fresh()->uniform_buy_price)->toBe(900000)
+        ->and((int)$first->items()->first()->buy_price)->toBe(1000000);
+    foreach($edit['items'] as &$row)$row['sell_price']=1400000;unset($row);
+    $edit['submission_token']=(string)Str::uuid();
     $this->put(route('purchases.update',$first),$edit)->assertSessionHasErrors('items');
-    expect($this->product->fresh()->uniform_buy_price)->toBe(900000);
+    expect($this->product->fresh()->price)->toBe(1300000);
+});
+
+it('corrects a zero historical purchase cost without touching newer catalog prices or stock',function(){
+    $first=Purchase::create(['supplier_id'=>$this->supplier->id,'user_id'=>$this->actor->id,'purchased_at'=>now()->subMonth(),'subtotal_amount'=>0,'total_amount'=>0]);
+    $items=collect();foreach($this->variants->take(2) as $variant){
+        $items->push($first->items()->create(['product_id'=>$this->product->id,'product_variant_id'=>$variant->id,'product_name'=>$this->product->name,'product_code'=>$this->product->code,'variant_name'=>$variant->variant_name,'quantity'=>1,'buy_price'=>0,'sell_price'=>1000000,'line_subtotal'=>0,'line_total'=>0]));
+        WarehouseStockService::set(WarehouseStockService::centralWarehouseId(),$this->product->id,$variant->id,1);
+    }
+    $new=$this->payload;
+    foreach($new['items'] as &$row){$row['buy_price']=900000;$row['sell_price']=1300000;}unset($row);
+    $this->post(route('purchases.store'),$new)->assertSessionHasNoErrors();
+    $currentPrices=$this->product->variants()->orderBy('id')->get(['id','buy_price','sell_price'])->toArray();
+    $movementCount=\App\Models\StockMovement::count();$registered=$first->purchased_at->toDateTimeString();
+    $edit=$this->payload;$edit['submission_token']=(string)Str::uuid();$edit['uniform_product_prices']=1;$edit['sale_price_change_confirmed']=0;unset($edit['sale_price_change_reason']);
+    foreach($edit['items'] as $i=>&$row){$row['id']=$items[$i]->id;$row['quantity']=1;$row['buy_price']=1070000;$row['sell_price']=1000000;$row['product_price_version']=str_repeat('0',64);}unset($row);
+    $this->put(route('purchases.update',$first),$edit)->assertSessionHasNoErrors();
+    expect((int)$first->fresh()->total_amount)->toBe(2140000)
+        ->and($first->fresh()->purchased_at->toDateTimeString())->toBe($registered)
+        ->and($first->items()->pluck('buy_price')->map(fn($v)=>(int)$v)->all())->toBe([1070000,1070000])
+        ->and($this->product->variants()->orderBy('id')->get(['id','buy_price','sell_price'])->toArray())->toBe($currentPrices)
+        ->and((int)$this->product->fresh()->uniform_buy_price)->toBe(900000)
+        ->and((int)$this->product->fresh()->uniform_sale_price)->toBe(1300000)
+        ->and(\App\Models\StockMovement::count())->toBe($movementCount);
+    $ledger=\App\Models\SupplierLedger::where('reference_type',Purchase::class)->where('reference_id',$first->id)->get();
+    expect($ledger)->toHaveCount(1)->and((int)$ledger->first()->amount)->toBe(2140000);
+    expect(\App\Models\ActivityLog::where('action','purchase_historical_cost_corrected')->where('subject_id',$first->id)->count())->toBe(1);
+    $edit['submission_token']=(string)Str::uuid();
+    $this->put(route('purchases.update',$first),$edit)->assertSessionHasNoErrors();
+    $ledger=\App\Models\SupplierLedger::where('reference_type',Purchase::class)->where('reference_id',$first->id)->get();
+    expect($ledger)->toHaveCount(1)->and((int)$ledger->first()->amount)->toBe(2140000)
+        ->and(\App\Models\StockMovement::count())->toBe($movementCount)
+        ->and($this->product->variants()->orderBy('id')->get(['id','buy_price','sell_price'])->toArray())->toBe($currentPrices);
 });
 
 it('preserves mixed historical line prices when only quantities are edited in the product-priced form',function(){

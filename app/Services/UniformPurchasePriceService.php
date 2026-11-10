@@ -56,7 +56,10 @@ final class UniformPurchasePriceService
             $buyEdited=!$editing || $rows->contains(fn($r)=>!$old->has($r['id']??0) || (int)$old->get($r['id'])->buy_price!==(int)$r['buy_price']);
             $saleEdited=!$editing || $rows->contains(fn($r)=>!$old->has($r['id']??0) || (int)$old->get($r['id'])->sell_price!==(int)$r['sell_price']);
             if(!$buyEdited && !$saleEdited)continue;
-            $buyChanges=$buyEdited && ($variants->contains(fn($v)=>(int)$v->buy_price!==$buy) || ($product->uniform_buy_price!==null && (int)$product->uniform_buy_price!==$buy));
+            $hasNewerPurchase=$editing && PurchaseItem::where('product_id',$id)->where('purchase_id','!=',$purchase->id)->whereHas('purchase',fn($q)=>$q->where('purchased_at','>',$purchase->purchased_at)->orWhere(fn($q)=>$q->where('purchased_at',$purchase->purchased_at)->where('id','>',$purchase->id)))->exists();
+            // Correct an older document's cost without replacing the current catalog cost.
+            $updateBuyCatalog=$buyEdited && !$hasNewerPurchase;
+            $buyChanges=$updateBuyCatalog && ($variants->contains(fn($v)=>(int)$v->buy_price!==$buy) || ($product->uniform_buy_price!==null && (int)$product->uniform_buy_price!==$buy));
             $saleChanges=$saleEdited && $sale>0 && ($variants->contains(fn($v)=>(int)$v->sell_price!==$sale) || ($product->uniform_sale_price!==null && (int)$product->uniform_sale_price!==$sale));
             $modeChanges=!$editing && ProductCnyPricing::where('product_id',$id)->where('enabled',true)->exists();
             // A historical snapshot correction still requires explicit approval, even when it matches today's price.
@@ -71,12 +74,18 @@ final class UniformPurchasePriceService
                 }
             }
             if($buyChanges || $saleChanges || $modeChanges)$this->assertVersion($product,$variants,$rows,$data);
-            if($editing && ($buyChanges || $saleChanges) && PurchaseItem::where('product_id',$id)->where('purchase_id','!=',$purchase->id)->whereHas('purchase',fn($q)=>$q->where('purchased_at','>',$purchase->purchased_at)->orWhere(fn($q)=>$q->where('purchased_at',$purchase->purchased_at)->where('id','>',$purchase->id)))->exists()){
+            if($hasNewerPurchase && $saleChanges){
                 throw ValidationException::withMessages(['items'=>'خرید جدیدتری برای این کالا وجود دارد؛ سند قدیمی نمی‌تواند قیمت روز آن را تغییر دهد. از سند تغییر قیمت استفاده کنید.']);
             }
             if(!$editing && !empty($data['uniform_product_prices']) && $sale<1)throw ValidationException::withMessages(['items'=>'قیمت فروش کالا باید بیشتر از صفر باشد.']);
+            if($buyEdited && $hasNewerPurchase){
+                ActivityLogger::log('purchase_historical_cost_corrected',$purchase,'اصلاح قیمت خرید سند قدیمی بدون تغییر قیمت روز کالا.',[
+                    'product_id'=>(int)$id,
+                    'items'=>$rows->map(fn($row)=>['id'=>$row['id']??null,'old_buy_price'=>$old->get($row['id']??0)?->buy_price,'new_buy_price'=>(int)$row['buy_price']])->values()->all(),
+                ]);
+            }
             $productValues=[];$variantValues=[];
-            if($buyEdited){$productValues['uniform_buy_price']=$buy;$variantValues['buy_price']=$buy;}
+            if($updateBuyCatalog){$productValues['uniform_buy_price']=$buy;$variantValues['buy_price']=$buy;}
             if($saleEdited && $sale>0){$productValues['uniform_sale_price']=$sale;$productValues['price']=$sale;$variantValues['sell_price']=$sale;}
             if($productValues){
                 $before=$variants->map(fn($v)=>['id'=>(int)$v->id,'buy'=>(int)$v->buy_price,'sell'=>(int)$v->sell_price])->values()->all();

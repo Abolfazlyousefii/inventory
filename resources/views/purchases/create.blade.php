@@ -210,6 +210,7 @@ $productsPayload = $products->map(function ($p) {
                 <div class="alert alert-info small mt-2 mb-2">
                     قیمت فروش ثبت‌شده در سند برای سابقه محفوظ است. ویرایش تعداد، توضیحات یا قیمت خرید،
                     قیمت فروش روز کالا را تغییر نمی‌دهد؛ تغییر عمدی قیمت فروش نیازمند تأیید کاربر مجاز است.
+                    اگر خرید جدیدتری وجود داشته باشد، اصلاح قیمت خرید فقط روی همین سند و حساب تأمین‌کننده اعمال می‌شود.
                 </div>
             @endif
             @if($errors->has('sale_price_change_confirmed') || $errors->has('items'))
