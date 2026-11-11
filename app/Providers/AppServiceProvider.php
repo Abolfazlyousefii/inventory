@@ -30,6 +30,8 @@ use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Services\Sms\OtpSmsSender;
 use App\Support\PermissionCatalog;
+use App\Support\AccountStatementAccess;
+use App\Models\User;
 use App\Support\SlowRequestDiagnostics;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Events\QueryExecuted;
@@ -46,8 +48,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // Run the read-only denial before Spatie's Gate::before permission grant.
         Gate::before(function ($user, $ability) {
-            if ($user instanceof \\App\\Models\\User
-                && \\App\\Support\\AccountStatementAccess::deniesPermission($user, (string) $ability)) {
+            if ($user instanceof User
+                && AccountStatementAccess::deniesPermission($user, (string) $ability)) {
                 return false;
             }
 
