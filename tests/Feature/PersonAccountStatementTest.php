@@ -229,4 +229,51 @@ class PersonAccountStatementTest extends TestCase
         $this->assertSame(125000, $response->viewData('totalCredit'));
         $this->assertSame(-125000, $response->viewData('netBalance'));
     }
+    public function test_supplier_account_statement_can_record_audited_payments_and_receipts(): void
+    {
+        $supplier = Supplier::query()->create([
+            'name' => 'تأمین‌کننده تراکنش',
+            'phone' => '09124445566',
+        ]);
+
+        $this->actingAs($this->owner())
+            ->post('/persons/supplier-'.$supplier->id.'/supplier-transactions', [
+                'direction' => 'payment',
+                'amount' => 3000,
+                'transaction_date' => '2026-11-10 12:30:00',
+                'method' => 'bank',
+                'reference' => 'TRX-100',
+                'note' => 'پرداخت به تأمین‌کننده',
+            ])
+            ->assertRedirect('/persons/supplier-'.$supplier->id.'/account');
+
+        $this->assertDatabaseHas('supplier_account_transactions', [
+            'supplier_id' => $supplier->id,
+            'direction' => 'payment',
+            'amount' => 3000,
+            'method' => 'bank',
+            'reference' => 'TRX-100',
+        ]);
+        $this->assertDatabaseHas('supplier_ledgers', [
+            'supplier_id' => $supplier->id,
+            'type' => 'debit',
+            'amount' => 3000,
+            'reference_type' => \\App\\Models\\SupplierAccountTransaction::class,
+        ]);
+
+        $this->post('/persons/supplier-'.$supplier->id.'/supplier-transactions', [
+            'direction' => 'receipt',
+            'amount' => 1000,
+            'transaction_date' => '2026-11-11 09:00:00',
+            'note' => 'دریافت از تأمین‌کننده',
+        ])->assertRedirect('/persons/supplier-'.$supplier->id.'/account');
+
+        $statement = app(\\App\\Services\\PersonAccountStatementService::class)
+            ->statement('supplier-'.$supplier->id);
+        $this->assertSame(3000, $statement['totalDebit']);
+        $this->assertSame(1000, $statement['totalCredit']);
+        $this->assertSame(2000, $statement['netBalance']);
+        $this->assertCount(2, $statement['ledgers']);
+    }
+
 }
