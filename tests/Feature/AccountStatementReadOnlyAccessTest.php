@@ -39,7 +39,7 @@ function statementReader(bool $broad = true): User
 
 it('denies financial mutations despite inherited broad permissions', function () {
     $user = statementReader();
-    foreach (['account-statements.payments.store', 'account-statements.payments.edit', 'account-statements.payments.update', 'account-statements.payments.destroy', 'account-statements.adjustments.store', 'invoices.payments.store', 'cheques.store'] as $route) {
+    foreach (['account-statements.payments.store', 'account-statements.payments.edit', 'account-statements.payments.update', 'account-statements.payments.destroy', 'account-statements.adjustments.store', 'invoices.payments.store', 'cheques.store', 'persons.supplier-transactions.store'] as $route) {
         expect(PageAccessCatalog::userCanRoute($user, $route), $route)->toBeFalse();
     }
     foreach (['account_statements.adjust', 'account_statements.payments.create', 'payments.create'] as $key) {
@@ -60,6 +60,8 @@ it('shows a read-only statement and rejects a forged payment or balance adjustme
     $count = CustomerLedger::count();
     $this->postJson(route('account-statements.payments.store', $customer), [])->assertForbidden();
     $this->postJson(route('account-statements.adjustments.store', $customer), [])->assertForbidden();
+    $supplier = Supplier::query()->create(['name' => 'تأمین‌کننده فقط خواندنی', 'phone' => '09120000099']);
+    $this->postJson('/persons/supplier-'.$supplier->id.'/supplier-transactions', [])->assertForbidden();
     $this->get(route('account-statements.payments.edit', [$customer, $payment]))->assertForbidden();
     $this->putJson(route('account-statements.payments.update', [$customer, $payment]), [])->assertForbidden();
     $this->deleteJson(route('account-statements.payments.destroy', [$customer, $payment]))->assertForbidden();
