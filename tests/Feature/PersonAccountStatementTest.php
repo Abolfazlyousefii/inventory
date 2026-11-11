@@ -9,6 +9,7 @@ use App\Models\Supplier;
 use App\Models\SupplierAccountTransaction;
 use App\Models\SupplierLedger;
 use App\Models\User;
+use App\Services\PersonAccountStatementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -282,7 +283,7 @@ class PersonAccountStatementTest extends TestCase
             'note' => 'دریافت از تأمین‌کننده',
         ])->assertRedirect('/persons/supplier-'.$supplier->id.'/account');
 
-        $statement = app(\\App\\Services\\PersonAccountStatementService::class)
+        $statement = app(PersonAccountStatementService::class)
             ->statement('supplier-'.$supplier->id);
         $this->assertSame(3000, $statement['totalDebit']);
         $this->assertSame(1000, $statement['totalCredit']);
