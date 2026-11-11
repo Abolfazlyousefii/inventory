@@ -44,34 +44,31 @@ class PersonAccountStatementController extends Controller
 
         $token = (string) ($data['submission_token'] ?? Str::uuid());
         $transaction = DB::transaction(function () use ($supplier, $data, $token) {
-            $existing = SupplierAccountTransaction::query()
-                ->where('submission_token', $token)
-                ->lockForUpdate()
-                ->first();
-
-            if ($existing) {
-                if ((int) $existing->supplier_id !== (int) $supplier->id) {
-                    abort(422, 'شناسه ثبت قبلاً برای شخص دیگری استفاده شده است.');
-                }
-
-                return $existing;
-            }
-
             $note = trim((string) ($data['note'] ?? '')) ?: (
                 $data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده' : 'دریافت از تأمین‌کننده'
             );
 
-            $transaction = SupplierAccountTransaction::query()->create([
-                'supplier_id' => (int) $supplier->id,
-                'direction' => $data['direction'],
-                'amount' => (int) $data['amount'],
-                'transaction_date' => $data['transaction_date'],
-                'method' => $data['method'] ?? null,
-                'reference' => $data['reference'] ?? null,
-                'note' => $note,
-                'submission_token' => $token,
-                'created_by' => auth()->id(),
-            ]);
+            $transaction = SupplierAccountTransaction::query()->firstOrCreate(
+                ['submission_token' => $token],
+                [
+                    'supplier_id' => (int) $supplier->id,
+                    'direction' => $data['direction'],
+                    'amount' => (int) $data['amount'],
+                    'transaction_date' => $data['transaction_date'],
+                    'method' => $data['method'] ?? null,
+                    'reference' => $data['reference'] ?? null,
+                    'note' => $note,
+                    'created_by' => auth()->id(),
+                ],
+            );
+
+            if (! $transaction->wasRecentlyCreated) {
+                if ((int) $transaction->supplier_id !== (int) $supplier->id) {
+                    abort(422, 'شناسه ثبت قبلاً برای شخص دیگری استفاده شده است.');
+                }
+
+                return $transaction;
+            }
 
             SupplierLedger::query()->create([
                 'supplier_id' => (int) $supplier->id,
