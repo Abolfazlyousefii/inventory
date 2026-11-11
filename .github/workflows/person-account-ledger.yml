@@ -5,7 +5,7 @@ on:
     branches: [feature/unified-person-account-ledger]
     paths:
       - 'app/Http/Controllers/PersonController.php'
-      - 'app/Http/Controllers/PersonAccountStatementController.php'
+      - 'app/Providers/AppServiceProvider.php'
       - 'app/Http/Controllers/PersonAccountStatementController.php'
       - 'app/Services/PersonAccountStatementService.php'
       - 'app/Models/SupplierLedger.php'
@@ -22,6 +22,7 @@ on:
   pull_request:
     paths:
       - 'app/Http/Controllers/PersonController.php'
+      - 'app/Providers/AppServiceProvider.php'
       - 'app/Http/Controllers/PersonAccountStatementController.php'
       - 'app/Services/PersonAccountStatementService.php'
       - 'app/Models/SupplierLedger.php'
@@ -60,6 +61,7 @@ jobs:
         run: php tests/run.php --configuration phpunit.xml tests/Feature/PurchaseReturnTest.php
       - name: Syntax checks
         run: |
+          php -l app/Providers/AppServiceProvider.php
           php -l app/Http/Controllers/PersonController.php
           php -l app/Services/PurchaseReturnService.php
           php -l routes/web.php

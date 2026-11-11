@@ -66,7 +66,14 @@ class AppServiceProvider extends ServiceProvider
         ]);
 
         Gate::before(function ($user, $ability) {
-            return PermissionCatalog::userHasPermission($user, $ability) ? true : null;
+            // A read-only finance grant must override direct and inherited
+            // Spatie permissions, not merely return "not granted" to the gate.
+            if ($user instanceof \App\Models\User
+                && \App\Support\AccountStatementAccess::deniesPermission($user, (string) $ability)) {
+                return false;
+            }
+
+            return PermissionCatalog::userHasPermission($user, (string) $ability) ? true : null;
         });
 
         Product::observe(ActivityObserver::class);
