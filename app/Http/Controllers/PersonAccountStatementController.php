@@ -9,6 +9,7 @@ use App\Models\PersonnelAccountDocument;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\SupplierAccountTransaction;
+use App\Models\SupplierAccountTransaction;
 use App\Models\SupplierLedger;
 use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
@@ -114,7 +115,11 @@ class PersonAccountStatementController extends Controller
             $description = $ledger->note ?: ($ledger->type === 'debit' ? 'ثبت بدهکار' : 'ثبت بستانکار');
             $url = null;
 
-            if ($ledger->reference_type === Purchase::class && $ledger->reference_id) {
+            if ($ledger->reference_type === SupplierAccountTransaction::class && $ledger->reference_id) {
+                $transaction = SupplierAccountTransaction::query()->find($ledger->reference_id);
+                $label = ($transaction?->direction === 'receipt' ? 'REC-' : 'PAY-').$ledger->reference_id;
+                $description = $transaction?->direction === 'receipt' ? 'دریافت از تأمین‌کننده' : 'پرداخت به تأمین‌کننده';
+            } elseif ($ledger->reference_type === Purchase::class && $ledger->reference_id) {
                 $purchase = Purchase::query()->find($ledger->reference_id);
                 $label = 'PUR-'.$ledger->reference_id;
                 $description = 'خرید کالا';
