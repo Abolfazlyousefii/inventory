@@ -4,7 +4,8 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\PurchaseController;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\{Cache, DB, Schema};
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
@@ -105,6 +106,29 @@ class PurchaseValidationTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $this->invoke('acquirePurchaseSubmission', [$token]);
+    }
+
+    public function test_stock_adjustment_only_supplier_is_rejected_for_new_purchase_but_real_supplier_is_allowed(): void
+    {
+        Schema::create('suppliers', function(Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->boolean('is_inventory_adjustment_source')->default(false);
+            $table->timestamps();
+        });
+        DB::table('suppliers')->insert([
+            ['id'=>1,'name'=>'کسری و اضافه','is_inventory_adjustment_source'=>true],
+            ['id'=>2,'name'=>'تأمین‌کننده واقعی','is_inventory_adjustment_source'=>false],
+        ]);
+
+        try {
+            $this->invoke('assertCommercialSupplierForPurchase', [1]);
+            $this->fail('Adjustment source was accepted as a commercial supplier.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('supplier_id',$e->errors());
+        }
+
+        $this->assertNull($this->invoke('assertCommercialSupplierForPurchase', [2]));
     }
 
     private function invoke(string $method, array $arguments): mixed

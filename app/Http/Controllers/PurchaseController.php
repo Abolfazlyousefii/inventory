@@ -322,6 +322,7 @@ class PurchaseController extends Controller
             DB::transaction(function () use ($data) {
                 $centralWarehouseId = WarehouseStockService::centralWarehouseId();
                 $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
+                $this->assertCommercialSupplierForPurchase($supplierId);
 
                 $purchase = Purchase::create($this->purchaseTablePayload([
                     'supplier_id' => $supplierId,
@@ -370,6 +371,9 @@ class PurchaseController extends Controller
                     ->firstOrFail();
                 app(\App\Services\PurchaseReturnService::class)->assertPurchaseMutable($purchase);
                 $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
+                if ($supplierId !== (int) $purchase->supplier_id) {
+                    $this->assertCommercialSupplierForPurchase($supplierId);
+                }
 
                 $purchase->update($this->purchaseTablePayload([
                     'supplier_id' => $supplierId,
@@ -995,6 +999,17 @@ class PurchaseController extends Controller
             });
 
         return $suppliers->concat($customerOptions)->sortBy('name')->values();
+    }
+
+    /** Preserve historical correction purchases, but stop creating new ones. */
+    private function assertCommercialSupplierForPurchase(int $supplierId): void
+    {
+        $supplier = Supplier::query()->findOrFail($supplierId);
+        if ($supplier->isInventoryAdjustmentSource()) {
+            throw ValidationException::withMessages([
+                'supplier_id' => 'کسری و اضافی منبع اصلاح موجودی است، نه تأمین‌کننده خرید واقعی. اصلاح موجودی را از بخش انبارگردانی انجام دهید.',
+            ]);
+        }
     }
 
     private function resolvePurchaseSupplierId(string $value): int

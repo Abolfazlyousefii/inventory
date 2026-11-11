@@ -1,0 +1,49 @@
+name: Purchase supplier source isolation
+
+on:
+  push:
+    paths:
+      - 'app/Http/Controllers/PurchaseController.php'
+      - 'app/Http/Controllers/PurchaseReturnController.php'
+      - 'app/Models/Supplier.php'
+      - 'app/Services/PurchaseReturnService.php'
+      - 'database/migrations/2026_11_11_120000_add_adjustment_source_flag_to_suppliers.php'
+      - 'tests/Feature/PurchaseReturnTest.php'
+      - 'tests/Feature/PurchaseValidationTest.php'
+      - 'tests/Feature/PurchaseAdjustmentSourceMigrationTest.php'
+      - '.github/workflows/purchase-supplier-source-regression.yml'
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/PurchaseController.php'
+      - 'app/Http/Controllers/PurchaseReturnController.php'
+      - 'app/Models/Supplier.php'
+      - 'app/Services/PurchaseReturnService.php'
+      - 'database/migrations/2026_11_11_120000_add_adjustment_source_flag_to_suppliers.php'
+      - 'tests/Feature/PurchaseReturnTest.php'
+      - 'tests/Feature/PurchaseValidationTest.php'
+      - 'tests/Feature/PurchaseAdjustmentSourceMigrationTest.php'
+      - '.github/workflows/purchase-supplier-source-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, sqlite3
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress --no-scripts
+      - run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Migration classification regression
+        run: vendor/bin/phpunit tests/Feature/PurchaseAdjustmentSourceMigrationTest.php --colors=never
+      - name: Purchase return compatibility
+        run: vendor/bin/phpunit tests/Feature/PurchaseReturnTest.php --colors=never
+      - name: Purchase input validation
+        run: vendor/bin/phpunit tests/Feature/PurchaseValidationTest.php --colors=never

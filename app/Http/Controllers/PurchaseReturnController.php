@@ -30,6 +30,9 @@ class PurchaseReturnController extends Controller
     {
         $request->validate(['supplier_id'=>['nullable','integer','exists:suppliers,id'],'purchase_id'=>['nullable','integer','exists:purchases,id'],'warehouse_id'=>['nullable','integer','exists:warehouses,id']]);
         $supplierId=$document?->supplier_id ?? old('supplier_id',$request->input('supplier_id'));
+        if (!$document && $supplierId && Supplier::find((int)$supplierId)?->isInventoryAdjustmentSource()) {
+            throw ValidationException::withMessages(['supplier_id'=>'کسری و اضافی منبع انبارداری است و خریدهای آن مرجع برگشت به تأمین‌کننده نیستند.']);
+        }
         $purchaseId=$document?->purchase_id ?? old('purchase_id',$request->input('purchase_id'));
         $purchase=$purchaseId ? Purchase::with('items')->where('supplier_id',$supplierId)->findOrFail($purchaseId):null;
         $selection=old('warehouse_id',$request->input('warehouse_id'));
@@ -55,7 +58,7 @@ class PurchaseReturnController extends Controller
             'document'=>$document,'supplierId'=>$supplierId,'purchase'=>$purchase,'rows'=>$rows,
             'warehouseId'=>$warehouseId,'warehouse'=>$warehouse,
             'warehouses'=>Warehouse::where('is_active',true)->orderByRaw("CASE WHEN type = 'central' THEN 0 ELSE 1 END")->orderBy('name')->get(),
-            'suppliers'=>Supplier::whereHas('purchases')->orderBy('name')->get(['id','name']),
+            'suppliers'=>Supplier::whereHas('purchases')->orderBy('name')->get()->reject(fn(Supplier $supplier)=>$supplier->isInventoryAdjustmentSource())->values(),
             'purchases'=>$supplierId ? Purchase::where('supplier_id',$supplierId)->latest('purchased_at')->get(['id','purchased_at','total_amount']):collect(),
             'token'=>old('submission_token',(string)Str::uuid()),
         ]);

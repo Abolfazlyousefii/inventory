@@ -14,6 +14,7 @@ class PurchaseReturnTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutVite();
         Schema::create('site_stock_sync_outbox', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('product_id');
@@ -31,7 +32,7 @@ class PurchaseReturnTest extends TestCase
             );
         });
         \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/purchase-returns-20261011'));
-        Schema::create('suppliers', function(Blueprint $t){$t->id();$t->string('name');$t->timestamps();});
+        Schema::create('suppliers', function(Blueprint $t){$t->id();$t->string('name');$t->boolean('is_inventory_adjustment_source')->default(false);$t->timestamps();});
         Schema::create('products', function(Blueprint $t){$t->id();$t->string('name');$t->integer('stock')->default(0);$t->timestamps();});
         Schema::create('product_variants', function(Blueprint $t){
             $t->boolean('sales_enabled')->default(true);$t->id();$t->integer('product_id');$t->string('variant_name');$t->integer('stock')->default(0);$t->integer('reserved')->default(0);$t->timestamps();});
@@ -52,6 +53,57 @@ class PurchaseReturnTest extends TestCase
         DB::table('warehouse_stocks')->insert(['warehouse_id'=>1,'product_id'=>1,'product_variant_id'=>1,'quantity'=>6]);
         DB::table('purchases')->insert([['id'=>1,'supplier_id'=>1,'warehouse_id'=>1,'total_amount'=>10000],['id'=>2,'supplier_id'=>2,'warehouse_id'=>1,'total_amount'=>10000]]);
         DB::table('purchase_items')->insert([['id'=>1,'purchase_id'=>1,'product_id'=>1,'product_variant_id'=>1,'quantity'=>10,'buy_price'=>1000,'product_name'=>'کالا','variant_name'=>'مشکی'],['id'=>2,'purchase_id'=>2,'product_id'=>1,'product_variant_id'=>1,'quantity'=>10,'buy_price'=>1000,'product_name'=>'دیگر','variant_name'=>'مشکی']]);
+    }
+
+    public function test_new_purchase_return_rejects_inventory_adjustment_source_without_moving_stock(): void
+    {
+        DB::table('suppliers')->where('id',1)->update([
+            'name'=>'کسری و اضافه',
+            'is_inventory_adjustment_source'=>true,
+        ]);
+
+        $this->invalid(fn()=> $this->service()->create($this->payload(2),1));
+        $this->assertSame(6,$this->quantity());
+        $this->assertDatabaseCount('purchase_returns',0);
+        $this->assertDatabaseCount('stock_movements',0);
+
+        $real = $this->service()->create($this->payload(2,[
+            'supplier_id'=>2,
+            'purchase_id'=>2,
+            'items'=>[['purchase_item_id'=>2,'quantity'=>2]],
+        ]),1);
+        $this->assertSame(2,(int)$real->supplier_id);
+        $this->assertSame(4,$this->quantity());
+    }
+
+    public function test_adjustment_source_does_not_appear_as_new_return_supplier_but_legacy_return_is_editable(): void
+    {
+        $legacy = $this->service()->create($this->payload(2),1);
+        DB::table('suppliers')->where('id',1)->update([
+            'name'=>'کسری و اضافه',
+            'is_inventory_adjustment_source'=>true,
+        ]);
+
+        $controller=app(\App\Http\Controllers\PurchaseReturnController::class);
+        $new=$controller->create(\Illuminate\Http\Request::create('/purchase-returns/create'))->getData();
+        $this->assertFalse($new['suppliers']->contains('id',1));
+        $this->assertTrue($new['suppliers']->contains('id',2));
+
+        $this->invalid(fn()=> $controller->create(
+            \Illuminate\Http\Request::create('/purchase-returns/create','GET',[
+                'supplier_id'=>1, 'purchase_id'=>1
+            ])
+        ));
+
+        $edit=$controller->edit(
+            \Illuminate\Http\Request::create('/purchase-returns/'.$legacy->id.'/edit','GET'),
+            $legacy
+        )->getData();
+        $this->assertSame(1,(int)$edit['supplierId']);
+        $updated=$this->service()->update($legacy,$this->payload(3,['version'=>1]),1);
+        $this->assertSame(3,(int)$updated->items()->first()->quantity);
+        $this->assertSame(3,$this->quantity());
+        $this->assertDatabaseCount('supplier_ledgers',0);
     }
 
     private function secondaryWarehouse(int $quantity=5, bool $active=true): void
