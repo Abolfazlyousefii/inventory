@@ -284,7 +284,7 @@ class PersonController extends Controller
             ? $customer->ledgers()->latest('created_at')->latest('id')->paginate(25, ['*'], 'customer_page')
             : null;
         $supplierEntries = $supplier
-            ? $supplier->ledgers()->latest('created_at')->latest('id')->paginate(25, ['*'], 'supplier_page')
+            ? $supplier->ledgers()->with('reference')->latest('created_at')->latest('id')->paginate(25, ['*'], 'supplier_page')
             : null;
 
         $person = [
