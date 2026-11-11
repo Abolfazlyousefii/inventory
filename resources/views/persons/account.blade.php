@@ -27,7 +27,8 @@
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
 
-    @if($person['is_supplier'] && auth()->user()?->canPermission('account_statements.payments.create'))
+    @if($person['is_supplier'])
+    @canPermission('account_statements.payments.create')
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white"><strong>ثبت پرداخت یا دریافت از تأمین‌کننده</strong></div>
             <div class="card-body">
@@ -70,6 +71,7 @@
                 @endif
             </div>
         </div>
+    @endcanPermission
     @endif
 
     <div class="row g-3 mb-3">
