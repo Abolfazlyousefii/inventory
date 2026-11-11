@@ -210,6 +210,48 @@ class PersonController extends Controller
         return redirect()->route('persons.index')->with('success', '✅ اطلاعات شخص با موفقیت بروزرسانی شد.');
     }
 
+    public function show(string $personKey)
+    {
+        [$customer, $supplier] = $this->findPersonByKey($personKey);
+        abort_if(! $customer && ! $supplier, 404);
+
+        $customer?->loadMissing('ledgers');
+        $supplier?->loadMissing('ledgers');
+
+        $customerReceivableBalance = $customer ? (int) $customer->balance : 0;
+        $supplierPayableBalance = $supplier
+            ? (int) $supplier->ledgers()->where('type', 'credit')->sum('amount')
+                - (int) $supplier->ledgers()->where('type', 'debit')->sum('amount')
+            : 0;
+
+        $customerEntries = $customer
+            ? $customer->ledgers()->latest('created_at')->latest('id')->paginate(25, ['*'], 'customer_page')
+            : null;
+        $supplierEntries = $supplier
+            ? $supplier->ledgers()->latest('created_at')->latest('id')->paginate(25, ['*'], 'supplier_page')
+            : null;
+
+        $person = [
+            'name' => $customer?->display_name ?: $supplier?->name,
+            'mobile' => $customer?->mobile ?: $supplier?->phone,
+            'address' => $customer?->address ?: $supplier?->address,
+            'customer_id' => $customer?->id,
+            'supplier_id' => $supplier?->id,
+            'is_customer' => (bool) $customer,
+            'is_supplier' => (bool) $supplier,
+        ];
+
+        return view('persons.show', compact(
+            'person',
+            'customer',
+            'supplier',
+            'customerEntries',
+            'supplierEntries',
+            'customerReceivableBalance',
+            'supplierPayableBalance',
+        ));
+    }
+
     private function mergePeople(Collection $customers, Collection $suppliers): Collection
     {
         $people = collect();
