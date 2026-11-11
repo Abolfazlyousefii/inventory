@@ -27,7 +27,7 @@
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
 
-    @if($person['is_supplier'] && \\App\\Support\\PageAccessCatalog::userCanRoute(auth()->user(), 'persons.supplier-transactions.store'))
+    @if($person['is_supplier'] && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'persons.supplier-transactions.store'))
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white"><strong>ثبت پرداخت یا دریافت از تأمین‌کننده</strong></div>
             <div class="card-body">
