@@ -398,6 +398,8 @@ class PageAccessCatalog
         'persons.index' => ['customers'],
         'persons.store' => ['customers'],
         'persons.update' => ['customers'],
+        'persons.show' => ['customers'],
+        'persons.supplier-ledgers.store' => ['suppliers'],
         'suppliers.index' => ['suppliers'],
         'suppliers.store' => ['suppliers'],
         'warehouse.stock-flow.index' => ['warehouse.stocktake'],
