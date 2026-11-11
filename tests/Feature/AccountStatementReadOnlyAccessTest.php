@@ -39,7 +39,7 @@ function statementReader(bool $broad = true): User
 
 it('denies financial mutations despite inherited broad permissions', function () {
     $user = statementReader();
-    foreach (['account-statements.payments.store', 'account-statements.payments.edit', 'account-statements.payments.update', 'account-statements.payments.destroy', 'account-statements.adjustments.store', 'invoices.payments.store', 'cheques.store', 'persons.supplier-transactions.store'] as $route) {
+    foreach (['persons.supplier-transactions.store', 'account-statements.payments.store', 'account-statements.payments.edit', 'account-statements.payments.update', 'account-statements.payments.destroy', 'account-statements.adjustments.store', 'invoices.payments.store', 'cheques.store', 'persons.supplier-transactions.store'] as $route) {
         expect(PageAccessCatalog::userCanRoute($user, $route), $route)->toBeFalse();
     }
     foreach (['account_statements.adjust', 'account_statements.payments.create', 'payments.create'] as $key) {
@@ -79,7 +79,7 @@ it('grants read routes and sidebar entry without opening financial reports or mu
         ->and(PageAccessCatalog::userCanRoute($user, 'account-statements.payments.store'))->toBeFalse();
 
     $supplier = Supplier::query()->create(['name' => 'تأمین‌کننده فقط خواندنی', 'phone' => '09127778899']);
-    $this->actingAs($user)->get('/persons/supplier-'.$supplier->id.'/account')->assertOk()->assertSee('گردش حساب');
+    $this->actingAs($user)->get('/persons/supplier-'.$supplier->id.'/account')->assertOk()->assertSee('گردش حساب')->assertDontSee('supplier-transactions.store');
 });
 
 it('preserves administrator and ordinary finance writer access', function () {
