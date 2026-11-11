@@ -127,7 +127,14 @@ class UnifiedPersonAccountStatementTest extends TestCase
             'supplier_id' => $supplier->id,
             'type' => 'debit',
             'amount' => 3000,
+            'reference_type' => \\App\\Models\\SupplierAccountTransaction::class,
             'note' => 'پرداخت نقدی',
+        ]);
+        $this->assertDatabaseHas('supplier_account_transactions', [
+            'supplier_id' => $supplier->id,
+            'direction' => 'payment',
+            'amount' => 3000,
+            'method' => null,
         ]);
 
         $this->post(route('persons.supplier-ledgers.store', '09120000005'), [
