@@ -169,6 +169,9 @@ class PersonAccountStatementController extends Controller
             $sources[$key] = compact('label', 'description', 'url');
         }
 
-        return view('persons.account', $statement + ['sources' => $sources]);
+        return view('persons.account', $statement + [
+            'sources' => $sources,
+            'supplierSubmissionToken' => (string) Str::uuid(),
+        ]);
     }
 }
