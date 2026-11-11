@@ -44,6 +44,16 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Run the read-only denial before Spatie's Gate::before permission grant.
+        Gate::before(function ($user, $ability) {
+            if ($user instanceof \\App\\Models\\User
+                && \\App\\Support\\AccountStatementAccess::deniesPermission($user, (string) $ability)) {
+                return false;
+            }
+
+            return null;
+        });
+
         $this->app->scoped(\App\Services\Tracking\HallQueueRecorder::class);
         $this->app->scoped(\App\Services\InventoryCountFreezeService::class);
         $this->app->bind(OtpSender::class, OtpSmsSender::class);
