@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Purchase;
 use App\Models\Supplier;
+use App\Models\SupplierAccountTransaction;
 use App\Models\SupplierLedger;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -239,6 +240,7 @@ class PersonAccountStatementTest extends TestCase
         $this->actingAs($this->owner())
             ->post('/persons/supplier-'.$supplier->id.'/supplier-transactions', [
                 'direction' => 'payment',
+                'submission_token' => '11111111-1111-4111-8111-111111111111',
                 'amount' => 3000,
                 'transaction_date' => '2026-11-10 12:30:00',
                 'method' => 'bank',
@@ -246,6 +248,18 @@ class PersonAccountStatementTest extends TestCase
                 'note' => 'پرداخت به تأمین‌کننده',
             ])
             ->assertRedirect('/persons/supplier-'.$supplier->id.'/account');
+
+        $this->post('/persons/supplier-'.$supplier->id.'/supplier-transactions', [
+            'direction' => 'payment',
+            'submission_token' => '11111111-1111-4111-8111-111111111111',
+            'amount' => 3000,
+            'transaction_date' => '2026-11-10 12:30:00',
+            'method' => 'bank',
+            'reference' => 'TRX-100',
+            'note' => 'پرداخت به تأمین‌کننده',
+        ])->assertRedirect('/persons/supplier-'.$supplier->id.'/account');
+        $this->assertDatabaseCount('supplier_account_transactions', 1);
+        $this->assertDatabaseCount('supplier_ledgers', 1);
 
         $this->assertDatabaseHas('supplier_account_transactions', [
             'supplier_id' => $supplier->id,
@@ -258,7 +272,7 @@ class PersonAccountStatementTest extends TestCase
             'supplier_id' => $supplier->id,
             'type' => 'debit',
             'amount' => 3000,
-            'reference_type' => \\App\\Models\\SupplierAccountTransaction::class,
+            'reference_type' => SupplierAccountTransaction::class,
         ]);
 
         $this->post('/persons/supplier-'.$supplier->id.'/supplier-transactions', [
