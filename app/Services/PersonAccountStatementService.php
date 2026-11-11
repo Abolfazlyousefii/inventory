@@ -9,6 +9,7 @@ use App\Models\PersonnelAccountDocument;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Supplier;
+use App\Models\SupplierAccountTransaction;
 use App\Support\PhoneNormalizer;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -164,11 +165,12 @@ class PersonAccountStatementService
                 ->where('sl.supplier_id', $supplierId)
                 ->selectRaw("'supplier' AS ledger_source, sl.id, sl.type, sl.amount, sl.reference_type, sl.reference_id, sl.note, sl.created_at, sl.updated_at, 1 AS source_order")
                 ->selectRaw("DATE(COALESCE(
+                    (SELECT sat.transaction_date FROM supplier_account_transactions sat WHERE sat.id = sl.reference_id AND sl.reference_type = ?),
                     (SELECT p.purchased_at FROM purchases p WHERE p.id = sl.reference_id AND sl.reference_type = ?),
                     (SELECT pr.returned_at FROM purchase_returns pr WHERE pr.id = sl.reference_id AND sl.reference_type = ?),
                     sl.created_at,
                     '1970-01-01'
-                )) AS statement_date", [Purchase::class, PurchaseReturn::class])
+                )) AS statement_date", [SupplierAccountTransaction::class, Purchase::class, PurchaseReturn::class])
                 ->selectRaw("CASE WHEN sl.reference_type = ? AND NOT EXISTS (
                     SELECT 1 FROM purchase_returns pr
                     WHERE pr.id = sl.reference_id AND pr.deleted_at IS NULL
