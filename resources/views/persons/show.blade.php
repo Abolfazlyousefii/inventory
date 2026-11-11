@@ -56,7 +56,7 @@
                 <tbody>
                 @forelse($customerEntries as $entry)
                     <tr>
-                        <td class="text-nowrap">{{ $entry->created_at?->format('Y/m/d H:i') ?: '—' }}</td>
+                        <td class="text-nowrap">{{ $entry->reference?->transaction_date?->format('Y/m/d H:i') ?: $entry->created_at?->format('Y/m/d H:i') ?: '—' }}</td>
                         <td>{{ $entry->note ?: class_basename($entry->reference_type ?: 'سند') }}</td>
                         <td class="text-danger">{{ $entry->type === 'debit' ? number_format($entry->amount) : '—' }}</td>
                         <td class="text-success">{{ $entry->type === 'credit' ? number_format($entry->amount) : '—' }}</td>
@@ -92,7 +92,19 @@
                 <label class="form-label">مبلغ (ریال)</label>
                 <input type="number" name="amount" min="1" max="9000000000000000" class="form-control" required>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
+                <label class="form-label">تاریخ سند</label>
+                <input type="datetime-local" name="transaction_date" class="form-control" value="{{ now()->format('Y-m-d\\TH:i') }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">روش</label>
+                <input type="text" name="method" maxlength="50" class="form-control" placeholder="نقدی / کارت">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">شماره پیگیری</label>
+                <input type="text" name="reference" maxlength="100" class="form-control">
+            </div>
+            <div class="col-md-3">
                 <label class="form-label">شرح</label>
                 <input type="text" name="note" maxlength="255" class="form-control" placeholder="مثلاً پرداخت نقدی">
             </div>
