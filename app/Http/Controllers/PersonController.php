@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\Purchase;
 use App\Models\Supplier;
 use App\Models\SupplierLedger;
 use App\Models\SupplierAccountTransaction;
@@ -292,7 +293,7 @@ class PersonController extends Controller
                      WHERE purchases.id = supplier_ledgers.reference_id
                      AND supplier_ledgers.reference_type = ?),
                     supplier_ledgers.created_at
-                ) AS statement_date', [SupplierAccountTransaction::class, \\App\\Models\\Purchase::class])
+                ) AS statement_date', [SupplierAccountTransaction::class, Purchase::class])
                 ->orderByDesc('statement_date')
                 ->orderByDesc('supplier_ledgers.created_at')
                 ->orderByDesc('supplier_ledgers.id')
