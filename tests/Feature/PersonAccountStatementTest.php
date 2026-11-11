@@ -18,6 +18,12 @@ class PersonAccountStatementTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutVite();
+    }
+
     private function owner(): User
     {
         $user = User::factory()->create();

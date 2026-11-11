@@ -15,6 +15,10 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function () {
+    $this->withoutVite();
+});
+
 function statementReader(bool $broad = true): User
 {
     $user = User::factory()->create();
