@@ -975,6 +975,8 @@ class PermissionCatalog
             'persons.index' => 'customers.view',
             'persons.store' => 'customers.create',
             'persons.update' => 'customers.edit',
+            'persons.show' => 'customers.view',
+            'persons.supplier-ledgers.store' => 'suppliers.edit',
             'suppliers.index' => 'suppliers.view',
             'suppliers.store' => 'suppliers.create',
             'stocktake.index' => 'inventory.count.view',
