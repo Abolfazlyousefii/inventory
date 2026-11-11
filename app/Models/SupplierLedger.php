@@ -23,4 +23,9 @@ class SupplierLedger extends Model
     {
         return $this->belongsTo(Supplier::class);
     }
+
+    public function reference()
+    {
+        return $this->morphTo();
+    }
 }
