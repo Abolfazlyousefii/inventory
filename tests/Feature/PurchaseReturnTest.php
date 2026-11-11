@@ -83,19 +83,19 @@ class PurchaseReturnTest extends TestCase
             'is_inventory_adjustment_source'=>true,
         ]);
 
-        $controller=app(\\App\\Http\\Controllers\\PurchaseReturnController::class);
-        $new=$controller->create(\\Illuminate\\Http\\Request::create('/purchase-returns/create'))->getData();
+        $controller=app(\App\Http\Controllers\PurchaseReturnController::class);
+        $new=$controller->create(\Illuminate\Http\Request::create('/purchase-returns/create'))->getData();
         $this->assertFalse($new['suppliers']->contains('id',1));
         $this->assertTrue($new['suppliers']->contains('id',2));
 
         $this->invalid(fn()=> $controller->create(
-            \\Illuminate\\Http\\Request::create('/purchase-returns/create','GET',[
+            \Illuminate\Http\Request::create('/purchase-returns/create','GET',[
                 'supplier_id'=>1, 'purchase_id'=>1
             ])
         ));
 
         $edit=$controller->edit(
-            \\Illuminate\\Http\\Request::create('/purchase-returns/'.$legacy->id.'/edit','GET'),
+            \Illuminate\Http\Request::create('/purchase-returns/'.$legacy->id.'/edit','GET'),
             $legacy
         )->getData();
         $this->assertSame(1,(int)$edit['supplierId']);
