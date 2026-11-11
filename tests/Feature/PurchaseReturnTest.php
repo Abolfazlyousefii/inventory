@@ -14,6 +14,7 @@ class PurchaseReturnTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutVite();
         Schema::create('site_stock_sync_outbox', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('product_id');
