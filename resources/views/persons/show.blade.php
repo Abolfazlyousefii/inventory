@@ -79,6 +79,28 @@
         <span class="small text-muted">بدهی ما</span>
     </div>
     <div class="card-body">
+        <form method="POST" action="{{ route('persons.supplier-ledgers.store', request()->route('personKey')) }}" class="row g-2 align-items-end border rounded p-3 mb-3">
+            @csrf
+            <div class="col-md-3">
+                <label class="form-label">نوع عملیات</label>
+                <select name="direction" class="form-select" required>
+                    <option value="payment">پرداخت به تأمین‌کننده</option>
+                    <option value="receipt">دریافت از تأمین‌کننده</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">مبلغ (ریال)</label>
+                <input type="number" name="amount" min="1" max="9000000000000000" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">شرح</label>
+                <input type="text" name="note" maxlength="255" class="form-control" placeholder="مثلاً پرداخت نقدی">
+            </div>
+            <div class="col-md-2"><button class="btn btn-primary w-100">ثبت سند</button></div>
+            @if($errors->any())
+                <div class="col-12 text-danger small">{{ $errors->first() }}</div>
+            @endif
+        </form>
         <div class="table-responsive">
             <table class="table table-sm table-hover align-middle">
                 <thead><tr><th>تاریخ ثبت</th><th>شرح</th><th>پرداخت / بدهکار</th><th>خرید / بستانکار</th></tr></thead>
