@@ -1,0 +1,61 @@
+name: Unified person account regression
+
+on:
+  push:
+    branches: [feature/unified-person-account-ledger]
+    paths:
+      - 'app/Http/Controllers/PersonController.php'
+      - 'app/Http/Controllers/PersonAccountStatementController.php'
+      - 'app/Services/PersonAccountStatementService.php'
+      - 'app/Models/SupplierLedger.php'
+      - 'app/Services/PurchaseReturnService.php'
+      - 'app/Services/SupplierLedgerService.php'
+      - 'resources/views/persons/**'
+      - 'routes/web.php'
+      - 'app/Support/PageAccessCatalog.php'
+      - 'app/Support/PermissionCatalog.php'
+      - 'tests/Feature/PersonAccountStatementTest.php'
+      - 'tests/Feature/PurchaseReturnTest.php'
+      - '.github/workflows/person-account-ledger.yml'
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/PersonController.php'
+      - 'app/Http/Controllers/PersonAccountStatementController.php'
+      - 'app/Services/PersonAccountStatementService.php'
+      - 'app/Models/SupplierLedger.php'
+      - 'app/Services/PurchaseReturnService.php'
+      - 'app/Services/SupplierLedgerService.php'
+      - 'resources/views/persons/**'
+      - 'routes/web.php'
+      - 'app/Support/PageAccessCatalog.php'
+      - 'app/Support/PermissionCatalog.php'
+      - 'tests/Feature/PersonAccountStatementTest.php'
+      - 'tests/Feature/PurchaseReturnTest.php'
+      - '.github/workflows/person-account-ledger.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, gd, pdo, sqlite, pdo_sqlite
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Unified person account tests
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/PersonAccountStatementTest.php
+      - name: Purchase return tests
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/PurchaseReturnTest.php
+      - name: Syntax checks
+        run: |
+          php -l app/Http/Controllers/PersonController.php
+          php -l app/Services/PurchaseReturnService.php
+          php -l routes/web.php
