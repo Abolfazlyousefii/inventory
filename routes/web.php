@@ -585,6 +585,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Persons
     Route::get('/persons', [PersonController::class, 'index'])->name('persons.index');
     Route::get('/persons/{personKey}', [PersonController::class, 'show'])->name('persons.show');
+    Route::post('/persons/{personKey}/supplier-ledger-entries', [PersonController::class, 'storeSupplierLedgerEntry'])->name('persons.supplier-ledgers.store');
     Route::post('/persons', [PersonController::class, 'store'])->name('persons.store');
     Route::put('/persons/{personKey}', [PersonController::class, 'update'])->name('persons.update');
 
