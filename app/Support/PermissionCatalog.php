@@ -973,6 +973,7 @@ class PermissionCatalog
             'purchases.update' => 'stock_in.edit',
             'purchases.destroy' => 'stock_in.delete',
             'persons.index' => 'customers.view',
+            'persons.account' => 'account_statements.view',
             'persons.store' => 'customers.create',
             'persons.update' => 'customers.edit',
             'suppliers.index' => 'suppliers.view',

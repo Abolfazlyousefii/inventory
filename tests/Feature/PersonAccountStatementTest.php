@@ -1,16 +1,18 @@
 <?php
 
-namespace Tests\\Feature;
+namespace Tests\Feature;
 
-use App\\Models\\Customer;
-use App\\Models\\CustomerLedger;
-use App\\Models\\Purchase;
-use App\\Models\\Supplier;
-use App\\Models\\SupplierLedger;
-use App\\Models\\User;
-use Illuminate\\Foundation\\Testing\\RefreshDatabase;
-use Spatie\\Permission\\Models\\Role;
-use Tests\\TestCase;
+use App\Models\Customer;
+use App\Models\CustomerLedger;
+use App\Models\Purchase;
+use App\Models\Supplier;
+use App\Models\SupplierLedger;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
+use Tests\TestCase;
 
 class PersonAccountStatementTest extends TestCase
 {
@@ -43,6 +45,41 @@ class PersonAccountStatementTest extends TestCase
         $response->assertSee('/persons/09121234567/account', false);
         $this->assertSame($customer->id, $response->viewData('people')->items()[0]['customer_id']);
         $this->assertNotNull($response->viewData('people')->items()[0]['supplier_id']);
+    }
+
+    public function test_person_update_matches_customer_and_supplier_roles_by_normalized_phone(): void
+    {
+        $customer = Customer::factory()->create([
+            'first_name' => 'شخص مشترک',
+            'mobile' => '09121234567',
+        ]);
+        $supplier = Supplier::query()->create([
+            'name' => 'شخص مشترک',
+            'phone' => '+98 912 123 4567',
+        ]);
+
+        $response = $this->actingAs($this->owner())->put('/persons/09121234567', [
+            'name' => 'نام اصلاح‌شده',
+            'mobile' => '+98 912 333 4444',
+            'types' => ['customer', 'supplier'],
+            'address' => 'تهران',
+            'postal_code' => '1234567890',
+            'description' => 'شخص مشترک',
+            'province_id' => null,
+            'city_id' => null,
+        ]);
+
+        $response->assertRedirect(route('persons.index'));
+        $this->assertDatabaseHas('customers', [
+            'id' => $customer->id,
+            'mobile' => '09123334444',
+            'first_name' => 'نام اصلاح‌شده',
+        ]);
+        $this->assertDatabaseHas('suppliers', [
+            'id' => $supplier->id,
+            'phone' => '09123334444',
+            'name' => 'نام اصلاح‌شده',
+        ]);
     }
 
     public function test_unified_account_combines_both_ledgers_and_deduplicates_customer_copied_purchase_credit(): void
@@ -93,6 +130,22 @@ class PersonAccountStatementTest extends TestCase
             'amount' => 200,
             'note' => 'پرداخت به شخص',
         ]);
+        DB::table('purchase_returns')->insert([
+            'document_number' => '00001',
+            'submission_token' => (string) Str::uuid(),
+            'supplier_id' => $supplier->id,
+            'purchase_id' => 41,
+            'warehouse_id' => 1,
+            'supplier_name' => 'طرف حساب',
+            'returned_at' => '2026-11-01',
+            'total_amount' => 250,
+            'total_quantity' => 1,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'version' => 1,
+            'created_at' => '2026-11-01 10:00:00',
+            'updated_at' => '2026-11-01 10:00:00',
+        ]);
 
         $response = $this->actingAs($this->owner())
             ->get('/persons/'.$customer->mobile.'/account');
@@ -100,13 +153,52 @@ class PersonAccountStatementTest extends TestCase
         $response->assertOk()
             ->assertSee('گردش حساب')
             ->assertSee('خرید مستقل از شخص')
-            ->assertSee('پرداخت به شخص');
+            ->assertSee('پرداخت به شخص')
+            ->assertSee('PR-00001');
 
         $this->assertSame(500, $response->viewData('openingBalance'));
-        $this->assertSame(1200, $response->viewData('totalDebit'));
+        $this->assertSame(1450, $response->viewData('totalDebit'));
         $this->assertSame(1000, $response->viewData('totalCredit'));
-        $this->assertSame(700, $response->viewData('netBalance'));
-        $this->assertCount(4, $response->viewData('ledgers'));
+        $this->assertSame(950, $response->viewData('netBalance'));
+        $this->assertCount(5, $response->viewData('ledgers'));
+    }
+
+    public function test_active_legacy_purchase_return_is_included_without_a_supplier_ledger_row_and_deleted_return_is_excluded(): void
+    {
+        $supplier = Supplier::query()->create([
+            'name' => 'تأمین‌کننده قدیمی',
+            'phone' => '09123334456',
+        ]);
+        $returnId = DB::table('purchase_returns')->insertGetId([
+            'document_number' => '00002',
+            'submission_token' => (string) Str::uuid(),
+            'supplier_id' => $supplier->id,
+            'purchase_id' => 99,
+            'warehouse_id' => 1,
+            'supplier_name' => 'تأمین‌کننده قدیمی',
+            'returned_at' => '2026-11-02',
+            'total_amount' => 2500,
+            'total_quantity' => 2,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'version' => 1,
+            'created_at' => '2026-11-02 10:00:00',
+            'updated_at' => '2026-11-02 10:00:00',
+        ]);
+
+        $this->actingAs($this->owner())
+            ->get('/persons/supplier-'.$supplier->id.'/account')
+            ->assertOk()
+            ->assertSee('PR-00002');
+
+        $service = app(\App\Services\PersonAccountStatementService::class);
+        $this->assertSame(2500, $service->statement('supplier-'.$supplier->id)['totalDebit']);
+
+        DB::table('purchase_returns')->where('id', $returnId)->update(['deleted_at' => now()]);
+        $statement = $service->statement('supplier-'.$supplier->id);
+        $this->assertSame(0, $statement['totalDebit']);
+        $this->assertCount(1, $statement['ledgers']);
+        $this->assertSame(0, (int) $statement['ledgers']->first()->is_effective);
     }
 
     public function test_supplier_only_person_can_open_a_statement_without_a_customer_record(): void

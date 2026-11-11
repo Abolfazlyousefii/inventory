@@ -6,6 +6,7 @@ on:
     paths:
       - 'app/Http/Controllers/PersonController.php'
       - 'app/Http/Controllers/PersonAccountStatementController.php'
+      - 'app/Http/Controllers/PersonAccountStatementController.php'
       - 'app/Services/PersonAccountStatementService.php'
       - 'app/Models/SupplierLedger.php'
       - 'app/Services/PurchaseReturnService.php'
@@ -15,6 +16,7 @@ on:
       - 'app/Support/PageAccessCatalog.php'
       - 'app/Support/PermissionCatalog.php'
       - 'tests/Feature/PersonAccountStatementTest.php'
+      - 'tests/Feature/AccountStatementReadOnlyAccessTest.php'
       - 'tests/Feature/PurchaseReturnTest.php'
       - '.github/workflows/person-account-ledger.yml'
   pull_request:
@@ -52,6 +54,8 @@ jobs:
           php artisan key:generate --force
       - name: Unified person account tests
         run: php tests/run.php --configuration phpunit.xml tests/Feature/PersonAccountStatementTest.php
+      - name: Account statement access tests
+        run: php tests/run.php --configuration phpunit.xml tests/Feature/AccountStatementReadOnlyAccessTest.php
       - name: Purchase return tests
         run: php tests/run.php --configuration phpunit.xml tests/Feature/PurchaseReturnTest.php
       - name: Syntax checks

@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Invoice;
 use App\Models\InvoicePayment;
+use App\Models\Supplier;
 use App\Models\User;
 use App\Support\PageAccessCatalog;
 use App\Support\PermissionCatalog;
@@ -64,12 +65,15 @@ it('shows a read-only statement and rejects a forged payment or balance adjustme
 
 it('grants read routes and sidebar entry without opening financial reports or mutations', function () {
     $user = statementReader(false);
-    foreach (['account-statements.index', 'account-statements.show', 'account-statements.documents.invoices.show', 'account-statements.documents.returns.show', 'account-statements.documents.payments.show'] as $route) {
+    foreach (['account-statements.index', 'account-statements.show', 'account-statements.documents.invoices.show', 'account-statements.documents.returns.show', 'account-statements.documents.payments.show', 'persons.account'] as $route) {
         expect(PageAccessCatalog::userCanRoute($user, $route), $route)->toBeTrue();
     }
     expect(PermissionCatalog::userHasPermission($user, 'account_statements.view'))->toBeTrue()
         ->and(PageAccessCatalog::userCanRoute($user, 'finance.reports.index'))->toBeFalse()
         ->and(PageAccessCatalog::userCanRoute($user, 'account-statements.payments.store'))->toBeFalse();
+
+    $supplier = Supplier::query()->create(['name' => 'تأمین‌کننده فقط خواندنی', 'phone' => '09127778899']);
+    $this->actingAs($user)->get('/persons/supplier-'.$supplier->id.'/account')->assertOk()->assertSee('گردش حساب');
 });
 
 it('preserves administrator and ordinary finance writer access', function () {
