@@ -31,4 +31,9 @@ class Supplier extends Model
     {
         return $this->hasMany(SupplierLedger::class);
     }
+
+    public function accountTransactions()
+    {
+        return $this->hasMany(SupplierAccountTransaction::class);
+    }
 }
