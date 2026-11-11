@@ -23,6 +23,55 @@
         <div class="text-muted small">مبالغ به ریال · مثبت: شخص بدهکار است · منفی: شخص بستانکار است</div>
     </div>
 
+    @if(session('success'))
+        <div class="alert alert-success">{{ session('success') }}</div>
+    @endif
+
+    @if($person['is_supplier'] && auth()->user()?->canPermission('account_statements.payments.create'))
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white"><strong>ثبت پرداخت یا دریافت از تأمین‌کننده</strong></div>
+            <div class="card-body">
+                <form method="POST" action="{{ route('persons.supplier-transactions.store', request()->route('personKey')) }}" class="row g-2 align-items-end">
+                    @csrf
+                    <input type="hidden" name="submission_token" value="{{ $supplierSubmissionToken }}">
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">نوع تراکنش</label>
+                        <select name="direction" class="form-select" required>
+                            <option value="payment">پرداخت به شخص</option>
+                            <option value="receipt">دریافت از شخص</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">مبلغ (ریال)</label>
+                        <input type="number" name="amount" min="1" max="9000000000000000" class="form-control" required>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">تاریخ</label>
+                        <input type="datetime-local" name="transaction_date" class="form-control" value="{{ now()->format('Y-m-d\\TH:i') }}" required>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">روش پرداخت</label>
+                        <input type="text" name="method" maxlength="50" class="form-control" placeholder="نقدی / کارت / حواله">
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">شماره پیگیری</label>
+                        <input type="text" name="reference" maxlength="100" class="form-control">
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">شرح</label>
+                        <input type="text" name="note" maxlength="255" class="form-control">
+                    </div>
+                    <div class="col-12 d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary">ثبت در گردش حساب</button>
+                    </div>
+                </form>
+                @if($errors->any())
+                    <div class="text-danger small mt-2">{{ $errors->first() }}</div>
+                @endif
+            </div>
+        </div>
+    @endif
+
     <div class="row g-3 mb-3">
         <div class="col-12 col-md-6 col-xl-3">
             <div class="card h-100 border-0 shadow-sm"><div class="card-body">
