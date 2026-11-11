@@ -271,9 +271,6 @@ class PersonController extends Controller
         [$customer, $supplier] = $this->findPersonByKey($personKey);
         abort_if(! $customer && ! $supplier, 404);
 
-        $customer?->loadMissing('ledgers');
-        $supplier?->loadMissing('ledgers');
-
         $customerReceivableBalance = $customer ? (int) $customer->balance : 0;
         $supplierPayableBalance = $supplier
             ? (int) $supplier->ledgers()->where('type', 'credit')->sum('amount')
@@ -284,7 +281,22 @@ class PersonController extends Controller
             ? $customer->ledgers()->latest('created_at')->latest('id')->paginate(25, ['*'], 'customer_page')
             : null;
         $supplierEntries = $supplier
-            ? $supplier->ledgers()->with('reference')->latest('created_at')->latest('id')->paginate(25, ['*'], 'supplier_page')
+            ? $supplier->ledgers()
+                ->with('reference')
+                ->select('supplier_ledgers.*')
+                ->selectRaw('COALESCE(
+                    (SELECT supplier_account_transactions.transaction_date FROM supplier_account_transactions
+                     WHERE supplier_account_transactions.id = supplier_ledgers.reference_id
+                     AND supplier_ledgers.reference_type = ?),
+                    (SELECT purchases.purchased_at FROM purchases
+                     WHERE purchases.id = supplier_ledgers.reference_id
+                     AND supplier_ledgers.reference_type = ?),
+                    supplier_ledgers.created_at
+                ) AS statement_date', [SupplierAccountTransaction::class, \\App\\Models\\Purchase::class])
+                ->orderByDesc('statement_date')
+                ->orderByDesc('supplier_ledgers.created_at')
+                ->orderByDesc('supplier_ledgers.id')
+                ->paginate(25, ['*'], 'supplier_page')
             : null;
 
         $person = [
