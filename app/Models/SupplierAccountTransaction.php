@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class SupplierAccountTransaction extends Model
 {
     protected $fillable = [
-        'supplier_id', 'direction', 'amount', 'transaction_date',
+        'supplier_id', 'direction', 'amount', 'transaction_date', 'submission_token',
         'method', 'reference', 'note', 'created_by',
     ];
 
