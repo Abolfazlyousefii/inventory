@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('supplier_account_transactions', function (Blueprint $table): void {
             $table->id();
+            $table->string('submission_token', 36)->unique();
             $table->foreignId('supplier_id')->constrained()->restrictOnDelete();
             $table->enum('direction', ['payment', 'receipt']);
             $table->unsignedBigInteger('amount');
