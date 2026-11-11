@@ -56,7 +56,7 @@
                 <tbody>
                 @forelse($customerEntries as $entry)
                     <tr>
-                        <td class="text-nowrap">{{ $entry->statement_date ? \\Carbon\\Carbon::parse($entry->statement_date)->format('Y/m/d H:i') : '—' }}</td>
+                        <td class="text-nowrap">{{ $entry->statement_date ? date('Y/m/d H:i', strtotime($entry->statement_date)) : '—' }}</td>
                         <td>{{ $entry->note ?: class_basename($entry->reference_type ?: 'سند') }}</td>
                         <td class="text-danger">{{ $entry->type === 'debit' ? number_format($entry->amount) : '—' }}</td>
                         <td class="text-success">{{ $entry->type === 'credit' ? number_format($entry->amount) : '—' }}</td>
