@@ -588,6 +588,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/persons/{personKey}/account', [PersonAccountStatementController::class, 'show'])
         ->where('personKey', '[A-Za-z0-9_-]+')
         ->name('persons.account');
+    Route::post('/persons/{personKey}/supplier-transactions', [PersonAccountStatementController::class, 'storeSupplierTransaction'])
+        ->name('persons.supplier-transactions.store');
     Route::post('/persons', [PersonController::class, 'store'])->name('persons.store');
     Route::put('/persons/{personKey}', [PersonController::class, 'update'])->name('persons.update');
 
