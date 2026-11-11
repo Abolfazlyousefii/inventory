@@ -210,6 +210,42 @@ class PersonController extends Controller
         return redirect()->route('persons.index')->with('success', '✅ اطلاعات شخص با موفقیت بروزرسانی شد.');
     }
 
+    public function storeSupplierLedgerEntry(Request $request, string $personKey)
+    {
+        [, $supplier] = $this->findPersonByKey($personKey);
+        abort_if(! $supplier, 404);
+
+        $data = $request->validate([
+            'direction' => ['required', Rule::in(['payment', 'receipt'])],
+            'amount' => ['required', 'integer', 'min:1', 'max:9000000000000000'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        DB::transaction(function () use ($supplier, $data) {
+            $entry = SupplierLedger::query()->create([
+                'supplier_id' => (int) $supplier->id,
+                'type' => $data['direction'] === 'payment' ? 'debit' : 'credit',
+                'amount' => (int) $data['amount'],
+                'note' => trim((string) ($data['note'] ?? '')) ?: ($data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده' : 'دریافت از تأمین‌کننده'),
+            ]);
+
+            ActivityLogger::log(
+                $data['direction'] === 'payment' ? 'supplier_payment_recorded' : 'supplier_receipt_recorded',
+                $entry,
+                $data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده در گردش حساب اشخاص ثبت شد.' : 'دریافت از تأمین‌کننده در گردش حساب اشخاص ثبت شد.',
+                [
+                    'supplier_id' => (int) $supplier->id,
+                    'amount' => (int) $data['amount'],
+                    'direction' => $data['direction'],
+                ],
+            );
+        });
+
+        return redirect()
+            ->route('persons.show', $personKey)
+            ->with('success', 'سند مالی با موفقیت در گردش حساب ثبت شد.');
+    }
+
     public function show(string $personKey)
     {
         [$customer, $supplier] = $this->findPersonByKey($personKey);
