@@ -103,4 +103,46 @@ class UnifiedPersonAccountStatementTest extends TestCase
             ->assertOk()
             ->assertDontSee('نباید نمایش داده شود');
     }
+
+    public function test_supplier_account_can_record_payments_and_receipts_as_audited_ledger_entries(): void
+    {
+        $supplier = Supplier::query()->create([
+            'name' => 'تأمین‌کننده پرداختی',
+            'phone' => '09120000005',
+        ]);
+        SupplierLedger::query()->create([
+            'supplier_id' => $supplier->id,
+            'type' => 'credit',
+            'amount' => 10000,
+            'note' => 'خرید اولیه',
+        ]);
+
+        $this->post(route('persons.supplier-ledgers.store', '09120000005'), [
+            'direction' => 'payment',
+            'amount' => 3000,
+            'note' => 'پرداخت نقدی',
+        ])->assertRedirect(route('persons.show', '09120000005'));
+
+        $this->assertDatabaseHas('supplier_ledgers', [
+            'supplier_id' => $supplier->id,
+            'type' => 'debit',
+            'amount' => 3000,
+            'note' => 'پرداخت نقدی',
+        ]);
+
+        $this->post(route('persons.supplier-ledgers.store', '09120000005'), [
+            'direction' => 'receipt',
+            'amount' => 1000,
+            'note' => 'دریافت از تأمین‌کننده',
+        ])->assertRedirect(route('persons.show', '09120000005'));
+
+        $this->assertDatabaseHas('supplier_ledgers', [
+            'supplier_id' => $supplier->id,
+            'type' => 'credit',
+            'amount' => 1000,
+            'note' => 'دریافت از تأمین‌کننده',
+        ]);
+        $this->assertSame(8000, (int) $supplier->ledgers()->where('type', 'credit')->sum('amount')
+            - (int) $supplier->ledgers()->where('type', 'debit')->sum('amount'));
+    }
 }
