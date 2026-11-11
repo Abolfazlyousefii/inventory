@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\Supplier;
 use App\Models\SupplierLedger;
+use App\Models\SupplierAccountTransaction;
 use App\Support\ActivityLogger;
 use App\Support\IranLocations;
 use Illuminate\Http\Request;
@@ -220,20 +221,37 @@ class PersonController extends Controller
         $data = $request->validate([
             'direction' => ['required', Rule::in(['payment', 'receipt'])],
             'amount' => ['required', 'integer', 'min:1', 'max:9000000000000000'],
+            'transaction_date' => ['nullable', 'date'],
+            'method' => ['nullable', 'string', 'max:50'],
+            'reference' => ['nullable', 'string', 'max:100'],
             'note' => ['nullable', 'string', 'max:255'],
         ]);
 
         DB::transaction(function () use ($supplier, $data) {
+            $note = trim((string) ($data['note'] ?? '')) ?: ($data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده' : 'دریافت از تأمین‌کننده');
+            $transaction = SupplierAccountTransaction::query()->create([
+                'supplier_id' => (int) $supplier->id,
+                'direction' => $data['direction'],
+                'amount' => (int) $data['amount'],
+                'transaction_date' => $data['transaction_date'] ?? now(),
+                'method' => $data['method'] ?? null,
+                'reference' => $data['reference'] ?? null,
+                'note' => $note,
+                'created_by' => auth()->id(),
+            ]);
+
             $entry = SupplierLedger::query()->create([
                 'supplier_id' => (int) $supplier->id,
                 'type' => $data['direction'] === 'payment' ? 'debit' : 'credit',
                 'amount' => (int) $data['amount'],
-                'note' => trim((string) ($data['note'] ?? '')) ?: ($data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده' : 'دریافت از تأمین‌کننده'),
+                'reference_type' => SupplierAccountTransaction::class,
+                'reference_id' => (int) $transaction->id,
+                'note' => $note,
             ]);
 
             ActivityLogger::log(
                 $data['direction'] === 'payment' ? 'supplier_payment_recorded' : 'supplier_receipt_recorded',
-                $entry,
+                $transaction,
                 $data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده در گردش حساب اشخاص ثبت شد.' : 'دریافت از تأمین‌کننده در گردش حساب اشخاص ثبت شد.',
                 [
                     'supplier_id' => (int) $supplier->id,
