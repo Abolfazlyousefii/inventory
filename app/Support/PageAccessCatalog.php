@@ -504,6 +504,7 @@ class PageAccessCatalog
         'invoices.notes.store' => ['sales.invoices'],
         'cheques.store' => ['finance.payments'],
         'persons.account' => ['finance.accounts'],
+        'persons.supplier-transactions.store' => ['finance.accounts'],
         'account-statements.index' => ['finance.accounts'],
         'account-statements.adjustments.store' => ['finance.accounts'],
         'account-statements.personnel.store' => ['finance.accounts'],
