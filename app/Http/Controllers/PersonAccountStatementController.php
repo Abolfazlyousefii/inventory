@@ -8,6 +8,13 @@ use App\Models\InvoicePayment;
 use App\Models\PersonnelAccountDocument;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
+use App\Models\SupplierAccountTransaction;
+use App\Models\SupplierLedger;
+use App\Support\ActivityLogger;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use App\Models\SalesReturnDocument;
 use App\Models\WarehouseTransfer;
 use App\Services\PersonAccountStatementService;
@@ -17,6 +24,83 @@ class PersonAccountStatementController extends Controller
 {
     public function __construct(private readonly PersonAccountStatementService $statementService)
     {
+    }
+
+    public function storeSupplierTransaction(Request $request, string $personKey)
+    {
+        $person = $this->statementService->resolve($personKey);
+        $supplier = $person['supplier'];
+        abort_if(! $supplier, 404);
+
+        $data = $request->validate([
+            'direction' => ['required', Rule::in(['payment', 'receipt'])],
+            'amount' => ['required', 'integer', 'min:1', 'max:9000000000000000'],
+            'transaction_date' => ['required', 'date'],
+            'method' => ['nullable', 'string', 'max:50'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'note' => ['nullable', 'string', 'max:255'],
+            'submission_token' => ['nullable', 'uuid'],
+        ]);
+
+        $token = (string) ($data['submission_token'] ?? Str::uuid());
+        $transaction = DB::transaction(function () use ($supplier, $data, $token) {
+            $existing = SupplierAccountTransaction::query()
+                ->where('submission_token', $token)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing) {
+                if ((int) $existing->supplier_id !== (int) $supplier->id) {
+                    abort(422, 'شناسه ثبت قبلاً برای شخص دیگری استفاده شده است.');
+                }
+
+                return $existing;
+            }
+
+            $note = trim((string) ($data['note'] ?? '')) ?: (
+                $data['direction'] === 'payment' ? 'پرداخت به تأمین‌کننده' : 'دریافت از تأمین‌کننده'
+            );
+
+            $transaction = SupplierAccountTransaction::query()->create([
+                'supplier_id' => (int) $supplier->id,
+                'direction' => $data['direction'],
+                'amount' => (int) $data['amount'],
+                'transaction_date' => $data['transaction_date'],
+                'method' => $data['method'] ?? null,
+                'reference' => $data['reference'] ?? null,
+                'note' => $note,
+                'submission_token' => $token,
+                'created_by' => auth()->id(),
+            ]);
+
+            SupplierLedger::query()->create([
+                'supplier_id' => (int) $supplier->id,
+                'type' => $data['direction'] === 'payment' ? 'debit' : 'credit',
+                'amount' => (int) $data['amount'],
+                'reference_type' => SupplierAccountTransaction::class,
+                'reference_id' => (int) $transaction->id,
+                'note' => $note,
+            ]);
+
+            ActivityLogger::log(
+                $data['direction'] === 'payment' ? 'supplier_payment_recorded' : 'supplier_receipt_recorded',
+                $transaction,
+                $data['direction'] === 'payment'
+                    ? 'پرداخت به تأمین‌کننده در گردش حساب ثبت شد.'
+                    : 'دریافت از تأمین‌کننده در گردش حساب ثبت شد.',
+                [
+                    'supplier_id' => (int) $supplier->id,
+                    'amount' => (int) $data['amount'],
+                    'direction' => $data['direction'],
+                ],
+            );
+
+            return $transaction;
+        }, 3);
+
+        return redirect()
+            ->route('persons.account', $personKey)
+            ->with('success', 'تراکنش با موفقیت در گردش حساب ثبت شد.');
     }
 
     public function show(string $personKey)
