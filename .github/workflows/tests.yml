@@ -43,5 +43,8 @@ jobs:
       - name: Generate app key
         run: php artisan key:generate
 
+      - name: Unified person account statement regression
+        run: php artisan test --filter=UnifiedPersonAccountStatementTest
+
       - name: Execute tests
         run: php artisan test
