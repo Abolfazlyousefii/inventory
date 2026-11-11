@@ -48,6 +48,9 @@ class PurchaseReturnService
             }
             $purchase=Purchase::whereKey($data['purchase_id'])->lockForUpdate()->firstOrFail();
             if ((int)$purchase->supplier_id !== (int)$data['supplier_id']) $this->fail('خرید انتخاب‌شده متعلق به این تأمین‌کننده نیست.');
+            if ($purchase->supplier?->isInventoryAdjustmentSource()) {
+                $this->fail('خریدهای تاریخی کسری و اضافی، مرجع برگشت از خرید به تأمین‌کننده نیستند. یک خرید واقعی از همان تأمین‌کننده انتخاب کنید.');
+            }
             $lines=$this->lines($purchase,$data['items']);
             $number=(int)$sequence->last_number+1;
             $doc=PurchaseReturn::create([
