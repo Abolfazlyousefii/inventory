@@ -219,6 +219,16 @@ class SyncProductsToSite {
                         }
                     }
                     $priceData = $this->makePriceData($variant, $siteStock, $sourceTimestamp);
+                    // A normal Site promotion belongs to Site, not Inventory: keep its
+                    // fixed customer price when the Inventory yuan base price changes.
+                    // Inventory-authored discounts and automatic bundle quotes remain authoritative.
+                    $hasInventoryDiscount = (int) ($variant->discount_price ?? 0) > 0
+                        && (int) ($variant->discount_price ?? 0) < (int) ($variant->regular_price ?? $variant->sell_price ?? 0);
+                    $isAutomaticBundle = (bool) ($sourceProduct?->is_bundle && $sourceProduct->bundle_stock_mode === 'automatic');
+                    if ($priceData !== null && $sitePrice !== null && !$sitePrice->trashed()
+                        && $bundleQuote === null && !$isAutomaticBundle && !$hasInventoryDiscount) {
+                        $priceData = $this->preserveActiveSiteDiscount($sitePrice, $priceData);
+                    }
                     if ($priceData !== null && $bundleQuote !== null) {
                         $priceData['price'] = $bundleQuote['final'];
                         $priceData['regular_price'] = $bundleQuote['regular'];
@@ -427,6 +437,38 @@ class SyncProductsToSite {
             'updated_at'          => $sourceTimestamp ? CarbonImmutable::parse($sourceTimestamp)
                 ->toDateTimeString() : now()->toDateTimeString(),
         ];
+    }
+
+    /**
+     * The Site can own an ordinary time-limited or indefinite promotion.
+     * Preserve its absolute discounted amount (not the old percentage) while
+     * refreshing the Inventory-controlled regular price.
+     *
+     * A discount is only applicable if it remains lower than the new regular
+     * price. If the yuan price falls below it, use the cheaper regular price;
+     * never increase the customer's charge to maintain a stale promotion.
+     *
+     * @param array<string, mixed> $desired
+     * @return array<string, mixed>
+     */
+    private function preserveActiveSiteDiscount(SitePrice $sitePrice, array $desired): array
+    {
+        if (!$sitePrice->hasDiscount()) {
+            return $desired;
+        }
+
+        $fixedDiscount = (int) ($sitePrice->discount_price ?? 0);
+        $newRegular = (int) ($desired['regular_price'] ?? 0);
+        if ($fixedDiscount <= 0 || $fixedDiscount >= $newRegular) {
+            return $desired;
+        }
+
+        $desired['price'] = $fixedDiscount;
+        $desired['discount_price'] = $fixedDiscount;
+        $desired['discount'] = max(1, $this->calculateDiscount($newRegular, $newRegular, $fixedDiscount));
+        $desired['discount_expire_at'] = $this->dateTimeString($sitePrice->discount_expire_at);
+
+        return $desired;
     }
 
     private function savePrice( SiteProduct $siteProduct, ?SitePrice $sitePrice, array $data ): SitePrice {

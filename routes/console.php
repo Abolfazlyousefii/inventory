@@ -112,5 +112,24 @@ if (!config('services.request_driven_site_stock', false)) {
 }
 
 if (config('cny_pricing.enabled') && config('cny_pricing.schedule_enabled')) {
-    Schedule::command('cny:reprice')->everyFiveMinutes()->withoutOverlapping(10);
+    Schedule::call(function (): void {
+        // Shared hosting may disable proc_open; do not spawn a child PHP process.
+        if (Artisan::call('cny:reprice') !== 0) {
+            throw new \RuntimeException('CNY reprice command failed');
+        }
+    })->name('cny-reprice')->everyFiveMinutes()->withoutOverlapping(10)
+      ->onFailure(fn () => Log::error('CNY_REPRICE_SCHEDULE_FAILED'));
+}
+
+// Free Navasan: maximum 3 scheduled calls/day, with a database-enforced
+// cap of 90 HTTP attempts / rolling 31 days. Disabled until unit/TLS checked.
+if (config('navasan.enabled') && config('navasan.schedule_enabled')) {
+    Schedule::call(function (): void {
+        // This fetch imports a quote only; it never changes catalog prices.
+        if (Artisan::call('cny:fetch-rate') !== 0) {
+            throw new \RuntimeException('CNY fetch-rate command failed');
+        }
+    })->name('cny-navasan-fetch')->cron('5 0,8,16 * * *')
+      ->timezone('Asia/Tehran')->withoutOverlapping(20)
+      ->onFailure(fn () => Log::error('CNY_NAVASAN_FETCH_SCHEDULE_FAILED'));
 }

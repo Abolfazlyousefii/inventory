@@ -9,7 +9,7 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 beforeEach(function(){
-    config(['cache.default'=>'array','cny_pricing.enabled'=>true,'cny_pricing.allow_sample'=>true]);
+    config(['cache.default'=>'array','cny_pricing.enabled'=>true,'cny_pricing.allow_sample'=>true,'cny_pricing.production_mode'=>false, 'navasan.enabled'=>false]);
     $this->withoutVite();$this->actor=User::factory()->create();$this->actor->assignRole(Role::findOrCreate('Owner','web'));$this->actingAs($this->actor);
     $this->supplier=Supplier::create(['name'=>'تأمین‌کننده نمونه']);
     $category=Category::create(['name'=>'چین']);
@@ -19,6 +19,7 @@ beforeEach(function(){
     $this->payload=['submission_token'=>(string)Str::uuid(),'supplier_id'=>(string)$this->supplier->id,'purchase_origin'=>'china','cny_rate_id'=>$this->rate->id,
         'sale_price_change_confirmed'=>1,'sale_price_change_reason'=>'تأیید مبنای یوانی و قیمت‌گذاری خودکار',
         'items'=>[['product_id'=>$this->product->id,'variant_id'=>$this->variants[0]->id,'quantity'=>2,'buy_cny'=>'۵','buy_price'=>1,'sell_price'=>1,'expected_current_sell_price'=>1000000]]];
+    $this->payload['items'][0]['product_price_version']=app(\App\Services\UniformPurchasePriceService::class)->version($this->product);
 });
 
 it('uses server prices and stores fixed purchase amounts while enabling uniform yuan pricing',function(){
@@ -71,6 +72,12 @@ it('does not enable sample rates outside the explicitly allowed sample mode',fun
     expect(Purchase::count())->toBe(0);
 });
 
+it('does not allow sample purchase pricing when live Navasan fetching is enabled', function () {
+    config(['navasan.enabled' => true]);
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasErrors();
+    expect(Purchase::count())->toBe(0)->and(ProductCnyPricing::count())->toBe(0);
+});
+
 it('requires approval to switch an active yuan product back to fixed prices even when the selling price is unchanged',function(){
     $this->post(route('purchases.store'),$this->payload)->assertSessionHasNoErrors();
     $fixed=$this->payload;$fixed['purchase_origin']='domestic';$fixed['submission_token']=(string)Str::uuid();$fixed['sale_price_change_confirmed']=0;
@@ -120,3 +127,17 @@ it('preserves the last valid price when the latest quote is unsafe',function($ki
     expect(fn()=>app(CnyPricingService::class)->reprice())->toThrow(\Illuminate\Validation\ValidationException::class);
     expect($this->product->fresh()->price)->toBe(2910000)->and(DB::table('cny_price_revisions')->count())->toBe(1);
 })->with(['stale','zero','future']);
+
+it('refuses stale catalog versions even when uniform pricing was disabled by a tampered request',function(){
+    $this->payload['uniform_product_prices']=0;
+    $this->payload['items'][0]['product_price_version']=str_repeat('0',64);
+    $this->post(route('purchases.store'),$this->payload)->assertSessionHasErrors();
+    expect(Purchase::count())->toBe(0)->and(ProductCnyPricing::count())->toBe(0)
+        ->and($this->product->fresh()->price)->toBe(1000000);
+});
+
+it('never accepts sample rates in explicit production mode even if APP_ENV is local',function(){
+    config(['cny_pricing.production_mode'=>true]);
+    $this->post(route('purchases.store'),$this->payload)->assertSessionHasErrors();
+    expect(Purchase::count())->toBe(0);
+});

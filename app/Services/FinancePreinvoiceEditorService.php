@@ -22,7 +22,7 @@ class FinancePreinvoiceEditorService
     /** Finance review changes discounts only; item corrections belong to sales. */
     public function updateDiscounts(PreinvoiceOrder $order, array $data, User $actor): PreinvoiceOrder
     {
-        return DB::transaction(function () use ($order, $data, $actor) {
+        return ReservationSideEffects::transaction(function () use ($order, $data, $actor) {
             $lockedOrder = PreinvoiceOrder::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             $items = $lockedOrder->items()->lockForUpdate()->get()->keyBy('id');
             foreach ($data['items'] ?? [] as $row) {

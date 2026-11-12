@@ -45,30 +45,6 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame(1, DB::table('stock_count_documents')->where('document_number', 'STC-SUPERSEDED')->value('superseded_by_id'));
     }
 
-    public function test_superseded_draft_is_excluded_from_archive_but_preserved_in_database(): void
-    {
-        DB::table('stock_count_documents')->insert([
-            'document_number'=>'STC-SUPERSEDED',
-            'document_date'=>'2026-10-16',
-            'status'=>'draft',
-            'product_id'=>2,
-            'warehouse_id'=>2,
-            'created_by'=>1,
-            'total_increase'=>500,
-            'superseded_by_id'=>1,
-        ]);
-
-        $draftView = app(StocktakeController::class)->index(
-            Request::create('/stocktake', 'GET', ['status'=>'draft'])
-        )->getData();
-
-        $this->assertFalse($draftView['documents']->contains('document_number', 'STC-SUPERSEDED'));
-        $this->assertSame('draft', DB::table('stock_count_documents')
-            ->where('document_number', 'STC-SUPERSEDED')->value('status'));
-        $this->assertSame(1, (int) DB::table('stock_count_documents')
-            ->where('document_number', 'STC-SUPERSEDED')->value('superseded_by_id'));
-    }
-
     public function test_filters_and_summaries_cover_all_matching_documents_before_pagination(): void
     {
         foreach ([

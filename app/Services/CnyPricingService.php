@@ -21,7 +21,7 @@ final class CnyPricingService
         if(!config('cny_pricing.enabled') || !Schema::hasTable('cny_exchange_rates'))$this->fail('قیمت‌گذاری یوانی فعال نیست.');
         $rate=CnyExchangeRate::orderByDesc('quoted_at')->orderByDesc('id')->first();
         if(!$rate || $rate->rate_rial<1 || $rate->rate_rial>100000000 || $rate->quoted_at->lt(now()->subMinutes(config('cny_pricing.max_rate_age_minutes',30))) || $rate->quoted_at->gt(now()->addMinute()))$this->fail('نرخ یوان موجود نیست یا قدیمی/نامعتبر است؛ ابتدا نرخ را به‌روز کنید.');
-        if(!in_array($rate->provider,['sample','navasan'],true) || ($rate->provider==='sample' && !config('cny_pricing.allow_sample')))$this->fail('نرخ نمونه برای این محیط مجاز نیست.');
+        if(!in_array($rate->provider,['sample','navasan'],true) || ($rate->provider==='sample' && (!config('cny_pricing.allow_sample') || config('cny_pricing.production_mode') || !app()->environment(['local','testing']) || config('navasan.enabled'))))$this->fail('نرخ نمونه برای این محیط مجاز نیست.');
         if($expectedId!==null && $expectedId!==$rate->id)$this->fail('نرخ یوان پس از بازشدن فرم تغییر کرده است؛ صفحه را تازه کنید و قیمت را دوباره تأیید کنید.');
         return $rate;
     }
@@ -77,7 +77,9 @@ final class CnyPricingService
         foreach(collect($data['items'])->groupBy('product_id')->sortKeys() as $id=>$rows){
             $product=Product::whereKey($id)->lockForUpdate()->firstOrFail();
             $variants=$product->variants()->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-            app(UniformPurchasePriceService::class)->assertVersion($product,$variants,$rows,$data);
+            // Yuan activation must always check the catalog version, even if the client
+            // tampers with uniform_product_prices=0.
+            app(UniformPurchasePriceService::class)->assertVersion($product,$variants,$rows,['uniform_product_prices'=>true]);
             foreach($rows as $row){
                 $variant=$variants->get((int)$row['variant_id']);
                 if(!$variant || !isset($row['expected_current_sell_price']) || (int)$row['expected_current_sell_price']!==(int)$variant->sell_price)$this->fail('قیمت کالا پس از بازشدن فرم تغییر کرده است؛ صفحه را تازه و مجدداً تأیید کنید.');
