@@ -2,27 +2,22 @@
 
 namespace App\Models\Site;
 
-use App\Models\Product;
-use App\Models\Role;
-use Bavix\Wallet\Traits\HasWallet;
-use Bavix\Wallet\Interfaces\Wallet as WalletInterface;
-use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Notifications\Notifiable;
 
-class User extends Authenticatable implements WalletInterface {
+class User extends Authenticatable
+{
     protected $connection = 'site';
+
     use Notifiable;
-    use HasWallet;
 
     /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
-    protected $guarded = [ 'id' ];
+    protected $guarded = ['id'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -45,5 +40,10 @@ class User extends Authenticatable implements WalletInterface {
         'email_verified_at' => 'datetime',
         'is_active'         => 'boolean',
     ];
+
+    public function wallet(): HasOne
+    {
+        return $this->hasOne(Wallet::class, 'user_id', 'id');
+    }
 
 }

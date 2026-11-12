@@ -87,7 +87,8 @@
     },
     "extra": {
         "laravel": {
-            "dont-discover": []
+            "dont-discover": [
+			  "bavix/laravel-wallet"]
         }
     },
     "config": {
