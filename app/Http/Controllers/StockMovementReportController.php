@@ -30,8 +30,19 @@ class StockMovementReportController extends Controller
             $query->where('type', $type);
         }
 
-        if (in_array($reason, ['purchase','sale','return','transfer','adjustment'], true)) {
-            $query->where('reason', $reason);
+        // Group all return-related movement reasons, including purchase returns.
+        // Purchase returns use "purchase_return", not the legacy "return" reason.
+        $reasonFilters = [
+            'purchase' => ['purchase'],
+            'sale' => ['sale'],
+            'return' => ['return', 'sales_return', 'purchase_return', 'purchase_return_restore'],
+            'purchase_return' => ['purchase_return', 'purchase_return_restore'],
+            'sales_return' => ['sales_return'],
+            'transfer' => ['transfer'],
+            'adjustment' => ['adjustment'],
+        ];
+        if (is_string($reason) && isset($reasonFilters[$reason])) {
+            $query->whereIn('reason', $reasonFilters[$reason]);
         }
 
         if ($dateFrom) {

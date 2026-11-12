@@ -16,6 +16,12 @@ class Supplier extends Model
         'additional_notes',
     ];
 
+    /** Historical inventory adjustment placeholders are not commercial suppliers. */
+    public function isInventoryAdjustmentSource(): bool
+    {
+        return (bool) $this->getAttribute('is_inventory_adjustment_source');
+    }
+
     public function purchases()
     {
         return $this->hasMany(Purchase::class);

@@ -32,7 +32,9 @@
           <option value="">همه</option>
           <option value="purchase" @selected(request('reason')==='purchase')>خرید</option>
           <option value="sale" @selected(request('reason')==='sale')>فروش</option>
-          <option value="return" @selected(request('reason')==='return')>مرجوعی</option>
+          <option value="return" @selected(request('reason')==='return')>مرجوعی (همه)</option>
+          <option value="purchase_return" @selected(request('reason')==='purchase_return')>برگشت از خرید</option>
+          <option value="sales_return" @selected(request('reason')==='sales_return')>برگشت از فروش</option>
           <option value="transfer" @selected(request('reason')==='transfer')>انتقال</option>
           <option value="adjustment" @selected(request('reason')==='adjustment')>اصلاح</option>
         </select>
@@ -91,6 +93,9 @@
                   'purchase'=>'خرید',
                   'sale'=>'فروش',
                   'return'=>'مرجوعی',
+                  'purchase_return'=>'برگشت از خرید',
+                  'purchase_return_restore'=>'بازگردانی برگشت از خرید',
+                  'sales_return'=>'برگشت از فروش',
                   'transfer'=>'انتقال',
                   'adjustment'=>'اصلاح'
                 ][$m->reason] ?? $m->reason }}

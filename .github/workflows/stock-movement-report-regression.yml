@@ -1,0 +1,38 @@
+name: Stock movement report regression
+
+on:
+  push:
+    paths:
+      - 'app/Http/Controllers/StockMovementReportController.php'
+      - 'resources/views/movements/index.blade.php'
+      - 'tests/Feature/StockMovementPurchaseReturnReportTest.php'
+      - '.github/workflows/stock-movement-report-regression.yml'
+  pull_request:
+    paths:
+      - 'app/Http/Controllers/StockMovementReportController.php'
+      - 'resources/views/movements/index.blade.php'
+      - 'tests/Feature/StockMovementPurchaseReturnReportTest.php'
+      - '.github/workflows/stock-movement-report-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, sqlite3
+          coverage: none
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress --no-scripts
+      - name: Prepare testing environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Verify warehouse movement report regression
+        run: vendor/bin/phpunit tests/Feature/StockMovementPurchaseReturnReportTest.php --colors=never
