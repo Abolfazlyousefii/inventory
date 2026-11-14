@@ -1521,8 +1521,16 @@ class PurchaseController extends Controller
 
             if (!$variant) continue;
 
-            if (WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id) < (int) $item->quantity) {
-                abort(422, 'امکان ویرایش/حذف این سند وجود ندارد؛ موجودی فعلی یکی از مدل‌ها کمتر از مقدار خرید قبلی است.');
+            $available = WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id);
+            $quantity = (int) $item->quantity;
+            if ($available < $quantity) {
+                $name = $item->product_name ?: $item->product?->name ?: 'کالا';
+                $model = $item->variant_name ?: $variant->variant_name;
+                $label = $model ? "{$name} ({$model})" : $name;
+                throw ValidationException::withMessages([
+                    'items' => "امکان حذف این سند خرید وجود ندارد؛ موجودی قابل‌استفادهٔ «{$label}» در انبار سند {$available} عدد است، ولی برای حذف {$quantity} عدد لازم است. "
+                        . 'ممکن است کالا فروخته، رزرو یا به انبار دیگری منتقل شده باشد؛ ابتدا اسناد وابسته را بررسی کنید. هیچ تغییری در سند خرید، موجودی یا حساب تأمین‌کننده اعمال نشد.',
+                ]);
             }
 
             WarehouseStockService::change($warehouseId, (int) $variant->product_id, -((int) $item->quantity), (int) $variant->id);
