@@ -5,6 +5,10 @@
 @push('styles')<link rel="stylesheet" href="{{ asset('css/purchases-list.css') }}?v=1">@endpush
 
 @section('content')
+@if(session('success'))
+<script src="{{ asset('js/purchase-draft-autosave.js') }}?v={{ substr(hash_file('sha256',public_path('js/purchase-draft-autosave.js')),0,12) }}"></script>
+<script>window.PurchaseDraftAutosave?.cleanCompleted({userId:@json(auth()->id()),baseUrl:@json(url('/purchases/drafts'))});</script>
+@endif
 @php
     $toRial = fn($rial) => \App\Support\Currency::formatRial($rial);
 @endphp

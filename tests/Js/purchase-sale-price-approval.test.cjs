@@ -20,6 +20,7 @@ function inlinePurchaseScript() {
         products: '[]',
         categories: '[]',
         initialItems: '[]',
+        DRAFT_CONFIG: '{}',
         IS_EDIT_PURCHASE: 'false',
         CAN_CHANGE_SALE_PRICE: 'false',
         variantsUrlTemplate: '""',
