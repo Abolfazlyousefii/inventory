@@ -2,6 +2,7 @@
 @php use App\Models\SalesReturnDocument; use App\Models\SalesReturnDocumentItem; use Morilog\Jalali\Jalalian; $labels=SalesReturnDocument::statusLabels(); $sources=SalesReturnDocument::sourceTypeLabels(); @endphp
 @section('content')
 	<div class="container-fluid" dir="rtl">
+        @if($document->return_flow)<div class="alert alert-light border">نوع عملیات: <strong>{{ $document->isFinancialOnly() ? 'صرفاً مالی؛ بدون تحویل کالا' : 'برگشت فیزیکی به انبار' }}</strong>@if($document->isFinancialOnly())<div class="small mt-1">دلیل: {{ $document->financial_only_reason }}</div>@endif</div>@endif
         @php
             $protectedReturn=\App\Support\SalesReturnFinalization::isLocked($document);
             $canDirectReturn=$document->isApplied() && !$protectedReturn && auth()->user() && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(),'vouchers.return-from-sale.applied.update');

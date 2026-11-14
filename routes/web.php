@@ -29,6 +29,7 @@ use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\ModelListController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PersonController;
+use App\Http\Controllers\PersonAccountStatementController;
 use App\Http\Controllers\PreinvoiceApiController;
 use App\Http\Controllers\PreinvoiceController;
 use App\Http\Controllers\PriceChangeDocumentController;
@@ -574,6 +575,10 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/purchases/export', [PurchaseController::class, 'exportExcel'])->name('purchases.export');
     Route::get('/purchases/create', [PurchaseController::class, 'create'])->name('purchases.create');
+    Route::get('/purchases/drafts/latest', [\App\Http\Controllers\PurchaseDraftController::class,'latest'])->name('purchases.drafts.latest');
+    Route::get('/purchases/drafts/{token}', [\App\Http\Controllers\PurchaseDraftController::class,'show'])->name('purchases.drafts.show');
+    Route::post('/purchases/drafts', [\App\Http\Controllers\PurchaseDraftController::class,'save'])->name('purchases.drafts.save');
+    Route::delete('/purchases/drafts/{token}', [\App\Http\Controllers\PurchaseDraftController::class,'discard'])->name('purchases.drafts.discard');
     Route::get('/purchases/products/{product}/variants', [PurchaseController::class, 'productVariants'])
         ->name('purchases.products.variants');
     Route::post('/purchases', [PurchaseController::class, 'store'])->name('purchases.store');
@@ -584,6 +589,15 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Persons
     Route::get('/persons', [PersonController::class, 'index'])->name('persons.index');
+    Route::get('/persons/{personKey}/account', [PersonAccountStatementController::class, 'show'])
+        ->where('personKey', '[A-Za-z0-9_-]+')
+        ->name('persons.account');
+    Route::post('/persons/{personKey}/supplier-transactions', [PersonAccountStatementController::class, 'storeSupplierTransaction'])
+        ->name('persons.supplier-transactions.store');
+    Route::post('/persons/{personKey}/financial-documents', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'storePerson'])->name('persons.financial-documents.store');
+    Route::get('/financial-documents/{document}/edit', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'edit'])->name('financial-documents.edit');
+    Route::put('/financial-documents/{document}', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'update'])->name('financial-documents.update');
+    Route::delete('/financial-documents/{document}', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'destroy'])->name('financial-documents.destroy');
     Route::post('/persons', [PersonController::class, 'store'])->name('persons.store');
     Route::put('/persons/{personKey}', [PersonController::class, 'update'])->name('persons.update');
 
@@ -724,6 +738,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
     Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
     Route::post('/account-statements/{customer}/personnel-documents', [\App\Http\Controllers\PersonnelAccountDocumentController::class, 'store'])->name('account-statements.personnel.store');
+    Route::post('/account-statements/{customer}/financial-documents', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'storeCustomer'])->name('account-statements.financial-documents.store');
     Route::get('/account-statements/{customer}/adjustments/{adjustment}/edit', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'edit'])->name('account-statements.adjustments.edit');
     Route::put('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'update'])->name('account-statements.adjustments.update');
     Route::delete('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'destroy'])->name('account-statements.adjustments.destroy');

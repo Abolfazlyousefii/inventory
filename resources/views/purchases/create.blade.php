@@ -3,6 +3,7 @@
 @section('content')
 	@php
 		$isEdit = isset($purchase) && $purchase;
+        $purchaseDraftConfig=['userId'=>auth()->id(),'baseUrl'=>url('/purchases/drafts'),'saveUrl'=>route('purchases.drafts.save'),'latestUrl'=>route('purchases.drafts.latest'),'hasInitial'=>session()->hasOldInput()];
 		$cnyEnabled = config('cny_pricing.enabled') || ($purchase->purchase_origin ?? '') === 'china';
         $cnyRate = ($purchase->purchase_origin ?? '') === 'china' ? optional(\App\Models\CnyExchangeRate::find($purchase->cny_rate_id))->toArray() : app(\App\Services\CnyPricingService::class)->previewRate();
         if ($isEdit && $cnyRate) {
@@ -198,6 +199,16 @@ $productsPayload = $products->map(function ($p) {
 			<a class="btn btn-sm btn-outline-light" href="{{ route('purchases.index') }}">بازگشت</a>
 		</div>
 
+        @if(!$isEdit)
+        <section class="alert alert-light border d-flex flex-wrap align-items-center gap-2" aria-label="پیش‌نویس خرید">
+            <span id="purchaseDraftStatus" role="status" aria-live="polite">در حال بررسی پیش‌نویس خرید…</span>
+            <div id="purchaseDraftActions" class="d-flex flex-wrap gap-2"></div>
+        </section>
+        <div id="purchaseDraftPriceNotice" class="alert alert-warning" hidden>
+            <span>اطلاعات واردشده حفظ شده است. پیش از ثبت، قیمت‌های روز و تنوع‌ها را بررسی کنید.</span>
+            <button type="button" id="purchaseDraftReviewPrices" class="btn btn-sm btn-outline-dark">بررسی قیمت‌های روز</button>
+        </div>
+        @endif
 		<form method="POST" action="{{ $formAction }}" id="purchaseForm">
 			@csrf
             <input type="hidden" name="uniform_product_prices" value="1">
@@ -404,6 +415,7 @@ $productsPayload = $products->map(function ($p) {
 
     <link rel="stylesheet" href="{{ asset('css/cny-purchase.css') }}?v={{ filemtime(public_path('css/cny-purchase.css')) }}">
     <script src="{{ asset('js/cny-pricing.js') }}?v={{ filemtime(public_path('js/cny-pricing.js')) }}"></script>
+    @if(!$isEdit)<script src="{{ asset('js/purchase-draft-autosave.js') }}?v={{ substr(hash_file('sha256',public_path('js/purchase-draft-autosave.js')),0,12) }}"></script>@endif
 	<script>
 		(function () {
 			const cnyRate = @json($cnyRate);
@@ -412,6 +424,7 @@ $productsPayload = $products->map(function ($p) {
 			const products = @json($productsPayload);
 			const categories = @json($categoriesPayload);
 			const initialItems = @json($initialItems);
+            const DRAFT_CONFIG = @json($purchaseDraftConfig);
             const IS_EDIT_PURCHASE = @json($isEdit);
             const CAN_CHANGE_SALE_PRICE = @json(\App\Support\PermissionCatalog::userHasPermission(auth()->user(), 'products.price_changes.apply'));
 			const variantsUrlTemplate = @json(route('purchases.products.variants', ['product' => '__PRODUCT__']));
@@ -426,6 +439,7 @@ $productsPayload = $products->map(function ($p) {
 			const invoiceDiscountTypeEl = document.getElementById('invoiceDiscountType');
 			const invoiceDiscountValueEl = document.getElementById('invoiceDiscountValue');
 			const supplierSelectEl = document.getElementById('purchaseSupplierSelect');
+            const draftPriceVersions=new Map();
 
 			const summaryProductCountEl = document.getElementById('summaryProductCount');
 			const summaryVariantCountEl = document.getElementById('summaryVariantCount');
@@ -593,7 +607,10 @@ $productsPayload = $products->map(function ($p) {
 
 			async function fetchRealProductVariants(product) {
 				const url = variantsUrlTemplate.replace('__PRODUCT__', encodeURIComponent(product.id));
-				const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+                let response;
+                try{response=await fetch(url, { headers: { 'Accept': 'application/json' },signal:controller.signal });}
+                finally{clearTimeout(timer);}
 
 				if (!response.ok) {
 					throw new Error('خطا در دریافت تنوع‌های واقعی محصول.');
@@ -602,6 +619,7 @@ $productsPayload = $products->map(function ($p) {
 				const payload = await response.json();
 				product.variants = realVariantsForProduct(product, payload.variants || []);
                 product.prices = payload.product_prices || {};
+                product.draftOffline=false;
 				return product.variants;
 			}
 
@@ -865,7 +883,7 @@ $productsPayload = $products->map(function ($p) {
         `;
 			}
 
-			async function addProductCard(productId, initialRows = []) {
+			async function addProductCard(productId, initialRows = [], draftCatalog = null) {
 				const product = productById(productId);
 				if (!product) return null;
 
@@ -881,8 +899,13 @@ $productsPayload = $products->map(function ($p) {
 				try {
 					await fetchRealProductVariants(product);
 				} catch (error) {
-					alert(error.message || 'خطا در دریافت تنوع‌های محصول.');
-					return null;
+                    if(draftCatalog && Array.isArray(draftCatalog.variants)){
+                        product.variants=realVariantsForProduct(product,draftCatalog.variants);product.prices=draftCatalog.prices||{};
+                        product.draftOffline=true;
+                    }else{
+					    alert(error.message || 'خطا در دریافت تنوع‌های محصول.');
+					    return null;
+                    }
 				}
 
 				productCardsEl.insertAdjacentHTML('beforeend', productCardTemplate(product));
@@ -1061,7 +1084,7 @@ $productsPayload = $products->map(function ($p) {
 							...(purchaseItemId ? { id: purchaseItemId } : {}),
 							client_key: `product-${productId}-variant-${row.dataset.variantId}`,
 							product_id: productId,
-                            product_price_version: product?.prices?.version || '',
+                            product_price_version: draftPriceVersions.get(String(productId)) || product?.prices?.version || '',
                             ...(isCny() ? {buy_cny: window.AriyaCny.latin(card.querySelector('[data-cny-buy]').value)} : {}),
 							variant_id: row.dataset.variantId,
 							quantity: qty,
@@ -1340,6 +1363,14 @@ $productsPayload = $products->map(function ($p) {
 			});
 
 			purchaseForm.addEventListener('submit', (event) => {
+                if(event.defaultPrevented)return;
+                if(!IS_EDIT_PURCHASE && [...productCardsEl.querySelectorAll('[data-product-card]')].some(card=>{
+                    const product=productById(card.dataset.productId),saved=draftPriceVersions.get(String(product.id));
+                    return product.draftOffline || (saved && saved!==product.prices?.version);
+                })){
+                    event.preventDefault();document.getElementById('purchaseDraftPriceNotice').hidden=false;
+                    document.getElementById('purchaseDraftReviewPrices').focus();return;
+                }
 				if (purchaseForm.dataset.submitting === '1') {
 					event.preventDefault();
 					return;
@@ -1391,6 +1422,59 @@ $productsPayload = $products->map(function ($p) {
 				});
 			});
 
+            function capturePurchaseDraft(){
+                const fields={};
+                for(const name of ['supplier_id','note','purchase_origin','invoice_discount_type','invoice_discount_value'])fields[name]=purchaseForm.elements.namedItem(name)?.value||'';
+                return {version:1,fields,cards:[...productCardsEl.querySelectorAll('[data-product-card]')].map(card=>{
+                    const product=productById(card.dataset.productId);
+                    return {product_id:product.id,price_version:draftPriceVersions.get(String(product.id))||product.prices?.version||'',buy:card.querySelector('[data-product-buy]').value,sell:card.querySelector('[data-product-sell]').value,buy_cny:card.querySelector('[data-cny-buy]').value,
+                        catalog:{variants:product.variants,prices:product.prices},
+                        items:[...card.querySelectorAll('[data-variant-row]')].map(row=>({product_id:product.id,variant_id:Number(row.dataset.variantId),quantity:row.querySelector('[data-qty]').value,buy_price:numericPayloadValue(row.querySelector('[data-buy]').value),sell_price:numericPayloadValue(row.querySelector('[data-sell]').value),discount_type:row.dataset.lineDiscountType||null,discount_value:Number(row.dataset.lineDiscountValue||0),price_overridden:rowPriceOverridden(row)}))};
+                })};
+            }
+            async function restorePurchaseDraft(payload){
+                if(!payload||payload.version!==1||!Array.isArray(payload.cards))throw new Error('ساختار پیش‌نویس معتبر نیست.');
+                const fields=payload.fields||{};
+                if(fields.purchase_origin==='china'&&!originEl)throw new Error('قیمت‌گذاری یوانی اکنون در دسترس نیست.');
+                if(fields.supplier_id && ![...supplierSelectEl.options].some(option=>option.value===fields.supplier_id))throw new Error('تأمین‌کنندهٔ قبلی در دسترس نیست.');
+                productCardsEl.replaceChildren();draftPriceVersions.clear();
+                for(const name of ['supplier_id','note','invoice_discount_type','invoice_discount_value']){
+                    const el=purchaseForm.elements.namedItem(name);if(el)el.value=fields[name]||'';
+                }
+                if(originEl){originEl.value=fields.purchase_origin||'domestic';const checkbox=document.getElementById('purchaseCnyEnabled');if(checkbox)checkbox.checked=isCny();}
+                if(window.jQuery)supplierSelectEl && window.jQuery(supplierSelectEl).trigger('change.select2');
+                for(const saved of payload.cards){
+                    const card=await addProductCard(saved.product_id,saved.items||[],saved.catalog);
+                    if(!card)throw new Error('کالای '+saved.product_id+' قابل بازیابی نیست.');
+                    for(const row of saved.items||[])if(!card.querySelector(`[data-variant-row][data-variant-id="${Number(row.variant_id)}"]`))throw new Error('یک تنوع حذف یا تغییر کرده است؛ بازیابی متوقف شد و اصل اطلاعات محفوظ ماند.');
+                    card.querySelector('[data-product-buy]').value=saved.buy??'';
+                    card.querySelector('[data-product-sell]').value=saved.sell??'';
+                    card.querySelector('[data-cny-buy]').value=saved.buy_cny??'';
+                    draftPriceVersions.set(String(saved.product_id),saved.price_version||'');
+                    refreshCnyCard(card);
+                }
+                refreshCnyMode();recalc();
+                document.getElementById('purchaseDraftPriceNotice').hidden=![...productCardsEl.querySelectorAll('[data-product-card]')].some(card=>{
+                    const p=productById(card.dataset.productId);return p.draftOffline||draftPriceVersions.get(String(p.id))!==p.prices?.version;
+                });
+            }
+            if(!IS_EDIT_PURCHASE)document.getElementById('purchaseDraftReviewPrices').addEventListener('click',async()=>{
+                const lines=[];
+                try{
+                    for(const card of productCardsEl.querySelectorAll('[data-product-card]')){
+                        const product=productById(card.dataset.productId);await fetchRealProductVariants(product);
+                        for(const row of card.querySelectorAll('[data-variant-row]')){
+                            const current=product.variants.find(v=>Number(v.id)===Number(row.dataset.variantId));
+                            if(!current && Number(row.querySelector('[data-qty]').value)>0)throw new Error('یکی از تنوع‌های انتخاب‌شده دیگر در دسترس نیست.');
+                            if(current){const label=row.querySelector('[data-current-sale-price]');label.dataset.salePrice=current.sell_price;label.textContent=currentSalePriceMessage(current.sell_price);}
+                        }
+                        lines.push(product.name+' — خرید روز: '+formatFa(product.prices.buy_price||0)+' ریال؛ فروش روز: '+formatFa(product.prices.sell_price||0)+' ریال');
+                    }
+                    if(!window.confirm(lines.join('\n')+'\n\nقیمت‌های واردشدهٔ شما حفظ می‌شود. قیمت روز را بررسی کردید و ادامه می‌دهید؟'))return;
+                    draftPriceVersions.clear();document.getElementById('purchaseDraftPriceNotice').hidden=true;recalc();
+                    purchaseForm.dispatchEvent(new Event('change',{bubbles:true}));
+                }catch(e){alert('بررسی کامل نشد؛ '+e.message);}
+            });
 			async function hydrateInitialItems() {
 				if (!Array.isArray(initialItems) || !initialItems.length) return;
 
@@ -1408,7 +1492,15 @@ $productsPayload = $products->map(function ($p) {
             refreshCnyMode();
 			initPurchaseSupplierSearch();
 			renderProductOptions();
-			hydrateInitialItems();
+			hydrateInitialItems().then(()=>{
+                if(!IS_EDIT_PURCHASE && window.PurchaseDraftAutosave)window.PurchaseDraftAutosave.start({
+                    ...DRAFT_CONFIG,form:purchaseForm,cardsElement:productCardsEl,
+                    token:()=>purchaseForm.elements.namedItem('submission_token').value,
+                    setToken:value=>purchaseForm.elements.namedItem('submission_token').value=value,
+                    snapshot:capturePurchaseDraft,restore:restorePurchaseDraft,
+                    hasContent:payload=>payload.cards.length>0||!!payload.fields.supplier_id||!!payload.fields.note||Number(payload.fields.invoice_discount_value)>0
+                });
+            });
 			recalc();
 			updateAllVariantFilters();
 

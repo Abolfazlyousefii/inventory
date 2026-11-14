@@ -48,7 +48,7 @@
 		@endif
 
 		<form method="POST" action="{{ $isEdit ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store') }}" id="salesReturnForm" novalidate>
-			@csrf @if($isEdit) @method('PATCH') @endif
+			@unless($document) <input type="hidden" name="submission_token" value="{{ old('submission_token', (string) \Illuminate\Support\Str::uuid()) }}"> @endunless @csrf @if($isEdit) @method('PATCH') @endif
 			<input type="hidden" name="source_type" id="sourceTypeInput" value="{{ old('source_type', $document?->source_type ?? 'internal_invoice') }}">
 			<input type="hidden" name="customer_id" id="customerId" value="{{ old('customer_id', $document?->customer_id) }}">
 			<input type="hidden" name="invoice_id" id="invoiceId" value="{{ old('invoice_id', $document?->invoice_id) }}">
@@ -70,6 +70,7 @@
 								<div class="col-md-4"><label class="form-label">علت برگشت</label><select class="form-select form-select-sm" name="return_reason" id="returnReason">@foreach($returnReasons as $key => $label)<option value="{{ $key }}" @selected(old('return_reason', $document?->return_reason) === $key)>{{ $label }}</option>@endforeach</select></div>
 								<div class="col-md-4"><label class="form-label">انبار مقصد پیش‌فرض</label><select class="form-select form-select-sm" name="default_destination_warehouse_id" id="defaultWarehouse">@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}" data-type="{{ $warehouse->type }}" @selected(old('default_destination_warehouse_id', $document?->default_destination_warehouse_id) == $warehouse->id)>{{ $warehouse->name }} ({{ $warehouse->type }})</option>@endforeach</select></div>
 								<div class="col-md-4"><label class="form-label">شماره حواله/مرجع</label><input class="form-control form-control-sm" name="reference_number" value="{{ old('reference_number', $document?->reference_number) }}"></div>
+                @include('vouchers.return-from-sale.partials.return-flow')
 								<div class="col-12"><label class="form-label">توضیحات</label><textarea class="form-control form-control-sm" name="description" id="description" rows="2">{{ old('description', $document?->description) }}</textarea><div class="small sr-muted">در صورت انتخاب «سایر»، توضیحات اجباری است.</div></div>
 							</div></div></div></div>
 

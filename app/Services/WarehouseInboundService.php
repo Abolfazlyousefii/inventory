@@ -27,6 +27,15 @@ class WarehouseInboundService
 
     public function queueSalesReturn(SalesReturnDocument $document, ?int $actorId, string $operationKey = 'initial'): ?WarehouseInboundReceipt
     {
+        return DB::transaction(function () use ($document, $actorId, $operationKey) {
+            $locked = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
+
+            return $this->queueSalesReturnLocked($locked, $actorId, $operationKey);
+        });
+    }
+
+    private function queueSalesReturnLocked(SalesReturnDocument $document, ?int $actorId, string $operationKey): ?WarehouseInboundReceipt
+    {
         $existing = WarehouseInboundReceipt::query()
             ->where('source_type', WarehouseInboundReceipt::SOURCE_SALES_RETURN)
             ->where('source_id', $document->id)
@@ -39,8 +48,19 @@ class WarehouseInboundService
 
         $centralWarehouseId = WarehouseStockService::centralWarehouseId();
 
+        if ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL) {
+            $destinations = $document->items->where('return_quantity', '>', 0)->pluck('destination_warehouse_id')->unique();
+            $valid = Warehouse::whereIn('id', $destinations)->where('is_active', true)->whereIn('type', ['central', 'return'])->count();
+            if ($destinations->isEmpty() || $valid !== $destinations->count()) {
+                throw ValidationException::withMessages(['items' => 'مقصد برگشت فیزیکی باید انبار مرکزی یا مرجوعی معتبر و فعال باشد.']);
+            }
+        }
+
         $lines = $document->items
-            ->filter(fn(SalesReturnDocumentItem $item) => (int) $item->destination_warehouse_id === (int) $centralWarehouseId)
+            ->filter(fn(SalesReturnDocumentItem $item) => ! $document->isFinancialOnly()
+                && (int) $item->return_quantity > 0
+                && ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL
+                    || (int) $item->destination_warehouse_id === (int) $centralWarehouseId))
             ->map(function (SalesReturnDocumentItem $item) {
                 return [
                     'source_item_type' => SalesReturnDocumentItem::class,
@@ -102,7 +122,7 @@ class WarehouseInboundService
         }
 
         if ($lines === []) {
-            $receipt->update(['status' => WarehouseInboundReceipt::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'review_note' => 'لغو ورودی پس از اصلاح گارانتی؛ سند دیگر قلم ورودی مرکزی ندارد.']);
+            $receipt->update(['status' => WarehouseInboundReceipt::STATUS_CANCELLED, 'cancelled_by' => $actorId, 'cancelled_at' => now(), 'review_note' => 'لغو ورودی پس از اصلاح گارانتی؛ سند دیگر قلم ورودی فیزیکی ندارد.']);
 
             return null;
         }
@@ -282,7 +302,7 @@ class WarehouseInboundService
             $items = $locked->items()->with(['product', 'variant', 'suggestedWarehouse'])->lockForUpdate()->get();
             $submitted = collect($submittedItems)->keyBy(fn(array $row) => (int) ($row['id'] ?? 0));
 
-            if ($submitted->count() !== $items->count() || $items->contains(fn($item) => ! $submitted->has((int) $item->id))) {
+            if (count($submittedItems) !== $submitted->count() || $submitted->count() !== $items->count() || $items->contains(fn($item) => ! $submitted->has((int) $item->id))) {
                 throw ValidationException::withMessages([
                     'items' => 'فهرست اقلام رسید تغییر کرده است. صفحه را بروزرسانی و دوباره بررسی کنید.',
                 ]);
@@ -518,13 +538,25 @@ class WarehouseInboundService
 
             $doc->load('items');
 
-            if ($doc->items->contains(fn($item) => (int) $item->destination_warehouse_id === (int) WarehouseStockService::centralWarehouseId())) {
+            if ($doc->return_flow === SalesReturnDocument::FLOW_PHYSICAL) {
+                throw ValidationException::withMessages(['document' => 'برگشت فیزیکی فقط پس از تأیید دریافت انبار نهایی می‌شود.']);
+            }
+            if ($doc->isFinancialOnly() && mb_strlen(trim((string) $doc->financial_only_reason)) < 3) {
+                throw ValidationException::withMessages(['financial_only_reason' => 'دلیل برگشت صرفاً مالی و عدم تحویل کالا را وارد کنید.']);
+            }
+            if (! $doc->isDraft() && ! $doc->isPendingWarehouse()) {
+                throw ValidationException::withMessages(['document' => 'این سند قابل نهایی‌سازی مالی نیست.']);
+            }
+
+            if (! $doc->isFinancialOnly() && $doc->items->contains(fn($item) => (int) $item->destination_warehouse_id === (int) WarehouseStockService::centralWarehouseId())) {
                 throw ValidationException::withMessages([
                     'document' => 'این سند دارای قلم مقصد انبار مرکزی است و باید از صف ورود موجودی عبور کند.',
                 ]);
             }
 
-            app(SalesReturnSellingPriceService::class)->finalize($doc, $actorId);
+            if (! $doc->isFinancialOnly()) {
+                app(SalesReturnSellingPriceService::class)->finalize($doc, $actorId);
+            }
 
             // A return moved to central and then back to return-only has already
             // reversed its original credit. Keep that history and post a new credit.
@@ -741,6 +773,25 @@ class WarehouseInboundService
     ): void {
         $document = SalesReturnDocument::query()->whereKey($receipt->source_id)->lockForUpdate()->firstOrFail();
         $documentItems = $document->items()->lockForUpdate()->get()->keyBy('id');
+
+        if ($document->isFinancialOnly()) {
+            throw ValidationException::withMessages(['receipt' => 'سند صرفاً مالی نباید رسید دریافت کالا داشته باشد.']);
+        }
+        $seen = [];
+        foreach ($receiptItems as $receiptItem) {
+            $sourceItem = $documentItems->get((int) $receiptItem->source_item_id);
+            if (! $sourceItem || isset($seen[$sourceItem->id])
+                || $receiptItem->source_item_type !== SalesReturnDocumentItem::class
+                || (int) $receiptItem->product_id !== (int) $sourceItem->product_id
+                || (int) $receiptItem->product_variant_id !== (int) $sourceItem->product_variant_id) {
+                throw ValidationException::withMessages(['items' => 'ارتباط قلم رسید با کالا و تنوع سند برگشت معتبر نیست؛ دریافت انجام نشد.']);
+            }
+            $seen[$sourceItem->id] = true;
+        }
+        if ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL
+            && $documentItems->where('return_quantity', '>', 0)->contains(fn ($item) => ! isset($seen[$item->id]))) {
+            throw ValidationException::withMessages(['items' => 'رسید تمام اقلام برگشت فیزیکی را پوشش نمی‌دهد؛ ابتدا صف بررسی شود.']);
+        }
 
         if ($document->isInternal()) {
             $invoice = Invoice::query()->whereKey($document->invoice_id)->lockForUpdate()->firstOrFail();

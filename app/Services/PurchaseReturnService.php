@@ -6,7 +6,7 @@ use App\Models\{Product, ProductVariant, Purchase, PurchaseReturn, StockMovement
 use Illuminate\Support\Facades\{DB, Schema};
 use Illuminate\Validation\ValidationException;
 
-/** A return changes free stock in its recorded source warehouse; financial rows remain immutable. */
+/** A return changes free stock in its recorded source warehouse and synchronizes its supplier debit atomically. */
 class PurchaseReturnService
 {
     private function fail(string $message): never { throw ValidationException::withMessages(['items'=>$message]); }
@@ -61,6 +61,7 @@ class PurchaseReturnService
             ]);
             $this->applyLines($doc,$lines,[],$userId,'ثبت برگشت از خرید');
             $this->storeLines($doc,$lines);
+            app(SupplierLedgerService::class)->syncPurchaseReturnDebit($doc->fresh());
             $doc->revisions()->create(['action'=>'created','user_id'=>$userId,'after'=>$this->snapshot($doc)]);
             DB::table('purchase_return_sequences')->where('id',1)->update(['last_number'=>$number]);
             return $doc->fresh();
@@ -79,7 +80,8 @@ class PurchaseReturnService
             $this->applyLines($doc,$lines,$old,$userId,'ویرایش برگشت از خرید');
             $doc->update(['returned_at'=>$data['returned_at'],'note'=>$data['note']??null,'updated_by'=>$userId,'version'=>$doc->version+1]);
             $this->storeLines($doc,$lines);
-            $doc->revisions()->create(['action'=>'updated','user_id'=>$userId,'before'=>$before,'after'=>$this->snapshot($doc)]);
+            $revision = $doc->revisions()->create(['action'=>'updated','user_id'=>$userId,'before'=>$before,'after'=>$this->snapshot($doc)]);
+            app(SupplierLedgerService::class)->syncPurchaseReturnDebit($doc->fresh(), $revision);
             return $doc->fresh();
         },3);
     }
@@ -93,7 +95,8 @@ class PurchaseReturnService
             $this->applyLines($doc,[],$old,$userId,'حذف برگشت از خرید');
             $doc->update(['deleted_by'=>$userId,'delete_reason'=>$reason,'updated_by'=>$userId,'version'=>$doc->version+1]);
             $doc->delete();
-            $doc->revisions()->create(['action'=>'deleted','user_id'=>$userId,'before'=>$before,'after'=>$this->snapshot($doc),'note'=>$reason]);
+            $revision = $doc->revisions()->create(['action'=>'deleted','user_id'=>$userId,'before'=>$before,'after'=>$this->snapshot($doc),'note'=>$reason]);
+            app(SupplierLedgerService::class)->syncPurchaseReturnDebit($doc, $revision);
         },3);
     }
 
@@ -108,6 +111,8 @@ class PurchaseReturnService
     {
         $source=$purchase->items()->lockForUpdate()->get()->keyBy('id');$lines=[];$seen=[];
         $returned=$this->returnedQuantities($source->keys()->all(),$document?->id);
+        $returnedAmounts = $this->returnedAmounts($source->keys()->all(), $document?->id);
+        $netLineTotals=$this->purchaseLineNetTotals($purchase,$source);
         foreach ($input as $row) {
             $id=(int)$row['purchase_item_id'];$qty=(int)$row['quantity'];
             if (isset($seen[$id])) $this->fail('یک ردیف خرید نباید دو بار انتخاب شود.');$seen[$id]=true;
@@ -118,17 +123,162 @@ class PurchaseReturnService
             if ($qty>(int)$item->quantity-$previous) $this->fail('تعداد برگشت «'.$item->product_name.'» از باقی‌ماندهٔ خرید بیشتر است.');
             $price=(int)($old[$id]['buy_price']??$item->buy_price);
             if ($price<0 || $price>1000000000000) $this->fail('قیمت ثبت‌شدهٔ خرید معتبر نیست.');
+            $totalQuantity=max(0,(int)$item->quantity);
+            $netLineTotal=(int)($netLineTotals[$id]??0);
+            $amountBefore=(int) ($returnedAmounts[$id] ?? 0);
+            if ($amountBefore > $netLineTotal) $this->fail('مبالغ برگشت قبلی از مبلغ خالص خرید بیشتر است؛ سابقه مالی این ردیف باید بررسی شود.');
+            $amountAfter=$this->proportionalQuantityAmount($netLineTotal,$previous+$qty,$totalQuantity);
             $lines[$id]=['purchase_item_id'=>$id,'product_id'=>(int)$item->product_id,'product_variant_id'=>$item->product_variant_id,
                 'product_name'=>$item->product_name ?: 'کالا','variant_name'=>$item->variant_name,'product_code'=>$item->product_code,
-                'quantity'=>$qty,'buy_price'=>$price,'line_total'=>$qty*$price];
+                'quantity'=>$qty,'buy_price'=>$price,'line_total'=>max(0,$amountAfter-$amountBefore)];
         }
         if (!$lines) $this->fail('حداقل یک کالا با تعداد برگشت بیشتر از صفر وارد کنید.');
         return $lines;
     }
 
+    /**
+     * Resolve each original purchase row to its net amount after item and
+     * invoice discounts. Invoice discount is distributed proportionally using
+     * integer arithmetic so the allocated shares add up exactly.
+     */
+    public function purchaseLineNetTotals(Purchase $purchase, \Illuminate\Support\Collection $items): array
+    {
+        $hasLineSubtotal = Schema::hasColumn('purchase_items', 'line_subtotal');
+        $hasItemDiscount = Schema::hasColumn('purchase_items', 'discount_amount');
+        $hasLineTotal = Schema::hasColumn('purchase_items', 'line_total');
+        $lineTotals = [];
+        $itemDiscountTotal = 0;
+
+        foreach ($items as $item) {
+            $fallbackGross = max(0, (int) $item->quantity) * max(0, (int) $item->buy_price);
+            $gross = $hasLineSubtotal ? (int) ($item->line_subtotal ?? $fallbackGross) : $fallbackGross;
+            if ($gross <= 0 && $fallbackGross > 0) {
+                $gross = $fallbackGross;
+            }
+
+            $itemDiscount = $hasItemDiscount ? max(0, (int) ($item->discount_amount ?? 0)) : 0;
+            $storedLineTotal = $hasLineTotal ? $item->line_total : null;
+            if ($storedLineTotal !== null && ((int) $storedLineTotal > 0 || $gross === 0 || $itemDiscount >= $gross)) {
+                $lineTotal = (int) $storedLineTotal;
+            } else {
+                $lineTotal = max(0, $gross - $itemDiscount);
+            }
+
+            if ($gross > 0) {
+                $lineTotal = min($lineTotal, $gross);
+            }
+
+            $lineTotals[(int) $item->id] = max(0, $lineTotal);
+            $itemDiscountTotal += $itemDiscount;
+        }
+
+        $baseTotal = array_sum($lineTotals);
+        $invoiceDiscount = min(
+            $baseTotal,
+            max(0, (int) ($purchase->total_discount ?? 0) - $itemDiscountTotal)
+        );
+
+        if ($baseTotal === 0 || $invoiceDiscount === 0) {
+            return $lineTotals;
+        }
+
+        $shares = [];
+        $remainders = [];
+        $allocated = 0;
+
+        foreach ($lineTotals as $id => $lineTotal) {
+            [$share, $remainder] = $this->multiplyDivide($invoiceDiscount, $lineTotal, $baseTotal);
+            $shares[$id] = min($lineTotal, $share);
+            $remainders[$id] = $remainder;
+            $allocated += $shares[$id];
+        }
+
+        $remaining = max(0, $invoiceDiscount - $allocated);
+        arsort($remainders, SORT_NUMERIC);
+
+        foreach (array_keys($remainders) as $id) {
+            if ($remaining <= 0) {
+                break;
+            }
+            if ($shares[$id] < $lineTotals[$id]) {
+                $shares[$id]++;
+                $remaining--;
+            }
+        }
+
+        foreach ($lineTotals as $id => $lineTotal) {
+            $lineTotals[$id] = max(0, $lineTotal - $shares[$id]);
+        }
+
+        return $lineTotals;
+    }
+
+    /**
+     * Returns floor(left * right / divisor) and its exact remainder without
+     * overflowing a 64-bit integer.
+     *
+     * @return array{0:int,1:int}
+     */
+    private function multiplyDivide(int $left, int $right, int $divisor): array
+    {
+        if ($divisor <= 0 || $left <= 0 || $right <= 0) {
+            return [0, 0];
+        }
+
+        if ($left > $divisor) {
+            throw new \InvalidArgumentException('The proportional numerator must not exceed its divisor.');
+        }
+
+        $quotient = 0;
+        $remainder = 0;
+
+        for ($bit = 62; $bit >= 0; $bit--) {
+            $quotient *= 2;
+
+            if ($remainder >= $divisor - $remainder) {
+                $remainder -= ($divisor - $remainder);
+                $quotient++;
+            } else {
+                $remainder += $remainder;
+            }
+
+            if (($right & (1 << $bit)) !== 0) {
+                if ($remainder >= $divisor - $left) {
+                    $remainder -= ($divisor - $left);
+                    $quotient++;
+                } else {
+                    $remainder += $left;
+                }
+            }
+        }
+
+        return [$quotient, $remainder];
+    }
+
+    private function proportionalQuantityAmount(int $total, int $quantity, int $totalQuantity): int
+    {
+        if ($total <= 0 || $quantity <= 0 || $totalQuantity <= 0) {
+            return 0;
+        }
+
+        $quantity = min($quantity, $totalQuantity);
+        $whole = intdiv($total, $totalQuantity);
+        $remainder = $total % $totalQuantity;
+
+        return ($whole * $quantity) + $this->multiplyDivide($remainder, $quantity, $totalQuantity)[0];
+    }
+
     public function returnedQuantity(int $itemId, ?int $except=null): int
     {
         return (int)$this->returnedQuantities([$itemId],$except)->get($itemId,0);
+    }
+
+    public function returnedAmounts(array $itemIds, ?int $except = null): \Illuminate\Support\Collection
+    {
+        return DB::table('purchase_return_items as i')->join('purchase_returns as r','r.id','=','i.purchase_return_id')
+            ->whereNull('r.deleted_at')->whereIn('i.purchase_item_id', $itemIds)
+            ->when($except, fn ($q) => $q->where('r.id','!=',$except))
+            ->groupBy('i.purchase_item_id')->selectRaw('i.purchase_item_id, SUM(i.line_total) as amount')->pluck('amount','purchase_item_id');
     }
 
     public function returnedQuantities(array $itemIds, ?int $except=null): \Illuminate\Support\Collection

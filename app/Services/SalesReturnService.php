@@ -39,14 +39,55 @@ class SalesReturnService
     public function createDraft(array $data, ?int $actorId): SalesReturnDocument
     {
         return DB::transaction(function () use ($data, $actorId) {
+            $token = strtolower((string) ($data['submission_token'] ?? Str::uuid()));
+            if (! Str::isUuid($token)) {
+                throw ValidationException::withMessages(['submission_token' => 'شناسهٔ درخواست معتبر نیست.']);
+            }
+            $intent = $data;
+            unset($intent['submission_token'], $intent['action']);
+            $fingerprint = hash('sha256', json_encode($this->canonicalRequest($intent), JSON_THROW_ON_ERROR));
+            // Serialize new requests before checking their key. The database
+            // unique index remains the final defense against duplicate creation.
+            DB::table('document_sequences')->insertOrIgnore([
+                'type' => 'sales_return',
+                'last_number' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('document_sequences')->where('type','sales_return')->lockForUpdate()->first();
+            $existing = SalesReturnDocument::where('submission_token',$token)->lockForUpdate()->first();
+            if ($existing) {
+                if ((int) $existing->created_by !== (int) $actorId || $existing->isCancelled()) {
+                    throw ValidationException::withMessages(['submission_token' => 'این درخواست قبلاً استفاده شده است؛ صفحه را تازه کنید.']);
+                }
+                if (! hash_equals((string) $existing->submission_fingerprint, $fingerprint)) {
+                    if (! $existing->isDraft()) {
+                        throw ValidationException::withMessages(['submission_token' => 'این درخواست قبلاً با اطلاعات دیگری ثبت نهایی شده است؛ سند ثبت‌شده را بررسی کنید.']);
+                    }
+                    $existing->submission_fingerprint = $fingerprint;
+                    return $this->persistDraft($existing, $data, $actorId);
+                }
+                return $existing->load('items');
+            }
             $document = new SalesReturnDocument([
                 'document_number' => $this->nextDocumentNumber(),
                 'status' => SalesReturnDocument::STATUS_DRAFT,
                 'created_by' => $actorId,
+                'submission_token' => $token,
+                'submission_fingerprint' => $fingerprint,
             ]);
 
             return $this->persistDraft($document, $data, $actorId);
-        });
+        }, 3);
+    }
+
+    private function canonicalRequest(array $data): array
+    {
+        if (! array_is_list($data)) ksort($data);
+        foreach ($data as $key => $value) {
+            if (is_array($value)) $data[$key] = $this->canonicalRequest($value);
+        }
+        return $data;
     }
 
     public function updateDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument
@@ -122,7 +163,8 @@ class SalesReturnService
             if ($doc->isInternal()) {
                 $this->assertInternalReturnablesStillValid($doc);
             }
-            if ($doc->isSazehHesab()) {
+            $this->assertFinancialOnlySubmission($doc);
+            if ($doc->isSazehHesab() && ! $doc->isFinancialOnly()) {
                 app(SalesReturnSellingPriceService::class)->validateForSubmission($doc, false);
                 $this->materializeNewProductGroups($doc);
                 $doc = $doc->fresh('items');
@@ -140,6 +182,17 @@ class SalesReturnService
 
     private function persistDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument
     {
+        $flow = array_key_exists('return_flow', $data)
+            ? $data['return_flow']
+            : ($doc->exists ? $doc->return_flow : SalesReturnDocument::FLOW_PHYSICAL);
+        $reason = trim((string) ($data['financial_only_reason'] ?? $doc->financial_only_reason ?? ''));
+        if ($flow !== null && ! in_array($flow, [SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_FINANCIAL_ONLY], true)) {
+            throw ValidationException::withMessages(['return_flow' => 'نوع برگشت معتبر نیست.']);
+        }
+        if ($flow === SalesReturnDocument::FLOW_FINANCIAL_ONLY && (mb_strlen($reason) < 3 || mb_strlen($reason) > 1000)) {
+            throw ValidationException::withMessages(['financial_only_reason' => 'دلیل عدم تحویل کالا را وارد کنید (۳ تا ۱۰۰۰ کاراکتر).']);
+        }
+        $doc->fill(['return_flow' => $flow, 'financial_only_reason' => $flow === SalesReturnDocument::FLOW_FINANCIAL_ONLY ? $reason : null]);
         $source = $data['source_type'];
         if (blank($doc->document_number)) {
             $doc->document_number = $this->nextDocumentNumber();
@@ -240,7 +293,8 @@ class SalesReturnService
             if ($doc->isInternal()) {
                 $this->assertInternalReturnablesStillValid($doc);
             }
-            if ($doc->isSazehHesab()) {
+            $this->assertFinancialOnlySubmission($doc);
+            if ($doc->isSazehHesab() && ! $doc->isFinancialOnly()) {
                 app(SalesReturnSellingPriceService::class)->validateForSubmission($doc, $requireSellingPrice);
                 $this->materializeNewProductGroups($doc);
                 $doc->load('items');
@@ -256,8 +310,8 @@ class SalesReturnService
             $this->refreshTotals($doc);
             $doc = $doc->fresh(['items.product', 'items.variant']);
 
-            // فقط برگشت‌هایی که حداقل یک قلم مقصد انبار مرکزی دارند وارد صف انبار می‌شوند.
-            // برگشت‌های صرفاً مرجوعی مستقیماً نهایی می‌شوند.
+            // New physical returns include both central and return warehouses.
+            // Historical NULL classifications retain their original contract.
             $receipt = $this->warehouseInbound->queueSalesReturn($doc, $actorId);
 
             if ($receipt) {
@@ -273,6 +327,18 @@ class SalesReturnService
 
             return $doc->fresh('items');
         });
+    }
+
+    private function assertFinancialOnlySubmission(SalesReturnDocument $doc): void
+    {
+        if (! $doc->isFinancialOnly()) return;
+        $length = mb_strlen(trim((string) $doc->financial_only_reason));
+        if ($length < 3 || $length > 1000) {
+            throw ValidationException::withMessages(['financial_only_reason' => 'دلیل عدم تحویل کالا را وارد کنید (۳ تا ۱۰۰۰ کاراکتر).']);
+        }
+        if ($doc->items->contains(fn ($item) => $item->item_source === SalesReturnDocumentItem::SOURCE_NEW_PRODUCT)) {
+            throw ValidationException::withMessages(['items' => 'تعریف کالای جدید در برگشت صرفاً مالی مجاز نیست.']);
+        }
     }
 
     public function prepareInternalItems(SalesReturnDocument $doc, array $data): array

@@ -200,7 +200,7 @@
                             <a class="sidebar-sublink {{ $is('preinvoice.my.*') }}" href="{{ route('preinvoice.my.index') }}">پیش‌فاکتورهای من</a>
                         @endcanPermission
                         @canPermission('customers.view')
-                            <a class="sidebar-sublink {{ $is('customers.*', 'persons.*') }}" href="{{ route('customers.index') }}">اشخاص و طرف‌حساب‌ها</a>
+                            <a class="sidebar-sublink {{ $is('customers.*', 'persons.*') }}" href="{{ route('persons.index') }}">اشخاص و طرف‌حساب‌ها</a>
                         @endcanPermission
                         @canPermission('page.sales.returns')
                             <a class="sidebar-sublink {{ $is('vouchers.return-from-sale.*', 'sales-returns.*') }}" href="{{ route('vouchers.return-from-sale.index') }}">برگشت از فروش</a>

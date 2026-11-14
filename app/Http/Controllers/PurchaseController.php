@@ -315,11 +315,19 @@ class PurchaseController extends Controller
 
     public function store(Request $request)
     {
+        $token=$request->input('submission_token');
+        if(is_string($token) && \Illuminate\Support\Str::isUuid($token)){
+            $completed=\App\Models\PurchaseDraft::whereKey($token)->where('user_id',auth()->id())->where('status','submitted')->first();
+            if($completed)return redirect()->route('purchases.index')->with('success','این خرید قبلاً با موفقیت ثبت شده است؛ سند تکراری ایجاد نشد.');
+        }
         $data = $this->validatePayload($request);
         $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
         try {
             DB::transaction(function () use ($data) {
+                $draft=app(\App\Services\PurchaseDraftService::class)->lock($data['submission_token'],(int)auth()->id());
+                if($draft->status==='submitted')return;
+                if($draft->status!=='active')throw ValidationException::withMessages(['purchase'=>'این پیش‌نویس کنار گذاشته شده است؛ برای خرید جدید فرم تازه باز کنید.']);
                 $centralWarehouseId = WarehouseStockService::centralWarehouseId();
                 $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
                 $this->assertCommercialSupplierForPurchase($supplierId);
@@ -344,6 +352,7 @@ class PurchaseController extends Controller
                 $purchase->update($this->purchaseTablePayload($summary));
 
                 app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
+                $draft->forceFill(['status'=>'submitted','purchase_id'=>$purchase->id,'payload'=>null,'revision'=>$draft->revision+1])->save();
             });
         } catch (\Throwable $exception) {
             Cache::forget($submissionCacheKey);
@@ -1512,8 +1521,16 @@ class PurchaseController extends Controller
 
             if (!$variant) continue;
 
-            if (WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id) < (int) $item->quantity) {
-                abort(422, 'امکان ویرایش/حذف این سند وجود ندارد؛ موجودی فعلی یکی از مدل‌ها کمتر از مقدار خرید قبلی است.');
+            $available = WarehouseStockService::available($warehouseId, (int) $variant->product_id, (int) $variant->id);
+            $quantity = (int) $item->quantity;
+            if ($available < $quantity) {
+                $name = $item->product_name ?: $item->product?->name ?: 'کالا';
+                $model = $item->variant_name ?: $variant->variant_name;
+                $label = $model ? "{$name} ({$model})" : $name;
+                throw ValidationException::withMessages([
+                    'items' => "امکان حذف این سند خرید وجود ندارد؛ موجودی قابل‌استفادهٔ «{$label}» در انبار سند {$available} عدد است، ولی برای حذف {$quantity} عدد لازم است. "
+                        . 'ممکن است کالا فروخته، رزرو یا به انبار دیگری منتقل شده باشد؛ ابتدا اسناد وابسته را بررسی کنید. هیچ تغییری در سند خرید، موجودی یا حساب تأمین‌کننده اعمال نشد.',
+                ]);
             }
 
             WarehouseStockService::change($warehouseId, (int) $variant->product_id, -((int) $item->quantity), (int) $variant->id);

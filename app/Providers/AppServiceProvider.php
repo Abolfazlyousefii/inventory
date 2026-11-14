@@ -30,6 +30,8 @@ use App\Observers\StockMovementObserver;
 use App\Observers\WarehouseStockObserver;
 use App\Services\Sms\OtpSmsSender;
 use App\Support\PermissionCatalog;
+use App\Support\AccountStatementAccess;
+use App\Models\User;
 use App\Support\SlowRequestDiagnostics;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Events\QueryExecuted;
@@ -44,6 +46,16 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Run the read-only denial before Spatie's Gate::before permission grant.
+        Gate::before(function ($user, $ability) {
+            if ($user instanceof User
+                && AccountStatementAccess::deniesPermission($user, (string) $ability)) {
+                return false;
+            }
+
+            return null;
+        });
+
         $this->app->scoped(\App\Services\Tracking\HallQueueRecorder::class);
         $this->app->scoped(\App\Services\InventoryCountFreezeService::class);
         $this->app->bind(OtpSender::class, OtpSmsSender::class);
@@ -66,7 +78,14 @@ class AppServiceProvider extends ServiceProvider
         ]);
 
         Gate::before(function ($user, $ability) {
-            return PermissionCatalog::userHasPermission($user, $ability) ? true : null;
+            // A read-only finance grant must override direct and inherited
+            // Spatie permissions, not merely return "not granted" to the gate.
+            if ($user instanceof \App\Models\User
+                && \App\Support\AccountStatementAccess::deniesPermission($user, (string) $ability)) {
+                return false;
+            }
+
+            return PermissionCatalog::userHasPermission($user, (string) $ability) ? true : null;
         });
 
         Product::observe(ActivityObserver::class);

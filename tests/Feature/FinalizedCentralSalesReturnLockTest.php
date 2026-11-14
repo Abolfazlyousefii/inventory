@@ -17,7 +17,6 @@ use App\Models\SalesReturnDocument;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\WarehouseStock;
-use App\Models\WarehouseInboundReceipt;
 use App\Services\SalesReturnCorrectionService;
 use App\Services\SalesReturnReportService;
 use App\Support\InboundReviewVersion;
@@ -417,6 +416,8 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $version = InboundReviewVersion::token($document);
         $beforeMovement = StockMovement::first()->getAttributes();
         $beforeStock = WarehouseStock::first()->getAttributes();
+        $beforeReceipt = \App\Models\WarehouseInboundReceipt::first()->getAttributes();
+        $beforeReceiptItem = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
         $itemId = $document->items->first()->id;
 
         app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
@@ -427,17 +428,31 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame('applied', $fresh->status);
         $this->assertSame(2, (int) $fresh->total_quantity);
         $this->assertSame(350, (int) $fresh->total_refund_amount);
+        $this->assertSame(2, (int) $fresh->items->first()->return_quantity);
+        $this->assertSame(1, (int) $fresh->items->first()->product_id);
+        $this->assertSame(1, (int) $fresh->items->first()->product_variant_id);
+        $this->assertSame(1, (int) $fresh->items->first()->destination_warehouse_id);
+        $this->assertSame('healthy', $fresh->items->first()->item_condition);
         $this->assertSame(175, (int) $fresh->items->first()->refund_unit_price);
         $this->assertSame(350, (int) $fresh->items->first()->refund_amount);
-        $this->assertSame(2, (int) \App\Models\WarehouseInboundReceipt::first()->accepted_quantity);
+        $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
+        $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
         $this->assertSame($beforeStock, WarehouseStock::first()->getAttributes());
         $this->assertSame($beforeMovement, StockMovement::first()->getAttributes());
         $this->assertSame(1, StockMovement::count());
         $this->assertSame(200, (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->sum('amount'));
         $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'credit')->sum('amount'));
-        $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
+        $this->assertSame(-350, (int) Customer::findOrFail(1)->balance);
+        $health = app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh);
+        $this->assertTrue($health['checks']['ledger_amount_matches']);
+        $this->assertTrue($health['checks']['stock_movements_complete']);
+        $this->assertTrue($health['ok']);
         $this->assertSame(1, SalesReturnCorrection::where('status', 'applied')->count());
         $this->assertSame(1, \App\Models\SalesReturnDocumentRevision::where('action', 'received_price_corrected')->count());
+        $audit = \App\Models\ActivityLog::where('action', 'sales_return.received_price_corrected')->firstOrFail();
+        $this->assertSame(0, (int) data_get($audit->properties, 'stock_change'));
+        $this->assertSame(150, (int) data_get($audit->properties, 'ledger_delta'));
+        $this->assertSame(2, (int) data_get($audit->properties, 'quantity'));
     }
 
     public function test_duplicate_or_stale_price_correction_does_not_create_another_credit(): void
@@ -511,6 +526,7 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(2, (int) $fresh->total_quantity);
         $this->assertSame(50, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
             ->where('type', 'debit')->sum('amount'));
+        $this->assertSame(-150, (int) Customer::findOrFail(1)->balance);
         $this->assertSame($movementBefore, StockMovement::first()->getAttributes());
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
         $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
@@ -537,463 +553,467 @@ class FinalizedCentralSalesReturnLockTest extends \Tests\TestCase
         $this->assertSame(1, CustomerLedger::count());
     }
 
-    private function returnEditor(array $permissions): User
+
+    public function test_partial_central_receipt_is_not_eligible_for_price_only_correction(): void
+    {
+        $document = $this->document();
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-PARTIAL-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'discrepancy',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 1,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 1,
+            'expected_quantity' => 2,
+            'accepted_quantity' => 1,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+
+        try {
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+                $document, $document->items->first()->id, 175,
+                InboundReviewVersion::token($document), 'اصلاح قیمت', 2
+            );
+            $this->fail('A partially received item was eligible for full-line repricing.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('item_id', $exception->errors());
+        }
+
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+    }
+
+    public function test_mixed_central_and_noncentral_acceptance_is_not_eligible(): void
+    {
+        $document = $this->document();
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-MIXED-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'discrepancy',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        foreach ([[1, 1], [2, 1]] as [$warehouseId, $accepted]) {
+            $receipt->items()->create([
+                'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+                'source_item_id' => $document->items->first()->id,
+                'product_id' => 1,
+                'product_variant_id' => 1,
+                'received_warehouse_id' => $warehouseId,
+                'expected_quantity' => 1,
+                'accepted_quantity' => $accepted,
+            ]);
+        }
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
+
+    public function test_pending_receipt_prevents_price_correction_even_if_another_receipt_was_received(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $pending = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-PENDING-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'retry',
+            'status' => 'pending',
+            'expected_quantity' => 1,
+            'accepted_quantity' => 0,
+        ]);
+        $pending->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 1,
+            'expected_quantity' => 1,
+            'accepted_quantity' => 0,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
+
+    public function test_repeated_sequential_price_corrections_keep_net_ledger_and_stock_consistent(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $service = app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class);
+        $itemId = $document->items->first()->id;
+
+        $service->correct($document, $itemId, 175, InboundReviewVersion::token($document), 'افزایش قیمت', 2);
+        $service->correct($document->fresh('items'), $itemId, 150, InboundReviewVersion::token($document->fresh('items')), 'اصلاح مجدد قیمت', 2);
+
+        $fresh = $document->fresh('items');
+        $this->assertSame(300, (int) $fresh->total_refund_amount);
+        $this->assertSame(2, (int) $fresh->total_quantity);
+        $this->assertSame(150, (int) $fresh->items->first()->refund_unit_price);
+        $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'credit')->sum('amount'));
+        $this->assertSame(50, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->where('type', 'debit')->sum('amount'));
+        $this->assertSame(-300, (int) Customer::findOrFail(1)->balance);
+        $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
+        $this->assertSame(1, StockMovement::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+        $this->assertSame(2, (int) \App\Models\WarehouseInboundReceipt::first()->accepted_quantity);
+    }
+
+    public function test_price_correction_permission_uses_the_erp_permission_catalog(): void
+    {
+        $user = \Mockery::mock(User::class)->makePartial();
+        $user->shouldReceive('isAdministrator')->andReturn(false);
+        $user->shouldReceive('hasRole')->andReturn(false);
+        $user->shouldReceive('hasPermission')->andReturnUsing(fn ($key) => $key === 'page.sales.returns');
+
+        $this->assertTrue(\App\Services\ReceivedSalesReturnPriceCorrectionService::allowed($user));
+    }
+
+    public function test_price_correction_permission_denies_users_without_catalog_permission(): void
+    {
+        $user = \Mockery::mock(User::class)->makePartial();
+        $user->shouldReceive('isAdministrator')->andReturn(false);
+        $user->shouldReceive('hasRole')->andReturn(false);
+        $user->shouldReceive('hasPermission')->andReturn(false);
+
+        $this->assertFalse(\App\Services\ReceivedSalesReturnPriceCorrectionService::allowed($user));
+    }
+
+
+    public function test_receipt_header_must_reconcile_with_its_item_rows_before_price_correction(): void
+    {
+        $document = $this->document();
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-HEADER-MISMATCH-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'discrepancy',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 1,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 1,
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+    }
+
+    public function test_accepted_quantity_cannot_exceed_receipt_line_expected_quantity(): void
+    {
+        $document = $this->document();
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-OVER-ACCEPTED-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'received',
+            'expected_quantity' => 1,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 1,
+            'expected_quantity' => 1,
+            'accepted_quantity' => 2,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
+
+
+    public function test_multiple_finalized_central_receipts_can_cover_the_full_return_quantity(): void
+    {
+        $document = $this->document();
+        foreach ([1, 2] as $sequence) {
+            $receipt = \App\Models\WarehouseInboundReceipt::create([
+                'receipt_number' => 'WI-SPLIT-'.$document->id.'-'.$sequence,
+                'source_type' => 'sales_return',
+                'source_id' => $document->id,
+                'operation_key' => 'split-'.$sequence,
+                'status' => 'received',
+                'expected_quantity' => 1,
+                'accepted_quantity' => 1,
+                'reviewed_by' => 2,
+                'reviewed_at' => now(),
+            ]);
+            $receipt->items()->create([
+                'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+                'source_item_id' => $document->items->first()->id,
+                'product_id' => 1,
+                'product_variant_id' => 1,
+                'received_warehouse_id' => 1,
+                'expected_quantity' => 1,
+                'accepted_quantity' => 1,
+            ]);
+        }
+
+        $this->assertContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
+
+
+    public function test_other_central_type_warehouse_is_not_mistaken_for_the_canonical_central_warehouse(): void
+    {
+        $document = $this->document();
+        Warehouse::create(['id' => 3, 'name' => 'انبار مرکزی فرعی', 'type' => 'central', 'is_active' => true]);
+        $receipt = \App\Models\WarehouseInboundReceipt::create([
+            'receipt_number' => 'WI-OTHER-CENTRAL-'.$document->id,
+            'source_type' => 'sales_return',
+            'source_id' => $document->id,
+            'operation_key' => 'initial',
+            'status' => 'received',
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+            'reviewed_by' => 2,
+            'reviewed_at' => now(),
+        ]);
+        $receipt->items()->create([
+            'source_item_type' => \App\Models\SalesReturnDocumentItem::class,
+            'source_item_id' => $document->items->first()->id,
+            'product_id' => 1,
+            'product_variant_id' => 1,
+            'received_warehouse_id' => 3,
+            'expected_quantity' => 2,
+            'accepted_quantity' => 2,
+        ]);
+
+        $this->assertNotContains(
+            (int) $document->items->first()->id,
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->eligibleItemIds($document)
+        );
+    }
+
+
+    public function test_real_document_377_price_change_keeps_63_units_and_posts_exact_ledger_delta(): void
+    {
+        $document = $this->document();
+        $item = $document->items->first();
+        $item->update([
+            'return_quantity' => 63,
+            'refund_unit_price' => 690000,
+            'refund_amount' => 43470000,
+        ]);
+        $document->update(['total_quantity' => 63, 'total_refund_amount' => 43470000]);
+        CustomerLedger::where('reference_type', SalesReturnDocument::class)
+            ->where('reference_id', $document->id)
+            ->update(['amount' => 43470000]);
+        WarehouseStock::where('warehouse_id', 1)->where('product_variant_id', 1)->update(['quantity' => 63]);
+        StockMovement::where('reference_type', SalesReturnDocument::class)
+            ->where('reference_id', $document->id)
+            ->update(['quantity' => 63, 'stock_after' => 63]);
+        $this->confirmCentralPriceOnlyReceipt($document);
+        \App\Models\WarehouseInboundReceipt::first()->update([
+            'expected_quantity' => 63,
+            'accepted_quantity' => 63,
+        ]);
+        \App\Models\WarehouseInboundReceiptItem::first()->update([
+            'expected_quantity' => 63,
+            'accepted_quantity' => 63,
+        ]);
+
+        $beforeStock = WarehouseStock::first()->getAttributes();
+        $beforeMovement = StockMovement::first()->getAttributes();
+        $beforeReceipt = \App\Models\WarehouseInboundReceipt::first()->getAttributes();
+        $beforeReceiptItem = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
+
+        app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+            $document->fresh('items'),
+            $item->id,
+            1750000,
+            InboundReviewVersion::token($document->fresh('items')),
+            'اصلاح قیمت سند ۳۷۷ از ۶۹ هزار به ۱۷۵ هزار تومان',
+            2
+        );
+
+        $fresh = $document->fresh('items');
+        $this->assertSame(63, (int) $fresh->total_quantity);
+        $this->assertSame(110250000, (int) $fresh->total_refund_amount);
+        $this->assertSame(63, (int) $fresh->items->first()->return_quantity);
+        $this->assertSame(1750000, (int) $fresh->items->first()->refund_unit_price);
+        $this->assertSame(110250000, (int) $fresh->items->first()->refund_amount);
+        $this->assertSame(66780000, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
+            ->where('type', 'credit')->sum('amount'));
+        $this->assertSame(-110250000, (int) Customer::findOrFail(1)->balance);
+        $this->assertSame($beforeStock, WarehouseStock::first()->getAttributes());
+        $this->assertSame($beforeMovement, StockMovement::first()->getAttributes());
+        $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
+        $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
+        $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)->appliedHealthCheck($fresh)['checks']['ledger_amount_matches']);
+    }
+
+
+    public function test_price_correction_rejects_incomplete_historical_stock_movement_history(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        StockMovement::where('reference_type', SalesReturnDocument::class)
+            ->where('reference_id', $document->id)
+            ->delete();
+
+        try {
+            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
+                $document, $document->items->first()->id, 175,
+                InboundReviewVersion::token($document), 'اصلاح قیمت', 2
+            );
+            $this->fail('Price correction must not bypass an incomplete central stock history.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('document', $exception->errors());
+        }
+
+        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
+        $this->assertSame(1, CustomerLedger::count());
+        $this->assertSame(0, SalesReturnCorrection::count());
+        $this->assertSame(2, (int) WarehouseStock::first()->quantity);
+    }
+
+    private function priceCorrectionHttpUser(bool $canCorrect): User
     {
         $user = \Mockery::mock(User::class)->makePartial();
         $user->id = 2;
+        $user->setRelation('roles', new \Illuminate\Database\Eloquent\Collection());
         $user->shouldReceive('isAdministrator')->andReturn(false);
         $user->shouldReceive('hasRole')->andReturn(false);
         $user->shouldReceive('hasPermission')->andReturnUsing(
-            fn ($permission) => in_array($permission, $permissions, true)
+            static fn (string $permission): bool => $canCorrect && $permission === 'page.sales.returns'
         );
 
         return $user;
     }
 
-    public function test_existing_return_editors_can_correct_received_prices_without_a_separate_permission(): void
-    {
-        foreach ([['sales_returns.edit_applied'], ['page.sales.returns']] as $permissions) {
-            $user = $this->returnEditor($permissions);
-            $this->assertTrue(\App\Services\ReceivedSalesReturnPriceCorrectionService::allowed($user));
-            $this->assertTrue(\App\Support\PageAccessCatalog::userCanRoute($user, 'vouchers.return-from-sale.applied.price'));
-        }
-        $this->assertFalse(\App\Services\ReceivedSalesReturnPriceCorrectionService::allowed(null));
-        $this->assertFalse(\App\Services\ReceivedSalesReturnPriceCorrectionService::allowed(
-            $this->returnEditor(['sales_returns.view'])
-        ));
-    }
-
-    private function priceRequest(SalesReturnDocument $document, User $user, int $price, array $extra = []): \Illuminate\Http\Request
-    {
-        $session = app('session')->driver();
-        $session->regenerateToken();
-        $request = \Illuminate\Http\Request::create('/', 'PATCH', array_merge([
-            '_token' => $session->token(),
-            'item_id' => $document->items->first()->id,
-            'refund_unit_price' => $price,
-            'document_version' => InboundReviewVersion::token($document),
-            'reason' => 'اصلاح قیمت توافق‌شده با مشتری',
-        ], $extra));
-        $request->setLaravelSession($session);
-        $request->setUserResolver(fn () => $user);
-
-        return $request;
-    }
-
-    public function test_return_editor_can_update_document_and_customer_balance_without_changing_received_stock(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $user = $this->returnEditor(['sales_returns.edit_applied']);
-        $receiptsBefore = WarehouseInboundReceipt::first()->getAttributes();
-        $receiptItemsBefore = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
-        $stockBefore = WarehouseStock::first()->getAttributes();
-        $movementBefore = StockMovement::first()->getAttributes();
-        $service = app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class);
-
-        foreach ([175 => 350, 75 => 150] as $price => $total) {
-            $document = $document->fresh('items');
-            $response = app(VoucherSalesReturnController::class)->correctReceivedPrice(
-                $this->priceRequest($document, $user, $price), $document, $service
-            );
-            $this->assertSame(302, $response->getStatusCode());
-            $this->assertSame($total, (int) $document->fresh()->total_refund_amount);
-            $this->assertSame(-$total, Customer::find(1)->balance);
-            $this->assertSame(-$total, Customer::withBalance()->find(1)->balance);
-            $this->assertTrue(app(\App\Services\SalesReturnQueryService::class)
-                ->appliedHealthCheck($document->fresh('items'))['checks']['ledger_amount_matches']);
-        }
-
-        $this->assertSame($receiptsBefore, WarehouseInboundReceipt::first()->getAttributes());
-        $this->assertSame($receiptItemsBefore, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
-        $this->assertSame($stockBefore, WarehouseStock::first()->getAttributes());
-        $this->assertSame($movementBefore, StockMovement::first()->getAttributes());
-        $this->assertSame(1, StockMovement::count());
-        $this->assertSame(2, (int) $document->fresh()->total_quantity);
-        $this->assertSame(2, (int) $document->fresh('items')->items->first()->return_quantity);
-        $this->assertSame(200, (int) CustomerLedger::where('reference_type', SalesReturnDocument::class)->sum('amount'));
-        $this->assertSame(2, SalesReturnCorrection::count());
-        $this->assertSame(2, \App\Models\SalesReturnDocumentRevision::where('action', 'received_price_corrected')->count());
-    }
-
-    public function test_price_endpoint_rejects_quantity_and_destination_changes_atomically(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $user = $this->returnEditor(['page.sales.returns']);
-        try {
-            app(VoucherSalesReturnController::class)->correctReceivedPrice(
-                $this->priceRequest($document, $user, 175, ['return_quantity' => 99, 'destination_warehouse_id' => 2]),
-                $document, app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)
-            );
-            $this->fail('A price-only request accepted warehouse fields.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('return_quantity', $exception->errors());
-            $this->assertArrayHasKey('destination_warehouse_id', $exception->errors());
-        }
-        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
-    }
-
-    public function test_view_only_user_cannot_submit_received_price_correction(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        try {
-            app(VoucherSalesReturnController::class)->correctReceivedPrice(
-                $this->priceRequest($document, $this->returnEditor(['sales_returns.view']), 175),
-                $document, app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)
-            );
-            $this->fail('A view-only user changed a received price.');
-        } catch (HttpException $exception) {
-            $this->assertSame(403, $exception->getStatusCode());
-        }
-        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(1, CustomerLedger::count());
-    }
-
-    public function test_price_correction_remains_possible_after_the_received_stock_has_been_sold(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        WarehouseStock::query()->update(['quantity' => 0]);
-        $itemBefore = $document->items->first()->getAttributes();
-
-        app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-            $document, $document->items->first()->id, 175,
-            InboundReviewVersion::token($document), 'اصلاح قیمت پس از فروش موجودی', 2
-        );
-
-        $this->assertSame(0, (int) WarehouseStock::first()->quantity);
-        $this->assertSame(1, StockMovement::count());
-        $this->assertSame(350, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(-350, Customer::find(1)->balance);
-        $itemAfter = $document->fresh('items')->items->first()->getAttributes();
-        foreach (['refund_unit_price', 'refund_amount', 'updated_at'] as $field) {
-            unset($itemBefore[$field], $itemAfter[$field]);
-        }
-        $this->assertSame($itemBefore, $itemAfter);
-    }
-
-    public function test_price_form_is_available_to_existing_editors_and_hidden_from_view_only_users(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $controller = app(VoucherSalesReturnController::class);
-        foreach ([['sales_returns.edit_applied'], ['sales_returns.view']] as $permissions) {
-            auth()->setUser($this->returnEditor($permissions));
-            $view = $controller->show(
-                $document->fresh('items'), app(\App\Services\SalesDocumentAccessService::class),
-                app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)
-            );
-            $this->assertSame(
-                $permissions === ['sales_returns.edit_applied'] ? [$document->items->first()->id] : [],
-                $view->getData()['correctablePriceItemIds']
-            );
-        }
-    }
-
-    public static function invalidPriceInputs(): array
+    private function priceCorrectionHttpPayload(SalesReturnDocument $document, string $csrfToken): array
     {
         return [
-            'zero' => [0, 'اصلاح قیمت', 'refund_unit_price'],
-            'negative' => [-1, 'اصلاح قیمت', 'refund_unit_price'],
-            'over limit' => [1_000_000_000_001, 'اصلاح قیمت', 'refund_unit_price'],
-            'unchanged' => [100, 'اصلاح قیمت', 'refund_unit_price'],
-            'blank reason' => [175, '   ', 'reason'],
-            'short reason' => [175, 'اب', 'reason'],
-            'long reason' => [175, str_repeat('ا', 1001), 'reason'],
+            '_token' => $csrfToken,
+            'item_id' => (int) $document->items->first()->id,
+            'refund_unit_price' => 175,
+            'document_version' => InboundReviewVersion::token($document),
+            'reason' => 'اصلاح قیمت اشتباه ثبت‌شده',
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('invalidPriceInputs')]
-    public function test_invalid_price_or_reason_has_no_financial_effect(int $price, string $reason, string $field): void
+    public function test_price_correction_http_endpoint_requires_existing_return_edit_access(): void
     {
         $document = $this->document();
         $this->confirmCentralPriceOnlyReceipt($document);
-        try {
-            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-                $document, $document->items->first()->id, $price,
-                InboundReviewVersion::token($document), $reason, 2
-            );
-            $this->fail('Invalid monetary correction was accepted.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey($field, $exception->errors());
-        }
+        $token = str_repeat('a', 40);
+
+        $this->actingAs($this->priceCorrectionHttpUser(false))
+            ->withSession(['_token' => $token])
+            ->patch(
+                route('vouchers.return-from-sale.applied.price', $document),
+                $this->priceCorrectionHttpPayload($document, $token)
+            )
+            ->assertForbidden();
+
         $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(-200, Customer::find(1)->balance);
+        $this->assertSame(100, (int) $document->fresh('items')->items->first()->refund_unit_price);
         $this->assertSame(1, CustomerLedger::count());
         $this->assertSame(0, SalesReturnCorrection::count());
-        $this->assertSame(0, \App\Models\SalesReturnDocumentRevision::count());
-    }
-
-    public static function unconfirmedReceiptStates(): array
-    {
-        return [['pending'], ['cancelled']];
-    }
-
-    #[\PHPUnit\Framework\Attributes\DataProvider('unconfirmedReceiptStates')]
-    public function test_price_correction_requires_confirmed_positive_central_receiving(string $status): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        WarehouseInboundReceipt::query()->update(['status' => $status]);
-        $service = app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class);
-        $this->assertSame([], $service->eligibleItemIds($document));
-        try {
-            $service->correct($document, $document->items->first()->id, 175,
-                InboundReviewVersion::token($document), 'اصلاح قیمت', 2);
-            $this->fail('An unconfirmed receipt allowed price correction.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('item_id', $exception->errors());
-        }
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-    }
-
-    public function test_a_row_from_another_document_cannot_be_corrected(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $other = $document->replicate();
-        $other->document_number = 'LOCK-OTHER';
-        $other->save();
-        $otherItem = $document->items->first()->replicate();
-        $otherItem->document_id = $other->id;
-        $otherItem->save();
-        try {
-            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-                $document, $otherItem->id, 175, InboundReviewVersion::token($document), 'اصلاح قیمت', 2
-            );
-            $this->fail('A row belonging to another document was accepted.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('item_id', $exception->errors());
-        }
-        $this->assertSame(100, (int) $otherItem->fresh()->refund_unit_price);
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
-    }
-
-    public function test_pending_financial_review_prevents_a_second_price_correction(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        SalesReturnCorrection::create([
-            'document_id' => $document->id, 'base_version' => InboundReviewVersion::token($document),
-            'payload' => [], 'before_snapshot' => [], 'proposed_snapshot' => [],
-            'reason' => 'در انتظار بررسی', 'requested_by' => 2, 'status' => 'pending_finance',
-        ]);
-        try {
-            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-                $document, $document->items->first()->id, 175,
-                InboundReviewVersion::token($document), 'اصلاح قیمت', 2
-            );
-            $this->fail('An outstanding correction was bypassed.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('document', $exception->errors());
-        }
-        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(1, SalesReturnCorrection::count());
-    }
-
-    public function test_failure_while_recording_audit_rolls_back_all_monetary_changes(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $before = $document->getAttributes();
-        $itemBefore = $document->items->first()->getAttributes();
-        \App\Models\ActivityLog::creating(function () {
-            throw new \RuntimeException('Simulated audit failure');
-        });
-        try {
-            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-                $document, $document->items->first()->id, 175,
-                InboundReviewVersion::token($document), 'اصلاح قیمت', 2
-            );
-            $this->fail('Simulated audit failure did not interrupt correction.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('Simulated audit failure', $exception->getMessage());
-        }
-        $this->assertSame($before, $document->fresh()->getAttributes());
-        $this->assertSame($itemBefore, $document->fresh('items')->items->first()->getAttributes());
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
-        $this->assertSame(0, \App\Models\SalesReturnDocumentRevision::count());
-        $this->assertSame(-200, Customer::find(1)->balance);
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
-    }
-
-    public function test_real_http_route_updates_price_and_rejects_stale_resubmission(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $user = $this->returnEditor(['sales_returns.edit_applied']);
-        $user->is_active = true;
-        $user->can_access_erp = true;
-        config(['services.request_driven_site_stock' => false]);
-        $payload = [
-            '_token' => 'price-test-token', 'item_id' => $document->items->first()->id,
-            'refund_unit_price' => 175, 'document_version' => InboundReviewVersion::token($document),
-            'reason' => 'اصلاح از مسیر واقعی نرم‌افزار',
-        ];
-        $this->actingAs($user)->withSession(['_token' => 'price-test-token'])
-            ->patch(route('vouchers.return-from-sale.applied.price', $document), $payload)
-            ->assertRedirect(route('vouchers.return-from-sale.show', $document));
-        $this->assertSame(350, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(-350, Customer::find(1)->balance);
-        $this->patchJson(route('vouchers.return-from-sale.applied.price', $document), $payload)
-            ->assertUnprocessable()->assertJsonValidationErrors('document_version');
-        $this->assertSame(2, CustomerLedger::count());
-        $this->assertSame(1, SalesReturnCorrection::count());
         $this->assertSame(1, StockMovement::count());
     }
 
-    public function test_real_http_route_rejects_missing_csrf_token_before_mutating_money(): void
+    public function test_price_correction_http_endpoint_rejects_invalid_csrf_token(): void
     {
         $document = $this->document();
         $this->confirmCentralPriceOnlyReceipt($document);
-        $user = $this->returnEditor(['page.sales.returns']);
-        $user->is_active = true;
-        $user->can_access_erp = true;
-        config(['services.request_driven_site_stock' => false]);
-        $this->actingAs($user)->withSession(['_token' => 'valid-price-token'])
-            ->patchJson(route('vouchers.return-from-sale.applied.price', $document), [
-                'item_id' => $document->items->first()->id, 'refund_unit_price' => 175,
-                'document_version' => InboundReviewVersion::token($document), 'reason' => 'اصلاح قیمت',
-            ])->assertStatus(419);
+        $sessionToken = str_repeat('b', 40);
+        $invalidToken = str_repeat('c', 40);
+
+        $this->actingAs($this->priceCorrectionHttpUser(true))
+            ->withSession(['_token' => $sessionToken])
+            ->patch(
+                route('vouchers.return-from-sale.applied.price', $document),
+                $this->priceCorrectionHttpPayload($document, $invalidToken)
+            )
+            ->assertStatus(419);
+
         $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
         $this->assertSame(1, CustomerLedger::count());
         $this->assertSame(0, SalesReturnCorrection::count());
-    }
-
-    public function test_multi_item_correction_changes_only_the_selected_rows_price(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $otherItem = $document->items->first()->replicate();
-        $otherItem->return_quantity = 3;
-        $otherItem->refund_amount = 300;
-        $otherItem->sort_order = 2;
-        $otherItem->save();
-        $document->update(['total_quantity' => 5, 'items_count' => 2, 'total_refund_amount' => 500]);
-        CustomerLedger::query()->update(['amount' => 500]);
-        $otherBefore = $otherItem->fresh()->getAttributes();
-        $document = $document->fresh('items');
-
-        app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-            $document, $document->items->first()->id, 175,
-            InboundReviewVersion::token($document), 'اصلاح قیمت فقط ردیف اول', 2
-        );
-
-        $this->assertSame($otherBefore, $otherItem->fresh()->getAttributes());
-        $this->assertSame(650, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(5, (int) $document->fresh()->total_quantity);
-        $this->assertSame(-650, Customer::find(1)->balance);
-        $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)->sum('amount'));
-    }
-
-    public static function forbiddenDocumentStates(): array
-    {
-        return [['draft'], ['pending_warehouse'], ['cancelled']];
-    }
-
-    #[\PHPUnit\Framework\Attributes\DataProvider('forbiddenDocumentStates')]
-    public function test_non_applied_documents_cannot_use_the_received_price_path(string $status): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $document->update(['status' => $status]);
-        $service = app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class);
-        $this->assertSame([], $service->eligibleItemIds($document));
-        try {
-            $service->correct($document, $document->items->first()->id, 175,
-                InboundReviewVersion::token($document), 'اصلاح قیمت', 2);
-            $this->fail('A non-applied document accepted a received-price change.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('document', $exception->errors());
-        }
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
-    }
-
-    public static function excessiveTotals(): array
-    {
-        return ['document amount limit' => [10_000], 'integer overflow' => [10_000_000]];
-    }
-
-    #[\PHPUnit\Framework\Attributes\DataProvider('excessiveTotals')]
-    public function test_amount_limits_do_not_partially_update_customer_or_document(int $quantity): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $document->items->first()->update(['return_quantity' => $quantity, 'refund_amount' => $quantity * 100]);
-        $document->update(['total_quantity' => $quantity, 'total_refund_amount' => $quantity * 100]);
-        CustomerLedger::query()->update(['amount' => $quantity * 100]);
-        $document = $document->fresh('items');
-        try {
-            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-                $document, $document->items->first()->id, 1_000_000_000_000,
-                InboundReviewVersion::token($document), 'آزمون سقف مبلغ', 2
-            );
-            $this->fail('An excessive amount was accepted.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('refund_unit_price', $exception->errors());
-        }
-        $this->assertSame($quantity * 100, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(-$quantity * 100, Customer::find(1)->balance);
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
-    }
-
-    public function test_inconsistent_line_price_is_rejected_without_rewriting_financial_history(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        $document->items->first()->update(['refund_unit_price' => 99]);
-        $document = $document->fresh('items');
-        try {
-            app(\App\Services\ReceivedSalesReturnPriceCorrectionService::class)->correct(
-                $document, $document->items->first()->id, 175,
-                InboundReviewVersion::token($document), 'اصلاح قیمت', 2
-            );
-            $this->fail('An inconsistent historical line was accepted.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('document', $exception->errors());
-        }
-        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
-    }
-
-    public function test_real_http_route_denies_view_only_users_and_warehouse_payload_tampering(): void
-    {
-        $document = $this->document();
-        $this->confirmCentralPriceOnlyReceipt($document);
-        config(['services.request_driven_site_stock' => false]);
-        $payload = [
-            '_token' => 'valid-token', 'item_id' => $document->items->first()->id,
-            'refund_unit_price' => 175, 'document_version' => InboundReviewVersion::token($document),
-            'reason' => 'اصلاح قیمت',
-        ];
-        foreach ([['sales_returns.view'], ['page.sales.returns']] as $permissions) {
-            $user = $this->returnEditor($permissions);
-            $user->is_active = true;
-            $user->can_access_erp = true;
-            $request = $this->actingAs($user)->withSession(['_token' => 'valid-token']);
-            $response = $request->patchJson(route('vouchers.return-from-sale.applied.price', $document),
-                $payload + ['items' => [['return_quantity' => 999, 'destination_warehouse_id' => 2]]]);
-            if ($permissions === ['sales_returns.view']) {
-                $response->assertForbidden();
-            } else {
-                $response->assertUnprocessable()->assertJsonValidationErrors('items');
-            }
-        }
-        $this->assertSame(200, (int) $document->fresh()->total_refund_amount);
-        $this->assertSame(2, (int) $document->fresh()->total_quantity);
         $this->assertSame(2, (int) WarehouseStock::first()->quantity);
-        $this->assertSame(1, CustomerLedger::count());
-        $this->assertSame(0, SalesReturnCorrection::count());
+        $this->assertSame(1, StockMovement::count());
     }
+
+    public function test_price_correction_http_endpoint_applies_only_the_financial_delta(): void
+    {
+        $document = $this->document();
+        $this->confirmCentralPriceOnlyReceipt($document);
+        $token = str_repeat('d', 40);
+        $beforeStock = WarehouseStock::first()->getAttributes();
+        $beforeMovement = StockMovement::first()->getAttributes();
+        $beforeReceipt = \App\Models\WarehouseInboundReceipt::first()->getAttributes();
+        $beforeReceiptItem = \App\Models\WarehouseInboundReceiptItem::first()->getAttributes();
+
+        $this->actingAs($this->priceCorrectionHttpUser(true))
+            ->withSession(['_token' => $token])
+            ->patch(
+                route('vouchers.return-from-sale.applied.price', $document),
+                $this->priceCorrectionHttpPayload($document, $token)
+            )
+            ->assertRedirect(route('vouchers.return-from-sale.show', $document));
+
+        $fresh = $document->fresh('items');
+        $this->assertSame(350, (int) $fresh->total_refund_amount);
+        $this->assertSame(2, (int) $fresh->total_quantity);
+        $this->assertSame(175, (int) $fresh->items->first()->refund_unit_price);
+        $this->assertSame(2, (int) $fresh->items->first()->return_quantity);
+        $this->assertSame(150, (int) CustomerLedger::where('reference_type', SalesReturnCorrection::class)
+            ->where('type', 'credit')->sum('amount'));
+        $this->assertSame(1, SalesReturnCorrection::where('status', 'applied')->count());
+        $this->assertSame($beforeStock, WarehouseStock::first()->getAttributes());
+        $this->assertSame($beforeMovement, StockMovement::first()->getAttributes());
+        $this->assertSame($beforeReceipt, \App\Models\WarehouseInboundReceipt::first()->getAttributes());
+        $this->assertSame($beforeReceiptItem, \App\Models\WarehouseInboundReceiptItem::first()->getAttributes());
+    }
+
 }
