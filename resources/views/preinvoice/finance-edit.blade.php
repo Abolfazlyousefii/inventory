@@ -10,6 +10,24 @@
     $invoiceValue = old('invoice_discount_value', $invoiceDiscount['value'] ?? $order->invoice_discount_value ?? 0);
     $groups = collect($discountEditorState['product_groups'] ?? [])->keyBy('product_id');
     $indices = $order->items->values()->mapWithKeys(fn($item,$index) => [$item->id => $index]);
+    // Initial amounts must remain visible even if a browser script cannot load.
+    $previewAmount = function($base,$type,$value) {
+        try { return \App\Support\DiscountMath::amount($base,$type,$value); }
+        catch (\Illuminate\Validation\ValidationException $e) { return 0; }
+    };
+    $previewGroups = []; $previewGross = 0; $previewProductDiscount = 0;
+    foreach ($order->items->groupBy('product_id')->values() as $groupIndex=>$groupItems) {
+        $productId = $groupItems->first()->product_id;
+        $group = $groups->get($productId, []);
+        $gross = (int)$groupItems->sum(fn($item)=>\App\Support\SalesDocumentTotals::lineSubtotal($item));
+        $amount = $previewAmount($gross,old('product_discounts.'.$groupIndex.'.type',$group['discount_type']??'amount'),old('product_discounts.'.$groupIndex.'.value',$group['discount_value']??0));
+        $previewGroups[$productId] = ['gross'=>$gross,'discount'=>$amount,'final'=>$gross-$amount];
+        $previewGross += $gross; $previewProductDiscount += $amount;
+    }
+    $previewInvoiceDiscount = $previewAmount($previewGross-$previewProductDiscount,$invoiceType,$invoiceValue);
+    $previewTotal = $previewGross-$previewProductDiscount-$previewInvoiceDiscount+(int)$order->shipping_price;
+    $previewPaid = collect(old('payments',[]))->sum(fn($payment)=>$previewAmount(PHP_INT_MAX,'amount',$payment['amount']??0));
+    $financeScript = fn($path)=>asset($path).'?v='.substr(hash_file('sha256',public_path($path)),0,12);
 @endphp
 @push('styles')<link rel="stylesheet" href="{{ asset('css/finance-review.css') }}?v=20261026b">@endpush
 @section('content')
@@ -42,7 +60,7 @@
                 @endphp
                 <section class="fr-card fr-product" data-product-discount-group data-product-id="{{ $productId }}" data-original-discount-type="{{ $group['discount_type'] ?? 'amount' }}" data-original-discount-value="{{ $group['discount_value'] ?? 0 }}">
                     <header><div><span class="fr-product-icon" aria-hidden="true">{{ $loop->iteration }}</span><h3>{{ $groupItems->first()->product?->name ?? '#'.$productId }}</h3></div></header>
-                    <div class="fr-product-totals"><span>جمع قبل از تخفیف <strong data-group-gross>—</strong></span><span>تخفیف این کالا <strong class="fr-discount" data-group-discount-amount>—</strong></span><span>بعد از تخفیف محصول <strong class="fr-success" data-group-final>—</strong></span></div>
+                    <div class="fr-product-totals"><span>جمع قبل از تخفیف <strong data-group-gross>{{ $rial($previewGroups[$productId]['gross']) }}</strong></span><span>تخفیف این کالا <strong class="fr-discount" data-group-discount-amount>{{ $rial($previewGroups[$productId]['discount']) }}</strong></span><span>بعد از تخفیف محصول <strong class="fr-success" data-group-final>{{ $rial($previewGroups[$productId]['final']) }}</strong></span></div>
                     <div class="fr-discount-editor"><label for="product-discount-{{ $productId }}">تخفیف روی مجموع این کالا<small>روی مجموع تعداد × قیمت واحد محاسبه می‌شود.</small></label><div class="fr-input-pair"><select class="form-select" aria-label="نوع تخفیف کالا {{ $loop->iteration }}" name="product_discounts[{{ $groupIndex }}][type]" data-product-discount-type><option value="amount" @selected($type==='amount')>مبلغ (ریال)</option><option value="percent" @selected($type==='percent')>درصد</option></select><input data-rial id="product-discount-{{ $productId }}" type="text" inputmode="decimal" autocomplete="off" class="form-control" data-finance-number data-product-discount-value name="product_discounts[{{ $groupIndex }}][value]" value="{{ $type==='percent' ? $value : $money($value) }}"></div><input type="hidden" name="product_discounts[{{ $groupIndex }}][product_id]" value="{{ $productId }}"></div>
                     @foreach($groupItems as $item)
                         @php($idx=$indices[$item->id])
@@ -58,9 +76,9 @@
             <section class="fr-card"><label for="edit_reason" class="fr-label">دلیل تغییر تخفیف <span class="fr-danger" id="financeReasonRequiredMark" hidden>*</span></label><textarea id="edit_reason" name="edit_reason" rows="2" class="form-control @error('edit_reason') is-invalid @enderror" minlength="3" maxlength="1000" placeholder="فقط در صورت تغییر تخفیف، دلیل را وارد کنید">{{ old('edit_reason') }}</textarea><small class="fr-unit" id="financeReasonHint">اگر تخفیف‌ها تغییر نکرده‌اند، می‌توانید مستقیم تأیید کنید.</small>@error('edit_reason')<div class="invalid-feedback">{{ $message }}</div>@enderror</section>
         </main><aside class="fr-summary fr-card" aria-label="جمع‌بندی فاکتور">
             <h2>جمع‌بندی مالی</h2><p class="fr-unit">تمام مبالغ به ریال</p>
-            <div class="fr-summary-row"><span>جمع قبل از تخفیف</span><strong data-summary-gross>—</strong></div><div class="fr-summary-row fr-discount"><span>تخفیف کالاها</span><strong data-summary-product-discount>—</strong></div>
-            <div class="fr-global-discount"><label for="invoice-discount-value" class="fr-label">تخفیف کلی فاکتور</label><div class="fr-input-pair"><select name="invoice_discount_type" class="form-select" data-invoice-discount-type data-original-invoice-type="{{ $invoiceDiscount['type'] ?? 'none' }}" aria-label="نوع تخفیف کلی"><option value="none" @selected($invoiceType==='none')>بدون تخفیف</option><option value="amount" @selected($invoiceType==='amount')>مبلغ (ریال)</option><option value="percent" @selected($invoiceType==='percent')>درصد</option></select><input data-rial id="invoice-discount-value" type="text" inputmode="decimal" autocomplete="off" data-finance-number name="invoice_discount_value" class="form-control" value="{{ $invoiceType==='percent' ? $invoiceValue : $money($invoiceValue) }}" data-invoice-discount-value data-original-invoice-value="{{ $invoiceDiscount['value'] ?? 0 }}"></div><small>پس از تخفیف کالاها: <b data-summary-invoice-discount>—</b></small></div>
-            <div class="fr-summary-row"><span>هزینه ارسال</span><strong data-summary-shipping data-value="{{ (int)$order->shipping_price }}">{{ $rial($order->shipping_price) }}</strong></div><div class="fr-summary-row fr-discount"><span>مجموع تخفیف</span><strong data-summary-total-discount>—</strong></div><div class="fr-grand"><span>مبلغ نهایی فاکتور</span><strong data-summary-grand-total>—</strong></div><div class="fr-summary-row"><span>پرداخت آماده ثبت</span><strong id="allTotalLabel">۰ ریال</strong></div><div class="fr-summary-row"><span>مانده این فاکتور</span><strong data-summary-remaining>—</strong></div>
+            <div class="fr-summary-row"><span>جمع قبل از تخفیف</span><strong data-summary-gross>{{ $rial($previewGross) }}</strong></div><div class="fr-summary-row fr-discount"><span>تخفیف کالاها</span><strong data-summary-product-discount>{{ $rial($previewProductDiscount) }}</strong></div>
+            <div class="fr-global-discount"><label for="invoice-discount-value" class="fr-label">تخفیف کلی فاکتور</label><div class="fr-input-pair"><select name="invoice_discount_type" class="form-select" data-invoice-discount-type data-original-invoice-type="{{ $invoiceDiscount['type'] ?? 'none' }}" aria-label="نوع تخفیف کلی"><option value="none" @selected($invoiceType==='none')>بدون تخفیف</option><option value="amount" @selected($invoiceType==='amount')>مبلغ (ریال)</option><option value="percent" @selected($invoiceType==='percent')>درصد</option></select><input data-rial id="invoice-discount-value" type="text" inputmode="decimal" autocomplete="off" data-finance-number name="invoice_discount_value" class="form-control" value="{{ $invoiceType==='percent' ? $invoiceValue : $money($invoiceValue) }}" data-invoice-discount-value data-original-invoice-value="{{ $invoiceDiscount['value'] ?? 0 }}"></div><small>پس از تخفیف کالاها: <b data-summary-invoice-discount>{{ $rial($previewInvoiceDiscount) }}</b></small></div>
+            <div class="fr-summary-row"><span>هزینه ارسال</span><strong data-summary-shipping data-value="{{ (int)$order->shipping_price }}">{{ $rial($order->shipping_price) }}</strong></div><div class="fr-summary-row fr-discount"><span>مجموع تخفیف</span><strong data-summary-total-discount>{{ $rial($previewProductDiscount+$previewInvoiceDiscount) }}</strong></div><div class="fr-grand"><span>مبلغ نهایی فاکتور</span><strong data-summary-grand-total>{{ $rial($previewTotal) }}</strong></div><div class="fr-summary-row"><span>پرداخت آماده ثبت</span><strong id="allTotalLabel">{{ $rial($previewPaid) }}</strong></div><div class="fr-summary-row"><span>مانده این فاکتور</span><strong data-summary-remaining>{{ $rial($previewTotal-$previewPaid) }}</strong></div>
             <div class="fr-actions"><button type="submit" class="btn btn-success" name="intent" value="save_and_finalize" formaction="{{ route('preinvoice.draft.finance.save-and-finalize',$order->uuid) }}" formmethod="POST" onclick="return confirm('تغییرات و پرداخت‌های آماده‌شده ثبت و فاکتور برای جمع‌آوری ارسال شود؟')">ذخیره و تأیید مالی ←</button><button type="submit" class="btn btn-outline-primary" name="intent" value="save">فقط ذخیره تغییرات</button></div><p class="fr-unit">تأیید مالی، سند را به صف جمع‌آوری انبار می‌فرستد.</p>
         </aside></div>
     </form>
@@ -70,8 +88,8 @@
 </div>
 @endsection
 @push('scripts')
-<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>
-<script src="{{ asset('js/finance-review.js') }}?v=20261027-finance-reason"></script>
-<script src="{{ asset('js/finance-review-payments.js') }}?v=20261026b"></script>
-<script src="{{ asset('js/finance-preinvoice-payload.js') }}?v=20261026b"></script>
+<script src="{{ $financeScript('js/sales-discount-math.js') }}"></script>
+<script src="{{ $financeScript('js/finance-review.js') }}"></script>
+<script src="{{ $financeScript('js/finance-review-payments.js') }}"></script>
+<script src="{{ $financeScript('js/finance-preinvoice-payload.js') }}"></script>
 @endpush
