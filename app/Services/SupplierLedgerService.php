@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Purchase;
+use App\Models\PurchaseReturn;
 use App\Models\Supplier;
 use App\Models\SupplierLedger;
 
@@ -40,6 +41,26 @@ class SupplierLedgerService
         );
 
         $this->syncCustomerCreditForAutoSupplierPurchase($purchase, $amount, $note);
+    }
+
+    public function syncPurchaseReturnDebit(PurchaseReturn $return): void
+    {
+        if (empty($return->supplier_id)) {
+            return;
+        }
+
+        SupplierLedger::query()->updateOrCreate(
+            [
+                'supplier_id' => (int) $return->supplier_id,
+                'reference_type' => PurchaseReturn::class,
+                'reference_id' => (int) $return->id,
+                'type' => 'debit',
+            ],
+            [
+                'amount' => max((int) $return->total_amount, 0),
+                'note' => 'بدهکاری تأمین‌کننده بابت برگشت از خرید شماره PR-'.$return->document_number,
+            ]
+        );
     }
 
     public function voidPurchaseCredit(Purchase $purchase): void

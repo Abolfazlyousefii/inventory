@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Purchase, PurchaseReturn};
+use App\Models\{Purchase, PurchaseReturn, SupplierLedger};
 use App\Services\PurchaseReturnService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB, Schema};
@@ -38,10 +38,10 @@ class PurchaseReturnTest extends TestCase
             $t->boolean('sales_enabled')->default(true);$t->id();$t->integer('product_id');$t->string('variant_name');$t->integer('stock')->default(0);$t->integer('reserved')->default(0);$t->timestamps();});
         Schema::create('warehouses', function(Blueprint $t){$t->id();$t->string('name');$t->string('type');$t->boolean('is_active')->default(true);$t->timestamps();});
         Schema::create('warehouse_stocks', function(Blueprint $t){$t->id();$t->integer('warehouse_id');$t->integer('product_id');$t->integer('product_variant_id')->nullable();$t->integer('quantity');$t->timestamps();});
-        Schema::create('purchases', function(Blueprint $t){$t->id();$t->integer('supplier_id');$t->integer('warehouse_id');$t->integer('user_id')->nullable();$t->integer('total_amount')->default(10000);$t->timestamp('purchased_at')->nullable();$t->timestamps();});
-        Schema::create('purchase_items', function(Blueprint $t){$t->id();$t->integer('purchase_id');$t->integer('product_id');$t->integer('product_variant_id')->nullable();$t->integer('quantity');$t->integer('buy_price');$t->string('product_name');$t->string('variant_name')->nullable();$t->string('product_code')->nullable();$t->timestamps();});
+        Schema::create('purchases', function(Blueprint $t){$t->id();$t->integer('supplier_id');$t->integer('warehouse_id');$t->integer('user_id')->nullable();$t->integer('subtotal_amount')->default(10000);$t->integer('total_discount')->default(0);$t->integer('total_amount')->default(10000);$t->timestamp('purchased_at')->nullable();$t->timestamps();});
+        Schema::create('purchase_items', function(Blueprint $t){$t->id();$t->integer('purchase_id');$t->integer('product_id');$t->integer('product_variant_id')->nullable();$t->integer('quantity');$t->integer('buy_price');$t->integer('line_subtotal')->default(0);$t->integer('discount_amount')->default(0);$t->integer('line_total')->default(0);$t->string('product_name');$t->string('variant_name')->nullable();$t->string('product_code')->nullable();$t->timestamps();});
         Schema::create('stock_movements', function(Blueprint $t){$t->id();foreach(['product_id','product_variant_id','warehouse_id','user_id','stock_before','stock_after','reference_id'] as $f)$t->integer($f)->nullable();foreach(['type','reason','transaction_type','reference','reference_type','note'] as $f)$t->string($f)->nullable();$t->integer('quantity');$t->timestamps();});
-        Schema::create('supplier_ledgers', function(Blueprint $t){$t->id();$t->integer('amount');});
+        Schema::create('supplier_ledgers', function(Blueprint $t){$t->id();$t->integer('supplier_id');$t->string('type');$t->integer('amount');$t->string('reference_type')->nullable();$t->integer('reference_id')->nullable();$t->string('note')->nullable();$t->timestamps();$t->unique(['supplier_id','reference_type','reference_id','type'],'supplier_ledger_reference_unique');});
         Schema::create('customer_ledgers', function(Blueprint $t){$t->id();$t->integer('amount');});
         Schema::create('activity_logs', function(Blueprint $t){$t->id();$t->integer('user_id')->nullable();$t->string('action');$t->string('subject_type');$t->integer('subject_id');$t->text('description');$t->json('properties');$t->timestamp('occurred_at');$t->timestamps();});
         $migration = require base_path('database/migrations/2026_10_11_160000_create_purchase_returns.php');
@@ -103,7 +103,8 @@ class PurchaseReturnTest extends TestCase
         $updated=$this->service()->update($legacy,$this->payload(3,['version'=>1]),1);
         $this->assertSame(3,(int)$updated->items()->first()->quantity);
         $this->assertSame(3,$this->quantity());
-        $this->assertDatabaseCount('supplier_ledgers',0);
+        $this->assertDatabaseCount('supplier_ledgers',1);
+        $this->assertDatabaseHas('supplier_ledgers',['supplier_id'=>1,'type'=>'debit','amount'=>3000,'reference_type'=>PurchaseReturn::class,'reference_id'=>$legacy->id]);
     }
 
     private function secondaryWarehouse(int $quantity=5, bool $active=true): void
@@ -122,7 +123,7 @@ class PurchaseReturnTest extends TestCase
         $this->assertSame(6,(int)DB::table('product_variants')->value('stock'));
         $this->assertSame(4,(int)DB::table('product_variants')->value('reserved'));
         $this->assertDatabaseHas('stock_movements',['warehouse_id'=>2,'type'=>'out','quantity'=>2]);
-        $this->assertDatabaseCount('supplier_ledgers',0);$this->assertDatabaseCount('customer_ledgers',0);
+        $this->assertDatabaseHas('supplier_ledgers',['supplier_id'=>1,'type'=>'debit','amount'=>2000,'reference_type'=>PurchaseReturn::class,'reference_id'=>$doc->id]);$this->assertDatabaseCount('customer_ledgers',0);
     }
 
     public function test_insufficient_selected_warehouse_does_not_borrow_central_stock(): void
@@ -223,15 +224,40 @@ class PurchaseReturnTest extends TestCase
         try { $call(); $this->fail('Expected validation failure'); } catch (ValidationException $e) { $this->assertNotEmpty($e->errors()); }
     }
 
-    public function test_registration_is_immediate_idempotent_and_financially_neutral(): void
+    public function test_registration_is_immediate_idempotent_and_creates_one_supplier_debit(): void
     {
         $data=$this->payload();$doc=$this->service()->create($data,1);
         $this->assertSame('00001',$doc->document_number);$this->assertSame(4,$this->quantity());
         $this->assertSame(2000,(int)$doc->total_amount);$this->assertSame(4,(int)DB::table('product_variants')->value('reserved'));
         $again=$this->service()->create($data,1);$this->assertSame($doc->id,$again->id);$this->assertSame(4,$this->quantity());
         $this->assertDatabaseCount('stock_movements',1);$this->assertDatabaseCount('purchase_return_revisions',1);
-        $this->assertDatabaseCount('supplier_ledgers',0);$this->assertDatabaseCount('customer_ledgers',0);
+        $this->assertDatabaseCount('supplier_ledgers',1);$this->assertDatabaseCount('customer_ledgers',0);
+        $this->assertDatabaseHas('supplier_ledgers',['supplier_id'=>1,'type'=>'debit','amount'=>2000,'reference_type'=>PurchaseReturn::class,'reference_id'=>$doc->id]);
         $this->assertDatabaseHas('stock_movements',['type'=>'out','reason'=>'purchase_return','quantity'=>2,'stock_before'=>6,'stock_after'=>4]);
+    }
+
+    public function test_return_amount_prorates_item_and_invoice_discounts_across_partial_returns(): void
+    {
+        DB::table('purchases')->where('id',1)->update([
+            'subtotal_amount'=>10000,
+            'total_discount'=>1500,
+            'total_amount'=>8500,
+        ]);
+        DB::table('purchase_items')->where('id',1)->update([
+            'line_subtotal'=>10000,
+            'discount_amount'=>500,
+            'line_total'=>9500,
+        ]);
+
+        $first=$this->service()->create($this->payload(4),1);
+        $this->assertSame(3400,(int)$first->total_amount);
+        $this->assertDatabaseHas('supplier_ledgers',['reference_type'=>PurchaseReturn::class,'reference_id'=>$first->id,'type'=>'debit','amount'=>3400]);
+
+        DB::table('warehouse_stocks')->where('warehouse_id',1)->update(['quantity'=>20]);
+        $second=$this->service()->create($this->payload(6),1);
+        $this->assertSame(5100,(int)$second->total_amount);
+        $this->assertSame(8500,(int)DB::table('purchase_returns')->whereNull('deleted_at')->sum('total_amount'));
+        $this->assertSame(8500,(int)SupplierLedger::query()->effectiveForBalance()->sum('amount'));
     }
 
     public function test_partial_returns_are_limited_by_both_purchase_and_free_stock(): void
@@ -243,6 +269,8 @@ class PurchaseReturnTest extends TestCase
         $second=$this->service()->create($this->payload(6),1);$this->assertSame('00002',$second->document_number);
         $this->invalid(fn()=> $this->service()->create($this->payload(1),1));
         $this->assertSame(24,$this->quantity());$this->assertDatabaseCount('purchase_returns',2);
+        $this->assertDatabaseCount('supplier_ledgers',2);
+        $this->assertSame(10000,(int)SupplierLedger::query()->effectiveForBalance()->sum('amount'));
     }
 
     public function test_edit_applies_only_difference_and_stale_requests_cannot_write(): void
@@ -252,11 +280,16 @@ class PurchaseReturnTest extends TestCase
         $this->invalid(fn()=> $this->service()->update($doc,$this->payload(3,['version'=>1]),1));
         $doc=$this->service()->update($doc,$this->payload(1,['version'=>2]),1);$this->assertSame(5,$this->quantity());
         $this->assertSame(1000,(int)$doc->total_amount);$this->assertDatabaseCount('stock_movements',3);
+        $this->assertDatabaseHas('supplier_ledgers',['supplier_id'=>1,'type'=>'debit','amount'=>1000,'reference_type'=>PurchaseReturn::class,'reference_id'=>$doc->id]);
         $this->service()->delete($doc,3,1,'اشتباه ثبت');$this->assertSame(6,$this->quantity());
         $this->assertNotNull($doc->fresh()->deleted_at);$this->assertDatabaseCount('purchase_return_revisions',4);
         $this->assertDatabaseCount('stock_movements',4);
+        $this->assertDatabaseCount('supplier_ledgers',1);
+        $this->assertSame(0,(int)SupplierLedger::query()->effectiveForBalance()->count());
         $this->invalid(fn()=> $this->service()->delete($doc,3,1,'دوباره'));$this->assertSame(6,$this->quantity());
         $next=$this->service()->create($this->payload(1),1);$this->assertSame('00002',$next->document_number);
+        $this->assertDatabaseCount('supplier_ledgers',2);
+        $this->assertSame(1,(int)SupplierLedger::query()->effectiveForBalance()->count());
     }
 
     public function test_foreign_supplier_row_duplicates_and_no_variant_aggregate_are_rejected(): void
@@ -333,6 +366,7 @@ class PurchaseReturnTest extends TestCase
         \App\Models\PurchaseReturnRevision::flushEventListeners();
         $this->assertSame(6,$this->quantity());$this->assertDatabaseCount('stock_movements',0);$this->assertDatabaseCount('purchase_returns',0);
         $doc=$this->service()->create($this->payload(),1);$this->assertSame('00001',$doc->document_number);
+        $this->assertDatabaseHas('supplier_ledgers',['supplier_id'=>1,'type'=>'debit','amount'=>2000,'reference_type'=>PurchaseReturn::class,'reference_id'=>$doc->id]);
         $this->invalid(fn()=> $this->service()->update($doc,$this->payload(1,['purchase_id'=>2,'supplier_id'=>2,'version'=>1]),1));
         $this->assertSame(4,$this->quantity());$this->assertSame(1,$doc->fresh()->version);
     }
