@@ -81,12 +81,17 @@ it('preserves administrator and ordinary finance writer access', function () {
         ->and(PageAccessCatalog::userCanRoute($writer, 'account-statements.payments.store'))->toBeTrue();
 });
 
-it('does not let a legacy named permission bypass the read-only constraint through gates', function () {
-    $user=statementReader();
-    $role=Role::findOrCreate('LegacyPaymentWriter','web');
-    $role->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('payments.create','web'));
+it('honors an explicitly assigned inherited permission while keeping read-only account-statement routes protected', function () {
+    $user = statementReader(false);
+    expect($user->can('payments.create'))->toBeFalse();
+
+    $role = Role::findOrCreate('LegacyPaymentWriter', 'web');
+    $role->givePermissionTo(Permission::findOrCreate('payments.create', 'web'));
     $user->assignRole($role);
-    expect($user->fresh()->can('payments.create'))->toBeFalse();
+
+    $user = $user->fresh();
+    expect($user->can('payments.create'))->toBeTrue()
+        ->and(PageAccessCatalog::userCanRoute($user, 'account-statements.payments.store'))->toBeFalse();
 });
 
 it('allows an explicit shipping exception without granting other warehouse pages', function () {

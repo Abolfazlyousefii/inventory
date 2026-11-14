@@ -111,7 +111,7 @@ if (!config('services.request_driven_site_stock', false)) {
     })->name('site-stock-hold-expiry')->everyFiveMinutes()->withoutOverlapping(10);
 }
 
-if (config('cny_pricing.enabled') && config('cny_pricing.schedule_enabled')) {
+if (config('cny_pricing.enabled') && config('cny_pricing.schedule_enabled') && !config('nobitex.enabled')) {
     Schedule::call(function (): void {
         // Shared hosting may disable proc_open; do not spawn a child PHP process.
         if (Artisan::call('cny:reprice') !== 0) {
@@ -121,15 +121,18 @@ if (config('cny_pricing.enabled') && config('cny_pricing.schedule_enabled')) {
       ->onFailure(fn () => Log::error('CNY_REPRICE_SCHEDULE_FAILED'));
 }
 
-// Free Navasan: maximum 3 scheduled calls/day, with a database-enforced
-// cap of 90 HTTP attempts / rolling 31 days. Disabled until unit/TLS checked.
-if (config('navasan.enabled') && config('navasan.schedule_enabled')) {
+// Three daily Tehran-local updates: fetch BOTH free public feeds, then reprice
+// only when the fresh rate import succeeds and repricing is explicitly enabled.
+if (config('nobitex.enabled') && config('nobitex.schedule_enabled')) {
     Schedule::call(function (): void {
-        // This fetch imports a quote only; it never changes catalog prices.
         if (Artisan::call('cny:fetch-rate') !== 0) {
-            throw new \RuntimeException('CNY fetch-rate command failed');
+            throw new \RuntimeException('CNY Nobitex proxy fetch failed; prices unchanged');
         }
-    })->name('cny-navasan-fetch')->cron('5 0,8,16 * * *')
+        if (config('cny_pricing.enabled') && config('cny_pricing.schedule_enabled')
+            && Artisan::call('cny:reprice') !== 0) {
+            throw new \RuntimeException('CNY scheduled repricing failed');
+        }
+    })->name('cny-nobitex-update')->cron('0 9,12,17 * * *')
       ->timezone('Asia/Tehran')->withoutOverlapping(20)
-      ->onFailure(fn () => Log::error('CNY_NAVASAN_FETCH_SCHEDULE_FAILED'));
+      ->onFailure(fn () => Log::error('CNY_NOBITEX_UPDATE_SCHEDULE_FAILED'));
 }

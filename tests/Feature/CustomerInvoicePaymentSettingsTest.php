@@ -38,7 +38,7 @@ class CustomerInvoicePaymentSettingsTest extends TestCase
     {
         $this->actingAs($this->administrator())
             ->get(route('admin.invoice-payment-settings.edit'))
-            ->assertOk()->assertSee('مشخصات واریز فاکتور');
+            ->assertOk()->assertSee('اطلاعات واریز فاکتور مشتری');
 
         $this->put(route('admin.invoice-payment-settings.update'), $this->details())
             ->assertRedirect(route('admin.invoice-payment-settings.edit'))

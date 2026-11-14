@@ -279,15 +279,15 @@ class CustomerManagementTest extends TestCase
         ]))->assertSessionHasErrors('phones.0.phone');
     }
 
-    public function test_customer_is_soft_deleted_and_hidden_from_normal_list(): void
+    public function test_customer_deletion_is_forbidden_and_preserves_records(): void
     {
         $customer = $this->createCustomer('مشتری حذف‌شدنی', '09121111111');
 
         $this->actingAs($this->admin)->delete("/customers/{$customer->id}")
-            ->assertRedirect('/customers');
+            ->assertForbidden();
 
-        $this->assertSoftDeleted($customer);
-        $this->actingAs($this->admin)->get('/customers')->assertDontSee('مشتری حذف‌شدنی');
+        $this->assertDatabaseHas('customers', ['id' => $customer->id, 'deleted_at' => null]);
+        $this->actingAs($this->admin)->get('/customers')->assertOk()->assertSee('مشتری حذف‌شدنی');
     }
 
     public function test_search_works_by_name_company_phone_and_city(): void
@@ -315,16 +315,21 @@ class CustomerManagementTest extends TestCase
             ->assertDontSee('مشتری غیرفعال تهران');
     }
 
-    public function test_dashboard_shows_real_active_customer_count_only_with_permission(): void
+    public function test_dashboard_customer_shortcut_follows_the_customers_page_permission(): void
     {
         $this->createCustomer('فعال', '09121111111');
         $this->createCustomer('غیرفعال', '09122222222', ['is_active' => false]);
 
-        $this->actingAs($this->admin)->get('/dashboard')->assertOk()->assertSee('مشتریان فعال')->assertSee('1');
+        $this->actingAs($this->admin)->get('/dashboard')
+            ->assertOk()
+            ->assertSee('data-workspace-route="customers.index"', false)
+            ->assertSee('اشخاص و طرف‌حساب‌ها');
 
         $user = User::factory()->create();
         $user->givePermissionTo('dashboard.view');
-        $this->actingAs($user)->get('/dashboard')->assertOk()->assertDontSee('مشتریان فعال');
+        $this->actingAs($user)->get('/dashboard')
+            ->assertOk()
+            ->assertDontSee('data-workspace-route="customers.index"', false);
     }
 
     private function payload(array $overrides = []): array

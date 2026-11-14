@@ -527,12 +527,21 @@ it('returns 403 for authenticated users without required roles and permissions',
         'phone' => '09120000001',
         'username' => 'route_test_user',
         'is_active' => true,
+        'can_access_erp' => true,
     ]);
 
     $failures = [];
 
     foreach ($routeCoverageRoutes() as $route) {
         if (! $routeCoverageNeedsAuthorization($route)) {
+            continue;
+        }
+
+        // Product export is intentionally granted to every active ERP account,
+        // even without an assigned role. It is not a missing-permission case.
+        // If that policy changes, these routes return to the 403 coverage below.
+        $mappedPermission = PermissionCatalog::routePermissions()[$route->getName() ?? ''] ?? null;
+        if ($mappedPermission === 'products.export' && $user->hasPermission('products.export')) {
             continue;
         }
 
@@ -614,6 +623,10 @@ it('executes every GET POST PUT PATCH and DELETE route without server errors', f
         config('database.connections.sqlite.database')
     )->toBe(':memory:');
 
+    // This old SQLite schema fixture intentionally omits bundle recipes.
+    // Supply the legacy test-only tables needed by current product lookups.
+    \Tests\Support\InventorySqliteTestSchema::forReservationProductLookup();
+
     $superAdminRole = Role::findOrCreate(
         'super_admin',
         'web'
@@ -635,6 +648,13 @@ it('executes every GET POST PUT PATCH and DELETE route without server errors', f
     $failures = [];
 
     foreach ($routeCoverageRoutes() as $route) {
+        // Livewire vendor assets and update calls require a registered
+        // component or signed client payload, not generic smoke inputs.
+        // The route structure checks above still cover their registration.
+        if (Str::startsWith(ltrim($route->uri(), '/'), 'livewire-')) {
+            continue;
+        }
+
         foreach ($routeCoverageMethods($route) as $method) {
             $label = $routeCoverageLabel($route, $method);
             $uri = $routeCoverageUri($route);
@@ -724,6 +744,8 @@ it('executes every GET POST PUT PATCH and DELETE route without server errors', f
                     $status >= 200
                     && $status < 300
                     && $status !== 204
+                    // The legacy public /test stub deliberately returns an empty 200.
+                    && ! ($route->uri() === 'test' && $route->getName() === null)
                     && ! ($response->baseResponse instanceof StreamedResponse)
                     && ! str_contains(
                         strtolower((string) $response->headers->get('Content-Disposition')),
@@ -828,4 +850,23 @@ it('executes every GET POST PUT PATCH and DELETE route without server errors', f
         "Functional route failures:\n"
         .implode("\n", $failures)
     );
+});
+
+it('keeps product export available to active ERP accounts without granting unrelated permissions', function (): void {
+    $user = User::factory()->create([
+        'is_active' => true,
+        'can_access_erp' => true,
+    ]);
+
+    expect($user->hasPermission('products.export'))->toBeTrue()
+        ->and($user->hasPermission('products.create'))->toBeFalse();
+
+    $this->actingAs($user)->get(route('admin.product-exports.index'))->assertOk();
+    $this->actingAs($user)->postJson(route('products.selected-export'), [])->assertUnprocessable();
+
+    $user->update(['can_access_erp' => false]);
+    expect($user->fresh()->hasPermission('products.export'))->toBeFalse();
+
+    $user->update(['can_access_erp' => true, 'is_active' => false]);
+    expect($user->fresh()->hasPermission('products.export'))->toBeFalse();
 });

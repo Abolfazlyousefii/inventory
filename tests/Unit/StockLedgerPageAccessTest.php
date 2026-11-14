@@ -27,6 +27,8 @@ class StockLedgerPageAccessTest extends TestCase
         if($permissions!==null){
             $user=\Mockery::mock(User::class)->makePartial();
             $user->shouldReceive('isSuperAdmin')->andReturn(false);
+            $user->shouldReceive('isAdministrator')->andReturn(false);
+            $user->shouldReceive('hasRole')->andReturn(false);
             $user->shouldReceive('hasPermission')->andReturnUsing(fn($key)=>in_array($key,$permissions,true));
         }
         $request->setUserResolver(fn()=>$user);

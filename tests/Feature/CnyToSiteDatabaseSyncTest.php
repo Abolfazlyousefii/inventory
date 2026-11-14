@@ -36,6 +36,8 @@ class CnyToSiteDatabaseSyncTest extends TestCase
             'cny_pricing.allow_sample' => true,
             'cny_pricing.production_mode' => false,
             'navasan.enabled' => false,
+            // This suite uses sample CNY fixtures, not live Nobitex quotes.
+            'nobitex.enabled' => false,
             'services.request_driven_site_stock' => false,
             'inventory.site_sellable_warehouse_ids' => [],
         ]);

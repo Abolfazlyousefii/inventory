@@ -5,7 +5,10 @@
 		$isEdit = isset($purchase) && $purchase;
 		$cnyEnabled = config('cny_pricing.enabled') || ($purchase->purchase_origin ?? '') === 'china';
         $cnyRate = ($purchase->purchase_origin ?? '') === 'china' ? optional(\App\Models\CnyExchangeRate::find($purchase->cny_rate_id))->toArray() : app(\App\Services\CnyPricingService::class)->previewRate();
-        if ($isEdit && $cnyRate) $cnyRate['sample'] = ($cnyRate['provider']??'') === 'sample';
+        if ($isEdit && $cnyRate) {
+            $cnyRate['sample'] = ($cnyRate['provider']??'') === 'sample';
+            $cnyRate['estimated'] = ($cnyRate['provider']??'') === 'nobitex_usdt_proxy';
+        }
 		$formAction = $isEdit ? route('purchases.update', $purchase) : route('purchases.store');
 		$initialItems = old('items');
 		$purchaseItemsById = $isEdit ? $purchase->items->keyBy('id') : collect();
@@ -263,6 +266,7 @@ $productsPayload = $products->map(function ($p) {
                                     @if($cnyRate)
                                         هر یوان: <strong>{{ number_format(($cnyRate['rate_rial']??0)/10) }} تومان</strong>
                                         @if($cnyRate['sample']??false)<span class="cny-sample-badge">نمونه</span>@endif
+                                        @if($cnyRate['estimated']??false)<span class="cny-sample-badge" title="برآورد با نرخ بازار تتر نوبیتکس و نسبت تأییدشده دلار به یوان؛ نرخ مستقیم یوان نیست">برآوردی</span>@endif
                                     @else <span class="text-warning">نرخ معتبر در دسترس نیست</span> @endif
                                 </small>
                                 @endif
@@ -953,6 +957,10 @@ $productsPayload = $products->map(function ($p) {
                     if (!cnyRate) throw Error('نرخ معتبر در دسترس نیست؛ نرخ را به‌روز کنید.');
                     const quote = window.AriyaCny.quote(input.value, Number(cnyRate.rate_rial));
                     if (!IS_EDIT_PURCHASE) {
+                        // Match PHP's integer-safe ceil-to-1000-toman sale policy.
+                        const numerator = BigInt(quote.units) * BigInt(cnyRate.rate_rial) * 102n;
+                        const denominator = 10000n * 70n * 10000n;
+                        quote.sale = Number(((numerator + denominator - 1n) / denominator) * 10000n);
                         card.querySelector('[data-product-buy]').value=formatNumericInput(quote.buy);
                         card.querySelector('[data-product-sell]').value=formatNumericInput(quote.sale);
                         card.querySelectorAll('[data-buy]').forEach(el=>el.value=formatNumericInput(quote.buy));

@@ -15,6 +15,12 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+// Synthetic cleanup fixtures must not create pending site-stock sync records.
+// Such records are real references and production cleanup must refuse deletion.
+beforeEach(function (): void {
+    config()->set('services.request_driven_site_stock', false);
+});
+
 function phaseFiveCleanupFixture(bool $proven = true): array
 {
     $root = Category::query()->firstOrCreate(['name' => 'برقیجات'], ['code' => uniqid('C')]);
@@ -238,7 +244,7 @@ it('preserves every nondeleted warehouse row and never nets nonzero rows to safe
         'is_active' => true,
         'sales_enabled' => true,
     ]);
-    $secondWarehouse = Warehouse::query()->create(['name' => 'Phase 5 secondary', 'type' => 'branch', 'is_active' => true]);
+    $secondWarehouse = Warehouse::query()->create(['name' => 'Phase 5 secondary', 'type' => 'return', 'is_active' => true]);
     WarehouseStock::query()->create(['warehouse_id' => WarehouseStockService::centralWarehouseId(), 'product_id' => $product->id, 'product_variant_id' => $other->id, 'quantity' => 5]);
     WarehouseStock::query()->create(['warehouse_id' => $secondWarehouse->id, 'product_id' => $product->id, 'product_variant_id' => $other->id, 'quantity' => -5]);
     $preservedBefore = DB::table('warehouse_stocks')->where('product_variant_id', '<>', $synthetic->id)->orderBy('id')->get()->toJson();

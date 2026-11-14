@@ -6,10 +6,13 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Services\SalesPrintDocumentService;
 use Illuminate\Support\Collection;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class CustomerInvoicePrintBalanceTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_customer_invoice_shows_ledger_balance_separate_from_this_invoices_remaining(): void
     {
         $invoice = $this->invoiceWithCustomer(150_000, 50_000, 20_000);

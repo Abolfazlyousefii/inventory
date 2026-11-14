@@ -16,7 +16,7 @@ class ReturnFromSalePricingUiTest extends TestCase
         $this->assertStringContainsString("sazehPriceField(it,i,'mobile-price')", $view);
         $this->assertStringContainsString('inputmode="numeric"', $view);
         $this->assertStringContainsString('document.querySelectorAll(`.price[data-i="${i}"]`)', $view);
-        $this->assertStringContainsString('قیمت فروش فعلی نرم‌افزار', $view);
+        $this->assertStringContainsString('قیمت فروش کالا: <strong>', $view);
     }
 
     public function test_internal_price_is_rendered_as_read_only_historical_details(): void

@@ -6,7 +6,7 @@ use InvalidArgumentException;
 
 final class CnyPriceCalculator
 {
-    public const POLICY = 'margin30-buffer2-round1000-v1';
+    public const POLICY = 'margin30-buffer2-ceil1000-v2';
 
     public function units(string $amount): int
     {
@@ -31,12 +31,19 @@ final class CnyPriceCalculator
         $saleMicro=$this->roundedRatio($units,10200,70);
         return ['buy_cny_units'=>$units,'buy_cny'=>$this->amount($units),'sale_cny'=>intdiv($saleMicro,1000000).'.'.str_pad((string)($saleMicro%1000000),6,'0',STR_PAD_LEFT),
             'buy_rial'=>$this->roundedRatio($base,1,10000),
-            'sell_rial'=>$this->roundedRatio($base,102,10000*70*10000)*10000,'policy'=>self::POLICY];
+            'sell_rial'=>$this->ceilingRatio($base,102,10000*70*10000)*10000,'policy'=>self::POLICY];
     }
 
     private function roundedRatio(int $number,int $multiplier,int $divisor): int
     {
         // Split before multiplication so supported inputs never overflow or use floating point.
         return intdiv($number,$divisor)*$multiplier+intdiv(($number%$divisor)*$multiplier+intdiv($divisor,2),$divisor);
+    }
+
+    private function ceilingRatio(int $number,int $multiplier,int $divisor): int
+    {
+        // ceil(number * multiplier / divisor) without floating point/overflow.
+        return intdiv($number,$divisor)*$multiplier
+            +intdiv(($number%$divisor)*$multiplier+$divisor-1,$divisor);
     }
 }

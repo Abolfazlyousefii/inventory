@@ -19,16 +19,20 @@ final class CnyPricingService
     public function currentRate(?int $expectedId=null): CnyExchangeRate
     {
         if(!config('cny_pricing.enabled') || !Schema::hasTable('cny_exchange_rates'))$this->fail('قیمت‌گذاری یوانی فعال نیست.');
-        $rate=CnyExchangeRate::orderByDesc('quoted_at')->orderByDesc('id')->first();
+        $rates=CnyExchangeRate::query();
+        // Never substitute an old Navasan/sample quote when Nobitex mode is on.
+        if(config('nobitex.enabled'))$rates->where('provider','nobitex_usdt_proxy')->where('symbol','cny');
+        $rate=$rates->orderByDesc('quoted_at')->orderByDesc('id')->first();
         if(!$rate || $rate->rate_rial<1 || $rate->rate_rial>100000000 || $rate->quoted_at->lt(now()->subMinutes(config('cny_pricing.max_rate_age_minutes',30))) || $rate->quoted_at->gt(now()->addMinute()))$this->fail('نرخ یوان موجود نیست یا قدیمی/نامعتبر است؛ ابتدا نرخ را به‌روز کنید.');
-        if(!in_array($rate->provider,['sample','navasan'],true) || ($rate->provider==='sample' && (!config('cny_pricing.allow_sample') || config('cny_pricing.production_mode') || !app()->environment(['local','testing']) || config('navasan.enabled'))))$this->fail('نرخ نمونه برای این محیط مجاز نیست.');
+        if(!in_array($rate->provider,['sample','navasan','nobitex_usdt_proxy'],true) || ($rate->provider==='sample' && (!config('cny_pricing.allow_sample') || config('cny_pricing.production_mode') || !app()->environment(['local','testing']) || config('navasan.enabled') || config('nobitex.enabled'))))$this->fail('نرخ نمونه برای این محیط مجاز نیست.');
+        if($rate->provider==='nobitex_usdt_proxy' && !config('nobitex.enabled'))$this->fail('منبع نرخ نوبیتکس غیرفعال است.');
         if($expectedId!==null && $expectedId!==$rate->id)$this->fail('نرخ یوان پس از بازشدن فرم تغییر کرده است؛ صفحه را تازه کنید و قیمت را دوباره تأیید کنید.');
         return $rate;
     }
 
     public function previewRate(): ?array
     {
-        try{$rate=$this->currentRate();return ['id'=>$rate->id,'rate_rial'=>$rate->rate_rial,'quoted_at'=>$rate->quoted_at->toIso8601String(),'sample'=>$rate->provider==='sample'];}
+        try{$rate=$this->currentRate();return ['id'=>$rate->id,'rate_rial'=>$rate->rate_rial,'quoted_at'=>$rate->quoted_at->toIso8601String(),'sample'=>$rate->provider==='sample','estimated'=>$rate->provider==='nobitex_usdt_proxy'];}
         catch(ValidationException){return null;}
     }
 
@@ -100,13 +104,13 @@ final class CnyPricingService
                 $product=Product::whereKey($policy->product_id)->lockForUpdate()->first();
                 if(!$product)return 0;
                 $locked=ProductCnyPricing::whereKey($policy->id)->lockForUpdate()->firstOrFail();
-                if(!$locked->enabled || $locked->policy!==CnyPriceCalculator::POLICY || (int)$locked->applied_rate_id===$rate->id)return 0;
+                if(!$locked->enabled || !in_array($locked->policy,[CnyPriceCalculator::POLICY,'margin30-buffer2-round1000-v1'],true) || (int)$locked->applied_rate_id===$rate->id)return 0;
                 $previous=CnyExchangeRate::findOrFail($locked->applied_rate_id);
                 if($previous->quoted_at->gt($rate->quoted_at) || abs($rate->rate_rial-$previous->rate_rial)<10000)return 0;
                 // Do not re-apply a stale worker's quote after another worker received a newer quote.
                 $this->currentRate($rate->id);
                 $this->writePrice($product,$rate,$locked->buy_cny_units,'rate',$locked->approved_by);
-                $locked->update(['applied_rate_id'=>$rate->id]);return 1;
+                $locked->update(['applied_rate_id'=>$rate->id,'policy'=>CnyPriceCalculator::POLICY]);return 1;
             },3);
         });
         return $changed;

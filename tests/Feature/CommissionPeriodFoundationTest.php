@@ -43,7 +43,7 @@ it('repairs only an empty invalid active period and preserves paid history', fun
         'review_started_at' => now()->subMonth(), 'closed_at' => now()->subMonth(), 'paid_at' => now()->subMonth(),
     ]);
 
-    $migration = require database_path('migrations/2026_08_14_000008_reopen_invalid_empty_active_commission_periods.php');
+    $migration = require database_path('retired-migrations/seller-commission/2026_08_14_000008_reopen_invalid_empty_active_commission_periods.php');
     $migration->up();
 
     expect($active->fresh()->status)->toBe(CommissionPeriod::STATUS_OPEN)

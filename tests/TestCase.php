@@ -23,6 +23,8 @@ abstract class TestCase extends BaseTestCase
         // Historical schema was removed from production migrations in e2cbf9f6.
         // Load the recovered baseline only behind the in-memory database guard.
         $app->make('migrator')->path(base_path('tests/Support/LegacyMigrations'));
+        // Restore archived seller/commission schema only for the guarded in-memory test database.
+        $app->make('migrator')->path(base_path('database/retired-migrations/seller-commission'));
 
         return $app;
     }

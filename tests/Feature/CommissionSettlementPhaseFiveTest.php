@@ -345,10 +345,17 @@ it('reports pending correction and adjustment blockers explicitly', function () 
         ->and(collect($blockers)->contains(fn ($value) => str_contains($value, 'تعدیل pending')))->toBeTrue();
 });
 
-it('enforces workflow permissions seller isolation and settlement print contract', function () {
+it('keeps retired settlement routes closed without removing role permissions or settlement history', function () {
     $period = p5Period();
-    $this->actingAs(p5PageUser())->post(route('commercial.commissions.periods.review', $period))->assertForbidden();
-    $this->actingAs(p5PageUser('commissions.close_periods'))->post(route('commercial.commissions.periods.review', $period))->assertRedirect();
+    $viewer = p5PageUser();
+    $closer = p5PageUser('commissions.close_periods');
+
+    // Role grants remain assignable, but the retired workflow cannot be reopened.
+    expect($viewer->hasPermission('commissions.close_periods'))->toBeFalse()
+        ->and($closer->hasPermission('commissions.close_periods'))->toBeTrue();
+    $this->actingAs($viewer)->post(route('commercial.commissions.periods.review', $period))->assertStatus(410);
+    $this->actingAs($closer)->post(route('commercial.commissions.periods.review', $period))->assertStatus(410);
+    expect($period->fresh()->status)->toBe('open');
 
     $sellerA = p5PageUser();
     $sellerB = p5PageUser();
@@ -361,7 +368,14 @@ it('enforces workflow permissions seller isolation and settlement print contract
         'seller_correction_snapshot' => 0, 'manual_adjustment_snapshot' => 0, 'net_payable' => 500,
         'paid_amount' => 0, 'remaining_amount' => 500, 'status' => 'unpaid', 'source_fingerprint' => hash('sha256', 'print'), 'settled_at' => now()]);
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
-    $this->actingAs($sellerA)->get(route('commercial.commissions.settlements.print', $settlement))->assertOk()
-        ->assertSee('SET-COM-000500')->assertSee('تسویه پورسانت فروشنده')->assertSee('مانده');
-    $this->actingAs($sellerB)->get(route('commercial.commissions.settlements.show', $settlement))->assertForbidden();
+    $this->actingAs($sellerA)->get(route('commercial.commissions.settlements.print', $settlement))
+        ->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($sellerB)->get(route('commercial.commissions.settlements.show', $settlement))
+        ->assertRedirect(route('finance.seller-sales.index'));
+
+    // Historical settlement and document snapshots remain intact behind the retired routes.
+    expect($settlement->fresh()->settlement_number)->toBe('SET-COM-000500')
+        ->and((int) $settlement->fresh()->net_payable)->toBe(500)
+        ->and((int) $settlement->fresh()->remaining_amount)->toBe(500)
+        ->and($document->fresh()->status)->toBe('finalized');
 });

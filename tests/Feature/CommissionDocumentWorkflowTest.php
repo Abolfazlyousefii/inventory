@@ -170,7 +170,7 @@ it('detects changed approved ledger and refreshes it to pending while preserving
         ->and($rejected->fresh()->total_commission_snapshot)->toBe($oldRejected);
 });
 
-it('calculates approved totals only and protects manager reviewer and print endpoints', function () {
+it('calculates approved totals and keeps retired commission document endpoints closed', function () {
     $seller = phaseThreeSeller();
     $actor = phaseThreeSeller('Actor');
     $period = phaseThreePeriod();
@@ -189,12 +189,26 @@ it('calculates approved totals only and protects manager reviewer and print endp
     $manager = phaseThreeDocumentUser('commissions.manage_documents');
     $reviewer = phaseThreeDocumentUser('commissions.review_documents');
     $printer = phaseThreeDocumentUser('commissions.print_documents');
+    // Guests and users without the page permission are rejected before the retirement middleware.
     $this->get(route('commercial.commissions.documents.show', $document))->assertRedirect(route('login'));
     $this->actingAs(User::factory()->create())->get(route('commercial.commissions.documents.show', $document))->assertForbidden();
-    $this->actingAs($viewer)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertForbidden();
-    $this->actingAs($manager)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertRedirect();
-    $this->actingAs($manager)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertForbidden();
-    $this->actingAs($reviewer)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertRedirect();
-    $this->actingAs($viewer)->get(route('commercial.commissions.documents.print', $document))->assertForbidden();
-    $this->actingAs($printer)->get(route('commercial.commissions.documents.print', $document))->assertOk()->assertSee($document->document_number)->assertSee('پرداخت نهایی ثبت نشده است');
+
+    // The legacy workflow is retired. Assigned action permissions must not reopen its write routes.
+    $this->actingAs($viewer)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertStatus(410);
+    $this->actingAs($manager)->post(route('commercial.commissions.documents.refresh-candidates', $document))->assertStatus(410);
+    $this->actingAs($manager)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertStatus(410);
+    $this->actingAs($reviewer)->post(route('commercial.commissions.documents.items.approve', [$document, $items[1]]))->assertStatus(410);
+
+    // Legacy read routes redirect to the supported finance workflow instead of rendering old pages.
+    $this->actingAs($viewer)->get(route('commercial.commissions.documents.print', $document))
+        ->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($printer)->get(route('commercial.commissions.documents.print', $document))
+        ->assertRedirect(route('finance.seller-sales.index'));
+
+    // Blocking web mutations must not alter approved/rejected claim history or historical totals.
+    $totalsAfterBlockedRequests = app(CommissionDocumentService::class)->totals($document->fresh());
+    expect($items[0]->fresh()->status)->toBe('approved')
+        ->and($items[1]->fresh()->status)->toBe('rejected')
+        ->and($totalsAfterBlockedRequests['approved_total_commission'])->toBe(200_000)
+        ->and($totalsAfterBlockedRequests['rejected_commission'])->toBe(200_000);
 });

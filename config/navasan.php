@@ -2,9 +2,9 @@
 
 return [
     // Nothing is fetched until an operator explicitly activates this configuration.
-    'enabled' => env('NAVASAN_ENABLED', true),
+    'enabled' => env('NAVASAN_ENABLED', false),
     'schedule_enabled' => env('NAVASAN_FETCH_SCHEDULE_ENABLED', false),
-    'api_key' => env('NAVASAN_API_KEY', 'freekkxEQU1aXweTEDPJ7Iq3khSPVUus'),
+    'api_key' => env('NAVASAN_API_KEY'),
     'url' => env('NAVASAN_API_URL', 'https://api.navasan.tech/latest/'),
     'symbol' => 'cny',
     // Fail closed until a real keyed response proves the provider's unit.

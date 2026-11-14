@@ -15,6 +15,12 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+// Synthetic cleanup fixtures must not create pending site-stock sync records.
+// Such records are real references and production cleanup must refuse deletion.
+beforeEach(function (): void {
+    config()->set('services.request_driven_site_stock', false);
+});
+
 function phaseFiveCleanupCommandFixture(bool $proven): ProductVariant
 {
     $root = Category::query()->firstOrCreate(['name' => 'برقیجات'], ['code' => uniqid('CC')]);

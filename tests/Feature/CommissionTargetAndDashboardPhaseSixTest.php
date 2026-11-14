@@ -206,7 +206,7 @@ it('resolves and auto creates the same current period idempotently', function ()
         ->and(DB::table('commission_settings')->count())->toBe(1);
 });
 
-it('keeps seller dashboard commission data isolated and exposes team data only to an authorized manager', function () {
+it('keeps retired commission widgets off dashboards while scoped summaries preserve seller isolation and team totals', function () {
     Carbon::setTestNow('2026-08-15 12:00:00');
     $period = phaseSixPeriod();
     $actor = User::factory()->create();
@@ -220,19 +220,33 @@ it('keeps seller dashboard commission data isolated and exposes team data only t
     phaseSixLedger($period, $sellerB, 990_000_000);
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
 
+    // The workspace dashboard intentionally does not render the retired commission widget.
     $this->actingAs($sellerA)->get(route('dashboard'))->assertOk()
-        ->assertSee('پورسانت دوره جاری')
-        ->assertSee('10,000,000 تومان')
+        ->assertDontSee('پورسانت دوره جاری')
+        ->assertDontSee('10,000,000 تومان')
         ->assertDontSee('فروشنده محرمانه ب')
         ->assertDontSee('99,000,000 تومان');
 
     $manager = phaseSixUserWithPermissions('phase-six-manager', ['dashboard.view', 'commissions.view_seller_details']);
     $this->actingAs($manager)->get(route('dashboard'))->assertOk()
-        ->assertSee('پورسانت دوره جاری')
-        ->assertSee('109,000,000 تومان');
+        ->assertDontSee('پورسانت دوره جاری')
+        ->assertDontSee('109,000,000 تومان');
+
+    // Retiring the UI must not remove role inheritance or historical calculation services.
+    expect($sellerA->can('commissions.view_seller_details'))->toBeFalse()
+        ->and($manager->can('commissions.view_seller_details'))->toBeTrue();
+
+    $scoped = app(CommissionDashboardService::class)->build($period, $sellerA->id);
+    $team = app(CommissionDashboardService::class)->build($period);
+    expect($scoped['seller_rows'])->toHaveCount(1)
+        ->and($scoped['seller_summary']['seller_id'])->toBe($sellerA->id)
+        ->and($scoped['seller_summary']['calculated_commission'])->toBe(100_000_000)
+        ->and($scoped['seller_summary']['target_amount'])->toBe(200_000_000)
+        ->and($team['team_summary']['total_calculated_commission'])->toBe(1_090_000_000)
+        ->and($team['team_summary']['total_target'])->toBe(1_190_000_000);
 });
 
-it('protects target mutations with the target management permission', function () {
+it('keeps retired target writes closed without revoking assigned management permissions', function () {
     $period = phaseSixPeriod();
     $seller = phaseSixSeller('فروشنده مجوز');
     $viewer = phaseSixUserWithPermissions('phase-six-target-viewer', ['page.commercial.commissions']);
@@ -240,16 +254,19 @@ it('protects target mutations with the target management permission', function (
     $payload = ['target_amount' => '20,000,000'];
     CommissionSetting::current()->update(['targets_enabled' => true]);
 
-    $this->actingAs($viewer)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertForbidden();
-    $this->actingAs($manager)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertRedirect();
-    expect(CommissionTarget::query()->where('seller_id', $seller->id)->value('target_amount'))->toBe(200_000_000);
+    expect($viewer->can('commissions.manage_targets'))->toBeFalse()
+        ->and($manager->can('commissions.manage_targets'))->toBeTrue();
+
+    $this->actingAs($viewer)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertStatus(410);
+    $this->actingAs($manager)->put(route('commercial.commissions.targets.update', [$period, $seller]), $payload)->assertStatus(410);
     $this->actingAs($manager)->get(route('commercial.commissions.index', ['period' => $period->id]))
-        ->assertOk()
-        ->assertSee('commissionTargetForm'.$seller->id, false)
-        ->assertSee('20,000,000');
+        ->assertRedirect(route('finance.seller-sales.index'));
+
+    expect(CommissionTarget::query()->where('seller_id', $seller->id)->exists())->toBeFalse()
+        ->and(CommissionSetting::current()->targets_enabled)->toBeTrue();
 });
 
-it('prevents a seller from viewing another seller commission document', function () {
+it('keeps retired seller document pages inaccessible while preserving both historical documents', function () {
     $period = phaseSixPeriod();
     $sellerA = phaseSixUserWithPermissions('phase-six-document-seller-a', ['page.commercial.commissions'], [
         'name' => 'فروشنده سند الف', 'is_seller' => true, 'is_active' => true, 'can_access_erp' => true,
@@ -265,8 +282,16 @@ it('prevents a seller from viewing another seller commission document', function
     ]);
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
 
-    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $ownDocument))->assertOk();
-    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $otherDocument))->assertForbidden();
+    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $ownDocument))
+        ->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($sellerA)->get(route('commercial.commissions.documents.show', $otherDocument))
+        ->assertRedirect(route('finance.seller-sales.index'));
+
+    expect(CommissionDocument::query()->count())->toBe(2)
+        ->and($ownDocument->fresh()->seller_id)->toBe($sellerA->id)
+        ->and($otherDocument->fresh()->seller_id)->toBe($sellerB->id)
+        ->and($ownDocument->fresh()->status)->toBe(CommissionDocument::STATUS_DRAFT)
+        ->and($otherDocument->fresh()->status)->toBe(CommissionDocument::STATUS_DRAFT);
 });
 
 it('surfaces dirty periods in dashboard summaries', function () {
@@ -293,11 +318,11 @@ it('keeps commission dashboard queries bounded as ledger rows grow', function ()
         ->and($queries)->toBeLessThanOrEqual(10);
 });
 
-it('renders real rate names distinct zero and missing states campaign terminology and document empty state', function () {
+it('retains zero and missing commission rates while keeping the retired rates page closed', function () {
     $period = phaseSixPeriod();
     $actor = User::factory()->create();
     $zeroCategory = Category::query()->create(['name' => 'دسته بدون پورسانت']);
-    Category::query()->create(['name' => 'دسته فاقد نرخ']);
+    $missingCategory = Category::query()->create(['name' => 'دسته فاقد نرخ']);
     CommissionRateRevision::query()->create([
         'target_type' => 'category', 'target_id' => $zeroCategory->id,
         'target_key' => 'category:'.$zeroCategory->id, 'active_marker' => 1,
@@ -307,12 +332,11 @@ it('renders real rate names distinct zero and missing states campaign terminolog
     $viewer = phaseSixUserWithPermissions('phase-six-ui-viewer', ['page.commercial.commissions']);
 
     $this->actingAs($viewer)->get(route('commercial.commissions.index', ['period' => $period->id]))
-        ->assertOk()
-        ->assertSee('دسته بدون پورسانت')
-        ->assertSee('دسته فاقد نرخ')
-        ->assertSee('بدون پورسانت')
-        ->assertSee('فاقد نرخ')
-        ->assertSee('اقلام کمپین')
-        ->assertDontSee('هدف کمپین')
-        ->assertSee('هنوز سند پورسانتی برای این دوره ثبت نشده است.');
+        ->assertRedirect(route('finance.seller-sales.index'));
+
+    expect((float) CommissionRateRevision::query()->where('target_type', 'category')
+        ->where('target_id', $zeroCategory->id)->value('percentage'))->toBe(0.0)
+        ->and(CommissionRateRevision::query()->where('target_type', 'category')
+            ->where('target_id', $missingCategory->id)->exists())->toBeFalse()
+        ->and(CommissionDocument::query()->where('commission_period_id', $period->id)->count())->toBe(0);
 });

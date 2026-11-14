@@ -75,7 +75,7 @@ it('uses fail safe pilot feature defaults', function () {
         ->and($settings->targets_enabled)->toBeFalse();
 });
 
-it('does not render or calculate seller commission while visibility is disabled', function () {
+it('keeps retired seller commission off the dashboard even when pilot visibility is enabled', function () {
     pilotHardeningPeriod();
     $seller = pilotHardeningUser('pilot-hidden-seller', ['dashboard.view', 'page.commercial.commissions'], [
         'name' => 'فروشنده Pilot', 'is_seller' => true, 'is_active' => true, 'can_access_erp' => true,
@@ -87,14 +87,22 @@ it('does not render or calculate seller commission while visibility is disabled'
 
     $this->actingAs($seller)->get(route('dashboard'))->assertOk()->assertDontSee('seller-commission-widget', false);
     expect(collect($queries)->contains(fn (string $sql) => str_contains($sql, 'commission_periods') || str_contains($sql, 'commission_ledger_entries')))->toBeFalse();
-    $this->actingAs($seller)->get(route('commercial.commissions.index'))->assertForbidden();
+    $this->actingAs($seller)->get(route('commercial.commissions.index'))
+        ->assertRedirect(route('finance.seller-sales.index'));
 
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
-    $this->actingAs($seller)->get(route('dashboard'))->assertOk()->assertSee('پورسانت دوره جاری');
-    $this->actingAs($seller)->get(route('commercial.commissions.index'))->assertOk();
+    $queries = [];
+    $this->actingAs($seller)->get(route('dashboard'))->assertOk()
+        ->assertDontSee('seller-commission-widget', false)
+        ->assertDontSee('پورسانت دوره جاری');
+    expect(collect($queries)->contains(fn (string $sql) => str_contains($sql, 'commission_periods') || str_contains($sql, 'commission_ledger_entries')))->toBeFalse()
+        ->and(CommissionSetting::current()->seller_visibility_enabled)->toBeTrue()
+        ->and($seller->can('page.commercial.commissions'))->toBeTrue();
+    $this->actingAs($seller)->get(route('commercial.commissions.index'))
+        ->assertRedirect(route('finance.seller-sales.index'));
 });
 
-it('keeps target records but hides target period ui until explicitly enabled', function () {
+it('keeps commission target records while the retired target UI remains unavailable', function () {
     $period = pilotHardeningPeriod();
     $seller = User::factory()->create(['is_seller' => true, 'is_active' => true, 'can_access_erp' => true]);
     CommissionTarget::query()->create([
@@ -104,15 +112,17 @@ it('keeps target records but hides target period ui until explicitly enabled', f
     $manager = pilotHardeningUser('pilot-target-manager', ['page.commercial.commissions', 'commissions.manage_targets']);
 
     $this->actingAs($manager)->get(route('commercial.commissions.index', ['period' => $period->id]))
-        ->assertOk()->assertDontSee('targetManagementModal', false)->assertDontSee('commissionTargetForm'.$seller->id, false);
+        ->assertRedirect(route('finance.seller-sales.index'));
     expect(CommissionTarget::query()->count())->toBe(1);
 
     CommissionSetting::current()->update(['targets_enabled' => true]);
     $this->actingAs($manager)->get(route('commercial.commissions.index', ['period' => $period->id]))
-        ->assertOk()->assertSee('targetManagementModal', false)->assertSee('commissionTargetForm'.$seller->id, false);
+        ->assertRedirect(route('finance.seller-sales.index'));
+    expect(CommissionTarget::query()->count())->toBe(1)
+        ->and(CommissionSetting::current()->targets_enabled)->toBeTrue();
 });
 
-it('protects seller document and settlement urls while keeping pilot payment available to managers', function () {
+it('keeps retired seller document and settlement pages closed regardless of pilot visibility', function () {
     $period = pilotHardeningPeriod();
     $period->update(['status' => CommissionPeriod::STATUS_CLOSED]);
     $seller = pilotHardeningUser('pilot-direct-seller', ['page.commercial.commissions'], [
@@ -132,16 +142,25 @@ it('protects seller document and settlement urls while keeping pilot payment ava
         'source_fingerprint' => hash('sha256', 'pilot-settlement'), 'settled_at' => now(), 'created_by' => $seller->id,
     ]);
 
-    $this->actingAs($seller)->get(route('commercial.commissions.documents.show', $document))->assertForbidden();
-    $this->actingAs($seller)->get(route('commercial.commissions.settlements.show', $settlement))->assertForbidden();
+    $this->actingAs($seller)->get(route('commercial.commissions.documents.show', $document))
+        ->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($seller)->get(route('commercial.commissions.settlements.show', $settlement))
+        ->assertRedirect(route('finance.seller-sales.index'));
 
     CommissionSetting::current()->update(['seller_visibility_enabled' => true]);
-    $this->actingAs($seller)->get(route('commercial.commissions.documents.show', $document))->assertOk();
-    $this->actingAs($seller)->get(route('commercial.commissions.settlements.show', $settlement))->assertOk();
+    $this->actingAs($seller)->get(route('commercial.commissions.documents.show', $document))
+        ->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($seller)->get(route('commercial.commissions.settlements.show', $settlement))
+        ->assertRedirect(route('finance.seller-sales.index'));
 
     $manager = pilotHardeningUser('pilot-payment-manager', ['page.commercial.commissions', 'commissions.view_settlements', 'commissions.record_payments']);
+    $this->assertTrue($manager->can('commissions.record_payments'));
     $this->actingAs($manager)->get(route('commercial.commissions.settlements.show', $settlement))
-        ->assertOk()->assertSee('حالت آزمایشی فعال است.')->assertSee('ثبت پرداخت');
+        ->assertRedirect(route('finance.seller-sales.index'));
+    $this->actingAs($manager)->post(route('commercial.commissions.settlements.payments.store', $settlement), [
+        'amount' => 1_000_000,
+    ])->assertStatus(410);
+    expect($settlement->fresh()->paid_amount)->toBe(0);
 });
 
 it('keeps campaign targets operational when period target ui is disabled', function () {
@@ -160,41 +179,45 @@ it('keeps campaign targets operational when period target ui is disabled', funct
         ->and(CommissionSetting::current()->targets_enabled)->toBeFalse();
 });
 
-it('updates pilot settings transactionally with validation and audit history', function () {
+it('rejects retired pilot settings writes without changing settings or audit history', function () {
     $manager = pilotHardeningUser('pilot-settings-manager', ['page.commercial.commissions', 'commissions.manage_periods']);
 
-    $this->actingAs($manager)->get(route('commercial.commissions.index'))->assertOk()->assertSee('حالت آزمایشی');
+    $this->actingAs($manager)->get(route('commercial.commissions.index'))
+        ->assertRedirect(route('finance.seller-sales.index'));
     $this->actingAs($manager)->put(route('commercial.commissions.settings.features.update'), [
         'pilot_mode' => 'invalid', 'seller_visibility_enabled' => false, 'targets_enabled' => false,
-    ])->assertSessionHasErrors('pilot_mode');
+    ])->assertStatus(410);
     expect(CommissionSetting::current()->pilot_mode)->toBeTrue();
 
     $this->actingAs($manager)->put(route('commercial.commissions.settings.features.update'), [
         'pilot_mode' => false, 'seller_visibility_enabled' => true, 'targets_enabled' => true,
-    ])->assertRedirect(route('commercial.commissions.index'));
+    ])->assertStatus(410);
 
-    expect(CommissionSetting::current()->only(['pilot_mode', 'seller_visibility_enabled', 'targets_enabled']))
-        ->toBe(['pilot_mode' => false, 'seller_visibility_enabled' => true, 'targets_enabled' => true])
+    expect(CommissionSetting::current()->fresh()->only(['pilot_mode', 'seller_visibility_enabled', 'targets_enabled']))
+        ->toBe(['pilot_mode' => true, 'seller_visibility_enabled' => false, 'targets_enabled' => false])
         ->and(ActivityLog::query()->whereIn('action', [
             'commission_pilot_mode.updated', 'commission_seller_visibility.updated', 'commission_targets_visibility.updated',
-        ])->count())->toBe(3);
-    $this->actingAs($manager)->get(route('commercial.commissions.index'))->assertOk()->assertDontSee('text-bg-warning fs-6">حالت آزمایشی', false);
+        ])->count())->toBe(0);
+    $this->actingAs($manager)->get(route('commercial.commissions.index'))
+        ->assertRedirect(route('finance.seller-sales.index'));
 });
 
-it('shows the target free manager dashboard with exact pilot kpis and no duplicate sellers', function () {
+it('keeps retired manager commission cards off the dashboard while preserving exact KPI calculations', function () {
     $period = pilotHardeningPeriod();
     $seller = User::factory()->create(['is_seller' => true, 'is_active' => true, 'can_access_erp' => true]);
     pilotHardeningLedger($period, $seller, 60_000_000);
     pilotHardeningLedger($period, $seller, 40_000_000);
     $manager = pilotHardeningUser('pilot-dashboard-manager', ['dashboard.view', 'page.commercial.commissions', 'commissions.view_seller_details']);
 
+    expect($manager->can('commissions.view_seller_details'))->toBeTrue();
     $this->actingAs($manager)->get(route('dashboard'))->assertOk()
-        ->assertSee('10,000,000 تومان')
-        ->assertSee('تأییدشده مالی')
-        ->assertSee('در انتظار بررسی')
-        ->assertSee('برگشتی و اصلاحات')
-        ->assertSee('فروشنده دارای فعالیت')
-        ->assertSee('مشاهده سیستم پورسانت')
+        ->assertDontSee('seller-commission-widget', false)
+        ->assertDontSee('10,000,000 تومان')
+        ->assertDontSee('تأییدشده مالی')
+        ->assertDontSee('در انتظار بررسی')
+        ->assertDontSee('برگشتی و اصلاحات')
+        ->assertDontSee('فروشنده دارای فعالیت')
+        ->assertDontSee('مشاهده سیستم پورسانت')
         ->assertDontSee('مجموع تارگت')
         ->assertDontSee('پیشرفت تیم');
 
