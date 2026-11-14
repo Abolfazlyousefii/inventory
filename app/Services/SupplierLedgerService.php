@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\Purchase;
+use App\Models\PurchaseReturn;
+use App\Models\PurchaseReturnRevision;
 use App\Models\Supplier;
 use App\Models\SupplierLedger;
 
@@ -40,6 +42,51 @@ class SupplierLedgerService
         );
 
         $this->syncCustomerCreditForAutoSupplierPurchase($purchase, $amount, $note);
+    }
+
+    public function syncPurchaseReturnDebit(PurchaseReturn $return, ?PurchaseReturnRevision $revision = null): void
+    {
+        if (empty($return->supplier_id)) {
+            return;
+        }
+
+        // Callers hold the source purchase/document lock. Never rewrite a posted entry.
+        $reference = [
+                'supplier_id' => (int) $return->supplier_id,
+                'reference_type' => PurchaseReturn::class,
+                'reference_id' => (int) $return->id,
+                'type' => 'debit',
+        ];
+        $original = SupplierLedger::where($reference)->first();
+        if (! $original) {
+            // Unedited historical returns remain read-only fallbacks. A newly
+            // edited historical document gets its first actual posting now.
+            if (! $return->trashed()) SupplierLedger::create($reference + [
+                'amount' => max(0, (int) $return->total_amount),
+                'note' => 'بدهکاری تأمین‌کننده بابت برگشت از خرید شماره PR-'.$return->document_number,
+            ]);
+            return;
+        }
+        $revisionIds = $return->revisions()->pluck('id');
+        $net = (int) SupplierLedger::where('supplier_id', $return->supplier_id)
+            ->where(function ($q) use ($return, $revisionIds) {
+                $q->where(fn ($r) => $r->where('reference_type', PurchaseReturn::class)->where('reference_id', $return->id))
+                    ->orWhere(fn ($r) => $r->where('reference_type', PurchaseReturnRevision::class)->whereIn('reference_id', $revisionIds));
+            })->selectRaw("COALESCE(SUM(CASE WHEN type='debit' THEN amount ELSE -amount END), 0) AS net")->value('net');
+        $delta = ($return->trashed() ? 0 : (int) $return->total_amount) - $net;
+        if ($delta === 0) return;
+        if (! $revision || (int) $revision->purchase_return_id !== (int) $return->id) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'اصلاح مالی برگشت به سابقهٔ معتبر سند نیاز دارد.']);
+        }
+        SupplierLedger::firstOrCreate([
+            'supplier_id' => (int) $return->supplier_id,
+            'reference_type' => PurchaseReturnRevision::class,
+            'reference_id' => $revision->id,
+            'type' => $delta > 0 ? 'debit' : 'credit',
+        ], [
+            'amount' => abs($delta),
+            'note' => ($return->trashed() ? 'برگشت ثبت مالی پس از ابطال ' : 'مابه‌التفاوت اصلاح ').'PR-'.$return->document_number,
+        ]);
     }
 
     public function voidPurchaseCredit(Purchase $purchase): void

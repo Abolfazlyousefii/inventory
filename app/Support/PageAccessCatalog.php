@@ -503,6 +503,8 @@ class PageAccessCatalog
         'invoices.payments.store' => ['finance.payments'],
         'invoices.notes.store' => ['sales.invoices'],
         'cheques.store' => ['finance.payments'],
+        'persons.account' => ['finance.accounts'],
+        'persons.supplier-transactions.store' => ['finance.accounts'],
         'account-statements.index' => ['finance.accounts'],
         'account-statements.adjustments.store' => ['finance.accounts'],
         'account-statements.personnel.store' => ['finance.accounts'],
@@ -551,7 +553,7 @@ class PageAccessCatalog
         'finance.account_statements_readonly' => [
             'account-statements.index', 'account-statements.show',
             'account-statements.documents.invoices.show', 'account-statements.documents.returns.show',
-            'account-statements.documents.payments.show',
+            'account-statements.documents.payments.show', 'persons.account',
         ],
         // Defining a product is separate from browsing the product catalogue.
         'products.definition' => [

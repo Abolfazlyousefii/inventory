@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'گردش حساب '.($customer->display_name ?: 'شخص'))
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/account-statement-document.css') }}?v=20261015-payment-actions">
+<link rel="stylesheet" href="{{ asset('css/account-statement-document.css') }}?v=20261114-shared-book">
 @endpush
 @section('content')
 @php
@@ -25,12 +25,7 @@
     </header>
     @if($errors->any())<div class="alert alert-danger" role="alert"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if(session('success'))<div class="alert alert-success" role="status">{{ session('success') }}</div>@endif
-    <section class="asd-summary" aria-label="خلاصه حساب">
-        <div><span>ماندهٔ اولیه</span><strong>{{ $rial($statementTotals['opening_balance']) }}</strong><small>{{ $balanceText($statementTotals['opening_balance']) }}</small></div>
-        <div class="asd-summary-debt"><span>جمع بدهکار</span><strong>{{ $rial($totalDebit) }}</strong><small>کل گردش مؤثر</small></div>
-        <div class="asd-summary-credit"><span>جمع بستانکار</span><strong>{{ $rial($totalCredit) }}</strong><small>کل گردش مؤثر</small></div>
-        <div class="asd-current {{ $netBalance > 0 ? 'asd-debt' : ($netBalance < 0 ? 'asd-credit' : '') }}"><span>ماندهٔ فعلی حساب</span><strong>{{ $rial($netBalance) }}</strong><small>{{ $balanceText($netBalance) }}</small></div>
-    </section>
+    @include('account-statements.partials.summary', ['openingBalance' => $statementTotals['opening_balance']])
     <section class="asd-book">
         <div class="asd-book-heading"><h2>گردش حساب</h2><span>بر اساس تاریخ سند، جدیدترین ابتدا · مبالغ به ریال</span></div>
         <div class="asd-table-wrap">

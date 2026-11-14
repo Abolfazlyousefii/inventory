@@ -24,6 +24,9 @@ class StoreSalesReturnRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'submission_token' => [in_array($this->route()?->getName(), ['vouchers.return-from-sale.store','sales-returns.store'], true) ? 'required' : 'nullable', 'uuid'],
+            'return_flow' => ['nullable', Rule::in([SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_FINANCIAL_ONLY])],
+            'financial_only_reason' => ['required_if:return_flow,financial_only', 'nullable', 'string', 'min:3', 'max:1000'],
             'commission_effect_type' => ['nullable', Rule::in(array_keys(SalesReturnDocument::commissionEffectLabels()))],
             'items_payload' => ['nullable', 'string', 'max:8388608'],
             'source_type' => ['required', Rule::in([SalesReturnDocument::SOURCE_INTERNAL_INVOICE, SalesReturnDocument::SOURCE_SAZEH_HESAB])],

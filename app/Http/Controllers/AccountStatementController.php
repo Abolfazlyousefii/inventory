@@ -66,29 +66,10 @@ class AccountStatementController extends Controller
                 });
             });
 
-        if ($sort === 'name') {
-            $query->orderByRaw("COALESCE(NULLIF(name, ''), {$this->fullNameExpression()}) {$direction}");
-        } elseif ($sort === 'mobile') {
-            $query->orderBy('mobile', $direction);
-        } elseif (in_array($sort, ['debt', 'credit', 'status'], true)) {
-            $balance = "COALESCE(customers.opening_balance, 0) + COALESCE(SUM(CASE WHEN customer_ledgers.type = 'debit' THEN customer_ledgers.amount WHEN customer_ledgers.type = 'credit' THEN -customer_ledgers.amount ELSE 0 END), 0)";
-            $sortValue = match ($sort) {
-                'debt' => "CASE WHEN {$balance} > 0 THEN {$balance} ELSE 0 END",
-                'credit' => "CASE WHEN {$balance} < 0 THEN -({$balance}) ELSE 0 END",
-                default => $balance,
-            };
-            $query->addSelect(['sort_value' => CustomerLedger::query()
-                ->effectiveForBalance()
-                ->whereColumn('customer_ledgers.customer_id', 'customers.id')
-                ->selectRaw($sortValue)])
-                ->orderBy('sort_value', $direction);
-        }
+        $customers = app(\App\Services\PersonAccountDirectory::class)->paginate($query, $request);
+        $role = in_array($request->query('role'), ['customer', 'supplier'], true) ? $request->query('role') : '';
 
-        $customers = $query->orderByDesc('customers.id')
-            ->paginate(20)
-            ->withQueryString();
-
-        return view('account-statements.index', compact('customers', 'q', 'sort', 'direction'));
+        return view('account-statements.index', compact('customers', 'q', 'sort', 'direction', 'role'));
     }
 
 

@@ -9,6 +9,9 @@
 .as-list .as-search-card .card-body{padding:14px 18px}
 .as-list .form-control{border-color:#dce7ee;border-radius:10px;min-height:44px;background:#fafcfd;font-size:12px}
 .as-list .form-control:focus{background:#fff;border-color:#8aacbf;box-shadow:0 0 0 3px #dcecf580}
+.as-list .as-search-card .form-select{border:1px solid #dce7ee;border-radius:10px;min-height:44px;font-family:inherit;font-size:12px;background-color:#fafcfd;flex-shrink:0}
+.as-list #accountStatementSearch{flex-wrap:wrap}
+.as-list #accountStatementSearch .form-control{flex:1 1 200px;min-width:0}
 .as-list .as-search-button{display:flex;align-items:center;gap:8px;justify-content:center;background:var(--as-blue);color:#fff;border-radius:10px;min-height:44px;padding:8px 20px;font-size:12px;font-weight:400}
 .as-list .as-search-button:hover{background:#163d57;color:#fff}
 .as-list #accountStatementSearchStatus:empty{display:none}
