@@ -43,6 +43,8 @@ class PurchaseReturnController extends Controller
         if ($purchase) {
             $stocks=WarehouseStock::where('warehouse_id',$warehouseId)->whereIn('product_id',$purchase->items->pluck('product_id'))->get()->groupBy(fn($stock)=>$stock->product_id.':'.($stock->product_variant_id??0));
             $returnedByItem=$this->service->returnedQuantities($purchase->items->pluck('id')->all(),$document?->id);
+            $netTotals=$this->service->purchaseLineNetTotals($purchase,$purchase->items);
+            $returnedAmounts=$this->service->returnedAmounts($purchase->items->pluck('id')->all(),$document?->id);
             $oldByStock=$selected->groupBy(fn($item)=>$item->product_id.':'.($item->product_variant_id??0))->map(fn($items)=>(int)$items->sum('quantity'));
             foreach ($purchase->items as $item) {
                 $stockKey=$item->product_id.':'.($item->product_variant_id??0);
@@ -51,6 +53,7 @@ class PurchaseReturnController extends Controller
                 $old=(int)($selected->get($item->id)?->quantity??0);$returned=(int)$returnedByItem->get($item->id,0);
                 $capacity=$free+(int)$oldByStock->get($stockKey,0);
                 $rows->push((object)['item'=>$item,'returned'=>$returned,'free'=>$free,'old'=>$old,'stockKey'=>$stockKey,'capacity'=>$capacity,'limit'=>max(0,min((int)$item->quantity-$returned,$capacity)),
+                    'netTotal'=>(int)($netTotals[$item->id]??0),'previousAmount'=>(int)($returnedAmounts[$item->id]??0),
                     'price'=>(int)($selected->get($item->id)?->buy_price??$item->buy_price)]);
             }
         }

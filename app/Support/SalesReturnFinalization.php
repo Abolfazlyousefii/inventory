@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
  */
 final class SalesReturnFinalization
 {
-    public const MESSAGE = 'این سند پس از تأیید دریافت انبار مرکزی نهایی شده و دیگر قابل ویرایش یا ابطال نیست.';
+    public const MESSAGE = 'این سند پس از تأیید دریافت انبار نهایی شده و دیگر قابل ویرایش یا ابطال نیست.';
 
     public static function isLocked(SalesReturnDocument $document): bool
     {

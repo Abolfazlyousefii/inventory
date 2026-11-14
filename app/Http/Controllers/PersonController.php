@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\Supplier;
 use App\Support\IranLocations;
+use App\Support\PhoneNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -75,6 +76,11 @@ class PersonController extends Controller
             'city_id' => ['nullable', 'integer'],
         ]);
 
+        $data['mobile'] = PhoneNormalizer::normalize((string) $data['mobile']);
+        if ($data['mobile'] === '') {
+            throw ValidationException::withMessages(['mobile' => 'شماره تماس معتبر نیست.']);
+        }
+
         $types = collect($data['types'])->unique()->values();
         $provinceId = !empty($data['province_id']) ? (int) $data['province_id'] : null;
         $cityId = !empty($data['city_id']) ? (int) $data['city_id'] : null;
@@ -88,12 +94,20 @@ class PersonController extends Controller
         }
 
         if ($types->contains('customer')) {
-            $duplicateCustomer = Customer::query()->where('mobile', $data['mobile'])->exists();
+            $duplicateCustomer = Customer::query()->get(['id', 'mobile'])->contains(
+                fn (Customer $candidate): bool => PhoneNormalizer::normalize((string) $candidate->mobile) === $data['mobile']
+            );
             if ($duplicateCustomer) {
                 return back()
                     ->withErrors(['mobile' => 'شماره تماس برای یک مشتری دیگر ثبت شده است.'])
                     ->withInput();
             }
+        }
+
+        if ($types->contains('supplier') && Supplier::query()->get(['id', 'phone'])->contains(
+            fn (Supplier $candidate): bool => PhoneNormalizer::normalize((string) $candidate->phone) === $data['mobile']
+        )) {
+            return back()->withErrors(['mobile' => 'این شماره تماس قبلاً برای تأمین‌کننده دیگری ثبت شده است.'])->withInput();
         }
 
         DB::transaction(function () use ($data, $types, $provinceId, $cityId) {
@@ -146,6 +160,11 @@ class PersonController extends Controller
             'city_id' => ['nullable', 'integer'],
         ]);
 
+        $data['mobile'] = PhoneNormalizer::normalize((string) $data['mobile']);
+        if ($data['mobile'] === '') {
+            throw ValidationException::withMessages(['mobile' => 'شماره تماس معتبر نیست.']);
+        }
+
         $types = collect($data['types'])->unique()->values();
         $provinceId = !empty($data['province_id']) ? (int) $data['province_id'] : null;
         $cityId = !empty($data['city_id']) ? (int) $data['city_id'] : null;
@@ -158,15 +177,24 @@ class PersonController extends Controller
             throw ValidationException::withMessages(['city_id' => 'شهر انتخاب‌شده با استان انتخاب‌شده همخوانی ندارد.']);
         }
 
-        $duplicateCustomer = Customer::query()
-            ->where('mobile', $data['mobile'])
-            ->when($customer, fn ($query) => $query->whereKeyNot($customer->id))
-            ->exists();
+        $duplicateCustomer = Customer::query()->get(['id', 'mobile'])->contains(
+            fn (Customer $candidate): bool => (int) $candidate->id !== (int) ($customer?->id ?? 0)
+                && PhoneNormalizer::normalize((string) $candidate->mobile) === $data['mobile']
+        );
 
         if ($types->contains('customer') && $duplicateCustomer) {
             return back()
                 ->withErrors(['mobile' => 'شماره تماس برای یک مشتری دیگر ثبت شده است.'])
                 ->withInput();
+        }
+
+        $duplicateSupplier = Supplier::query()->get(['id', 'phone'])->contains(
+            fn (Supplier $candidate): bool => (int) $candidate->id !== (int) ($supplier?->id ?? 0)
+                && PhoneNormalizer::normalize((string) $candidate->phone) === $data['mobile']
+        );
+
+        if ($types->contains('supplier') && $duplicateSupplier) {
+            return back()->withErrors(['mobile' => 'این شماره تماس قبلاً برای تأمین‌کننده دیگری ثبت شده است.'])->withInput();
         }
 
         DB::transaction(function () use ($customer, $supplier, $data, $types, $provinceId, $cityId) {
@@ -213,9 +241,13 @@ class PersonController extends Controller
     private function mergePeople(Collection $customers, Collection $suppliers): Collection
     {
         $people = collect();
+        $customerPhoneCounts = $customers->countBy(fn ($c) => PhoneNormalizer::normalize((string) $c->mobile));
+        $supplierPhoneCounts = $suppliers->countBy(fn ($s) => PhoneNormalizer::normalize((string) $s->phone));
+        $ambiguous = fn ($phone) => ($customerPhoneCounts[$phone] ?? 0) > 1 || ($supplierPhoneCounts[$phone] ?? 0) > 1;
 
         foreach ($customers as $customer) {
-            $key = $customer->mobile ?: 'customer-'.$customer->id;
+            $phone = PhoneNormalizer::normalize((string) $customer->mobile);
+            $key = $phone !== '' && ! $ambiguous($phone) ? $phone : 'customer-'.$customer->id;
             $people[$key] = [
                 'key' => $key,
                 'customer_id' => $customer->id,
@@ -234,13 +266,14 @@ class PersonController extends Controller
         }
 
         foreach ($suppliers as $supplier) {
-            $key = $supplier->phone ?: 'supplier-'.$supplier->id;
+            $phone = PhoneNormalizer::normalize((string) $supplier->phone);
+            $key = $phone !== '' && ! $ambiguous($phone) ? $phone : 'supplier-'.$supplier->id;
             $existing = $people->get($key);
 
             if ($existing) {
                 $people[$key] = [
                     ...$existing,
-                    'supplier_id' => $supplier->id,
+                    'supplier_id' => $existing['supplier_id'] ?? $supplier->id,
                     'name' => $existing['name'] ?: $supplier->name,
                     'mobile' => $existing['mobile'] ?: $supplier->phone,
                     'address' => $existing['address'] ?: $supplier->address,
@@ -284,10 +317,17 @@ class PersonController extends Controller
             return [null, Supplier::find((int) Str::after($personKey, 'supplier-'))];
         }
 
-        return [
-            Customer::query()->where('mobile', $personKey)->first(),
-            Supplier::query()->where('phone', $personKey)->first(),
-        ];
+        $normalized = PhoneNormalizer::normalize($personKey);
+        if ($normalized === '') {
+            return [null, null];
+        }
+
+        $customer = Customer::query()->orderByDesc('id')->get(['id', 'mobile'])
+            ->first(fn (Customer $candidate): bool => PhoneNormalizer::normalize((string) $candidate->mobile) === $normalized);
+        $supplier = Supplier::query()->orderByDesc('id')->get(['id', 'phone'])
+            ->first(fn (Supplier $candidate): bool => PhoneNormalizer::normalize((string) $candidate->phone) === $normalized);
+
+        return [$customer, $supplier];
     }
 
     private function deleteCustomerRole(Customer $customer): void

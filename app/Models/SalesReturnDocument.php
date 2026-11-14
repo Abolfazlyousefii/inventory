@@ -6,6 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class SalesReturnDocument extends Model
 {
+    public const FLOW_PHYSICAL = 'physical';
+    public const FLOW_FINANCIAL_ONLY = 'financial_only';
+
+    public function isFinancialOnly(): bool
+    {
+        return $this->return_flow === self::FLOW_FINANCIAL_ONLY;
+    }
+
     public const SOURCE_INTERNAL_INVOICE = 'internal_invoice';
 
     public const SOURCE_SAZEH_HESAB = 'sazeh_hesab';
@@ -26,7 +34,7 @@ class SalesReturnDocument extends Model
 
     public const COMMISSION_REPLACEMENT = 'replacement';
 
-    protected $fillable = ['document_number', 'source_type', 'status', 'customer_id', 'invoice_id', 'external_invoice_number', 'external_invoice_date', 'default_destination_warehouse_id', 'return_reason', 'commission_effect_type', 'reference_number', 'description', 'total_quantity', 'items_count', 'total_refund_amount', 'created_by', 'updated_by', 'applied_by', 'applied_at', 'cancelled_by', 'cancelled_at', 'cancel_reason'];
+    protected $fillable = ['submission_token', 'submission_fingerprint', 'return_flow', 'financial_only_reason', 'document_number', 'source_type', 'status', 'customer_id', 'invoice_id', 'external_invoice_number', 'external_invoice_date', 'default_destination_warehouse_id', 'return_reason', 'commission_effect_type', 'reference_number', 'description', 'total_quantity', 'items_count', 'total_refund_amount', 'created_by', 'updated_by', 'applied_by', 'applied_at', 'cancelled_by', 'cancelled_at', 'cancel_reason'];
 
     protected $casts = ['external_invoice_date' => 'date', 'applied_at' => 'datetime', 'cancelled_at' => 'datetime', 'total_quantity' => 'integer', 'items_count' => 'integer', 'total_refund_amount' => 'integer'];
 

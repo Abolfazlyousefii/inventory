@@ -145,7 +145,7 @@
 		@endif
 
 		<form method="POST" action="{{ $isAppliedEdit ? route('vouchers.return-from-sale.applied.update', $document) : ($isEdit ? route('vouchers.return-from-sale.update', $document) : route('vouchers.return-from-sale.store')) }}" id="salesReturnForm" novalidate>
-			@csrf
+			@unless($document) <input type="hidden" name="submission_token" value="{{ old('submission_token', (string) \Illuminate\Support\Str::uuid()) }}"> @endunless @csrf
             @if($isAppliedEdit)<input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}"><div class="alert alert-info">{{ ($warehouseMode ?? false) ? 'ثبت این فرم فقط اختلاف دریافت و حساب مشتری را اعمال می‌کند؛ در صورت کمبود موجودی آزاد هیچ تغییری انجام نمی‌شود.' : 'اصلاح مرجوعی مستقیم ثبت می‌شود. تغییر مقصد به مرکزی، سند را برای تأیید دریافت به صف انبار می‌فرستد؛ موجودی مرکزی اکنون افزایش نمی‌یابد.' }} علت و سیاست پورسانت ثابت است؛ کالای جدید را در سند جدا ثبت کنید.</div>@endif
             @if($isPendingEdit)<input type="hidden" name="document_version" value="{{ \App\Support\InboundReviewVersion::token($document) }}"><div class="alert alert-info">اصلاح این سند، صف ورودی انبار را هم به‌روز می‌کند؛ تأیید نسخهٔ قبلی امکان‌پذیر نیست.</div>@endif @if($isEdit) @method('PATCH') @endif
 			<textarea name="items_payload" id="itemsPayload" hidden>{{ old('items_payload') }}</textarea>
@@ -189,6 +189,7 @@
 
 
 
+                @include('vouchers.return-from-sale.partials.return-flow')
 				<div class="col-12"><div class="sr-card sr-compact sr-notes-card"><div class="sr-notes-heading"><label class="form-label" for="description">توضیحات سند</label><button class="btn btn-outline-danger" type="button" id="clearForm">پاک‌کردن فرم</button></div><textarea class="form-control" name="description" id="description" rows="3" placeholder="توضیحات تکمیلی درباره این برگشت...">{{ old('description', $document?->description) }}</textarea><div class="small sr-muted">در صورت انتخاب «سایر»، توضیحات یا توضیح علت اجباری است.</div></div></div>
 				@if($isAppliedEdit || $isPendingEdit)<div class="col-12"><div class="sr-card sr-compact"><label class="form-label" for="adjustment_reason">دلیل اصلاح سند <span class="text-danger">*</span></label><textarea class="form-control" id="adjustment_reason" name="adjustment_reason" rows="2" minlength="3" maxlength="1000" required>{{ old('adjustment_reason') }}</textarea><div class="np-field-error" data-field-error="adjustment_reason">{{ $errors->first('adjustment_reason') }}</div></div></div>@endif
 

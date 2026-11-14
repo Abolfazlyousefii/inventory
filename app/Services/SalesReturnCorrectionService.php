@@ -30,6 +30,11 @@ class SalesReturnCorrectionService
     public function requiresWarehouse(SalesReturnDocument $document): bool
     {
         $document->loadMissing('items.destinationWarehouse');
+        if ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL) return true;
+        if ($document->isFinancialOnly()) {
+            return $this->movementQuery($document)->exists()
+                || WarehouseInboundReceipt::where('source_type', 'sales_return')->where('source_id', $document->id)->where('accepted_quantity', '>', 0)->exists();
+        }
         if ($document->items->contains(fn ($i) => (int) $i->return_quantity > 0 && $i->destinationWarehouse?->type !== 'return')) {
             return true;
         }

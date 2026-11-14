@@ -64,6 +64,8 @@
           <tr>
             <th>زمان</th>
             <th>محصول</th>
+            <th>تنوع</th>
+            <th>انبار</th>
             <th>نوع</th>
             <th>علت</th>
             <th>تعداد</th>
@@ -81,6 +83,8 @@
                 {{ $m->product?->name }}
                 <div class="text-muted small">{{ $m->product?->sku }}</div>
               </td>
+              <td>{{ $m->variant?->variant_name ?: '—' }}<div class="text-muted small">{{ $m->variant?->variant_code }}</div></td>
+              <td>{{ $m->warehouse?->name ?: '—' }}</td>
               <td>
                 @if($m->type==='in')
                   <span class="badge text-bg-success">ورود</span>
@@ -103,11 +107,11 @@
               <td class="fw-bold">{{ $m->quantity }}</td>
               <td>{{ $m->stock_before }}</td>
               <td>{{ $m->stock_after }}</td>
-              <td class="text-muted">{{ $m->reference }}</td>
+              <td class="text-muted">@if(isset($sourceLinks[$m->id]))<a href="{{ $sourceLinks[$m->id] }}">{{ $m->reference }}</a>@else{{ $m->reference }}@endif</td>
               <td class="text-muted">{{ $m->user?->name }}</td>
             </tr>
           @empty
-            <tr><td colspan="9" class="text-center text-muted py-5">هیچ گردش انباری ثبت نشده.</td></tr>
+            <tr><td colspan="11" class="text-center text-muted py-5">هیچ گردش انباری ثبت نشده.</td></tr>
           @endforelse
         </tbody>
       </table>

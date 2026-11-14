@@ -51,7 +51,10 @@
                             <td>{{ $person['address'] ?: '-' }}</td>
                             <td>{{ $person['postal_code'] ?: '-' }}</td>
                             <td>{{ $person['description'] ?: '-' }}</td>
-                            <td>
+                            <td class="text-nowrap">
+                                @if(\App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'persons.account'))
+                                    <a href="{{ route('persons.account', $person['key']) }}" class="btn btn-sm btn-outline-success">گردش حساب</a>
+                                @endif
                                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editPersonModal{{ $loop->iteration }}">ویرایش</button>
                             </td>
                         </tr>
