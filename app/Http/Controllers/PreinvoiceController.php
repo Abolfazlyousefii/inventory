@@ -151,7 +151,8 @@ class PreinvoiceController extends Controller
 
             $before = $this->snapshotItems($order);
             $stockLocked = $this->hasActiveFreeze($order);
-            $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id, 'quantity' => (int) $it->quantity])->all();
+            $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id,
+                        'source_warehouse_id' => $it->source_warehouse_id, 'quantity' => (int) $it->quantity])->all();
             $this->replaceOrderItems($order, $data['items']);
             if ($stockLocked) {
                 $this->syncPreinvoiceReservations($order->fresh('items'));
@@ -213,7 +214,8 @@ class PreinvoiceController extends Controller
 
             $before = $this->snapshotItems($order);
             $stockLocked = $this->hasActiveFreeze($order);
-            $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id, 'quantity' => (int) $it->quantity])->all();
+            $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id,
+                        'source_warehouse_id' => $it->source_warehouse_id, 'quantity' => (int) $it->quantity])->all();
             $this->replaceOrderItems($order, $data['items']);
             if ($stockLocked) {
                 $this->syncPreinvoiceReservations($order->fresh('items'));
@@ -903,9 +905,9 @@ class PreinvoiceController extends Controller
                 // loaded order instance. Keep this instance in sync for the autosave response.
                 $order->setAttribute('draft_token', $effectiveDraftToken);
             }
-                $existingItems = $order->items()->get()->keyBy(fn ($item) => $item->product_id.':'.$item->variant_id);
+                $existingItems = $order->items()->get()->keyBy(fn ($item) => \App\Services\SalesWarehouseSource::key((int)$item->product_id,(int)$item->variant_id,$item->source_warehouse_id));
             $products = array_map(function ($row) use ($existingItems) {
-                $row['item_id'] = $existingItems->get($row['id'].':'.$row['variety_id'])?->id;
+                $row['item_id'] = $existingItems->get(\App\Services\SalesWarehouseSource::key((int)$row['id'],(int)$row['variety_id'],$row['source_warehouse_id'] ?? null))?->id;
                 return $row;
             }, $validated['products'] ?? []);
             $this->syncItems($order, $products, true);
@@ -966,10 +968,10 @@ class PreinvoiceController extends Controller
 
     private function guardAutosaveSnapshot(PreinvoiceOrder $order, array $payload, array $attrs, int $total): void
     {
-        $incoming = collect($payload['products'])->keyBy('variety_id');
+        $incoming = collect($payload['products'])->keyBy(fn($row)=>\App\Services\SalesWarehouseSource::key((int)$row['id'],(int)$row['variety_id'],$row['source_warehouse_id'] ?? null));
         $reduced = $incoming->count() < $order->items->count() || $total < (int) $order->total_price;
 
-        foreach ($order->items->groupBy('variant_id') as $variantId => $items) {
+        foreach ($order->items->groupBy(fn($item)=>\App\Services\SalesWarehouseSource::key((int)$item->product_id,(int)$item->variant_id,$item->source_warehouse_id)) as $variantId => $items) {
             $row = $incoming->get($variantId);
             if (! $row || (int) $row['quantity'] < (int) $items->sum('quantity') || (int) $row['price'] < (int) $items->max('price')) {
                 $reduced = true;
@@ -1036,6 +1038,7 @@ class PreinvoiceController extends Controller
             'items' => $order->items->map(fn ($item) => [
                 'product_id' => (int) $item->product_id,
                 'variant_id' => (int) $item->variant_id,
+            'source_warehouse_id' => $item->source_warehouse_id,
                 'quantity' => (int) $item->quantity,
                 'price' => (int) $item->price,
                 'available' => (int) ($item->variant?->stock ?? 0),
@@ -1451,10 +1454,12 @@ class PreinvoiceController extends Controller
                 ? $this->validatedShippingId($validated)
                 : (! empty($order->shipping_id) ? (int) $order->shipping_id : null);
             $before = $this->snapshotItems($order);
-            $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id, 'quantity' => (int) $it->quantity])->all();
+            $oldItems = $order->items->map(fn($it) => ['product_id' => (int) $it->product_id, 'variant_id' => (int) $it->variant_id,
+                        'source_warehouse_id' => $it->source_warehouse_id, 'quantity' => (int) $it->quantity])->all();
             $newItems = collect($validated['products'])->map(fn($p) => [
                 'product_id' => (int) $p['id'],
                 'variant_id' => (int) $p['variety_id'],
+                'source_warehouse_id' => \App\Services\SalesWarehouseSource::normalize($p['source_warehouse_id'] ?? null),
                 'quantity' => (int) $p['quantity'],
             ])->all();
 
@@ -1720,6 +1725,7 @@ class PreinvoiceController extends Controller
             'products' => 'required|array|min:1',
             'products.*.id' => 'required|integer|exists:products,id',
             'products.*.variety_id' => ['required', 'integer', 'exists:product_variants,id'],
+            'products.*.source_warehouse_id' => 'nullable|integer|exists:warehouses,id',
             'products.*.quantity' => 'required|integer|min:1',
             'products.*.price' => 'nullable|integer|min:0',
             'products.*.item_id' => 'nullable|integer',
@@ -1749,10 +1755,14 @@ class PreinvoiceController extends Controller
         }
 
         $existingQtyByProductVariant = [];
+        foreach ($validated['products'] as &$sourceRow) {
+            $sourceRow['source_warehouse_id'] = \App\Services\SalesWarehouseSource::normalize($sourceRow['source_warehouse_id'] ?? null);
+        }
+        unset($sourceRow);
         if ($editingOrder) {
             $editingOrder->loadMissing('items');
             foreach ($editingOrder->items as $existingItem) {
-                $key = ((int) $existingItem->product_id) . ':' . ((int) $existingItem->variant_id);
+                $key = \App\Services\SalesWarehouseSource::key((int) $existingItem->product_id, (int) $existingItem->variant_id, $existingItem->source_warehouse_id);
                 $existingQtyByProductVariant[$key] = ($existingQtyByProductVariant[$key] ?? 0) + (int) $existingItem->quantity;
             }
         }
@@ -1761,7 +1771,7 @@ class PreinvoiceController extends Controller
             $productId = (int) $productRow['id'];
             $variantId = (int) $productRow['variety_id'];
             $requestedQty = (int) $productRow['quantity'];
-            $existingQty = (int) ($existingQtyByProductVariant[$productId . ':' . $variantId] ?? 0);
+            $existingQty = (int) ($existingQtyByProductVariant[\App\Services\SalesWarehouseSource::key($productId,$variantId,$productRow['source_warehouse_id'] ?? null)] ?? 0);
 
             $product = Product::query()->whereKey($productId)->first(['id', 'is_sellable']);
             $variant = ProductVariant::query()->whereKey($variantId)->first(['id', 'product_id', 'is_active', 'sales_enabled']);
@@ -1859,7 +1869,7 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            $pairKey = $productId . ':' . $variantId;
+            $pairKey = \App\Services\SalesWarehouseSource::key($productId, $variantId, $row['source_warehouse_id'] ?? null);
             if (isset($seenProductVariant[$pairKey])) {
                 throw ValidationException::withMessages([
                     "products.{$index}.variety_id" => 'هر تنوع باید فقط یک‌بار در هر محصول مادر ثبت شود.',
@@ -1867,15 +1877,20 @@ class PreinvoiceController extends Controller
             }
             $seenProductVariant[$pairKey] = true;
 
-            $qtyByVariant[$variantId] = ($qtyByVariant[$variantId] ?? 0) + (int) ($row['quantity'] ?? 0);
+            $qtyByVariant[$pairKey] = ($qtyByVariant[$pairKey] ?? 0) + (int) ($row['quantity'] ?? 0);
         }
 
         $draftReservations = $this->activeDraftReservationQuantities($reservationToken);
 
         $itemErrors = [];
-        foreach ($qtyByVariant as $variantId => $requiredQty) {
+        foreach ($qtyByVariant as $pairKey => $requiredQty) {
+            [$productId,$variantId] = array_map('intval',explode(':',$pairKey));
             $variant = $variants->get((int) $variantId);
-            $availableQty = max(0, $this->centralInventoryService->availableForVariant((int) $variantId) + (int) ($draftReservations[(int) $variantId] ?? 0));
+            $sourceRow=collect($products)->first(fn($p)=>\App\Services\SalesWarehouseSource::key((int)$p['id'],(int)$p['variety_id'],$p['source_warehouse_id'] ?? null)===$pairKey);
+            $source=\App\Services\SalesWarehouseSource::normalize($sourceRow['source_warehouse_id'] ?? null);
+            $own=(int)($draftReservations[$pairKey] ?? 0);
+            if($source && $own===0) \App\Services\SalesWarehouseSource::assertReservable((int)$variant->product_id,(int)$variantId,$source);
+            $availableQty = max(0, app(\App\Services\PreinvoiceBundleStockService::class)->free((int)$variant->product_id,(int)$variantId,$source) + $own);
 
             if ($requiredQty > $availableQty) {
                 $variant->loadMissing('product:id,name');
@@ -1884,6 +1899,7 @@ class PreinvoiceController extends Controller
                 $itemErrors[] = [
                     'item_id' => (int) ($products[$firstIndex]['item_id'] ?? 0) ?: null,
                     'row_key' => 'variant-' . (int) $variantId,
+                    'source_warehouse_id' => $source,
                     'variant_id' => (int) $variantId,
                     'variant_code' => (string) ($variant->variant_code ?: $variant->variety_code),
                     'product_name' => (string) ($variant->product?->name ?? 'نامشخص'),
@@ -1945,6 +1961,7 @@ class PreinvoiceController extends Controller
         $oldMap = $this->itemQuantityMap($order->items->map(fn($item) => [
             'product_id' => (int) $item->product_id,
             'variant_id' => (int) $item->variant_id,
+            'source_warehouse_id' => $item->source_warehouse_id,
             'quantity' => (int) $item->quantity,
         ])->all());
         $newMap = $this->itemQuantityMap($data['items'] ?? []);
@@ -1994,6 +2011,7 @@ class PreinvoiceController extends Controller
 
     private function replaceOrderItems(PreinvoiceOrder $order, array $items): void
     {
+        $sourceItems=$order->items()->get()->keyBy(fn($item)=>\App\Services\SalesWarehouseSource::key((int)$item->product_id,(int)$item->variant_id,$item->source_warehouse_id));
         $order->items()->delete();
 
         foreach (array_values($items) as $index => $row) {
@@ -2003,6 +2021,7 @@ class PreinvoiceController extends Controller
                 ->firstOrFail(['sell_price']);
             $order->items()->create([
                 'product_id' => (int) $row['product_id'],
+                'source_warehouse_id' => $sourceItems->get($row['product_id'].':'.$row['variant_id'])?->source_warehouse_id,
                 'variant_id' => (int) $row['variant_id'],
                 'quantity' => (int) $row['quantity'],
                 'price' => (int) ($variant->sell_price ?? 0),
@@ -2020,6 +2039,7 @@ class PreinvoiceController extends Controller
             'product_id' => (int) $item->product_id,
             'product_name' => $item->product?->name,
             'variant_id' => (int) $item->variant_id,
+            'source_warehouse_id' => $item->source_warehouse_id,
             'variant_name' => $item->variant?->variant_name ?: $item->variant?->variety_name,
             'code' => $item->variant?->sku ?: ($item->variant?->variant_code ?: ($item->variant?->barcode ?: ($item->product?->sku ?: $item->product?->code))),
             'quantity' => (int) $item->quantity,
@@ -2073,6 +2093,7 @@ class PreinvoiceController extends Controller
         $oldMap = $this->itemQuantityMap($order->items->map(fn($item) => [
             'product_id' => (int) $item->product_id,
             'variant_id' => (int) $item->variant_id,
+            'source_warehouse_id' => $item->source_warehouse_id,
             'quantity' => (int) $item->quantity,
         ])->all());
         $newMap = $this->itemQuantityMap($newItems);
@@ -2092,6 +2113,9 @@ class PreinvoiceController extends Controller
     {
         $oldMap = $this->itemQuantityMap($oldItems);
         $newMap = $this->itemQuantityMap($newItems);
+        $sourceMap = collect($newItems)->mapWithKeys(fn ($row) => [
+            \App\Services\SalesWarehouseSource::key((int)$row['product_id'],(int)$row['variant_id'],$row['source_warehouse_id'] ?? null) => $row['source_warehouse_id'] ?? null,
+        ]);
         $itemErrors = [];
 
         foreach ($newMap as $key => $newQty) {
@@ -2102,7 +2126,13 @@ class PreinvoiceController extends Controller
             }
 
             [$productId, $variantId] = array_map('intval', explode(':', $key));
-            $available = $this->centralInventoryService->availableForVariant($variantId);
+            $source = $sourceMap->get($key);
+            if ($source) {
+                \App\Services\SalesWarehouseSource::assertReservable($productId, $variantId, $source);
+            }
+            $available = $source
+                ? WarehouseStockService::available($source, $productId, $variantId)
+                : $this->centralInventoryService->availableForVariant($variantId);
             if ($available < $delta) {
                 $variant = ProductVariant::query()
                     ->with('product:id,name,code,short_barcode,sku')
@@ -2137,7 +2167,7 @@ class PreinvoiceController extends Controller
             if ($productId <= 0 || $variantId <= 0 || $qty <= 0) {
                 continue;
             }
-            $key = $productId . ':' . $variantId;
+            $key = \App\Services\SalesWarehouseSource::key($productId, $variantId, $row['source_warehouse_id'] ?? null);
             $map[$key] = ($map[$key] ?? 0) + $qty;
         }
 
@@ -2165,6 +2195,7 @@ class PreinvoiceController extends Controller
             $invoice->items()->create([
                 'product_id' => (int) $item->product_id,
                 'variant_id' => (int) $item->variant_id,
+            'source_warehouse_id' => $item->source_warehouse_id,
                 'quantity' => (int) $item->quantity,
                 'price' => (int) $item->price,
                 'line_total' => max(((int) $item->quantity * (int) $item->price) - (int) ($item->line_discount_amount ?? 0), 0),
@@ -2440,6 +2471,7 @@ class PreinvoiceController extends Controller
             $attrs = [
                 'product_id' => (int) $p['id'],
                 'variant_id' => (int) $p['variety_id'],
+                'source_warehouse_id' => \App\Services\SalesWarehouseSource::normalize($p['source_warehouse_id'] ?? null),
                 'quantity' => (int) $p['quantity'],
                 'price' => (int) ($p['price'] ?? $variant->sell_price ?? 0),
                 'line_total' => max(((int) $p['quantity'] * (int) ($p['price'] ?? $variant->sell_price ?? 0)) - (int) ($p['line_discount_amount'] ?? 0), 0),
@@ -2473,11 +2505,12 @@ class PreinvoiceController extends Controller
                 continue;
             }
 
-            $key = $productId . ':' . $variantId;
+            $key = \App\Services\SalesWarehouseSource::key($productId, $variantId, $row['source_warehouse_id'] ?? null);
             if (! isset($required[$key])) {
                 $required[$key] = [
                     'product_id' => $productId,
                     'variant_id' => $variantId,
+                    'source_warehouse_id' => \App\Services\SalesWarehouseSource::normalize($row['source_warehouse_id'] ?? null),
                     'quantity' => 0,
                 ];
             }
@@ -2502,7 +2535,8 @@ class PreinvoiceController extends Controller
 
         $reserved = [];
         foreach ($reservedRows as $row) {
-            $key = ((int) $row->product_id) . ':' . ((int) $row->variant_id);
+            $key = \App\Services\SalesWarehouseSource::key((int) $row->product_id, (int) $row->variant_id, $row->source_warehouse_id);
+            if (isset($required[$key]) && ($row->source_warehouse_id ?? null) !== ($required[$key]['source_warehouse_id'] ?? null)) throw ValidationException::withMessages(['products'=>'انبار رزرو با ردیف سند هماهنگ نیست.']);
             $reserved[$key] = ($reserved[$key] ?? 0) + (int) $row->quantity;
         }
 
@@ -2510,23 +2544,23 @@ class PreinvoiceController extends Controller
             $coveredQty = (int) ($reserved[$key] ?? 0);
             $missingQty = max(0, (int) $row['quantity'] - $coveredQty);
             if ($missingQty > 0) {
-                $this->reserveStockForItem((int) $row['product_id'], (int) $row['variant_id'], $missingQty);
+                $this->reserveStockForItem((int) $row['product_id'], (int) $row['variant_id'], $missingQty, $row['source_warehouse_id'] ?? null);
             }
         }
 
         foreach ($reservedRows as $row) {
-            $key = ((int) $row->product_id) . ':' . ((int) $row->variant_id);
+            $key = \App\Services\SalesWarehouseSource::key((int) $row->product_id, (int) $row->variant_id, $row->source_warehouse_id);
             $requiredQty = (int) ($required[$key]['quantity'] ?? 0);
             $reservedQty = (int) $row->quantity;
 
             if ($requiredQty <= 0) {
-                $this->releaseStockForItem((int) $row->product_id, (int) $row->variant_id, $reservedQty);
+                $this->releaseStockForItem((int) $row->product_id, (int) $row->variant_id, $reservedQty, $row->source_warehouse_id);
                 $row->delete();
                 continue;
             }
 
             if ($reservedQty > $requiredQty) {
-                $this->releaseStockForItem((int) $row->product_id, (int) $row->variant_id, $reservedQty - $requiredQty);
+                $this->releaseStockForItem((int) $row->product_id, (int) $row->variant_id, $reservedQty - $requiredQty, $row->source_warehouse_id);
                 $row->quantity = $requiredQty;
             }
 
@@ -2553,9 +2587,9 @@ class PreinvoiceController extends Controller
                 continue;
             }
 
-            $key = $productId . ':' . $variantId;
+            $key = \App\Services\SalesWarehouseSource::key($productId, $variantId, $item->source_warehouse_id);
             if (! isset($required[$key])) {
-                $required[$key] = ['product_id' => $productId, 'variant_id' => $variantId, 'quantity' => 0];
+                $required[$key] = ['product_id' => $productId, 'variant_id' => $variantId, 'source_warehouse_id' => $item->source_warehouse_id, 'quantity' => 0];
             }
             $required[$key]['quantity'] += $quantity;
         }
@@ -2566,16 +2600,17 @@ class PreinvoiceController extends Controller
             ->whereNull('release_reason')
             ->lockForUpdate()
             ->get()
-            ->groupBy(fn (PreinvoiceDraftReservation $row) => ((int) $row->product_id) . ':' . ((int) $row->variant_id));
+            ->groupBy(fn (PreinvoiceDraftReservation $row) => \App\Services\SalesWarehouseSource::key((int) $row->product_id, (int) $row->variant_id, $row->source_warehouse_id));
 
         if (! $stockAlreadyAdjusted) {
             $shortfalls = [];
             $messages = [];
             $suggested = [];
             foreach ($required as $key => $row) {
+                foreach ($rows->get($key,collect()) as $heldRow) if (($heldRow->source_warehouse_id ?? null) !== ($row['source_warehouse_id'] ?? null)) throw ValidationException::withMessages(['products'=>'انبار رزرو رسمی با سند هماهنگ نیست.']);
                 $held = (int) $rows->get($key, collect())->sum('quantity');
                 // Automatic bundles have allocated component stock, not physical SKU stock.
-                $available = app(\App\Services\PreinvoiceBundleStockService::class)->free((int) $row['product_id'], (int) $row['variant_id']);
+                $available = app(\App\Services\PreinvoiceBundleStockService::class)->free((int) $row['product_id'], (int) $row['variant_id'], $row['source_warehouse_id'] ?? null);
                 $maximum = $held + $available;
                 $suggested[] = $row + ['requested_quantity' => $row['quantity'], 'remove' => $maximum <= 0];
                 $suggested[array_key_last($suggested)]['quantity'] = min($row['quantity'], $maximum);
@@ -2603,9 +2638,9 @@ class PreinvoiceController extends Controller
             $delta = $requiredQty - $currentQty;
 
             if ($delta > 0 && ! $stockAlreadyAdjusted) {
-                $this->reserveStockForItem((int) $row['product_id'], (int) $row['variant_id'], $delta);
+                $this->reserveStockForItem((int) $row['product_id'], (int) $row['variant_id'], $delta, $row['source_warehouse_id'] ?? null);
             } elseif ($delta < 0 && ! $stockAlreadyAdjusted) {
-                $this->releaseStockForItem((int) $row['product_id'], (int) $row['variant_id'], abs($delta));
+                $this->releaseStockForItem((int) $row['product_id'], (int) $row['variant_id'], abs($delta), $row['source_warehouse_id'] ?? null);
             }
 
             if ($reservation) {
@@ -2619,6 +2654,7 @@ class PreinvoiceController extends Controller
             } else {
                 PreinvoiceDraftReservation::query()->create([
                     'token' => (string) Str::uuid(),
+                    'source_warehouse_id' => $row['source_warehouse_id'] ?? null,
                     'user_id' => $order->created_by,
                     'preinvoice_order_id' => $order->id,
                     'product_id' => (int) $row['product_id'],
@@ -2638,7 +2674,7 @@ class PreinvoiceController extends Controller
 
             if (! $stockAlreadyAdjusted) {
                 $first = $reservations->first();
-                $this->releaseStockForItem((int) $first->product_id, (int) $first->variant_id, (int) $reservations->sum('quantity'));
+                $this->releaseStockForItem((int) $first->product_id, (int) $first->variant_id, (int) $reservations->sum('quantity'), $first->source_warehouse_id);
             }
             foreach ($reservations as $reservation) {
                 $reservation->forceFill([
@@ -2667,14 +2703,14 @@ class PreinvoiceController extends Controller
             ->where(function ($query) {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })
-            ->pluck('quantity', 'variant_id')
-            ->mapWithKeys(fn ($quantity, $variantId) => [(int) $variantId => (int) $quantity])
+            ->get()->groupBy(fn($row)=>\App\Services\SalesWarehouseSource::key((int)$row->product_id,(int)$row->variant_id,$row->source_warehouse_id))
+            ->map(fn($rows)=>(int)$rows->sum('quantity'))
             ->all();
     }
 
-    private function reserveStockForItem(int $productId, int $variantId, int $quantity): void
+    private function reserveStockForItem(int $productId, int $variantId, int $quantity, ?int $source = null): void
     {
-        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {
+        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity, $source) {
             if ($quantity <= 0) {
                 return;
             }
@@ -2688,7 +2724,7 @@ class PreinvoiceController extends Controller
                 ->firstOrFail();
 
             $bundleStock = app(\App\Services\PreinvoiceBundleStockService::class);
-            $available = $bundleStock->free($productId, $variantId);
+            $available = $bundleStock->free($productId, $variantId, $source);
             if ($available < $quantity) {
                 $productName = (string) ($variant->product?->name ?? 'نامشخص');
                 $variantName = (string) ($variant->variant_name ?? $variant->variety_name ?? $variant->variant_code ?? $variant->id);
@@ -2697,19 +2733,19 @@ class PreinvoiceController extends Controller
                 ]);
             }
 
-            $bundleStock->reserve($productId, $variantId, $quantity);
+            $bundleStock->reserve($productId, $variantId, $quantity, $source);
             ReservationSideEffects::touchProduct($productId);
         });
     }
 
-    private function releaseStockForItem(int $productId, int $variantId, int $quantity): void
+    private function releaseStockForItem(int $productId, int $variantId, int $quantity, ?int $source = null): void
     {
-        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {
+        ReservationSideEffects::run(function () use ($productId, $variantId, $quantity, $source) {
             if ($quantity <= 0) {
                 return;
             }
 
-            app(\App\Services\PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity);
+            app(\App\Services\PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity, $source);
             ReservationSideEffects::touchProduct($productId);
         });
     }
@@ -2731,7 +2767,7 @@ class PreinvoiceController extends Controller
         $order->loadMissing('items');
 
         foreach ($order->items as $item) {
-            $this->reserveStockForItem((int) $item->product_id, (int) $item->variant_id, (int) $item->quantity);
+            $this->reserveStockForItem((int) $item->product_id, (int) $item->variant_id, (int) $item->quantity, $item->source_warehouse_id);
         }
     }
 
@@ -2755,11 +2791,11 @@ class PreinvoiceController extends Controller
     private function moveConsumedInvoiceStockBackToReservation(array $oldItems, array $newItems): void
     {
         foreach ($oldItems as $row) {
-            $this->releaseStockForItem((int) $row['product_id'], (int) $row['variant_id'], (int) $row['quantity']);
+            $this->releaseStockForItem((int) $row['product_id'], (int) $row['variant_id'], (int) $row['quantity'], $row['source_warehouse_id'] ?? null);
         }
 
         foreach ($newItems as $row) {
-            $this->reserveStockForItem((int) $row['product_id'], (int) $row['variant_id'], (int) $row['quantity']);
+            $this->reserveStockForItem((int) $row['product_id'], (int) $row['variant_id'], (int) $row['quantity'], $row['source_warehouse_id'] ?? null);
         }
     }
 
@@ -2767,7 +2803,7 @@ class PreinvoiceController extends Controller
     {
         $oldMap = [];
         foreach ($oldItems as $row) {
-            $key = ((int) $row['product_id']) . ':' . ((int) $row['variant_id']);
+            $key = ((int) $row['product_id']) . ':' . ((int) $row['variant_id']).':'.((int)($row['source_warehouse_id']??0));
             $oldMap[$key] = ($oldMap[$key] ?? 0) + (int) $row['quantity'];
         }
         $newMap = [];
@@ -2775,26 +2811,26 @@ class PreinvoiceController extends Controller
             $productId = (int) ($row['product_id'] ?? $row['id'] ?? 0);
             $variantId = (int) ($row['variant_id'] ?? $row['variety_id'] ?? 0);
             $qty = (int) ($row['quantity'] ?? 0);
-            $key = $productId . ':' . $variantId;
+            $key = $productId . ':' . $variantId . ':' . ((int)($row['source_warehouse_id']??0));
             $newMap[$key] = ($newMap[$key] ?? 0) + $qty;
         }
 
         foreach (array_unique(array_merge(array_keys($oldMap), array_keys($newMap))) as $key) {
-            [$productId, $variantId] = array_map('intval', explode(':', $key));
+            [$productId, $variantId, $source] = array_map('intval', explode(':', $key));
             $delta = ($newMap[$key] ?? 0) - ($oldMap[$key] ?? 0);
             if ($delta === 0) continue;
 
             if ($delta > 0) {
-                if ($centralStockMovedToReserve) {
-                    $this->reserveStockForItem($productId, $variantId, $delta);
+                if ($centralStockMovedToReserve || $source) {
+                    $this->reserveStockForItem($productId, $variantId, $delta, $source ?: null);
                 } else {
-                    $this->changeReservedOnly($productId, $variantId, $delta);
+                    $this->changeReservedOnly($productId, $variantId, $delta, $source ?: null);
                 }
             } else {
-                if ($centralStockMovedToReserve) {
-                    $this->releaseStockForItem($productId, $variantId, abs($delta));
+                if ($centralStockMovedToReserve || $source) {
+                    $this->releaseStockForItem($productId, $variantId, abs($delta), $source ?: null);
                 } else {
-                    $this->changeReservedOnly($productId, $variantId, $delta);
+                    $this->changeReservedOnly($productId, $variantId, $delta, $source ?: null);
                 }
             }
         }
@@ -2807,7 +2843,7 @@ class PreinvoiceController extends Controller
 
         foreach ($order->items as $item) {
             if ($centralStockMovedToReserve) {
-                $this->releaseStockForItem((int) $item->product_id, (int) $item->variant_id, (int) $item->quantity);
+                $this->releaseStockForItem((int) $item->product_id, (int) $item->variant_id, (int) $item->quantity, $item->source_warehouse_id);
             } else {
                 $this->changeReservedOnly((int) $item->product_id, (int) $item->variant_id, -((int) $item->quantity));
             }
@@ -3260,6 +3296,7 @@ class PreinvoiceController extends Controller
                         'invoice_id' => $invoice->id,
                         'product_id' => (int) $it->product_id,
                         'variant_id' => (int) $it->variant_id,
+                        'source_warehouse_id' => $it->source_warehouse_id,
                         'quantity' => (int) $it->quantity,
                         'price' => (int) $it->price,
                         'line_total' => max(((int) $it->price * (int) $it->quantity) - (int) ($it->line_discount_amount ?? 0), 0),

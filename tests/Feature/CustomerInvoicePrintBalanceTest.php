@@ -25,7 +25,7 @@ class CustomerInvoicePrintBalanceTest extends TestCase
         $html = view('prints.partials.sales-invoice-template', ['printData' => $data])->render();
         $this->assertStringContainsString('مانده کل حساب مشتری', $html);
         $this->assertStringContainsString('بدهکار', $html);
-        $this->assertStringContainsString('180,000', $html);
+        $this->assertStringContainsString('۱۸۰٬۰۰۰', $html);
         $this->assertStringContainsString('مانده', $html); // Existing invoice-specific remaining is retained.
     }
 
@@ -60,7 +60,7 @@ class CustomerInvoicePrintBalanceTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('مشخصات واریز', $customerHtml);
-        foreach (['Test Payee', '1234567890', 'IR123456789012345678901234', '12345678', '1234-5678-9012-3456'] as $value) {
+        foreach (['Test Payee', '۱۲۳۴۵۶۷۸۹۰', 'IR۱۲۳۴۵۶۷۸۹۰۱۲۳۴۵۶۷۸۹۰۱۲۳۴', '۱۲۳۴۵۶۷۸', '۱۲۳۴-۵۶۷۸-۹۰۱۲-۳۴۵۶'] as $value) {
             $this->assertStringContainsString($value, $customerHtml);
         }
 

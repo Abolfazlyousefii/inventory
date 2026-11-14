@@ -64,6 +64,7 @@ class PreinvoiceDraftReservation extends Model
     public const DEFAULT_IN_PERSON_STALE_MINUTES = 15;
 
     protected $fillable = [
+        'source_warehouse_id',
         'token',
         'user_id',
         'preinvoice_order_id',

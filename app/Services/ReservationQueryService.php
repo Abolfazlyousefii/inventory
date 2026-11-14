@@ -43,6 +43,7 @@ class ReservationQueryService
         ?CarbonInterface $at = null,
     ): Collection {
         return $this->activeQuery($at)
+            ->whereNull('source_warehouse_id')
             ->when($productId !== null, fn (Builder $query) => $query->where('product_id', $productId))
             ->when($variantIds !== [], fn (Builder $query) => $query->whereIn('variant_id', $variantIds))
             ->when($official === true, fn (Builder $query) => $query->whereNotNull('preinvoice_order_id'))

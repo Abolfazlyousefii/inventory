@@ -162,7 +162,7 @@
 						@endphp
 						<tr class="{{ $addedRevision ? 'revision-added-row' : ($isChangedRevision ? 'revision-changed-row' : '') }}">
 							<td>
-								{{ $it->product?->name ?? '#'.$it->product_id }}
+								{{ $it->product?->name ?? '#'.$it->product_id }}@if($it->source_warehouse_id)<span class="badge bg-warning text-dark">تحویل از انبار شوروم</span>@endif
 								@include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot, 'variantId' => $it->variant_id, 'productId' => $it->product_id, 'bundleQuantity' => $it->quantity])
 								@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif
 								@if($isChangedRevision)<span class="revision-meta"><span class="revision-changed-badge">ویرایش‌شده</span> · اصلاح #{{ $latestRevision->revision_number }} · {{ $revisionReason }} · {{ $latestRevision->changed_by_name ?: ('کاربر #'.$latestRevision->changed_by) }} · {{ $revisionAt }}</span>@endif
@@ -213,7 +213,7 @@
 					@endphp
 					<div class="invoice-item-card {{ $addedRevision ? 'is-added' : ($isChangedRevision ? 'is-changed' : '') }}">
 						<div class="d-flex justify-content-between gap-2 align-items-start mb-2">
-							<div class="value">{{ $it->product?->name ?? '#'.$it->product_id }}</div>
+							<div class="value">{{ $it->product?->name ?? '#'.$it->product_id }}@if($it->source_warehouse_id)<span class="badge bg-warning text-dark">تحویل از انبار شوروم</span>@endif</div>
 								@include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot, 'variantId' => $it->variant_id, 'productId' => $it->product_id, 'bundleQuantity' => $it->quantity])
 							@if($addedRevision)<span class="revision-added-badge">اضافه‌شده</span>@elseif($isChangedRevision)<span class="revision-changed-badge">ویرایش‌شده</span>@endif
 						</div>

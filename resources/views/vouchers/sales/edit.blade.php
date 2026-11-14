@@ -150,13 +150,14 @@
 								<td>{{ $loop->iteration }}</td>
 								<td>
 									{{ $it->product?->name ?? '#'.$it->product_id }}
+									@if($it->source_warehouse_id)<span class="badge bg-info-subtle text-info-emphasis d-block mt-1">تحویل از انبار شوروم</span>@endif
 									@include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot, 'variantId' => $it->variant_id, 'productId' => $it->product_id, 'bundleQuantity' => $it->quantity])
 									@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif
 									@if($isChangedRevision)<span class="revision-meta"><span class="revision-changed-badge">ویرایش‌شده</span> · اصلاح #{{ $latestRevision->revision_number }} · {{ $revisionReason }} · {{ $latestRevision->changed_by_name ?: ('کاربر #'.$latestRevision->changed_by) }} · {{ $revisionAt }}</span>@endif
 								</td>
 								<td>{{ $it->variant?->variant_name ?? $it->variant?->variety_name ?? '—' }}</td>
 								<td>{{ $it->variant?->variant_code ?? $it->variant?->variety_code ?? '—' }}</td>
-								<td>{{ number_format(\App\Services\WarehouseStockService::available(\App\Services\WarehouseStockService::centralWarehouseId(), (int)$it->product_id, (int)$it->variant_id)) }}</td>
+								<td>{{ number_format(\App\Services\WarehouseStockService::available($it->source_warehouse_id ?: \App\Services\WarehouseStockService::centralWarehouseId(), (int)$it->product_id, (int)$it->variant_id)) }}</td>
 								<td>
 									@if($addedRevision)
 										۰

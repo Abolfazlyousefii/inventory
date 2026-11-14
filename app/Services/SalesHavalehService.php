@@ -127,7 +127,7 @@ class SalesHavalehService
                 $delta = $newQty - $oldQty;
 
                 if ($delta > 0) {
-                    $this->centralInventoryService->assertVariantAvailable((int) $item->variant_id, $delta);
+                    $this->assertItemStockAvailable((int) $item->product_id, (int) $item->variant_id, $delta, $item->source_warehouse_id);
                     $this->adjustSaleItemStock($invoice, $item, -$delta, StockMovement::REASON_SALE, 'کسر موجودی بابت افزایش تعداد آیتم حواله فروش', $changeReason, $changeNote);
                     $this->historyService->log($invoice, 'item_quantity_increased', 'quantity', (string) $oldQty, (string) $newQty, $this->itemChangeDescription('تعداد آیتم ' . $this->itemLabel($item) . ' از ' . number_format($oldQty) . ' به ' . number_format($newQty) . ' تغییر کرد؛ ' . number_format($delta) . ' عدد از موجودی مرکزی کم شد.', $changeReason, $changeNote), $userId);
                     $this->logItemStockAudit($invoice, $item, $oldQty, $newQty, $changeReason, $changeNote, $userId);
@@ -277,7 +277,7 @@ class SalesHavalehService
 
                 if ($newVariantId !== (int) $item->variant_id || $newProductId !== (int) $item->product_id) {
                     $variant = ProductVariant::query()->with('product')->whereKey($newVariantId)->where('product_id', $newProductId)->lockForUpdate()->firstOrFail();
-                    $this->centralInventoryService->assertVariantAvailable($newVariantId, $newQty);
+                    $this->assertItemStockAvailable($newProductId, $newVariantId, $newQty, $item->source_warehouse_id);
                     $pendingInboundLines[] = $this->warehouseInbound->invoiceItemLine(
                         $item,
                         (int) $item->quantity,
@@ -291,7 +291,7 @@ class SalesHavalehService
                 } else {
                     $delta = $newQty - (int) $item->quantity;
                     if ($delta > 0) {
-                        $this->centralInventoryService->assertVariantAvailable((int) $item->variant_id, $delta);
+                        $this->assertItemStockAvailable((int) $item->product_id, (int) $item->variant_id, $delta, $item->source_warehouse_id);
                         $this->adjustSaleItemStock($invoice, $item, -$delta, StockMovement::REASON_SALE, 'کسر موجودی بابت افزایش تعداد توسط مالی', 'finance_correction', $editReason);
                     } elseif ($delta < 0) {
                         $pendingInboundLines[] = $this->warehouseInbound->invoiceItemLine(
@@ -358,6 +358,7 @@ class SalesHavalehService
             $order->items()->create([
                 'product_id' => (int) $item->product_id,
                 'variant_id' => (int) $item->variant_id,
+                'source_warehouse_id' => $item->source_warehouse_id,
                 'quantity' => (int) $item->quantity,
                 'price' => (int) $item->price,
                 'line_total' => (int) $item->line_total,
@@ -404,6 +405,7 @@ class SalesHavalehService
             $order->items()->create([
                 'product_id' => (int) $item->product_id,
                 'variant_id' => (int) $item->variant_id,
+                'source_warehouse_id' => $item->source_warehouse_id,
                 'quantity' => (int) $item->quantity,
                 'price' => (int) $item->price,
                 'line_total' => max(((int) $item->quantity * (int) $item->price) - (int) ($item->line_discount_amount ?? 0), 0),
@@ -485,77 +487,24 @@ class SalesHavalehService
 
     private function validateRequestedStockAvailability(Invoice $invoice, array $items): void
     {
-        $currentItems = $invoice->items;
-        $itemsById = $currentItems->keyBy('id');
-
-        $oldTotals = $currentItems
-            ->filter(fn (InvoiceItem $item) => (int) $item->variant_id > 0)
-            ->groupBy(fn (InvoiceItem $item) => (int) $item->variant_id)
-            ->map(fn ($rows) => (int) $rows->sum('quantity'));
-
-        $newTotals = collect($items)->reduce(function (array $carry, array $row) use ($itemsById) {
-            $quantity = max(0, (int) ($row['quantity'] ?? 0));
-            if ($quantity <= 0) {
-                return $carry;
-            }
-
-            $itemId = (int) ($row['id'] ?? 0);
-            $existingItem = $itemId > 0 ? $itemsById->get($itemId) : null;
-            $variantId = (int) ($row['variant_id'] ?? ($existingItem?->variant_id ?? 0));
-
-            if ($variantId > 0) {
-                $carry[$variantId] = ($carry[$variantId] ?? 0) + $quantity;
-            }
-
-            return $carry;
-        }, []);
-
-        $variantIds = collect(array_keys($newTotals))
-            ->merge($oldTotals->keys())
-            ->map(fn ($id) => (int) $id)
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($variantIds->isEmpty()) {
-            return;
+        $byId = $invoice->items->keyBy('id');
+        $old = $invoice->items->groupBy(fn($line)=>$line->variant_id.':'.((int)($line->source_warehouse_id ?? 0)))
+            ->map(fn($lines)=>(int)$lines->sum('quantity'));
+        $desired = [];
+        foreach ($items as $row) {
+            $existing = $byId->get((int)($row['id'] ?? 0));
+            $variant = (int)($row['variant_id'] ?? $existing?->variant_id ?? 0);
+            $source = $existing?->source_warehouse_id;
+            $key = $variant.':'.((int)($source ?? 0));
+            $desired[$key] = ($desired[$key] ?? 0) + max(0,(int)($row['quantity'] ?? 0));
         }
-
-        $variants = ProductVariant::query()
-            ->with('product')
-            ->whereIn('id', $variantIds)
-            ->lockForUpdate()
-            ->get()
-            ->keyBy('id');
-
-        $centralId = WarehouseStockService::centralWarehouseId();
-        $warehouseStocks = WarehouseStock::query()
-            ->where('warehouse_id', $centralId)
-            ->whereIn('product_variant_id', $variantIds)
-            ->lockForUpdate()
-            ->pluck('quantity', 'product_variant_id');
-
-        foreach ($variantIds as $variantId) {
-            $oldTotal = (int) ($oldTotals[$variantId] ?? 0);
-            $newTotal = (int) ($newTotals[$variantId] ?? 0);
-            $delta = $newTotal - $oldTotal;
-
-            if ($delta <= 0) {
-                continue;
-            }
-
-            $freeStock = max(0, (int) ($warehouseStocks[$variantId] ?? 0));
-            if ($delta <= $freeStock) {
-                continue;
-            }
-
-            $variant = $variants->get($variantId);
-            $label = trim(($variant?->product?->name ?: ('#' . $variantId)) . ($variant?->variant_name ? (' / ' . $variant->variant_name) : ''));
-            $maxAllowed = $oldTotal + $freeStock;
-
-            throw ValidationException::withMessages([
-                'items' => "موجودی آزاد کالای {$label} کافی نیست. موجودی آزاد: {$freeStock} عدد، حداکثر قابل ثبت برای این حواله: {$maxAllowed} عدد.",
-            ]);
+        ksort($desired);
+        foreach ($desired as $key=>$quantity) {
+            $delta = $quantity-(int)($old[$key] ?? 0);
+            if ($delta <= 0) continue;
+            [$variantId,$source] = array_map('intval',explode(':',$key));
+            $variant = ProductVariant::whereKey($variantId)->lockForUpdate()->firstOrFail();
+            $this->assertItemStockAvailable((int)$variant->product_id,$variantId,$delta,$source ?: null);
         }
     }
 
@@ -581,7 +530,7 @@ class SalesHavalehService
             abort(422, 'کالای انتخاب‌شده قابل فروش نیست.');
         }
 
-        $this->centralInventoryService->assertVariantAvailable($variantId, $quantity);
+
 
         $existingItem = InvoiceItem::query()
             ->where('invoice_id', $invoice->id)
@@ -590,6 +539,7 @@ class SalesHavalehService
             ->lockForUpdate()
             ->first();
 
+        $this->assertItemStockAvailable((int) $variant->product_id, $variantId, $quantity, $existingItem?->source_warehouse_id);
         if ($existingItem) {
             $existingItem->loadMissing(['product', 'variant']);
             $oldQty = (int) $existingItem->quantity;
@@ -747,7 +697,8 @@ class SalesHavalehService
                 'transaction_type' => $transactionType ?: StockMovement::TRANSACTION_SALES_HAVALEH_ADJUSTMENT,
                 'reference_type' => Invoice::class,
                 'reference_id' => $invoice->id,
-            ]
+            ],
+            $item->source_warehouse_id
         );
     }
 
@@ -762,6 +713,19 @@ class SalesHavalehService
         $order->update(['uuid' => $code]);
 
         return $code;
+    }
+
+    private function assertItemStockAvailable(int $productId, int $variantId, int $quantity, ?int $source): void
+    {
+        if (! $source) {
+            $this->centralInventoryService->assertVariantAvailable($variantId, $quantity);
+            return;
+        }
+
+        SalesWarehouseSource::assertReservable($productId, $variantId, $source);
+        if (WarehouseStockService::available($source, $productId, $variantId) < $quantity) {
+            throw ValidationException::withMessages(['items' => 'موجودی آزاد شوروم کافی نیست.']);
+        }
     }
 
     public function createFromFinancialRecord(int $preinvoiceOrderId, ?int $userId = null): Invoice
@@ -815,6 +779,7 @@ class SalesHavalehService
                     'invoice_id' => $invoice->id,
                     'product_id' => (int) $item->product_id,
                     'variant_id' => (int) $item->variant_id,
+                    'source_warehouse_id' => $item->source_warehouse_id,
                     'quantity' => (int) $item->quantity,
                     'price' => (int) $item->price,
                     'line_total' => (int) $item->quantity * (int) $item->price,

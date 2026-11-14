@@ -3,10 +3,11 @@
         if (!$value) return '—';
         try { return \Morilog\Jalali\Jalalian::fromDateTime($value)->format($format); } catch (\Throwable $e) { return (string) $value; }
     };
-    $money = fn ($value) => \App\Support\Currency::formatRial((int) $value);
+    $fa = fn ($value) => strtr((string) $value, array_combine(str_split('0123456789'), preg_split('//u', '۰۱۲۳۴۵۶۷۸۹', -1, PREG_SPLIT_NO_EMPTY)));
+    $num = fn ($value) => $fa(str_replace(',', '٬', number_format((int) $value)));
+    $money = fn ($value) => new \Illuminate\Support\HtmlString('<span class="print-money" dir="rtl"><bdi>'.$num($value).'</bdi><span class="money-unit">ریال</span></span>');
     $dash = fn ($value) => filled($value) ? $value : '—';
     $isWarehouseMode = $printData['mode'] !== 'customer';
-    $itemColspan = $isWarehouseMode ? 5 : 8;
     $totalQuantity = $printData['items']->sum('quantity');
     $totalLineAmount = $printData['items']->sum('lineTotal');
 @endphp
@@ -20,68 +21,35 @@
 </div>
 <main class="invoice-page">
     <header class="invoice-header">
-        <div class="brand"><img src="{{ $printData['logo'] }}" alt="{{ $printData['company']['name'] }}"><div><div class="brand-name">{{ $printData['company']['name'] }}</div><div>{{ $printData['company']['phone'] }}</div></div></div>
-        <div><h1 class="doc-title">{{ $printData['title'] }}</h1><div class="doc-meta">
-            <div>{{ $printData['numberLabel'] }}: <strong>{{ $printData['number'] }}</strong></div>
-            @if($printData['customerNumber'])<div>شماره فاکتور مشتری: {{ $printData['customerNumber'] }}</div>@endif
-            <div>تاریخ ثبت پیش‌فاکتور: {{ $fmtDate($printData['registeredAt']) }}</div>
-            @if($printData['issuedAt'])<div>تاریخ صدور فاکتور: {{ $fmtDate($printData['issuedAt']) }}</div>@endif
-            @if($printData['status'])<div>وضعیت سند: {{ $printData['status'] }}</div>@endif
-            @if(filled($printData['seller']))<div>فروشنده: {{ $printData['seller'] }}</div>@endif
+        <div class="header-brand">
+        <div class="brand"><img src="{{ $printData['logo'] }}" alt="{{ $fa($printData['company']['name']) }}"><div><div class="brand-name">{{ $fa($printData['company']['name']) }}</div><div>{{ $fa($printData['company']['phone']) }}</div></div></div>
+            @include('prints.partials.invoice-customer-header')
+        </div>
+        <div><h1 class="doc-title">{{ $fa($printData['title']) }}</h1><div class="doc-meta">
+            <div>{{ $fa($printData['numberLabel']) }}: <strong>{{ $fa($printData['number']) }}</strong></div>
+            @if($printData['customerNumber'])<div>شماره فاکتور مشتری: {{ $fa($printData['customerNumber']) }}</div>@endif
+            <div>تاریخ سند: {{ $fa($fmtDate($printData['registeredAt'])) }}</div>
+            @if($isWarehouseMode && $printData['issuedAt'] && $printData['issuedAt'] != $printData['registeredAt'])<div>تاریخ صدور فاکتور: {{ $fa($fmtDate($printData['issuedAt'])) }}</div>@endif
+            @if($isWarehouseMode && $printData['status'])<div>وضعیت سند: {{ $fa($printData['status']) }}</div>@endif
+            @if(filled($printData['seller']))<div>فروشنده: {{ $fa($printData['seller']) }}</div>@endif
         </div></div>
     </header>
-    <section class="info-grid">
-        <div class="info-box"><div class="info-title">مشخصات مشتری</div>
-            <div class="info-row"><span class="label">نام مشتری:</span><strong>{{ $dash($printData['customer']['name']) }}</strong></div>
-            <div class="info-row"><span class="label">شماره تماس:</span><span>{{ $dash($printData['customer']['mobile']) }}</span></div>
-            <div class="info-row"><span class="label">کد مشتری:</span><span>{{ $dash($printData['customer']['code']) }}</span></div>
-            <div class="info-row"><span class="label">آدرس:</span><span>{{ $dash($printData['customer']['address']) }}</span></div>
-        </div>
+    @if(filled($printData['shipping']['method']) || filled($printData['shipping']['description']))
+    <section class="info-grid {{ $fa(!filled($printData['shipping']['method']) && !filled($printData['shipping']['description']) ? 'single-info' : '') }}">
+        @if(filled($printData['shipping']['method']) || filled($printData['shipping']['description']))
         <div class="info-box"><div class="info-title">اطلاعات ارسال</div>
-            <div class="info-row"><span class="label">روش ارسال:</span><span>{{ $dash($printData['shipping']['method']) }}</span></div>
-            <div class="info-row"><span class="label">هزینه ارسال:</span><span>{{ $money($printData['shipping']['cost']) }}</span></div>
-            @if(filled($printData['shipping']['description']))<div class="info-row"><span class="label">توضیحات:</span><span>{{ $printData['shipping']['description'] }}</span></div>@endif
+            <div class="info-row"><span class="label">روش ارسال:</span><span>{{ $fa($dash($printData['shipping']['method'])) }}</span></div>
+            @if(filled($printData['shipping']['description']))<div class="info-row"><span class="label">توضیحات:</span><span>{{ $fa($printData['shipping']['description']) }}</span></div>@endif
         </div>
-    </section>
-    <table class="items-table">
-        @if($isWarehouseMode)
-            <thead><tr><th class="col-index">ردیف</th><th class="col-desc">شرح کالا</th><th class="col-code">کد انبار</th><th class="col-qty">تعداد</th><th class="col-check">کنترل انبار</th></tr></thead>
-        @else
-            <thead><tr><th class="col-index">ردیف</th><th class="col-desc">شرح کالا</th><th class="col-code">کد انبار</th><th class="col-qty">تعداد</th><th class="col-price">قیمت واحد</th><th class="col-price">تخفیف ردیف</th><th class="col-price">قیمت خالص</th><th class="col-total">مبلغ کل</th></tr></thead>
         @endif
-        <tbody>
-        @forelse($printData['items'] as $item)
-            @if($isWarehouseMode)
-                <tr><td class="col-index">{{ $loop->iteration }}</td><td class="col-desc">{{ $item['description'] }}@foreach(($item['bundle_contents'] ?? []) as $part)<span class="bundle-component-chip" style="display:inline-block;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:10px;padding:2px 6px;margin:3px 2px;">{{ $part['name'] }}@if($part['variant'] && $part['variant'] !== $part['name']) ({{ $part['variant'] }})@endif × {{ number_format($part['quantity']) }}@if((int)$item['quantity'] > 1) (جمع {{ number_format($part['quantity'] * (int)$item['quantity']) }})@endif</span>@endforeach</td><td class="col-code">{{ $item['inventoryCode'] }}</td><td class="col-qty">{{ number_format($item['quantity']) }}</td><td class="col-check"></td></tr>
-            @else
-                <tr><td class="col-index">{{ $loop->iteration }}</td><td class="col-desc">{{ $item['description'] }}@foreach(($item['bundle_contents'] ?? []) as $part)<span class="bundle-component-chip" style="display:inline-block;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:10px;padding:2px 6px;margin:3px 2px;">{{ $part['name'] }}@if($part['variant'] && $part['variant'] !== $part['name']) ({{ $part['variant'] }})@endif × {{ number_format($part['quantity']) }}@if((int)$item['quantity'] > 1) (جمع {{ number_format($part['quantity'] * (int)$item['quantity']) }})@endif</span>@endforeach</td><td class="col-code">{{ $item['inventoryCode'] }}</td><td class="col-qty">{{ number_format($item['quantity']) }}</td><td class="col-price">{{ number_format($item['unitPrice']) }}</td><td class="col-price">{{ number_format($item['lineDiscount'] ?? 0) }}</td><td class="col-price">{{ number_format($item['netUnitPrice'] ?? $item['unitPrice']) }}</td><td class="col-total">{{ number_format($item['lineTotal']) }}</td></tr>
-            @endif
-        @empty
-            <tr><td colspan="{{ $itemColspan }}" style="text-align:center">آیتمی ثبت نشده است.</td></tr>
-        @endforelse
-        </tbody>
-        <tfoot>
-            <tr class="items-total-row">
-                <td class="col-index"></td>
-                <td class="col-desc">جمع کل</td>
-                <td class="col-code"></td>
-                @if($isWarehouseMode)
-                    <td class="col-qty">{{ number_format($totalQuantity) }}</td>
-                    <td class="col-check"></td>
-                @else
-                    <td class="col-qty">{{ number_format($totalQuantity) }}</td>
-                    <td class="col-price"></td>
-                    <td class="col-price"></td>
-                    <td class="col-price"></td>
-                    <td class="col-total">{{ number_format($totalLineAmount) }}</td>
-                @endif
-            </tr>
-        </tfoot>
-    </table>
+    </section>
+    @endif
+    @include('prints.partials.customer-invoice-items')
     @unless($isWarehouseMode)
         <section class="summary-section">
             <div></div><table class="summary-table"><tbody>
-                <tr><td>جمع کالاها</td><td>{{ $money($printData['totals']['itemsNetSubtotal']) }}</td></tr>
+                <tr><td>جمع قبل از تخفیف</td><td>{{ $money($printData['totals']['subtotal']) }}</td></tr>
+                @if($printData['totals']['itemsDiscount'] > 0)<tr><td>جمع تخفیف کالاها</td><td>{{ $money($printData['totals']['itemsDiscount']) }}</td></tr>@endif
                 <tr><td>تخفیف کلی فاکتور</td><td>{{ $money($printData['totals']['invoiceDiscount']) }}</td></tr>
                 <tr><td>هزینه ارسال</td><td>{{ $money($printData['totals']['shipping']) }}</td></tr>
                 @if(!is_null($printData['totals']['paid']))<tr><td>مبلغ پرداخت‌شده</td><td>{{ $money($printData['totals']['paid']) }}</td></tr>@endif
@@ -95,41 +63,44 @@
                     <div class="info-title">مانده کل حساب مشتری</div>
                     <div class="customer-balance-details">
                         <strong>{{ $money($printData['accountBalance']['amount']) }}</strong>
-                        <span class="customer-balance-status">{{ $printData['accountBalance']['status'] }}</span>
-                        <span class="customer-balance-time">تا زمان چاپ: {{ $fmtDate($printData['accountBalance']['asOf']) }}</span>
+                        <span class="customer-balance-status">{{ $fa($printData['accountBalance']['status']) }}</span>
+                        <span class="customer-balance-time">تا زمان چاپ: {{ $fa($fmtDate($printData['accountBalance']['asOf'])) }}</span>
                     </div>
                     <div class="customer-balance-hint">این مبلغ مربوط به کل گردش حساب مشتری است و با مانده همین فاکتور تفاوت دارد.</div>
                 </section>
             @endif
             @php($paymentDetails = $printData['customerPayment'] ?? [])
+            @if(filled($printData['paymentWarning'] ?? null))
+                <section class="customer-payment-box"><strong>{{ $fa($printData['paymentWarning']) }}</strong></section>
+            @endif
             @if(collect($paymentDetails)->contains(fn ($value) => filled($value)))
                 <section class="customer-payment-box">
                     <div class="info-title">مشخصات واریز</div>
                     <div class="customer-payment-grid">
                         @if(filled($paymentDetails['name'] ?? null))
-                            <div><span class="payment-label">صاحب حساب:</span><strong>{{ $paymentDetails['name'] }}</strong></div>
+                            <div><span class="payment-label">صاحب حساب:</span><strong>{{ $fa($paymentDetails['name']) }}</strong></div>
                         @endif
                         @if(filled($paymentDetails['national_id'] ?? null))
-                            <div><span class="payment-label">شماره ملی:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['national_id'] }}</strong></div>
+                            <div><span class="payment-label">شماره ملی:</span><strong class="payment-number" dir="ltr">{{ $fa($paymentDetails['national_id']) }}</strong></div>
                         @endif
                         @if(filled($paymentDetails['iban'] ?? null))
-                            <div><span class="payment-label">شماره شبا:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['iban'] }}</strong></div>
+                            <div><span class="payment-label">شماره شبا:</span><strong class="payment-number" dir="ltr">{{ $fa($paymentDetails['iban']) }}</strong></div>
                         @endif
                         @if(filled($paymentDetails['account'] ?? null))
-                            <div><span class="payment-label">شماره حساب:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['account'] }}</strong></div>
+                            <div><span class="payment-label">شماره حساب:</span><strong class="payment-number" dir="ltr">{{ $fa($paymentDetails['account']) }}</strong></div>
                         @endif
                         @if(filled($paymentDetails['card'] ?? null))
-                            <div><span class="payment-label">شماره کارت:</span><strong class="payment-number" dir="ltr">{{ $paymentDetails['card'] }}</strong></div>
+                            <div><span class="payment-label">شماره کارت:</span><strong class="payment-number" dir="ltr">{{ $fa($paymentDetails['card']) }}</strong></div>
                         @endif
                     </div>
                 </section>
             @endif
         @endif
         <section class="company-box"><div class="info-title">اطلاعات شرکت و پرداخت</div>
-            <div><strong>{{ $printData['company']['name'] }}</strong> | تلفن: {{ $printData['company']['phone'] }}</div>
-            <div>آدرس: {{ $printData['company']['address'] }}</div>
-            @if(filled($printData['company']['bank_account']))<div>شماره حساب شرکت: {{ $printData['company']['bank_account'] }}</div>@endif
-            @if(filled($printData['company']['sheba']))<div>شماره شبا شرکت: {{ $printData['company']['sheba'] }}</div>@endif
+            <div><strong>{{ $fa($printData['company']['name']) }}</strong> | تلفن: {{ $fa($printData['company']['phone']) }}</div>
+            <div>آدرس: {{ $fa($printData['company']['address']) }}</div>
+            @if(filled($printData['company']['bank_account']))<div>شماره حساب شرکت: {{ $fa($printData['company']['bank_account']) }}</div>@endif
+            @if(filled($printData['company']['sheba']))<div>شماره شبا شرکت: {{ $fa($printData['company']['sheba']) }}</div>@endif
         </section>
     @endunless
     <section class="signature-section"><div class="signature-box">امضا و مهر فروشنده</div><div class="signature-box">امضای مشتری / تحویل‌گیرنده</div></section>

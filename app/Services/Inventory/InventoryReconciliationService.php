@@ -28,7 +28,7 @@ class InventoryReconciliationService
 
     public function invalidInvoiceStatuses(?int $productId = null): Collection
     {
-        return DB::table('invoice_items AS ii')
+        return DB::table('invoice_items AS ii')->whereNull('ii.source_warehouse_id')
             ->join('invoices AS i', 'i.id', '=', 'ii.invoice_id')
             ->whereNotNull('ii.variant_id')
             ->when($productId, fn ($q) => $q->where('ii.product_id', $productId))
@@ -40,7 +40,7 @@ class InventoryReconciliationService
 
     public function activeReservationRowsForProduct(int $productId): Collection
     {
-        return DB::table('preinvoice_order_items AS poi')
+        return DB::table('preinvoice_order_items AS poi')->whereNull('poi.source_warehouse_id')
             ->join('preinvoice_orders AS po', 'po.id', '=', 'poi.preinvoice_order_id')
             ->where('poi.product_id', $productId)
             ->whereNotNull('poi.variant_id')
@@ -142,10 +142,10 @@ class InventoryReconciliationService
     { return DB::table($table)->select($variantCol, DB::raw('SUM(quantity) qty'))->whereNotNull($variantCol)->when($productId, fn($q)=>$q->where('product_id',$productId))->groupBy($variantCol)->pluck('qty',$variantCol)->map(fn($v)=>(int)$v)->all(); }
 
     private function invoiceQty(?int $productId): array
-    { return DB::table('invoice_items AS ii')->join('invoices AS i','i.id','=','ii.invoice_id')->whereNotNull('ii.variant_id')->whereIn('i.status', self::VALID_INVOICE_STATUSES)->when($productId, fn($q)=>$q->where('ii.product_id',$productId))->select('ii.variant_id',DB::raw('SUM(ii.quantity) qty'))->groupBy('ii.variant_id')->pluck('qty','variant_id')->map(fn($v)=>(int)$v)->all(); }
+    { return DB::table('invoice_items AS ii')->whereNull('ii.source_warehouse_id')->join('invoices AS i','i.id','=','ii.invoice_id')->whereNotNull('ii.variant_id')->whereIn('i.status', self::VALID_INVOICE_STATUSES)->when($productId, fn($q)=>$q->where('ii.product_id',$productId))->select('ii.variant_id',DB::raw('SUM(ii.quantity) qty'))->groupBy('ii.variant_id')->pluck('qty','variant_id')->map(fn($v)=>(int)$v)->all(); }
 
     private function reservedQty(?int $productId): array
-    { return DB::table('preinvoice_order_items AS poi')->join('preinvoice_orders AS po','po.id','=','poi.preinvoice_order_id')->whereNotNull('poi.variant_id')->whereNull('po.stock_released_at')->whereIn('po.status', self::ACTIVE_PREINVOICE_STATUSES)->when($productId, fn($q)=>$q->where('poi.product_id',$productId))->select('poi.variant_id',DB::raw('SUM(poi.quantity) qty'))->groupBy('poi.variant_id')->pluck('qty','variant_id')->map(fn($v)=>(int)$v)->all(); }
+    { return DB::table('preinvoice_order_items AS poi')->whereNull('poi.source_warehouse_id')->join('preinvoice_orders AS po','po.id','=','poi.preinvoice_order_id')->whereNotNull('poi.variant_id')->whereNull('po.stock_released_at')->whereIn('po.status', self::ACTIVE_PREINVOICE_STATUSES)->when($productId, fn($q)=>$q->where('poi.product_id',$productId))->select('poi.variant_id',DB::raw('SUM(poi.quantity) qty'))->groupBy('poi.variant_id')->pluck('qty','variant_id')->map(fn($v)=>(int)$v)->all(); }
 
     private function warehouseQty(?int $central, ?int $productId): array
     { if(!$central) return []; return DB::table('warehouse_stocks')->where('warehouse_id',$central)->whereNotNull('product_variant_id')->when($productId, fn($q)=>$q->where('product_id',$productId))->select('product_variant_id',DB::raw('SUM(quantity) qty'))->groupBy('product_variant_id')->pluck('qty','product_variant_id')->map(fn($v)=>(int)$v)->all(); }
@@ -174,7 +174,7 @@ class InventoryReconciliationService
     private function suspiciousReservations(?int $productId): array
     {
         $variantCounts = DB::table('product_variants')->when($productId, fn($q)=>$q->where('product_id',$productId))->select('product_id',DB::raw('COUNT(*) c'))->groupBy('product_id')->pluck('c','product_id');
-        $rows = DB::table('preinvoice_order_items AS poi')->join('preinvoice_orders AS po','po.id','=','poi.preinvoice_order_id')->whereNotNull('poi.variant_id')->whereNull('po.stock_released_at')->whereIn('po.status', self::ACTIVE_PREINVOICE_STATUSES)->when($productId, fn($q)=>$q->where('poi.product_id',$productId))->select('poi.product_id','po.id','po.uuid','poi.quantity',DB::raw('COUNT(DISTINCT poi.variant_id) variants'))->groupBy('poi.product_id','po.id','po.uuid','poi.quantity')->get();
+        $rows = DB::table('preinvoice_order_items AS poi')->whereNull('poi.source_warehouse_id')->join('preinvoice_orders AS po','po.id','=','poi.preinvoice_order_id')->whereNotNull('poi.variant_id')->whereNull('po.stock_released_at')->whereIn('po.status', self::ACTIVE_PREINVOICE_STATUSES)->when($productId, fn($q)=>$q->where('poi.product_id',$productId))->select('poi.product_id','po.id','po.uuid','poi.quantity',DB::raw('COUNT(DISTINCT poi.variant_id) variants'))->groupBy('poi.product_id','po.id','po.uuid','poi.quantity')->get();
         $byProduct=[]; $qtyByVariant=[];
         foreach($rows as $r){
             $total=(int)($variantCounts[$r->product_id]??0);

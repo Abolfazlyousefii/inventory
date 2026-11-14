@@ -495,6 +495,8 @@ class InvoiceController extends Controller
                     'customer_name'           => $invoice->customer_name,
                     'customer_mobile'         => $invoice->customer_mobile,
                     'items_count'             => (int) $invoice->items->sum('quantity'),
+                    'has_showroom_items'      => $invoice->items->contains(fn ($item) => $item->source_warehouse_id !== null),
+                    'warehouse_summary'       => 'مرکزی: '.number_format((int)$invoice->items->whereNull('source_warehouse_id')->sum('quantity')).' | شوروم: '.number_format((int)$invoice->items->whereNotNull('source_warehouse_id')->sum('quantity')),
                     'total'                   => (int) $invoice->total,
                     'status'                  => $invoice->status,
                     'status_label'            => $this->statusService->labels()[$invoice->status] ?? $invoice->status,

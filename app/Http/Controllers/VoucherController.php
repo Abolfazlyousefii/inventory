@@ -162,8 +162,9 @@ class VoucherController extends Controller
                 $deltaQty = $newQty - (int) $item->quantity;
 
                 if ($deltaQty !== 0) {
+                    if ($deltaQty>0 && $item->source_warehouse_id) \App\Services\SalesWarehouseSource::assertReservable((int)$item->product_id,$variantId,$item->source_warehouse_id);
                     WarehouseStockService::change(
-                        $centralWarehouseId,
+                        $item->source_warehouse_id ?: $centralWarehouseId,
                         (int) $item->product_id,
                         -$deltaQty,
                         $variantId
@@ -1212,17 +1213,18 @@ class VoucherController extends Controller
                         ->whereKey((int) $item->product_id)
                         ->first();
 
-                    $before = (int) ($product?->stock ?? 0);
+                    if ($delta>0 && $item->source_warehouse_id) \App\Services\SalesWarehouseSource::assertReservable((int)$item->product_id,$variantId,$item->source_warehouse_id);
+                    $before = $item->source_warehouse_id ? WarehouseStockService::available($item->source_warehouse_id,(int)$item->product_id,$variantId) : (int)($product?->stock ?? 0);
 
                     WarehouseStockService::change(
-                        $centralWarehouseId,
+                        $item->source_warehouse_id ?: $centralWarehouseId,
                         (int) $item->product_id,
                         -$delta,
                         $variantId
                     );
 
                     $product?->refresh();
-                    $after = (int) ($product?->stock ?? 0);
+                    $after = $item->source_warehouse_id ? WarehouseStockService::available($item->source_warehouse_id,(int)$item->product_id,$variantId) : (int)($product?->stock ?? 0);
 
                     if ($product) {
                         StockMovement::create([
@@ -1230,6 +1232,8 @@ class VoucherController extends Controller
                             'user_id' => auth()->id(),
                             'type' => $delta > 0 ? 'out' : 'in',
                             'reason' => 'sale_edit',
+                            'warehouse_id' => $item->source_warehouse_id ?: $centralWarehouseId,
+                            'product_variant_id' => $variantId,
                             'quantity' => abs($delta),
                             'stock_before' => $before,
                             'stock_after' => $after,

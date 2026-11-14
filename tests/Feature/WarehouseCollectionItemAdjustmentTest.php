@@ -41,7 +41,7 @@ class WarehouseCollectionItemAdjustmentTest extends TestCase
         $this->assertStringContainsString('if ($existing && $qty <= 0)', $service);
         $this->assertStringContainsString('$newByVariant', $service);
         $this->assertStringContainsString('$delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0)', $service);
-        $this->assertStringContainsString('WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta', $service);
+        $this->assertStringContainsString('WarehouseStockService::change($this->sourceWarehouseForVariant($invoice, $variantId), (int) $variant->product_id, -$delta', $service);
         $this->assertStringContainsString("'line_total' => max", $service);
         $this->assertStringContainsString('SalesDocumentTotals::fromDocument($invoice)', $service);
         $this->assertStringContainsString('SalesDocumentTotals::proportionalLineDiscount(', $service);

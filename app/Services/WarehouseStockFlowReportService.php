@@ -36,7 +36,7 @@ final class WarehouseStockFlowReportService
             return collect();
         }
 
-        return DB::table('invoice_items as ii')
+        return DB::table('invoice_items as ii')->whereNull('ii.source_warehouse_id')
             ->join('invoices as i','i.id','=','ii.invoice_id')
             ->whereIn('ii.variant_id',$ids)
             ->whereIn('i.status',self::COLLECTION_STATUSES)
@@ -74,14 +74,14 @@ final class WarehouseStockFlowReportService
         }
 
         $queueExists = static fn ($q) => $q->selectRaw('1')
-            ->from('invoice_items as items')
+            ->from('invoice_items as items')->whereNull('items.source_warehouse_id')
             ->join('invoices as invoices', 'invoices.id', '=', 'items.invoice_id')
             ->whereColumn('items.variant_id', 'v.id')
             ->whereIn('invoices.status', self::COLLECTION_STATUSES)
             ->where('items.quantity', '>', 0);
 
         $holdExists = static fn ($q) => $q->selectRaw('1')
-            ->from('preinvoice_draft_reservations as holds')
+            ->from('preinvoice_draft_reservations as holds')->whereNull('holds.source_warehouse_id')
             ->join('preinvoice_orders as orders', 'orders.id', '=', 'holds.preinvoice_order_id')
             ->whereColumn('holds.variant_id', 'v.id')
             ->where('holds.reservation_scope', 'official')

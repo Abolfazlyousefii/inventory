@@ -13,6 +13,14 @@ use Illuminate\Validation\ValidationException;
  */
 final class PreinvoiceBundleStockService
 {
+    public function constrainSalesVariants(Builder $query): Builder
+    {
+        return $query->active()->where('sales_enabled',true)->where(function(Builder $q) {
+            $q->where(fn(Builder $central)=>$this->constrainAvailableVariants($central))
+                ->orWhereHas('warehouseStocks',fn($stock)=>$stock->where('quantity','>',0)->whereHas('warehouse',fn($warehouse)=>$warehouse->where('type','showroom')->where('is_active',true)->whereNull('parent_id')));
+        });
+    }
+
     public function constrainAvailableVariants(Builder $query): Builder
     {
         return $query->active()->where('sales_enabled', true)->where(function (Builder $q) {
@@ -45,15 +53,21 @@ final class PreinvoiceBundleStockService
                 ->where('bundle_stock_mode', 'automatic'))->exists();
     }
 
-    public function free(int $productId, int $variantId): int
+    public function free(int $productId, int $variantId, ?int $sourceWarehouseId = null): int
     {
+        if ($sourceWarehouseId) return WarehouseStockService::available($sourceWarehouseId,$productId,$variantId);
         return $this->isAutomatic($productId, $variantId)
             ? app(AutomaticBundleAvailabilityService::class)->available($variantId)
             : WarehouseStockService::available(WarehouseStockService::centralWarehouseId(), $productId, $variantId);
     }
 
-    public function reserve(int $productId, int $variantId, int $quantity): void
+    public function reserve(int $productId, int $variantId, int $quantity, ?int $sourceWarehouseId = null): void
     {
+        if ($sourceWarehouseId) {
+            SalesWarehouseSource::assertReservable($productId,$variantId,$sourceWarehouseId);
+            if ($quantity>0) WarehouseStockService::change($sourceWarehouseId,$productId,-$quantity,$variantId);
+            return;
+        }
         app(InventoryCountFreezeService::class)->assertProduct($productId);
         if ($quantity <= 0) return;
         if (! $this->isAutomatic($productId, $variantId)) {
@@ -66,8 +80,12 @@ final class PreinvoiceBundleStockService
         app(BundleComponentAllocationService::class)->reserve([$variantId => $requirements]);
     }
 
-    public function release(int $productId, int $variantId, int $quantity): void
+    public function release(int $productId, int $variantId, int $quantity, ?int $sourceWarehouseId = null): void
     {
+        if ($sourceWarehouseId) {
+            if ($quantity>0) WarehouseStockService::change($sourceWarehouseId,$productId,$quantity,$variantId);
+            return;
+        }
         if ($quantity <= 0) return;
         if (! $this->isAutomatic($productId, $variantId)) {
             WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), $productId, $quantity, $variantId);

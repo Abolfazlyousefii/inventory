@@ -151,7 +151,7 @@ class InventoryCorruptionAuditService
 
     private function invoiceQuantities(): array
     {
-        return DB::table('invoice_items AS ii')
+        return DB::table('invoice_items AS ii')->whereNull('ii.source_warehouse_id')
             ->select('ii.variant_id', DB::raw('SUM(ii.quantity) AS qty'))
             ->join('invoices AS i', 'i.id', '=', 'ii.invoice_id')
             ->whereNotNull('ii.variant_id')
@@ -164,7 +164,7 @@ class InventoryCorruptionAuditService
 
     private function activeReservationQuantities(): array
     {
-        return DB::table('preinvoice_order_items AS poi')
+        return DB::table('preinvoice_order_items AS poi')->whereNull('poi.source_warehouse_id')
             ->select('poi.variant_id', DB::raw('SUM(poi.quantity) AS qty'))
             ->join('preinvoice_orders AS po', 'po.id', '=', 'poi.preinvoice_order_id')
             ->whereNotNull('poi.variant_id')

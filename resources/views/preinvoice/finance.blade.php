@@ -160,6 +160,7 @@
                     <tr>
                       <td>
                         {{ $it->product?->name ?? ('#'.$it->product_id) }}
+                        @if($it->source_warehouse_id)<span class="badge bg-warning text-dark">تحویل از انبار شوروم</span>@endif
                         @include('partials.bundle-contents', [
                           'productIsBundle' => $it->product?->is_bundle,
                           'variantId' => $it->variant_id,

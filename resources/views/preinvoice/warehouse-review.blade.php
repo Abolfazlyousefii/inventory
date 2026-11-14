@@ -33,6 +33,8 @@
             'item_id' => (int) $item->id,
             'product_id' => (int) $item->product_id,
             'variant_id' => (int) $item->variant_id,
+            'source_warehouse_id' => $item->source_warehouse_id,
+            'source_available' => $item->source_warehouse_id ? \App\Services\WarehouseStockService::available($item->source_warehouse_id,$item->product_id,$item->variant_id) : null,
             'quantity' => (int) $item->quantity,
             'price' => (int) $item->price,
         ];
@@ -273,6 +275,9 @@
         tr.dataset.itemId = String(data.item_id || data.id || '');
         tr.dataset.productId = String(data.product_id || '');
         tr.dataset.variantId = String(data.variant_id || '');
+        tr.dataset.sourceWarehouseId = String(data.source_warehouse_id || '');
+        tr.dataset.sourceAvailable = String(data.source_available ?? '');
+        if(data.source_warehouse_id) tr.querySelector('.bundle-contents-display').insertAdjacentHTML('beforebegin','<span class="badge bg-warning text-dark">تحویل از انبار شوروم</span>');
 
         removeBtn.addEventListener('click', function () {
             const reason = tr.querySelector('.change-reason').value;
@@ -356,7 +361,7 @@
             const variantId = Number(variantSelect.value || 0);
             const variant = (product.variants || []).find(v => Number(v.id) === variantId);
 
-            variantStockCell.textContent = variant ? (variant.stock ?? 0) : 0;
+            variantStockCell.textContent = tr.dataset.sourceWarehouseId ? tr.dataset.sourceAvailable : (variant ? (variant.stock ?? 0) : 0);
 
             if (variant && (!priceInput.value || RialInput.number(priceInput.value) === 0)) {
                 priceInput.value = variant.price ?? 0;

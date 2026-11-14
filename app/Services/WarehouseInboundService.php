@@ -264,7 +264,7 @@ class WarehouseInboundService
             'variant_name_snapshot' => $item->variant?->variant_name,
             'sku_snapshot' => $item->variant?->variant_code,
             'expected_quantity' => max(0, $quantity),
-            'suggested_warehouse_id' => $warehouseId ?: WarehouseStockService::centralWarehouseId(),
+            'suggested_warehouse_id' => $item->source_warehouse_id ?: ($warehouseId ?: WarehouseStockService::centralWarehouseId()),
             'condition' => SalesReturnDocumentItem::CONDITION_HEALTHY,
             'reason' => $reason,
             'source_meta' => $sourceMeta + [

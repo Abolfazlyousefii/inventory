@@ -36,6 +36,7 @@ return [
 'product_code' => $product->code ?? $product->sku ?? null,
 'variety_id' => (int) $it->variant_id,
 'variant_id' => (int) $it->variant_id,
+'source_warehouse_id' => $it->source_warehouse_id,
 'variant_name' => $variant->variant_name ?? null,
 'quantity' => (int) $it->quantity,
 'price' => (int) $it->price,
@@ -1841,7 +1842,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			SERVER_ITEM_ERRORS.forEach(error => {
 				const variantId = Number(error.variant_id || 0);
 				if (!variantId) return;
-				document.querySelectorAll(`[data-variant-pill="${variantId}"]`).forEach(pill => {
+				document.querySelectorAll(`[data-variant-pill="${variantId}"][data-warehouse-source="${Number(error.source_warehouse_id || 0)}"]`).forEach(pill => {
 					pill.classList.add('border', 'border-danger', 'bg-danger-subtle');
 					const msg = pill.querySelector('[data-stock-row-error]');
 					if (msg) {
@@ -1928,7 +1929,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					const variantId = Number(item.variant_id || 0);
 					const quantity = Number(item.quantity || 0);
 					if (variantId > 0 && quantity > 0) {
-						rows.push({ product_id: productId, variant_id: variantId, quantity });
+						rows.push({ product_id: productId, variant_id: variantId, quantity, source_warehouse_id: Number(item.source_warehouse_id || 0) || null });
 					}
 				});
 			});
@@ -1973,7 +1974,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		function showReservationItemErrors(errors) {
 			(errors || []).forEach(error => {
 				const variantId = Number(error?.variant_id || 0);
-				document.querySelectorAll(`[data-variant-pill="${variantId}"]`).forEach(pill => {
+				document.querySelectorAll(`[data-variant-pill="${variantId}"][data-warehouse-source="${Number(error.source_warehouse_id || 0)}"]`).forEach(pill => {
 					pill.classList.add('border', 'border-danger', 'bg-danger-subtle');
 					const message = pill.querySelector('[data-stock-row-error]');
 					if (message) {
@@ -2106,7 +2107,17 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			return Number(v?.sell_price ?? v?.price ?? product?.sell_price ?? product?.price ?? 0);
 		}
 
-		function variantAvailability(v) {
+		function pickerKey(v) {
+            const source = Number(v?.sales_source_warehouse_id || 0);
+            return source ? variantId(v) + ':' + source : variantId(v);
+        }
+
+        function variantAvailability(v) {
+            const showroom = Number(v?.sales_source_warehouse_id || 0);
+            if (showroom) {
+                const freeStock = Math.max(0,Number(v?.showroom_free_stock || 0));
+                return {freeStock,currentTokenReserved:0,maxSelectable:freeStock+Number(v?.showroom_reserved_for_form || 0),reservedByOthers:0,totalReserved:0,totalStock:freeStock};
+            }
 			const freeStock = Math.max(0, Number(v?.free_stock ?? v?.stock ?? v?.quantity ?? 0) || 0);
 			const currentTokenReserved = Math.max(0, Number(v?.current_token_reserved ?? 0) || 0);
 			const maxSelectable = Math.max(0, Number(v?.max_selectable_for_current_form ?? v?.sellable_stock ?? (freeStock + currentTokenReserved)) || 0);
@@ -2249,6 +2260,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					rows.push({
 						id: productId,
 						variety_id: Number(item.variant_id || 0),
+                        source_warehouse_id: Number(item.source_warehouse_id || 0) || null,
 						quantity: Number(item.quantity || 0),
 						price: Number(item.price || 0),
 						line_discount_amount: Number(item.line_discount_amount || 0)
@@ -2559,7 +2571,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					};
 				}
 				const requestedQty = Number(row.quantity || 0);
-				const availability = v ? variantAvailability(v) : null;
+				const availability = v ? variantAvailability({...v,sales_source_warehouse_id:Number(row.source_warehouse_id || 0)}) : null;
 				const maxAllowed = availability ? Math.max(0, availability.maxSelectable) : requestedQty;
 				const effectiveQty = requestedQty;
 				const wasClamped = effectiveQty < requestedQty;
@@ -2576,6 +2588,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					: (row.stock_warning ? ' — موجودی فعلی کافی نیست' : '');
 				groupedSelections[productId].items.push({
 					variant_id: draftVariantId,
+                    source_warehouse_id: Number(row.source_warehouse_id || 0) || null,
 					quantity: effectiveQty,
 					price: Number(row.price ?? (v ? variantPrice(v, product) : 0)),
 					line_discount_amount: Number(row.line_discount_amount || 0),
@@ -2622,7 +2635,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				groupedSelections = {};
 				for (const row of payload.products) {
 					const oldGroup = previous[row.id];
-					const oldItem = oldGroup?.items?.find(item => Number(item.variant_id) === row.variety_id);
+					const oldItem = oldGroup?.items?.find(item => Number(item.variant_id) === row.variety_id && Number(item.source_warehouse_id || 0) === Number(row.source_warehouse_id || 0));
 					if (!groupedSelections[row.id]) groupedSelections[row.id] = {
 						product: oldGroup?.product || {id: row.id, title: remoteDraft?.items?.find(item => Number(item.product_id) === row.id)?.product?.title || 'محصول #' + row.id, code: ''},
 						discount_type: payload.product_discounts?.[row.id]?.type || 'amount',
@@ -3057,16 +3070,19 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 					return;
 				}
 				activeProduct = product;
-				activeModalItems = getProductVarieties(product);
+				activeModalItems = getProductVarieties(product).flatMap(v => [
+                    {...v, sales_source_warehouse_id: 0},
+                    ...(Number(v.showroom_warehouse_id || 0) > 0 ? [{...v, sales_source_warehouse_id: Number(v.showroom_warehouse_id)}] : [])
+                ]);
 				modalQuantities = new Map();
 				const oldItems = groupedSelections[activeProductId]?.items || [];
-				oldItems.forEach(item => modalQuantities.set(Number(item.variant_id), Number(item.quantity || 0)));
+				oldItems.forEach(item => modalQuantities.set(item.source_warehouse_id ? Number(item.variant_id)+':'+Number(item.source_warehouse_id) : Number(item.variant_id), Number(item.quantity || 0)));
 				modalGroupDiscountType = groupedSelections[activeProductId]?.discount_type || 'amount';
 				modalGroupDiscountValue = Number(groupedSelections[activeProductId]?.discount_value || 0);
 				document.getElementById('modalGroupDiscountType').value = modalGroupDiscountType;
 				document.getElementById('modalGroupDiscountValue').value = discountValueForInput(modalGroupDiscountType, modalGroupDiscountValue);
 				document.getElementById('pickerModalTitle').textContent = productTitle(product);
-				document.getElementById('pickerModalSubTitle').textContent = 'کد: ' + (productCode(product) || '—') + ' | ' + formatNum(activeModalItems.length) + ' تنوع';
+				document.getElementById('pickerModalSubTitle').textContent = 'کد: ' + (productCode(product) || '—') + ' | ' + formatNum(getProductVarieties(product).length) + ' تنوع | تعداد هر انبار را جدا وارد کنید';
                 document.getElementById('pickerBundleContents').innerHTML = bundlePillsHtml(product.bundle_contents);
 				saveRecentProduct(product);
 				renderPickerRows();
@@ -3084,14 +3100,14 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			const q = document.getElementById('pickerSearchInput').value;
 			return activeModalItems.filter(v => {
 				const availability = variantAvailability(v);
-				if (modalOnlyInStock && availability.maxSelectable <= 0 && Number(modalQuantities.get(variantId(v)) || 0) <= 0) return false;
+				if (modalOnlyInStock && availability.maxSelectable <= 0 && Number(v.showroom_free_stock || 0)<=0 && Number(modalQuantities.get(pickerKey(v)) || 0) <= 0) return false;
 				if (!q) return true;
 				return window.InventoryVariantSearch.matches(q, [variantModel(v), variantDesign(v), variantName(v), v?.sku, v?.code, v?.variant_code, v?.variety_code, v?.barcode]);
 			});
 		}
 
 		function modalMaxQty(v) {
-			const id = variantId(v);
+			const id = pickerKey(v);
 			const currentQty = Number(modalQuantities.get(id) || 0);
 			return Math.max(variantStock(v), currentQty);
 		}
@@ -3108,7 +3124,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
             return chips ? `<div class="bundle-components" dir="rtl" aria-label="محتویات بسته" style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px"><span class="hint">شامل:</span>${chips}</div>` : '';
         }
 
-		function renderPickerRows() {
+		        function renderPickerRows() {
 			const wrap = document.getElementById('groupPickerRows');
 			const rows = filteredModalItems();
 			const q = normalize(document.getElementById('pickerSearchInput')?.value || '');
@@ -3117,7 +3133,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				return;
 			}
 			wrap.innerHTML = rows.map(v => {
-				const id = variantId(v);
+				const id = pickerKey(v);
 				const availability = variantAvailability(v);
 				const stock = availability.maxSelectable;
 				const freeStock = availability.freeStock;
@@ -3127,7 +3143,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				const qty = Number(modalQuantities.get(id) || 0);
 				const price = variantPrice(v, activeProduct);
 				const selectedClass = qty > 0 ? 'row-selected' : '';
-				const noStockClass = stock <= 0 && qty <= 0 ? 'row-empty-stock' : '';
+                const noStockClass = stock <= 0 && qty <= 0 && Number(v.showroom_free_stock || 0)<=0 ? 'row-empty-stock' : '';
 				const disabled = stock <= 0 && qty <= 0 ? 'disabled' : '';
 				const minusDisabled = qty <= 0 || disabled ? 'disabled' : '';
 				const plusDisabled = qty >= max || disabled ? 'disabled' : '';
@@ -3136,6 +3152,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
         <div class="variant-row ${selectedClass} ${noStockClass}" data-row-variant="${id}">
             <div class="variant-row__info">
                 <div class="variant-row__title" title="${esc(title)}">${esc(title)}</div>
+                <span class="badge ${v.sales_source_warehouse_id ? 'bg-info-subtle text-info-emphasis' : 'bg-success-subtle text-success-emphasis'}">${v.sales_source_warehouse_id ? 'از انبار شوروم' : 'از انبار مرکزی'}</span>
                 ${bundlePillsHtml(activeProduct?.bundle_contents)}
                 <div class="variant-row__meta">
                     <span class="variant-pill variant-pill--stock">آزاد: ${freeStock > 0 ? formatNum(freeStock) : 'ناموجود'}</span>
@@ -3157,8 +3174,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function setModalQty(id, value, shouldRender = false) {
-			id = Number(id);
-			const item = activeModalItems.find(v => variantId(v) === id);
+			id = String(id).includes(':') ? String(id) : Number(id);
+			const item = activeModalItems.find(v => pickerKey(v) === id);
 			if (!item) return;
 			const max = modalMaxQty(item);
 			const cleanedValue = toEnglishDigits(value).replace(/[^0-9]/g, '');
@@ -3190,7 +3207,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function changeModalQty(id, delta) {
-			const current = Number(modalQuantities.get(Number(id)) || 0);
+			const current = Number(modalQuantities.get(String(id).includes(':') ? String(id) : Number(id)) || 0);
 			setModalQty(id, current + Number(delta || 0), true);
 		}
 
@@ -3199,7 +3216,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			    totalQty = 0,
 			    totalAmount = 0;
 			activeModalItems.forEach(v => {
-				const id = variantId(v);
+				const id = pickerKey(v);
 				const qty = Number(modalQuantities.get(id) || 0);
 				const price = variantPrice(v, activeProduct);
 				if (qty > 0) {
@@ -3231,20 +3248,23 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			updateModalSummary();
 		}
 
+
+
 		async function saveGroupSelection() {
 			if (!activeProductId || !activeProduct) return;
 			const items = [];
 			activeModalItems.forEach(v => {
-				const id = variantId(v);
+				const id = pickerKey(v);
 				const qty = Number(modalQuantities.get(id) || 0);
 				if (qty > 0) items.push({
-					variant_id: id,
+					variant_id: variantId(v),
+                    source_warehouse_id: Number(v.sales_source_warehouse_id || 0) || null,
 					quantity: qty,
 					price: variantPrice(v, activeProduct),
 					model: variantModel(v),
 					design: variantDesign(v),
 					variant: variantName(v),
-					label: buildVariantTitle(v)
+					label: buildVariantTitle(v) + (v.sales_source_warehouse_id ? ' — تحویل از شوروم' : ' — تحویل از مرکزی')
 				});
 			});
 			if (!items.length) {
@@ -3357,15 +3377,16 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 const bundleMarkup = bundlePillsHtml(group.product.bundle_contents, qty);
 
 				const details = group.items.map(it => `
-            <div class="detail-pill" data-variant-pill="${Number(it.variant_id)}">
+            <div class="detail-pill" data-variant-pill="${Number(it.variant_id)}" data-warehouse-source="${Number(it.source_warehouse_id || 0)}">
                 <div class="fw-bold">${esc(it.label || 'تنوع پیش‌فرض')}</div>
+                ${it.source_warehouse_id ? '<span class="badge bg-warning text-dark">تحویل از انبار شوروم</span>' : ''}
                 <div class="text-muted mt-1">تعداد: ${formatNum(it.quantity)} | مبلغ: ${formatMoney(Number(it.quantity) * Number(it.price))}</div>
                 <div class="small text-danger mt-1 d-none" data-stock-row-error></div>
             </div>`).join('');
 				wrap.insertAdjacentHTML('beforeend', `
         <div class="group-card" data-group-card="${productId}">
             <button type="button" class="group-main" onclick="toggleGroupDetails(${productId})" aria-expanded="false">
-                <div class="group-title" title="${esc(group.product.title)}">${esc(group.product.title)}</div>
+                <div class="group-title" title="${esc(group.product.title)}">${esc(group.product.title)} ${group.items.some(item=>Number(item.source_warehouse_id || 0)>0) ? '<span class="badge bg-warning text-dark">شامل کالای شوروم</span>' : ''}</div>
                 <div class="group-amount">${formatMoney(finalAmount)}</div>
                 <div class="group-arrow">▼</div>
             </button>
@@ -3390,6 +3411,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
                 <input type="hidden" name="products[${idx}][item_id]" value="${Number(item.item_id || 0)}">
                 <input type="hidden" name="products[${idx}][id]" value="${productId}">
                 <input type="hidden" name="products[${idx}][variety_id]" value="${Number(item.variant_id)}">
+                <input type="hidden" name="products[${idx}][source_warehouse_id]" value="${Number(item.source_warehouse_id || 0) || ''}">
                 <input type="hidden" name="products[${idx}][quantity]" value="${Number(item.quantity)}">
                 <input type="hidden" name="products[${idx}][price]" value="${Number(item.price)}">`);
 					idx++;
@@ -3475,13 +3497,14 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 						const v = varieties.find(item => variantId(item) === vid);
 						return {
 							variant_id: vid,
+                            source_warehouse_id: Number(row.source_warehouse_id || 0) || null,
 							item_id: Number(row.item_id || row.id || 0),
 							quantity: Number(row.quantity || 0),
 							price: Number(row.price || (v ? variantPrice(v, product) : 0)),
 							model: v ? variantModel(v) : '—',
 							design: v ? variantDesign(v) : '—',
 							variant: v ? variantName(v) : (row.variant_name || '—'),
-							label: v ? buildVariantTitle(v) : (row.variant_name || 'تنوع پیش‌فرض'),
+							label: (v ? buildVariantTitle(v) : (row.variant_name || 'تنوع پیش‌فرض')) + (row.source_warehouse_id ? ' — تحویل از شوروم' : ''),
 							line_discount_amount: Number(row.line_discount_amount || 0)
 						};
 					}).filter(item => item.variant_id && item.quantity > 0)
@@ -3510,6 +3533,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			}
 		}
 
+
+
 		async function validateSelectedStockBeforeSubmit() {
 			if (IS_EDIT) return true;
 			const errors = [];
@@ -3522,7 +3547,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 						errors.push(`${group.product.title}: تنوع ${item.variant_id} پیدا نشد.`);
 						continue;
 					}
-					const stock = variantStock(v);
+                    const stock = variantStock({...v,sales_source_warehouse_id:Number(item.source_warehouse_id || 0)});
 					const requested = Number(item.quantity || 0);
 					if (requested > stock) errors.push(`${group.product.title} / ${buildVariantTitle(v)}: موجودی ${stock} عدد، درخواست ${requested} عدد.`);
 				}
@@ -3548,6 +3573,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 						id: productId,
 						product_id: productId,
 						variety_id: Number(item.variant_id || 0),
+                        source_warehouse_id: Number(item.source_warehouse_id || 0) || null,
 						variant_id: Number(item.variant_id || 0),
 						quantity: Number(item.quantity || 0),
 						price: Number(item.price || 0),

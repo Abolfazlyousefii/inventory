@@ -87,7 +87,7 @@ class PreinvoiceReservationService
                 }
 
                 $quantity = (int) $reservation->quantity;
-                $this->releaseStockForReservation((int) $reservation->product_id, (int) $reservation->variant_id, $quantity);
+                $this->releaseStockForReservation((int) $reservation->product_id, (int) $reservation->variant_id, $quantity, $reservation->source_warehouse_id);
                 $reservation->forceFill([
                     'released_at' => now(),
                     'released_by' => null,
@@ -227,7 +227,8 @@ class PreinvoiceReservationService
             $this->releaseStockForReservation(
                 (int) $lockedReservation->product_id,
                 (int) $lockedReservation->variant_id,
-                $quantity
+                $quantity,
+                $lockedReservation->source_warehouse_id
             );
 
             $lockedReservation->forceFill([
@@ -311,10 +312,11 @@ class PreinvoiceReservationService
 
             $productId = (int) $item->product_id;
             $variantId = (int) $item->variant_id;
+            $source = $item->source_warehouse_id;
 
             if ($delta > 0) {
                 $variant = ProductVariant::query()->whereKey($variantId)->lockForUpdate()->firstOrFail();
-                $available = app(PreinvoiceBundleStockService::class)->free($productId, $variantId);
+                $available = app(PreinvoiceBundleStockService::class)->free($productId, $variantId, $source);
                 if ($delta > $available) {
                     $name = trim(($variant->product?->name ?? $item->product?->name ?? 'نامشخص') . ' / ' . ($variant->variant_name ?? '—'));
                     throw ValidationException::withMessages([
@@ -322,7 +324,7 @@ class PreinvoiceReservationService
                     ]);
                 }
 
-                app(PreinvoiceBundleStockService::class)->reserve($productId, $variantId, $delta);
+                app(PreinvoiceBundleStockService::class)->reserve($productId, $variantId, $delta, $source);
 
                 PreinvoiceDraftReservation::query()->create([
                     'token' => 'finance-edit-' . $order->id . '-' . $item->id . '-' . now()->timestamp,
@@ -331,6 +333,7 @@ class PreinvoiceReservationService
                     'product_id' => $productId,
                     'variant_id' => $variantId,
                     'quantity' => $delta,
+                    'source_warehouse_id' => $source,
                     'expires_at' => $order->stock_frozen_until,
                     'last_seen_at' => now(),
                     'reservation_scope' => 'official',
@@ -345,6 +348,7 @@ class PreinvoiceReservationService
                 ->where('reservation_scope', 'official')
                 ->where('product_id', $productId)
                 ->where('variant_id', $variantId)
+                ->where('source_warehouse_id', $source)
                 ->whereNull('released_at')
                 ->whereNull('release_reason')
                 ->where('quantity', '>', 0)
@@ -357,7 +361,7 @@ class PreinvoiceReservationService
                     break;
                 }
                 $take = min($remaining, (int) $reservation->quantity);
-                $this->releaseStockForReservation($productId, $variantId, $take);
+                $this->releaseStockForReservation($productId, $variantId, $take, $reservation->source_warehouse_id);
                 if ($take === (int) $reservation->quantity) {
                     $reservation->forceFill(['released_at' => now(), 'released_by' => $actor?->id, 'release_reason' => 'finance_quantity_decreased', 'release_note' => 'کاهش تعداد توسط مالی.'])->save();
                 } else {
@@ -369,6 +373,7 @@ class PreinvoiceReservationService
                         'product_id' => $productId,
                         'variant_id' => $variantId,
                         'quantity' => $take,
+                        'source_warehouse_id' => $reservation->source_warehouse_id,
                         'expires_at' => $reservation->expires_at,
                         'last_seen_at' => now(),
                         'released_at' => now(),
@@ -445,10 +450,10 @@ class PreinvoiceReservationService
 
         $order->loadMissing('items');
         $required = $order->items
-            ->groupBy(fn ($item) => ((int) $item->product_id).':'.((int) $item->variant_id))
+            ->groupBy(fn ($item) => ((int) $item->product_id).':'.((int) $item->variant_id).':'.((int) ($item->source_warehouse_id ?? 0)))
             ->map(fn ($items) => (int) $items->sum('quantity'));
         $reserved = $activeReservations
-            ->groupBy(fn (PreinvoiceDraftReservation $reservation) => ((int) $reservation->product_id).':'.((int) $reservation->variant_id))
+            ->groupBy(fn (PreinvoiceDraftReservation $reservation) => ((int) $reservation->product_id).':'.((int) $reservation->variant_id).':'.((int) ($reservation->source_warehouse_id ?? 0)))
             ->map(fn ($reservations) => (int) $reservations->sum('quantity'));
 
         foreach ($required as $key => $requiredQuantity) {
@@ -471,7 +476,7 @@ class PreinvoiceReservationService
         return 'رزرو این پیش‌فاکتور منقضی شده است و باید توسط فروشنده مجدداً بررسی و ثبت نهایی شود.';
     }
 
-    private function releaseStockForReservation(int $productId, int $variantId, int $quantity): void
+    private function releaseStockForReservation(int $productId, int $variantId, int $quantity, ?int $source = null): void
     {
         if ($quantity <= 0) {
             return;
@@ -486,6 +491,6 @@ class PreinvoiceReservationService
             throw ValidationException::withMessages(['products' => 'تنوع رزرو شده با کالای پیش‌فاکتور همخوانی ندارد.']);
         }
 
-        app(PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity);
+        app(PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity, $source);
     }
 }

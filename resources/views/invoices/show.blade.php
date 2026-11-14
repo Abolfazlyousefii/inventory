@@ -143,6 +143,7 @@
 						<tr class="{{ $addedRevision ? 'revision-added-row' : ($isChangedRevision ? 'revision-changed-row' : '') }}">
 							<td>
 								{{ $item->product?->name ?? ('#'.$item->product_id) }}
+								<span class="badge bg-info-subtle text-info-emphasis">{{ \App\Services\SalesWarehouseSource::label($item->source_warehouse_id) }}</span>
                                 @include('partials.bundle-contents', ['productIsBundle' => $item->product?->is_bundle, 'snapshot' => $item->bundle_components_snapshot, 'variantId' => $item->variant_id, 'productId' => $item->product_id, 'bundleQuantity' => $item->quantity])
 
 								@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif

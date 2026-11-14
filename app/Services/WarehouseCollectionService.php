@@ -102,7 +102,7 @@ class WarehouseCollectionService
             }
 
             $oldTotal = (int) $invoice->total;
-            $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
+            $oldByVariant = $invoice->items->groupBy(fn($item) => $item->variant_id.':'.((int)($item->source_warehouse_id ?? 0)))->map(fn ($rows) => (int) $rows->sum('quantity'));
             $existingById = $invoice->items->keyBy('id');
             $normalized = [];
             $revisionRows = [];
@@ -158,7 +158,8 @@ class WarehouseCollectionService
                     throw ValidationException::withMessages(['line_discount_amount' => 'تخفیف ردیف معتبر نیست.']);
                 }
 
-                $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty', 'price', 'discount');
+                $stockKey = $variantId.':'.((int)($existing?->source_warehouse_id ?? 0));
+                $normalized[] = compact('stockKey', 'itemId', 'existing', 'variant', 'variantId', 'productId', 'qty', 'price', 'discount');
             }
 
             if (collect($normalized)->sum('qty') <= 0) {
@@ -171,22 +172,16 @@ class WarehouseCollectionService
                 $reason ?: 'invoice_correction'
             );
 
-            $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
+            $newByVariant = collect($normalized)->groupBy('stockKey')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
             $variantIds = $oldByVariant->keys()->merge($newByVariant->keys())->unique()->values();
-            $stocks = WarehouseStock::query()
-                ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
-                ->whereIn('product_variant_id', $variantIds)
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('product_variant_id');
 
             foreach ($variantIds as $variantId) {
                 $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
                 if ($delta <= 0) {
                     continue;
                 }
-                $stock = $stocks->get((int) $variantId);
-                $available = (int) ($stock?->quantity ?? 0);
+                $variant = ProductVariant::query()->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
+                $available = $this->sourceAvailableStockForUpdate($invoice, (int) $variant->product_id, (int) $variantId, (string)$variantId);
                 if ($available < $delta) {
                     $variant = ProductVariant::query()->with('product')->findOrFail((int) $variantId);
                     $name = trim(($variant->product?->name ?? 'کالا') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
@@ -198,7 +193,7 @@ class WarehouseCollectionService
                 $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
                 if ($delta <= 0) { continue; }
                 $variant = ProductVariant::query()->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
-                WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
+                WarehouseStockService::change($this->sourceWarehouseForVariant($invoice, $variantId), (int) $variant->product_id, -$delta, (int) $variant->id);
             }
 
             $seen = [];
@@ -343,7 +338,7 @@ class WarehouseCollectionService
             $oldStatus = (string) $invoice->status;
             $revisionReason = trim((string) $reason) !== '' ? (string) $reason : 'invoice_correction';
 
-            $oldByVariant = $invoice->items->groupBy('variant_id')->map(fn ($rows) => (int) $rows->sum('quantity'));
+            $oldByVariant = $invoice->items->groupBy(fn($item) => $item->variant_id.':'.((int)($item->source_warehouse_id ?? 0)))->map(fn ($rows) => (int) $rows->sum('quantity'));
             $existingById = $invoice->items->keyBy('id');
             $normalized = [];
             $revisionRows = [];
@@ -408,7 +403,8 @@ class WarehouseCollectionService
                     throw ValidationException::withMessages(['change_note' => 'برای تغییر قیمت یا تخفیف، توضیح تغییر الزامی است.']);
                 }
 
-                $normalized[] = compact('itemId', 'existing', 'variant', 'variantId', 'productId', 'qty', 'price', 'discount', 'priceChanged');
+                $stockKey = $variantId.':'.((int)($existing?->source_warehouse_id ?? 0));
+                $normalized[] = compact('stockKey', 'itemId', 'existing', 'variant', 'variantId', 'productId', 'qty', 'price', 'discount', 'priceChanged');
             }
 
             if (collect($normalized)->sum('qty') <= 0) {
@@ -421,7 +417,7 @@ class WarehouseCollectionService
                 $revisionReason
             );
 
-            $newByVariant = collect($normalized)->groupBy('variantId')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
+            $newByVariant = collect($normalized)->groupBy('stockKey')->map(fn ($rows) => (int) collect($rows)->sum('qty'));
             foreach ($oldByVariant->keys()->merge($newByVariant->keys())->unique() as $variantId) {
                 $delta = (int) ($newByVariant[$variantId] ?? 0) - (int) ($oldByVariant[$variantId] ?? 0);
                 if ($delta === 0) {
@@ -429,18 +425,18 @@ class WarehouseCollectionService
                 }
                 $variant = ProductVariant::query()->with('product')->whereKey((int) $variantId)->lockForUpdate()->firstOrFail();
                 if ($delta > 0) {
-                    $available = $this->centralAvailableStockForUpdate((int) $variant->product_id, (int) $variant->id);
+                    $available = $this->sourceAvailableStockForUpdate($invoice, (int) $variant->product_id, (int) $variant->id, (string)$variantId);
                     if ($available < $delta) {
                         $name = trim(($variant->product?->name ?? 'کالا') . ' / ' . ($variant->variant_name ?: $variant->variety_name ?: ('#' . $variant->id)));
                         throw ValidationException::withMessages(['items' => "موجودی کافی برای {$name} وجود ندارد. موجودی قابل فروش: {$available}، تعداد اضافه‌شده: {$delta}"]);
                     }
                 }
                 if ($delta > 0) {
-                    WarehouseStockService::change(WarehouseStockService::centralWarehouseId(), (int) $variant->product_id, -$delta, (int) $variant->id);
+                    WarehouseStockService::change($this->sourceWarehouseForVariant($invoice, $variantId), (int) $variant->product_id, -$delta, (int) $variant->id);
                 }
             }
 
-            $aggregated = collect($normalized)->groupBy('variantId')->map(function ($rows) {
+            $aggregated = collect($normalized)->groupBy('stockKey')->map(function ($rows) {
                 $first = $rows->first();
                 $existingRow = $rows->first(fn ($row) => $row['existing'] !== null);
                 $existing = $existingRow['existing'] ?? null;
@@ -680,6 +676,25 @@ class WarehouseCollectionService
         }
 
         return $updatedInvoice;
+    }
+
+    private function sourceWarehouseForVariant(Invoice $invoice, int|string $variantId): int
+    {
+        // The key is built from locked invoice items, never from posted warehouse fields.
+        if (is_string($variantId) && str_contains($variantId, ':')) return (int)explode(':',$variantId)[1] ?: WarehouseStockService::centralWarehouseId();
+        return $invoice->items->firstWhere('variant_id', $variantId)?->source_warehouse_id
+            ?: WarehouseStockService::centralWarehouseId();
+    }
+
+    private function sourceAvailableStockForUpdate(Invoice $invoice, int $productId, int $variantId, ?string $stockKey = null): int
+    {
+        $warehouse = $this->sourceWarehouseForVariant($invoice, $stockKey ?? $variantId);
+        if ($warehouse === WarehouseStockService::centralWarehouseId()) {
+            return $this->centralAvailableStockForUpdate($productId, $variantId);
+        }
+        SalesWarehouseSource::assertReservable($productId, $variantId, $warehouse);
+        return (int) WarehouseStock::where('warehouse_id', $warehouse)->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)->lockForUpdate()->value('quantity');
     }
 
     private function centralAvailableStockForUpdate(int $productId, int $variantId): int
