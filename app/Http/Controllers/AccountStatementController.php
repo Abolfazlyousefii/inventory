@@ -128,6 +128,8 @@ class AccountStatementController extends Controller
 
         $personnelDocuments = \App\Models\PersonnelAccountDocument::with('creator:id,name')->where('customer_id', $customer->id)
             ->whereIn('id', $ledgers->getCollection()->where('reference_type', \App\Models\PersonnelAccountDocument::class)->pluck('reference_id'))->get()->keyBy('id');
+        $financialDocuments = \App\Models\FinancialAccountDocument::with('creator:id,name')->where('customer_id',$customer->id)
+            ->whereIn('id',$ledgers->getCollection()->where('reference_type',\App\Models\FinancialAccountDocument::class)->pluck('reference_id'))->get()->keyBy('id');
         $invoiceIds = $ledgers->getCollection()->where('reference_type', Invoice::class)->pluck('reference_id')->filter()->unique()->values();
         $paymentIds = $ledgers->getCollection()->where('reference_type', InvoicePayment::class)->pluck('reference_id')->filter()->unique()->values();
         $adjustmentDocuments = ActivityLog::query()->where('action', 'customer_balance_adjusted')
@@ -363,6 +365,7 @@ class AccountStatementController extends Controller
             'payments',
             'adjustmentDocuments',
             'personnelDocuments',
+            'financialDocuments',
             'transfers',
             'salesReturnDocuments',
             'netBalance',

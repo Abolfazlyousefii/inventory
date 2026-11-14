@@ -8,6 +8,7 @@
     $rial = fn ($value) => \App\Support\Currency::formatRial(abs((int) $value));
     $balanceText = fn ($value) => $value > 0 ? 'بدهکار' : ($value < 0 ? 'بستانکار' : 'تسویه');
     $canAddPayment = $person['is_supplier'] && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'persons.supplier-transactions.store');
+    $canAddFinancialDocument = !\App\Support\AccountStatementAccess::readOnly(auth()->user()) && \App\Support\PermissionCatalog::userHasPermission(auth()->user(),'account_statements.adjust');
 @endphp
 <div class="as-document">
     <header class="asd-toolbar">
@@ -22,6 +23,7 @@
         </div>
         <div class="asd-actions">
             @if($canAddPayment)<button type="button" class="btn asd-primary" id="openSupplierPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#supplierPaymentModal">+ افزودن پرداخت / دریافت</button>@endif
+            @if($canAddFinancialDocument)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#financialDocumentModal">+ افزودن سند مالی</button>@endif
             @if(\App\Support\AccountStatementAccess::readOnly(auth()->user()))<span class="badge bg-light text-secondary">فقط مشاهده</span>@endif
             <a href="{{ route('account-statements.index') }}" class="btn asd-secondary">بازگشت</a>
         </div>
@@ -51,8 +53,10 @@
                             </td>
                             <td class="asd-description" data-label="شرح">
                                 <span>{{ $description }}</span>
-                                @if($ledger->note && $ledger->note !== $description)<small>{{ $ledger->note }}</small>@endif
+                                @if($source['detail'] ?? null)<small>{{ $source['detail'] }}</small>
+                                @elseif($ledger->note && $ledger->note !== $description)<small>{{ $ledger->note }}</small>@endif
                                 @if(!$effective)<small class="asd-excluded">بدون اثر در مانده</small>@endif
+                                @if($canAddFinancialDocument && !empty($source['financial_edit_url']))<a class="asd-payment-action" href="{{ $source['financial_edit_url'] }}">ویرایش / حذف</a>@endif
                             </td>
                             <td class="asd-money" data-label="بدهکار">{{ $ledger->type === 'debit' ? $rial($ledger->amount) : '—' }}</td>
                             <td class="asd-money" data-label="بستانکار">{{ $ledger->type === 'credit' ? $rial($ledger->amount) : '—' }}</td>
@@ -68,4 +72,8 @@
     </section>
 </div>
 @if($canAddPayment)@include('persons.partials.supplier-payment-modal')@endif
+@if($canAddFinancialDocument)
+    @php($financialDocumentRoles = array_filter(['customer'=>$person['is_customer']?'دفتر مشتری':null,'supplier'=>$person['is_supplier']?'دفتر تأمین‌کننده':null]))
+    @include('account-statements.partials.financial-document-modal', ['financialDocumentAction'=>route('persons.financial-documents.store',request()->route('personKey')), 'financialDocumentPersonName'=>$person['name']])
+@endif
 @endsection

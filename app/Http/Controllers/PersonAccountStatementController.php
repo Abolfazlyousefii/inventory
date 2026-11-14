@@ -109,12 +109,15 @@ class PersonAccountStatementController extends Controller
     {
         $statement = $this->statementService->statement($personKey);
         $sources = [];
+        $financialDocuments = \App\Models\FinancialAccountDocument::with('creator:id,name')
+            ->whereIn('id',$statement['ledgers']->getCollection()->where('reference_type',\App\Models\FinancialAccountDocument::class)->pluck('reference_id'))->get()->keyBy('id');
 
         foreach ($statement['ledgers'] as $ledger) {
             $key = $ledger->ledger_key;
             $label = 'GL-'.$ledger->id;
             $description = $ledger->note ?: ($ledger->type === 'debit' ? 'ثبت بدهکار' : 'ثبت بستانکار');
             $url = null;
+            $detail = null;
 
             if ($ledger->reference_type === SupplierAccountTransaction::class && $ledger->reference_id) {
                 $transaction = SupplierAccountTransaction::query()->find($ledger->reference_id);
@@ -171,11 +174,20 @@ class PersonAccountStatementController extends Controller
                 $document = PersonnelAccountDocument::query()->find($ledger->reference_id);
                 $label = 'PER-'.$ledger->reference_id;
                 $description = $document?->description ?: 'سند پرسنلی';
+            } elseif ($ledger->reference_type === \App\Models\FinancialAccountDocument::class && $ledger->reference_id) {
+                $document = $financialDocuments->get($ledger->reference_id);
+                $label = 'FIN-'.$ledger->reference_id;
+                $description = $document?->title ?: 'سند مالی';
+                $detail = $document?->description;
+                if ($document?->cancelled_at) $detail .= ' — سند حذف شده؛ بدون اثر در مانده';
             } elseif ($ledger->reference_type === ActivityLog::class && $ledger->reference_id) {
                 $label = 'GL-'.$ledger->id;
             }
 
-            $sources[$key] = compact('label', 'description', 'url');
+            $sources[$key] = compact('label', 'description', 'url', 'detail');
+            if ($ledger->reference_type === \App\Models\FinancialAccountDocument::class && isset($document) && $document && !$document->cancelled_at) {
+                $sources[$key]['financial_edit_url'] = route('financial-documents.edit', $document);
+            }
         }
 
         return view('persons.account', $statement + [

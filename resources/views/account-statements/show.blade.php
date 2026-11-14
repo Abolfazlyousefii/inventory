@@ -17,6 +17,7 @@
         <div><span class="asd-eyebrow">دفتر حساب شخص</span><h1>{{ $customer->display_name ?: 'شخص' }}</h1><div class="asd-identity"><span>کد: {{ $customer->crm_customer_id ?: $customer->id }}</span><span dir="ltr">{{ $customer->mobile ?: '—' }}</span></div></div>
         <div class="asd-actions">
             @if($canAddPayment)<button type="button" class="btn asd-primary" id="openPaymentModalBtn" data-bs-toggle="modal" data-bs-target="#paymentModal">+ افزودن پرداخت</button>@endif
+            @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#financialDocumentModal">+ افزودن سند مالی</button>@endif
             @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#personnelDocumentModal">+ افزودن سند پرسنلی</button>@endif
             @if($financeActor && \App\Support\AccountStatementAccess::readOnly($financeActor))<span class="badge bg-light text-secondary">فقط مشاهده</span>@endif
             @if($canAdjustBalance)<button type="button" class="btn asd-secondary" data-bs-toggle="modal" data-bs-target="#balanceAdjustmentModal">اصلاح مانده</button>@endif
@@ -74,6 +75,11 @@
                             $reference = 'PER-'.$personnelDocument->id;
                             $description = 'سند پرسنلی · '.$personnelDocument->description;
                         }
+                        $financialDocument = $ledger->reference_type === \App\Models\FinancialAccountDocument::class ? ($financialDocuments[$ledger->reference_id] ?? null) : null;
+                        if ($financialDocument) {
+                            $reference = 'FIN-'.$financialDocument->id;
+                            $description = $financialDocument->title;
+                        }
                     @endphp
                     <tr class="asd-entry {{ !$effective ? 'asd-ineffective' : ($ledger->type === 'debit' ? 'asd-entry-debit' : 'asd-entry-credit') }}" data-ledger-id="{{ $ledger->id }}">
                         @include('account-statements.partials.entry-date', ['ledger' => $ledger, 'payment' => $payment])
@@ -96,6 +102,7 @@
                         </td>
                         <td class="asd-description" data-label="شرح">
                             <span>{{ $description }}</span>
+                            @if($financialDocument)<small>{{ $financialDocument->description }}</small><small>ثبت‌کننده: {{ $financialDocument->creator?->name ?: '—' }}</small>@if($financialDocument->cancelled_at)<small class="text-danger">سند حذف شده — بدون اثر در مانده</small>@endif @endif
                             @if($personnelDocument)
                                 @if($personnelDocument->reference)<small>ارجاع سازه‌حساب: {{ $personnelDocument->reference }}</small>@endif
                                 <small>ثبت‌کننده: {{ $personnelDocument->creator?->name ?: '—' }}</small>
@@ -109,6 +116,7 @@
                         <td class="asd-money" data-label="بستانکار">{{ $ledger->type === 'credit' ? $rial($ledger->amount) : '—' }}</td>
                         <td class="asd-row-balance {{ $rowBalance > 0 ? 'asd-debt' : ($rowBalance < 0 ? 'asd-credit' : '') }}" data-label="مانده پس از سند"><strong>{{ $rial($rowBalance) }}</strong><small>{{ $balanceText($rowBalance) }}</small></td>
                         @if($canManageDocuments)<td class="asd-operations" data-label="عملیات">
+                            @if($financialDocument && !$financialDocument->cancelled_at && $canAdjustBalance)<a class="asd-payment-action" href="{{ route('financial-documents.edit',$financialDocument) }}">ویرایش / حذف</a>@endif
                             @if($payment && $canManagePayments) @include('payments.manage-link', ['payment' => $payment, 'compactPaymentLink' => true]) @endif
                             @if($adjustmentDocument && $canAdjustBalance && !data_get($adjustmentDocument->properties, 'deleted_at'))<a class="asd-payment-action" href="{{ route('account-statements.adjustments.edit', [$customer, $adjustmentDocument]) }}">ویرایش / حذف</a>@endif
                         </td>@endif
@@ -125,6 +133,7 @@
 </div>
 @if($canAddPayment)@include('payments.entry-modal', ['paymentModalId' => 'paymentModal', 'paymentAction' => route('account-statements.payments.store', $customer->id), 'paymentInvoiceOptions' => $paymentInvoiceOptions])@endif
 @if($canAdjustBalance)@include('account-statements.partials.personnel-document')@endif
+@if($canAdjustBalance)@include('account-statements.partials.financial-document-modal', ['financialDocumentAction'=>route('account-statements.financial-documents.store',$customer), 'financialDocumentRoles'=>['customer'=>'دفتر مشتری'], 'financialDocumentPersonName'=>$customer->display_name])@endif
 @endsection
 
 @push('scripts')<script src="{{ asset('js/account-statement-display.js') }}?v=20261011" defer></script>@endpush

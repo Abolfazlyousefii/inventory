@@ -594,6 +594,10 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         ->name('persons.account');
     Route::post('/persons/{personKey}/supplier-transactions', [PersonAccountStatementController::class, 'storeSupplierTransaction'])
         ->name('persons.supplier-transactions.store');
+    Route::post('/persons/{personKey}/financial-documents', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'storePerson'])->name('persons.financial-documents.store');
+    Route::get('/financial-documents/{document}/edit', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'edit'])->name('financial-documents.edit');
+    Route::put('/financial-documents/{document}', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'update'])->name('financial-documents.update');
+    Route::delete('/financial-documents/{document}', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'destroy'])->name('financial-documents.destroy');
     Route::post('/persons', [PersonController::class, 'store'])->name('persons.store');
     Route::put('/persons/{personKey}', [PersonController::class, 'update'])->name('persons.update');
 
@@ -734,6 +738,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/account-statements/{customer}/payments', [InvoicePaymentController::class, 'storeForCustomer'])->name('account-statements.payments.store');
     Route::post('/account-statements/{customer}/adjustments', [AccountStatementController::class, 'storeAdjustment'])->name('account-statements.adjustments.store');
     Route::post('/account-statements/{customer}/personnel-documents', [\App\Http\Controllers\PersonnelAccountDocumentController::class, 'store'])->name('account-statements.personnel.store');
+    Route::post('/account-statements/{customer}/financial-documents', [\App\Http\Controllers\FinancialAccountDocumentController::class, 'storeCustomer'])->name('account-statements.financial-documents.store');
     Route::get('/account-statements/{customer}/adjustments/{adjustment}/edit', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'edit'])->name('account-statements.adjustments.edit');
     Route::put('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'update'])->name('account-statements.adjustments.update');
     Route::delete('/account-statements/{customer}/adjustments/{adjustment}', [\App\Http\Controllers\CustomerBalanceAdjustmentController::class, 'destroy'])->name('account-statements.adjustments.destroy');

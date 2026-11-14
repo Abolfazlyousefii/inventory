@@ -46,6 +46,8 @@ if ($worker) {
             'draft'=>app(SalesReturnService::class)->createDraft($input['data'],$input['actor']),
             'queue'=>app(WarehouseInboundService::class)->queueSalesReturn(SalesReturnDocument::findOrFail($input['document']),$input['actor']),
             'receive'=>app(WarehouseInboundService::class)->receive(WarehouseInboundReceipt::findOrFail($input['receipt']),$input['rows'],$input['actor']),
+            'financial'=>app(App\Services\FinancialAccountDocumentService::class)->create(Supplier::findOrFail($input['supplier']),$input['data'],$input['actor']),
+            'financial-revise'=>app(App\Services\FinancialAccountDocumentService::class)->revise(App\Models\FinancialAccountDocument::findOrFail($input['document']),$input['data'],$input['actor'],$input['cancel']??false),
             default=>throw new RuntimeException('Unknown worker operation'),
         };
         echo json_encode(['state'=>'ok','id'=>$result?->id],JSON_THROW_ON_ERROR)."\n";
@@ -62,7 +64,7 @@ if (($argv[1]??'')==='--schema') {
         (require dirname(__DIR__).'/Support/LegacyMigrations/2026_02_10_000000_create_activity_logs_table.php')->up();
         (require dirname(__DIR__).'/Support/LegacyMigrations/2026_06_13_150700_widen_activity_logs_action_column.php')->up();
     }
-    foreach (['2026_11_11_180000_create_supplier_account_transactions_table.php','2026_11_14_150000_add_explicit_sales_return_flow.php'] as $file) {
+    foreach (['2026_11_11_180000_create_supplier_account_transactions_table.php','2026_11_14_150000_add_explicit_sales_return_flow.php','2026_11_14_163000_create_financial_account_documents_table.php','2026_11_14_180000_add_financial_document_revision_state.php'] as $file) {
         (require dirname(__DIR__,2).'/database/migrations/'.$file)->up();
     }
     echo "Disposable schema provisioned; no business rows copied.\n"; exit;
@@ -152,6 +154,29 @@ checkReturnQa((array)DB::table('supplier_ledgers')->where('id',$base->id)->first
 $statement=app(PersonAccountStatementService::class)->statement('supplier-'.$sources['A']['supplier']->id);
 checkReturnQa($statement['netBalance']===6000,'Unified supplier statement failed to include the audit reversal exactly once');
 
+$financialStock=WarehouseStockService::available($central,$product->id,$variant->id);
+$financialMovements=StockMovement::count();
+$same=['supplier'=>$sources['A']['supplier']->id,'actor'=>$actor->id,'data'=>[
+    'title'=>'QA financial document','description'=>'Disposable concurrent financial document test',
+    'type'=>'debit','document_amount'=>700,'document_date'=>now()->toDateString(),'submission_token'=>(string)Str::uuid()]];
+$result=raceReturns('financial',[$same,$same]);
+checkReturnQa($result[0]['state']==='ok'&&$result[1]['state']==='ok'&&$result[0]['id']===$result[1]['id'],'Concurrent financial submission diverged');
+checkReturnQa(App\Models\FinancialAccountDocument::count()===1 && DB::table('supplier_ledgers')->where('reference_type',App\Models\FinancialAccountDocument::class)->count()===1,'Financial document posted twice');
+$financialStatement=app(PersonAccountStatementService::class)->statement('supplier-only-'.$sources['A']['supplier']->id);
+checkReturnQa($financialStatement['netBalance']===6700,'Financial document did not update the supplier balance exactly once');
+checkReturnQa(WarehouseStockService::available($central,$product->id,$variant->id)===$financialStock && StockMovement::count()===$financialMovements,'Financial document changed inventory');
+checkReturnQa((int)DB::table('activity_logs')->where('action','financial_account_document_created')->value('user_id')===$actor->id,'Financial document audit actor was lost');
+
+$revision=['document'=>$result[0]['id'],'actor'=>$actor->id,'data'=>array_merge($same['data'],['version'=>1,'document_amount'=>900])];
+$revisions=raceReturns('financial-revise',[$revision,$revision]);
+checkReturnQa(count(array_filter($revisions,fn($r)=>$r['state']==='ok'))===1,'Concurrent financial editing bypassed version guard');
+checkReturnQa(app(PersonAccountStatementService::class)->statement('supplier-only-'.$sources['A']['supplier']->id)['netBalance']===6900,'Financial editing changed more than the document difference');
+$revision['cancel']=true;$revision['data']=['version'=>2,'reason'=>'Disposable cancellation'];
+$cancellations=raceReturns('financial-revise',[$revision,$revision]);
+checkReturnQa(count(array_filter($cancellations,fn($r)=>$r['state']==='ok'))===1,'Concurrent cancellation applied more than once');
+checkReturnQa(app(PersonAccountStatementService::class)->statement('supplier-only-'.$sources['A']['supplier']->id)['netBalance']===6000,'Cancellation did not restore the previous balance');
+checkReturnQa(WarehouseStockService::available($central,$product->id,$variant->id)===$financialStock && StockMovement::count()===$financialMovements,'Financial revision changed inventory');
+
 $before=WarehouseStockService::available($central,$product->id,$variant->id);
 $beforeLedgers=DB::table('supplier_ledgers')->count();
 App\Models\PurchaseReturnRevision::creating(fn()=>throw new RuntimeException('QA injected audit failure'));
@@ -159,5 +184,5 @@ try {$service->create($payload('B',1,(string)Str::uuid()),$actor->id);throw new 
 catch(RuntimeException $e){checkReturnQa($e->getMessage()==='QA injected audit failure','Unexpected failure');}
 checkReturnQa(WarehouseStockService::available($central,$product->id,$variant->id)===$before && DB::table('supplier_ledgers')->count()===$beforeLedgers,'Transaction rollback changed stock or finance');
 echo json_encode(['result'=>'PASS','engine'=>DB::selectOne('SELECT VERSION() AS version')->version,
-    'checks'=>['source_capacity_A50_adjustment30_B20','concurrent_source_capacity','concurrent_idempotency','unique_inbound_operation','concurrent_receive_once_two_users','customer_credit_once','reserved_preserved','concurrent_sales_return_creation','immutable_supplier_posting_and_reversal','unified_statement_SQL','transaction_rollback'],
+    'checks'=>['source_capacity_A50_adjustment30_B20','concurrent_source_capacity','concurrent_idempotency','unique_inbound_operation','concurrent_receive_once_two_users','customer_credit_once','reserved_preserved','concurrent_sales_return_creation','immutable_supplier_posting_and_reversal','unified_statement_SQL','transaction_rollback','concurrent_financial_document_once','financial_document_preserves_inventory_and_actor','concurrent_financial_edit_and_cancel_once'],
     'fixture_database'=>$database,'production_touched'=>false],JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR)."\n";

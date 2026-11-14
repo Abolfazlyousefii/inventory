@@ -117,10 +117,11 @@ class PersonAccountStatementService
                 ->selectRaw("DATE(COALESCE(
                     (SELECT ip.paid_at FROM invoice_payments ip WHERE ip.id = cl.reference_id AND cl.reference_type = ?),
                     (SELECT pad.document_date FROM personnel_account_documents pad WHERE pad.id = cl.reference_id AND cl.reference_type = ?),
+                    (SELECT fd.document_date FROM financial_account_documents fd WHERE fd.id = cl.reference_id AND cl.reference_type = ?),
                     (SELECT p.purchased_at FROM purchases p WHERE p.id = cl.reference_id AND cl.reference_type = ?),
                     cl.created_at,
                     '1970-01-01'
-                )) AS statement_date", [InvoicePayment::class, PersonnelAccountDocument::class, Purchase::class]);
+                )) AS statement_date", [InvoicePayment::class, PersonnelAccountDocument::class, \App\Models\FinancialAccountDocument::class, Purchase::class]);
 
             $cancelledStatuses = Invoice::cancelledStatuses();
             if ($cancelledStatuses !== []) {
@@ -145,11 +146,12 @@ class PersonAccountStatementService
                 ->selectRaw("'supplier' AS ledger_source, sl.id, sl.type, sl.amount, sl.reference_type, sl.reference_id, sl.note, sl.created_at, sl.updated_at, 1 AS source_order")
                 ->selectRaw("DATE(COALESCE(
                     (SELECT sat.transaction_date FROM supplier_account_transactions sat WHERE sat.id = sl.reference_id AND sl.reference_type = ?),
+                    (SELECT fd.document_date FROM financial_account_documents fd WHERE fd.id = sl.reference_id AND sl.reference_type = ?),
                     (SELECT p.purchased_at FROM purchases p WHERE p.id = sl.reference_id AND sl.reference_type = ?),
                     (SELECT pr.returned_at FROM purchase_returns pr WHERE pr.id = sl.reference_id AND sl.reference_type = ?),
                     sl.created_at,
                     '1970-01-01'
-                )) AS statement_date", [SupplierAccountTransaction::class, Purchase::class, PurchaseReturn::class])
+                )) AS statement_date", [SupplierAccountTransaction::class, \App\Models\FinancialAccountDocument::class, Purchase::class, PurchaseReturn::class])
                 ->selectRaw("CASE WHEN sl.reference_type = ? AND NOT EXISTS (
                     SELECT 1 FROM purchase_returns pr
                     WHERE pr.id = sl.reference_id AND pr.deleted_at IS NULL
