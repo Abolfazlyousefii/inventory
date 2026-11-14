@@ -23,26 +23,36 @@ class PersonController extends Controller
         $perPage = 20;
 
         $customers = Customer::query()
-            ->when($q !== '', function ($query) use ($q) {
-                $query->where(function ($nested) use ($q) {
-                    $nested->where('first_name', 'like', "%{$q}%")
-                        ->orWhere('mobile', 'like', "%{$q}%");
-                });
-            })
             ->orderByDesc('id')
             ->get();
 
         $suppliers = Supplier::query()
-            ->when($q !== '', function ($query) use ($q) {
-                $query->where(function ($nested) use ($q) {
-                    $nested->where('name', 'like', "%{$q}%")
-                        ->orWhere('phone', 'like', "%{$q}%");
-                });
-            })
+            ->where(fn ($query) => $query->whereNull('is_inventory_adjustment_source')->orWhere('is_inventory_adjustment_source', false))
             ->orderByDesc('id')
             ->get();
 
         $people = $this->mergePeople($customers, $suppliers);
+        // Resolve identity against the full directory before filtering; searching
+        // must not hide the other role or make a duplicate phone look unique.
+        if ($q !== '') {
+            $term = mb_strtolower(strtr($q, ['ي' => 'ی', 'ك' => 'ک']));
+            $phone = PhoneNormalizer::normalize($q);
+            $customerNames = $customers->keyBy('id');
+            $supplierNames = $suppliers->keyBy('id');
+            $people = $people->filter(function ($person) use ($term, $phone, $customerNames, $supplierNames) {
+                $names = [$person['name'], $customerNames->get($person['customer_id'])?->display_name,
+                    $supplierNames->get($person['supplier_id'])?->name];
+                return collect($names)->contains(fn ($name) => str_contains(mb_strtolower(strtr((string) $name, ['ي' => 'ی', 'ك' => 'ک'])), $term))
+                    || ($phone !== '' && str_contains(PhoneNormalizer::normalize((string) $person['mobile']), $phone));
+            })->values();
+        }
+        $role = in_array($request->query('role'), ['customer', 'supplier', 'both'], true) ? $request->query('role') : '';
+        $people = $people->filter(fn ($person) => match ($role) {
+            'customer' => $person['is_customer'],
+            'supplier' => $person['is_supplier'],
+            'both' => $person['is_customer'] && $person['is_supplier'],
+            default => true,
+        })->values();
 
         $items = $people->forPage($page, $perPage)->values();
         $pagination = new LengthAwarePaginator(
@@ -59,6 +69,7 @@ class PersonController extends Controller
         return view('persons.index', [
             'people' => $pagination,
             'q' => $q,
+            'role' => $role,
         ]);
     }
 

@@ -5,7 +5,7 @@ $root=dirname(__DIR__);
 $files=[];
 foreach (['Feature','Unit'] as $directory) {
     foreach (glob(__DIR__.'/'.$directory.'/*.php') as $file) {
-        if (preg_match('/(SalesReturn|WarehouseInbound|PurchaseReturn|PersonAccountStatement|ReturnsIntegrity|AccountStatementReadOnlyAccess|StocktakeSnapshotSchemaMigration|SupplierTransactionMigrationSafety)/',basename($file))) {
+        if (preg_match('/(SalesReturn|WarehouseInbound|PurchaseReturn|PersonAccount|ReturnsIntegrity|AccountStatementReadOnlyAccess|StocktakeSnapshotSchemaMigration|SupplierTransactionMigrationSafety)/',basename($file))) {
             $files[]=$file;
         }
     }

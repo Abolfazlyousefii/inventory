@@ -1,15 +1,16 @@
 @extends('layouts.app')
 @section('title', 'گردش حساب اشخاص')
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/account-statements-list.css') }}?v=20261011">
+<link rel="stylesheet" href="{{ asset('css/account-statements-list.css') }}?v=20261114">
 @endpush
 
 @section('content')
 @php
-    $sortUrl = function (string $column) use ($q, $sort, $direction) {
+    $sortUrl = function (string $column) use ($q, $sort, $direction, $role) {
         $nextDirection = $sort === $column ? ($direction === 'desc' ? 'asc' : null) : 'desc';
         return route('account-statements.index', array_filter([
             'q' => $q,
+            'role' => $role,
             'sort' => $nextDirection ? $column : null,
             'direction' => $nextDirection,
         ], fn ($value) => $value !== null && $value !== ''));
@@ -19,7 +20,7 @@
 <div class="as-list">
 <header class="as-heading">
     <span class="as-heading-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 8h8M8 12h8M8 16h4"/></svg></span>
-    <div><h1>گردش حساب اشخاص</h1><p>ماندهٔ حساب مشتریان، در یک نگاه</p></div>
+    <div><h1>گردش حساب اشخاص</h1><p>حساب مشتریان و تأمین‌کنندگان · ماندهٔ هر پرونده به‌صورت مستقل</p></div>
     <span class="as-unit">مبالغ به ریال</span>
 </header>
 
@@ -27,7 +28,12 @@
     <div class="card-body">
         <form id="accountStatementSearch" class="d-flex gap-2" method="GET" action="{{ route('account-statements.index') }}">
             @if($sort)<input type="hidden" name="sort" value="{{ $sort }}"><input type="hidden" name="direction" value="{{ $direction }}">@endif
-            <input class="form-control" type="search" name="q" value="{{ $q ?? '' }}" autocomplete="off" aria-label="جستجوی اشخاص" placeholder="نام مشتری، موبایل، کد یا شهر…">
+            <input class="form-control" type="search" name="q" value="{{ $q ?? '' }}" autocomplete="off" aria-label="جستجوی اشخاص" placeholder="نام شخص، موبایل، کد یا شهر…">
+            <select class="form-select w-auto" name="role" aria-label="نقش شخص">
+                @foreach(['' => 'همهٔ اشخاص', 'customer' => 'مشتری', 'supplier' => 'تأمین‌کننده'] as $value => $label)
+                    <option value="{{ $value }}" @selected($role === $value)>{{ $label }}</option>
+                @endforeach
+            </select>
             <button class="btn as-search-button" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><span>جستجو</span></button>
         </form>
         <div id="accountStatementSearchStatus" class="small text-muted mt-2" role="status" aria-live="polite"></div>
@@ -60,18 +66,19 @@
                 <tbody>
                     @forelse($customers as $customer)
                         @php
+                            $accountUrl = $customer->account_role === 'supplier' ? route('persons.account', 'supplier-only-'.$customer->id) : route('account-statements.show', $customer->id);
                             $balance = (int) $customer->balance;
                             $statusLabel = $balance > 0 ? 'بدهکار' : ($balance < 0 ? 'بستانکار' : 'تسویه');
                             $statusClass = $balance > 0 ? 'text-danger' : ($balance < 0 ? 'text-success' : 'text-muted');
                         @endphp
                         <tr class="as-person-row {{ $balance > 0 ? 'as-person-debt' : ($balance < 0 ? 'as-person-credit' : 'as-person-settled') }}">
-                            <td class="as-person"><a href="{{ route('account-statements.show', $customer->id) }}">{{ $customer->display_name ?: '-' }}</a></td>
+                            <td class="as-person"><a href="{{ $accountUrl }}">{{ $customer->display_name ?: '-' }}</a><div class="small text-muted mt-1">{{ $customer->account_role === 'supplier' ? 'تأمین‌کننده' : 'مشتری' }} · {{ $customer->id }}</div></td>
                             <td class="as-mobile" data-label="موبایل"><span dir="ltr">{{ $customer->mobile ?: '-' }}</span></td>
                             <td class="as-amount" data-label="بدهکاری">{{ \App\Support\Currency::formatRial($customer->debt) }}</td>
                             <td class="as-amount" data-label="بستانکاری">{{ \App\Support\Currency::formatRial($customer->credit) }}</td>
                             <td class="as-balance {{ $statusClass }}" data-label="ماندهٔ حساب"><span class="as-status {{ $balance > 0 ? 'is-debt' : ($balance < 0 ? 'is-credit' : 'is-settled') }}">{{ $statusLabel }}</span><strong>{{ $balance === 0 ? '—' : \App\Support\Currency::formatRial(abs($balance)) }}</strong></td>
                             <td class="as-action text-end">
-                                <a href="{{ route('account-statements.show', $customer->id) }}" class="as-open" aria-label="مشاهده گردش حساب {{ $customer->display_name }}">گردش حساب <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 12H5m7-7-7 7 7 7"/></svg></a>
+                                <a href="{{ $accountUrl }}" class="as-open" aria-label="مشاهده گردش حساب {{ $customer->display_name }}">گردش حساب <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 12H5m7-7-7 7 7 7"/></svg></a>
                             </td>
                         </tr>
                     @empty
@@ -128,6 +135,8 @@
         const value = input.value.trim();
         if (value) url.searchParams.set('q', value);
         for (const field of form.querySelectorAll('input[type="hidden"]')) url.searchParams.set(field.name, field.value);
+        const role = form.querySelector('[name="role"]').value;
+        if (role) url.searchParams.set('role', role);
         return url;
     };
 
@@ -137,6 +146,7 @@
         sequence++;
         timer = setTimeout(() => load(searchUrl()), 350);
     });
+    form.querySelector('[name="role"]').addEventListener('change', () => { clearTimeout(timer); load(searchUrl(), true); });
     form.addEventListener('submit', event => {
         event.preventDefault();
         clearTimeout(timer);
@@ -161,6 +171,7 @@
     window.addEventListener('popstate', () => {
         const url = new URL(window.location.href);
         input.value = url.searchParams.get('q') || '';
+        form.querySelector('[name="role"]').value = url.searchParams.get('role') || '';
         form.querySelectorAll('input[type="hidden"]').forEach(field => field.remove());
         for (const key of ['sort', 'direction']) {
             if (url.searchParams.has(key)) {

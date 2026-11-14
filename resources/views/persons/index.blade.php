@@ -6,15 +6,23 @@
         <h4 class="mb-0">👥 اشخاص</h4>
         <div class="text-muted small">مدیریت یکپارچه مشتریان و تامین‌کنندگان</div>
     </div>
+    <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ route('customers.index') }}">مدیریت مشتریان</a>
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#personModal">
         ➕ ساخت شخص
     </button>
+    </div>
 </div>
 
 <div class="card mb-3">
     <div class="card-body">
         <form class="d-flex gap-2" method="GET" action="{{ route('persons.index') }}">
             <input class="form-control" name="q" value="{{ $q ?? '' }}" placeholder="جستجو نام/شماره تماس">
+            <select class="form-select w-auto" name="role" aria-label="نقش شخص">
+                @foreach(['' => 'همهٔ اشخاص', 'customer' => 'مشتری', 'supplier' => 'تأمین‌کننده', 'both' => 'مشتری و تأمین‌کننده'] as $value => $label)
+                    <option value="{{ $value }}" @selected(($role ?? '') === $value)>{{ $label }}</option>
+                @endforeach
+            </select>
             <button class="btn btn-outline-secondary">جستجو</button>
         </form>
     </div>

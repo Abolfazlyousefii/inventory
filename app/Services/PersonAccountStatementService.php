@@ -67,6 +67,13 @@ class PersonAccountStatementService
      */
     public function resolve(string $personKey): array
     {
+        // Directory links open the supplier's own book, never a phone-based netting.
+        if (preg_match('/^supplier-only-([0-9]+)$/D', $personKey, $m)) {
+            $supplier = Supplier::findOrFail((int) $m[1]);
+            return ['customer' => null, 'supplier' => $supplier, 'name' => $supplier->name,
+                'mobile' => $supplier->phone, 'is_customer' => false, 'is_supplier' => true,
+                'link_warning' => null];
+        }
         $customer = null;
         $supplier = null;
         $explicit = false;
