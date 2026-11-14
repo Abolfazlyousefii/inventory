@@ -315,11 +315,19 @@ class PurchaseController extends Controller
 
     public function store(Request $request)
     {
+        $token=$request->input('submission_token');
+        if(is_string($token) && \Illuminate\Support\Str::isUuid($token)){
+            $completed=\App\Models\PurchaseDraft::whereKey($token)->where('user_id',auth()->id())->where('status','submitted')->first();
+            if($completed)return redirect()->route('purchases.index')->with('success','این خرید قبلاً با موفقیت ثبت شده است؛ سند تکراری ایجاد نشد.');
+        }
         $data = $this->validatePayload($request);
         $submissionCacheKey = $this->acquirePurchaseSubmission($data['submission_token']);
 
         try {
             DB::transaction(function () use ($data) {
+                $draft=app(\App\Services\PurchaseDraftService::class)->lock($data['submission_token'],(int)auth()->id());
+                if($draft->status==='submitted')return;
+                if($draft->status!=='active')throw ValidationException::withMessages(['purchase'=>'این پیش‌نویس کنار گذاشته شده است؛ برای خرید جدید فرم تازه باز کنید.']);
                 $centralWarehouseId = WarehouseStockService::centralWarehouseId();
                 $supplierId = $this->resolvePurchaseSupplierId((string) $data['supplier_id']);
                 $this->assertCommercialSupplierForPurchase($supplierId);
@@ -344,6 +352,7 @@ class PurchaseController extends Controller
                 $purchase->update($this->purchaseTablePayload($summary));
 
                 app(SupplierLedgerService::class)->syncPurchaseCredit($purchase->fresh());
+                $draft->forceFill(['status'=>'submitted','purchase_id'=>$purchase->id,'payload'=>null,'revision'=>$draft->revision+1])->save();
             });
         } catch (\Throwable $exception) {
             Cache::forget($submissionCacheKey);

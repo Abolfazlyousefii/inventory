@@ -574,6 +574,10 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/purchases/export', [PurchaseController::class, 'exportExcel'])->name('purchases.export');
     Route::get('/purchases/create', [PurchaseController::class, 'create'])->name('purchases.create');
+    Route::get('/purchases/drafts/latest', [\App\Http\Controllers\PurchaseDraftController::class,'latest'])->name('purchases.drafts.latest');
+    Route::get('/purchases/drafts/{token}', [\App\Http\Controllers\PurchaseDraftController::class,'show'])->name('purchases.drafts.show');
+    Route::post('/purchases/drafts', [\App\Http\Controllers\PurchaseDraftController::class,'save'])->name('purchases.drafts.save');
+    Route::delete('/purchases/drafts/{token}', [\App\Http\Controllers\PurchaseDraftController::class,'discard'])->name('purchases.drafts.discard');
     Route::get('/purchases/products/{product}/variants', [PurchaseController::class, 'productVariants'])
         ->name('purchases.products.variants');
     Route::post('/purchases', [PurchaseController::class, 'store'])->name('purchases.store');
