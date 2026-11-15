@@ -117,5 +117,7 @@
             @if(filled($printData['company']['sheba']))<div>شماره شبا شرکت: {{ $fa($printData['company']['sheba']) }}</div>@endif
         </section>
     @endunless
-    <section class="signature-section"><div class="signature-box">امضا و مهر فروشنده</div><div class="signature-box">امضای مشتری / تحویل‌گیرنده</div></section>
+    @unless($isWarehouseInvoice)
+        <section class="signature-section"><div class="signature-box">امضا و مهر فروشنده</div><div class="signature-box">امضای مشتری / تحویل‌گیرنده</div></section>
+    @endunless
 </main>
