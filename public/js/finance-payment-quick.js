@@ -80,7 +80,7 @@
    r.known.forEach((row,i)=>$('detailsRows').appendChild(detailRow('چک مشخص '+number(i+1)+' · '+number(row.day)+' روزه',row.amount)));
    r.future.forEach((row,i)=>$('detailsRows').appendChild(detailRow('چک محاسبه‌شده '+number(i+1)+' · '+number(row.day)+' روزه',row.amount)));
    if(active==='cash')$('detailsRows').appendChild(detailRow('نقدی لازم امروز',r.computedCash));
-   $('formulaInfo').textContent='تاریخ مبنا '+config.baseDate+' · سود ماهانه '+number(config.monthly)+'٪ · ماه مالی ۳۰روزه · ارزش فعلی = مبلغ چک ÷ (۱ + نرخ مؤثر روزانه) به توان تعداد روز.';
+   $('formulaInfo').textContent='تاریخ مبنا '+config.baseDate+' · سود ماهانه ' +Adapter.formatMonthlyRate(config.monthly)+' · ماه مالی ۳۰روزه · ارزش فعلی = مبلغ چک ÷ (۱ + نرخ مؤثر روزانه) به توان تعداد روز.';
    $('printBtn').disabled=false;
  }
  function collectPayload(){
@@ -178,7 +178,7 @@
  function formatMoneyField(input){const n=moneyValue(input.value);if(n!==null&&Number.isFinite(n)&&Number.isSafeInteger(n))input.value=money(n);}
  function saveSettings(ev){ev.preventDefault();const normalizedRate=toLatin($('rateInput').value).replace(/٫/g,'.').trim();const percent=Number(normalizedRate);
    try{if(!/^\d{1,3}(?:\.\d{1,4})?$/.test(normalizedRate))throw Error('نرخ سود حداکثر چهار رقم اعشار داشته باشد.');F.rate(percent);const date=$('baseDateInput').value.trim();F.dayDifference(date,date);
-     config.monthly=percent;config.baseDate=date;safeSave();$('rateChip').textContent=number(config.monthly)+'٪';$('baseDateChip').textContent=config.baseDate;$('settingsError').hidden=true;$('settingsDialog').close();drawRows();recalc(true);
+     config.monthly=percent;config.baseDate=date;safeSave();$('rateChip').textContent=Adapter.formatMonthlyRate(config.monthly);$('baseDateChip').textContent=config.baseDate;$('settingsError').hidden=true;$('settingsDialog').close();drawRows();recalc(true);
    }catch(err){$('settingsError').hidden=false;$('settingsError').textContent=err.message||'مقادیر تنظیمات معتبر نیست.';}}
  // Full Persian calendar: any valid Jalali date, no time or hour controls.
  function openCalendar(input){pickedInput=input;let date=input.value.trim();try{F.toGregorianDay(date);}catch{date=config.baseDate}
@@ -231,7 +231,7 @@
  $('calendarToday').addEventListener('click',()=>chooseDate(config.baseDate));
  $('calendarDays').addEventListener('click',ev=>{const btn=ev.target.closest('[data-date]');if(btn)chooseDate(btn.dataset.date)});
 
- $('rateChip').textContent=number(config.monthly)+'٪';
+ $('rateChip').textContent=Adapter.formatMonthlyRate(config.monthly);
  showMode(active);
 })();
 
