@@ -12,10 +12,6 @@
 
 
  <div class="page-shell">
-  <header class="masthead">
-   <h1>ماشین‌حساب نقد و چک</h1>
-  </header>
-
   <main class="calculator" aria-label="محاسبه شرایط پرداخت">
    <div class="control-strip">
     <div class="calculation-context" aria-label="تنظیمات محاسبه">
