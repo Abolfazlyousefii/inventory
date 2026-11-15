@@ -8,6 +8,9 @@
     $money = fn ($value) => new \Illuminate\Support\HtmlString('<span class="print-money" dir="rtl"><bdi>'.$num($value).'</bdi><span class="money-unit">ریال</span></span>');
     $dash = fn ($value) => filled($value) ? $value : '—';
     $isWarehouseMode = $printData['mode'] !== 'customer';
+    // Only the final warehouse invoice gains sales prices; warehouse preinvoices stay operational.
+    $isWarehouseInvoice = $isWarehouseMode && ($printData['documentType'] ?? null) === 'invoice';
+    $showProductPrices = !$isWarehouseMode || $isWarehouseInvoice;
     $totalQuantity = $printData['items']->sum('quantity');
     $totalLineAmount = $printData['items']->sum('lineTotal');
 @endphp
@@ -45,6 +48,17 @@
     </section>
     @endif
     @include('prints.partials.customer-invoice-items')
+    @if($isWarehouseInvoice)
+        <section class="summary-section warehouse-items-summary" aria-label="جمع ارزش کالاهای فاکتور">
+            <div></div><table class="summary-table"><tbody>
+                <tr><td>جمع کالاها پس از تخفیف کالا</td><td>{{ $money($printData['totals']['itemsNetSubtotal']) }}</td></tr>
+                @if($printData['totals']['invoiceDiscount'] > 0)
+                    <tr><td>تخفیف کلی فاکتور</td><td>{{ $money($printData['totals']['invoiceDiscount']) }}</td></tr>
+                @endif
+                <tr class="final-row"><td>جمع ارزش کالاها</td><td>{{ $money($printData['totals']['subtotalAfterDiscount']) }}</td></tr>
+            </tbody></table>
+        </section>
+    @endif
     @unless($isWarehouseMode)
         <section class="summary-section">
             <div></div><table class="summary-table"><tbody>
