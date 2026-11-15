@@ -124,6 +124,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         Schema::create('invoice_items', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('invoice_id');
+            $table->unsignedBigInteger('source_warehouse_id')->nullable();
             $table->unsignedBigInteger('variant_id');
             $table->unsignedInteger('quantity');
         });
