@@ -37,7 +37,6 @@
       if(/\d/.test(next[index]))seen++;
       index++;
     }
-    if(priorDigits>0&&next[index]===',')index++;
     if(typeof input.setSelectionRange==='function')input.setSelectionRange(index,index);
   }
   function buildPayload(mode,state,config,customer){
