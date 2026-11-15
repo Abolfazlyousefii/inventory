@@ -47,3 +47,15 @@ test('mobile layouts keep entry fields readable and preserve reduced-motion acce
   assert.match(stylesheet, /#financeQuickCalc \.payment-row\.future-row\.with-weights/);
   assert.match(stylesheet, /#financeQuickCalc \.date-wrap \.date-input/);
 });
+
+
+test('new layout follows the approved demo with compact workspace, a clear result and mobile styles', () => {
+  assert.match(view, /class="pc-quick pc-v2"/);
+  assert.match(view, /class="calc-workspace"/);
+  assert.match(view, /id="emptyCheques"/);
+  assert.match(stylesheet, /#financeQuickCalc\\.pc-v2 \\.calc-workspace/);
+  assert.match(stylesheet, /#financeQuickCalc\\.pc-v2 \\.answer/);
+  assert.match(stylesheet, /@media\\(max-width:660px\\)/);
+  assert.match(view, /id="settingsDialog"/);
+  assert.doesNotMatch(view, /demo-badge|id="formTitle"/);
+});
