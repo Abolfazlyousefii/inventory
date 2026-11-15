@@ -12,7 +12,7 @@
 
 
  <div class="page-shell">
-  <main class="calculator" aria-label="محاسبه شرایط پرداخت">
+  <section class="calculator" aria-label="محاسبه شرایط پرداخت">
    <div class="control-strip">
     <div class="calculation-context" aria-label="تنظیمات محاسبه">
       <span>نرخ ماهانه <button type="button" id="rateChip" class="rate-chip-button" aria-controls="settingsDialog" aria-haspopup="dialog" aria-label="تغییر نرخ سود ماهانه" title="تغییر نرخ سود ماهانه">۶٪</button></span>
@@ -92,7 +92,7 @@
      <p class="read-only-note">صرفاً برای محاسبه؛ سندی ثبت نمی‌شود.</p>
     </section>
    </div>
-  </main>
+  </section>
  </div>
   <dialog id="settingsDialog" class="pc-settings-dialog" aria-labelledby="settingsDialogTitle">
     <form method="dialog" id="settingsForm" class="modal-inner">
