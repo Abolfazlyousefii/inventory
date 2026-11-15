@@ -6,6 +6,7 @@
  if(!app||!F||!Adapter)return;
  const en=new Intl.NumberFormat('en-US',{maximumFractionDigits:0});
  const fa=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0});
+ const yearNumber=new Intl.NumberFormat('fa-IR',{useGrouping:false});
  const toLatin=s=>String(s??'').replace(/[۰-۹]/g,x=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(x)).replace(/[٠-٩]/g,x=>'٠١٢٣٤٥٦٧٨٩'.indexOf(x));
  const money=v=>v==null||!Number.isFinite(v)?'':en.format(v);
  const number=v=>fa.format(v);
@@ -205,18 +206,70 @@
      config.monthly=percent;config.baseDate=date;safeSave();$('rateChip').textContent=Adapter.formatMonthlyRate(config.monthly);$('baseDateChip').textContent=config.baseDate;$('settingsError').hidden=true;$('settingsDialog').close();drawRows();recalc(true);
    }catch(err){$('settingsError').hidden=false;$('settingsError').textContent=err.message||'مقادیر تنظیمات معتبر نیست.';}}
  // Full Persian calendar: any valid Jalali date, no time or hour controls.
- function openCalendar(input){pickedInput=input;let date=input.value.trim();try{F.toGregorianDay(date);}catch{date=config.baseDate}
-   [calYear,calMonth]=date.split('/').slice(0,2).map(Number);renderCalendar();$('calendarDialog').showModal();}
- function renderCalendar(){if(calMonth>12){calMonth=1;calYear++}if(calMonth<1){calMonth=12;calYear--}calYear=Math.min(1499,Math.max(1200,calYear));
-   $('calMonth').textContent=monthNames[calMonth-1]+' '+number(calYear);const container=$('calendarDays');container.replaceChildren();const first=`${calYear}/${String(calMonth).padStart(2,'0')}/01`;
-   let offset=0;try{const day=F.toGregorianDay(first);offset=(new Date(day*86400000).getUTCDay()+1)%7}catch{}
-   for(let i=0;i<offset;i++){const empty=document.createElement('span');container.append(empty)}
-   const selected=pickedInput?.value.trim(),today=config.baseDate;
-   for(let d=1;d<=31;d++){const value=`${calYear}/${String(calMonth).padStart(2,'0')}/${String(d).padStart(2,'0')}`;try{F.toGregorianDay(value)}catch{break}
-     const btn=document.createElement('button');btn.type='button';btn.textContent=number(d);btn.dataset.date=value;btn.className=(selected===value?'selected ':'')+(value===today?'today':'');btn.setAttribute('aria-label','انتخاب '+value);container.append(btn)}
+ function openCalendar(input){
+   pickedInput=input;
+   let date=toLatin(input.value.trim()).replace(/-/g,'/');
+   try{F.toGregorianDay(date);}catch{date=config.baseDate;}
+   [calYear,calMonth]=date.split('/').slice(0,2).map(Number);
+   renderCalendar();
+   $('calendarDialog').showModal();
+   const focusTarget=$('calendarDays').querySelector('.selected:not(:disabled)')
+     ||$('calendarDays').querySelector('button:not(:disabled)')
+     ||$('calNext');
+   focusTarget.focus();
  }
- function chooseDate(value){if(!pickedInput)return;pickedInput.value=value;pickedInput.dispatchEvent(new Event('input',{bubbles:true}));$('calendarDialog').close();}
- function moveMonth(n){calMonth+=n;if(calMonth<1){calMonth=12;calYear--}if(calMonth>12){calMonth=1;calYear++}renderCalendar();}
+ function renderCalendar(){
+   const info=F.jalaliMonthInfo(calYear,calMonth);
+   $('calMonth').textContent=monthNames[calMonth-1]+' '+yearNumber.format(calYear);
+   $('calPrev').disabled=calYear===1200&&calMonth===1;
+   $('calNext').disabled=calYear===1499&&calMonth===12;
+   const container=$('calendarDays');
+   const fragment=document.createDocumentFragment();
+   const selectedParts=toLatin(pickedInput?.value??'').replace(/-/g,'/').split('/').map(Number);
+   const selected=selectedParts.length===3&&selectedParts.every(Number.isInteger)
+     ?selectedParts[0]+'/'+String(selectedParts[1]).padStart(2,'0')+'/'+String(selectedParts[2]).padStart(2,'0')
+     :'';
+   const today=F.todayJalali();
+   const chequeDueDate=pickedInput?.id!=='baseDateInput';
+   const baseDay=chequeDueDate?F.toGregorianDay(config.baseDate):0;
+   const lastDay=baseDay+3650;
+   const slots=42; // Stable six-week grid prevents visual jumps between months.
+   for(let slot=0;slot<slots;slot++){
+     const d=slot-info.firstWeekday+1;
+     if(d<1||d>info.days){
+       const empty=document.createElement('span');
+       empty.setAttribute('aria-hidden','true');
+       fragment.append(empty);
+       continue;
+     }
+     const value=calYear+'/'+String(calMonth).padStart(2,'0')+'/'+String(d).padStart(2,'0');
+     const btn=document.createElement('button');
+     const inRange=!chequeDueDate||(info.firstDay+d-1>=baseDay&&info.firstDay+d-1<=lastDay);
+     btn.type='button';
+     btn.textContent=number(d);
+     btn.dataset.date=value;
+     btn.disabled=!inRange;
+     btn.className=(selected===value?'selected ':'')+(value===today?'today':'');
+     btn.setAttribute('aria-label','انتخاب '+value);
+     if(selected===value)btn.setAttribute('aria-pressed','true');
+     if(value===today)btn.setAttribute('aria-current','date');
+     fragment.append(btn);
+   }
+   container.replaceChildren(fragment);
+ }
+ function chooseDate(value){
+   if(!pickedInput)return;
+   pickedInput.value=value;
+   pickedInput.dispatchEvent(new Event('input',{bubbles:true}));
+   $('calendarDialog').close();
+ }
+ function moveMonth(step){
+   const next=calYear*12+(calMonth-1)+step;
+   if(next<1200*12||next>=1500*12)return;
+   calYear=Math.floor(next/12);
+   calMonth=next%12+1;
+   renderCalendar();
+ }
  // Simple, keyboard-friendly tab navigation.
  app.querySelectorAll('[data-mode]').forEach(btn=>btn.addEventListener('click',()=>showMode(btn.dataset.mode)));
  $('addKnown').addEventListener('click',addKnown);$('addFuture').addEventListener('click',addFuture);
@@ -251,7 +304,10 @@
  $('closeSettings').addEventListener('click',()=>$('settingsDialog').close());
  $('settingsForm').addEventListener('submit',saveSettings);
  app.addEventListener('click',ev=>{const btn=ev.target.closest('[data-calendar-for]');if(!btn)return;const input=$(btn.dataset.calendarFor);if(input)openCalendar(input)});
- $('calendarClose').addEventListener('click',()=>$('calendarDialog').close());$('calPrev').addEventListener('click',()=>moveMonth(-1));$('calNext').addEventListener('click',()=>moveMonth(1));
+ $('calendarClose').addEventListener('click',()=>$('calendarDialog').close());
+ $('calendarDialog').addEventListener('close',()=>{if(pickedInput?.isConnected)pickedInput.focus({preventScroll:true});});
+ $('calPrev').addEventListener('click',()=>moveMonth(-1));
+ $('calNext').addEventListener('click',()=>moveMonth(1));
  $('calendarToday').addEventListener('click',()=>chooseDate(config.baseDate));
  $('calendarDays').addEventListener('click',ev=>{const btn=ev.target.closest('[data-date]');if(btn)chooseDate(btn.dataset.date)});
 
