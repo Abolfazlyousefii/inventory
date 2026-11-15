@@ -31,12 +31,19 @@
  const inputEl=(row,field)=>row.querySelector('[data-field="'+field+'"]');
  function dateControl(value,index,kind){const id=`date-${kind}-${index}`;return `<div class="date-wrap"><input id="${id}" class="row-input date-input" type="text" inputmode="numeric" autocomplete="off" data-field="due" value="${escapeHTML(value)}" aria-label="تاریخ شمسی چک ${index+1+(kind==='future'?states[active].known.length:0)}" placeholder="تاریخ شمسی"><button class="calendar-trigger" type="button" data-calendar-for="${id}" aria-label="انتخاب تاریخ شمسی چک ${index+1+(kind==='future'?states[active].known.length:0)}">▦</button></div>`;}
  function rowMarkup(item,index,kind){
-   const known=kind==='known',weightClass=!known&&weightVisible?' with-weights':'';
-   const due=dateControl(item.due,index,kind),amount=known?`<label class="row-field"><span>مبلغ چک · ریال</span><input class="row-input" type="text" inputmode="numeric" autocomplete="off" data-money data-field="amount" value="${money(item.amount)}" placeholder="مبلغ چک"></label>`:'';
-   const weight=!known&&weightVisible?`<label class="row-field"><span>سهم / وزن</span><input class="row-input" type="text" inputmode="decimal" data-field="weight" value="${item.weight}" placeholder="۱"></label>`:'';
-   const type=active==='cheque'?`<label class="row-field row-kind"><span>مبلغ این چک</span><select data-payment-kind aria-label="نوع مبلغ چک ${index+1+(kind==='future'?states[active].known.length:0)}"><option value="future" ${known?'':'selected'}>محاسبه شود</option><option value="known" ${known?'selected':''}>مشخص است</option></select></label>`:'';
-   const remove=`<button type="button" class="remove" data-remove aria-label="حذف چک ${index+1+(kind==='future'?states[active].known.length:0)}" title="حذف چک">×</button>`;
-   return `<div class="payment-row ${known?'known-row':'future-row'}${weightClass}" data-type="${kind}" data-index="${index}"><div class="row-header">${type}${remove}</div>${amount}<label class="row-field row-due"><span>تاریخ سررسید شمسی</span>${due}<small class="due-hint">${dueText(item.due)}</small></label>${weight}</div>`;
+   const known=kind==='known',chequeMode=active==='cheque';
+   const numberOfRow=index+1+(kind==='future'?states[active].known.length:0);
+   const due=dateControl(item.due,index,kind);
+   const amount=known?`<label class="row-field amount-field"><span>مبلغ چک · ریال</span><input class="row-input" type="text" inputmode="numeric" dir="ltr" autocomplete="off" data-money data-field="amount" value="${money(item.amount)}" placeholder="مبلغ را وارد کنید"></label>`:'';
+   const weight=!known&&weightVisible?`<label class="row-field weight-field"><span>وزن</span><input class="row-input" type="text" inputmode="decimal" data-field="weight" value="${item.weight}" placeholder="۱"></label>`:'';
+   const type=chequeMode?`<label class="row-field row-kind"><span>نوع مبلغ</span><select data-payment-kind aria-label="نوع مبلغ چک ${numberOfRow}"><option value="future" ${known?'':'selected'}>محاسبه شود</option><option value="known" ${known?'selected':''}>مشخص است</option></select></label>`:'';
+   const remove=`<button type="button" class="remove" data-remove aria-label="حذف چک ${numberOfRow}" title="حذف چک">×</button>`;
+   return `<div class="payment-row ${known?'known-row':'future-row'}${chequeMode?' has-kind':''}${!known&&weightVisible?' with-weights':''}" data-type="${kind}" data-index="${index}">
+     <span class="cheque-number">چک ${number(numberOfRow)}</span>
+     ${type}${amount}
+     <label class="row-field row-due"><span>سررسید شمسی</span>${due}<small class="due-hint">${dueText(item.due)}</small></label>
+     ${weight}${remove}
+   </div>`;
  }
  function dueText(due){if(!due)return 'تاریخ را انتخاب کنید';try{const days=F.dayDifference(config.baseDate,due);return days===0?'امروز':number(days)+' روز دیگر';}catch{return 'تاریخ را بررسی کنید';}}
  function drawRows(){const state=states[active];$('knownRows').innerHTML=state.known.map((r,i)=>rowMarkup(r,i,'known')).join('');$('futureRows').innerHTML=state.future.map((r,i)=>rowMarkup(r,i,'future')).join('');$('knownSection').hidden=state.known.length===0;
