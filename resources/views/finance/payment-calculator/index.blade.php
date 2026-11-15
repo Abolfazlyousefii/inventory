@@ -105,10 +105,14 @@
   </dialog>
   <dialog id="calendarDialog" class="calendar-modal" aria-label="انتخاب تاریخ شمسی">
     <div class="calendar-content"><div class="calendar-title"><h2>انتخاب تاریخ شمسی</h2><button type="button" id="calendarClose" class="icon-close" aria-label="بستن">×</button></div>
-      <div class="month-nav"><button id="calPrev" type="button" aria-label="ماه قبل">›</button><strong id="calMonth">آبان ۱۴۰۵</strong><button id="calNext" type="button" aria-label="ماه بعد">‹</button></div>
+      <div class="month-nav" dir="rtl">
+        <button id="calPrev" type="button" aria-label="ماه قبل" title="ماه قبل"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></button>
+        <strong id="calMonth" aria-live="polite">آبان ۱۴۰۵</strong>
+        <button id="calNext" type="button" aria-label="ماه بعد" title="ماه بعد"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg></button>
+      </div>
       <div class="weekdays" aria-hidden="true"><span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span></div>
       <div class="days" id="calendarDays"></div>
-      <p class="date-foot">هر تاریخ دلخواه را می‌توانی انتخاب کنی؛ حتی ۱۰ روز دیگر.</p>
+      <p class="date-foot">تاریخ موردنظر را انتخاب کنید.</p>
       <button type="button" id="calendarToday" class="today-btn">انتخاب تاریخ مبنا</button>
     </div>
   </dialog>
