@@ -151,18 +151,18 @@ test('temporary saved amounts never enter weighted API payloads',()=>{
 });
 
 test('native settings dialog avoids Bootstrap modal CSS and is reachable from the rate chip', () => {
-  const dialog = view.match(/<dialog\\b[^>]*id="settingsDialog"[^>]*>/);
+  const dialog = view.split('\n').find(line => line.includes('<dialog id="settingsDialog"'));
   assert.ok(dialog, 'settings dialog should exist');
-  assert.doesNotMatch(dialog[0], /\\bclass="[^"]*\\bmodal\\b/, 'Bootstrap .modal hides native dialog even when open');
-  assert.match(view, /<button[^>]*id="rateChip"[^>]*aria-controls="settingsDialog"/);
-  assert.match(view, /id="rateChip"[^>]*aria-haspopup="dialog"/);
-  assert.match(script, /\\$\\('rateChip'\\)\\.addEventListener\\('click',\\s*openSettingsDialog\\)/);
-  assert.match(script, /\\$\\('openSettings'\\)\\.addEventListener\\('click',\\s*openSettingsDialog\\)/);
+  assert.ok(dialog.includes('class="pc-settings-dialog"'), 'do not use Bootstrap modal class on native dialog');
+  assert.ok(view.includes('<button type="button" id="rateChip"'), 'rate is a native keyboard-accessible button');
+  assert.ok(view.includes('id="rateChip" class="rate-chip-button" aria-controls="settingsDialog" aria-haspopup="dialog"'));
+  assert.ok(script.includes("$('rateChip').addEventListener('click',openSettingsDialog)"));
+  assert.ok(script.includes("$('openSettings').addEventListener('click',openSettingsDialog)"));
 });
 
 test('settings dialog initializes stored rate and focuses the editable percent field', () => {
-  assert.match(script, /function openSettingsDialog\\(\\)/);
-  assert.match(script, /\\$\\('rateInput'\\)\\.value\\s*=\\s*String\\(config\\.monthly\\)/);
-  assert.match(script, /\\$\\('settingsDialog'\\)\\.showModal\\(\\)/);
-  assert.match(script, /\\$\\('rateInput'\\)\\.focus\\(\\)/);
+  assert.ok(script.includes('function openSettingsDialog()'));
+  assert.ok(script.includes("$('rateInput').value=String(config.monthly)"));
+  assert.ok(script.includes("$('settingsDialog').showModal()"));
+  assert.ok(script.includes("$('rateInput').focus()"));
 });
