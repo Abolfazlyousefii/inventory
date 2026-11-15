@@ -7,13 +7,10 @@
  const en=new Intl.NumberFormat('en-US',{maximumFractionDigits:0});
  const fa=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0});
  const toLatin=s=>String(s??'').replace(/[۰-۹]/g,x=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(x)).replace(/[٠-٩]/g,x=>'٠١٢٣٤٥٦٧٨٩'.indexOf(x));
- const digits=s=>toLatin(s).replace(/[٬,\s\u200e\u200f]/g,'').trim();
  const money=v=>v==null||!Number.isFinite(v)?'':en.format(v);
  const number=v=>fa.format(v);
  const moneyValue=Adapter.parseMoney;
- const dateInDays=n=>F.jalaliAfterDays(config.baseDate,n);
  const safeSave=()=>{try{localStorage.setItem('finance-quick-monthly-rate-v1',String(config.monthly))}catch{}};
- const names={cheque:'محاسبه مبلغ چک',cash:'محاسبه نقد لازم',value:'ارزش نقدی چک‌ها'};
  const monthNames=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
  let config={monthly:6,baseDate:app.dataset.todayJalali||F.todayJalali()};
  try{const saved=Number(localStorage.getItem('finance-quick-monthly-rate-v1'));
@@ -189,7 +186,6 @@
  function showMode(mode){if(!states[mode])return;active=mode;
    app.querySelectorAll('[data-mode]').forEach(btn=>{const on=btn.dataset.mode===mode;btn.classList.toggle('active',on);btn.setAttribute('aria-selected',String(on));btn.tabIndex=on?0:-1});
    syncFields();recalc();}
- function nextChequeDay(state){return Math.min(3650,30+Math.max(0,...[...state.known,...state.future].map(item=>{try{return F.dayDifference(config.baseDate,item.due)}catch{return 0}})));}
  function addKnown(){const state=states[active];if(state.known.length>=40)return;state.known.push({amount:null,due:''});drawRows();recalc();$('knownRows').lastElementChild?.querySelector('[data-field="amount"]')?.focus();}
  function addFuture(){const state=states.cheque;if(state.future.length>=40)return;state.future.push({due:'',weight:1});drawRows();recalc();$('futureRows').lastElementChild?.querySelector('[data-field="due"]')?.focus();}
  function updateDueHints(){for(const item of app.querySelectorAll('.payment-row')){const input=inputEl(item,'due'),hint=item.querySelector('.due-hint');if(input&&hint)hint.textContent=dueText(input.value);}}
