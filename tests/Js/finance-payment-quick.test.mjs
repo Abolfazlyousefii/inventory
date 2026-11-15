@@ -166,3 +166,11 @@ test('settings dialog initializes stored rate and focuses the editable percent f
   assert.ok(script.includes("$('settingsDialog').showModal()"));
   assert.ok(script.includes("$('rateInput').focus()"));
 });
+
+test('monthly rate chip preserves decimal rates instead of rounding to whole percents', () => {
+  assert.equal(adapter.formatMonthlyRate(6), '۶٪');
+  assert.equal(adapter.formatMonthlyRate(7.5), '۷٫۵٪');
+  assert.equal(adapter.formatMonthlyRate(6.125), '۶٫۱۲۵٪');
+  assert.ok(script.includes('Adapter.formatMonthlyRate(config.monthly)'));
+  assert.ok(!script.includes("number(config.monthly)+'٪'"));
+});
