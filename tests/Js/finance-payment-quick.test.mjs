@@ -174,3 +174,42 @@ test('monthly rate chip preserves decimal rates instead of rounding to whole per
   assert.ok(script.includes('Adapter.formatMonthlyRate(config.monthly)'));
   assert.ok(!script.includes("number(config.monthly)+'٪'"));
 });
+
+
+test('redesigned calculator opens with blank editable inputs and no sample cheques in every mode', () => {
+  assert.match(view, /class="pc-quick pc-v2"/);
+  assert.match(view, /id="priceInput"[^>]*value=""/);
+  assert.match(view, /id="cashInput"[^>]*value=""/);
+  assert.doesNotMatch(view, /value="100,000,000"|value="50,000,000"/);
+  for (const mode of ['cheque', 'cash', 'value'])
+    assert.match(script, new RegExp(mode + ':\\\\{price:null,cash:null,known:\\\\[\\\\],future:\\\\[\\\\]\\\\}'));
+  assert.ok(script.includes("if(!isReadyToCalculate()&&!manual)"));
+  assert.ok(script.includes('showIdleResult()'));
+});
+
+test('typing rial amounts groups thousands immediately without changing the actual amount', () => {
+  const field={value:'1234567',selectionStart:7,selectionEnd:7,
+    setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;}};
+  adapter.formatMoneyWhileTyping(field);
+  assert.equal(field.value,'1,234,567');
+  assert.equal(field.selectionStart,9);
+  assert.equal(adapter.parseMoney('1,234,567'),1234567);
+  field.value='۱۲۳۴۵۶۷';field.selectionStart=7;
+  adapter.formatMoneyWhileTyping(field);
+  assert.equal(field.value,'1,234,567');
+  const mid={value:'12345',selectionStart:2,selectionEnd:2,
+    setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;}};
+  adapter.formatMoneyWhileTyping(mid);
+  assert.equal(mid.value,'12,345');
+  assert.equal(mid.selectionStart,2);
+  assert.equal(adapter.formatMoneyInput(''), '');
+  assert.equal(adapter.formatMoneyInput('abc'), 'abc');
+  assert.ok(script.includes('Adapter.formatMoneyWhileTyping(target)'));
+});
+
+test('the server retains authority for all calculations and printing after UI redesign', () => {
+  assert.match(script, /fetch\\(app\\.dataset\\.calculateUrl/);
+  assert.match(script, /form\\.action=app\\.dataset\\.printUrl/);
+  assert.match(view, /data-calculate-url=/);
+  assert.match(view, /data-print-url=/);
+});
