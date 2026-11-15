@@ -83,6 +83,12 @@
         .warehouse-mode .col-qty { width:18mm; }
         .warehouse-mode .col-check { width:24mm; }
         .warehouse-mode .items-table td { min-height:12mm; padding-top:9px; padding-bottom:9px; }
+        /* A4 warehouse invoice now contains sale prices as well as picking details. */
+        .warehouse-mode.warehouse-priced .col-qty { width:11mm; }
+        .warehouse-mode.warehouse-priced .items-table td.col-qty { font-size:15px; }
+        .warehouse-mode.warehouse-priced .items-table td { padding:6px 5px; }
+        .warehouse-mode.warehouse-priced .product-discount { background:#f8fafc; font-weight:700; }
+        .warehouse-mode.warehouse-priced .warehouse-items-summary { margin-top:12px; }
         .summary-table td { padding:5px 8px; border-color:#bac6ce; font-size:11px; }
         .final-row td { background:#edf2f5; font-size:13px; border-top:2px solid #244b60; }
         @media screen and (max-width:760px) { .invoice-page,.no-print { width:100%; } .invoice-page { overflow-x:auto; } .items-table { min-width:680px; } }
@@ -174,7 +180,7 @@
         }
     </style>
 </head>
-<body class="{{ $printData['mode'] === 'customer' ? 'customer-mode' : 'warehouse-mode' }}">
+<body class="{{ $printData['mode'] === 'customer' ? 'customer-mode' : 'warehouse-mode' }}{{ $printData['mode'] !== 'customer' && ($printData['documentType'] ?? null) === 'invoice' ? ' warehouse-priced' : '' }}">
 @include('prints.partials.sales-invoice-template')
 </body>
 </html>
