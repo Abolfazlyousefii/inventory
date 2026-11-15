@@ -133,14 +133,25 @@
 #financeQuickCalc.pc-v2 .modal-inner .calendar-trigger{right:auto;left:5px;top:6px}
 #financeQuickCalc.pc-v2 .month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px}
 #financeQuickCalc.pc-v2 .month-nav strong{font-size:15px}
-#financeQuickCalc.pc-v2 .month-nav button{display:grid;place-items:center;border:0;border-radius:8px;background:var(--pc-soft);color:var(--pc-blue);width:36px;height:36px;font-size:20px}
+#financeQuickCalc.pc-v2 .month-nav button{display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:var(--pc-soft);color:var(--pc-blue);width:42px;height:42px;padding:0}
+#financeQuickCalc.pc-v2 .month-nav button svg{display:block;width:19px;height:19px;direction:ltr;transform:none}
+#financeQuickCalc.pc-v2 .month-nav button:hover:not(:disabled){background:#e3edfb}
+#financeQuickCalc.pc-v2 .month-nav button:disabled{opacity:.3;cursor:not-allowed}
 #financeQuickCalc.pc-v2 .weekdays,#financeQuickCalc.pc-v2 .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;align-items:center;text-align:center}
 #financeQuickCalc.pc-v2 .weekdays span{color:var(--pc-muted);font-size:11px}
-#financeQuickCalc.pc-v2 .days button{border:0;background:transparent;border-radius:9px;min-height:37px;color:var(--pc-ink);font-size:13px;padding:4px}
-#financeQuickCalc.pc-v2 .days button:hover{background:var(--pc-soft);color:var(--pc-blue)}
+#financeQuickCalc.pc-v2 .days button{border:0;background:transparent;border-radius:9px;min-height:42px;color:var(--pc-ink);font-size:13px;padding:4px}
+#financeQuickCalc.pc-v2 .days button:hover:not(:disabled){background:var(--pc-soft);color:var(--pc-blue)}
+#financeQuickCalc.pc-v2 .days button:disabled{opacity:.28;cursor:not-allowed}
+#financeQuickCalc.pc-v2 .days > span{min-height:42px}
 #financeQuickCalc.pc-v2 .days button.selected{background:var(--pc-blue);color:#fff}
 #financeQuickCalc.pc-v2 .days button.today:not(.selected){box-shadow:inset 0 0 0 1px var(--pc-blue)}
 #financeQuickCalc.pc-v2 .date-foot{font-size:11px;color:var(--pc-muted);margin:0}
+#financeQuickCalc.pc-v2 .calendar-content{gap:12px}
+#financeQuickCalc.pc-v2 .calendar-modal .days button:focus-visible{outline-offset:0}
+@media(max-width:470px){
+ #financeQuickCalc.pc-v2 .calendar-content{padding:16px;gap:10px}
+ #financeQuickCalc.pc-v2 .weekdays,#financeQuickCalc.pc-v2 .days{gap:3px}
+}
 #financeQuickCalc.pc-v2 .today-btn{border:1px solid var(--pc-line);background:var(--pc-soft);color:var(--pc-blue);border-radius:9px;min-height:40px;font-weight:700}
 html[data-app-theme="dark"] #financeQuickCalc.pc-v2{
   --pc-ink:#e8f0f8;--pc-muted:#a4b6c8;--pc-line:#3d5164;
