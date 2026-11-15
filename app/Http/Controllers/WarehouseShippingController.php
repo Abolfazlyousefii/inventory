@@ -95,6 +95,7 @@ class WarehouseShippingController extends Controller
 
         DB::transaction(function () use ($uuid, $validated, &$invoice, &$shippingMethod): void {
             $invoice = Invoice::query()->where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+            $invoice->assertStockDeducted();
 
             if ((string) $invoice->status !== Invoice::STATUS_READY_TO_SHIP) {
                 abort(422, 'این فاکتور در وضعیت آماده ارسال نیست.');

@@ -17,13 +17,13 @@ class ProductStockHistoryExplanationTest extends TestCase
         $tables = [
             'products'=>['name','stock','reserved'],
             'product_variants'=>['product_id','variant_name','variant_code','stock','reserved'],
-            'warehouses'=>['name','type'], 'users'=>['name'], 'categories'=>['name','parent_id'],
+            'warehouses'=>['name','type','parent_id','personnel_name'], 'users'=>['name'], 'categories'=>['name','parent_id'],
             'warehouse_stocks'=>['warehouse_id','product_id','product_variant_id','quantity'],
             'stock_movements'=>['product_id','product_variant_id','warehouse_id','user_id','type','reason','quantity','stock_before','stock_after','reference','reference_type','reference_id','transaction_type','note'],
             'preinvoice_orders'=>['uuid'],
-            'preinvoice_draft_reservations'=>['product_id','variant_id','quantity','preinvoice_order_id','user_id','released_at','released_by','release_reason','release_note','converted_at'],
-            'invoices'=>['uuid','status','cancelled_at','preinvoice_order_id','seller_id'],
-            'invoice_items'=>['invoice_id','product_id','variant_id','quantity'],
+            'preinvoice_draft_reservations'=>['product_id','variant_id','source_warehouse_id','quantity','preinvoice_order_id','user_id','released_at','released_by','release_reason','release_note','converted_at'],
+            'invoices'=>['uuid','status','cancelled_at','preinvoice_order_id','seller_id','stock_deduction_status'],
+            'invoice_items'=>['invoice_id','product_id','variant_id','source_warehouse_id','quantity'],
             'purchases'=>['user_id'], 'purchase_items'=>['purchase_id','product_id','product_variant_id','quantity'],
             'warehouse_transfers'=>['reference','voucher_type','from_warehouse_id','to_warehouse_id','transferred_at','user_id'],
             'warehouse_transfer_items'=>['warehouse_transfer_id','product_id','product_variant_id','quantity','destination_warehouse_id'],
@@ -47,6 +47,33 @@ class ProductStockHistoryExplanationTest extends TestCase
         DB::table('warehouse_stocks')->insert(['id'=>1,'warehouse_id'=>1,'product_id'=>1,'product_variant_id'=>1,'quantity'=>0]);
         DB::table('users')->insert(['id'=>1,'name'=>'بازبین']);
         DB::table('invoices')->insert(['id'=>1,'uuid'=>'01433','status'=>'shipped','created_at'=>'2026-09-01 10:00:00']);
+    }
+
+    public function test_mixed_source_sale_and_consumed_reservations_keep_their_own_warehouse_without_double_counting(): void
+    {
+        DB::table('warehouses')->insert(['id'=>6,'name'=>'شوروم','type'=>'showroom']);
+        DB::table('warehouse_stocks')->where('id',1)->update(['quantity'=>7]);
+        DB::table('product_variants')->where('id',1)->update(['stock'=>7]);
+        DB::table('warehouse_stocks')->insert(['warehouse_id'=>6,'product_id'=>1,'product_variant_id'=>1,'quantity'=>8]);
+        DB::table('preinvoice_orders')->insert(['id'=>1,'uuid'=>'P-MIXED']);
+        DB::table('invoices')->where('id',1)->update(['preinvoice_order_id'=>1]);
+        foreach ([[1,null,3],[2,6,2]] as [$id,$source,$quantity]) {
+            DB::table('invoice_items')->insert(['id'=>$id,'invoice_id'=>1,'product_id'=>1,'variant_id'=>1,'source_warehouse_id'=>$source,'quantity'=>$quantity]);
+            DB::table('preinvoice_draft_reservations')->insert(['id'=>$id,'product_id'=>1,'variant_id'=>1,'source_warehouse_id'=>$source,'quantity'=>$quantity,'preinvoice_order_id'=>1,'user_id'=>1,'release_reason'=>'consumed','released_at'=>'2026-09-01 10:00:00']);
+            DB::table('stock_movements')->insert(['id'=>$id,'product_id'=>1,'product_variant_id'=>1,'warehouse_id'=>$source ?: 1,'type'=>'out','reason'=>'reservation','quantity'=>$quantity,'stock_before'=>10,'stock_after'=>10-$quantity]);
+        }
+        $before=DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+        $history=app(ProductStockHistoryService::class)->history(1,1);
+        foreach (['reserve-','release-','invoice-item-'] as $prefix) {
+            $this->assertSame(1,(int)$history['rows']->firstWhere('id',$prefix.'1')->warehouse_id);
+            $this->assertSame(6,(int)$history['rows']->firstWhere('id',$prefix.'2')->warehouse_id);
+        }
+        $this->assertSame(-3,$history['rows']->where('warehouse_id',1)->sum('available_delta'));
+        $this->assertSame(-2,$history['rows']->where('warehouse_id',6)->sum('available_delta'));
+        $this->assertSame(7,$history['current']);
+        $this->assertSame(5,$history['sold']);
+        $this->assertTrue($history['projection_matches']);
+        $this->assertSame($before,DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
     }
 
     private function zeroReceipt(string $status = 'discrepancy'): void
@@ -192,10 +219,10 @@ class ProductStockHistoryExplanationTest extends TestCase
         \Illuminate\Support\Facades\File::put($preview.'/views/layouts/app.blade.php','<!doctype html><html dir="rtl" lang="fa"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:20px;background:#f4f7f9;font-family:Tahoma}.form-control,.form-select{width:100%;box-sizing:border-box}.btn{padding:10px;border:1px solid;display:inline-block}'.$css.'</style><body>@yield("content")</body></html>');
         view()->getFinder()->prependLocation($preview.'/views');
         view()->share('errors',new \Illuminate\Support\ViewErrorBag());
-        $data=app(\App\Http\Controllers\ProductStockLedgerController::class)->index(\Illuminate\Http\Request::create('/products/1/stock-ledger'),\App\Models\Product::findOrFail(1))->getData();
+        $data=app(\App\Http\Controllers\ProductStockLedgerController::class)->index(\Illuminate\Http\Request::create('/products/1/stock-ledger','GET',['category'=>'all']),\App\Models\Product::findOrFail(1))->getData();
         $rendered=view('products.stock-ledger',$data)->render();
         $this->assertStringContainsString('دریافت صفر',$rendered);
-        $this->assertStringContainsString('سند توضیحی',$rendered);
+        $this->assertStringContainsString('مشاهده جزئیات',$rendered);
         $this->assertStringContainsString('name="q"',$rendered);
         $this->assertStringContainsString('WI-',$rendered);
         $dom=new \DOMDocument();
@@ -215,13 +242,17 @@ class ProductStockHistoryExplanationTest extends TestCase
         $this->assertStringContainsString('این تعداد، تغییر مستقل موجودی نیست',$rowText('reserve-1'));
         $this->assertSame(0,$xpath->query('//*[contains(concat(" ",normalize-space(@class)," ")," psl-unknown ")]')->length);
         $this->assertStringNotContainsString('اطلاعات ناکافی؛ نیاز به بررسی',$rendered);
-        $this->assertStringContainsString('موجودی فعلی',$rendered);
+        $this->assertStringContainsString('موجودی آزاد فعلی',$rendered);
         \Illuminate\Support\Facades\File::put($preview.'/preview.html',$rendered);
         $data['summary']->cached_current=4;
         $data['summary']->projection_matches=false;
         $mismatch=view('products.stock-ledger',$data)->render();
         $this->assertStringContainsString('اختلاف: ۴ عدد',$mismatch);
         $this->assertStringContainsString('این اختلاف به‌تنهایی دلیل باگ نیست',$mismatch);
+        $data['filters']['category']='';
+        $overview=view('products.stock-ledger',$data)->render();
+        $this->assertStringContainsString('خلاصهٔ گردش کالا',$overview);
+        $this->assertStringNotContainsString('data-history-id=',$overview);
     }
 
     public function test_receipt_with_wrong_linked_movement_is_flagged_incomplete(): void
@@ -240,5 +271,34 @@ class ProductStockHistoryExplanationTest extends TestCase
         $data=app(\App\Http\Controllers\ProductStockLedgerController::class)->index(\Illuminate\Http\Request::create('/products/1/stock-ledger','GET',['q'=>'TARGET-OLD']),\App\Models\Product::findOrFail(1))->getData();
         $this->assertSame(1,$data['movements']->total());
         $this->assertSame(1,$data['movements']->first()->id);
+    }
+
+    public function test_overview_counts_each_receipt_once_and_separates_warehouses(): void
+    {
+        $this->zeroReceipt('received');
+        DB::table('warehouse_inbound_receipt_items')->where('id',1)->update(['accepted_quantity'=>1,'stock_movement_id'=>1]);
+        DB::table('stock_movements')->insert(['id'=>1,'product_id'=>1,'product_variant_id'=>1,'warehouse_id'=>1,'type'=>'in','reason'=>'invoice_cancel_return','quantity'=>1,'stock_before'=>0,'stock_after'=>1]);
+        DB::table('invoices')->where('id',1)->update(['stock_deduction_status'=>'not_deducted']);
+        DB::table('warehouses')->insert(['id'=>6,'name'=>'شوروم','type'=>'showroom']);
+        DB::table('warehouse_stocks')->insert(['warehouse_id'=>6,'product_id'=>1,'product_variant_id'=>1,'quantity'=>1]);
+        // Product aggregate rows must not be added to their own variant rows.
+        DB::table('warehouse_stocks')->insert(['warehouse_id'=>6,'product_id'=>1,'product_variant_id'=>null,'quantity'=>1]);
+        $h=app(ProductStockHistoryService::class)->history(1,1);
+        $summary=app(\App\Services\ProductStockOverviewService::class)->summarize($h['rows'],1,1);
+        $this->assertSame(1,(int)$summary['groups']['returns']['quantity']);
+        $this->assertSame(1,$summary['balances']->firstWhere('id',6)->quantity);
+        $this->assertCount(1,$summary['issues']);
+    }
+
+    public function test_category_links_filter_before_pagination_and_legacy_transfer_snapshots_are_hidden(): void
+    {
+        DB::table('stock_movements')->insert(['id'=>1,'product_id'=>1,'product_variant_id'=>1,'warehouse_id'=>1,'type'=>'out','reason'=>'transfer','quantity'=>1,'stock_before'=>8,'stock_after'=>7]);
+        $controller=app(\App\Http\Controllers\ProductStockLedgerController::class);
+        $product=\App\Models\Product::findOrFail(1);
+        $data=$controller->index(\Illuminate\Http\Request::create('/products/1/stock-ledger','GET',['category'=>'transfers']),$product)->getData();
+        $this->assertSame(1,$data['movements']->total());
+        $this->assertFalse($data['movements']->first()->snapshot_reliable);
+        $data=$controller->index(\Illuminate\Http\Request::create('/products/1/stock-ledger','GET',['category'=>'sales']),$product)->getData();
+        $this->assertSame(0,$data['movements']->total());
     }
 }

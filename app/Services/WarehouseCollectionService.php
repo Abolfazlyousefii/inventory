@@ -26,6 +26,7 @@ class WarehouseCollectionService
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice->assertNotCancelled();
+            $invoice->assertStockDeducted();
 
             if ($invoice->status === Invoice::STATUS_PENDING_WAREHOUSE_APPROVAL) {
                 throw ValidationException::withMessages(['status' => 'این فاکتور مربوط به روند قدیمی است و از صف جمع‌آوری جدید قابل دریافت نیست.']);
@@ -51,6 +52,7 @@ class WarehouseCollectionService
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice->assertNotCancelled();
+            $invoice->assertStockDeducted();
             $this->assertStatus($invoice, [Invoice::STATUS_PENDING_COLLECTION, Invoice::STATUS_WAREHOUSE_RECEIVED]);
             return $this->mark($invoice, Invoice::STATUS_COLLECTING, [
                 'collection_started_at' => now(),
@@ -65,6 +67,7 @@ class WarehouseCollectionService
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice->assertNotCancelled();
+            $invoice->assertStockDeducted();
             $this->assertStatus($invoice, [Invoice::STATUS_WAREHOUSE_RECEIVED, Invoice::STATUS_COLLECTING]);
             return $this->mark($invoice, Invoice::STATUS_READY_TO_SHIP, [
                 'collected_at' => now(),
@@ -87,6 +90,7 @@ class WarehouseCollectionService
             app(InventoryCountFreezeService::class)->assertInvoice($invoice);
             $invoice = Invoice::query()->with(['payments'])->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertNotCancelled();
+            $invoice->assertStockDeducted();
             $lockedItems = InvoiceItem::query()->with(['product', 'variant'])->where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
             $this->assertStatus($invoice, [
@@ -329,6 +333,7 @@ class WarehouseCollectionService
                 ->whereKey($invoice->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $invoice->assertStockDeducted();
 
             if ((string) $invoice->status === Invoice::STATUS_SHIPPED) {
                 throw ValidationException::withMessages(['status' => 'فاکتور ارسال‌شده قابل تغییر اقلام نیست.']);

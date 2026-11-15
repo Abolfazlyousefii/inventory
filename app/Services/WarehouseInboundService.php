@@ -36,6 +36,7 @@ class WarehouseInboundService
 
     private function queueSalesReturnLocked(SalesReturnDocument $document, ?int $actorId, string $operationKey): ?WarehouseInboundReceipt
     {
+        if ($document->isInternal()) Invoice::findOrFail($document->invoice_id)->assertStockDeducted();
         $existing = WarehouseInboundReceipt::query()
             ->where('source_type', WarehouseInboundReceipt::SOURCE_SALES_RETURN)
             ->where('source_id', $document->id)
@@ -162,6 +163,7 @@ class WarehouseInboundService
 
     public function queueInvoiceCancellation(Invoice $invoice, ?int $actorId, ?string $note = null): WarehouseInboundReceipt
     {
+        Invoice::findOrFail($invoice->id)->assertStockDeducted();
         $existing = WarehouseInboundReceipt::query()
             ->where('source_type', WarehouseInboundReceipt::SOURCE_INVOICE_CANCEL)
             ->where('source_id', $invoice->id)
@@ -203,6 +205,7 @@ class WarehouseInboundService
         string $reason,
         ?string $operationKey = null
     ): ?WarehouseInboundReceipt {
+        Invoice::findOrFail($invoice->id)->assertStockDeducted();
         $lines = collect($lines)
             ->filter(fn(array $line) => (int) ($line['expected_quantity'] ?? 0) > 0)
             ->values()
@@ -282,10 +285,13 @@ class WarehouseInboundService
     {
         return DB::transaction(function () use ($receipt, $submittedItems, $actorId, $reviewNote, $expectedVersion) {
             // Use the same document -> customer -> invoice -> receipt lock order as return edits.
+            if (in_array($receipt->source_type, [WarehouseInboundReceipt::SOURCE_INVOICE_CANCEL, WarehouseInboundReceipt::SOURCE_INVOICE_ADJUSTMENT], true)) {
+                Invoice::whereKey($receipt->source_id)->lockForUpdate()->firstOrFail()->assertStockDeducted();
+            }
             if ($receipt->source_type === WarehouseInboundReceipt::SOURCE_SALES_RETURN) {
                 $source = SalesReturnDocument::whereKey($receipt->source_id)->lockForUpdate()->firstOrFail();
                 \App\Models\Customer::whereKey($source->customer_id)->lockForUpdate()->firstOrFail();
-                if ($source->isInternal()) Invoice::whereKey($source->invoice_id)->lockForUpdate()->firstOrFail();
+                if ($source->isInternal()) Invoice::whereKey($source->invoice_id)->lockForUpdate()->firstOrFail()->assertStockDeducted();
             }
             $locked = WarehouseInboundReceipt::query()->whereKey($receipt->id)->lockForUpdate()->firstOrFail();
             $locked->load('items');

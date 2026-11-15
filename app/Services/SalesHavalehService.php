@@ -49,6 +49,7 @@ class SalesHavalehService
 
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertFinanciallyMutable();
+            $invoice->assertStockDeducted();
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
             $beforeItems = $lockedItems->map(fn (InvoiceItem $item) => clone $item);
             $invoice->setRelation('items', $lockedItems);
@@ -218,6 +219,7 @@ class SalesHavalehService
 
             $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $invoice->assertFinanciallyMutable();
+            $invoice->assertStockDeducted();
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
             $itemsById = $lockedItems->keyBy('id');
@@ -894,7 +896,8 @@ class SalesHavalehService
 
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
-            $queuedQuantity = (int) $invoice->items->sum(fn ($item) => max((int) $item->quantity, 0));
+            $queuedQuantity = $invoice->stockWasNotDeducted() ? 0
+                : (int) $invoice->items->sum(fn ($item) => max((int) $item->quantity, 0));
 
             $this->ledgerService->voidInvoiceDebit($invoice, $reason ?: 'لغو فاکتور');
 
@@ -912,9 +915,13 @@ class SalesHavalehService
                 $this->warehouseInbound->queueInvoiceCancellation($invoice->fresh(['items.product', 'items.variant']), $userId, $note ?: $reason);
             }
 
-            $description = 'کنسلی فاکتور ' . $invoice->uuid . ' و ارسال ' . number_format($queuedQuantity) . ' عدد به صف دریافت انبار. علت: ' . ($reason ?: 'ثبت نشده') . ($note ? ' | توضیحات: ' . $note : '');
+            $description = 'کنسلی فاکتور ' . $invoice->uuid
+                . ($invoice->stockWasNotDeducted() ? ' بدون برگشت موجودی؛ موجودی هنگام صدور کسر نشده بود.' : ' و ارسال ' . number_format($queuedQuantity) . ' عدد به صف دریافت انبار.')
+                . ' علت: ' . ($reason ?: 'ثبت نشده') . ($note ? ' | توضیحات: ' . $note : '');
             $this->historyService->log($invoice, 'cancelled', 'status', $oldStatus, SalesHavalehStatusService::NOT_SHIPPED, $description, $userId);
-            ActivityLogger::log('invoice_cancelled', $invoice->fresh(), 'فاکتور لغو شد و اقلام آن در انتظار تأیید دریافت انبار قرار گرفت.', [
+            ActivityLogger::log('invoice_cancelled', $invoice->fresh(), $invoice->stockWasNotDeducted()
+                ? 'فاکتور بدون کسر اولیهٔ موجودی لغو شد؛ رسید برگشت انبار ایجاد نشد.'
+                : 'فاکتور لغو شد و اقلام آن در انتظار تأیید دریافت انبار قرار گرفت.', [
                 'invoice_id' => $invoice->id,
                 'invoice_uuid' => $invoice->uuid,
                 'old_status' => $oldStatus,
@@ -974,6 +981,7 @@ class SalesHavalehService
     {
         return DB::transaction(function () use ($invoice, $note, $userId) {
             $invoice = Invoice::query()->with('items')->lockForUpdate()->findOrFail($invoice->id);
+            $invoice->assertStockDeducted();
             if ((string) $invoice->status !== SalesHavalehStatusService::NOT_SHIPPED) {
                 return $invoice;
             }

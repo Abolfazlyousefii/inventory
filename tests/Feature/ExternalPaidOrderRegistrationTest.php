@@ -239,6 +239,13 @@ it('is idempotent and does not consume stock or create payments twice', function
         ->assertOk()
         ->assertJsonPath('created', false);
 
+    $movement=\App\Models\StockMovement::sole();
+    expect((int)$movement->stock_before)->toBe(10)
+        ->and((int)$movement->stock_after)->toBe(8)
+        ->and((int)$movement->product_variant_id)->toBe($variant->id)
+        ->and((int)$movement->warehouse_id)->toBe($warehouseId)
+        ->and(Invoice::first()->stock_deduction_status)->toBe(Invoice::STOCK_DEDUCTED);
+
     expect(Invoice::query()->count())->toBe(1)
         ->and(InvoiceItem::query()->count())->toBe(1)
         ->and(Invoice::query()->firstOrFail()->payments()->count())->toBe(1)

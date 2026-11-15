@@ -127,6 +127,7 @@ final class WarehouseStockFlowReportService
             ->groupBy('product_variant_id')->pluck('units','product_variant_id');
 
         $holds = DB::table('preinvoice_draft_reservations as r')
+            ->whereNull('r.source_warehouse_id')
             ->join('preinvoice_orders as o', 'o.id','=','r.preinvoice_order_id')
             ->whereIn('r.variant_id', $ids)
             ->where('r.reservation_scope','official')

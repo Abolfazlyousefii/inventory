@@ -142,8 +142,9 @@ class ExternalPaidOrderService
                         $externalOrderId, $holdId, $physicalItems, $invoice
                     );
                 } else {
-                    $this->consumeStock($resolvedItems);
+                    $this->consumeStock($resolvedItems, $invoice);
                 }
+                $invoice->forceFill(['stock_deduction_status' => Invoice::STOCK_DEDUCTED])->save();
                 $this->customerLedgerService->syncInvoiceDebit($invoice);
                 if ($invoice->total > 0) {
                     $this->paymentRegistrationService->registerForInvoice(
@@ -327,7 +328,7 @@ class ExternalPaidOrderService
             ])->values()->all();
     }
 
-    private function consumeStock(array $resolvedItems): void
+    private function consumeStock(array $resolvedItems, Invoice $invoice): void
     {
         $quantities = [];
         $variants = [];
@@ -345,12 +346,21 @@ class ExternalPaidOrderService
             /** @var ProductVariant $variant */
             $variant = $variants[$variantId];
 
-            WarehouseStockService::change(
+            $stock = WarehouseStockService::change(
                 WarehouseStockService::centralWarehouseId(),
                 (int) $variant->product_id,
                 -$quantity,
                 (int) $variant->id
             );
+            \App\Models\StockMovement::create([
+                'product_id' => $variant->product_id, 'product_variant_id' => $variant->id,
+                'warehouse_id' => $stock->warehouse_id, 'type' => 'out', 'reason' => 'sale',
+                'user_id' => $invoice->seller_id,
+                'quantity' => $quantity, 'stock_before' => (int) $stock->quantity + $quantity,
+                'stock_after' => (int) $stock->quantity, 'reference_type' => Invoice::class,
+                'reference_id' => $invoice->id, 'reference' => 'SITE-ORDER-'.$invoice->external_order_id,
+                'note' => 'کسر موجودی بابت سفارش سایت؛ فاکتور '.$invoice->uuid,
+            ]);
         }
     }
 

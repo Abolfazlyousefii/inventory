@@ -22,6 +22,24 @@ class Invoice extends Model
     public const STATUS_READY_TO_SHIP = 'ready_to_ship';
     public const STATUS_RETURNED_TO_SALES_AFTER_COLLECTION = 'returned_to_sales_after_collection';
 
+    // Null preserves legacy invoices; an explicit exception must never restore stock.
+    public const STOCK_NOT_DEDUCTED = 'not_deducted';
+    public const STOCK_DEDUCTED = 'deducted';
+
+    public function stockWasNotDeducted(): bool
+    {
+        return $this->getAttribute('stock_deduction_status') === self::STOCK_NOT_DEDUCTED;
+    }
+
+    public function assertStockDeducted(): void
+    {
+        if ($this->stockWasNotDeducted()) {
+            throw ValidationException::withMessages([
+                'invoice' => 'موجودی این فاکتور هنگام صدور کسر نشده است؛ دریافت برگشتی، ویرایش اقلام یا ارسال آن تا تعیین تکلیف رسمی انبار مجاز نیست.',
+            ]);
+        }
+    }
+
     protected $fillable = [
         'uuid','customer_id','preinvoice_order_id','seller_id',
         'document_date',

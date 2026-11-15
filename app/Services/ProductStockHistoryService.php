@@ -30,7 +30,8 @@ class ProductStockHistoryService
             $reference = $r->order_uuid ? 'پیش‌فاکتور '.$r->order_uuid : 'رزرو #'.$r->id;
             $url = $r->order_uuid ? route('preinvoice.my.show', $r->order_uuid) : null;
             // A reservation row is mutable: its remaining quantity is not a full delta log.
-            $rows->push($this->row('reserve-'.$r->id, $r->created_at, $r->variant_id, $central,
+            $source = $r->source_warehouse_id ?: $central;
+            $rows->push($this->row('reserve-'.$r->id, $r->created_at, $r->variant_id, $source,
                 'document_out', 'رزرو؛ کسر از موجودی آزاد', $r->quantity, $reference, $url, $r->user_id,
                 'مقدار ثبت‌شدهٔ رزرو؛ افزایش و کاهش‌های میانی ممکن است در این رکورد نگهداری نشده باشند.', 'سابقه رزرو'));
             if ($r->released_at) {
@@ -39,23 +40,26 @@ class ProductStockHistoryService
                 $knownReturn = in_array($r->release_reason, ['save_as_draft','manual_release','temporary_session_lost','submitted_to_finance','expired','reservation_expired','cancelled','returned_to_sales','cancelled_by_finance','cancelled_by_warehouse','draft_discarded','abandoned','token_release'], true);
                 $type = !$consumed && !$neutral && $knownReturn ? 'document_in' : 'info';
                 $label = $consumed ? 'مصرف رزرو در فاکتور؛ بدون کسر مجدد' : ($neutral ? 'بستن رزرو؛ بدون برگشت موجودی' : ($knownReturn ? 'آزادسازی رزرو؛ برگشت موجودی آزاد' : 'پایان رزرو؛ اثر موجودی نامشخص'));
-                $rows->push($this->row('release-'.$r->id, $r->released_at, $r->variant_id, $central,
+                $rows->push($this->row('release-'.$r->id, $r->released_at, $r->variant_id, $source,
                     $type, $label, $r->quantity, $reference, $url, $r->released_by,
                     trim(($r->release_note ?? '').' | علت: '.($r->release_reason ?? 'نامشخص')), 'سابقه رزرو'));
             }
         }
         $sales = DB::table('invoice_items as ii')->join('invoices as i', 'i.id', '=', 'ii.invoice_id')
             ->where('ii.product_id', $productId)->when($variantId, fn($q) => $q->where('ii.variant_id', $variantId))
-            ->get(['ii.id','ii.variant_id','ii.quantity','i.id as invoice_id','i.uuid','i.status','i.cancelled_at','i.preinvoice_order_id','i.created_at','i.seller_id']);
+            ->get(['ii.id','ii.variant_id','ii.source_warehouse_id','ii.quantity','i.id as invoice_id','i.uuid','i.status','i.cancelled_at','i.preinvoice_order_id','i.created_at','i.seller_id']);
         $sold = 0;
         foreach ($sales as $sale) {
             $cancelled = $sale->cancelled_at || in_array($sale->status, Invoice::cancelledStatuses(), true);
             if (!$cancelled) $sold += (int) $sale->quantity;
             // Always show the invoice, but never add its quantity to stock deltas:
             // stock may have been deducted at reservation or by another recorded event.
-            $linked = $direct->contains(fn($m) => $m->reference_type === Invoice::class && (int)$m->reference_id === (int)$sale->invoice_id)
-                || $reservations->contains(fn($r) => $sale->preinvoice_order_id && (int)$r->preinvoice_order_id === (int)$sale->preinvoice_order_id && (int)$r->variant_id === (int)$sale->variant_id && in_array($r->release_reason, ['consumed','converted_invoice_cleanup'], true));
-            $rows->push($this->row('invoice-item-'.$sale->id, $sale->created_at, $sale->variant_id, $central,
+            $source = $sale->source_warehouse_id ?: $central;
+            $linked = $direct->contains(fn($m) => $m->reference_type === Invoice::class && (int)$m->reference_id === (int)$sale->invoice_id
+                    && (int)$m->product_variant_id === (int)$sale->variant_id && (int)$m->warehouse_id === (int)$source)
+                || $reservations->contains(fn($r) => $sale->preinvoice_order_id && (int)$r->preinvoice_order_id === (int)$sale->preinvoice_order_id && (int)$r->variant_id === (int)$sale->variant_id
+                    && (int)($r->source_warehouse_id ?: $central) === (int)$source && in_array($r->release_reason, ['consumed','converted_invoice_cleanup'], true));
+            $rows->push($this->row('invoice-item-'.$sale->id, $sale->created_at, $sale->variant_id, $source,
                 $cancelled ? 'info' : 'document_out', $cancelled ? 'فاکتور لغوشده؛ مرجع فروش' : 'فروش؛ '.$this->statusLabel($sale->status), $sale->quantity,
                 'فاکتور '.$sale->uuid, route('invoices.show', $sale->uuid), $sale->seller_id,
                 $linked ? 'سند فروش مرتبط با رزرو یا گردش موجودی؛ این تعداد دوباره از موجودی کم نمی‌شود.' : 'سند فروش ثبت شده است؛ زمان و مقدار دقیق کسر موجودی در سابقهٔ مستقل موجود نیست.', 'سند فروش'));
@@ -129,7 +133,7 @@ class ProductStockHistoryService
                 'r.id as receipt_id','r.receipt_number','r.source_type','r.source_id','r.status','r.created_at',
                 'r.reviewed_at','r.requested_by','r.reviewed_by','r.review_note']);
         $invoiceIds = $items->whereIn('source_type', ['invoice_adjustment','invoice_cancel','finance_adjustment'])->pluck('source_id')->unique();
-        $invoices = DB::table('invoices')->whereIn('id', $invoiceIds)->pluck('uuid', 'id');
+        $invoices = DB::table('invoices')->whereIn('id', $invoiceIds)->get(['id','uuid','stock_deduction_status'])->keyBy('id');
         $movementRows = $direct->keyBy('id');
         foreach ($items as $item) {
             $final = in_array($item->status, ['received', 'discrepancy'], true);
@@ -153,10 +157,14 @@ class ProductStockHistoryService
             $row->related_reference = null;
             $row->related_url = null;
             if ($invoices->has($item->source_id) && in_array($item->source_type, ['invoice_adjustment','invoice_cancel','finance_adjustment'], true)) {
-                $row->related_reference = 'فاکتور '.$invoices[$item->source_id];
-                $row->related_url = route('invoices.show', $invoices[$item->source_id]);
+                $row->related_reference = 'فاکتور '.$invoices[$item->source_id]->uuid;
+                $row->related_url = route('invoices.show', $invoices[$item->source_id]->uuid);
+                if ($invoices[$item->source_id]->stock_deduction_status === Invoice::STOCK_NOT_DEDUCTED && $accepted > 0) {
+                    $row->integrity_issue = true;
+                    $row->evidence_note = 'مغایرت تأییدشده: این فاکتور بدون کسر موجودی صادر شده بود؛ دریافت برگشتی آن موجودی را اضافه کرده است. اصلاح باید با سند رسمی انبار انجام شود.';
+                }
             }
-            $row->evidence_note = $final
+            $row->evidence_note ??= $final
                 ? ($accepted === 0 ? 'از تعداد مورد انتظار، هیچ کالایی به موجودی تحویل نشده است.' : 'تعداد دریافت‌شده در گردش مرتبط ثبت می‌شود؛ این ردیف دوباره جمع نمی‌شود.')
                 : ($item->status === 'cancelled' ? 'این رسید اثر دریافتی ندارد.' : 'تا تأیید دریافت، مقداری از این رسید وارد موجودی نمی‌شود.');
             $linked = $movementRows->get($item->stock_movement_id);
@@ -171,6 +179,8 @@ class ProductStockHistoryService
             // Give the actual numeric event a useful source even when old reference fields are absent.
             if ($final && $accepted > 0 && $validLink) {
                 $movement = $linked;
+                $row->linked_history_id = $linked->id;
+                $movement->inbound_context = $row;
                 $movement->source_url = route('warehouse.inbound.show', $item->receipt_id);
                 $movement->source_label = $item->receipt_number;
                 $movement->related_reference = $row->related_reference;
@@ -208,6 +218,10 @@ class ProductStockHistoryService
                 $valid = $hasSnapshot && (int) $row->stock_after - (int) $row->stock_before === $signed
                     && in_array($row->type, ['in','out','info'], true) && (int) $row->quantity >= 0
                     && $row->warehouse_id !== null && $row->product_variant_id !== null;
+                // Older vouchers saved the whole product's central total beside a
+                // single variant/warehouse. Arithmetic agreement cannot prove scope.
+                if ($row instanceof StockMovement && $row->reason === 'transfer'
+                    && $row->transaction_type !== 'warehouse_transfer_variant') $valid = false;
                 $row->evidence_level = $valid ? 'recorded' : 'incomplete';
                 $row->available_delta = $valid ? $signed : null;
                 $row->snapshot_reliable = $valid;

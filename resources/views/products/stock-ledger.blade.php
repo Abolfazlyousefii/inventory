@@ -1,6 +1,6 @@
 @extends('layouts.app')
 @section('title', 'گردش موجودی '.$product->name)
-@push('styles')<link rel="stylesheet" href="{{ asset('css/product-stock-ledger.css') }}?v=20261018-readable">@endpush
+@push('styles')<link rel="stylesheet" href="{{ asset('css/product-stock-ledger.css') }}?v=20261114-overview">@endpush
 @section('content')
 @php
 $fa=fn($value)=>strtr((string)$value,['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']);
@@ -32,26 +32,54 @@ $statuses=['pending'=>'در انتظار دریافت','received'=>'دریافت
 	</header>
 
     @if($errors->any())<div class="alert alert-danger" role="alert">{{ $errors->first() }}</div>@endif
-    <div class="psl-summary">
-        <div class="psl-stat is-stock"><span class="psl-stat-icon" aria-hidden="true">▤</span><div><span>الان قابل فروش است</span><strong>{{ $summary->current===null?'—':$n($summary->current) }} <small>عدد</small></strong><p>موجودی آزاد انبار مرکزی</p></div></div>
-        <div class="psl-stat is-reserved"><span class="psl-stat-icon" aria-hidden="true">◷</span><div><span>کنار گذاشته برای سفارش‌ها</span><strong>{{ $n($summary->reserved) }} <small>عدد</small></strong><p>رزرو فعلی؛ جدا از موجودی آزاد</p></div></div>
-        <div class="psl-stat is-sales"><span class="psl-stat-icon" aria-hidden="true">↗</span><div><span>تعداد در فاکتورهای لغونشده</span><strong>{{ $n($summary->sold) }} <small>عدد</small></strong><p>شامل ارسال‌شده و در جریان؛ موجودی نیست</p></div></div>
-    </div>
-    <section class="psl-review" aria-label="موجودی فعلی"><div><strong>موجودی فعلی</strong><p class="psl-check {{ $summary->projection_matches?'is-matched':'is-review' }}"><i aria-hidden="true"></i>{{ $summary->projection_matches?'عدد موجودی صفحهٔ کالا با انبار مرکزی یکسان است.':'عدد موجودی صفحهٔ کالا با انبار مرکزی تطبیق ندارد.' }}</p>
-        @if(!$summary->projection_matches)<p>انبار مرکزی: {{ $summary->current===null?'نامشخص':$n($summary->current).' عدد' }} · صفحهٔ کالا: {{ $summary->cached_current===null?'نامشخص':$n($summary->cached_current).' عدد' }}@if($summary->current!==null && $summary->cached_current!==null) · اختلاف: {{ $n(abs($summary->cached_current-$summary->current)) }} عدد@endif</p>@endif
-        </div></section>
-    <div class="psl-context"><div class="psl-key"><span class="is-in"><bdi>+</bdi> ورود به موجودی</span><span class="is-out"><bdi>−</bdi> خروج از موجودی</span><span>بدون علامت: تعداد مربوط به سفارش یا سند</span></div>
-        <details class="psl-guide"><summary>راهنمای خواندن گردش</summary><div><p>تطبیق بالا فقط عدد فعلیِ نمایشگر و انبار را مقایسه می‌کند؛ تأیید سلامت تمام سوابق نیست.</p><p>سند توضیحی، فروش و رزرو را با گردش موجودی جمع نکنید. حذف کالا از فاکتور، پیش از دریافت انبار به معنی برگشت موجودی نیست.</p>@if($summary->incomplete_records)<p>{{ $n($summary->incomplete_records) }} سابقه، تعداد مربوط به سند یا عملیات را نشان می‌دهد؛ برای این ردیف‌ها تغییر مستقل با قبل و بعد قابل تطبیق در دسترس نیست و مثبت یا منفی نمایش داده نمی‌شود.</p>@endif<p>قبل و بعد فقط با وجود مقادیر مطابق نمایش داده می‌شود؛ مقدارهای ثبت‌نشده حدس زده نمی‌شوند. این اختلاف به‌تنهایی دلیل باگ نیست و این صفحه سلامت کل تاریخچه را تأیید نمی‌کند.</p></div></details>
-    </div>
+    @if(!$summary->projection_matches)
+        <p class="alert alert-warning">نمایش موجودی مرکزی با انبار تطبیق ندارد؛ اختلاف: {{ $n(abs(($summary->cached_current ?? 0)-($summary->current ?? 0))) }} عدد. این اختلاف به‌تنهایی دلیل باگ نیست؛ اسناد مرتبط باید بررسی شوند.</p>
+    @endif
+    @foreach($overview['issues'] as $issue)
+        <div class="alert alert-warning" role="alert"><strong>مغایرت مشخص در دریافت انبار:</strong> {{ $n($issue->accepted_quantity) }} عدد بابت {{ $issue->related_reference }} از رسید <a href="{{ $issue->source_url }}">{{ $issue->reference }}</a> اضافه شده، درحالی‌که موجودی فاکتور هنگام صدور کسر نشده بود. این سابقه نیازمند سند اصلاحی است؛ گزارش موجودی را تغییر نمی‌دهد.</div>
+    @endforeach
+    <section class="psl-warehouse-overview" aria-label="موجودی آزاد به تفکیک انبار">
+        <h2>موجودی آزاد فعلی</h2>
+        <div class="psl-balances">
+        @foreach($overview['balances'] as $balance)
+            <div class="psl-balance {{ $balance->quantity ? 'has-stock' : '' }}"><span>{{ $balance->name }}</span><strong>{{ $n($balance->quantity) }} <small>عدد</small></strong></div>
+        @endforeach
+        </div>
+        <p>رزرو فعلی مرکزی: {{ $n($summary->reserved) }} عدد · موجودی آزاد، پس از کسر رزرو است؛ دوباره از آن کم نکنید.</p>
+    </section>
+    <section class="psl-overview" aria-label="خلاصه گردش کالا">
+        <div class="psl-overview-heading"><div><h2>خلاصهٔ گردش کالا</h2><p>برای دیدن اسناد هر بخش، «مشاهده جزئیات» را بزنید.</p></div>
+        <a href="{{ request()->fullUrlWithQuery(['category'=>'all','page'=>null]) }}">همهٔ جزئیات</a></div>
+        <div class="psl-overview-grid">
+        @foreach($overview['groups'] as $key=>$group)
+            <article class="psl-overview-card" data-category="{{ $key }}">
+                <h3>{{ $group['label'] }}</h3>
+                @if(in_array($key,['purchases','sales','returns']))
+                    <strong>{{ $n($group['quantity']) }} <small>عدد</small></strong>
+                    <p>{{ ['purchases'=>'تعداد ثبت‌شده در خریدها','sales'=>'تعداد در فاکتورهای لغونشده','returns'=>'دریافت تأییدشده؛ شامل لغو و اصلاح فاکتور'][$key] }}</p>
+                @else
+                    <strong>{{ $n($group['records']) }} <small>سابقه</small></strong>
+                    @if($key==='reservations')<p>مراحل ثبت و آزادسازی رزرو؛ جدا از خرید و فروش</p>
+                    @else<p>{{ $key==='transfers'?'طبق حواله‌ها:':'گردش مستقل:' }} ورود {{ $n($group['in']) }} · خروج {{ $n($group['out']) }}</p>@endif
+                @endif
+                <a href="{{ request()->fullUrlWithQuery(['category'=>$key,'page'=>null]) }}">مشاهده جزئیات <span aria-hidden="true">←</span></a>
+            </article>
+        @endforeach
+        </div>
+        <p class="psl-overview-note">خرید و فروش، تعدادِ اسناد هستند؛ دریافت و انتقال، عملیات انبارند. این عددها را برای محاسبهٔ مانده با هم جمع نکنید؛ ممکن است یک عملیات، سند فروش و رسید مرتبط هم داشته باشد.</p>
+    </section>
     <form class="psl-filter" method="get" action="{{ route('products.stock-ledger',$product) }}">
         @if($selectedVariant)<input type="hidden" name="variant_id" value="{{ $selectedVariant->id }}">@endif
+        @if($filters['category'])<input type="hidden" name="category" value="{{ $filters['category'] }}">@endif
         <label class="psl-search">جست‌وجو<input class="form-control" name="q" value="{{ $filters['q'] }}" maxlength="150" placeholder="مدل، رنگ، کد کالا یا شماره سند…"></label>
         <label>نوع نمایش<select class="form-select" name="effect"><option value="">همهٔ سوابق</option><option value="recorded" @selected($filters['effect']==='recorded')>تغییر موجودی با قبل و بعد</option><option value="reference" @selected($filters['effect']==='reference')>اسناد و مراحل مرتبط</option><option value="incomplete" @selected($filters['effect']==='incomplete')>سایر سوابق ثبت‌شده</option></select></label>
         <label>انبار<select class="form-select" name="warehouse_id"><option value="">همهٔ انبارها</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}" @selected((string)$filters['warehouse_id']===(string)$warehouse->id)>{{ $warehouse->name }}</option>@endforeach</select></label>
         <div class="psl-filter-actions"><button class="btn btn-primary" type="submit">جست‌وجو</button><a class="psl-reset" href="{{ route('products.stock-ledger',array_filter(['product'=>$product,'variant_id'=>$selectedVariant?->id])) }}">پاک‌کردن</a></div>
     </form>
+    @if($filters['category'] !== '' || $filters['q'] !== '' || $filters['effect'] !== '' || $filters['warehouse_id'] !== '')
     <section class="psl-book">
     <div class="psl-book-title"><div><strong>گردش کالا و مراحل سفارش</strong><span>{{ $n($movements->total()) }} سابقه مطابق جست‌وجو · ورود و خروج موجودی با علامت + و − مشخص است.</span></div><span>جدیدترین در بالا</span></div>
+    <p class="psl-detail-scope">{{ $overview['groups'][$filters['category']]['label'] ?? 'همهٔ سوابق' }} · <a href="{{ request()->fullUrlWithQuery(['category'=>null,'page'=>null,'q'=>null,'effect'=>null,'warehouse_id'=>null]) }}">بستن جزئیات</a></p>
     <table><thead><tr><th>تاریخ</th><th>مدل / انبار</th><th>عملیات</th><th>تعداد / تغییر موجودی</th><th>سند و جزئیات</th></tr></thead><tbody>
     @forelse($movements as $movement)
         @php
@@ -67,6 +95,7 @@ $statuses=['pending'=>'در انتظار دریافت','received'=>'دریافت
             <td class="psl-item" data-label="مدل / انبار"><strong>{{ $movement->variant?->variant_name ?: ($movement->variant_snapshot ?? ($movement->product_variant_id ? 'تنوع حذف‌شده #'.$fa($movement->product_variant_id) : 'سابقه بدون تنوع مشخص')) }}</strong><small>{{ $movement->warehouse?->name ?: 'انبار نامشخص' }}<span class="psl-code"> · {{ $fa($movement->variant?->variant_code ?? $movement->variant_code_snapshot ?? '') }}</span></small></td>
             <td class="psl-event" data-label="رویداد"><strong><i class="psl-event-dot is-{{ $tone }}" aria-hidden="true"></i>{{ $event }}</strong>@if($status)<small>{{ $statuses[$status] ?? 'وضعیت ثبت‌شده: '.$status }}</small>@endif</td>
             <td class="psl-change" data-label="تعداد / تغییر">
+                @if($movement->inbound_context ?? null)<p class="psl-row-fact">دریافت: {{ $n($movement->inbound_context->accepted_quantity) }} از {{ $n($movement->inbound_context->expected_quantity) }} عدد</p>@endif
                 @if($recorded)<strong class="psl-amount is-{{ $tone }}"><bdi dir="ltr">{{ $delta>0?'+':($delta<0?'−':'') }}{{ $n(abs($delta)) }}</bdi> <small>عدد</small></strong><span class="psl-effect-copy is-{{ $tone }}">{{ $delta>0?$n($delta).' عدد اضافه شد':($delta<0?$n(abs($delta)).' عدد کم شد':'موجودی تغییری نکرد') }}</span>
                 @else<strong class="psl-document-quantity">{{ $n(isset($movement->expected_quantity)?$movement->accepted_quantity:$movement->quantity) }} <small>عدد</small></strong><span class="psl-document-caption">{{ isset($movement->expected_quantity)?'تعداد دریافت':($reservation?($reservationStart?'تعداد رزرو':'تعداد مربوط به رزرو'):($movement->evidence_level==='incomplete'?'تعداد ثبت‌شده':'تعداد در سند')) }}</span>@endif
                 @if(isset($movement->expected_quantity))<p class="psl-row-fact">@if($status==='pending'){{ $n($movement->expected_quantity) }} عدد در انتظار دریافت؛ هنوز تحویل نشده.@elseif($status==='cancelled')درخواست دریافت لغو شده است.@elseif($movement->accepted_quantity===0)از {{ $n($movement->expected_quantity) }} عدد، هیچ کالایی تحویل نشد.@else{{ $n($movement->accepted_quantity) }} از {{ $n($movement->expected_quantity) }} عدد تحویل شد؛ اثر موجودی در ردیف گردش مربوط ثبت می‌شود.@endif</p>@endif
@@ -87,5 +116,6 @@ $statuses=['pending'=>'در انتظار دریافت','received'=>'دریافت
         </tr>
     @empty<tr><td colspan="5" class="psl-empty"><strong>سابقه‌ای پیدا نشد</strong><span>جست‌وجو یا فیلترها را تغییر دهید.</span></td></tr>@endforelse
     </tbody></table><footer><span>{{ $n($movements->firstItem() ?: 0) }} تا {{ $n($movements->lastItem() ?: 0) }} از {{ $n($movements->total()) }} سابقه</span>{{ $movements->links() }}</footer></section>
+    @endif
 </div>
 @endsection

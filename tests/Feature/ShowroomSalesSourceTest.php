@@ -60,6 +60,18 @@ it('increases an existing showroom invoice line without consuming central stock'
         ->and(WarehouseStockService::available($this->central, $this->product->id, $this->variant->id))->toBe(0);
 });
 
+it('excludes showroom official holds from the central warehouse stock flow report', function () {
+    $order = PreinvoiceOrder::create(['uuid'=>'FLOW-MIXED','created_by'=>$this->seller->id,
+        'status'=>PreinvoiceOrder::STATUS_PENDING_FINANCE,'customer_name'=>'تست','customer_mobile'=>'09120000000']);
+    foreach ([[null,2],[$this->showroom->id,3]] as [$source,$quantity]) {
+        PreinvoiceDraftReservation::create(['token'=>$this->token,'user_id'=>$this->seller->id,
+            'preinvoice_order_id'=>$order->id,'product_id'=>$this->product->id,'variant_id'=>$this->variant->id,
+            'source_warehouse_id'=>$source,'quantity'=>$quantity,'reservation_scope'=>'official','expires_at'=>now()->addDay()]);
+    }
+    $report=app(App\Services\WarehouseStockFlowReportService::class)->rows(0,100,'QA showroom',true);
+    expect(collect($report['rows'])->firstWhere('variant_id',$this->variant->id)['official_reserved'])->toBe(2);
+});
+
 beforeEach(function () {
     foreach (['product_bundle_components' => 'quantity', 'bundle_component_allocations' => 'remaining'] as $table => $quantityColumn) {
         if (! Schema::hasTable($table)) {

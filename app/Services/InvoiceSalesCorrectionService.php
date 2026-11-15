@@ -7,6 +7,7 @@ use App\Models\InvoiceItem;
 use App\Models\User;
 use App\Support\SalesDocumentTotals;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class InvoiceSalesCorrectionService
@@ -49,6 +50,7 @@ class InvoiceSalesCorrectionService
             $invoice = Invoice::query()->with(['items.product', 'items.variant', 'payments', 'preinvoiceOrder'])
                 ->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             abort_unless($this->canEdit($invoice, $user), 403);
+            $invoice->assertStockDeducted();
             if (! hash_equals($this->fingerprint($invoice), (string) $data['opened_fingerprint'])) {
                 throw ValidationException::withMessages(['invoice' => 'این فاکتور بعد از باز شدن صفحه تغییر کرده است. صفحه را تازه‌سازی و دوباره بررسی کنید.']);
             }
@@ -79,6 +81,9 @@ class InvoiceSalesCorrectionService
                 'discount_allocation_mode' => 'product_lines',
             ]);
 
+            $revisionTableExists = Schema::hasTable('invoice_collection_revisions');
+            $previousRevisionId = $revisionTableExists
+                ? (int) DB::table('invoice_collection_revisions')->where('invoice_id', $invoice->id)->max('id') : 0;
             $invoice = $this->collection->updateInvoiceItemsInPlace(
                 $invoice, $items, $user, true, 'seller_finance_correction', $note, true
             );
