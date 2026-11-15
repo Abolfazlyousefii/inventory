@@ -8,15 +8,47 @@
     return String(value);
   };
   const knownType='cheque';
+
+  const toLatin = value => String(value ?? '')
+    .replace(/[۰-۹]/g, v => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(v)))
+    .replace(/[٠-٩]/g, v => String('٠١٢٣٤٥٦٧٨٩'.indexOf(v)));
+
+  // Rial inputs are integers; grouping commas are presentation only.
+  function parseMoney(value) {
+    const raw=toLatin(value).replace(/[\s,٬\u200e\u200f]/g,'');
+    if(raw==='')return null;
+    return /^\d+$/.test(raw)?Number(raw):NaN;
+  }
+  function formatMoneyInput(value) {
+    const latin=toLatin(value);
+    const raw=latin.replace(/[\s,٬\u200e\u200f]/g,'');
+    if(!/^\d*$/.test(raw))return latin;
+    return raw.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  }
+  function formatMoneyWhileTyping(input) {
+    const previous=input.value;
+    const at=input.selectionStart ?? previous.length;
+    const priorDigits=(toLatin(previous.slice(0,at)).match(/\d/g)||[]).length;
+    const next=formatMoneyInput(previous);
+    if(next===previous)return;
+    input.value=next;
+    let index=0,seen=0;
+    while(index<next.length&&seen<priorDigits){
+      if(/\d/.test(next[index]))seen++;
+      index++;
+    }
+    if(typeof input.setSelectionRange==='function')input.setSelectionRange(index,index);
+  }
   function buildPayload(mode,state,config,customer){
     if(!['cheque','cash','value'].includes(mode))throw Error('نوع محاسبه نامعتبر است.');
     if(!Number.isFinite(config.monthly)||config.monthly<0||config.monthly>100)
       throw Error('نرخ سود ماهانه معتبر نیست.');
     if(!config.baseDate)throw Error('تاریخ مبنای محاسبه را انتخاب کنید.');
     const fixed=[];
-    if(state.cash===null||!Number.isSafeInteger(state.cash))
+    const cash=state.cash??0;
+    if(!Number.isSafeInteger(cash)||cash<0)
       throw Error('مبلغ نقدی را به‌درستی وارد کنید.');
-    if(state.cash>0)fixed.push({kind:'cash',due_date:config.baseDate,amount_rial:toAmount(state.cash,'نقدی')});
+    if(cash>0)fixed.push({kind:'cash',due_date:config.baseDate,amount_rial:toAmount(cash,'نقدی')});
     for(const [i,item] of state.known.entries()){
       if(!item.due)throw Error('تاریخ سررسید چک '+(i+1)+' را وارد کنید.');
       fixed.push({kind:knownType,due_date:item.due,amount_rial:toAmount(item.amount,'مبلغ چک '+(i+1))});
@@ -84,7 +116,7 @@
   function formatMonthlyRate(value){
     return new Intl.NumberFormat('fa-IR',{maximumFractionDigits:4,useGrouping:false}).format(value)+'٪';
   }
-  const api={buildPayload,toViewModel,moveCheque,formatMonthlyRate};
+  const api={buildPayload,toViewModel,moveCheque,formatMonthlyRate,parseMoney,formatMoneyInput,formatMoneyWhileTyping};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.FinancePaymentQuickAdapter=api;
 })(typeof window!=='undefined'?window:globalThis);
