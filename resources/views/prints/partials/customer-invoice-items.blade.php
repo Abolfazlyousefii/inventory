@@ -1,21 +1,21 @@
 <table class="items-table customer-items">
-    <caption>{{ $isWarehouseMode ? 'نسخه انبار — کنترل جمع‌آوری' : 'تمام مبلغ‌ها به ریال' }}</caption>
-    <thead><tr><th class="col-index">ردیف</th><th>شرح کالا و مدل‌ها</th><th class="col-qty">تعداد</th>@unless($isWarehouseMode)<th class="col-price">قیمت واحد</th><th class="col-total">مبلغ خالص</th>@endunless</tr></thead>
+    <caption>{{ $isWarehouseMode ? ($isWarehouseInvoice ? 'نسخه انبار — کنترل جمع‌آوری · مبالغ کالاها به ریال' : 'نسخه انبار — کنترل جمع‌آوری') : 'تمام مبلغ‌ها به ریال' }}</caption>
+    <thead><tr><th class="col-index">ردیف</th><th>شرح کالا و مدل‌ها</th><th class="col-qty">تعداد</th>@if($showProductPrices)<th class="col-price">قیمت واحد</th><th class="col-total">مبلغ خالص</th>@endif</tr></thead>
     @forelse($printData['customerGroups'] as $group)
         <tbody class="customer-product-group">
             <tr class="product-heading">
                 <td class="col-index">{{ $num($loop->iteration) }}</td>
                 <td><strong>{{ $fa($group['name']) }}</strong></td>
                 <td class="col-qty">{{ $num($group['quantity']) }}</td>
-                @unless($isWarehouseMode)<td class="col-price">{{ $num($group['unitPrice']) }}</td>
-                <td class="col-total">{{ $num($group['total']) }}</td>@endunless
+                @if($showProductPrices)<td class="col-price">{{ $num($group['unitPrice']) }}</td>
+                <td class="col-total">{{ $num($group['total']) }}</td>@endif
             </tr>
             @foreach($group['items']->chunk(12) as $modelRows)
             @php
                 $columns = $modelRows->values()->split(2)->map->values();
                 $firstModelNumber = $modelRows->keys()->first() + 1;
             @endphp
-            <tr class="product-models"><td></td><td colspan="{{ $isWarehouseMode ? 2 : 4 }}">
+            <tr class="product-models"><td></td><td colspan="{{ $showProductPrices ? 4 : 2 }}">
                 <table class="model-schedule">
                     <colgroup><col class="model-index"><col><col class="model-qty"><col class="model-divider"><col class="model-index"><col><col class="model-qty"></colgroup>
                     <thead><tr><th>ردیف</th><th>مدل / رنگ</th><th class="model-qty">تعداد</th><th class="model-divider" aria-hidden="true"></th><th>ردیف</th><th>مدل / رنگ</th><th class="model-qty">تعداد</th></tr></thead>
@@ -42,12 +42,12 @@
                     @endfor
                     </tbody>
                 </table>
-                @if(!$isWarehouseMode && $loop->last && $group['discount'] > 0)<div class="product-discount">تخفیف این کالا: <strong>{{ $money($group['discount']) }}</strong></div>@endif
+                @if($showProductPrices && $loop->last && $group['discount'] > 0)<div class="product-discount">تخفیف این کالا: <strong>{{ $money($group['discount']) }}</strong></div>@endif
             </td></tr>
             @endforeach
         </tbody>
     @empty
-        <tbody><tr><td colspan="{{ $isWarehouseMode ? 3 : 5 }}">آیتمی ثبت نشده است.</td></tr></tbody>
+        <tbody><tr><td colspan="{{ $showProductPrices ? 5 : 3 }}">آیتمی ثبت نشده است.</td></tr></tbody>
     @endforelse
-    <tfoot><tr><td></td><td>{{ $isWarehouseMode ? 'جمع تعداد اقلام' : 'جمع کالاها پس از تخفیف کالا' }}</td><td class="col-qty">{{ $num($totalQuantity) }}</td>@unless($isWarehouseMode)<td></td><td class="col-total">{{ $num($totalLineAmount) }}</td>@endunless</tr></tfoot>
+    <tfoot><tr><td></td><td>{{ $showProductPrices ? 'جمع کالاها پس از تخفیف کالا' : 'جمع تعداد اقلام' }}</td><td class="col-qty">{{ $num($totalQuantity) }}</td>@if($showProductPrices)<td></td><td class="col-total">{{ $num($totalLineAmount) }}</td>@endif</tr></tfoot>
 </table>
