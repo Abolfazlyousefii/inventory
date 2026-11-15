@@ -213,7 +213,17 @@
  $('calculateBtn').addEventListener('click',()=>{recalc(true);if(window.matchMedia('(max-width:1099px)').matches)app.querySelector('.answer').scrollIntoView({behavior:'smooth',block:'nearest'});});
  $('resetBtn').addEventListener('click',()=>{const state=states[active];state.price=active==='value'?null:null;state.cash=0;state.known=[];state.future=active==='cheque'?[{due:dateInDays(30),weight:1}]:[];showExtraCash[active]=false;syncFields();recalc();$('customerInput').value='';});
  $('printBtn').addEventListener('click',printVerified);
- $('openSettings').addEventListener('click',()=>{$('rateInput').value=String(config.monthly);$('baseDateInput').value=config.baseDate;$('settingsDialog').showModal();});
+ function openSettingsDialog(){
+   $('rateInput').value=String(config.monthly);
+   $('baseDateInput').value=config.baseDate;
+   $('settingsError').hidden=true;
+   $('settingsError').textContent='';
+   $('settingsDialog').showModal();
+   $('rateInput').focus();
+   $('rateInput').select();
+ }
+ $('openSettings').addEventListener('click',openSettingsDialog);
+ $('rateChip').addEventListener('click',openSettingsDialog);
  $('closeSettings').addEventListener('click',()=>$('settingsDialog').close());
  $('settingsForm').addEventListener('submit',saveSettings);
  app.addEventListener('click',ev=>{const btn=ev.target.closest('[data-calendar-for]');if(!btn)return;const input=$(btn.dataset.calendarFor);if(input)openCalendar(input)});
