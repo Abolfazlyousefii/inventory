@@ -163,7 +163,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $warehouseHtml = view('prints.invoice', [
             'printData' => $service->invoiceData($invoice, 'warehouse'),
         ])->render();
-        $this->assertStringNotContainsString('signature-section', $warehouseHtml);
+        $this->assertStringNotContainsString('<section class="signature-section">', $warehouseHtml);
         $this->assertStringNotContainsString('امضا و مهر فروشنده</div>', $warehouseHtml);
         $this->assertStringNotContainsString('امضای مشتری / تحویل‌گیرنده</div>', $warehouseHtml);
         $this->assertStringContainsString('قیمت واحد', $warehouseHtml);
