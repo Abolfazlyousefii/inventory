@@ -96,11 +96,11 @@ final class CnyPricingService
         }
     }
 
-    public function reprice(): int
+    public function reprice(bool $dryRun = false): int
     {
         $rate=$this->currentRate();$changed=0;
-        ProductCnyPricing::where('enabled',true)->orderBy('id')->chunkById(100,function($policies)use($rate,&$changed){
-            foreach($policies as $policy)$changed+=DB::transaction(function()use($policy,$rate){
+        ProductCnyPricing::where('enabled',true)->orderBy('id')->chunkById(100,function($policies)use($rate,&$changed,$dryRun){
+            foreach($policies as $policy)$changed+=DB::transaction(function()use($policy,$rate,$dryRun){
                 $product=Product::whereKey($policy->product_id)->lockForUpdate()->first();
                 if(!$product)return 0;
                 $locked=ProductCnyPricing::whereKey($policy->id)->lockForUpdate()->firstOrFail();
@@ -109,6 +109,8 @@ final class CnyPricingService
                 if($previous->quoted_at->gt($rate->quoted_at) || abs($rate->rate_rial-$previous->rate_rial)<10000)return 0;
                 // Do not re-apply a stale worker's quote after another worker received a newer quote.
                 $this->currentRate($rate->id);
+                // Preview uses the same eligibility rules but never writes prices or site markers.
+                if ($dryRun) return 1;
                 $this->writePrice($product,$rate,$locked->buy_cny_units,'rate',$locked->approved_by);
                 $locked->update(['applied_rate_id'=>$rate->id,'policy'=>CnyPriceCalculator::POLICY]);return 1;
             },3);

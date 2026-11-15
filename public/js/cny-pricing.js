@@ -10,7 +10,7 @@
         const base = units * BigInt(rate);
         const buy = (base + 5000n) / 10000n;
         const divisor = 10000n * 70n * 10000n;
-        const sale = ((base * 102n + divisor / 2n) / divisor) * 10000n;
+        const sale = ((base * 102n + divisor - 1n) / divisor) * 10000n;
         if (sale < 1n) throw Error('قیمت پس از گردکردن باید بیشتر از صفر باشد.');
         const micro = (units * 10200n + 35n) / 70n;
         return { buy: Number(buy), sale: Number(sale), saleCny: `${micro / 1000000n}.${String(micro % 1000000n).padStart(6, '0')}`, units: Number(units), amount: text };

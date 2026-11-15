@@ -42,6 +42,16 @@
                 <div><h2>ماشین‌حساب نقد و چک</h2><p>محاسبه پیش‌پرداخت، سررسید و مبلغ چک‌های مشتری، سود روزانه و ماهانه و جمع پرداخت‌ها.</p></div>
                 <span class="finance-directory-card-link">شروع محاسبه <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10H5m5-5-5 5 5 5"/></svg></span>
             </a>
+            @if(auth()->user()?->hasAnyRole(['admin','finance']) || auth()->user()?->can('finance.approve'))
+            <a class="finance-report-directory-card is-cheque-calendar" href="{{ route('finance.saeidian-cheques.index') }}">
+                <div class="finance-directory-card-top">
+                    <span class="finance-directory-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="24" height="23" rx="3"/><path d="M10 3v6M22 3v6M4 13h24M10 18h3m6 0h3M10 23h3"/><path d="m19 24 2 2 4-5"/></svg></span>
+                    <span class="finance-directory-tag">برنامهٔ تأمین وجه</span>
+                </div>
+                <div><h2>تقویم چک‌های سعیدیان</h2><p>چک‌های صادره، خواباندن چک مشتری و بررسی کسری روزانه.</p></div>
+                <span class="finance-directory-card-link">مشاهده تقویم <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10H5m5-5-5 5 5 5"/></svg></span>
+            </a>
+            @endif
         </div>
     </div>
 </x-app-layout>
