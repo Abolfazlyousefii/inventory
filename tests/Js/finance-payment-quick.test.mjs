@@ -149,3 +149,20 @@ test('temporary saved amounts never enter weighted API payloads',()=>{
   adapter.moveCheque(state,'future',0,'known');
   assert.equal(state.known[0].amount,30000000);
 });
+
+test('native settings dialog avoids Bootstrap modal CSS and is reachable from the rate chip', () => {
+  const dialog = view.match(/<dialog\\b[^>]*id="settingsDialog"[^>]*>/);
+  assert.ok(dialog, 'settings dialog should exist');
+  assert.doesNotMatch(dialog[0], /\\bclass="[^"]*\\bmodal\\b/, 'Bootstrap .modal hides native dialog even when open');
+  assert.match(view, /<button[^>]*id="rateChip"[^>]*aria-controls="settingsDialog"/);
+  assert.match(view, /id="rateChip"[^>]*aria-haspopup="dialog"/);
+  assert.match(script, /\\$\\('rateChip'\\)\\.addEventListener\\('click',\\s*openSettingsDialog\\)/);
+  assert.match(script, /\\$\\('openSettings'\\)\\.addEventListener\\('click',\\s*openSettingsDialog\\)/);
+});
+
+test('settings dialog initializes stored rate and focuses the editable percent field', () => {
+  assert.match(script, /function openSettingsDialog\\(\\)/);
+  assert.match(script, /\\$\\('rateInput'\\)\\.value\\s*=\\s*String\\(config\\.monthly\\)/);
+  assert.match(script, /\\$\\('settingsDialog'\\)\\.showModal\\(\\)/);
+  assert.match(script, /\\$\\('rateInput'\\)\\.focus\\(\\)/);
+});
