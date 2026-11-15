@@ -28,7 +28,7 @@
       <button type="button" class="tab" role="tab" id="tab-cash" data-mode="cash" aria-selected="false" aria-controls="inputPanel">محاسبه نقد لازم</button>
       <button type="button" class="tab" role="tab" id="tab-value" data-mode="value" aria-selected="false" aria-controls="inputPanel">ارزش نقدی چک‌ها</button>
     </div>
-    <div class="calculation-context" aria-label="مبنای محاسبه"><span>نرخ ماهانه <b id="rateChip">۶٪</b></span><span>تاریخ مبنا <b id="baseDateChip">{{ $todayJalali }}</b></span><span>مبلغ‌ها به ریال · ماه ۳۰روزه</span></div>
+    <div class="calculation-context" aria-label="مبنای محاسبه"><span>نرخ ماهانه <button type="button" id="rateChip" class="rate-chip-button" aria-controls="settingsDialog" aria-haspopup="dialog" aria-label="تغییر نرخ سود ماهانه" title="تغییر نرخ سود ماهانه">۶٪</button></span><span>تاریخ مبنا <b id="baseDateChip">{{ $todayJalali }}</b></span><span>مبلغ‌ها به ریال · ماه ۳۰روزه</span></div>
     <div class="calc-workspace">
     <section id="inputPanel" class="body" role="tabpanel" aria-labelledby="tab-cheque">
       <p id="modeHelp" class="mode-help">قیمت نقدی و مبلغ پرداختی را وارد کن؛ سیستم مبلغ چک آخر را حساب می‌کند.</p>
@@ -70,9 +70,9 @@
    </main>
    <footer class="footnote">همه مبلغ‌ها به ریال هستند؛ نرخ سود مشترک است و محاسبه با ماه ۳۰روزه انجام می‌شود.</footer>
   </div>
-  <dialog id="settingsDialog" class="modal">
+  <dialog id="settingsDialog" class="pc-settings-dialog" aria-labelledby="settingsDialogTitle">
     <form method="dialog" id="settingsForm" class="modal-inner">
-      <div class="modal-head"><div><h2>تنظیمات محاسبه</h2><p>یک‌بار تنظیم کن، در هر سه تب استفاده می‌شود.</p></div><button type="button" id="closeSettings" class="icon-close" aria-label="بستن">×</button></div>
+      <div class="modal-head"><div><h2 id="settingsDialogTitle">تنظیمات محاسبه</h2><p>یک‌بار تنظیم کن، در هر سه تب استفاده می‌شود.</p></div><button type="button" id="closeSettings" class="icon-close" aria-label="بستن">×</button></div>
       <label class="field"><span>سود ماهانه <em>درصد</em></span><input id="rateInput" type="text" inputmode="decimal" value="6" autocomplete="off"></label>
       <label class="field"><span>تاریخ مبنای محاسبه (امروز)</span><span class="date-wrap"><input id="baseDateInput" class="date-input" type="text" inputmode="numeric" value="{{ $todayJalali }}" autocomplete="off" aria-label="تاریخ مبنای شمسی"><button type="button" class="calendar-trigger" data-calendar-for="baseDateInput" aria-label="انتخاب تاریخ مبنا">▦</button></span></label>
       <p class="modal-note">این نرخ برای همین مرورگر ذخیره می‌شود و در هر سه تب استفاده خواهد شد. تاریخ‌ها شمسی و بدون ساعت هستند.</p>

@@ -79,7 +79,12 @@
     state[from].splice(index,1);
     state[to].push(moved);
   }
-  const api={buildPayload,toViewModel,moveCheque};
+  // UI labels must preserve the configured precision (0–4 decimal places).
+  // Formatting only: the server receives the unmodified numeric rate.
+  function formatMonthlyRate(value){
+    return new Intl.NumberFormat('fa-IR',{maximumFractionDigits:4,useGrouping:false}).format(value)+'٪';
+  }
+  const api={buildPayload,toViewModel,moveCheque,formatMonthlyRate};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.FinancePaymentQuickAdapter=api;
 })(typeof window!=='undefined'?window:globalThis);

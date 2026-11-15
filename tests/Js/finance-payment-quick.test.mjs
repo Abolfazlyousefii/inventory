@@ -149,3 +149,28 @@ test('temporary saved amounts never enter weighted API payloads',()=>{
   adapter.moveCheque(state,'future',0,'known');
   assert.equal(state.known[0].amount,30000000);
 });
+
+test('native settings dialog avoids Bootstrap modal CSS and is reachable from the rate chip', () => {
+  const dialog = view.split('\n').find(line => line.includes('<dialog id="settingsDialog"'));
+  assert.ok(dialog, 'settings dialog should exist');
+  assert.ok(dialog.includes('class="pc-settings-dialog"'), 'do not use Bootstrap modal class on native dialog');
+  assert.ok(view.includes('<button type="button" id="rateChip"'), 'rate is a native keyboard-accessible button');
+  assert.ok(view.includes('id="rateChip" class="rate-chip-button" aria-controls="settingsDialog" aria-haspopup="dialog"'));
+  assert.ok(script.includes("$('rateChip').addEventListener('click',openSettingsDialog)"));
+  assert.ok(script.includes("$('openSettings').addEventListener('click',openSettingsDialog)"));
+});
+
+test('settings dialog initializes stored rate and focuses the editable percent field', () => {
+  assert.ok(script.includes('function openSettingsDialog()'));
+  assert.ok(script.includes("$('rateInput').value=String(config.monthly)"));
+  assert.ok(script.includes("$('settingsDialog').showModal()"));
+  assert.ok(script.includes("$('rateInput').focus()"));
+});
+
+test('monthly rate chip preserves decimal rates instead of rounding to whole percents', () => {
+  assert.equal(adapter.formatMonthlyRate(6), '۶٪');
+  assert.equal(adapter.formatMonthlyRate(7.5), '۷٫۵٪');
+  assert.equal(adapter.formatMonthlyRate(6.125), '۶٫۱۲۵٪');
+  assert.ok(script.includes('Adapter.formatMonthlyRate(config.monthly)'));
+  assert.ok(!script.includes("number(config.monthly)+'٪'"));
+});
