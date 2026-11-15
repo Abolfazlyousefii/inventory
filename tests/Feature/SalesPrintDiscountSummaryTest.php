@@ -88,11 +88,69 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $warehouse = $this->printService()->invoiceData($invoice, 'warehouse');
         $this->assertCount(4, $warehouse['items']);
         $warehouseHtml = view('prints.invoice', ['printData' => $warehouse])->render();
-        $this->assertStringNotContainsString('تخفیف این کالا', $warehouseHtml);
+        $this->assertSame(1, substr_count($warehouseHtml, 'تخفیف این کالا'));
         $this->assertStringNotContainsString('انبار مرکزی', $warehouseHtml);
         $this->assertStringContainsString('شوروم', $warehouseHtml);
         $this->assertStringContainsString('کنترل جمع‌آوری', $warehouseHtml);
-        $this->assertStringNotContainsString('قیمت واحد', $warehouseHtml);
+        $this->assertStringContainsString('قیمت واحد', $warehouseHtml);
+        $this->assertStringContainsString('مبلغ خالص', $warehouseHtml);
+    }
+
+    public function test_warehouse_invoice_print_shows_product_prices_and_goods_total_without_shipping_or_customer_finances(): void
+    {
+        $invoice = $this->invoice([
+            ['product_id' => 7, 'quantity' => 3, 'price' => 100_000, 'line_discount_amount' => 3_000],
+            ['product_id' => 7, 'source_warehouse_id' => 6, 'quantity' => 2, 'price' => 100_000, 'line_discount_amount' => 2_000],
+            ['product_id' => 7, 'quantity' => 1, 'price' => 120_000, 'line_discount_amount' => 0],
+            ['product_id' => 8, 'quantity' => 1, 'price' => 100_000, 'line_discount_amount' => 0],
+        ], 10_000, 25_000);
+
+        $service = $this->printService();
+        $warehouse = $service->invoiceData($invoice, 'warehouse');
+        $this->assertSame(715_000, $warehouse['totals']['itemsNetSubtotal']);
+        $this->assertSame(10_000, $warehouse['totals']['invoiceDiscount']);
+        $this->assertSame(705_000, $warehouse['totals']['subtotalAfterDiscount']);
+        $this->assertSame(730_000, $warehouse['totals']['total']);
+
+        $html = view('prints.invoice', ['printData' => $warehouse])->render();
+        $this->assertStringContainsString('قیمت واحد', $html);
+        $this->assertStringContainsString('مبلغ خالص', $html);
+        $this->assertStringContainsString('۱۰۰٬۰۰۰', $html);
+        $this->assertStringContainsString('۴۹۵٬۰۰۰', $html);
+        $this->assertSame(1, substr_count($html, 'تخفیف این کالا'));
+        $this->assertStringContainsString('تخفیف کلی فاکتور', $html);
+        $this->assertStringContainsString('جمع ارزش کالاها', $html);
+        $this->assertStringContainsString('۷۰۵٬۰۰۰', $html);
+        $this->assertStringNotContainsString('۷۳۰٬۰۰۰', $html); // Shipping must not enter the displayed goods total.
+        $this->assertStringNotContainsString('۲۵٬۰۰۰', $html);
+        $this->assertStringNotContainsString('هزینه ارسال', $html);
+        $this->assertStringNotContainsString('مبلغ پرداخت‌شده', $html);
+        $this->assertStringNotContainsString('مانده کل حساب مشتری', $html);
+        $this->assertStringNotContainsString('مشخصات واریز', $html);
+        $this->assertStringContainsString('کنترل جمع‌آوری', $html);
+        $this->assertStringContainsString('شوروم', $html);
+        $this->assertStringContainsString('collection-checkbox', $html);
+
+        $customerHtml = view('prints.invoice', ['printData' => $service->invoiceData($invoice, 'customer')])->render();
+        $this->assertStringContainsString('هزینه ارسال', $customerHtml);
+        $this->assertStringContainsString('۷۳۰٬۰۰۰', $customerHtml);
+        $this->assertStringContainsString('مبلغ پرداخت‌شده', $customerHtml);
+    }
+
+    public function test_warehouse_preinvoice_remains_an_operational_copy_without_prices(): void
+    {
+        $preinvoice = $this->preinvoice([
+            ['product_id' => 7, 'quantity' => 2, 'price' => 100_000, 'line_discount_amount' => 5_000],
+        ], 10_000, 25_000);
+
+        $html = view('prints.invoice', [
+            'printData' => $this->printService()->preinvoiceData($preinvoice, 'warehouse'),
+        ])->render();
+
+        $this->assertStringContainsString('کنترل جمع‌آوری', $html);
+        $this->assertStringNotContainsString('قیمت واحد', $html);
+        $this->assertStringNotContainsString('مبلغ خالص', $html);
+        $this->assertStringNotContainsString('جمع ارزش کالاها', $html);
     }
 
     public function test_many_models_show_one_product_price_and_escape_variant_names_without_zero_discount_noise(): void
