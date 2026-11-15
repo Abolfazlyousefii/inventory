@@ -153,6 +153,38 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertStringNotContainsString('جمع ارزش کالاها', $html);
     }
 
+    public function test_warehouse_sales_invoice_hides_signatures_but_customer_and_preinvoice_copies_keep_them(): void
+    {
+        $invoice = $this->invoice([
+            ['product_id' => 7, 'quantity' => 2, 'price' => 150_000, 'line_discount_amount' => 0],
+        ], 0, 0);
+
+        $service = $this->printService();
+        $warehouseHtml = view('prints.invoice', [
+            'printData' => $service->invoiceData($invoice, 'warehouse'),
+        ])->render();
+        $this->assertStringNotContainsString('signature-section', $warehouseHtml);
+        $this->assertStringNotContainsString('امضا و مهر فروشنده</div>', $warehouseHtml);
+        $this->assertStringNotContainsString('امضای مشتری / تحویل‌گیرنده</div>', $warehouseHtml);
+        $this->assertStringContainsString('قیمت واحد', $warehouseHtml);
+        $this->assertStringContainsString('کنترل جمع‌آوری', $warehouseHtml);
+
+        $customerHtml = view('prints.invoice', [
+            'printData' => $service->invoiceData($invoice, 'customer'),
+        ])->render();
+        $this->assertStringContainsString('<section class="signature-section">', $customerHtml);
+        $this->assertStringContainsString('امضا و مهر فروشنده</div>', $customerHtml);
+        $this->assertStringContainsString('امضای مشتری / تحویل‌گیرنده</div>', $customerHtml);
+
+        $preinvoice = $this->preinvoice([
+            ['product_id' => 7, 'quantity' => 1, 'price' => 150_000, 'line_discount_amount' => 0],
+        ], 0, 0);
+        $preinvoiceWarehouseHtml = view('prints.invoice', [
+            'printData' => $service->preinvoiceData($preinvoice, 'warehouse'),
+        ])->render();
+        $this->assertStringContainsString('<section class="signature-section">', $preinvoiceWarehouseHtml);
+    }
+
     public function test_many_models_show_one_product_price_and_escape_variant_names_without_zero_discount_noise(): void
     {
         $invoice = $this->invoice(array_fill(0, 25, [
