@@ -31,7 +31,8 @@ return new class extends Migration
             $table->unsignedBigInteger('subtotal')->default(0);
             $table->unsignedBigInteger('total')->default(0);
 
-            $table->string('status')->default('processing'); // processing, shipped, delivered, canceled
+            $table->string('status')->default('processing');
+            $table->string('stock_deduction_status', 32)->nullable();
             $table->timestamps();
         });
     }

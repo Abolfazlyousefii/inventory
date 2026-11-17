@@ -250,6 +250,29 @@ class Invoice extends Model
         $this->assertNotCancelled();
     }
 
+    /**
+     * A site-originated invoice may restore stock only when its original
+     * deduction (or previously deducted stock hold) was verified. Historical
+     * internal invoices with NULL remain subject to their existing workflow;
+     * a NULL status must never be treated as verification for a site invoice.
+     */
+    public function assertStockDeducted(): void
+    {
+        $status = $this->stock_deduction_status;
+
+        if ($status === 'deducted') {
+            return;
+        }
+
+        if ($status === null && (int) ($this->external_order_id ?? 0) <= 0) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'invoice' => 'کسر موجودی اولیه این فاکتور تأیید نشده است؛ ورود موجودی نیاز به بررسی انبار دارد.',
+        ]);
+    }
+
     public static function statusLabels(): array
     {
         return [

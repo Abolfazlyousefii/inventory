@@ -143,6 +143,11 @@ class VoucherController extends Controller
         ]);
 
         DB::transaction(function () use ($invoice, $data) {
+            $invoice = Invoice::query()
+                ->with(['items.product', 'items.variant'])
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
             $centralWarehouseId = WarehouseStockService::centralWarehouseId();
             $itemsById = $invoice->items->keyBy('id');
 
@@ -162,12 +167,33 @@ class VoucherController extends Controller
                 $deltaQty = $newQty - (int) $item->quantity;
 
                 if ($deltaQty !== 0) {
-                    WarehouseStockService::change(
+                    if ($deltaQty < 0) {
+                        $invoice->assertStockDeducted();
+                    }
+
+                    $stock = WarehouseStockService::change(
                         $centralWarehouseId,
                         (int) $item->product_id,
                         -$deltaQty,
                         $variantId
                     );
+                    // A voucher quantity edit must leave a warehouse/variant-level audit trail.
+                    $after = (int) $stock->quantity;
+                    StockMovement::create([
+                        'product_id' => (int) $item->product_id,
+                        'product_variant_id' => $variantId,
+                        'warehouse_id' => $centralWarehouseId,
+                        'user_id' => auth()->id(),
+                        'type' => $deltaQty > 0 ? 'out' : 'in',
+                        'reason' => 'sale_edit',
+                        'quantity' => abs($deltaQty),
+                        'stock_before' => $after + $deltaQty,
+                        'stock_after' => $after,
+                        'reference' => $invoice->uuid,
+                        'reference_type' => Invoice::class,
+                        'reference_id' => $invoice->id,
+                        'note' => 'اصلاح اقلام حواله فروش - ' . ($item->variant?->variant_name ?? 'تنوع'),
+                    ]);
                 }
 
                 $item->update([
@@ -1189,6 +1215,12 @@ class VoucherController extends Controller
         ]);
 
         DB::transaction(function () use ($invoice, $data) {
+            // The request can be stale: lock and reload the current invoice and items.
+            $invoice = Invoice::query()
+                ->with(['items.product', 'items.variant'])
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
             $centralWarehouseId = WarehouseStockService::centralWarehouseId();
             $map = collect($data['items'])->keyBy(fn($it) => (int) $it['id']);
 
@@ -1208,35 +1240,34 @@ class VoucherController extends Controller
                 $delta = $newQty - $oldQty;
 
                 if ($delta !== 0) {
-                    $product = Product::query()
-                        ->whereKey((int) $item->product_id)
-                        ->first();
+                    // Decreasing an invoice quantity credits stock. Require the original debit.
+                    if ($delta < 0) {
+                        $invoice->assertStockDeducted();
+                    }
 
-                    $before = (int) ($product?->stock ?? 0);
-
-                    WarehouseStockService::change(
+                    $stock = WarehouseStockService::change(
                         $centralWarehouseId,
                         (int) $item->product_id,
                         -$delta,
                         $variantId
                     );
+                    $after = (int) $stock->quantity;
 
-                    $product?->refresh();
-                    $after = (int) ($product?->stock ?? 0);
-
-                    if ($product) {
-                        StockMovement::create([
-                            'product_id' => $product->id,
-                            'user_id' => auth()->id(),
-                            'type' => $delta > 0 ? 'out' : 'in',
-                            'reason' => 'sale_edit',
-                            'quantity' => abs($delta),
-                            'stock_before' => $before,
-                            'stock_after' => $after,
-                            'reference' => $invoice->uuid,
-                            'note' => 'اصلاح اقلام حواله فروش کالا - ' . ($item->variant?->variant_name ?? 'تنوع'),
-                        ]);
-                    }
+                    StockMovement::create([
+                        'product_id' => (int) $item->product_id,
+                        'product_variant_id' => $variantId,
+                        'warehouse_id' => $centralWarehouseId,
+                        'user_id' => auth()->id(),
+                        'type' => $delta > 0 ? 'out' : 'in',
+                        'reason' => 'sale_edit',
+                        'quantity' => abs($delta),
+                        'stock_before' => $after + $delta,
+                        'stock_after' => $after,
+                        'reference' => $invoice->uuid,
+                        'reference_type' => Invoice::class,
+                        'reference_id' => $invoice->id,
+                        'note' => 'اصلاح اقلام حواله فروش کالا - ' . ($item->variant?->variant_name ?? 'تنوع'),
+                    ]);
                 }
 
                 $newPrice = (int) $payload['price'];
@@ -1251,6 +1282,10 @@ class VoucherController extends Controller
             $totals = SalesDocumentTotals::fromDocument($invoice);
             $subtotal = $totals['subtotal_before_discount'];
             $total = $totals['grand_total'];
+
+            if ($data['status'] === Invoice::STATUS_SHIPPED) {
+                $invoice->assertStockDeducted();
+            }
 
             $invoice->update([
                 'subtotal' => $subtotal,
@@ -2217,7 +2252,20 @@ class VoucherController extends Controller
         $relatedInvoice = null;
 
         if (!empty($data['related_invoice_uuid'])) {
-            $relatedInvoice = Invoice::where('uuid', $data['related_invoice_uuid'])->firstOrFail();
+            $invoiceQuery = Invoice::query()
+                ->where('uuid', $data['related_invoice_uuid']);
+
+            // Only customer returns need the additional row lock before stock credit.
+            if ($voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN) {
+                $invoiceQuery->lockForUpdate();
+            }
+            $relatedInvoice = $invoiceQuery->firstOrFail();
+        }
+
+        // Customer returns credit stock immediately; do not credit an unverified sale.
+        // Returns with no internal invoice retain their separate external/manual policy.
+        if ($voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN && $relatedInvoice) {
+            $relatedInvoice->assertStockDeducted();
         }
 
         $receiverUser = null;

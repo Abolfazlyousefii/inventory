@@ -100,6 +100,9 @@ class WarehouseShippingController extends Controller
                 abort(422, 'این فاکتور در وضعیت آماده ارسال نیست.');
             }
 
+            // Never dispatch website invoices whose original stock debit is unverified.
+            $invoice->assertStockDeducted();
+
             $shippingMethod = ShippingMethod::query()->whereKey($validated['shipping_method_id'])->firstOrFail();
 
             $invoice->forceFill([

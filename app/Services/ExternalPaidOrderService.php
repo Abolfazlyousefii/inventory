@@ -144,6 +144,9 @@ class ExternalPaidOrderService
                 } else {
                     $this->consumeStock($resolvedItems);
                 }
+                // The hold was already deducted at reservation, or stock was
+                // deducted above. Persist the verified outcome in this transaction.
+                $invoice->forceFill(['stock_deduction_status' => 'deducted'])->save();
                 $this->customerLedgerService->syncInvoiceDebit($invoice);
                 if ($invoice->total > 0) {
                     $this->paymentRegistrationService->registerForInvoice(

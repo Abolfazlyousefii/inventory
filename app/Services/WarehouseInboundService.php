@@ -281,11 +281,20 @@ class WarehouseInboundService
     public function receive(WarehouseInboundReceipt $receipt, array $submittedItems, int $actorId, ?string $reviewNote = null, ?string $expectedVersion = null): WarehouseInboundReceipt
     {
         return DB::transaction(function () use ($receipt, $submittedItems, $actorId, $reviewNote, $expectedVersion) {
-            // Use the same document -> customer -> invoice -> receipt lock order as return edits.
+            // Lock source invoice before receipt, preserving the existing lock order.
+            $sourceInvoice = null;
             if ($receipt->source_type === WarehouseInboundReceipt::SOURCE_SALES_RETURN) {
                 $source = SalesReturnDocument::whereKey($receipt->source_id)->lockForUpdate()->firstOrFail();
                 \App\Models\Customer::whereKey($source->customer_id)->lockForUpdate()->firstOrFail();
-                if ($source->isInternal()) Invoice::whereKey($source->invoice_id)->lockForUpdate()->firstOrFail();
+                if ($source->isInternal()) {
+                    $sourceInvoice = Invoice::whereKey($source->invoice_id)->lockForUpdate()->firstOrFail();
+                }
+            } elseif (in_array($receipt->source_type, [
+                WarehouseInboundReceipt::SOURCE_INVOICE_CANCEL,
+                WarehouseInboundReceipt::SOURCE_INVOICE_ADJUSTMENT,
+                WarehouseInboundReceipt::SOURCE_FINANCE_ADJUSTMENT_LEGACY,
+            ], true)) {
+                $sourceInvoice = Invoice::whereKey($receipt->source_id)->lockForUpdate()->firstOrFail();
             }
             $locked = WarehouseInboundReceipt::query()->whereKey($receipt->id)->lockForUpdate()->firstOrFail();
             $locked->load('items');
@@ -362,6 +371,13 @@ class WarehouseInboundService
                 throw ValidationException::withMessages([
                     'review_note' => 'برای ثبت دریافت با مغایرت، توضیح مدیر انبار الزامی است.',
                 ]);
+            }
+
+            // Do not increase stock from an invoice whose original deduction
+            // cannot be verified. Financial-only/zero-quantity operations are unchanged.
+            if ($sourceInvoice !== null
+                && collect($normalized)->contains(fn (array $row): bool => (int) $row['accepted_quantity'] > 0)) {
+                $sourceInvoice->assertStockDeducted();
             }
 
             if ($locked->source_type === WarehouseInboundReceipt::SOURCE_SALES_RETURN) {
