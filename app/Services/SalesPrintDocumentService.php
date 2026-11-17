@@ -137,6 +137,16 @@ class SalesPrintDocumentService
         return $items->values()->map(function ($item) {
             $variant = $item->variant;
             $product = $item->product;
+            $quantity = max((int) $item->quantity, 0);
+            $lineDiscount = (int) ($item->line_discount_amount ?? 0);
+            // The stored line discount applies to the whole row. Per-unit figures
+            // are display-only; retain the original integer for all financial totals.
+            $positiveDiscount = max($lineDiscount, 0);
+            $unitDiscount = $quantity > 0
+                ? intdiv($positiveDiscount, $quantity)
+                    + ((($positiveDiscount % $quantity) >= intdiv($quantity, 2) + ($quantity % 2)) ? 1 : 0)
+                : 0;
+            $unitDiscountApproximate = $quantity > 0 && ($positiveDiscount % $quantity) !== 0;
 
             return [
                 'productId' => $item->product_id,
@@ -149,7 +159,9 @@ class SalesPrintDocumentService
                 'inventoryCode' => $this->inventoryCode($variant, $product),
                 'quantity' => (int) $item->quantity,
                 'unitPrice' => (int) $item->price,
-                'lineDiscount' => (int) ($item->line_discount_amount ?? 0),
+                'lineDiscount' => $lineDiscount,
+                'unitDiscount' => $unitDiscount,
+                'unitDiscountApproximate' => $unitDiscountApproximate,
                 'netUnitPrice' => SalesDocumentTotals::netUnitPrice($item),
                 'lineTotal' => SalesDocumentTotals::lineTotal($item),
             ];
