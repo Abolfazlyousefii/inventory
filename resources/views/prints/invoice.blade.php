@@ -99,67 +99,63 @@
         body { color:#303840; }
         .invoice-page { width:194mm; padding:5mm 4mm; }
         .no-print { width:194mm; }
+        /* Compact invoice header: shared frame, no equal-height cards. */
         .invoice-header {
-            grid-template-columns:minmax(0,1.06fr) minmax(0,1fr);
-            align-items:stretch;
-            gap:9px;
-            border:0;
-            padding:0;
-            margin-bottom:12px;
-        }
-        .header-panel {
-            min-width:0;
+            display:block;
             border:1px solid #d7dfe5;
             border-radius:6px;
-            background:#fbfcfd;
-            padding:10px 12px;
-            break-inside:avoid;
-            page-break-inside:avoid;
+            background:#fff;
+            padding:0;
+            margin-bottom:10px;
+            overflow:visible;
         }
-        .header-brand { min-width:0; }
-        .header-brand .brand {
-            padding-bottom:8px;
-            margin-bottom:7px;
-            border-bottom:1px solid #e6eaee;
-        }
-        .brand-name { color:#263746; font-size:17px; }
-        .doc-title { color:#263746; font-size:20px; text-align:right; margin:0 0 9px; }
-        .doc-meta {
+        .header-top {
             display:flex;
-            flex-direction:column;
-            gap:5px;
-            color:#394956;
-            font-size:11px;
-            line-height:1.75;
-            text-align:right;
-            margin:0;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            padding:6px 10px;
+            border-bottom:1px solid #e5ebef;
+            background:#fafbfd;
+        }
+        .header-top .brand { min-width:0; gap:8px; }
+        .header-top .brand img { width:38px; max-height:40px; flex-shrink:0; }
+        .brand-name { color:#263746; font-size:15px; line-height:1.5; }
+        .brand-phone { color:#667681; font-size:10px; line-height:1.4; }
+        .doc-title { color:#263746; font-size:18px; line-height:1.4; text-align:left; margin:0; white-space:nowrap; }
+        .header-details {
+            display:grid;
+            grid-template-columns:repeat(2,minmax(0,1fr));
+            align-items:start;
+        }
+        .header-info { min-width:0; padding:6px 10px 7px; page-break-inside:avoid; break-inside:avoid; }
+        .header-info + .header-info { border-right:1px solid #e5ebef; }
+        .header-info .info-title {
+            display:block; padding:0; margin:0 0 4px; border:0;
+            color:#62727e; font-size:10px; font-weight:700; line-height:1.4;
+        }
+        .header-customer { margin:0; font-size:10.5px; line-height:1.5; }
+        .header-customer .info-row {
+            grid-template-columns:72px minmax(0,1fr);
+            align-items:baseline; gap:5px; margin-bottom:2px;
+        }
+        .header-customer .info-row:last-child { margin-bottom:0; }
+        .header-customer .info-row > :last-child { min-width:0; overflow-wrap:anywhere; }
+        .header-customer .label { color:#63727d; font-weight:600; }
+        .doc-meta {
+            display:flex; flex-direction:column; gap:2px; margin:0;
+            color:#394956; font-size:10.5px; line-height:1.5; text-align:right;
         }
         .doc-meta-row {
-            display:grid;
-            grid-template-columns:max-content minmax(0,1fr);
-            align-items:baseline;
-            gap:8px;
+            display:grid; grid-template-columns:max-content minmax(0,1fr);
+            align-items:baseline; gap:5px;
         }
         .meta-label { color:#63727d; font-weight:600; }
         .meta-value { min-width:0; overflow-wrap:anywhere; font-weight:700; }
-        .header-customer { margin-top:6px; font-size:11px; line-height:1.75; }
-        .header-customer .info-title {
-            display:block;
-            font-size:10px;
-            margin-bottom:6px;
-            padding:0;
-            color:#647380;
-            border:0;
-            font-weight:700;
+        @media screen and (max-width:560px) {
+            .header-details { grid-template-columns:1fr; }
+            .header-info + .header-info { border-right:0; border-top:1px solid #e5ebef; }
         }
-        .header-customer .info-row {
-            grid-template-columns:75px minmax(0,1fr);
-            align-items:baseline;
-            gap:7px;
-            margin-bottom:5px;
-        }
-        .header-customer .info-row > :last-child { min-width:0; overflow-wrap:anywhere; }
-        .header-customer .label { color:#63727d; font-weight:600; }
         .info-box,.company-box,.customer-payment-box,.customer-balance-box,.signature-box {
             border-color:#d7dde2; border-radius:5px;
         }

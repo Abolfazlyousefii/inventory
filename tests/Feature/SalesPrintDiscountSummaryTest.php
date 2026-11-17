@@ -104,7 +104,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertStringContainsString('مبلغ نهایی', $warehouseHtml);
     }
 
-    public function test_invoice_header_uses_balanced_panels_and_keeps_customer_and_document_details(): void
+    public function test_invoice_header_compacts_customer_and_document_details_into_a_shared_frame(): void
     {
         $invoice = $this->invoice([
             ['product_id' => 7, 'quantity' => 3, 'price' => 100_000, 'line_discount_amount' => 3_000],
@@ -124,10 +124,15 @@ class SalesPrintDiscountSummaryTest extends TestCase
             @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
             $xpath = new \DOMXPath($dom);
 
-            $panels = $xpath->query('//header[contains(concat(" ", normalize-space(@class), " "), " invoice-header ")]/*[contains(concat(" ", normalize-space(@class), " "), " header-panel ")]');
-            $this->assertSame(2, $panels->length, 'Both document and customer information should be grouped in print panels.');
-            $this->assertSame(1, $xpath->query('//header//section[contains(concat(" ", normalize-space(@class), " "), " header-document ")]')->length);
-            $this->assertSame(1, $xpath->query('//header//div[contains(concat(" ", normalize-space(@class), " "), " header-brand ")]')->length);
+            $header = $xpath->query('//header[contains(concat(" ", normalize-space(@class), " "), " invoice-header ")]')->item(0);
+            $this->assertNotNull($header);
+            $this->assertSame(1, $xpath->query('./div[contains(@class, "header-top")]', $header)->length);
+            $this->assertSame(1, $xpath->query('./div[contains(@class, "header-details")]', $header)->length);
+            $this->assertSame(1, $xpath->query('./div[contains(@class, "header-top")]//h1[contains(@class, "doc-title")]', $header)->length);
+            $this->assertSame(2, $xpath->query('./div[contains(@class, "header-details")]/section[contains(@class, "header-info")]', $header)->length);
+            $this->assertSame(1, $xpath->query('.//section[contains(@class, "header-customer-info")]', $header)->length);
+            $this->assertSame(1, $xpath->query('.//section[contains(@class, "header-document")]', $header)->length);
+            $this->assertSame(0, $xpath->query('.//*[contains(@class, "header-panel")]', $header)->length);
             $this->assertStringContainsString('شماره فاکتور', $html);
             $this->assertStringContainsString('تاریخ سند', $html);
             $this->assertStringContainsString('نام مشتری', $html);
@@ -139,6 +144,37 @@ class SalesPrintDiscountSummaryTest extends TestCase
             $this->assertStringContainsString('تخفیف واحد', $html);
             $this->assertStringContainsString('مبلغ نهایی', $html);
         }
+    }
+
+    public function test_compact_header_keeps_long_customer_address_without_fixed_height(): void
+    {
+        $invoice = $this->invoice([
+            ['product_id' => 7, 'quantity' => 1, 'price' => 100_000, 'line_discount_amount' => 0],
+        ], 0, 0);
+        $data = $this->printService()->invoiceData($invoice, 'customer');
+        $data['customer']['address'] = str_repeat('خیابان نمونه ساختمان تجاری ', 10);
+        $html = view('prints.invoice', ['printData' => $data])->render();
+
+        $this->assertStringContainsString($data['customer']['address'], $html);
+        $this->assertMatchesRegularExpression('/\\.invoice-header\\s*\\{[^}]*display:block/s', $html);
+        $this->assertMatchesRegularExpression('/\\.header-details\\s*\\{[^}]*grid-template-columns:repeat\\(2,minmax\\(0,1fr\\)\\)/s', $html);
+        $this->assertMatchesRegularExpression('/\\.header-customer \\.info-row > :last-child\\s*\\{[^}]*overflow-wrap:anywhere/s', $html);
+    }
+
+    public function test_warehouse_preinvoice_uses_same_compact_header(): void
+    {
+        $order = $this->preinvoice([
+            ['product_id' => 7, 'quantity' => 1, 'price' => 100_000, 'line_discount_amount' => 0],
+        ], 0, 0);
+        $html = view('prints.invoice', [
+            'printData' => $this->printService()->preinvoiceData($order, 'warehouse'),
+        ])->render();
+
+        $this->assertStringContainsString('پیش‌فاکتور فروش', $html);
+        $this->assertStringContainsString('شماره پیش‌فاکتور', $html);
+        $this->assertStringContainsString('مشخصات مشتری', $html);
+        $this->assertStringContainsString('اطلاعات سند', $html);
+        $this->assertStringContainsString('class="header-details"', $html);
     }
 
     public function test_print_typography_keeps_counts_and_prices_legible_on_a4(): void
