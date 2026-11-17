@@ -214,16 +214,14 @@ class SalesPrintDocumentService
     private function customerGroups(Collection $items): Collection
     {
         // Presentation only: never average historical prices or allocate discounts again.
-        return $items->groupBy(fn (array $item) => json_encode([
-            $item['productId'], $item['unitPrice'], $item['bundle_contents'],
-        ], JSON_UNESCAPED_UNICODE))->map(fn (Collection $rows) => [
-            'name' => $rows->first()['productName'],
-            'unitPrice' => $rows->first()['unitPrice'],
-            'quantity' => $rows->sum('quantity'),
-            'discount' => $rows->sum('lineDiscount'),
-            'total' => $rows->sum('lineTotal'),
-            'items' => $rows->values(),
-        ])->values();
+        return $items->groupBy(fn (array $item) => (string) $item['productId'])
+            ->map(fn (Collection $rows) => [
+                'name' => $rows->first()['productName'],
+                'quantity' => $rows->sum('quantity'),
+                'discount' => $rows->sum('lineDiscount'),
+                'total' => $rows->sum('lineTotal'),
+                'items' => $rows->values(),
+            ])->values();
     }
 
     private function inventoryCode($variant, $product): string
