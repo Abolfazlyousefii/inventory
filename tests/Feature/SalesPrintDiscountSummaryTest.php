@@ -133,9 +133,9 @@ class SalesPrintDiscountSummaryTest extends TestCase
             $this->assertStringContainsString('مبلغ نهایی ردیف', $html);
             $this->assertStringContainsString('تعداد × قیمت واحد − تخفیف کل', $html);
             $this->assertStringContainsString('تقریبی', $html);
-            $dom = new \\DOMDocument();
+            $dom = new \DOMDocument();
             @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
-            $xpath = new \\DOMXPath($dom);
+            $xpath = new \DOMXPath($dom);
             $rows = $xpath->query('//tr[contains(concat(" ", normalize-space(@class), " "), " variant-row ")]');
             $this->assertSame(3, $rows->length);
             $first = $rows->item(0);
