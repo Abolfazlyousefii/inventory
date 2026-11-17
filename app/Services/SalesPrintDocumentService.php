@@ -137,6 +137,16 @@ class SalesPrintDocumentService
         return $items->values()->map(function ($item) {
             $variant = $item->variant;
             $product = $item->product;
+            $quantity = max((int) $item->quantity, 0);
+            $lineDiscount = (int) ($item->line_discount_amount ?? 0);
+            // The stored line discount applies to the whole row. Per-unit figures
+            // are display-only; retain the original integer for all financial totals.
+            $positiveDiscount = max($lineDiscount, 0);
+            $unitDiscount = $quantity > 0
+                ? intdiv($positiveDiscount, $quantity)
+                    + ((($positiveDiscount % $quantity) >= intdiv($quantity, 2) + ($quantity % 2)) ? 1 : 0)
+                : 0;
+            $unitDiscountApproximate = $quantity > 0 && ($positiveDiscount % $quantity) !== 0;
 
             return [
                 'productId' => $item->product_id,
@@ -149,7 +159,9 @@ class SalesPrintDocumentService
                 'inventoryCode' => $this->inventoryCode($variant, $product),
                 'quantity' => (int) $item->quantity,
                 'unitPrice' => (int) $item->price,
-                'lineDiscount' => (int) ($item->line_discount_amount ?? 0),
+                'lineDiscount' => $lineDiscount,
+                'unitDiscount' => $unitDiscount,
+                'unitDiscountApproximate' => $unitDiscountApproximate,
                 'netUnitPrice' => SalesDocumentTotals::netUnitPrice($item),
                 'lineTotal' => SalesDocumentTotals::lineTotal($item),
             ];
@@ -214,16 +226,14 @@ class SalesPrintDocumentService
     private function customerGroups(Collection $items): Collection
     {
         // Presentation only: never average historical prices or allocate discounts again.
-        return $items->groupBy(fn (array $item) => json_encode([
-            $item['productId'], $item['unitPrice'], $item['bundle_contents'],
-        ], JSON_UNESCAPED_UNICODE))->map(fn (Collection $rows) => [
-            'name' => $rows->first()['productName'],
-            'unitPrice' => $rows->first()['unitPrice'],
-            'quantity' => $rows->sum('quantity'),
-            'discount' => $rows->sum('lineDiscount'),
-            'total' => $rows->sum('lineTotal'),
-            'items' => $rows->values(),
-        ])->values();
+        return $items->groupBy(fn (array $item) => (string) $item['productId'])
+            ->map(fn (Collection $rows) => [
+                'name' => $rows->first()['productName'],
+                'quantity' => $rows->sum('quantity'),
+                'discount' => $rows->sum('lineDiscount'),
+                'total' => $rows->sum('lineTotal'),
+                'items' => $rows->values(),
+            ])->values();
     }
 
     private function inventoryCode($variant, $product): string
