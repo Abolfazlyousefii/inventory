@@ -15,7 +15,7 @@
                 <th class="col-price">قیمت واحد</th>
                 <th class="col-discount-unit">تخفیف واحد</th>
                 <th class="col-discount-total">تخفیف کل</th>
-                <th class="col-total">مبلغ نهایی ردیف</th>
+                <th class="col-total">مبلغ نهایی</th>
             @endif
             @if($isWarehouseMode)<th class="col-check">کنترل انبار</th>@endif
         </tr>
