@@ -72,23 +72,31 @@ class SalesPrintDiscountSummaryTest extends TestCase
             ['product_id' => 8, 'quantity' => 1, 'price' => 100000, 'line_discount_amount' => 0],
         ], 10000, 0);
         $data = $this->printService()->invoiceData($invoice, 'customer');
-        $this->assertCount(3, $data['customerGroups']);
+        $this->assertCount(2, $data['customerGroups']);
         $group = $data['customerGroups']->first();
-        $this->assertSame(5, $group['quantity']);
+        $this->assertSame(6, $group['quantity']);
         $this->assertSame(5000, $group['discount']);
-        $this->assertSame(495000, $group['total']);
-        $this->assertSame([null, 6], $group['items']->pluck('sourceWarehouseId')->all());
+        $this->assertSame(615000, $group['total']);
+        $this->assertSame([null, 6, null], $group['items']->pluck('sourceWarehouseId')->all());
         $this->assertSame(715000, $data['customerGroups']->sum('total'));
         $this->assertSame(705000, $data['totals']['total']);
         $html = view('prints.invoice', ['printData' => $data])->render();
-        $this->assertSame(1, substr_count($html, 'تخفیف این کالا'));
+        $this->assertSame(2, substr_count($html, 'class="product-heading"'));
+        $this->assertStringContainsString('تخفیف ردیف', $html);
+        $this->assertStringContainsString('۲۹۷٬۰۰۰', $html);
+        $this->assertStringContainsString('۱۹۸٬۰۰۰', $html);
+        $this->assertStringContainsString('۱۲۰٬۰۰۰', $html);
+        $this->assertStringNotContainsString('تخفیف این کالا', $html);
         $this->assertStringContainsString('تخفیف کلی فاکتور', $html);
         $this->assertStringContainsString('شوروم', $html);
         $this->assertStringNotContainsString('انبار مرکزی', $html);
+        $this->assertStringNotContainsString('model-schedule', $html);
         $warehouse = $this->printService()->invoiceData($invoice, 'warehouse');
         $this->assertCount(4, $warehouse['items']);
         $warehouseHtml = view('prints.invoice', ['printData' => $warehouse])->render();
-        $this->assertSame(1, substr_count($warehouseHtml, 'تخفیف این کالا'));
+        $this->assertSame(2, substr_count($warehouseHtml, 'class="product-heading"'));
+        $this->assertStringNotContainsString('تخفیف این کالا', $warehouseHtml);
+        $this->assertStringContainsString('تخفیف ردیف', $warehouseHtml);
         $this->assertStringNotContainsString('انبار مرکزی', $warehouseHtml);
         $this->assertStringContainsString('شوروم', $warehouseHtml);
         $this->assertStringContainsString('کنترل جمع‌آوری', $warehouseHtml);
@@ -116,8 +124,11 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertStringContainsString('قیمت واحد', $html);
         $this->assertStringContainsString('مبلغ خالص', $html);
         $this->assertStringContainsString('۱۰۰٬۰۰۰', $html);
-        $this->assertStringContainsString('۴۹۵٬۰۰۰', $html);
-        $this->assertSame(1, substr_count($html, 'تخفیف این کالا'));
+        $this->assertStringContainsString('۲۹۷٬۰۰۰', $html);
+        $this->assertStringContainsString('۱۹۸٬۰۰۰', $html);
+        $this->assertStringContainsString('۱۲۰٬۰۰۰', $html);
+        $this->assertStringContainsString('تخفیف ردیف', $html);
+        $this->assertSame(0, substr_count($html, 'تخفیف این کالا'));
         $this->assertStringContainsString('تخفیف کلی فاکتور', $html);
         $this->assertStringContainsString('جمع ارزش کالاها', $html);
         $this->assertStringContainsString('۷۰۵٬۰۰۰', $html);
@@ -204,7 +215,8 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $html = view('prints.invoice', ['printData' => $data])->render();
         $this->assertSame(1, substr_count($html, 'گارد سیلیکون'));
         $this->assertStringContainsString('مدل ۲۴ &lt;script&gt;', $html);
-        $this->assertStringContainsString('model-divider', $html);
+        $this->assertStringContainsString('variant-row', $html);
+        $this->assertStringNotContainsString('model-schedule', $html);
         $this->assertStringContainsString('print-money', $html);
         $this->assertStringContainsString('۵٬۰۰۰٬۰۰۰', $html);
         $this->assertStringContainsString('header-customer', $html);
@@ -217,8 +229,6 @@ class SalesPrintDiscountSummaryTest extends TestCase
                 preg_split('//u', '۰۱۲۳۴۵۶۷۸۹', -1, PREG_SPLIT_NO_EMPTY), str_split('0123456789')
             ));
         }
-        $this->assertSame([1, 7, 2, 8, 3, 9, 4, 10, 5, 11, 6, 12], array_slice($rowNumbers, 0, 12));
-        sort($rowNumbers);
         $this->assertSame(range(1, 25), $rowNumbers);
         $visibleText = '';
         foreach ($xpath->query('//main//text()') as $node) $visibleText .= $node->textContent;
