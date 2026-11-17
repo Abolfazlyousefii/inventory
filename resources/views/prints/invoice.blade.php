@@ -74,7 +74,7 @@
         .col-code { width:20mm; font-size:9px !important; overflow-wrap:anywhere; }
         .col-qty { width:11mm; font-weight:700; }
         .col-price { width:23mm; white-space:nowrap; }
-        .col-discount { width:18mm; text-align:left; direction:ltr; white-space:nowrap; }
+        .col-discount-unit,.col-discount-total { width:18mm; text-align:left; direction:ltr; white-space:nowrap; }
         .col-total { width:26mm; white-space:nowrap; font-weight:700; }
         .warehouse-badge { display:block; width:fit-content; margin-top:4px; padding:1px 6px; border:1px solid #7d919d; border-radius:3px; font-size:9px; font-weight:700; color:#284b60; }
         .warehouse-section td { background:#e9eff3 !important; font-size:13px !important; font-weight:700; padding:8px !important; border-top:2px solid #244b60; }
@@ -97,7 +97,8 @@
         .signature-box { height:48px; border:1px solid #374151; border-radius:6px; padding:6px; font-weight:900; }
         /* Readable row-based invoice layout with restrained print contrast. */
         body { color:#303840; }
-        .invoice-page { padding:6mm; }
+        .invoice-page { width:194mm; padding:5mm 4mm; }
+        .no-print { width:194mm; }
         .invoice-header { border-color:#cbd3da; border-bottom-width:1px; padding-bottom:12px; margin-bottom:12px; }
         .doc-title { color:#263746; font-size:19px; }
         .doc-meta { color:#5b6670; line-height:1.8; margin-top:7px; }
@@ -114,6 +115,7 @@
         .info-title { border-bottom:1px solid #e1e6ea; }
         .customer-items { margin-top:8px; }
         .customer-items caption { text-align:left; font-size:9px; padding:3px 0 6px; color:#6b7680; }
+        .print-pricing-formula { display:inline-block; margin-inline-start:9px; color:#73808a; font-size:9px; }
         .customer-items th,.customer-items td { border-color:#d9dfe4; }
         .customer-items > thead > tr > th {
             background:#f3f5f7; color:#3c4852; padding:7px 5px;
@@ -132,14 +134,18 @@
             padding:6px 5px; font-size:10px; line-height:1.55;
         }
         .customer-items .variant-row:nth-child(even) td { background:#fcfdfe; }
-        .col-index { width:8mm; text-align:center; }
+        .col-index { width:7mm; text-align:center; }
         .col-desc { overflow-wrap:anywhere; }
-        .col-code { width:20mm; text-align:center; direction:ltr; unicode-bidi:embed; font-size:9px !important; overflow-wrap:anywhere; }
-        .col-qty { width:13mm; text-align:center; font-weight:700; font-variant-numeric:tabular-nums; }
-        .col-price { width:23mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; }
-        .col-discount { width:19mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; color:#65717b !important; }
-        .col-total { width:26mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; font-weight:700; }
-        .col-check { width:15mm; text-align:center; }
+        .col-code { width:16mm; text-align:center; direction:ltr; unicode-bidi:embed; font-size:9px !important; overflow-wrap:anywhere; }
+        .col-qty { width:10mm; text-align:center; font-weight:700; font-variant-numeric:tabular-nums; }
+        .col-price { width:21mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; font-variant-numeric:tabular-nums; }
+        .col-discount-unit { width:18mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; color:#65717b !important; font-variant-numeric:tabular-nums; }
+        .col-discount-total { width:18mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; color:#53616e !important; font-variant-numeric:tabular-nums; }
+        .col-total { width:28mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
+        .col-check { width:12mm; text-align:center; }
+        .approximate-discount { white-space:nowrap; }
+        .customer-items .variant-row td.col-discount-unit,
+        .customer-items .variant-row td.col-discount-total { font-size:9.5px; }
         .model-row-number { display:block; color:#77818a; font-size:9px; }
         .variant-name { overflow-wrap:anywhere; }
         .showroom-source {
@@ -151,8 +157,8 @@
         .collection-checkbox { display:inline-block; width:11px; height:11px; border:1px solid #aeb9c1; border-radius:2px; vertical-align:middle; }
         .customer-items tfoot td { background:#f4f6f8; border-color:#d5dce2; font-weight:700; padding:7px 5px; }
         .warehouse-mode .items-table td.col-qty { font-size:12px; font-weight:700; }
-        .warehouse-mode .col-qty { width:13mm; }
-        .warehouse-mode .col-check { width:15mm; }
+        .warehouse-mode .col-qty { width:10mm; }
+        .warehouse-mode .col-check { width:12mm; }
         .summary-table td { border-color:#d9dfe4; padding:5px 8px; font-size:10px; }
         .final-row td { background:#f1f4f6; border-color:#cbd3da; border-top:1px solid #cbd3da; color:#263746; font-size:12px; }
         .signature-section { margin-top:14px; gap:18px; }
