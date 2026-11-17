@@ -23,19 +23,36 @@
     </div>
 </div>
 <main class="invoice-page">
-    <header class="invoice-header">
-        <div class="header-brand">
-        <div class="brand"><img src="{{ $printData['logo'] }}" alt="{{ $fa($printData['company']['name']) }}"><div><div class="brand-name">{{ $fa($printData['company']['name']) }}</div><div>{{ $fa($printData['company']['phone']) }}</div></div></div>
+    <header class="invoice-header" aria-label="اطلاعات فاکتور">
+        <div class="header-panel header-brand">
+            <div class="brand">
+                <img src="{{ $printData['logo'] }}" alt="{{ $fa($printData['company']['name']) }}">
+                <div>
+                    <div class="brand-name">{{ $fa($printData['company']['name']) }}</div>
+                    <div>{{ $fa($printData['company']['phone']) }}</div>
+                </div>
+            </div>
             @include('prints.partials.invoice-customer-header')
         </div>
-        <div><h1 class="doc-title">{{ $fa($printData['title']) }}</h1><div class="doc-meta">
-            <div>{{ $fa($printData['numberLabel']) }}: <strong>{{ $fa($printData['number']) }}</strong></div>
-            @if($printData['customerNumber'])<div>شماره فاکتور مشتری: {{ $fa($printData['customerNumber']) }}</div>@endif
-            <div>تاریخ سند: {{ $fa($fmtDate($printData['registeredAt'])) }}</div>
-            @if($isWarehouseMode && $printData['issuedAt'] && $printData['issuedAt'] != $printData['registeredAt'])<div>تاریخ صدور فاکتور: {{ $fa($fmtDate($printData['issuedAt'])) }}</div>@endif
-            @if($isWarehouseMode && $printData['status'])<div>وضعیت سند: {{ $fa($printData['status']) }}</div>@endif
-            @if(filled($printData['seller']))<div>فروشنده: {{ $fa($printData['seller']) }}</div>@endif
-        </div></div>
+        <section class="header-panel header-document" aria-label="اطلاعات سند">
+            <h1 class="doc-title">{{ $fa($printData['title']) }}</h1>
+            <div class="doc-meta">
+                <div class="doc-meta-row"><span class="meta-label">{{ $fa($printData['numberLabel']) }}:</span><strong class="meta-value">{{ $fa($printData['number']) }}</strong></div>
+                @if($printData['customerNumber'])
+                    <div class="doc-meta-row"><span class="meta-label">شماره فاکتور مشتری:</span><span class="meta-value">{{ $fa($printData['customerNumber']) }}</span></div>
+                @endif
+                <div class="doc-meta-row"><span class="meta-label">تاریخ سند:</span><span class="meta-value">{{ $fa($fmtDate($printData['registeredAt'])) }}</span></div>
+                @if($isWarehouseMode && $printData['issuedAt'] && $printData['issuedAt'] != $printData['registeredAt'])
+                    <div class="doc-meta-row"><span class="meta-label">تاریخ صدور فاکتور:</span><span class="meta-value">{{ $fa($fmtDate($printData['issuedAt'])) }}</span></div>
+                @endif
+                @if($isWarehouseMode && $printData['status'])
+                    <div class="doc-meta-row"><span class="meta-label">وضعیت سند:</span><span class="meta-value">{{ $fa($printData['status']) }}</span></div>
+                @endif
+                @if(filled($printData['seller']))
+                    <div class="doc-meta-row"><span class="meta-label">فروشنده:</span><span class="meta-value">{{ $fa($printData['seller']) }}</span></div>
+                @endif
+            </div>
+        </section>
     </header>
     @if(filled($printData['shipping']['method']) || filled($printData['shipping']['description']))
     <section class="info-grid {{ $fa(!filled($printData['shipping']['method']) && !filled($printData['shipping']['description']) ? 'single-info' : '') }}">

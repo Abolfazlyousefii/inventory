@@ -104,6 +104,58 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertStringContainsString('مبلغ نهایی', $warehouseHtml);
     }
 
+    public function test_invoice_header_uses_balanced_panels_and_keeps_customer_and_document_details(): void
+    {
+        $invoice = $this->invoice([
+            ['product_id' => 7, 'quantity' => 3, 'price' => 100_000, 'line_discount_amount' => 3_000],
+        ], 0, 0);
+        $invoice->customer_name = 'مشتری نمونه';
+        $invoice->customer_mobile = '09120000000';
+        $invoice->seller_name = 'فروشنده نمونه';
+
+        $service = $this->printService();
+
+        foreach (['customer', 'warehouse'] as $mode) {
+            $html = view('prints.invoice', [
+                'printData' => $service->invoiceData($invoice, $mode),
+            ])->render();
+
+            $dom = new \DOMDocument();
+            @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+            $xpath = new \DOMXPath($dom);
+
+            $panels = $xpath->query('//header[contains(concat(" ", normalize-space(@class), " "), " invoice-header ")]/*[contains(concat(" ", normalize-space(@class), " "), " header-panel ")]');
+            $this->assertSame(2, $panels->length, 'Both document and customer information should be grouped in print panels.');
+            $this->assertSame(1, $xpath->query('//header//section[contains(concat(" ", normalize-space(@class), " "), " header-document ")]')->length);
+            $this->assertSame(1, $xpath->query('//header//div[contains(concat(" ", normalize-space(@class), " "), " header-brand ")]')->length);
+            $this->assertStringContainsString('شماره فاکتور', $html);
+            $this->assertStringContainsString('تاریخ سند', $html);
+            $this->assertStringContainsString('نام مشتری', $html);
+            $this->assertStringContainsString('شماره تماس', $html);
+            $this->assertStringContainsString('مشتری نمونه', $html);
+            $this->assertStringContainsString('۰۹۱۲۰۰۰۰۰۰۰', $html);
+            $this->assertStringContainsString('doc-meta-row', $html);
+            $this->assertStringContainsString('header-customer', $html);
+            $this->assertStringContainsString('تخفیف واحد', $html);
+            $this->assertStringContainsString('مبلغ نهایی', $html);
+        }
+    }
+
+    public function test_print_typography_keeps_counts_and_prices_legible_on_a4(): void
+    {
+        $html = view('prints.invoice', [
+            'printData' => $this->printService()->invoiceData($this->invoice([
+                ['product_id' => 7, 'quantity' => 3, 'price' => 100_000, 'line_discount_amount' => 0],
+            ], 0, 0), 'customer'),
+        ])->render();
+
+        $this->assertMatchesRegularExpression('/\\.customer-items \\.variant-row td\\s*\\{[^}]*font-size:\\s*11px/s', $html);
+        $this->assertMatchesRegularExpression('/\\.product-summary\\s*\\{[^}]*font-size:\\s*10px;[^}]*font-weight:\\s*700/s', $html);
+        $this->assertMatchesRegularExpression('/\\.customer-items \\.variant-row td\\.col-discount-unit,[^}]*font-size:\\s*10\\.5px/s', $html);
+        $this->assertMatchesRegularExpression('/\\.customer-items tfoot td\\s*\\{[^}]*font-size:\\s*11px/s', $html);
+        $this->assertStringContainsString('class="product-summary"', $html);
+    }
+
     public function test_unit_and_total_discounts_render_separately_for_all_invoice_copies(): void
     {
         $invoice = $this->invoice([
