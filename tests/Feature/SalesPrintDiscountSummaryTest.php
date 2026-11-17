@@ -82,7 +82,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertSame(705000, $data['totals']['total']);
         $html = view('prints.invoice', ['printData' => $data])->render();
         $this->assertSame(2, substr_count($html, 'class="product-heading"'));
-        $this->assertStringContainsString('تخفیف ردیف', $html);
+        $this->assertStringContainsString('تخفیف واحد', $html);
         $this->assertStringContainsString('۲۹۷٬۰۰۰', $html);
         $this->assertStringContainsString('۱۹۸٬۰۰۰', $html);
         $this->assertStringContainsString('۱۲۰٬۰۰۰', $html);
@@ -96,12 +96,58 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $warehouseHtml = view('prints.invoice', ['printData' => $warehouse])->render();
         $this->assertSame(2, substr_count($warehouseHtml, 'class="product-heading"'));
         $this->assertStringNotContainsString('تخفیف این کالا', $warehouseHtml);
-        $this->assertStringContainsString('تخفیف ردیف', $warehouseHtml);
+        $this->assertStringContainsString('تخفیف کل', $warehouseHtml);
         $this->assertStringNotContainsString('انبار مرکزی', $warehouseHtml);
         $this->assertStringContainsString('شوروم', $warehouseHtml);
         $this->assertStringContainsString('کنترل جمع‌آوری', $warehouseHtml);
         $this->assertStringContainsString('قیمت واحد', $warehouseHtml);
         $this->assertStringContainsString('مبلغ خالص', $warehouseHtml);
+    }
+
+    public function test_unit_and_total_discounts_render_separately_for_all_invoice_copies(): void
+    {
+        $invoice = $this->invoice([
+            ['product_id' => 7, 'quantity' => 4, 'price' => 100_000, 'line_discount_amount' => 8_000],
+            ['product_id' => 7, 'quantity' => 3, 'price' => 100_000, 'line_discount_amount' => 5_000],
+            ['product_id' => 8, 'quantity' => 1, 'price' => 50_000, 'line_discount_amount' => 0],
+        ], 2_000, 0);
+        $service = $this->printService();
+        $data = $service->invoiceData($invoice, 'customer');
+
+        $this->assertSame(2_000, $data['items'][0]['unitDiscount']);
+        $this->assertFalse($data['items'][0]['unitDiscountApproximate']);
+        $this->assertSame(1_667, $data['items'][1]['unitDiscount']);
+        $this->assertTrue($data['items'][1]['unitDiscountApproximate']);
+        $this->assertSame(0, $data['items'][2]['unitDiscount']);
+        $this->assertFalse($data['items'][2]['unitDiscountApproximate']);
+        $this->assertSame(13_000, $data['totals']['itemsDiscount']);
+        $this->assertSame(13_000, $data['customerGroups']->sum('discount'));
+
+        foreach (['customer', 'warehouse'] as $mode) {
+            $html = view('prints.invoice', [
+                'printData' => $service->invoiceData($invoice, $mode),
+            ])->render();
+            $this->assertStringContainsString('تخفیف واحد', $html);
+            $this->assertStringContainsString('تخفیف کل', $html);
+            $this->assertStringNotContainsString('تخفیف ردیف', $html);
+            $this->assertStringContainsString('مبلغ نهایی ردیف', $html);
+            $this->assertStringContainsString('تعداد × قیمت واحد − تخفیف کل', $html);
+            $this->assertStringContainsString('تقریبی', $html);
+            $dom = new \\DOMDocument();
+            @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+            $xpath = new \\DOMXPath($dom);
+            $rows = $xpath->query('//tr[contains(concat(" ", normalize-space(@class), " "), " variant-row ")]');
+            $this->assertSame(3, $rows->length);
+            $first = $rows->item(0);
+            $second = $rows->item(1);
+            $this->assertStringContainsString('۲٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-unit")])', $first));
+            $this->assertStringContainsString('۸٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-total")])', $first));
+            $this->assertStringContainsString('۳۹۲٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-total")])', $first));
+            $this->assertStringContainsString('۱٬۶۶۷', $xpath->evaluate('string(.//td[contains(@class, "col-discount-unit")])', $second));
+            $this->assertStringContainsString('۵٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-total")])', $second));
+            $this->assertStringContainsString('۲۹۵٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-total")])', $second));
+            $this->assertStringContainsString('۱۳٬۰۰۰', $html);
+        }
     }
 
     public function test_warehouse_invoice_print_shows_product_prices_and_goods_total_without_shipping_or_customer_finances(): void
@@ -127,7 +173,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertStringContainsString('۲۹۷٬۰۰۰', $html);
         $this->assertStringContainsString('۱۹۸٬۰۰۰', $html);
         $this->assertStringContainsString('۱۲۰٬۰۰۰', $html);
-        $this->assertStringContainsString('تخفیف ردیف', $html);
+        $this->assertStringContainsString('تخفیف واحد', $html);
         $this->assertSame(0, substr_count($html, 'تخفیف این کالا'));
         $this->assertStringContainsString('تخفیف کلی فاکتور', $html);
         $this->assertStringContainsString('جمع ارزش کالاها', $html);
