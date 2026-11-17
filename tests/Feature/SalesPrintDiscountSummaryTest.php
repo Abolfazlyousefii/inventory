@@ -101,7 +101,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertStringContainsString('شوروم', $warehouseHtml);
         $this->assertStringContainsString('کنترل جمع‌آوری', $warehouseHtml);
         $this->assertStringContainsString('قیمت واحد', $warehouseHtml);
-        $this->assertStringContainsString('مبلغ خالص', $warehouseHtml);
+        $this->assertStringContainsString('مبلغ نهایی', $warehouseHtml);
     }
 
     public function test_unit_and_total_discounts_render_separately_for_all_invoice_copies(): void
@@ -168,7 +168,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
 
         $html = view('prints.invoice', ['printData' => $warehouse])->render();
         $this->assertStringContainsString('قیمت واحد', $html);
-        $this->assertStringContainsString('مبلغ خالص', $html);
+        $this->assertStringContainsString('مبلغ نهایی', $html);
         $this->assertStringContainsString('۱۰۰٬۰۰۰', $html);
         $this->assertStringContainsString('۲۹۷٬۰۰۰', $html);
         $this->assertStringContainsString('۱۹۸٬۰۰۰', $html);
