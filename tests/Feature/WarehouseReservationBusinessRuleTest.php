@@ -9,6 +9,7 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\WarehouseStock;
 use App\Services\WarehouseStockService;
+use App\Services\ReservationClassificationService;
 use App\Support\JalaliDate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -136,15 +137,17 @@ function warehouseReservationBusinessFixture(
     return compact('seller', 'product', 'variant', 'warehouseStock', 'reservation', 'order', 'invoice');
 }
 
-it('shows a healthy temporary reservation', function () {
+it('classifies a healthy temporary reservation but excludes it from the submitted-preinvoice report', function () {
     $fixture = warehouseReservationBusinessFixture('Temporary business reservation');
+    $classification = app(ReservationClassificationService::class)->classify($fixture['reservation']->fresh());
+
+    expect($classification['state'])->toBe(ReservationClassificationService::STATE_TEMPORARY_ACTIVE)
+        ->and($classification['reason'])->toBe('fresh_heartbeat');
 
     $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
         ->get(route('warehouse-reservations.index'))
         ->assertOk()
-        ->assertSee($fixture['product']->name)
-        ->assertSee('رزرو موقت فعال')
-        ->assertSee('fresh_heartbeat');
+        ->assertDontSee($fixture['product']->name);
 });
 
 it('keeps an abandoned temporary reservation eligible for cleanup', function () {
@@ -160,19 +163,32 @@ it('keeps an abandoned temporary reservation eligible for cleanup', function () 
         ->and($fixture['variant']->fresh()->reserved)->toBe(0);
 });
 
-it('shows a converted preinvoice reservation only in canonical history', function () {
-    $fixture = warehouseReservationBusinessFixture('Preinvoice business reservation', withPreinvoice: true);
+it('reports only held official preinvoice reservations, not converted reservations', function () {
+    $consumed = warehouseReservationBusinessFixture('Consumed preinvoice reservation', withPreinvoice: true);
+    $held = warehouseReservationBusinessFixture('Held preinvoice reservation', withPreinvoice: true);
+    // The fixture marks all linked reservations as converted. A held official
+    // preinvoice has a linked order but has not yet been consumed/converted.
+    $held['reservation']->forceFill(['converted_at' => null])->saveQuietly();
 
-    $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
+    $classification = app(ReservationClassificationService::class)->classify($consumed['reservation']->fresh());
+    expect($classification['state'])->toBe(ReservationClassificationService::STATE_CONSUMED);
+
+    $viewer = warehouseReservationBusinessUser(['warehouse_reservations.view']);
+    $this->actingAs($viewer)
         ->get(route('warehouse-reservations.index'))
         ->assertOk()
-        ->assertDontSee($fixture['product']->name);
+        ->assertSee($held['product']->name)
+        ->assertDontSee($consumed['product']->name);
 
-    $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
-        ->get(route('warehouse-reservations.index', ['lifecycle' => 'consumed']))
+    $this->actingAs($viewer)
+        ->getJson(route('warehouse-reservations.index', ['q' => $held['product']->name]))
         ->assertOk()
-        ->assertSee($fixture['product']->name)
-        ->assertSee('مصرف‌شده');
+        ->assertJsonPath('rows.total', 1);
+
+    $this->actingAs($viewer)
+        ->getJson(route('warehouse-reservations.index', ['q' => $consumed['product']->name]))
+        ->assertOk()
+        ->assertJsonPath('rows.total', 0);
 });
 
 it('never auto releases an old preinvoice reservation', function () {
@@ -188,14 +204,17 @@ it('never auto releases an old preinvoice reservation', function () {
         ->and($fixture['variant']->fresh()->reserved)->toBe(4);
 });
 
-it('does not show a reservation whose preinvoice has an invoice', function () {
+it('does not report an otherwise-held reservation once its preinvoice has an invoice', function () {
     $fixture = warehouseReservationBusinessFixture('Invoiced reservation must be hidden', withInvoice: true);
+    // Remove the conversion exclusion so the invoice association itself is
+    // what prevents the reservation from appearing in the report.
+    $fixture['reservation']->forceFill(['converted_at' => null])->saveQuietly();
 
     $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
-        ->getJson(route('warehouse-reservations.index', ['search' => $fixture['product']->name]))
+        ->getJson(route('warehouse-reservations.index', ['q' => $fixture['product']->name]))
         ->assertOk()
-        ->assertJsonPath('total', 0)
-        ->assertJsonMissing(['id' => $fixture['reservation']->id]);
+        ->assertJsonPath('rows.total', 0)
+        ->assertJsonPath('rows.data', []);
 });
 
 it('classifies preinvoice reservation age at the 24 and 72 hour boundaries', function () {
@@ -211,15 +230,19 @@ it('classifies preinvoice reservation age at the 24 and 72 hour boundaries', fun
         ->and($critical->businessStatus())->toBe(PreinvoiceDraftReservation::STATUS_CRITICAL);
 });
 
-it('renders reservation dates with the existing Jalali date helper', function () {
-    $fixture = warehouseReservationBusinessFixture('Jalali business reservation');
+it('renders held official reservation dates with the existing Jalali date helper', function () {
+    $fixture = warehouseReservationBusinessFixture('Jalali business reservation', withPreinvoice: true);
     $reservation = $fixture['reservation'];
-    $reservation->forceFill(['created_at' => Carbon::parse('2026-03-21 08:30:00')])->saveQuietly();
+    $reservation->forceFill([
+        'converted_at' => null,
+        'created_at' => Carbon::parse('2026-03-21 08:30:00'),
+    ])->saveQuietly();
     $expected = JalaliDate::dateTime($reservation->fresh()->created_at);
 
     $this->actingAs(warehouseReservationBusinessUser(['warehouse_reservations.view']))
-        ->get(route('warehouse-reservations.index', ['search' => $fixture['product']->name]))
+        ->get(route('warehouse-reservations.index', ['q' => $fixture['product']->name]))
         ->assertOk()
+        ->assertSee($fixture['product']->name)
         ->assertSee($expected)
         ->assertSee('1405/01/01');
 });
