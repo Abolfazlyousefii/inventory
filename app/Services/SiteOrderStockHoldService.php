@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\ProductVariant;
 use App\Models\Site\Order as SiteOrder;
 use App\Models\SiteStockHold;
+use App\Events\SiteStockHoldChangeRequested;
 use App\Models\WarehouseStock;
 use App\Support\HoldLinePlan;
 use App\Support\AutomaticBundlePlan;
@@ -21,6 +22,45 @@ use Throwable;
 /** An all-or-nothing physical stock hold shared by ordinary products and bundle SKUs. */
 class SiteOrderStockHoldService
 {
+    /**
+     * Public API boundary. The Site order lock is held on this same MySQL
+     * connection until the stock hold mutation commits.
+     * Internal expiry already acquires that lock and calls release() directly.
+     */
+    public function reserveForSiteOrder(int $siteOrderId, array $lines, int $ttlMinutes): SiteStockHold
+    {
+        return DB::transaction(function () use ($siteOrderId, $lines, $ttlMinutes) {
+            $this->assertSiteOrderState($siteOrderId, ['unpaid']);
+            return $this->reserve($siteOrderId, $lines, $ttlMinutes);
+        }, 3);
+    }
+
+    public function confirmForSiteOrder(int $siteOrderId, int $holdId): SiteStockHold
+    {
+        return DB::transaction(function () use ($siteOrderId, $holdId) {
+            $this->assertSiteOrderState($siteOrderId, ['paid']);
+            return $this->confirm($siteOrderId, $holdId);
+        }, 3);
+    }
+
+    public function releaseForSiteOrder(int $siteOrderId, int $holdId): SiteStockHold
+    {
+        return DB::transaction(function () use ($siteOrderId, $holdId) {
+            $this->assertSiteOrderState($siteOrderId, ['unpaid', 'canceled']);
+            return $this->release($siteOrderId, $holdId);
+        }, 3);
+    }
+
+    private function assertSiteOrderState(int $siteOrderId, array $allowed): void
+    {
+        $status = app(SiteOrderRowLock::class)->status($siteOrderId);
+        if (! in_array($status, $allowed, true)) {
+            throw ValidationException::withMessages([
+                'hold' => 'Site order state does not permit this stock transition.',
+            ]);
+        }
+    }
+
     /** @param array<int,array{variant_id:int,quantity:int}> $lines */
     public function reserve(int $siteOrderId, array $lines, int $ttlMinutes): SiteStockHold
     {
@@ -88,11 +128,13 @@ class SiteOrderStockHoldService
                     $hold->lines()->create([
                         'variant_id' => $id, 'product_id' => $variant->product_id, 'quantity' => $qty,
                     ]);
-                    // Deduct from sellable warehouse stock NOW. Subsequent imports only consume the hold.
-                    if (($normalPlan[$id] ?? 0) > 0) {
-                        WarehouseStockService::change($warehouseId, (int) $variant->product_id, -(int) $normalPlan[$id], $id);
-                    }
                 }
+                // Single synchronous event changes all ordinary physical stock;
+                // allocated bundle components were already protected separately.
+                // A missing listener fails closed before this transaction commits.
+                $change = new SiteStockHoldChangeRequested((int) $hold->id, SiteStockHoldChangeRequested::RESERVE);
+                event($change);
+                $change->assertHandled();
                 return $hold->fresh(['lines']);
             }, 3);
         } catch (QueryException $exception) {
@@ -178,17 +220,15 @@ class SiteOrderStockHoldService
     {
         return DB::transaction(function () use ($siteOrderId, $holdId, $expired) {
             $hold = $this->locked($siteOrderId, $holdId);
-            foreach($hold->lines()->pluck('product_id')->unique()as$id)app(InventoryCountFreezeService::class)->assertProduct((int)$id);
+            // An already completed release is an idempotent read: it must not
+            // fail because a stocktake freeze was started after the first call.
             if (in_array($hold->status, ['released', 'expired'], true)) return $hold;
+            foreach($hold->lines()->pluck('product_id')->unique()as$id)app(InventoryCountFreezeService::class)->assertProduct((int)$id);
             if ($hold->status !== 'held') {
                 throw ValidationException::withMessages(['hold' => 'Paid/consumed stock cannot be released.']);
             }
             $allocationJson = DB::table('site_stock_holds')->where('id', $hold->id)->value('bundle_allocated_lines');
             $allocationByBundle = $allocationJson ? json_decode((string) $allocationJson, true, 512, JSON_THROW_ON_ERROR) : [];
-            $allocatedTotals = [];
-            foreach ($allocationByBundle as $parts) foreach ($parts as $variantId => $qty) {
-                $allocatedTotals[$variantId] = ($allocatedTotals[$variantId] ?? 0) + (int) $qty;
-            }
             if ($allocationByBundle !== []) {
                 app(BundleComponentAllocationService::class)->restoreByBundle($allocationByBundle);
             }
@@ -198,15 +238,12 @@ class SiteOrderStockHoldService
                 $oldProduct = Product::query()->whereKey((int) $productId)->lockForUpdate()->firstOrFail();
                 $oldProduct->update(['bundle_shared_remaining' => (int) $oldProduct->bundle_shared_remaining + (int) $count]);
             }
-            $warehouseId = WarehouseStockService::centralWarehouseId();
-            foreach ($hold->lines()->orderBy('variant_id')->get() as $line) {
-                $normalQty = (int) $line->quantity - (int) ($allocatedTotals[$line->variant_id] ?? 0);
-                if ($normalQty < 0) throw new \LogicException('Stock hold allocation exceeds held component units.');
-                if ($normalQty > 0) {
-                    WarehouseStockService::change($warehouseId, (int) $line->product_id,
-                        $normalQty, (int) $line->variant_id);
-                }
-            }
+            // Restore ordinary warehouse quantities through the same synchronous
+            // stock event boundary. It derives normal units from the hold's
+            // immutable physical lines and protected bundle snapshot.
+            $change = new SiteStockHoldChangeRequested((int) $hold->id, SiteStockHoldChangeRequested::RELEASE);
+            event($change);
+            $change->assertHandled();
             $hold->update(['status' => $expired ? 'expired' : 'released', 'released_at' => now()]);
             return $hold->fresh();
         }, 3);

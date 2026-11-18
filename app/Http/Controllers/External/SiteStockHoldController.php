@@ -20,7 +20,7 @@ class SiteStockHoldController extends Controller
             'lines.*.variant_id' => ['required', 'integer', 'min:1'],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
         ]);
-        $hold = $service->reserve((int) $data['site_order_id'], $data['lines'], (int) $data['expires_in_minutes']);
+        $hold = $service->reserveForSiteOrder((int) $data['site_order_id'], $data['lines'], (int) $data['expires_in_minutes']);
         return $this->result($hold);
     }
 
@@ -35,14 +35,14 @@ class SiteStockHoldController extends Controller
     {
         $this->authorizeRequest($request);
         $data = $request->validate(['hold_id' => ['required', 'integer', 'min:1']]);
-        return $this->result($service->confirm($siteOrderId, (int) $data['hold_id']));
+        return $this->result($service->confirmForSiteOrder($siteOrderId, (int) $data['hold_id']));
     }
 
     public function release(Request $request, int $siteOrderId, SiteOrderStockHoldService $service): JsonResponse
     {
         $this->authorizeRequest($request);
         $data = $request->validate(['hold_id' => ['required', 'integer', 'min:1']]);
-        return $this->result($service->release($siteOrderId, (int) $data['hold_id']));
+        return $this->result($service->releaseForSiteOrder($siteOrderId, (int) $data['hold_id']));
     }
 
     private function authorizeRequest(Request $request): void

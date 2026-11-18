@@ -400,32 +400,21 @@ class WarehouseInboundService
                     }
 
                     $warehouseId = (int) $row['received_warehouse_id'];
-                    $stock = WarehouseStockService::change(
-                        $warehouseId,
-                        (int) $item->product_id,
-                        $accepted,
-                        (int) $item->product_variant_id
+                    $change = new \App\Events\StockChangeRequested(
+                        warehouseId: $warehouseId,
+                        productId: (int) $item->product_id,
+                        variantId: (int) $item->product_variant_id,
+                        delta: $accepted,
+                        transactionType: self::TRANSACTION_TYPE,
+                        reason: $this->movementReason($locked->source_type),
+                        referenceType: WarehouseInboundReceiptItem::class,
+                        referenceId: (int) $item->id,
+                        reference: $locked->receipt_number,
+                        actorId: $actorId,
+                        note: $this->movementNote($locked, $item),
                     );
-                    $after = (int) $stock->quantity;
-                    $before = max($after - $accepted, 0);
-
-                    $movement = StockMovement::create([
-                        'product_id' => $item->product_id,
-                        'product_variant_id' => $item->product_variant_id,
-                        'warehouse_id' => $warehouseId,
-                        'user_id' => $actorId,
-                        'type' => StockMovement::TYPE_IN,
-                        'reason' => $this->movementReason($locked->source_type),
-                        'transaction_type' => self::TRANSACTION_TYPE,
-                        'quantity' => $accepted,
-                        'stock_before' => $before,
-                        'stock_after' => $after,
-                        'note' => $this->movementNote($locked, $item),
-                        'reference' => $locked->receipt_number,
-                        'reference_type' => WarehouseInboundReceiptItem::class,
-                        'reference_id' => (int) $item->id,
-                    ]);
-                    $movementId = (int) $movement->id;
+                    event($change); // synchronous; exceptions roll back receipt and stock
+                    $movementId = (int) $change->movement()->id;
                 }
 
                 $item->update([

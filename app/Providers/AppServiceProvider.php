@@ -40,6 +40,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -64,6 +65,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(Router $router): void
     {
+        // Deliberately not auto-discovered: exactly one synchronous stock writer.
+        Event::listen(\App\Events\StockChangeRequested::class, \App\StockListeners\ApplyStockChange::class);
+        // Site holds reserve/release synchronously; never queue the stock mutation.
+        Event::listen(\App\Events\SiteStockHoldChangeRequested::class, \App\StockListeners\ApplySiteStockHoldChange::class);
+
         $this->loadRoutesFrom(base_path('routes/inventory-count-freeze.php'));
         $router->aliasMiddleware('route.permission', RoutePermissionMiddleware::class);
 
