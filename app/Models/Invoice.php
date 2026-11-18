@@ -9,6 +9,9 @@ use Illuminate\Validation\ValidationException;
 
 class Invoice extends Model
 {
+    public const STOCK_DEDUCTED = 'deducted';
+    public const STOCK_NOT_DEDUCTED = 'not_deducted';
+
     public const STATUS_PENDING_WAREHOUSE_APPROVAL = 'pending_warehouse_approval';
     public const STATUS_COLLECTING = 'collecting';
     public const STATUS_CHECKING_DISCREPANCY = 'checking_discrepancy';
@@ -251,6 +254,15 @@ class Invoice extends Model
     }
 
     /**
+     * Only an explicit non-deduction may skip the cancellation stock return.
+     * Unknown status does not prove stock was never deducted.
+     */
+    public function stockWasNotDeducted(): bool
+    {
+        return $this->stock_deduction_status === self::STOCK_NOT_DEDUCTED;
+    }
+
+    /**
      * A site-originated invoice may restore stock only when its original
      * deduction (or previously deducted stock hold) was verified. Historical
      * internal invoices with NULL remain subject to their existing workflow;
@@ -260,7 +272,7 @@ class Invoice extends Model
     {
         $status = $this->stock_deduction_status;
 
-        if ($status === 'deducted') {
+        if ($status === self::STOCK_DEDUCTED) {
             return;
         }
 
