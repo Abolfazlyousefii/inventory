@@ -295,7 +295,6 @@
                     };
                     const add = item => {
                         if (selected.has(Number(item.id))) { hide(); search.value = ''; search.focus(); return; }
-                        if (selected.size >= 100) { info('حداکثر ۱۰۰ قطعه مجاز است.'); return; }
                         selected.set(Number(item.id), {...item, quantity: 1, discount_type:'percent', discount_value:0});
                         render(); hide(); search.value = ''; search.focus();
                     };

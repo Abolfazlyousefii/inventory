@@ -87,7 +87,7 @@ class ProductBundleController extends Controller
         ))]);
         $payload = $request->validate([
             'bundle_variant_id' => ['required', 'integer', 'exists:product_variants,id'],
-            'components' => ['required', 'array', 'min:1', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
+            'components' => ['required', 'array', 'min:1'],
             'components.*.variant_id' => ['required', 'integer', 'exists:product_variants,id'],
             'components.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
             'components.*.discount_type' => ['nullable', 'in:percent,fixed'],
@@ -239,9 +239,9 @@ class ProductBundleController extends Controller
         $data = $request->validate([
             'bundle_quantity_mode' => ['required', 'in:shared'],
             'bundle_shared_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
-            'allocations' => ['nullable', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
+            'allocations' => ['nullable', 'array'],
             'allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
-            'expected_allocations' => ['required', 'array', 'max:'.\App\Support\BundleRecipe::MAX_COMPONENTS],
+            'expected_allocations' => ['required', 'array'],
             'expected_allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
         ]);
         if (!$product->is_bundle || $product->bundle_stock_mode !== 'automatic' || $product->variants()->count() !== 1) {

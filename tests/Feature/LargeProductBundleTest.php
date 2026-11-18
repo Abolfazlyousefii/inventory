@@ -14,6 +14,15 @@ class LargeProductBundleTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_json_payload_preserves_more_than_the_old_component_limit(): void
+    {
+        $rows=array_map(fn($id)=>['variant_id'=>$id,'quantity'=>1],range(1,6001));
+        $request=\Illuminate\Http\Request::create('/','POST',['bundle_form_payload'=>json_encode(['components'=>$rows])]);
+        \App\Support\BundleFormPayload::merge($request,['components']);
+        $this->assertSame($rows,$request->input('components'));
+        $this->assertCount(6001,\App\Support\BundleRecipe::normalize(99999,$request->input('components')));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

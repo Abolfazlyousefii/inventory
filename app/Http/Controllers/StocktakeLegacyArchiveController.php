@@ -25,4 +25,12 @@ final class StocktakeLegacyArchiveController extends Controller
 
         return view('stocktake.legacy-group-show', compact('group', 'items'));
     }
+
+    public function resume(int $batchId)
+    {
+        $document = app(\App\Services\StockCountDocumentService::class)
+            ->consolidateLegacyDraftBatch($batchId, (int) auth()->id());
+        return redirect()->route('stock-count-documents.edit', $document)
+            ->with('success', 'شمارش‌های قبلی در یک پیش‌نویس بازیابی شدند؛ موجودی تغییر نکرد.');
+    }
 }

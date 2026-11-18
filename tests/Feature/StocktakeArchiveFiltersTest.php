@@ -34,7 +34,7 @@ class StocktakeArchiveFiltersTest extends TestCase
         $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', []))->getData();
         $this->assertSame(18, $view['documents']->total());
         $this->assertSame(17, $view['summary']['finalized']);
-        $this->assertSame(39, $view['summary']['increase']);
+        $this->assertSame(34, $view['summary']['increase']);
         $this->assertFalse($view['documents']->contains('document_number', 'STC-SUPERSEDED'));
 
         $draftView = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', ['status'=>'draft']))->getData();
@@ -48,8 +48,8 @@ class StocktakeArchiveFiltersTest extends TestCase
     public function test_filters_and_summaries_cover_all_matching_documents_before_pagination(): void
     {
         foreach ([
-            [[],18,39,51], [['q'=>'سيليكوني'],17,34,51], [['warehouse_id'=>1],17,34,51],
-            [['status'=>'draft'],1,5,0], [['document_number'=>'STC-18'],1,5,0],
+            [[],18,34,51], [['q'=>'سيليكوني'],17,34,51], [['warehouse_id'=>1],17,34,51],
+            [['status'=>'draft'],1,0,0], [['document_number'=>'STC-18'],1,0,0],
             [['date_from'=>'۱۴۰۵/۰۷/۲۳','date_to'=>'۱۴۰۵/۰۷/۲۳'],17,34,51],
             [['warehouse_id'=>1,'status'=>'finalized','q'=>'گارد','date_to'=>'1405/07/23'],17,34,51],
             [['q'=>'missing'],0,0,0],

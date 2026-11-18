@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'سند یکپارچه تاریخی انبارگردانی')
+@section('title', 'شمارش دسته‌ای انبارگردانی')
 @section('content')
 <div class="container-fluid py-4 px-3" dir="rtl" style="max-width:1500px">
     <header class="card shadow-sm mb-3">
@@ -8,19 +8,27 @@
                 <div>
                     <div class="text-muted small mb-2">آرشیو انبارگردانی / ثبت دسته‌ای تاریخی</div>
                     <h3 class="mb-2">انبارگردانی {{ $group->scope_name }}</h3>
-                    <p class="mb-0 text-muted">این نمایش یکپارچه مربوط به عملیات ثبت نهایی شماره {{ $group->batch_id }} است. اسناد اصلی و گردش‌های موجودی تغییر نکرده‌اند.</p>
+                    <p class="mb-0 text-muted">شمارش دسته‌ای شماره {{ $group->batch_id }} — {{ $group->status === 'draft' ? 'پیش‌نویس ذخیره‌شده؛ هنوز روی موجودی اعمال نشده است.' : 'نهایی و اعمال‌شده؛ موجودی دوباره تغییر نمی‌کند.' }}</p>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
                     <a class="btn btn-outline-primary" href="{{ route('stocktake.index') }}">بازگشت به آرشیو</a>
                     <button type="button" class="btn btn-outline-secondary" onclick="window.print()">چاپ</button>
+                    @if($group->status === 'draft')
+                    <form method="post" action="{{ route('stock-count-documents.legacy-archive.resume', $group->batch_id) }}">
+                        @csrf
+                        <button type="submit" class="btn btn-success">ادامه همین شمارش در یک سند</button>
+                    </form>
+                    @endif
                 </div>
             </div>
         </div>
     </header>
 
     <div class="alert alert-info">
-        <strong>سند نمایشی تاریخی:</strong> این عملیات در نسخه قدیمی نرم‌افزار به {{ count($group->child_document_ids) }} سند محصولی تقسیم شده بود.
-        اکنون یک گزارش سندمانند از همان شمارش‌ها می‌بینید؛ این صفحه شماره سند رسمی تازه یا تعدیل جدید موجودی ایجاد نمی‌کند.
+        <strong>{{ $group->status === 'draft' ? 'شمارش ناتمام دسته:' : 'سند نمایشی تاریخی:' }}</strong>
+        این عملیات به {{ count($group->child_document_ids) }} سند محصولی تقسیم شده بود؛ همه شمارش‌های ذخیره‌شده در این صفحه کنار هم هستند.
+        @if($group->status === 'draft') با «ادامه همین شمارش» یک پیش‌نویس واحد با همان اعداد و سابقه موجودی ساخته می‌شود؛ اعمال موجودی فقط با تأیید ثبت نهایی انجام می‌شود.
+        @else این صفحه فقط گزارش است و موجودی را دوباره تغییر نمی‌دهد. @endif
     </div>
 
     <div class="row g-3 mb-3">
@@ -31,7 +39,7 @@
         <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><div class="small text-muted">تعداد تنوع‌ها</div><strong>{{ number_format($group->items_count) }}</strong></div></div></div>
         <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><div class="small text-muted">جمع افزایش</div><strong class="text-success">{{ number_format($group->total_increase) }}</strong></div></div></div>
         <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><div class="small text-muted">جمع کاهش</div><strong class="text-danger">{{ number_format($group->total_decrease) }}</strong></div></div></div>
-        <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><div class="small text-muted">وضعیت عملیات</div><strong>نهایی‌شده</strong></div></div></div>
+        <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><div class="small text-muted">وضعیت عملیات</div><strong>{{ $group->status === 'draft' ? 'پیش‌نویس؛ اعمال نشده' : 'نهایی‌شده' }}</strong></div></div></div>
     </div>
 
     <section class="card mb-3">
