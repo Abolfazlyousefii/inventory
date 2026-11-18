@@ -6,57 +6,62 @@
  if(!app||!F||!Adapter)return;
  const en=new Intl.NumberFormat('en-US',{maximumFractionDigits:0});
  const fa=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0});
+ const yearNumber=new Intl.NumberFormat('fa-IR',{useGrouping:false});
  const toLatin=s=>String(s??'').replace(/[۰-۹]/g,x=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(x)).replace(/[٠-٩]/g,x=>'٠١٢٣٤٥٦٧٨٩'.indexOf(x));
- const digits=s=>toLatin(s).replace(/[٬,\s\u200e\u200f]/g,'').trim();
  const money=v=>v==null||!Number.isFinite(v)?'':en.format(v);
  const number=v=>fa.format(v);
- const moneyValue=raw=>{const s=digits(raw);return s===''?null:(/^\d+$/.test(s)?Number(s):NaN);};
- const dateInDays=n=>F.jalaliAfterDays(config.baseDate,n);
+ const moneyValue=Adapter.parseMoney;
  const safeSave=()=>{try{localStorage.setItem('finance-quick-monthly-rate-v1',String(config.monthly))}catch{}};
- const names={cheque:'محاسبه مبلغ چک',cash:'محاسبه نقد لازم',value:'ارزش نقدی چک‌ها'};
  const monthNames=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
  let config={monthly:6,baseDate:app.dataset.todayJalali||F.todayJalali()};
  try{const saved=Number(localStorage.getItem('finance-quick-monthly-rate-v1'));
    if(localStorage.getItem('finance-quick-monthly-rate-v1')!==null&&Number.isFinite(saved)&&saved>=0&&saved<=100)config.monthly=saved;
  }catch{}
  function defaultStates(){return {
-  cheque:{price:100000000,cash:50000000,known:[],future:[{due:dateInDays(30),weight:1}]},
-  cash:{price:100000000,cash:0,known:[{amount:50000000,due:dateInDays(30)},{amount:50000000,due:dateInDays(60)}],future:[]},
-  value:{price:null,cash:0,known:[{amount:100000000,due:dateInDays(180)}],future:[]}
+  cheque:{price:null,cash:null,known:[],future:[]},
+  cash:{price:null,cash:null,known:[],future:[]},
+  value:{price:null,cash:null,known:[],future:[]}
  };}
  let states=defaultStates(),active='cheque',weightVisible=false,showExtraCash={cash:false,value:false},lastResult=null,lastPayload=null;
  let requestSequence=0,pendingController=null,debounceTimer=null;
  let pickedInput=null,calYear=1405,calMonth=8;
  const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
  const inputEl=(row,field)=>row.querySelector('[data-field="'+field+'"]');
- function dateControl(value,index,kind){const id=`date-${kind}-${index}`;return `<div class="date-wrap"><input id="${id}" class="row-input date-input" type="text" inputmode="numeric" autocomplete="off" data-field="due" value="${escapeHTML(value)}" aria-label="تاریخ شمسی چک ${index+1+(kind==='future'?states[active].known.length:0)}" placeholder="1405/09/14"><button class="calendar-trigger" type="button" data-calendar-for="${id}" aria-label="انتخاب تاریخ شمسی چک ${index+1+(kind==='future'?states[active].known.length:0)}">▦</button></div>`;}
+ function dateControl(value,index,kind){const id=`date-${kind}-${index}`;return `<div class="date-wrap"><input id="${id}" class="row-input date-input" type="text" inputmode="numeric" autocomplete="off" data-field="due" value="${escapeHTML(value)}" aria-label="تاریخ شمسی چک ${index+1+(kind==='future'?states[active].known.length:0)}" placeholder="تاریخ شمسی"><button class="calendar-trigger" type="button" data-calendar-for="${id}" aria-label="انتخاب تاریخ شمسی چک ${index+1+(kind==='future'?states[active].known.length:0)}">▦</button></div>`;}
  function rowMarkup(item,index,kind){
-   const known=kind==='known',weightClass=!known&&weightVisible?' with-weights':'';
-   const due=dateControl(item.due,index,kind),amount=known?`<label class="row-field"><span>مبلغ چک · ریال</span><input class="row-input" type="text" inputmode="numeric" autocomplete="off" data-money data-field="amount" value="${money(item.amount)}" placeholder="مبلغ چک"></label>`:'';
-   const weight=!known&&weightVisible?`<label class="row-field"><span>سهم / وزن</span><input class="row-input" type="text" inputmode="decimal" data-field="weight" value="${item.weight}" placeholder="۱"></label>`:'';
-   const type=active==='cheque'?`<label class="row-field row-kind"><span>مبلغ این چک</span><select data-payment-kind aria-label="نوع مبلغ چک ${index+1+(kind==='future'?states[active].known.length:0)}"><option value="future" ${known?'':'selected'}>محاسبه شود</option><option value="known" ${known?'selected':''}>مشخص است</option></select></label>`:'';
-   const remove=`<button type="button" class="remove" data-remove aria-label="حذف چک ${index+1+(kind==='future'?states[active].known.length:0)}" title="حذف چک">×</button>`;
-   return `<div class="payment-row ${known?'known-row':'future-row'}${weightClass}" data-type="${kind}" data-index="${index}"><div class="row-header">${type}${remove}</div>${amount}<label class="row-field row-due"><span>تاریخ سررسید شمسی</span>${due}<small class="due-hint">${dueText(item.due)}</small></label>${weight}</div>`;
+   const known=kind==='known',chequeMode=active==='cheque';
+   const numberOfRow=index+1+(kind==='future'?states[active].known.length:0);
+   const due=dateControl(item.due,index,kind);
+   const amount=known?`<label class="row-field amount-field"><span>مبلغ چک · ریال</span><input class="row-input" type="text" inputmode="numeric" dir="ltr" autocomplete="off" data-money data-field="amount" value="${money(item.amount)}" placeholder="مبلغ را وارد کنید"></label>`:'';
+   const weight=!known&&weightVisible?`<label class="row-field weight-field"><span>وزن</span><input class="row-input" type="text" inputmode="decimal" data-field="weight" value="${item.weight}" placeholder="۱"></label>`:'';
+   const type=chequeMode?`<label class="row-field row-kind"><span>نوع مبلغ</span><select data-payment-kind aria-label="نوع مبلغ چک ${numberOfRow}"><option value="future" ${known?'':'selected'}>محاسبه شود</option><option value="known" ${known?'selected':''}>مشخص است</option></select></label>`:'';
+   const remove=`<button type="button" class="remove" data-remove aria-label="حذف چک ${numberOfRow}" title="حذف چک">×</button>`;
+   return `<div class="payment-row ${known?'known-row':'future-row'}${chequeMode?' has-kind':''}${!known&&weightVisible?' with-weights':''}" data-type="${kind}" data-index="${index}">
+     <span class="cheque-number">چک ${number(numberOfRow)}</span>
+     ${type}${amount}
+     <label class="row-field row-due"><span>سررسید شمسی</span>${due}<small class="due-hint">${dueText(item.due)}</small></label>
+     ${weight}${remove}
+   </div>`;
  }
- function dueText(due){try{const days=F.dayDifference(config.baseDate,due);return days===0?'امروز':number(days)+' روز دیگر';}catch{return 'تاریخ را بررسی کن';}}
- function drawRows(){const state=states[active];$('knownRows').innerHTML=state.known.map((r,i)=>rowMarkup(r,i,'known')).join('');$('futureRows').innerHTML=state.future.map((r,i)=>rowMarkup(r,i,'future')).join('');$('knownSection').hidden=active==='cheque'&&state.known.length===0;
+ function dueText(due){if(!due)return 'تاریخ را انتخاب کنید';try{const days=F.dayDifference(config.baseDate,due);return days===0?'امروز':number(days)+' روز دیگر';}catch{return 'تاریخ را بررسی کنید';}}
+ function drawRows(){const state=states[active];$('knownRows').innerHTML=state.known.map((r,i)=>rowMarkup(r,i,'known')).join('');$('futureRows').innerHTML=state.future.map((r,i)=>rowMarkup(r,i,'future')).join('');$('knownSection').hidden=state.known.length===0;
    $('futureSection').hidden=active!=='cheque'||state.future.length===0;
+   $('emptyCheques').hidden=state.known.length+state.future.length>0;
    $('toggleWeights').hidden=state.future.length<2;
    $('weightArrow').textContent=weightVisible?'⌃':'⌄';$('toggleWeights').setAttribute('aria-expanded',String(weightVisible));}
- function syncFields(){const state=states[active];const isCheque=active==='cheque',isCash=active==='cash';
-   $('priceBox').hidden=active==='value'&&!showExtraCash.value&&state.cash===0;
+ function syncFields(){const state=states[active];const isCheque=active==='cheque';
    $('priceBox').children[0].hidden=active==='value';
-   const cashVisible=isCheque||(showExtraCash[active]||false)||state.cash>0;
+   const cashVisible=active!=='value'||showExtraCash.value||state.cash!==null;
    $('cashField').hidden=!cashVisible;
-   $('cashExtra').hidden=isCheque||cashVisible;
+   $('cashExtra').hidden=active!=='value'||cashVisible;
    $('priceBox').hidden=active==='value'&&!cashVisible;
    $('priceInput').value=money(state.price);$('cashInput').value=money(state.cash);
-   $('cashLabel').innerHTML=isCheque?'نقدی مشتری، همین امروز <em>ریال</em>':'نقدی گرفته‌شده تا امروز <em>ریال</em>';
+   $('cashLabel').innerHTML=isCheque?'پیش‌پرداخت <em>ریال</em>':active==='cash'?'نقد دریافتی قبلی <em>ریال</em>':'نقد دریافتی <em>ریال</em>';
    $('knownTitle').textContent=isCheque?'چک‌هایی که مبلغ‌شان مشخص است':'مبلغ و تاریخ چک‌های مشتری';
    $('knownHint').textContent=isCheque?'اگر از قبل چکی با مبلغ مشخص گرفته‌ای، اینجا اضافه کن.':'هر چک را با مبلغ واقعی و سررسید خودش وارد کن.';
    $('addKnown').textContent=isCheque?'+ افزودن چک با مبلغ مشخص':'+ افزودن چک دیگر';
    $('futureSection').hidden=!isCheque;
-   $('modeHelp').textContent=isCheque?'قیمت نقدی، پیش‌پرداخت و سررسید را وارد کنید. مبلغ هر چک می‌تواند مشخص یا قابل محاسبه باشد.':isCash?'قیمت نقدی و چک‌های مشتری را وارد کنید تا نقد لازم امروز محاسبه شود.':'مبلغ و سررسید چک‌ها را وارد کنید تا ارزش نقدی امروز مشخص شود.';
+   $('modeHelp').textContent=isCheque?'قیمت نقدی، پیش‌پرداخت و سررسید چک را وارد کنید.':active==='cash'?'قیمت نقدی و چک‌های مشتری را وارد کنید.':'مبلغ و سررسید چک‌ها را وارد کنید.';
    $('inputPanel').setAttribute('aria-labelledby','tab-'+active);
    drawRows();
  }
@@ -74,13 +79,13 @@
    $('statTwo').textContent=number(r.difference);
    $('detailsRows').replaceChildren();
    const state=states[active];
-   $('cashStat').textContent=number(state.cash+(active==='cash'?r.computedCash:0));
+   $('cashStat').textContent=number((state.cash??0)+(active==='cash'?r.computedCash:0));
    $('chequeStat').textContent=number([...r.known,...r.future].reduce((total,row)=>total+row.amount,0));
    if(state.cash>0)$('detailsRows').appendChild(detailRow('نقدی دریافت‌شده',state.cash));
    r.known.forEach((row,i)=>$('detailsRows').appendChild(detailRow('چک مشخص '+number(i+1)+' · '+number(row.day)+' روزه',row.amount)));
    r.future.forEach((row,i)=>$('detailsRows').appendChild(detailRow('چک محاسبه‌شده '+number(i+1)+' · '+number(row.day)+' روزه',row.amount)));
    if(active==='cash')$('detailsRows').appendChild(detailRow('نقدی لازم امروز',r.computedCash));
-   $('formulaInfo').textContent='تاریخ مبنا '+config.baseDate+' · سود ماهانه '+number(config.monthly)+'٪ · ماه مالی ۳۰روزه · ارزش فعلی = مبلغ چک ÷ (۱ + نرخ مؤثر روزانه) به توان تعداد روز.';
+   $('formulaInfo').textContent='تاریخ مبنا '+config.baseDate+' · سود ماهانه ' +Adapter.formatMonthlyRate(config.monthly)+' · ماه مالی ۳۰روزه · ارزش فعلی = مبلغ چک ÷ (۱ + نرخ مؤثر روزانه) به توان تعداد روز.';
    $('printBtn').disabled=false;
  }
  function collectPayload(){
@@ -91,6 +96,24 @@
      F.dayDifference(config.baseDate,item.due);
    return Adapter.buildPayload(active,state,config,$('customerInput').value);
  }
+ function showIdleResult(){
+   lastResult=null;lastPayload=null;$('printBtn').disabled=true;
+   $('errorBox').hidden=true;$('errorBox').textContent='';
+   $('detailsRows').replaceChildren();
+   $('answerLabel').textContent=active==='cheque'?'مبلغ چک پیشنهادی':active==='cash'?'نقد لازم امروز':'ارزش نقدی امروز';
+   $('answerAmount').textContent='—';
+   $('answerHint').textContent='مبلغ و تاریخ چک‌ها را وارد کنید تا نتیجه نمایش داده شود.';
+   clearSummary();
+ }
+ function isReadyToCalculate(){
+   const state=states[active];
+   if(active!=='value'&&(state.price===null||state.price===0))return false;
+   if(active==='cheque'&&state.future.length===0)return false;
+   if(active==='value'&&state.known.length===0&&!(state.cash>0))return false;
+   if(state.known.some(item=>item.amount===null||!item.due))return false;
+   if(active==='cheque'&&state.future.some(item=>!item.due))return false;
+   return true;
+ }
  function invalidate(){
    lastResult=null;lastPayload=null;$('printBtn').disabled=true;
    $('errorBox').hidden=true;$('errorBox').textContent='';
@@ -98,11 +121,12 @@
    $('answerAmount').textContent='…';$('answerHint').textContent='در حال محاسبه…';
    clearSummary();
  }
- function recalc(immediate=false){
+ function recalc(immediate=false,manual=false){
    clearTimeout(debounceTimer);
    if(pendingController)pendingController.abort();
    pendingController=null;
    const id=++requestSequence;
+   if(!isReadyToCalculate()&&!manual){showIdleResult();return;}
    invalidate();
    debounceTimer=setTimeout(()=>{void calculateOnServer(id);},immediate?0:600);
  }
@@ -163,11 +187,12 @@
  function showMode(mode){if(!states[mode])return;active=mode;
    app.querySelectorAll('[data-mode]').forEach(btn=>{const on=btn.dataset.mode===mode;btn.classList.toggle('active',on);btn.setAttribute('aria-selected',String(on));btn.tabIndex=on?0:-1});
    syncFields();recalc();}
- function nextChequeDay(state){return Math.min(3650,30+Math.max(0,...[...state.known,...state.future].map(item=>{try{return F.dayDifference(config.baseDate,item.due)}catch{return 0}})));}
- function addKnown(){const state=states[active];if(state.known.length>=40)return;state.known.push({amount:null,due:dateInDays(nextChequeDay(state))});drawRows();recalc();$('knownRows').lastElementChild?.querySelector('[data-field="amount"]')?.focus();}
- function addFuture(){const state=states.cheque;if(state.future.length>=40)return;state.future.push({due:dateInDays(nextChequeDay(state)),weight:1});drawRows();recalc();$('futureRows').lastElementChild?.querySelector('[data-field="due"]')?.focus();}
+ function addKnown(){const state=states[active];if(state.known.length>=40)return;state.known.push({amount:null,due:''});drawRows();recalc();$('knownRows').lastElementChild?.querySelector('[data-field="amount"]')?.focus();}
+ function addFuture(){const state=states.cheque;if(state.future.length>=40)return;state.future.push({due:'',weight:1});drawRows();recalc();$('futureRows').lastElementChild?.querySelector('[data-field="due"]')?.focus();}
  function updateDueHints(){for(const item of app.querySelectorAll('.payment-row')){const input=inputEl(item,'due'),hint=item.querySelector('.due-hint');if(input&&hint)hint.textContent=dueText(input.value);}}
- function handleInput(ev){const target=ev.target;const row=target.closest('.payment-row');if(row){const type=row.dataset.type,index=Number(row.dataset.index);const item=states[active][type==='known'?'known':'future'][index];if(!item)return;
+ function handleInput(ev){const target=ev.target;
+   if(target.id==='priceInput'||target.id==='cashInput'||target.matches('[data-money]'))Adapter.formatMoneyWhileTyping(target);
+   const row=target.closest('.payment-row');if(row){const type=row.dataset.type,index=Number(row.dataset.index);const item=states[active][type==='known'?'known':'future'][index];if(!item)return;
      if(target.dataset.field==='amount')item.amount=moneyValue(target.value);
      else if(target.dataset.field==='due'){item.due=target.value.trim();updateDueHints();}
      else if(target.dataset.field==='weight'){const n=Number(toLatin(target.value).replace(/٫/g,'.'));item.weight=target.value.trim()===''?NaN:n;}
@@ -178,21 +203,73 @@
  function formatMoneyField(input){const n=moneyValue(input.value);if(n!==null&&Number.isFinite(n)&&Number.isSafeInteger(n))input.value=money(n);}
  function saveSettings(ev){ev.preventDefault();const normalizedRate=toLatin($('rateInput').value).replace(/٫/g,'.').trim();const percent=Number(normalizedRate);
    try{if(!/^\d{1,3}(?:\.\d{1,4})?$/.test(normalizedRate))throw Error('نرخ سود حداکثر چهار رقم اعشار داشته باشد.');F.rate(percent);const date=$('baseDateInput').value.trim();F.dayDifference(date,date);
-     config.monthly=percent;config.baseDate=date;safeSave();$('rateChip').textContent=number(config.monthly)+'٪';$('baseDateChip').textContent=config.baseDate;$('settingsError').hidden=true;$('settingsDialog').close();drawRows();recalc(true);
+     config.monthly=percent;config.baseDate=date;safeSave();$('rateChip').textContent=Adapter.formatMonthlyRate(config.monthly);$('baseDateChip').textContent=config.baseDate;$('settingsError').hidden=true;$('settingsDialog').close();drawRows();recalc(true);
    }catch(err){$('settingsError').hidden=false;$('settingsError').textContent=err.message||'مقادیر تنظیمات معتبر نیست.';}}
  // Full Persian calendar: any valid Jalali date, no time or hour controls.
- function openCalendar(input){pickedInput=input;let date=input.value.trim();try{F.toGregorianDay(date);}catch{date=config.baseDate}
-   [calYear,calMonth]=date.split('/').slice(0,2).map(Number);renderCalendar();$('calendarDialog').showModal();}
- function renderCalendar(){if(calMonth>12){calMonth=1;calYear++}if(calMonth<1){calMonth=12;calYear--}calYear=Math.min(1499,Math.max(1200,calYear));
-   $('calMonth').textContent=monthNames[calMonth-1]+' '+number(calYear);const container=$('calendarDays');container.replaceChildren();const first=`${calYear}/${String(calMonth).padStart(2,'0')}/01`;
-   let offset=0;try{const day=F.toGregorianDay(first);offset=(new Date(day*86400000).getUTCDay()+1)%7}catch{}
-   for(let i=0;i<offset;i++){const empty=document.createElement('span');container.append(empty)}
-   const selected=pickedInput?.value.trim(),today=config.baseDate;
-   for(let d=1;d<=31;d++){const value=`${calYear}/${String(calMonth).padStart(2,'0')}/${String(d).padStart(2,'0')}`;try{F.toGregorianDay(value)}catch{break}
-     const btn=document.createElement('button');btn.type='button';btn.textContent=number(d);btn.dataset.date=value;btn.className=(selected===value?'selected ':'')+(value===today?'today':'');btn.setAttribute('aria-label','انتخاب '+value);container.append(btn)}
+ function openCalendar(input){
+   pickedInput=input;
+   let date=toLatin(input.value.trim()).replace(/-/g,'/');
+   try{F.toGregorianDay(date);}catch{date=config.baseDate;}
+   [calYear,calMonth]=date.split('/').slice(0,2).map(Number);
+   renderCalendar();
+   $('calendarDialog').showModal();
+   const focusTarget=$('calendarDays').querySelector('.selected:not(:disabled)')
+     ||$('calendarDays').querySelector('button:not(:disabled)')
+     ||$('calNext');
+   focusTarget.focus();
  }
- function chooseDate(value){if(!pickedInput)return;pickedInput.value=value;pickedInput.dispatchEvent(new Event('input',{bubbles:true}));$('calendarDialog').close();}
- function moveMonth(n){calMonth+=n;if(calMonth<1){calMonth=12;calYear--}if(calMonth>12){calMonth=1;calYear++}renderCalendar();}
+ function renderCalendar(){
+   const info=F.jalaliMonthInfo(calYear,calMonth);
+   $('calMonth').textContent=monthNames[calMonth-1]+' '+yearNumber.format(calYear);
+   $('calPrev').disabled=calYear===1200&&calMonth===1;
+   $('calNext').disabled=calYear===1499&&calMonth===12;
+   const container=$('calendarDays');
+   const fragment=document.createDocumentFragment();
+   const selectedParts=toLatin(pickedInput?.value??'').replace(/-/g,'/').split('/').map(Number);
+   const selected=selectedParts.length===3&&selectedParts.every(Number.isInteger)
+     ?selectedParts[0]+'/'+String(selectedParts[1]).padStart(2,'0')+'/'+String(selectedParts[2]).padStart(2,'0')
+     :'';
+   const today=F.todayJalali();
+   const chequeDueDate=pickedInput?.id!=='baseDateInput';
+   const baseDay=chequeDueDate?F.toGregorianDay(config.baseDate):0;
+   const lastDay=baseDay+3650;
+   const slots=42; // Stable six-week grid prevents visual jumps between months.
+   for(let slot=0;slot<slots;slot++){
+     const d=slot-info.firstWeekday+1;
+     if(d<1||d>info.days){
+       const empty=document.createElement('span');
+       empty.setAttribute('aria-hidden','true');
+       fragment.append(empty);
+       continue;
+     }
+     const value=calYear+'/'+String(calMonth).padStart(2,'0')+'/'+String(d).padStart(2,'0');
+     const btn=document.createElement('button');
+     const inRange=!chequeDueDate||(info.firstDay+d-1>=baseDay&&info.firstDay+d-1<=lastDay);
+     btn.type='button';
+     btn.textContent=number(d);
+     btn.dataset.date=value;
+     btn.disabled=!inRange;
+     btn.className=(selected===value?'selected ':'')+(value===today?'today':'');
+     btn.setAttribute('aria-label','انتخاب '+value);
+     if(selected===value)btn.setAttribute('aria-pressed','true');
+     if(value===today)btn.setAttribute('aria-current','date');
+     fragment.append(btn);
+   }
+   container.replaceChildren(fragment);
+ }
+ function chooseDate(value){
+   if(!pickedInput)return;
+   pickedInput.value=value;
+   pickedInput.dispatchEvent(new Event('input',{bubbles:true}));
+   $('calendarDialog').close();
+ }
+ function moveMonth(step){
+   const next=calYear*12+(calMonth-1)+step;
+   if(next<1200*12||next>=1500*12)return;
+   calYear=Math.floor(next/12);
+   calMonth=next%12+1;
+   renderCalendar();
+ }
  // Simple, keyboard-friendly tab navigation.
  app.querySelectorAll('[data-mode]').forEach(btn=>btn.addEventListener('click',()=>showMode(btn.dataset.mode)));
  $('addKnown').addEventListener('click',addKnown);$('addFuture').addEventListener('click',addFuture);
@@ -210,18 +287,31 @@
  $('inputPanel').addEventListener('click',ev=>{const btn=ev.target.closest('[data-remove]');if(!btn)return;const row=btn.closest('.payment-row');states[active][row.dataset.type==='known'?'known':'future'].splice(Number(row.dataset.index),1);drawRows();recalc();});
  $('inputPanel').addEventListener('input',handleInput);
  $('inputPanel').addEventListener('blur',ev=>{if(ev.target.matches('[data-money]')||['priceInput','cashInput'].includes(ev.target.id))formatMoneyField(ev.target)},true);
- $('calculateBtn').addEventListener('click',()=>{recalc(true);if(window.matchMedia('(max-width:1099px)').matches)app.querySelector('.answer').scrollIntoView({behavior:'smooth',block:'nearest'});});
- $('resetBtn').addEventListener('click',()=>{const state=states[active];state.price=active==='value'?null:null;state.cash=0;state.known=[];state.future=active==='cheque'?[{due:dateInDays(30),weight:1}]:[];showExtraCash[active]=false;syncFields();recalc();$('customerInput').value='';});
+ $('calculateBtn').addEventListener('click',()=>{recalc(true,true);if(window.matchMedia('(max-width:1099px)').matches)app.querySelector('.answer').scrollIntoView({behavior:'smooth',block:'nearest'});});
+ $('resetBtn').addEventListener('click',()=>{states[active]={price:null,cash:null,known:[],future:[]};weightVisible=false;showExtraCash[active]=false;syncFields();recalc();$('customerInput').value='';});
  $('printBtn').addEventListener('click',printVerified);
- $('openSettings').addEventListener('click',()=>{$('rateInput').value=String(config.monthly);$('baseDateInput').value=config.baseDate;$('settingsDialog').showModal();});
+ function openSettingsDialog(){
+   $('rateInput').value=String(config.monthly);
+   $('baseDateInput').value=config.baseDate;
+   $('settingsError').hidden=true;
+   $('settingsError').textContent='';
+   $('settingsDialog').showModal();
+   $('rateInput').focus();
+   $('rateInput').select();
+ }
+ $('openSettings').addEventListener('click',openSettingsDialog);
+ $('rateChip').addEventListener('click',openSettingsDialog);
  $('closeSettings').addEventListener('click',()=>$('settingsDialog').close());
  $('settingsForm').addEventListener('submit',saveSettings);
  app.addEventListener('click',ev=>{const btn=ev.target.closest('[data-calendar-for]');if(!btn)return;const input=$(btn.dataset.calendarFor);if(input)openCalendar(input)});
- $('calendarClose').addEventListener('click',()=>$('calendarDialog').close());$('calPrev').addEventListener('click',()=>moveMonth(-1));$('calNext').addEventListener('click',()=>moveMonth(1));
+ $('calendarClose').addEventListener('click',()=>$('calendarDialog').close());
+ $('calendarDialog').addEventListener('close',()=>{if(pickedInput?.isConnected)pickedInput.focus({preventScroll:true});});
+ $('calPrev').addEventListener('click',()=>moveMonth(-1));
+ $('calNext').addEventListener('click',()=>moveMonth(1));
  $('calendarToday').addEventListener('click',()=>chooseDate(config.baseDate));
  $('calendarDays').addEventListener('click',ev=>{const btn=ev.target.closest('[data-date]');if(btn)chooseDate(btn.dataset.date)});
 
- $('rateChip').textContent=number(config.monthly)+'٪';
+ $('rateChip').textContent=Adapter.formatMonthlyRate(config.monthly);
  showMode(active);
 })();
 

@@ -1,734 +1,215 @@
-/* Cash-and-cheque calculator: scoped version of approved standalone prototype. */
-#financeQuickCalc{
---bg:#f5f8fb;--paper:#fff;--ink:#19354b;--muted:#788b9d;--line:#e1e9f0;--blue:#1679b3;--blue-dark:#0c5b90;--light:#edf7fc;--danger:#b93449;--good:#167457;--shadow:0 14px 45px rgba(23,50,70,.055)}
-#financeQuickCalc *,#financeQuickCalc *::before,#financeQuickCalc *::after{
-box-sizing:border-box}
-#financeQuickCalc{
-scroll-behavior:smooth}
-#financeQuickCalc{
-direction:rtl;background:var(--bg);margin:0;min-height:100vh;color:var(--ink);font-family:Tahoma,'Segoe UI',sans-serif;font-size:14px;line-height:1.8}
-#financeQuickCalc button,#financeQuickCalc input{
-font:inherit}
-#financeQuickCalc button{
-cursor:pointer}
-#financeQuickCalc button:focus-visible,#financeQuickCalc input:focus-visible,#financeQuickCalc summary:focus-visible{
-outline:3px solid #99cced;outline-offset:2px}
-#financeQuickCalc input{
-outline:0}
-#financeQuickCalc .page-shell{
-max-width:870px;margin:0 auto;padding:32px 18px 40px}
-#financeQuickCalc .masthead{
-display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 22px}
-#financeQuickCalc .identity{
-display:flex;align-items:center;gap:11px}
-#financeQuickCalc .mark{
-height:44px;width:44px;display:grid;place-items:center;border-radius:13px;background:var(--blue);color:#fff;font-size:25px;font-weight:900;box-shadow:0 10px 20px #177fb025}
-#financeQuickCalc .eyebrow{
-font-size:11px;color:var(--muted)}
-#financeQuickCalc h1{
-font-size:20px;line-height:1.45;margin:2px 0 0;letter-spacing:-.3px}
-#financeQuickCalc .settings-link{
-display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:9px 13px;white-space:nowrap;font-size:12px}
-#financeQuickCalc .settings-link svg{
-color:var(--muted)}
-#financeQuickCalc .settings-link b{
-color:var(--blue)}
-#financeQuickCalc .calculator{
-border:1px solid var(--line);background:var(--paper);border-radius:22px;box-shadow:var(--shadow);overflow:hidden}
-#financeQuickCalc .lead{
-padding:24px 26px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between}
-#financeQuickCalc .lead h2{
-font-size:19px;margin:0 0 3px;font-weight:800}
-#financeQuickCalc .lead p{
-color:var(--muted);font-size:12px;margin:0}
-#financeQuickCalc .demo-badge{
-font-size:10px;color:#7195ac;background:var(--light);padding:3px 9px;white-space:nowrap;border-radius:50px}
-#financeQuickCalc .tabs{
-display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;background:#f0f4f8;border:1px solid #ebf0f4;border-radius:12px;margin:0 26px;padding:5px}
-#financeQuickCalc .tab{
-background:transparent;border:1px solid transparent;color:#61798c;font-weight:700;border-radius:9px;min-height:46px;font-size:13px;padding:7px 4px;white-space:normal}
-#financeQuickCalc .tab.active{
-background:#fff;color:var(--blue-dark);border-color:#dbe8f0;box-shadow:0 2px 9px #355e7514}
-#financeQuickCalc .tab:not(.active):hover{
-color:var(--blue-dark);background:#ffffff9c}
-#financeQuickCalc .body{
-padding:20px 26px 23px}
-#financeQuickCalc .mode-help{
-margin:0 0 17px;font-size:12px;color:#577b96}
-#financeQuickCalc .field-grid{
-display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:8px}
-#financeQuickCalc .field{
-display:grid;gap:7px;min-width:0}
-#financeQuickCalc .field>span:first-child{
-font-weight:700;font-size:12px;color:#425d74}
-#financeQuickCalc .field em{
-font-size:10px;font-weight:400;font-style:normal;color:#91a1ac}
-#financeQuickCalc .field input{
-border-radius:10px;border:1px solid #d8e3eb;padding:0 13px;height:45px;width:100%;min-width:0;background:#fff;color:var(--ink);font-size:15px}
-#financeQuickCalc .field input:focus,#financeQuickCalc .row-input:focus{
-border-color:var(--blue);box-shadow:0 0 0 3px #dceefa}
-#financeQuickCalc .field input[data-money]{
-direction:ltr;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
-#financeQuickCalc .field input::placeholder,#financeQuickCalc .row-input::placeholder{
-color:#b1bec8;font-weight:400}
-#financeQuickCalc .cash-extra{
-margin:9px 0}
-#financeQuickCalc .text-action{
-border:0;background:transparent;color:var(--blue);font-size:12px;font-weight:700;padding:7px 0}
-#financeQuickCalc .text-action:hover{
-text-decoration:underline}
-#financeQuickCalc .rows-block{
-margin-top:20px}
-#financeQuickCalc .section-heading h3{
-font-size:14px;margin:0;font-weight:800}
-#financeQuickCalc .section-heading p{
-font-size:11px;color:var(--muted);margin:2px 0 10px}
-#financeQuickCalc .row-list{
-display:grid;gap:9px}
-#financeQuickCalc .payment-row{
-display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 31px;gap:9px;align-items:end;background:#fafcfe;border:1px solid #eaf0f5;border-radius:12px;padding:10px 12px}
-#financeQuickCalc .payment-row.future-row{
-grid-template-columns:minmax(0,1fr) 31px}
-#financeQuickCalc .payment-row.future-row.with-weights{
-grid-template-columns:minmax(0,1fr) minmax(70px,.48fr) 31px}
-#financeQuickCalc .row-field{
-display:grid;gap:4px;min-width:0}
-#financeQuickCalc .row-field>span{
-font-size:10px;color:#657f92}
-#financeQuickCalc .row-field input{
-height:40px;border:1px solid #d9e5ee;border-radius:9px;background:#fff;padding:0 9px;color:var(--ink);width:100%;min-width:0;font-size:13px}
-#financeQuickCalc .row-field input[data-money]{
-direction:ltr;text-align:right;font-weight:750;font-variant-numeric:tabular-nums}
-#financeQuickCalc .date-wrap{
-display:flex;align-items:stretch;position:relative;min-width:0}
-#financeQuickCalc .date-wrap .date-input{
-direction:ltr;text-align:center;padding-left:35px;font-weight:650;font-size:12px;letter-spacing:.15px}
-#financeQuickCalc .calendar-trigger{
-position:absolute;top:2px;bottom:2px;left:3px;width:33px;border:0;background:transparent;color:var(--blue);font-size:22px;line-height:1}
-#financeQuickCalc .calendar-trigger:hover{
-background:#ecf5fc;border-radius:7px}
-#financeQuickCalc .remove{
-height:39px;width:30px;align-self:end;border:0;background:transparent;border-radius:8px;color:#b87b82;font-size:23px}
-#financeQuickCalc .remove:hover{
-background:#fceced;color:#ac3242}
-#financeQuickCalc .due-hint{
-font-size:10px;color:#8499a9;text-align:center}
-#financeQuickCalc .add-inline{
-color:var(--blue);font-size:12px;font-weight:700;background:transparent;border:0;padding:12px 0 2px;text-align:right}
-#financeQuickCalc .add-inline:hover{
-text-decoration:underline}
-#financeQuickCalc .bottom-tools{
-display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-#financeQuickCalc .tiny-tool{
-background:transparent;border:0;color:#8296a6;font-size:11px;padding:10px 0 0}
-#financeQuickCalc .tiny-tool:hover{
-color:var(--blue)}
-#financeQuickCalc .optional-line{
-margin-top:19px;padding-top:16px;border-top:1px solid #eef2f5;display:flex;gap:14px;align-items:center;justify-content:space-between}
-#financeQuickCalc .optional-line label{
-font-weight:700;font-size:12px;white-space:nowrap}
-#financeQuickCalc .optional-line label span{
-font-weight:400;color:var(--muted);font-size:10px}
-#financeQuickCalc .optional-line input{
-height:39px;border:1px solid #d8e3eb;background:#fff;border-radius:9px;max-width:315px;width:100%;padding:0 11px;font-size:12px}
-#financeQuickCalc .form-buttons{
-display:flex;gap:10px;margin-top:18px}
-#financeQuickCalc .calc-btn{
-background:var(--blue);border:1px solid var(--blue);color:#fff;padding:12px 22px;font-weight:800;font-size:13px;border-radius:11px;min-height:46px;flex:1}
-#financeQuickCalc .calc-btn:hover{
-background:var(--blue-dark)}
-#financeQuickCalc .calc-btn span{
-margin-right:9px;font-size:18px;vertical-align:middle}
-#financeQuickCalc .reset-btn{
-background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px 19px;color:#647f93;font-size:12px}
-#financeQuickCalc .reset-btn:hover{
-background:#f8fafc}
-#financeQuickCalc .error{
-color:var(--danger);background:#fff0f2;padding:12px;font-size:12px;border-radius:9px;margin:13px 0 0}
-#financeQuickCalc .answer{
-background:linear-gradient(145deg,#eff8fe,#eaf5fc);padding:21px 27px 22px;border-top:1px solid #d9eaf5}
-#financeQuickCalc .answer-top{
-display:flex;align-items:center;gap:8px;color:#446e8a;font-size:12px;font-weight:800}
-#financeQuickCalc .status-dot{
-display:block;width:8px;height:8px;border-radius:50%;background:var(--good)}
-#financeQuickCalc .answer-unit{
-margin-right:auto;font-size:11px;font-weight:400;color:#8199a9}
-#financeQuickCalc .big-answer{
-font-size:clamp(32px,6vw,48px);font-weight:900;line-height:1.5;direction:ltr;text-align:right;letter-spacing:-1.5px;color:#0c5b90;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-#financeQuickCalc .answer-hint{
-font-size:12px;color:#6288a2;margin:0 0 15px}
-#financeQuickCalc .answer-stats{
-border-top:1px solid #cce1ef;padding-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
-#financeQuickCalc .answer-stats>div{
-display:flex;flex-direction:column;gap:3px}
-#financeQuickCalc .answer-stats span{
-font-size:11px;color:#6f899e}
-#financeQuickCalc .answer-stats strong{
-font-size:15px;font-weight:800;color:var(--ink);direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
-#financeQuickCalc .details{
-border-top:1px dashed #c9dfec;margin-top:17px;padding-top:6px}
-#financeQuickCalc .details summary{
-cursor:pointer;font-size:12px;font-weight:700;color:#336e96;padding:7px 0;list-style:none;display:flex;align-items:center;justify-content:space-between}
-#financeQuickCalc .details summary::-webkit-details-marker{
-display:none}
-#financeQuickCalc .details[open] summary .caret{
-transform:rotate(180deg)}
-#financeQuickCalc .details-rows{
-display:grid;gap:6px;padding:8px 0}
-#financeQuickCalc .detail-row{
-display:flex;justify-content:space-between;gap:10px;font-size:12px}
-#financeQuickCalc .detail-row span{
-color:#58778e}
-#financeQuickCalc .detail-row strong{
-direction:ltr;font-variant-numeric:tabular-nums}
-#financeQuickCalc .formula-info{
-font-size:10px;line-height:1.9;color:#8ca2b1}
-#financeQuickCalc .print-btn{
-border:1px solid #bad5e7;background:#fff9;color:var(--blue-dark);width:100%;border-radius:9px;padding:9px;margin-top:15px;font-size:12px;font-weight:750}
-#financeQuickCalc .print-btn:disabled{
-opacity:.4;cursor:not-allowed}
-#financeQuickCalc .read-only-note{
-font-size:10px;text-align:center;color:#94aabc;margin:12px 0 0}
-#financeQuickCalc .footnote{
-color:#9baab8;text-align:center;font-size:10px;margin-top:21px;line-height:2}
-#financeQuickCalc [hidden]{
-display:none!important}
-#financeQuickCalc .modal,#financeQuickCalc .calendar-modal{
-border:1px solid #dce7ef;border-radius:19px;padding:0;background:#fff;color:var(--ink);width:min(440px,calc(100% - 24px));max-height:calc(100vh - 24px);box-shadow:0 24px 80px #0e2f4c25}
-#financeQuickCalc .modal::backdrop,#financeQuickCalc .calendar-modal::backdrop{
-background:#0e253d77;backdrop-filter:blur(3px)}
-#financeQuickCalc .modal-inner{
-display:grid;gap:17px;padding:24px}
-#financeQuickCalc .modal-head,#financeQuickCalc .calendar-title{
-display:flex;align-items:flex-start;justify-content:space-between;gap:13px}
-#financeQuickCalc .modal-head h2,#financeQuickCalc .calendar-title h2{
-font-size:17px;margin:0}
-#financeQuickCalc .modal-head p{
-font-size:11px;color:var(--muted);margin:2px 0}
-#financeQuickCalc .icon-close{
-background:#f2f6f9;border:0;border-radius:8px;color:#718a9a;font-size:23px;height:32px;width:32px;line-height:1}
-#financeQuickCalc .modal-note{
-font-size:11px;color:var(--muted);line-height:2;margin:0}
-#financeQuickCalc .modal-inner .calc-btn{
-width:100%;flex:auto}
-#financeQuickCalc .calendar-content{
-padding:20px;display:grid;gap:12px}
-#financeQuickCalc .month-nav{
-display:flex;align-items:center;justify-content:space-between}
-#financeQuickCalc .month-nav strong{
-font-size:15px}
-#financeQuickCalc .month-nav button{
-background:#f1f7fc;color:var(--blue);width:36px;height:36px;border:0;border-radius:9px;font-size:22px}
-#financeQuickCalc .weekdays,#financeQuickCalc .days{
-display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
-#financeQuickCalc .weekdays{
-font-size:12px;color:#90a5b4}
-#financeQuickCalc .days button{
-height:38px;border:0;border-radius:9px;background:transparent;color:var(--ink);font-size:13px}
-#financeQuickCalc .days button:hover{
-background:#e9f4fb;color:var(--blue)}
-#financeQuickCalc .days button.today{
-border:1px solid #b5d9ee}
-#financeQuickCalc .days button.selected{
-background:var(--blue);color:#fff}
-#financeQuickCalc .days span{
-height:38px}
-#financeQuickCalc .date-foot{
-font-size:10px;color:var(--muted);text-align:center;margin:0}
-#financeQuickCalc .today-btn{
-background:#f1f7fc;border:1px solid #d0e4f2;border-radius:9px;color:var(--blue-dark);padding:9px;font-size:12px}
- #financeQuickCalc .print-only{
-display:none}
-
-@media(max-width:660px){
-#financeQuickCalc .page-shell{
-padding:15px 9px 25px}
-#financeQuickCalc .masthead{
-margin:0 3px 16px}
-#financeQuickCalc .mark{
-width:38px;height:38px;font-size:22px;border-radius:10px}
-#financeQuickCalc .identity{
-gap:8px}
-#financeQuickCalc h1{
-font-size:16px}
-#financeQuickCalc .eyebrow{
-font-size:9px}
-#financeQuickCalc .settings-link{
-padding:7px 9px;gap:5px;font-size:11px}
-#financeQuickCalc .settings-link svg{
-width:15px}
-#financeQuickCalc .calculator{
-border-radius:15px}
-#financeQuickCalc .lead{
-padding:16px 14px 12px;align-items:start}
-#financeQuickCalc .lead h2{
-font-size:16px}
-#financeQuickCalc .lead p{
-font-size:11px}
-#financeQuickCalc .demo-badge{
-font-size:9px}
-#financeQuickCalc .tabs{
-margin:0 11px;padding:4px;gap:3px}
-#financeQuickCalc .tab{
-font-size:11px;line-height:1.45;min-height:48px;padding:7px 2px}
-#financeQuickCalc .body{
-padding:16px 14px 18px}
-#financeQuickCalc .field-grid{
-grid-template-columns:1fr;gap:11px}
-#financeQuickCalc .field input{
-height:43px;font-size:14px}
-#financeQuickCalc .rows-block{
-margin-top:17px}
-#financeQuickCalc .payment-row{
-grid-template-columns:minmax(0,1fr) minmax(0,1fr) 27px;padding:9px 7px;gap:5px}
-#financeQuickCalc .row-field input{
-font-size:12px;padding:0 5px}
-#financeQuickCalc .date-wrap .date-input{
-padding-left:27px;font-size:11px}
-#financeQuickCalc .calendar-trigger{
-width:26px;font-size:18px}
-#financeQuickCalc .payment-row.future-row{
-grid-template-columns:minmax(0,1fr) 28px}
-#financeQuickCalc .payment-row.future-row.with-weights{
-grid-template-columns:minmax(0,1fr) minmax(70px,.45fr) 27px}
-#financeQuickCalc .remove{
-width:26px}
-#financeQuickCalc .optional-line{
-align-items:stretch;flex-direction:column;gap:7px}
-#financeQuickCalc .optional-line input{
-max-width:none}
-#financeQuickCalc .answer{
-padding:17px 17px 18px}
-#financeQuickCalc .big-answer{
-font-size:clamp(29px,9vw,42px)}
-#financeQuickCalc .answer-stats strong{
-font-size:13px}
-#financeQuickCalc .form-buttons{
-margin-top:16px}
-#financeQuickCalc .footnote{
-font-size:9px}
+/* Finance payment calculator v2 — isolated, demo-based, server-backed UI. */
+#financeQuickCalc.pc-v2{
+  --pc-ink:#19334b;--pc-muted:#738a9f;--pc-line:#dfe8f1;
+  --pc-blue:#215ac2;--pc-blue-dark:#164594;--pc-soft:#f3f6fb;
+  --pc-paper:#fff;--pc-green:#0b8272;--pc-purple:#7256c2;
+  --pc-shadow:0 8px 32px rgba(22,54,95,.045);
+  color:var(--pc-ink);font-size:13px;line-height:1.75;direction:rtl;
 }
-
-@media(max-width:365px){
-#financeQuickCalc .tab{
-font-size:10px}
-#financeQuickCalc .lead{
-gap:5px}
-#financeQuickCalc .demo-badge{
-display:none}
-#financeQuickCalc .payment-row{
-grid-template-columns:minmax(0,1fr) minmax(0,1fr) 25px}
-#financeQuickCalc .answer-stats{
-grid-template-columns:1fr}
+#financeQuickCalc.pc-v2 *{box-sizing:border-box}
+#financeQuickCalc.pc-v2 button,
+#financeQuickCalc.pc-v2 input,
+#financeQuickCalc.pc-v2 select{font:inherit}
+#financeQuickCalc.pc-v2 [hidden]{display:none!important}
+#financeQuickCalc.pc-v2 button{cursor:pointer}
+#financeQuickCalc.pc-v2 button:disabled{opacity:.52;cursor:not-allowed}
+#financeQuickCalc.pc-v2 button:focus-visible,
+#financeQuickCalc.pc-v2 input:focus-visible,
+#financeQuickCalc.pc-v2 select:focus-visible,
+#financeQuickCalc.pc-v2 summary:focus-visible{outline:3px solid #93b6fb;outline-offset:2px}
+#financeQuickCalc.pc-v2 .page-shell{width:100%;max-width:1270px;margin:auto;padding:20px 16px 44px}
+#financeQuickCalc.pc-v2 .masthead{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px;padding:0}
+#financeQuickCalc.pc-v2 .masthead h1{font-size:21px;line-height:1.6;font-weight:850;color:var(--pc-ink);margin:0}
+#financeQuickCalc.pc-v2 .calculator{display:block;background:var(--pc-paper);border:1px solid var(--pc-line);border-radius:21px;box-shadow:var(--pc-shadow);padding:24px;overflow:visible}
+#financeQuickCalc.pc-v2 .control-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+#financeQuickCalc.pc-v2 .calculation-context{display:flex;align-items:center;flex-wrap:wrap;gap:14px;background:none;border:0;margin:0;padding:0;font-size:12px;color:var(--pc-muted)}
+#financeQuickCalc.pc-v2 .calculation-context>span{display:inline-flex;align-items:center;gap:7px}
+#financeQuickCalc.pc-v2 .calculation-context b{color:var(--pc-ink);font-size:12px;font-weight:750}
+#financeQuickCalc.pc-v2 .rate-chip-button{display:inline-flex;align-items:center;justify-content:center;background:#edf4ff;border:1px solid #cadcf6;border-radius:9px;color:var(--pc-blue);min-height:34px;padding:3px 12px;font-weight:800;font-variant-numeric:tabular-nums}
+#financeQuickCalc.pc-v2 .rate-chip-button:hover{background:#e1ecff;border-color:#9ebdec}
+#financeQuickCalc.pc-v2 .settings-link{display:inline-flex;align-items:center;justify-content:center;background:var(--pc-paper);border:1px solid var(--pc-line);border-radius:10px;padding:8px 13px;min-height:39px;color:var(--pc-blue);box-shadow:none;font-size:12px;font-weight:700;white-space:nowrap}
+#financeQuickCalc.pc-v2 .settings-link:hover{border-color:#98baec;background:var(--pc-soft)}
+#financeQuickCalc.pc-v2 .tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;background:var(--pc-soft);border:1px solid var(--pc-line);border-radius:13px;margin:0 0 22px;padding:5px}
+#financeQuickCalc.pc-v2 .tabs .tab{border:1px solid transparent;background:transparent;border-radius:9px;min-height:47px;padding:10px 8px;color:var(--pc-muted);font-weight:750;box-shadow:none;transition:background .15s,color .15s}
+#financeQuickCalc.pc-v2 .tabs .tab:hover:not(.active){background:rgba(145,177,223,.12)}
+#financeQuickCalc.pc-v2 .tabs .tab.active{color:var(--pc-blue);background:var(--pc-paper);border-color:var(--pc-line);box-shadow:0 2px 11px rgba(39,80,132,.075)}
+#financeQuickCalc.pc-v2 .calc-workspace{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(310px,.88fr);gap:23px;align-items:start}
+#financeQuickCalc.pc-v2 .body{border:0;box-shadow:none;background:transparent;padding:0;min-width:0}
+#financeQuickCalc.pc-v2 .input-head{margin:0 0 19px}
+#financeQuickCalc.pc-v2 .input-head h2{color:var(--pc-ink);font-size:17px;font-weight:800;margin:0}
+#financeQuickCalc.pc-v2 .mode-help{color:var(--pc-muted);font-size:12px;margin:4px 0 0;padding:0;border:0;background:none}
+#financeQuickCalc.pc-v2 .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:22px}
+#financeQuickCalc.pc-v2 .field,#financeQuickCalc.pc-v2 .row-field{display:flex;flex-direction:column;gap:7px;min-width:0;margin:0}
+#financeQuickCalc.pc-v2 .field>span:first-child,#financeQuickCalc.pc-v2 .row-field>span{font-size:11px;font-weight:750;color:#566d82}
+#financeQuickCalc.pc-v2 .field em{font-style:normal;font-size:10px;font-weight:500;color:var(--pc-muted);margin-right:4px}
+#financeQuickCalc.pc-v2 .field input,
+#financeQuickCalc.pc-v2 .row-field input,
+#financeQuickCalc.pc-v2 .row-field select,
+#financeQuickCalc.pc-v2 .optional-line input{width:100%;min-width:0;height:46px;padding:9px 12px;border:1px solid #d8e3ef;border-radius:10px;background:var(--pc-paper);color:var(--pc-ink);font-size:13px;font-weight:600;box-shadow:none}
+#financeQuickCalc.pc-v2 .field input:focus,
+#financeQuickCalc.pc-v2 .row-field input:focus,
+#financeQuickCalc.pc-v2 .row-field select:focus,
+#financeQuickCalc.pc-v2 .optional-line input:focus{border-color:#91b6f3;box-shadow:0 0 0 3px rgba(33,90,194,.08)}
+#financeQuickCalc.pc-v2 .field input::placeholder,
+#financeQuickCalc.pc-v2 .row-field input::placeholder{color:#9baabb;font-weight:400}
+#financeQuickCalc.pc-v2 input[data-money]{direction:ltr;text-align:left;font-variant-numeric:tabular-nums}
+#financeQuickCalc.pc-v2 .cash-extra{margin:0 0 18px}
+#financeQuickCalc.pc-v2 .text-action{border:0;background:none;color:var(--pc-blue);font-size:12px;padding:5px 0}
+#financeQuickCalc.pc-v2 .cheque-editor{border-top:1px solid #e8eef5;padding-top:20px}
+#financeQuickCalc.pc-v2 .cheque-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:13px}
+#financeQuickCalc.pc-v2 .cheque-heading h3{font-size:14px;font-weight:800;color:var(--pc-ink);margin:0}
+#financeQuickCalc.pc-v2 .add-inline{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:7px 12px;background:#f6faff;border:1px dashed #9dbdea;color:var(--pc-blue);border-radius:9px;font-size:12px;font-weight:750;white-space:nowrap;margin:0}
+#financeQuickCalc.pc-v2 .add-inline:hover{background:#eaf2ff}
+#financeQuickCalc.pc-v2 .empty-cheques{border:1px dashed #cddce9;border-radius:11px;background:#fafcff;color:var(--pc-muted);padding:22px 12px;text-align:center;margin:0;font-size:12px}
+#financeQuickCalc.pc-v2 .rows-block{display:block;margin:0 0 10px}
+#financeQuickCalc.pc-v2 .section-heading{display:none}
+#financeQuickCalc.pc-v2 .row-list{display:grid;gap:10px}
+#financeQuickCalc.pc-v2 .payment-row{display:grid;grid-template-columns:52px minmax(0,1fr) minmax(0,1fr) 36px;gap:9px;align-items:center;background:#fafcff;border:1px solid var(--pc-line);border-radius:12px;padding:10px;min-width:0}
+#financeQuickCalc.pc-v2 .payment-row.has-kind.future-row{grid-template-columns:52px minmax(0,1fr) minmax(0,1fr) 36px}
+#financeQuickCalc.pc-v2 .payment-row.has-kind.known-row{grid-template-columns:52px minmax(0,.85fr) minmax(0,1fr) minmax(0,1fr) 36px}
+#financeQuickCalc.pc-v2 .payment-row.has-kind.with-weights{grid-template-columns:45px minmax(0,.82fr) minmax(0,1fr) 75px 36px}
+#financeQuickCalc.pc-v2 .payment-row .cheque-number{font-size:11px;color:var(--pc-muted);font-weight:750;white-space:nowrap;align-self:center}
+#financeQuickCalc.pc-v2 .payment-row .row-field{gap:4px}
+#financeQuickCalc.pc-v2 .payment-row .row-field>span{font-size:10px}
+#financeQuickCalc.pc-v2 .payment-row .row-input,
+#financeQuickCalc.pc-v2 .payment-row select{height:39px;font-size:12px;padding:6px 9px}
+#financeQuickCalc.pc-v2 .payment-row select{cursor:pointer}
+#financeQuickCalc.pc-v2 .payment-row .date-wrap{display:flex;position:relative;min-width:0}
+#financeQuickCalc.pc-v2 .payment-row .date-input{direction:ltr;text-align:center;padding:7px 40px 7px 6px}
+#financeQuickCalc.pc-v2 .due-hint{font-size:10px;color:var(--pc-muted);line-height:1.3;min-height:12px}
+#financeQuickCalc.pc-v2 .calendar-trigger{display:inline-grid;place-items:center;position:absolute;right:3px;top:3px;height:33px;width:33px;border-radius:7px;border:0;background:#edf3fd;color:#315b9e;font-size:16px;padding:0}
+#financeQuickCalc.pc-v2 .calendar-trigger:hover{background:#dfeaff}
+#financeQuickCalc.pc-v2 .payment-row .remove{display:inline-grid;place-items:center;width:34px;height:36px;margin:0;padding:0;border:0;border-radius:8px;background:#fff0f2;color:#b14f65;font-size:20px}
+#financeQuickCalc.pc-v2 .payment-row .remove:hover{background:#ffe1e7}
+#financeQuickCalc.pc-v2 .bottom-tools{display:flex;align-items:center;gap:8px;margin-top:10px}
+#financeQuickCalc.pc-v2 .tiny-tool{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#5b7a9d;padding:7px 0;font-size:12px}
+#financeQuickCalc.pc-v2 .tiny-tool:hover{color:var(--pc-blue)}
+#financeQuickCalc.pc-v2 .optional-details{border:0;border-top:1px solid #e7edf5;border-radius:0;padding:12px 0 0;margin:20px 0 0}
+#financeQuickCalc.pc-v2 .optional-details summary{cursor:pointer;color:var(--pc-muted);font-size:12px;list-style:revert}
+#financeQuickCalc.pc-v2 .optional-line{margin-top:10px;display:grid;gap:7px}
+#financeQuickCalc.pc-v2 .optional-line label{font-size:11px;color:var(--pc-muted)}
+#financeQuickCalc.pc-v2 .optional-line input{max-width:480px}
+#financeQuickCalc.pc-v2 .form-buttons{display:flex;align-items:center;justify-content:flex-start;gap:9px;margin:20px 0 0}
+#financeQuickCalc.pc-v2 .calc-btn{display:inline-flex;align-items:center;justify-content:center;min-height:43px;padding:9px 19px;border:1px solid var(--pc-blue);background:var(--pc-blue);color:#fff;border-radius:9px;font-weight:800;font-size:12px;box-shadow:none}
+#financeQuickCalc.pc-v2 .calc-btn:hover{background:var(--pc-blue-dark)}
+#financeQuickCalc.pc-v2 .reset-btn{min-height:43px;padding:8px 13px;border:1px solid var(--pc-line);background:transparent;color:var(--pc-muted);border-radius:9px;font-size:12px}
+#financeQuickCalc.pc-v2 .reset-btn:hover{background:var(--pc-soft)}
+#financeQuickCalc.pc-v2 .error{margin-top:14px;background:#fff4f5;border:1px solid #f4ccd3;color:#a63d50;padding:10px 12px;border-radius:9px;white-space:pre-line}
+#financeQuickCalc.pc-v2 .answer{min-width:0;position:sticky;top:17px;background:linear-gradient(155deg,#f8fbff,#fff 89%);border:1px solid #d9e7f7;border-radius:16px;padding:23px;box-shadow:0 7px 23px rgba(15,66,128,.04)}
+#financeQuickCalc.pc-v2 .result-heading{font-size:11px;color:#6d8aad;margin:0 0 23px;font-weight:750}
+#financeQuickCalc.pc-v2 .answer-top{display:block;color:#59738e;font-weight:750;font-size:13px;margin:0 0 4px}
+#financeQuickCalc.pc-v2 .answer-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:9px;margin-bottom:4px}
+#financeQuickCalc.pc-v2 .big-answer{font-size:clamp(29px,3.3vw,45px);font-weight:850;color:var(--pc-blue);line-height:1.55;white-space:nowrap;margin:0;letter-spacing:0}
+#financeQuickCalc.pc-v2 .answer-unit{color:var(--pc-muted);font-size:12px}
+#financeQuickCalc.pc-v2 .answer-hint{margin:0 0 18px;font-size:11px;color:var(--pc-muted);min-height:19px}
+#financeQuickCalc.pc-v2 .answer-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0;margin:0 0 19px;border:0}
+#financeQuickCalc.pc-v2 .answer-stats>div{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 10px;border:1px solid var(--pc-line);background:var(--pc-paper);border-radius:10px}
+#financeQuickCalc.pc-v2 .answer-stats span{font-size:11px;color:var(--pc-muted)}
+#financeQuickCalc.pc-v2 .answer-stats strong{font-size:15px;color:var(--pc-ink);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#financeQuickCalc.pc-v2 .answer-stats .stat-cash strong{color:var(--pc-green)}
+#financeQuickCalc.pc-v2 .answer-stats .stat-cheques strong{color:var(--pc-purple)}
+#financeQuickCalc.pc-v2 .details{border:0;border-top:1px solid #e5edf6;padding:13px 0 0;margin:0}
+#financeQuickCalc.pc-v2 .details summary{cursor:pointer;color:var(--pc-blue);font-size:12px;font-weight:750;min-height:25px;list-style:revert}
+#financeQuickCalc.pc-v2 .details-rows{margin:11px 0 0}
+#financeQuickCalc.pc-v2 .detail-row{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:7px 0;border-bottom:1px dashed var(--pc-line);font-size:11px}
+#financeQuickCalc.pc-v2 .detail-row span{color:var(--pc-muted)}
+#financeQuickCalc.pc-v2 .detail-row strong{color:var(--pc-ink);font-weight:750;text-align:left}
+#financeQuickCalc.pc-v2 .formula-info{color:var(--pc-muted);font-size:10px;line-height:1.85;margin:10px 0 0}
+#financeQuickCalc.pc-v2 .print-btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:46px;margin-top:18px;border:1px solid var(--pc-blue);border-radius:10px;background:var(--pc-blue);color:#fff;font-size:13px;font-weight:800}
+#financeQuickCalc.pc-v2 .print-btn:not(:disabled):hover{background:var(--pc-blue-dark)}
+#financeQuickCalc.pc-v2 .read-only-note{text-align:center;color:#9babb9;font-size:10px;margin:11px 0 0}
+#financeQuickCalc.pc-v2 .pc-settings-dialog,
+#financeQuickCalc.pc-v2 .calendar-modal{border:1px solid var(--pc-line);border-radius:17px;background:var(--pc-paper);color:var(--pc-ink);width:min(440px,calc(100vw - 30px));max-height:calc(100vh - 24px);padding:0;box-shadow:0 25px 80px rgba(13,39,74,.23);overflow:auto}
+#financeQuickCalc.pc-v2 dialog::backdrop{background:rgba(18,42,73,.52);backdrop-filter:blur(3px)}
+#financeQuickCalc.pc-v2 .modal-inner,#financeQuickCalc.pc-v2 .calendar-content{display:grid;gap:16px;padding:23px}
+#financeQuickCalc.pc-v2 .modal-head,#financeQuickCalc.pc-v2 .calendar-title{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#financeQuickCalc.pc-v2 .modal-head h2,#financeQuickCalc.pc-v2 .calendar-title h2{font-size:17px;font-weight:800;margin:0;color:var(--pc-ink)}
+#financeQuickCalc.pc-v2 .modal-head p{font-size:11px;color:var(--pc-muted);margin:4px 0 0}
+#financeQuickCalc.pc-v2 .icon-close{display:grid;place-items:center;border:0;border-radius:9px;background:var(--pc-soft);color:var(--pc-muted);width:34px;height:34px;font-size:21px}
+#financeQuickCalc.pc-v2 .modal-note{font-size:11px;color:var(--pc-muted);margin:0;line-height:1.9}
+#financeQuickCalc.pc-v2 .modal-inner .calc-btn{width:100%}
+#financeQuickCalc.pc-v2 .modal-inner .date-wrap{display:flex;position:relative}
+#financeQuickCalc.pc-v2 .modal-inner .date-input{padding-left:43px}
+#financeQuickCalc.pc-v2 .modal-inner .calendar-trigger{right:auto;left:5px;top:6px}
+#financeQuickCalc.pc-v2 .month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#financeQuickCalc.pc-v2 .month-nav strong{font-size:15px}
+#financeQuickCalc.pc-v2 .month-nav button{display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:var(--pc-soft);color:var(--pc-blue);width:42px;height:42px;padding:0}
+#financeQuickCalc.pc-v2 .month-nav button svg{display:block;width:19px;height:19px;direction:ltr;transform:none}
+#financeQuickCalc.pc-v2 .month-nav button:hover:not(:disabled){background:#e3edfb}
+#financeQuickCalc.pc-v2 .month-nav button:disabled{opacity:.3;cursor:not-allowed}
+#financeQuickCalc.pc-v2 .weekdays,#financeQuickCalc.pc-v2 .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;align-items:center;text-align:center}
+#financeQuickCalc.pc-v2 .weekdays span{color:var(--pc-muted);font-size:11px}
+#financeQuickCalc.pc-v2 .days button{border:0;background:transparent;border-radius:9px;min-height:42px;color:var(--pc-ink);font-size:13px;padding:4px}
+#financeQuickCalc.pc-v2 .days button:hover:not(:disabled){background:var(--pc-soft);color:var(--pc-blue)}
+#financeQuickCalc.pc-v2 .days button:disabled{opacity:.28;cursor:not-allowed}
+#financeQuickCalc.pc-v2 .days > span{min-height:42px}
+#financeQuickCalc.pc-v2 .days button.selected{background:var(--pc-blue);color:#fff}
+#financeQuickCalc.pc-v2 .days button.today:not(.selected){box-shadow:inset 0 0 0 1px var(--pc-blue)}
+#financeQuickCalc.pc-v2 .date-foot{font-size:11px;color:var(--pc-muted);margin:0}
+#financeQuickCalc.pc-v2 .calendar-content{gap:12px}
+#financeQuickCalc.pc-v2 .calendar-modal .days button:focus-visible{outline-offset:0}
+@media(max-width:470px){
+ #financeQuickCalc.pc-v2 .calendar-content{padding:16px;gap:10px}
+ #financeQuickCalc.pc-v2 .weekdays,#financeQuickCalc.pc-v2 .days{gap:3px}
 }
-#financeQuickCalc{font-family:Vazirmatn,Tahoma,'Segoe UI',sans-serif;direction:rtl;width:100%;color:var(--ink);background:transparent;}
-#financeQuickCalc .page-shell{padding-top:16px}
-#financeQuickCalc .read-only-note{font-size:11px}
-#financeQuickCalc [hidden]{display:none!important}
-
-
-/* Visual refinement v2 — same compact, server-backed, three-tab calculator.
-   Keep every selector scoped to this module to protect the wider ERP shell. */
-#financeQuickCalc{
-  --bg:#f5f8fc;
-  --paper:var(--app-surface,#fff);
-  --ink:#20384d;
-  --muted:#60788b;
-  --line:#dbe5ee;
-  --blue:#156fa8;
-  --blue-dark:#0f5385;
-  --light:#eaf4fb;
-  --good:#16846a;
-  --shadow:0 6px 26px rgba(29,62,88,.065),0 1px 2px rgba(29,62,88,.04);
-  min-height:0;
-  background:transparent;
-  color:var(--ink);
-  line-height:1.8;
+#financeQuickCalc.pc-v2 .today-btn{border:1px solid var(--pc-line);background:var(--pc-soft);color:var(--pc-blue);border-radius:9px;min-height:40px;font-weight:700}
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2{
+  --pc-ink:#e8f0f8;--pc-muted:#a4b6c8;--pc-line:#3d5164;
+  --pc-blue:#8cb9ff;--pc-blue-dark:#3164b2;--pc-soft:#263747;
+  --pc-paper:#1b2938;--pc-shadow:none;
 }
-#financeQuickCalc .page-shell{
-  max-width:910px;
-  padding:22px 16px 42px;
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .answer{background:#1d3043;border-color:var(--pc-line)}
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .field input,
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .row-field input,
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .row-field select,
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .optional-line input{background:#25384a;border-color:var(--pc-line);color:var(--pc-ink)}
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .payment-row,
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .empty-cheques{background:#203143;color:var(--pc-muted)}
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .rate-chip-button{background:#243f63;border-color:#5076a5}
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .print-btn,
+html[data-app-theme="dark"] #financeQuickCalc.pc-v2 .calc-btn{color:#10243b;background:#8cb9ff;border-color:#8cb9ff}
+@media(max-width:1099px){
+ #financeQuickCalc.pc-v2 .calc-workspace{grid-template-columns:minmax(0,1fr)}
+ #financeQuickCalc.pc-v2 .answer{position:static}
 }
-#financeQuickCalc .masthead{margin:0 2px 18px}
-#financeQuickCalc .identity{gap:12px}
-#financeQuickCalc .mark{
-  width:46px;height:46px;border-radius:13px;
-  background:linear-gradient(155deg,#218abf,#106197);
-  box-shadow:0 8px 18px rgba(21,111,168,.18);
-  font-size:24px;
-}
-#financeQuickCalc .eyebrow{font-size:11px;color:var(--muted);font-weight:600}
-#financeQuickCalc h1{font-size:20px;font-weight:850;letter-spacing:0;color:#17374f}
-#financeQuickCalc .settings-link{
-  background:#fff;border-color:#d9e5ee;border-radius:12px;
-  padding:10px 14px;min-height:43px;
-  box-shadow:0 2px 7px rgba(36,77,103,.04);
-  color:#365770;transition:background .16s,border-color .16s,box-shadow .16s;
-}
-#financeQuickCalc .settings-link:hover{
-  border-color:#9fc8e3;background:#f4faff;box-shadow:0 4px 12px rgba(21,111,168,.08);
-}
-#financeQuickCalc .calculator{
-  border-color:#d7e3ed;border-radius:19px;
-  box-shadow:var(--shadow);
-  background:#fff;
-}
-#financeQuickCalc .lead{
-  padding:23px 25px 17px;
-  align-items:center;
-}
-#financeQuickCalc .lead h2{
-  color:#17374f;font-size:18px;font-weight:850;line-height:1.55;
-}
-#financeQuickCalc .lead p{margin-top:4px;color:#6b8092;line-height:1.9}
-#financeQuickCalc .demo-badge{
-  border:1px solid #d4e7f1;color:#3b7394;background:#f2f9fd;
-  border-radius:999px;padding:6px 10px;font-weight:650;
-}
-#financeQuickCalc .tabs{
-  margin:0 24px;padding:5px;gap:5px;
-  border:1px solid #e4edf4;background:#f1f5f9;border-radius:13px;
-}
-#financeQuickCalc .tab{
-  min-height:49px;padding:10px 7px;border-radius:9px;
-  font-size:13px;font-weight:750;color:#526d83;
-  transition:background .16s,color .16s,box-shadow .16s;
-}
-#financeQuickCalc .tab:not(.active):hover{
-  background:#fff;color:#145a8e;
-}
-#financeQuickCalc .tab.active{
-  background:#176fa8;color:white;border-color:#176fa8;
-  box-shadow:0 4px 12px rgba(21,111,168,.17);
-}
-#financeQuickCalc .body{padding:19px 25px 24px}
-#financeQuickCalc .mode-help{
-  margin:0 0 19px;padding:9px 12px;
-  border-right:3px solid #a2d0e8;border-radius:0 8px 8px 0;
-  background:#f5f9fd;color:#466b87;line-height:1.9;
-}
-#financeQuickCalc .field-grid{gap:14px;margin-bottom:6px}
-#financeQuickCalc .field{gap:7px}
-#financeQuickCalc .field>span:first-child,
-#financeQuickCalc .row-field>span{
-  color:#395b74;font-weight:750;
-}
-#financeQuickCalc .field>span:first-child{font-size:12px}
-#financeQuickCalc .field input,
-#financeQuickCalc .row-field input,
-#financeQuickCalc .optional-line input{
-  background:#fcfdff;border:1px solid #d4e2ec;
-  border-radius:10px;color:#20384d;
-  transition:border-color .15s,background .15s,box-shadow .15s;
-}
-#financeQuickCalc .field input{height:47px;font-size:15px;padding-inline:13px}
-#financeQuickCalc .row-field input{height:42px;font-size:13px}
-#financeQuickCalc .field input:hover,
-#financeQuickCalc .row-field input:hover,
-#financeQuickCalc .optional-line input:hover{
-  border-color:#a8c8db;
-}
-#financeQuickCalc .field input:focus,
-#financeQuickCalc .row-field input:focus,
-#financeQuickCalc .optional-line input:focus{
-  background:white;border-color:#287fb2;box-shadow:0 0 0 3px rgba(31,123,181,.12);
-}
-#financeQuickCalc .rows-block{margin-top:20px}
-#financeQuickCalc .section-heading h3{
-  color:#274b63;font-size:14px;font-weight:850;
-}
-#financeQuickCalc .section-heading p{color:#73899a;margin:4px 0 11px}
-#financeQuickCalc .row-list{gap:10px}
-#financeQuickCalc .payment-row{
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr) 41px;
-  background:#f8fbfd;border:1px solid #dfebf2;
-  padding:12px 13px;border-radius:12px;
-}
-#financeQuickCalc .payment-row.future-row{grid-template-columns:minmax(0,1fr) 41px}
-#financeQuickCalc .payment-row.future-row.with-weights{grid-template-columns:minmax(0,1fr) minmax(70px,.48fr) 41px}
-#financeQuickCalc .payment-row:hover{border-color:#bfd9e8}
-#financeQuickCalc .row-field>span{font-size:11px}
-#financeQuickCalc .date-wrap .date-input{letter-spacing:.12px;padding-left:43px}
-#financeQuickCalc .calendar-trigger{
-  width:39px;color:#1c75aa;border-radius:8px;
-}
-#financeQuickCalc .calendar-trigger:hover{background:#e9f3fb}
-#financeQuickCalc .due-hint{color:#667f92;font-size:10px}
-#financeQuickCalc .remove{
-  color:#a75b66;background:#fff3f4;border:1px solid #f6e0e4;
-  border-radius:9px;width:40px;height:42px;
-}
-#financeQuickCalc .remove:hover{color:#9f2d40;background:#fdecef}
-#financeQuickCalc .add-inline{
-  display:inline-flex;align-items:center;justify-content:center;
-  background:#f5faff;color:#12699f;
-  border:1px dashed #9fc6df;border-radius:9px;
-  padding:8px 13px;margin-top:12px;font-weight:750;min-height:42px;
-  transition:background .15s,border-color .15s;
-}
-#financeQuickCalc .add-inline:hover{
-  background:#eaf5fd;border-color:#5a9bc5;text-decoration:none;
-}
-#financeQuickCalc .tiny-tool{
-  padding:8px 4px;color:#567c96;font-weight:650;
-}
-#financeQuickCalc .bottom-tools{gap:13px}
-#financeQuickCalc .text-action{color:#12699f}
-#financeQuickCalc .optional-line{margin-top:20px;padding-top:18px}
-#financeQuickCalc .optional-line input{height:43px}
-#financeQuickCalc .form-buttons{gap:11px;margin-top:21px}
-#financeQuickCalc .calc-btn{
-  background:linear-gradient(115deg,#1677b2,#115c93);
-  border-color:#12679d;min-height:49px;border-radius:10px;
-  font-size:14px;font-weight:850;
-  box-shadow:0 5px 12px rgba(17,94,145,.15);
-  transition:filter .15s,box-shadow .15s,transform .15s;
-}
-#financeQuickCalc .calc-btn:hover{
-  background:linear-gradient(115deg,#126a9f,#104f80);
-  box-shadow:0 7px 15px rgba(17,94,145,.2);
-  transform:translateY(-1px);
-}
-#financeQuickCalc .calc-btn:active{transform:none}
-#financeQuickCalc .reset-btn{
-  min-height:49px;color:#526c82;
-  border-color:#d5e2ec;border-radius:10px;font-weight:700;
-}
-#financeQuickCalc .reset-btn:hover{background:#f2f7fb;border-color:#a8c8dd}
-#financeQuickCalc .error{
-  background:#fff4f5;border:1px solid #f4cdd3;
-  color:#a22f40;line-height:1.95;border-radius:10px;
-}
-#financeQuickCalc .answer{
-  background:linear-gradient(145deg,#f0f8fe 0%,#e8f3fb 100%);
-  padding:25px 27px 24px;border-top:1px solid #cfdfed;
-}
-#financeQuickCalc .answer-top{
-  color:#2d5f83;font-size:13px;font-weight:850;gap:10px;
-}
-#financeQuickCalc .status-dot{
-  width:9px;height:9px;background:#16846a;
-  box-shadow:0 0 0 4px rgba(22,132,106,.095);
-}
-#financeQuickCalc .answer-unit{
-  color:#607f94;font-size:12px;font-weight:650;
-}
-#financeQuickCalc .big-answer{
-  color:#10527f;font-size:clamp(35px,5.5vw,51px);
-  letter-spacing:-1px;line-height:1.52;margin-top:4px;
-}
-#financeQuickCalc .answer-hint{
-  margin:1px 0 17px;font-size:12px;color:#4f7690;
-}
-#financeQuickCalc .answer-stats{
-  border-top:1px solid #d1e3ef;
-  padding-top:15px;gap:11px;
-}
-#financeQuickCalc .answer-stats>div{
-  min-width:0;border:1px solid rgba(183,212,231,.75);
-  background:rgba(255,255,255,.82);
-  padding:11px 14px;border-radius:10px;gap:4px;
-}
-#financeQuickCalc .answer-stats span{color:#617e93}
-#financeQuickCalc .answer-stats strong{
-  color:#1d465f;overflow-wrap:anywhere;font-size:16px;
-}
-#financeQuickCalc .details{
-  border-color:#c6dcea;padding-top:10px;
-}
-#financeQuickCalc .details summary{
-  min-height:41px;color:#226894;
-}
-#financeQuickCalc .detail-row{padding:6px 0;border-bottom:1px solid #d9e8f2}
-#financeQuickCalc .detail-row:last-child{border-bottom:0}
-#financeQuickCalc .print-btn{
-  min-height:44px;margin-top:17px;background:#fff;
-  border:1px solid #a7cce4;color:#135c91;
-  border-radius:10px;font-size:13px;
-  transition:border-color .15s,background .15s;
-}
-#financeQuickCalc .print-btn:not(:disabled):hover{
-  background:#f7fbff;border-color:#6fa9ce;
-}
-#financeQuickCalc .print-btn:disabled{
-  opacity:.58;background:#eef5f9;
-}
-#financeQuickCalc .read-only-note{margin-top:11px;color:#718da0}
-#financeQuickCalc .footnote{margin-top:15px;color:#8296a5;font-size:11px}
-#financeQuickCalc .modal,#financeQuickCalc .calendar-modal{
-  border-radius:16px;border-color:#d3e3ed;
-  box-shadow:0 24px 75px rgba(20,52,75,.23);
-}
-#financeQuickCalc .modal-head h2,#financeQuickCalc .calendar-title h2{
-  color:#1f4864;
-}
-#financeQuickCalc .days button:focus-visible,
-#financeQuickCalc .tab:focus-visible,
-#financeQuickCalc .print-btn:focus-visible{
-  outline:3px solid #83bde0;outline-offset:2px;
-}
-#financeQuickCalc .days button.selected{
-  background:#176fa8;color:#fff;font-weight:800;
+@media(max-width:760px){
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.known-row{grid-template-columns:52px minmax(0,1fr) minmax(0,1fr) 36px}
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.known-row .row-due{grid-column:2/4}
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.known-row .remove{grid-column:4;grid-row:1}
 }
 @media(max-width:660px){
-  #financeQuickCalc .page-shell{padding:12px 9px 28px}
-  #financeQuickCalc .masthead{margin:0 2px 14px}
-  #financeQuickCalc .mark{width:40px;height:40px;border-radius:11px}
-  #financeQuickCalc h1{font-size:17px}
-  #financeQuickCalc .calculator{border-radius:15px}
-  #financeQuickCalc .lead{padding:17px 15px 13px;gap:9px}
-  #financeQuickCalc .lead h2{font-size:16px}
-  #financeQuickCalc .demo-badge{padding:4px 7px}
-  #financeQuickCalc .tabs{margin:0 13px;padding:4px;gap:4px}
-  #financeQuickCalc .tab{font-size:11px;min-height:48px;padding:8px 4px}
-  #financeQuickCalc .body{padding:16px 15px 21px}
-  #financeQuickCalc .mode-help{font-size:11px;margin-bottom:16px}
-  #financeQuickCalc .field-grid{gap:12px}
-  #financeQuickCalc .field input{height:47px}
-  #financeQuickCalc .row-field input{height:44px}
-  #financeQuickCalc .calendar-trigger{width:36px}
-  #financeQuickCalc .date-wrap .date-input{padding-left:40px}
-  #financeQuickCalc .payment-row{padding:11px 10px}
-  #financeQuickCalc .answer{padding:20px 17px 21px}
-  #financeQuickCalc .big-answer{font-size:clamp(32px,9vw,43px)}
-  #financeQuickCalc .answer-stats>div{padding:10px}
-  #financeQuickCalc .answer-stats strong{font-size:14px}
-  #financeQuickCalc .form-buttons{margin-top:18px}
+ #financeQuickCalc.pc-v2 .page-shell{padding:12px 9px 30px}
+ #financeQuickCalc.pc-v2 .masthead{margin-bottom:12px}
+ #financeQuickCalc.pc-v2 .masthead h1{font-size:17px}
+ #financeQuickCalc.pc-v2 .calculator{padding:14px;border-radius:15px}
+ #financeQuickCalc.pc-v2 .control-strip{align-items:flex-start;gap:10px}
+ #financeQuickCalc.pc-v2 .calculation-context{gap:8px}
+ #financeQuickCalc.pc-v2 .tabs .tab{font-size:11px;min-height:44px;padding:7px 3px}
+ #financeQuickCalc.pc-v2 .field-grid{grid-template-columns:minmax(0,1fr)}
+ #financeQuickCalc.pc-v2 .answer{padding:18px}
+ #financeQuickCalc.pc-v2 .big-answer{font-size:35px}
+ #financeQuickCalc.pc-v2 .payment-row,
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.future-row,
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.known-row,
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.with-weights{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+ #financeQuickCalc.pc-v2 .payment-row .cheque-number{grid-column:1}
+ #financeQuickCalc.pc-v2 .payment-row .remove{grid-column:2;grid-row:1;justify-self:end}
+ #financeQuickCalc.pc-v2 .payment-row .row-kind{grid-column:1/-1}
+ #financeQuickCalc.pc-v2 .payment-row .amount-field{grid-column:1/-1}
+ #financeQuickCalc.pc-v2 .payment-row .row-due{grid-column:1/-1}
+ #financeQuickCalc.pc-v2 .payment-row .weight-field{grid-column:1/-1}
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.known-row .row-due{grid-column:1/-1}
+ #financeQuickCalc.pc-v2 .payment-row.has-kind.known-row .remove{grid-column:2;grid-row:1}
 }
 @media(max-width:470px){
-  #financeQuickCalc .masthead{gap:8px}
-  #financeQuickCalc .settings-link{padding:7px 10px}
-  #financeQuickCalc .lead p{font-size:11px}
-  #financeQuickCalc .demo-badge{display:none}
-  #financeQuickCalc .payment-row,
-  #financeQuickCalc .payment-row.future-row,
-  #financeQuickCalc .payment-row.future-row.with-weights{
-    grid-template-columns:minmax(0,1fr);
-    gap:10px;position:relative;
-    padding:12px 12px 12px 52px;
-  }
-  #financeQuickCalc .payment-row .remove{
-    position:absolute;left:7px;top:10px;
-    width:40px;height:40px;
-  }
-  #financeQuickCalc .row-field input{font-size:14px;padding-inline:10px}
-  #financeQuickCalc .date-wrap .date-input{font-size:13px;padding-left:40px}
-  #financeQuickCalc .answer-stats{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  #financeQuickCalc .bottom-tools{gap:7px}
-  #financeQuickCalc .add-inline{padding:8px 10px}
+ #financeQuickCalc.pc-v2 .answer-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #financeQuickCalc.pc-v2 .answer-stats strong{font-size:13px}
+ #financeQuickCalc.pc-v2 .calculation-context{font-size:11px}
+ #financeQuickCalc.pc-v2 .settings-link{min-height:34px}
+ #financeQuickCalc.pc-v2 .big-answer{font-size:30px}
 }
 @media(max-width:350px){
-  #financeQuickCalc .tab{font-size:10px}
-  #financeQuickCalc .answer-stats{grid-template-columns:minmax(0,1fr)}
-  #financeQuickCalc .form-buttons{flex-wrap:wrap}
-  #financeQuickCalc .calc-btn{flex-basis:100%}
-  #financeQuickCalc .reset-btn{width:100%}
+ #financeQuickCalc.pc-v2 .answer-stats{grid-template-columns:minmax(0,1fr)}
+ #financeQuickCalc.pc-v2 .form-buttons{flex-wrap:wrap}
 }
-@media(prefers-reduced-motion:reduce){
-  #financeQuickCalc .calc-btn,#financeQuickCalc .tab,
-  #financeQuickCalc .settings-link,#financeQuickCalc input{
-    transition:none!important;transform:none!important;
-  }
-}
-
-/* Simple payment workspace: fixed section colours, using the app day/night switch. */
-#financeQuickCalc{
- --bg:#f3f6fa;--paper:#fff;--ink:#19354b;--muted:#52677c;--line:#dce5ee;
- --blue:#225cb5;--blue-dark:#18468f;--light:#edf3fd;
- --cash:#13734d;--cash-soft:#eff8f3;--cheque:#7440bd;--cheque-soft:#f5f0fb;
- --rate:#92500d;--rate-soft:#fcf5e9;--result:#087b7e;
- --danger:#b93449;--good:#167457;
- min-height:0;border-radius:16px;font-family:inherit;
-}
-html[data-app-theme="dark"] #financeQuickCalc{
- --bg:#15202d;--paper:#1d2b3a;--ink:#e6edf5;--muted:#afbdcd;--line:#3a4b5e;
- --blue:#98bfff;--blue-dark:#bad3ff;--light:#253a55;
- --cash:#74ddb0;--cash-soft:#223b35;--cheque:#c5a1ff;--cheque-soft:#302c45;
- --rate:#ffcc88;--rate-soft:#3d352b;--result:#6de0de;
- --danger:#ffabb4;--good:#74ddb0;
-}
-#financeQuickCalc .page-shell{max-width:1380px;padding:14px 20px 22px}
-#financeQuickCalc .calculator{background:transparent;border:0;box-shadow:none;border-radius:0;overflow:visible}
-#financeQuickCalc .lead{padding:0 0 8px}
-#financeQuickCalc .lead h2{font-size:14px;color:var(--ink);margin:0}
-#financeQuickCalc .lead p{display:none}
-#financeQuickCalc .lead p,#financeQuickCalc .eyebrow{color:var(--muted);font-size:12px}
-#financeQuickCalc .masthead{margin-bottom:12px}
-#financeQuickCalc .identity .mark{height:38px;width:38px;border-radius:10px;font-size:22px;box-shadow:none}
-#financeQuickCalc .identity h1{color:var(--ink)}
-#financeQuickCalc .demo-badge{background:var(--light);color:var(--blue-dark)}
-#financeQuickCalc .settings-link{background:var(--paper);color:var(--ink);min-height:44px;box-shadow:none}
-#financeQuickCalc .tabs{margin:0;background:var(--paper);border-color:var(--line)}
-#financeQuickCalc .tab{color:var(--muted);font-size:13px}
-#financeQuickCalc .tab.active{background:var(--blue);color:#fff;border-color:var(--blue);box-shadow:none}
-html[data-app-theme="dark"] #financeQuickCalc .tab.active{color:#142941}
-#financeQuickCalc .calculation-context{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;background:transparent;border-bottom:1px solid var(--line);padding:10px 0;margin:8px 0 16px;font-size:12px;color:var(--muted)}
-#financeQuickCalc .calculation-context b{font-size:14px;font-variant-numeric:tabular-nums;margin-inline-start:5px}
-#financeQuickCalc #rateChip{color:var(--rate)}
-#financeQuickCalc .calc-workspace{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:18px;align-items:start}
-#financeQuickCalc .body,#financeQuickCalc .answer{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:20px}
-#financeQuickCalc .mode-help{font-size:13px;color:var(--muted);background:transparent;border:0;padding:0;line-height:1.9;margin-bottom:18px}
-#financeQuickCalc .field-grid{gap:12px}
-#financeQuickCalc .field-grid>.field{padding:0;background:transparent;border:0}
-#financeQuickCalc #cashField>span:first-child{color:var(--cash)}
-#financeQuickCalc .field>span:first-child,#financeQuickCalc .row-field>span{color:var(--ink);font-size:12px}
-#financeQuickCalc .field em{color:var(--muted);font-size:11px}
-#financeQuickCalc .field input,#financeQuickCalc .row-field input,#financeQuickCalc .row-field select,#financeQuickCalc .optional-line input{background:var(--paper);border:1px solid var(--line);color:var(--ink);font-size:15px;min-height:44px}
-#financeQuickCalc .row-field select{font:inherit;width:100%;padding:6px 10px;border-radius:8px;min-width:0}
-#financeQuickCalc .field input:focus,#financeQuickCalc .row-field input:focus,#financeQuickCalc .optional-line input:focus{background:var(--paper);color:var(--ink)}
-#financeQuickCalc select:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
-#financeQuickCalc .cheque-editor{padding:16px 0 0;margin-top:20px;background:transparent;border-top:1px solid var(--line)}
-#financeQuickCalc .cheque-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
-#financeQuickCalc .cheque-heading h3{margin:0;font-size:16px;color:var(--cheque)}
-#financeQuickCalc .cheque-heading .add-inline{padding:7px 12px;background:var(--paper);border:1px solid var(--line);border-radius:7px;color:var(--cheque);font-size:13px;min-height:44px}
-#financeQuickCalc .cheque-editor .section-heading{display:none}
-#financeQuickCalc .rows-block{margin-top:12px}
-#financeQuickCalc .payment-row,#financeQuickCalc .payment-row.future-row,#financeQuickCalc .payment-row.future-row.with-weights{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;padding:12px;background:var(--paper);border-color:var(--line);gap:12px}
-#financeQuickCalc .row-header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
-#financeQuickCalc .row-kind{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
-#financeQuickCalc .row-kind>span{white-space:nowrap;font-weight:400;color:var(--muted)}
-#financeQuickCalc .row-kind select{width:auto;max-width:260px;flex:1;min-height:44px;font-size:14px}
-#financeQuickCalc .payment-row.future-row:not(.with-weights)>.row-due{grid-column:1/-1}
-#financeQuickCalc .payment-row .remove{position:static;flex:0 0 44px;height:44px;width:44px;margin-inline-start:auto;color:var(--danger);background:transparent;border:1px solid var(--line);border-radius:8px}
-#financeQuickCalc .payment-row .remove:hover{background:var(--rate-soft);border-color:var(--danger)}
-#financeQuickCalc .row-field>span{font-weight:600}
-#financeQuickCalc .date-wrap .date-input{font-size:14px}
-#financeQuickCalc .due-hint{color:var(--muted);font-size:12px}
-#financeQuickCalc .tiny-tool{color:var(--cheque);font-size:12px}
-#financeQuickCalc .optional-line{margin-top:16px;padding-top:12px;border-color:var(--line);flex-wrap:wrap;gap:6px}
-#financeQuickCalc .optional-line input{max-width:none}
-#financeQuickCalc .optional-details{margin-top:14px;font-size:12px;color:var(--muted)}
-#financeQuickCalc .optional-details summary{cursor:pointer;min-height:32px}
-#financeQuickCalc .optional-details .optional-line{margin-top:5px;padding-top:8px}
-#financeQuickCalc .form-buttons{display:grid;grid-template-columns:minmax(160px,max-content) max-content;justify-content:start;gap:10px;margin-top:16px}
-#financeQuickCalc .calc-btn{background:var(--blue);border-color:var(--blue);font-size:15px;color:#fff;padding:10px 22px;min-height:44px;box-shadow:none}
-#financeQuickCalc .reset-btn{width:auto;min-height:44px;padding:10px 16px}
-html[data-app-theme="dark"] #financeQuickCalc .calc-btn{color:#142941}
-#financeQuickCalc .reset-btn,#financeQuickCalc .print-btn{background:var(--paper);border-color:var(--line);color:var(--ink);min-height:44px}
-#financeQuickCalc .answer{border-top:4px solid var(--result);position:sticky;top:20px}
-#financeQuickCalc .result-heading{color:var(--result);font-size:17px;font-weight:700;margin:0 0 14px}
-#financeQuickCalc .answer-top{color:var(--ink);font-size:13px;flex-wrap:wrap}
-#financeQuickCalc .big-answer{font-size:clamp(28px,2.9vw,42px);line-height:1.8;letter-spacing:0;color:var(--blue);padding-top:8px}
-#financeQuickCalc .answer-hint{color:var(--muted);font-size:12px}
-#financeQuickCalc .answer-stats{border:0;padding:0;grid-template-columns:minmax(0,1fr);gap:8px}
-#financeQuickCalc .answer-stats>div{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:11px 0}
-#financeQuickCalc .answer-stats>.stat-cash strong{color:var(--cash)}
-#financeQuickCalc .answer-stats>.stat-cheques strong{color:var(--cheque)}
-#financeQuickCalc .answer-stats>.stat-increase{background:var(--rate-soft);border:0;border-radius:8px;padding:11px 12px}
-#financeQuickCalc .answer-stats span{font-size:12px;color:var(--muted)}
-#financeQuickCalc .answer-stats strong{font-size:14px;color:var(--ink);overflow-wrap:anywhere;min-width:0}
-#financeQuickCalc .details{border-color:var(--line)}
-#financeQuickCalc .details summary{color:var(--ink);font-size:13px}
-#financeQuickCalc .detail-row{flex-wrap:wrap}
-#financeQuickCalc .detail-row span,#financeQuickCalc .formula-info,#financeQuickCalc .read-only-note,#financeQuickCalc .footnote{color:var(--muted);font-size:12px}
-#financeQuickCalc .footnote{margin-top:15px}
-#financeQuickCalc .modal,#financeQuickCalc .calendar-modal{background:var(--paper);border-color:var(--line);color:var(--ink)}
-#financeQuickCalc .modal h2,#financeQuickCalc .calendar-modal h2{color:var(--ink)}
-#financeQuickCalc .calendar-trigger:hover{background:var(--light);color:var(--blue)}
-#financeQuickCalc .icon-close,#financeQuickCalc .month-nav button,#financeQuickCalc .today-btn{background:var(--light);color:var(--blue)}
-#financeQuickCalc .error{background:var(--rate-soft);color:var(--danger)}
-#financeQuickCalc .days button{color:var(--ink)}
-#financeQuickCalc .days button:hover,#financeQuickCalc .days button.selected{background:var(--blue);color:var(--paper)}
-@media(max-width:1099px){#financeQuickCalc .calc-workspace{grid-template-columns:minmax(0,1fr)}#financeQuickCalc .answer{position:static}#financeQuickCalc .answer-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:660px){#financeQuickCalc .page-shell{padding:16px 10px}#financeQuickCalc .body,#financeQuickCalc .answer{padding:15px}#financeQuickCalc .masthead{flex-wrap:wrap}#financeQuickCalc .field-grid{grid-template-columns:minmax(0,1fr)}#financeQuickCalc .answer-stats{grid-template-columns:minmax(0,1fr)}#financeQuickCalc .calculation-context{gap:8px 15px}#financeQuickCalc .tab{font-size:12px}}
-@media(max-width:470px){#financeQuickCalc .payment-row,#financeQuickCalc .payment-row.future-row,#financeQuickCalc .payment-row.future-row.with-weights{grid-template-columns:minmax(0,1fr);padding:12px}#financeQuickCalc .row-kind{flex-wrap:wrap;gap:4px}#financeQuickCalc .row-kind select{flex-basis:100%}#financeQuickCalc .row-field input,#financeQuickCalc .row-field select{font-size:16px}#financeQuickCalc .cheque-heading{flex-wrap:wrap}#financeQuickCalc .big-answer{font-size:32px}#financeQuickCalc .optional-line label{white-space:normal}}
+@media(prefers-reduced-motion:reduce){#financeQuickCalc.pc-v2 *{scroll-behavior:auto!important;transition:none!important}}

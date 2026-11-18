@@ -70,3 +70,32 @@ it('rejects malformed amounts instead of silently treating them as zero', functi
         'weighted_payments' => [['due_date' => '۱۴۰۵/۰۱/۳۱', 'weight' => '۱']],
     ])->assertUnprocessable()->assertJsonValidationErrors('price_rial');
 });
+
+it('uses an edited monthly rate for the verified calculation instead of a hardcoded six percent', function () {
+    PermissionCatalog::syncToDatabase();
+    $user = User::factory()->create();
+    $role = Role::findOrCreate('CalculatorRateEditorReader', 'web');
+    $role->givePermissionTo(\Spatie\Permission\Models\Permission::query()->where('key', 'page.finance.accounts')->firstOrFail());
+    $user->assignRole($role);
+    $this->actingAs($user);
+
+    $payload = [
+        'mode' => 'schedule',
+        'price_rial' => '100000000',
+        'base_date' => '1405/08/14',
+        'fixed_payments' => [[
+            'kind' => 'cash', 'due_date' => '1405/08/14', 'amount_rial' => '50000000',
+        ]],
+        'weighted_payments' => [[
+            'due_date' => '1405/09/14', 'weight' => '1',
+        ]],
+    ];
+
+    $this->postJson(route('finance.reports.payment-calculator.calculate'), $payload + ['monthly_percent' => '6'])
+        ->assertOk()
+        ->assertJsonPath('result.flexible_total_rial', 53_000_000);
+
+    $this->postJson(route('finance.reports.payment-calculator.calculate'), $payload + ['monthly_percent' => '8'])
+        ->assertOk()
+        ->assertJsonPath('result.flexible_total_rial', 54_000_000);
+});

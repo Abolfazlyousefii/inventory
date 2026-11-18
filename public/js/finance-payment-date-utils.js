@@ -38,6 +38,17 @@
     }
     throw Error('این روز در تقویم شمسی وجود ندارد.');
   }
+  // Month metadata in Saturday-first order; two conversions, rather than one per date cell.
+  function jalaliMonthInfo(year,month) {
+    if(!Number.isInteger(year)||year<1200||year>1499||!Number.isInteger(month)||month<1||month>12)
+      throw Error('ماه یا سال شمسی معتبر نیست.');
+    const firstDay=toGregorianDay(year+'/'+pad(month)+'/01');
+    const nextYear=month===12?year+1:year;
+    const nextMonth=month===12?1:month+1;
+    const days=toGregorianDay(nextYear+'/'+pad(nextMonth)+'/01')-firstDay;
+    const firstWeekday=(new Date(firstDay*86400000).getUTCDay()+1)%7;
+    return {firstDay,firstWeekday,days};
+  }
   function dayDifference(base,target) {
     const days=toGregorianDay(target)-toGregorianDay(base);
     validDay(days);
@@ -51,7 +62,7 @@
     const now=new Date();return toJalali(new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())));
   }
 
-  const api={dayDifference,jalaliAfterDays,todayJalali,toGregorianDay,rate};
+  const api={dayDifference,jalaliAfterDays,todayJalali,toGregorianDay,jalaliMonthInfo,rate};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.FinanceDate=api;
 })(typeof window!=='undefined'?window:globalThis);

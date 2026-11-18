@@ -159,3 +159,26 @@ it('upgrades legacy v1 automatic pricing policy only when a new price revision i
         ->and($policy->fresh()->policy)->toBe(\App\Services\CnyPriceCalculator::POLICY)
         ->and($purchase->items()->sole()->sell_price)->toBe($historicalSale);
 });
+
+
+it('reprices only opted-in yuan products and preserves domestic and paused catalog prices', function () {
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasNoErrors();
+    $domestic=Product::withoutEvents(fn()=>Product::create(['name'=>'کالای تومانی','sku'=>'DOM-1','code'=>'DOM-1','category_id'=>$this->product->category_id,'price'=>7654321,'uniform_sale_price'=>7654321,'is_sellable'=>true]));
+    $domesticVariant=ProductVariant::create(['product_id'=>$domestic->id,'variant_name'=>'مدل داخلی','variant_code'=>'DOM-V','variety_code'=>'0000','sell_price'=>7654321,'buy_price'=>3000000,'is_active'=>true]);
+    $paused=Product::withoutEvents(fn()=>Product::create(['name'=>'یوانی متوقف','sku'=>'PAUSED-1','code'=>'PAUSED-1','category_id'=>$this->product->category_id,'price'=>9876543,'uniform_sale_price'=>9876543,'is_sellable'=>true]));
+    ProductCnyPricing::create(['product_id'=>$paused->id,'buy_cny_units'=>50000,'enabled'=>false,'applied_rate_id'=>$this->rate->id,'approved_by'=>$this->actor->id,'policy'=>\App\Services\CnyPriceCalculator::POLICY]);
+    $domesticBefore=$domestic->fresh()->getAttributes();$variantBefore=$domesticVariant->fresh()->getAttributes();$pausedBefore=$paused->fresh()->getAttributes();
+    $historical=DB::table('purchase_items')->get()->toJson();$supplier=DB::table('supplier_ledgers')->get()->toJson();$stock=DB::table('warehouse_stocks')->get()->toJson();
+    CnyExchangeRate::create(['provider'=>'sample','rate_rial'=>410000,'quoted_at'=>now()]);
+    $catalog=DB::table('products')->get()->toJson();$revisions=DB::table('cny_price_revisions')->count();
+    $this->artisan('cny:reprice --dry-run')->expectsOutput('Eligible yuan products (no changes): 1')->assertSuccessful();
+    expect(DB::table('products')->get()->toJson())->toBe($catalog)->and(DB::table('cny_price_revisions')->count())->toBe($revisions);
+    expect(app(CnyPricingService::class)->reprice())->toBe(1)
+        ->and($this->product->fresh()->price)->toBe(2990000)
+        ->and($domestic->fresh()->getAttributes())->toBe($domesticBefore)
+        ->and($domesticVariant->fresh()->getAttributes())->toBe($variantBefore)
+        ->and($paused->fresh()->getAttributes())->toBe($pausedBefore)
+        ->and(DB::table('purchase_items')->get()->toJson())->toBe($historical)
+        ->and(DB::table('supplier_ledgers')->get()->toJson())->toBe($supplier)
+        ->and(DB::table('warehouse_stocks')->get()->toJson())->toBe($stock);
+});

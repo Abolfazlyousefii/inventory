@@ -74,7 +74,7 @@
         .col-code { width:20mm; font-size:9px !important; overflow-wrap:anywhere; }
         .col-qty { width:11mm; font-weight:700; }
         .col-price { width:23mm; white-space:nowrap; }
-        .col-discount { width:18mm; text-align:left; direction:ltr; white-space:nowrap; }
+        .col-discount-unit,.col-discount-total { width:18mm; text-align:left; direction:ltr; white-space:nowrap; }
         .col-total { width:26mm; white-space:nowrap; font-weight:700; }
         .warehouse-badge { display:block; width:fit-content; margin-top:4px; padding:1px 6px; border:1px solid #7d919d; border-radius:3px; font-size:9px; font-weight:700; color:#284b60; }
         .warehouse-section td { background:#e9eff3 !important; font-size:13px !important; font-weight:700; padding:8px !important; border-top:2px solid #244b60; }
@@ -83,83 +83,140 @@
         .warehouse-mode .col-qty { width:18mm; }
         .warehouse-mode .col-check { width:24mm; }
         .warehouse-mode .items-table td { min-height:12mm; padding-top:9px; padding-bottom:9px; }
+        /* A4 warehouse invoice now contains sale prices as well as picking details. */
+        .warehouse-mode.warehouse-priced .col-qty { width:11mm; }
+        .warehouse-mode.warehouse-priced .items-table td.col-qty { font-size:15px; }
+        .warehouse-mode.warehouse-priced .items-table td { padding:6px 5px; }
+        .warehouse-mode.warehouse-priced .product-discount { background:#f8fafc; font-weight:700; }
+        .warehouse-mode.warehouse-priced .warehouse-items-summary { margin-top:12px; }
         .summary-table td { padding:5px 8px; border-color:#bac6ce; font-size:11px; }
         .final-row td { background:#edf2f5; font-size:13px; border-top:2px solid #244b60; }
         @media screen and (max-width:760px) { .invoice-page,.no-print { width:100%; } .invoice-page { overflow-x:auto; } .items-table { min-width:680px; } }
 
         .signature-section { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; page-break-inside:avoid; break-inside:avoid; }
         .signature-box { height:48px; border:1px solid #374151; border-radius:6px; padding:6px; font-weight:900; }
-        .customer-items caption { text-align:left; font-size:10px; padding:3px 0 6px; color:#526570; }
-        .customer-items .product-heading td { background:#edf2f5; padding:8px 6px; border-top:2px solid #567180; }
-        .customer-items .product-heading strong { font-size:12px; }
-        .customer-items .product-models td { background:#fff; padding:6px; }
-        .variant-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
-        .variant-detail { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 7px; padding:5px 0; border-bottom:1px solid #e5e9ed; break-inside:avoid; }
-        .variant-name { flex:1; min-width:80px; overflow-wrap:anywhere; }
-        .variant-count { white-space:nowrap; }
-        .variant-source { font-size:9px; color:#526570; white-space:nowrap; }
-        .showroom-source { color:#173d53; font-weight:700; border:1px solid #879daa; padding:0 4px; border-radius:3px; }
-        .bundle-detail { flex-basis:100%; color:#526570; }
-        .product-discount { padding-top:6px; text-align:left; font-size:10px; }
-        .customer-items tfoot td { background:#f4f6f8; font-weight:700; }
-        .collection-checkbox { display:inline-block; width:12px; height:12px; border:1px solid #506574; flex-shrink:0; align-self:center; }
-        .collection-code { display:block; direction:ltr; text-align:right; font-size:8px; color:#526570; }
-        .info-grid.single-info { grid-template-columns:1fr; }
-        /* Restrained print layout; model quantities occupy fixed, aligned columns. */
-        body { color:#202020; }
-        .invoice-page { padding:6mm; }
-        .invoice-header { border-color:#303030; }
-        .doc-title { color:#202020; font-size:20px; }
-        .doc-meta { line-height:1.8; }
-        .info-box,.company-box,.customer-payment-box,.customer-balance-box,.signature-box { border-radius:0; border-color:#b0b0b0; }
-        .info-title { border-bottom:1px solid #d0d0d0; }
+        /* Readable row-based invoice layout with restrained print contrast. */
+        body { color:#303840; }
+        .invoice-page { width:194mm; padding:5mm 4mm; }
+        .no-print { width:194mm; }
+        /* Compact invoice header: shared frame, no equal-height cards. */
+        .invoice-header {
+            display:block;
+            border:1px solid #d7dfe5;
+            border-radius:6px;
+            background:#fff;
+            padding:0;
+            margin-bottom:10px;
+            overflow:visible;
+        }
+        .header-top {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            padding:6px 10px;
+            border-bottom:1px solid #e5ebef;
+            background:#fafbfd;
+        }
+        .header-top .brand { min-width:0; gap:8px; }
+        .header-top .brand img { width:38px; max-height:40px; flex-shrink:0; }
+        .brand-name { color:#263746; font-size:15px; line-height:1.5; }
+        .brand-phone { color:#667681; font-size:10px; line-height:1.4; }
+        .doc-title { color:#263746; font-size:18px; line-height:1.4; text-align:left; margin:0; white-space:nowrap; }
+        .header-details {
+            display:grid;
+            grid-template-columns:repeat(2,minmax(0,1fr));
+            align-items:start;
+        }
+        .header-info { min-width:0; padding:6px 10px 7px; page-break-inside:avoid; break-inside:avoid; }
+        .header-info + .header-info { border-right:1px solid #e5ebef; }
+        .header-info .info-title {
+            display:block; padding:0; margin:0 0 4px; border:0;
+            color:#62727e; font-size:10px; font-weight:700; line-height:1.4;
+        }
+        .header-customer { margin:0; font-size:10.5px; line-height:1.5; }
+        .header-customer .info-row {
+            grid-template-columns:72px minmax(0,1fr);
+            align-items:baseline; gap:5px; margin-bottom:2px;
+        }
+        .header-customer .info-row:last-child { margin-bottom:0; }
+        .header-customer .info-row > :last-child { min-width:0; overflow-wrap:anywhere; }
+        .header-customer .label { color:#63727d; font-weight:600; }
+        .doc-meta {
+            display:flex; flex-direction:column; gap:2px; margin:0;
+            color:#394956; font-size:10.5px; line-height:1.5; text-align:right;
+        }
+        .doc-meta-row {
+            display:grid; grid-template-columns:max-content minmax(0,1fr);
+            align-items:baseline; gap:5px;
+        }
+        .meta-label { color:#63727d; font-weight:600; }
+        .meta-value { min-width:0; overflow-wrap:anywhere; font-weight:700; }
+        @media screen and (max-width:560px) {
+            .header-details { grid-template-columns:1fr; }
+            .header-info + .header-info { border-right:0; border-top:1px solid #e5ebef; }
+        }
+        .info-box,.company-box,.customer-payment-box,.customer-balance-box,.signature-box {
+            border-color:#d7dde2; border-radius:5px;
+        }
         .info-box { padding:7px 9px; }
-        .customer-items th,.customer-items td { border-color:#b5b5b5; }
-        .customer-items > thead > tr > th { background:#e9ecee; color:#202020; padding:9px 6px; border-top:2px solid #30383d; border-bottom:1px solid #68727a; }
-        .customer-items .product-heading td { background:#f3f4f5; border-top:1.5px solid #444; padding:9px 7px; }
-        .customer-items .product-models > td { padding:0; }
-        .customer-items .product-heading strong { font-size:12px; }
-        .customer-items .model-schedule th,.customer-items .model-schedule td { border:0; border-bottom:1px solid #d7dcdf; border-left:1px solid #e1e5e8; padding:8px 9px; background:#fff; color:#303030; font-size:11px; line-height:1.8; }
-        .customer-items .model-schedule th { background:#fafafa; color:#555; font-size:10px; font-weight:400; text-align:right; }
-        .model-schedule .model-index { width:7%; text-align:center; color:#666; }
-        .model-schedule .model-qty { width:11%; text-align:center; font-weight:700; font-variant-numeric:tabular-nums; }
-        .model-label { overflow-wrap:anywhere; }
-        .customer-items .model-schedule td.model-qty { font-size:12px; }
-        .header-brand { min-width:0; }
-        .header-customer { margin-top:9px; font-size:10px; }
-        .header-customer .info-title { display:none; }
-        .header-customer .info-row { grid-template-columns:65px 1fr; }
-        .invoice-header { grid-template-columns:minmax(0,1fr) 55mm; gap:8mm; }
-        .model-schedule .model-index { width:5%; }
-        .model-schedule .model-qty { width:12%; }
-        .model-schedule col.model-divider { width:9%; }
-        .customer-items .model-schedule td.model-divider,.customer-items .model-schedule th.model-divider { padding:0; border-top:0; border-bottom:0; border-left:1px solid #aaa; border-right:1px solid #aaa; background:#fff; }
-        .customer-items .model-schedule td.model-index { font-size:9px; color:#777; text-align:center; }
-        .customer-items .model-schedule td.model-qty { background:#f2f2f2; color:#111; text-align:center; }
-        .brand-name { font-size:16px; color:#20292f; }
-        .invoice-header { padding-bottom:14px; margin-bottom:14px; border-bottom:2px solid #30383d; }
-        .header-customer { margin-top:12px; line-height:1.9; }
-        .header-customer .info-row { margin-bottom:3px; }
-        .doc-meta { margin-top:7px; }
-        .customer-items .product-models > td { padding-top:4px; padding-bottom:8px; }
-        .customer-items .product-models > td:first-child { padding:0; }
+        .info-title { border-bottom:1px solid #e1e6ea; }
+        .customer-items { margin-top:8px; }
+        .customer-items caption { text-align:left; font-size:10px; padding:4px 0 7px; color:#6b7680; }
+        .print-pricing-formula { display:inline-block; margin-inline-start:9px; color:#73808a; font-size:10px; }
+        .customer-items th,.customer-items td { border-color:#d9dfe4; }
+        .customer-items > thead > tr > th {
+            background:#f3f5f7; color:#3c4852; padding:7px 5px;
+            border-top:1px solid #cbd3da; border-bottom:1px solid #cbd3da;
+            font-size:11px; font-weight:700;
+        }
+        .customer-items .product-heading td {
+            background:#f8f9fa; border-top:1px solid #cbd3da;
+            border-bottom:1px solid #e0e5e9; padding:7px 8px;
+        }
+        .product-heading-content { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .customer-items .product-heading strong { color:#303b44; font-size:12px; font-weight:700; }
+        .product-summary { color:#566875; font-size:10px; font-weight:700; white-space:nowrap; }
+        .customer-items .variant-row td {
+            background:#fff; color:#303840; border-bottom:1px solid #e5e9ed;
+            padding:7px 5px; font-size:11px; line-height:1.6;
+        }
+        .customer-items .variant-row:nth-child(even) td { background:#fcfdfe; }
+        .col-index { width:7mm; text-align:center; }
+        .col-desc { overflow-wrap:anywhere; }
+        .col-code { width:16mm; text-align:center; direction:ltr; unicode-bidi:embed; font-size:10px !important; overflow-wrap:anywhere; }
+        .col-qty { width:10mm; text-align:center; font-weight:700; font-variant-numeric:tabular-nums; }
+        .col-price { width:21mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; font-variant-numeric:tabular-nums; }
+        .col-discount-unit { width:18mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; color:#65717b !important; font-variant-numeric:tabular-nums; }
+        .col-discount-total { width:18mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; color:#53616e !important; font-variant-numeric:tabular-nums; }
+        .col-total { width:28mm; text-align:left; direction:ltr; unicode-bidi:embed; white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
+        .col-check { width:12mm; text-align:center; }
+        .approximate-discount { white-space:nowrap; }
+        .customer-items .variant-row td.col-discount-unit,
+        .customer-items .variant-row td.col-discount-total { font-size:10.5px; }
+        .model-row-number { display:block; color:#77818a; font-size:10px; }
+        .variant-name { overflow-wrap:anywhere; }
+        .showroom-source {
+            display:inline-block; color:#596975; background:#f8fafb; border:1px solid #d8e0e5;
+            border-radius:3px; padding:0 4px; margin-right:4px; font-size:9px; font-weight:600;
+            white-space:nowrap;
+        }
+        .bundle-detail { display:block; margin-top:3px; color:#74808a; font-size:10px; }
+        .collection-checkbox { display:inline-block; width:11px; height:11px; border:1px solid #aeb9c1; border-radius:2px; vertical-align:middle; }
+        .customer-items tfoot td { background:#f4f6f8; border-color:#d5dce2; font-size:11px; font-weight:700; padding:8px 5px; }
+        .warehouse-mode .items-table td.col-qty { font-size:12px; font-weight:700; }
+        .warehouse-mode .col-qty { width:10mm; }
+        .warehouse-mode .col-check { width:12mm; }
+        .summary-table td { border-color:#d9dfe4; padding:7px 8px; font-size:11px; }
+        .final-row td { background:#f1f4f6; border-color:#cbd3da; border-top:1px solid #cbd3da; color:#263746; font-size:13px; }
         .signature-section { margin-top:14px; gap:18px; }
-        .signature-box { border:0; border-top:1px solid #70777c; height:50px; padding-top:8px; font-size:10px; }
-        .model-row-number { display:block; }
-        .collection-checkbox { margin-top:3px; }
+        .signature-box { border:0; border-top:1px solid #cbd3da; height:50px; padding-top:8px; font-size:10px; }
         .print-money { display:inline-flex; direction:rtl; align-items:baseline; gap:5px; white-space:nowrap; unicode-bidi:isolate; }
         .print-money bdi { direction:ltr; unicode-bidi:isolate; }
         .money-unit { font-size:0.85em; font-weight:400; }
-        .model-schedule .showroom-source { border:0; border-radius:0; border-bottom:1px solid #333; color:#111; padding:0; margin-right:4px; font-size:9px; white-space:nowrap; }
-        .bundle-detail { display:block; }
-        .product-discount { padding:5px 8px; border-top:1px solid #b5b5b5; }
-        .summary-table td { border-color:#b5b5b5; }
-        .final-row td { border-color:#444; background:#eee; }
         .customer-balance-box { background:#fff; }
-        .customer-balance-status { border:0; border-radius:0; padding:0; }
+        .customer-balance-status { border-color:#d7dde2; }
         .customer-payment-box,.company-box { font-size:10px; }
-        .warehouse-mode .variant-count { font-size:14px; }
-        .warehouse-mode .variant-detail { padding:7px 0; }
         @media screen and (max-width:760px) { .customer-items { min-width:0; } }
         @media print {
             body { margin:0; direction:rtl; background:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -170,11 +227,11 @@
             tr { page-break-inside:avoid; page-break-after:auto; }
             thead { display:table-header-group; }
             tfoot { display:table-footer-group; }
-            .summary-section, .company-box, .customer-balance-box, .customer-payment-box, .signature-section { page-break-inside:avoid; break-inside:avoid; }
+            .summary-section, .company-box, .customer-balance-box, .customer-payment-box, .signature-section, .invoice-header { page-break-inside:avoid; break-inside:avoid; }
         }
     </style>
 </head>
-<body class="{{ $printData['mode'] === 'customer' ? 'customer-mode' : 'warehouse-mode' }}">
+<body class="{{ $printData['mode'] === 'customer' ? 'customer-mode' : 'warehouse-mode' }}{{ $printData['mode'] !== 'customer' && ($printData['documentType'] ?? null) === 'invoice' ? ' warehouse-priced' : '' }}">
 @include('prints.partials.sales-invoice-template')
 </body>
 </html>

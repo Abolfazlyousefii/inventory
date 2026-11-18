@@ -8,6 +8,9 @@
     $money = fn ($value) => new \Illuminate\Support\HtmlString('<span class="print-money" dir="rtl"><bdi>'.$num($value).'</bdi><span class="money-unit">ریال</span></span>');
     $dash = fn ($value) => filled($value) ? $value : '—';
     $isWarehouseMode = $printData['mode'] !== 'customer';
+    // Only the final warehouse invoice gains sales prices; warehouse preinvoices stay operational.
+    $isWarehouseInvoice = $isWarehouseMode && ($printData['documentType'] ?? null) === 'invoice';
+    $showProductPrices = !$isWarehouseMode || $isWarehouseInvoice;
     $totalQuantity = $printData['items']->sum('quantity');
     $totalLineAmount = $printData['items']->sum('lineTotal');
 @endphp
@@ -20,19 +23,41 @@
     </div>
 </div>
 <main class="invoice-page">
-    <header class="invoice-header">
-        <div class="header-brand">
-        <div class="brand"><img src="{{ $printData['logo'] }}" alt="{{ $fa($printData['company']['name']) }}"><div><div class="brand-name">{{ $fa($printData['company']['name']) }}</div><div>{{ $fa($printData['company']['phone']) }}</div></div></div>
-            @include('prints.partials.invoice-customer-header')
+    <header class="invoice-header" aria-label="اطلاعات فاکتور">
+        <div class="header-top">
+            <div class="brand">
+                <img src="{{ $printData['logo'] }}" alt="{{ $fa($printData['company']['name']) }}">
+                <div>
+                    <div class="brand-name">{{ $fa($printData['company']['name']) }}</div>
+                    <div class="brand-phone">{{ $fa($printData['company']['phone']) }}</div>
+                </div>
+            </div>
+            <h1 class="doc-title">{{ $fa($printData['title']) }}</h1>
         </div>
-        <div><h1 class="doc-title">{{ $fa($printData['title']) }}</h1><div class="doc-meta">
-            <div>{{ $fa($printData['numberLabel']) }}: <strong>{{ $fa($printData['number']) }}</strong></div>
-            @if($printData['customerNumber'])<div>شماره فاکتور مشتری: {{ $fa($printData['customerNumber']) }}</div>@endif
-            <div>تاریخ سند: {{ $fa($fmtDate($printData['registeredAt'])) }}</div>
-            @if($isWarehouseMode && $printData['issuedAt'] && $printData['issuedAt'] != $printData['registeredAt'])<div>تاریخ صدور فاکتور: {{ $fa($fmtDate($printData['issuedAt'])) }}</div>@endif
-            @if($isWarehouseMode && $printData['status'])<div>وضعیت سند: {{ $fa($printData['status']) }}</div>@endif
-            @if(filled($printData['seller']))<div>فروشنده: {{ $fa($printData['seller']) }}</div>@endif
-        </div></div>
+        <div class="header-details">
+            <section class="header-info header-customer-info" aria-label="مشخصات مشتری">
+                @include('prints.partials.invoice-customer-header')
+            </section>
+            <section class="header-info header-document" aria-label="اطلاعات سند">
+                <div class="info-title">اطلاعات سند</div>
+                <div class="doc-meta">
+                    <div class="doc-meta-row"><span class="meta-label">{{ $fa($printData['numberLabel']) }}:</span><strong class="meta-value">{{ $fa($printData['number']) }}</strong></div>
+                    @if($printData['customerNumber'])
+                        <div class="doc-meta-row"><span class="meta-label">شماره فاکتور مشتری:</span><span class="meta-value">{{ $fa($printData['customerNumber']) }}</span></div>
+                    @endif
+                    <div class="doc-meta-row"><span class="meta-label">تاریخ سند:</span><span class="meta-value">{{ $fa($fmtDate($printData['registeredAt'])) }}</span></div>
+                    @if($isWarehouseMode && $printData['issuedAt'] && $printData['issuedAt'] != $printData['registeredAt'])
+                        <div class="doc-meta-row"><span class="meta-label">تاریخ صدور فاکتور:</span><span class="meta-value">{{ $fa($fmtDate($printData['issuedAt'])) }}</span></div>
+                    @endif
+                    @if($isWarehouseMode && $printData['status'])
+                        <div class="doc-meta-row"><span class="meta-label">وضعیت سند:</span><span class="meta-value">{{ $fa($printData['status']) }}</span></div>
+                    @endif
+                    @if(filled($printData['seller']))
+                        <div class="doc-meta-row"><span class="meta-label">فروشنده:</span><span class="meta-value">{{ $fa($printData['seller']) }}</span></div>
+                    @endif
+                </div>
+            </section>
+        </div>
     </header>
     @if(filled($printData['shipping']['method']) || filled($printData['shipping']['description']))
     <section class="info-grid {{ $fa(!filled($printData['shipping']['method']) && !filled($printData['shipping']['description']) ? 'single-info' : '') }}">
@@ -45,6 +70,17 @@
     </section>
     @endif
     @include('prints.partials.customer-invoice-items')
+    @if($isWarehouseInvoice)
+        <section class="summary-section warehouse-items-summary" aria-label="جمع ارزش کالاهای فاکتور">
+            <div></div><table class="summary-table"><tbody>
+                <tr><td>جمع کالاها پس از تخفیف کالا</td><td>{{ $money($printData['totals']['itemsNetSubtotal']) }}</td></tr>
+                @if($printData['totals']['invoiceDiscount'] > 0)
+                    <tr><td>تخفیف کلی فاکتور</td><td>{{ $money($printData['totals']['invoiceDiscount']) }}</td></tr>
+                @endif
+                <tr class="final-row"><td>جمع ارزش کالاها</td><td>{{ $money($printData['totals']['subtotalAfterDiscount']) }}</td></tr>
+            </tbody></table>
+        </section>
+    @endif
     @unless($isWarehouseMode)
         <section class="summary-section">
             <div></div><table class="summary-table"><tbody>
@@ -103,5 +139,7 @@
             @if(filled($printData['company']['sheba']))<div>شماره شبا شرکت: {{ $fa($printData['company']['sheba']) }}</div>@endif
         </section>
     @endunless
-    <section class="signature-section"><div class="signature-box">امضا و مهر فروشنده</div><div class="signature-box">امضای مشتری / تحویل‌گیرنده</div></section>
+    @unless($isWarehouseInvoice)
+        <section class="signature-section"><div class="signature-box">امضا و مهر فروشنده</div><div class="signature-box">امضای مشتری / تحویل‌گیرنده</div></section>
+    @endunless
 </main>
