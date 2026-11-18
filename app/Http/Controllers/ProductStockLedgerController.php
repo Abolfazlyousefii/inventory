@@ -11,11 +11,14 @@ class ProductStockLedgerController extends Controller
         $data=$request->validate([
             'variant_id'=>['nullable','integer','min:1'], 'q'=>['nullable','string','max:150'],
             'effect'=>['nullable','in:recorded,reference,incomplete'], 'warehouse_id'=>['nullable','integer','min:1'],
+            'category'=>['nullable','in:all,purchases,sales,returns,transfers,stocktakes,reservations,other'],
         ]);
-        $filters=['q'=>$data['q'] ?? '', 'effect'=>$data['effect'] ?? '', 'warehouse_id'=>$data['warehouse_id'] ?? ''];
+        $filters=['q'=>$data['q'] ?? '', 'effect'=>$data['effect'] ?? '', 'warehouse_id'=>$data['warehouse_id'] ?? '', 'category'=>$data['category'] ?? ''];
         $selectedVariant=!empty($data['variant_id'])?$product->variants()->whereKey($data['variant_id'])->firstOrFail():null;
         $history=app(\App\Services\ProductStockHistoryService::class)->history($product->id,$selectedVariant?->id);
         $all=$history['rows'];
+        // Tag rows before filtering; summary and detail links share exactly the same scope.
+        $overviewService=app(\App\Services\ProductStockOverviewService::class);
         $summary=(object)[
             'records'=>$all->count(), 'sold'=>$history['sold'], 'current'=>$history['current'],
             'cached_current'=>$history['cached_current'], 'reserved'=>$history['reserved'],
@@ -33,6 +36,15 @@ class ProductStockLedgerController extends Controller
             ]));
             return str_contains(\App\Support\ProductFinderSearchNormalizer::normalize($text),$term);
         })->values();
+        $overview=$overviewService->summarize($all,$product->id,$selectedVariant?->id);
+        if ($filters['category'] !== '' && $filters['category'] !== 'all') {
+            $all=$all->where('overview_category',$filters['category'])->values();
+        }
+        // One visible event per receipt. Its supporting result is displayed inside
+        // the numeric movement; retain an orphan/zero receipt as its own row.
+        $visibleIds=$all->pluck('id')->map(fn ($id)=>(string)$id)->all();
+        $all=$all->reject(fn ($row)=>isset($row->linked_history_id)
+            && in_array((string)$row->linked_history_id,$visibleIds,true))->values();
         $page=\Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPage();
         $movements=new \Illuminate\Pagination\LengthAwarePaginator($all->forPage($page,30)->values(),$all->count(),30,$page,['path'=>$request->url()]);
         $movements->appends(array_filter($data,fn($value)=>$value!==null && $value!==''));
@@ -66,6 +78,6 @@ class ProductStockLedgerController extends Controller
         foreach($movements as $row) if(!($row instanceof StockMovement)) $sources[$row->id]=['label'=>$row->reference,'url'=>$row->source_url];
         foreach($movements as $row) if($row->source_url) $sources[$row->id]=['label'=>$row->source_label ?? $row->reference,'url'=>$row->source_url];
         $warehouses=\Illuminate\Support\Facades\DB::table('warehouses')->orderBy('id')->get(['id','name']);
-        return view('products.stock-ledger',compact('product','selectedVariant','movements','summary','sources','filters','warehouses'));
+        return view('products.stock-ledger',compact('product','selectedVariant','movements','summary','sources','filters','warehouses','overview'));
     }
 }

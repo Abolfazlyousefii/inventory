@@ -22,6 +22,12 @@ class PersonnelVoucherManagementTest extends TestCase
     public function test_personnel_voucher_store_uses_default_warehouses_jalali_date_and_moves_stock(): void
     {
         [$admin, $receiver, $central, $personnel, $category, $product, $variant] = $this->fixture();
+        $other=$variant->replicate();
+        $other->variant_code='OTHER-COLOUR';
+        $other->stock=100;
+        $other->save();
+        WarehouseStock::create(['warehouse_id'=>$central->id,'product_id'=>$product->id,'product_variant_id'=>$other->id,'quantity'=>100]);
+        WarehouseStockService::syncProductStockFromCentral($product->id);
 
         $this->actingAs($admin)
             ->post(route('vouchers.section.store', 'personnel'), [
@@ -48,6 +54,12 @@ class PersonnelVoucherManagementTest extends TestCase
         $this->assertSame('2039', $transfer->items()->first()->personnel_asset_code);
         $this->assertSame(8, $this->stock($central, $product, $variant));
         $this->assertSame(2, $this->stock($personnel, $product, $variant));
+        $moves=\App\Models\StockMovement::where('reference_type',WarehouseTransfer::class)->where('reference_id',$transfer->id)->get();
+        $this->assertCount(2,$moves);
+        $this->assertSame(10,(int)$moves->firstWhere('warehouse_id',$central->id)->stock_before);
+        $this->assertSame(8,(int)$moves->firstWhere('warehouse_id',$central->id)->stock_after);
+        $this->assertSame(0,(int)$moves->firstWhere('warehouse_id',$personnel->id)->stock_before);
+        $this->assertSame(2,(int)$moves->firstWhere('warehouse_id',$personnel->id)->stock_after);
     }
 
     public function test_personnel_voucher_requires_four_digit_asset_code(): void

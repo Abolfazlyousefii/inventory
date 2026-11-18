@@ -9,6 +9,7 @@ class PreinvoiceOrderItem extends Model
     protected $fillable = [
         'preinvoice_order_id',
         'product_id',
+        'source_warehouse_id',
         'variant_id',
         'quantity',
         'price',

@@ -52,15 +52,15 @@
     function renderProducts(items) {
         productsById.clear();
         items.forEach(product => productsById.set(Number(product.id), product));
-        const stock = product => Number(product.total_available_stock || 0);
+        const stock = product => Number(product.total_available_stock || 0) + Number(product.showroom_available_stock || 0);
         results.innerHTML = items.map(product => {
             const imageHtml = product.image
                 ? `<div class="finder-product__image-wrap"><img class="finder-product__image" src="${escapeHtml(product.image)}" alt="" loading="lazy"></div>`
                 : `<div class="finder-product__image-wrap"><div class="finder-product__placeholder" aria-hidden="true">📦</div></div>`;
             const priceHtml = product.price ? `<div class="finder-product__price">${formatPrice(product.price)}</div>` : '';
             const availableStock = stock(product);
-            const stockHtml = `<div class="finder-product__stock${availableStock <= 0 ? ' is-empty' : ''}">${availableStock > 0 ? `موجودی: ${availableStock.toLocaleString('fa-IR')}` : 'ناموجود'}</div>`;
-            return `<article class="finder-product" data-product-id="${Number(product.id)}" role="button" tabindex="0" aria-label="${escapeHtml(product.name)}">${imageHtml}<div class="finder-product__info"><div class="finder-product__title">${escapeHtml(product.name)}</div>${priceHtml}${stockHtml}<button type="button" class="finder-product__model-list btn btn-sm btn-outline-secondary" data-model-list="${Number(product.id)}">مدلیست</button></div></article>`;
+            const stockHtml = `<div class="finder-product__stock${availableStock <= 0 ? ' is-empty' : ''}">${Number(product.showroom_available_stock || 0)>0 ? `مرکزی: ${Number(product.total_available_stock || 0).toLocaleString('fa-IR')} | شوروم: ${Number(product.showroom_available_stock).toLocaleString('fa-IR')}` : (availableStock > 0 ? `موجودی: ${availableStock.toLocaleString('fa-IR')}` : 'ناموجود')}</div>`;
+            return `<article class="finder-product" data-product-id="${Number(product.id)}" role="button" tabindex="0" aria-label="${escapeHtml(product.name)}">${imageHtml}<div class="finder-product__info"><div class="finder-product__title">${escapeHtml(product.name)}</div>${priceHtml}${stockHtml}${Number(product.showroom_available_stock || 0)>0 ? '<span class="badge bg-light text-primary">موجودی در شوروم</span>' : ''}<button type="button" class="finder-product__model-list btn btn-sm btn-outline-secondary" data-model-list="${Number(product.id)}">مدلیست</button></div></article>`;
         }).join('');
     }
 

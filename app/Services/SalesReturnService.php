@@ -129,6 +129,7 @@ class SalesReturnService
             Customer::whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
             if ($doc->isInternal()) {
                 $invoice = Invoice::whereKey($doc->invoice_id)->lockForUpdate()->firstOrFail();
+                $invoice->assertStockDeducted();
                 if ($invoice->status !== Invoice::STATUS_SHIPPED) {
                     throw ValidationException::withMessages(['invoice_id' => 'فاکتور مرجع دیگر در وضعیت ارسال‌شده نیست.']);
                 }
@@ -344,6 +345,7 @@ class SalesReturnService
     public function prepareInternalItems(SalesReturnDocument $doc, array $data): array
     {
         $invoice = Invoice::with('items.product', 'items.variant')->findOrFail((int) $data['invoice_id']);
+        $invoice->assertStockDeducted();
         if ((int) $invoice->customer_id !== (int) $data['customer_id']) {
             throw ValidationException::withMessages(['invoice_id' => 'فاکتور متعلق به مشتری انتخاب‌شده نیست.']);
         } if ($invoice->status !== Invoice::STATUS_SHIPPED && empty($data['override_invoice_status'])) {

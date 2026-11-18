@@ -83,6 +83,7 @@ class SalesHavalehStatusService
 
     public function assertValidTransition(Invoice $invoice, string $newStatus, ?User $user): void
     {
+        if ($newStatus !== self::NOT_SHIPPED) $invoice->assertStockDeducted();
         if (!in_array($newStatus, $this->all(), true)) {
             abort(422, 'وضعیت انتخاب‌شده معتبر نیست.');
         }

@@ -28,7 +28,7 @@ class PreinvoiceProductFinderService
             ->select(['products.id', 'products.is_bundle', 'products.bundle_stock_mode', 'products.name', 'products.code', 'products.short_barcode', 'products.sku', 'products.barcode', 'products.image_path', 'products.category_id'])
             ->with('category:id,name,parent_id')
             ->where('products.is_sellable', true)
-            ->withCount(['variants as sellable_variants_count' => fn (Builder $q) => $bundleStock->constrainAvailableVariants($q)])
+            ->withCount(['variants as sellable_variants_count' => fn (Builder $q) => $bundleStock->constrainSalesVariants($q)])
             ->withSum(['variants as total_available_stock' => fn (Builder $q) => $q->active()->where('sales_enabled', true)->where('stock', '>', 0)], 'stock');
         app(InventoryCountFreezeService::class)->excludeBlockedProducts($query);
 
@@ -36,7 +36,7 @@ class PreinvoiceProductFinderService
             $query->whereIn('products.category_id', Category::selfAndDescendantIds($categoryId));
         }
         if ($inStockOnly) {
-            $query->whereHas('variants', fn (Builder $q) => $bundleStock->constrainAvailableVariants($q));
+            $query->whereHas('variants', fn (Builder $q) => $bundleStock->constrainSalesVariants($q));
         }
         if ($term !== '') {
             foreach (explode(' ', $term) as $token) {
@@ -46,14 +46,14 @@ class PreinvoiceProductFinderService
                         $q->whereDoesntHave('variants', fn (Builder $v) => $this->applyVariantMatch($v, $token))
                             ->orWhereHas('variants', function (Builder $v) use ($token, $bundleStock) {
                                 $this->applyVariantMatch($v, $token);
-                                $bundleStock->constrainAvailableVariants($v);
+                                $bundleStock->constrainSalesVariants($v);
                             });
                     });
                 }
             }
             $query->withCount(['variants as matched_variants_count' => function (Builder $q) use ($term, $inStockOnly, $bundleStock) {
                 $this->applyVariantMatch($q, $term);
-                if ($inStockOnly) $bundleStock->constrainAvailableVariants($q);
+                if ($inStockOnly) $bundleStock->constrainSalesVariants($q);
             }]);
             $this->applyRanking($query, $term);
         } else {
@@ -108,7 +108,7 @@ class PreinvoiceProductFinderService
                     ->orWhereHas('category', fn (Builder $category) => $category->where('name', 'like', $like))
                     ->orWhereHas('variants', function (Builder $variantQuery) use ($variant, $inStockOnly) {
                         $this->applyVariantMatch($variantQuery, $variant);
-                        if ($inStockOnly) app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($variantQuery);
+                        if ($inStockOnly) app(PreinvoiceBundleStockService::class)->constrainSalesVariants($variantQuery);
                     });
             });
         }
@@ -155,7 +155,7 @@ class PreinvoiceProductFinderService
 
         if ($inStockOnly) {
             $available = \App\Models\ProductVariant::query()->select('product_variants.id');
-            app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($available);
+            app(PreinvoiceBundleStockService::class)->constrainSalesVariants($available);
             $ranked->whereIn('pv.id', $available);
         }
 
@@ -193,6 +193,7 @@ class PreinvoiceProductFinderService
                     : ($variant->variant_name ?: $variant->variety_name),
                 'available_stock' => $variant->is_active && $variant->sales_enabled ? ($bundleAvailability[(int) $variant->id] ?? max((int) $variant->stock, 0)) : 0,
             ])->values()->all(),
+            'showroom_available_stock' => \App\Models\WarehouseStock::where('product_id',$product->id)->whereHas('warehouse',fn($q)=>$q->where('type','showroom')->where('is_active',true))->where('quantity','>',0)->sum('quantity'),
             'sellable_variants_count' => (int) $product->sellable_variants_count,
             'total_available_stock' => $bundleAvailability !== null ? array_sum($bundleAvailability) : (int) ($product->total_available_stock ?? 0),
             'match_reason' => $matched->isNotEmpty() ? 'variant' : 'product',

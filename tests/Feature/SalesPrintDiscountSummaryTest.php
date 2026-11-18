@@ -63,6 +63,80 @@ class SalesPrintDiscountSummaryTest extends TestCase
         $this->assertSame(28_500_000, $printData['totals']['total']);
     }
 
+    public function test_customer_groups_variants_without_repeating_allocated_discounts_or_losing_sources(): void
+    {
+        $invoice = $this->invoice([
+            ['product_id' => 7, 'quantity' => 3, 'price' => 100000, 'line_discount_amount' => 3000],
+            ['product_id' => 7, 'source_warehouse_id' => 6, 'quantity' => 2, 'price' => 100000, 'line_discount_amount' => 2000],
+            ['product_id' => 7, 'quantity' => 1, 'price' => 120000, 'line_discount_amount' => 0],
+            ['product_id' => 8, 'quantity' => 1, 'price' => 100000, 'line_discount_amount' => 0],
+        ], 10000, 0);
+        $data = $this->printService()->invoiceData($invoice, 'customer');
+        $this->assertCount(3, $data['customerGroups']);
+        $group = $data['customerGroups']->first();
+        $this->assertSame(5, $group['quantity']);
+        $this->assertSame(5000, $group['discount']);
+        $this->assertSame(495000, $group['total']);
+        $this->assertSame([null, 6], $group['items']->pluck('sourceWarehouseId')->all());
+        $this->assertSame(715000, $data['customerGroups']->sum('total'));
+        $this->assertSame(705000, $data['totals']['total']);
+        $html = view('prints.invoice', ['printData' => $data])->render();
+        $this->assertSame(1, substr_count($html, 'تخفیف این کالا'));
+        $this->assertStringContainsString('تخفیف کلی فاکتور', $html);
+        $this->assertStringContainsString('شوروم', $html);
+        $this->assertStringNotContainsString('انبار مرکزی', $html);
+        $warehouse = $this->printService()->invoiceData($invoice, 'warehouse');
+        $this->assertCount(4, $warehouse['items']);
+        $warehouseHtml = view('prints.invoice', ['printData' => $warehouse])->render();
+        $this->assertStringNotContainsString('تخفیف این کالا', $warehouseHtml);
+        $this->assertStringNotContainsString('انبار مرکزی', $warehouseHtml);
+        $this->assertStringContainsString('شوروم', $warehouseHtml);
+        $this->assertStringContainsString('کنترل جمع‌آوری', $warehouseHtml);
+        $this->assertStringNotContainsString('قیمت واحد', $warehouseHtml);
+    }
+
+    public function test_many_models_show_one_product_price_and_escape_variant_names_without_zero_discount_noise(): void
+    {
+        $invoice = $this->invoice(array_fill(0, 25, [
+            'product_id' => 7, 'quantity' => 2, 'price' => 100000, 'line_discount_amount' => 0,
+        ]), 0, 0);
+        foreach ($invoice->items as $index => $item) {
+            $item->setRelation('product', new \App\Models\Product(['name' => 'گارد سیلیکون']));
+            $variant = new \App\Models\ProductVariant(['variant_name' => 'گارد سیلیکون مدل '.$index.' <script>', 'variety_name' => '—']);
+            $variant->setRelation('modelList', new \App\Models\ProductVariant(['model_name' => 'مدل '.$index]));
+            $variant->setRelation('color', null);
+            $item->setRelation('variant', $variant);
+        }
+        $data = $this->printService()->invoiceData($invoice, 'customer');
+        $this->assertCount(1, $data['customerGroups']);
+        $this->assertSame(50, $data['customerGroups'][0]['quantity']);
+        $this->assertCount(25, $data['customerGroups'][0]['items']);
+        $html = view('prints.invoice', ['printData' => $data])->render();
+        $this->assertSame(1, substr_count($html, 'گارد سیلیکون'));
+        $this->assertStringContainsString('مدل ۲۴ &lt;script&gt;', $html);
+        $this->assertStringContainsString('model-divider', $html);
+        $this->assertStringContainsString('print-money', $html);
+        $this->assertStringContainsString('۵٬۰۰۰٬۰۰۰', $html);
+        $this->assertStringContainsString('header-customer', $html);
+        $dom = new \DOMDocument();
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        $xpath = new \DOMXPath($dom);
+        $rowNumbers = [];
+        foreach ($xpath->query('//span[@class="model-row-number"]') as $node) {
+            $rowNumbers[] = (int) strtr($node->textContent, array_combine(
+                preg_split('//u', '۰۱۲۳۴۵۶۷۸۹', -1, PREG_SPLIT_NO_EMPTY), str_split('0123456789')
+            ));
+        }
+        $this->assertSame([1, 7, 2, 8, 3, 9, 4, 10, 5, 11, 6, 12], array_slice($rowNumbers, 0, 12));
+        sort($rowNumbers);
+        $this->assertSame(range(1, 25), $rowNumbers);
+        $visibleText = '';
+        foreach ($xpath->query('//main//text()') as $node) $visibleText .= $node->textContent;
+        $this->assertDoesNotMatchRegularExpression('/[0-9]/', $visibleText);
+        $this->assertStringNotContainsString('تخفیف این کالا', $html);
+        $this->assertSame(5000000, $data['totals']['total']);
+    }
+
     private function printService(): SalesPrintDocumentService
     {
         return app(SalesPrintDocumentService::class);

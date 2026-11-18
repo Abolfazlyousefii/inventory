@@ -98,6 +98,7 @@ class InventoryReservationReleaseService
                 (int) $lockedReservation->product_id,
                 (int) $lockedReservation->variant_id,
                 $quantity,
+                $lockedReservation->source_warehouse_id,
             );
 
             if (! $release['released'] && $release['reason'] === 'invalid_reservation_relation') {
@@ -154,9 +155,9 @@ class InventoryReservationReleaseService
      *
      * @return array{released: bool, reason: ?string, context: array<string, mixed>, before: array<string, int|null>, after: array<string, int|null>}
      */
-    public function releaseReservedQuantity(int $productId, int $variantId, int $quantity): array
+    public function releaseReservedQuantity(int $productId, int $variantId, int $quantity, ?int $source = null): array
     {
-        return ReservationSideEffects::run(function () use ($productId, $variantId, $quantity) {    
+        return ReservationSideEffects::run(function () use ($productId, $variantId, $quantity, $source) {
             $variant = ProductVariant::query()
                 ->whereKey($variantId)
                 ->where('product_id', $productId)
@@ -191,7 +192,7 @@ class InventoryReservationReleaseService
                 'product_reserved' => (int) $product->reserved,
             ];
     
-            app(PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity);
+            app(PreinvoiceBundleStockService::class)->release($productId, $variantId, $quantity, $source);
             ReservationSideEffects::touchProduct($productId);
     
             $variant->refresh();

@@ -13,8 +13,12 @@ function editor(fetch) {
         discount: '0', discount_breakdown: '{}', autosave_uuid: ''
     };
     const nodes = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, {value}]));
+    let pendingTimer;
     const context = vm.createContext({
         fetch, Headers, Response, console, JSON, Number, Object, Error, Promise,
+        RialInput: {number: Number}, jsonErrorMessage: (_errors, fallback) => fallback,
+        structuredClone, localStorage: {setItem: () => {}}, RESERVATION_TOKEN_KEY: "reservation", LOCAL_DRAFT_KEY: "draft",
+        setTimeout: fn => { pendingTimer = fn; return 1; }, clearTimeout: () => {},
         document: {
             getElementById: id => nodes[id],
             querySelector: () => ({content: 'csrf'})
@@ -23,6 +27,7 @@ function editor(fetch) {
         IS_EDIT: false, isBootingPage: false, isHydratingLocalDraft: false, isSubmittingProgrammatically: false,
         currentAutosaveUuid: '12345', currentAutosaveVersion: 'version-1',
         autosaveQueue: Promise.resolve(), confirmedAutosavePayload: null, autosaveConflict: false,
+        autosaveTimer: null, localDraftSaveTimer: null, autosaveDirty: false,
         groupedSelections: {
             1: {product: {id: 1, title: 'First'}, items: [{variant_id: 11, quantity: 2, price: 100}]},
             2: {product: {id: 2, title: 'Second'}, items: [{variant_id: 22, quantity: 2, price: 100}]}
@@ -39,14 +44,18 @@ function editor(fetch) {
         productTitle: () => '', productCode: () => '', updateSubmitState: () => {}
     });
     for (const name of ['fetchJson', 'collectProductsForAutosave', 'collectAutosavePayload',
-        'confirmAutosaveChanges', 'saveDbAutosaveNow', 'persistDbAutosave', 'deleteGroup', 'applyDbAutosaveDraft']) {
-        const start = source.search(new RegExp(`    (?:async )?function ${name}\\(`));
-        assert.notEqual(start, -1, `Missing editor function ${name}`);
-        const rest = source.slice(start + 1);
-        const end = rest.search(/\n    (?:async )?function /);
-        vm.runInContext(source.slice(start, start + 1 + end), context);
+        'confirmAutosaveChanges', 'saveDbAutosaveNow', 'persistDbAutosave', 'scheduleDbAutosave',
+        'saveLocalDraftNow', 'scheduleLocalDraftSave', 'deleteGroup', 'applyDbAutosaveDraft']) {
+        const found = new RegExp(`^([\t ]+)(?:async )?function ${name}\\(`, 'm').exec(source);
+        assert.ok(found, `Missing editor function ${name}`);
+        const bodyStart = found.index + found[0].length;
+        const remaining = source.slice(bodyStart);
+        const end = remaining.search(new RegExp(`\\n${found[1]}(?:async )?function `));
+        assert.notEqual(end, -1, `Missing end of editor function ${name}`);
+        vm.runInContext(source.slice(found.index, bodyStart + end), context);
     }
     context.nodes = nodes;
+    context.runScheduledTimer = () => { assert.ok(pendingTimer, "Expected pending timer"); pendingTimer(); };
     return context;
 }
 
@@ -173,4 +182,28 @@ test('recovery preserves quantities, zero prices, discounts and the server versi
     assert.equal(context.groupedSelections[1].items[0].line_discount_amount, 70);
     assert.equal(context.groupedSelections[1].discount_value, 10);
     assert.equal(context.groupedSelections[2].items[0].price, 0);
+});
+
+
+test('timer-based autosave never auto-confirms a reduction', async () => {
+    const requests = [];
+    const context = editor(async (_url, options) => {
+        requests.push(JSON.parse(options.body));
+        return reply({ok: false, code: 'snapshot_reduction', confirmation_token: 'proof', message: 'preserved'}, 422);
+    });
+    context.scheduleDbAutosave(0);
+    context.runScheduledTimer();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.length, 1, 'A timer must not automatically retry a destructive update');
+    assert.equal(requests[0].action, 'autosave');
+    assert.equal(requests[0].confirmation_token, undefined);
+});
+
+test('edit-field autosave scheduling never counts as explicit confirmation', () => {
+    const context = editor(async () => { throw new Error('unexpected request'); });
+    context.IS_EDIT = true;
+    context.scheduleLocalDraftSave();
+    assert.equal(context.confirmedAutosavePayload, null);
+    context.saveLocalDraftNow();
+    assert.equal(context.confirmedAutosavePayload, null);
 });

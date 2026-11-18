@@ -140,6 +140,7 @@
 								<tr class="{{ $addedRevision ? 'revision-added-row' : ($isChangedRevision ? 'revision-changed-row' : '') }}" data-variant-id="{{ $it->variant_id }}">
 									<td>
 										{{ $it->product?->name ?? '#'.$it->product_id }}
+										<span class="badge bg-info-subtle text-info-emphasis">{{ \App\Services\SalesWarehouseSource::label($it->source_warehouse_id) }}</span>
 										<input type="hidden" name="items[{{ $loop->index }}][id]" value="{{ $it->id }}">
 										<input type="hidden" name="items[{{ $loop->index }}][product_id]" value="{{ $it->product_id }}">
 										@if($addedRevision)<span class="revision-meta"><span class="revision-added-badge">اضافه‌شده به فاکتور</span> · اصلاح #{{ $addedRevision->revision_number }}</span>@endif

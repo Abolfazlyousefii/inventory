@@ -574,6 +574,7 @@
                   <td>
                     <span class="product-name">
                       {{ $it->product?->name ?? 'محصول نامشخص' }}
+                      <span class="badge bg-info-subtle text-info-emphasis">{{ \App\Services\SalesWarehouseSource::label($it->source_warehouse_id) }}</span>
                     </span>
                     @include('partials.bundle-contents', ['productIsBundle' => $it->product?->is_bundle, 'snapshot' => $it->bundle_components_snapshot ?? null, 'variantId' => $it->variant_id, 'bundleQuantity' => $it->quantity])
                   </td>

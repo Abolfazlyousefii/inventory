@@ -16,7 +16,19 @@ class SalesPrintDocumentService
 
         $paid = $invoice->relationLoaded('payments') ? (int) $invoice->payments->sum('amount') : (int) $invoice->paid_amount;
         $totals = SalesDocumentTotals::fromDocument($invoice);
+        $printItems = $this->items($invoice->items);
         $isCustomerCopy = $mode === 'customer';
+        $customerPayment = null;
+        $paymentWarning = null;
+        if ($isCustomerCopy) {
+            try {
+                $customerPayment = app(CustomerInvoicePaymentSettingsService::class)->details();
+            } catch (\Illuminate\Contracts\Encryption\DecryptException $exception) {
+                // Imported encrypted settings may belong to a different app key.
+                // Never invent bank details or alter the stored encrypted values.
+                $paymentWarning = 'اطلاعات واریز قابل بازیابی نیست؛ مشخصات حساب را پیش از پرداخت از واحد مالی دریافت کنید.';
+            }
+        }
         // This is the CURRENT whole-customer ledger balance, not the balance of this invoice.
         // Customer::balance includes opening balance and only effective debit/credit rows.
         $signedAccountBalance = $isCustomerCopy && $invoice->customer
@@ -44,7 +56,8 @@ class SalesPrintDocumentService
                 'cost' => (int) $invoice->shipping_price,
                 'description' => null,
             ],
-            'items' => $this->items($invoice->items),
+            'items' => $printItems,
+            'customerGroups' => $this->customerGroups($printItems),
             'totals' => [
                 'subtotal' => $totals['subtotal_before_discount'],
                 'discount' => $totals['total_discount'],
@@ -62,7 +75,8 @@ class SalesPrintDocumentService
                 'status' => $signedAccountBalance > 0 ? 'بدهکار' : ($signedAccountBalance < 0 ? 'بستانکار' : 'تسویه'),
                 'asOf' => now(),
             ],
-            'customerPayment' => $isCustomerCopy ? app(CustomerInvoicePaymentSettingsService::class)->details() : null,
+            'customerPayment' => $customerPayment,
+            'paymentWarning' => $paymentWarning,
             'company' => config('company'),
             'logo' => asset('logo.png'),
             'mode' => $isCustomerCopy ? 'customer' : 'warehouse',
@@ -74,6 +88,7 @@ class SalesPrintDocumentService
     {
         $order->loadMissing(['items.product', 'items.variant.modelList', 'items.variant.color', 'shippingMethod', 'customer', 'invoice']);
         $totals = SalesDocumentTotals::fromDocument($order);
+        $printItems = $this->items($order->items);
 
         return [
             'documentType' => 'preinvoice',
@@ -96,7 +111,8 @@ class SalesPrintDocumentService
                 'cost' => (int) $order->shipping_price,
                 'description' => $order->description,
             ],
-            'items' => $this->items($order->items),
+            'items' => $printItems,
+            'customerGroups' => $this->customerGroups($printItems),
             'totals' => [
                 'subtotal' => $totals['subtotal_before_discount'],
                 'discount' => $totals['total_discount'],
@@ -123,7 +139,12 @@ class SalesPrintDocumentService
             $product = $item->product;
 
             return [
+                'productId' => $item->product_id,
+                'productName' => $this->cleanText($product?->name) ?: ('#' . $item->product_id),
+                'variantDescription' => $this->variantDescription($item),
                 'description' => $this->formatInvoiceItemDescription($item),
+                'warehouseLabel' => $item->source_warehouse_id ? 'انبار شوروم' : 'انبار مرکزی',
+                'sourceWarehouseId' => $item->source_warehouse_id,
                 'bundle_contents' => ($product?->is_bundle || !empty($item->bundle_components_snapshot)) ? \App\Support\BundleContentsDisplay::rows($item->bundle_components_snapshot ?? null, $item->variant_id, $item->product_id) : [],
                 'inventoryCode' => $this->inventoryCode($variant, $product),
                 'quantity' => (int) $item->quantity,
@@ -163,7 +184,46 @@ class SalesPrintDocumentService
                 return $carry->push($part);
             }, collect());
 
-        return $parts->isNotEmpty() ? $parts->implode(' | ') : ('#' . $item->product_id);
+        $description = $parts->isNotEmpty() ? $parts->implode(' | ') : ('#' . $item->product_id);
+        return $description;
+    }
+
+    private function variantDescription($item): string
+    {
+        $name = $this->cleanText($item->product?->name);
+        $variant = $item->variant;
+        $parts = collect([$variant?->modelList?->model_name, $variant?->variant_name,
+            $variant?->variety_name, $variant?->color?->name])
+            ->map(function ($part) use ($name) {
+                $part = $this->cleanText($part) ?? '';
+                if ($name && str_starts_with($part, $name)) {
+                    $part = substr($part, strlen($name));
+                }
+                return preg_replace('/^[\s|—-]+|[\s|—-]+$/u', '', $part);
+            })->filter()->reduce(function (Collection $carry, string $part) {
+                $normalized = $this->normalizeText($part);
+                if ($carry->contains(fn ($existing) => str_contains($this->normalizeText($existing), $normalized))) {
+                    return $carry;
+                }
+                return $carry->reject(fn ($existing) => str_contains($normalized, $this->normalizeText($existing)))->push($part);
+            }, collect());
+
+        return $parts->implode(' | ') ?: 'بدون تنوع';
+    }
+
+    private function customerGroups(Collection $items): Collection
+    {
+        // Presentation only: never average historical prices or allocate discounts again.
+        return $items->groupBy(fn (array $item) => json_encode([
+            $item['productId'], $item['unitPrice'], $item['bundle_contents'],
+        ], JSON_UNESCAPED_UNICODE))->map(fn (Collection $rows) => [
+            'name' => $rows->first()['productName'],
+            'unitPrice' => $rows->first()['unitPrice'],
+            'quantity' => $rows->sum('quantity'),
+            'discount' => $rows->sum('lineDiscount'),
+            'total' => $rows->sum('lineTotal'),
+            'items' => $rows->values(),
+        ])->values();
     }
 
     private function inventoryCode($variant, $product): string
@@ -188,6 +248,11 @@ class SalesPrintDocumentService
         }
 
         $labels = [
+            'pending_collection' => 'در انتظار جمع‌آوری',
+            'warehouse_received' => 'دریافت‌شده در انبار',
+            'pending_finance_reapproval' => 'در انتظار تأیید مجدد مالی',
+            'ready_to_ship' => 'آمادهٔ ارسال',
+            'cancelled' => 'لغوشده',
             'pending_warehouse_approval' => 'در انتظار تایید انبار',
             'warehouse_approved' => 'تایید شده توسط انبار',
             'pending_finance_approval' => 'در انتظار تایید مالی',

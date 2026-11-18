@@ -46,12 +46,11 @@ class PreinvoiceApiController extends Controller
         app(InventoryCountFreezeService::class)->assertProduct((int) $product->id);
         $query = $product->variants()->with(['modelList', 'color'])->where('sell_price', '>', 0);
         if ($product->is_bundle && $product->bundle_stock_mode === 'automatic') {
-            app(PreinvoiceBundleStockService::class)->constrainAvailableVariants($query->getQuery());
+            app(PreinvoiceBundleStockService::class)->constrainSalesVariants($query->getQuery());
         } else {
             // Central warehouse quantity already excludes reservations. Do not subtract them twice.
             $centralId = WarehouseStockService::centralWarehouseId();
-            $query->active()->where('sales_enabled', true)->whereHas('warehouseStocks', fn ($stock) => $stock
-                ->where('warehouse_id', $centralId)->where('quantity', '>', 0));
+            $query->active()->where('sales_enabled',true)->whereHas('warehouseStocks',fn($stock)=>$stock->where('quantity','>',0)->where(fn($source)=>$source->where('warehouse_id',$centralId)->orWhereHas('warehouse',fn($warehouse)=>$warehouse->where('type','showroom')->where('is_active',true)->whereNull('parent_id'))));
         }
         $variants = $query->orderBy('variant_name')->get();
         $models = $variants->map(function ($v) use ($product) {
@@ -82,7 +81,7 @@ class PreinvoiceApiController extends Controller
             ->select(['id', 'name', 'is_bundle', 'sku', 'short_barcode', 'code', 'price'])
             ->where('is_sellable', true)
             ->tap(fn ($query) => app(InventoryCountFreezeService::class)->excludeBlockedProducts($query))
-            ->whereHas('variants', fn ($q) => $bundleStock->constrainAvailableVariants($q))
+            ->whereHas('variants', fn ($q) => $bundleStock->constrainSalesVariants($q))
             ->when($q !== '', function ($query) use ($q, $isPureNumeric) {
 
                 // ✅ اگر عدد وارد شد و طولش <= 4 یعنی PPPP
@@ -196,7 +195,8 @@ class PreinvoiceApiController extends Controller
 
         $reservationToken = (string) $request->query('reservation_token', '');
         $reservedByVariant = $this->activeReservationQuantities($reservationToken);
-        $reservedVariantIds = array_keys($reservedByVariant);
+        $showroomForVisibility=\App\Services\SalesWarehouseSource::showroomId();
+        $reservedVariantIds = array_keys($reservedByVariant + ($showroomForVisibility ? $this->activeReservationQuantities($reservationToken,$showroomForVisibility) : []));
 
         $bundleStock = app(PreinvoiceBundleStockService::class);
         $applyVariantVisibility = function ($outerQuery) use ($bundleStock, $reservedVariantIds, $currentPreinvoiceItemVariantIds, $includeUnavailable) {
@@ -206,7 +206,7 @@ class PreinvoiceApiController extends Controller
 
             $outerQuery->where(function ($query) use ($bundleStock, $reservedVariantIds) {
                 $query->where(function ($stockQuery) use ($bundleStock, $reservedVariantIds) {
-                    $stockQuery->where(fn ($available) => $bundleStock->constrainAvailableVariants($available));
+                    $stockQuery->where(fn ($available) => $bundleStock->constrainSalesVariants($available));
                     if (! empty($reservedVariantIds)) {
                         $stockQuery->orWhereIn('id', $reservedVariantIds);
                     }
@@ -237,6 +237,9 @@ class PreinvoiceApiController extends Controller
 
         $reservationToken = (string) $request->query('reservation_token', '');
         $reservedByVariant = $this->activeReservationQuantities($reservationToken);
+        $showroomId = \App\Services\SalesWarehouseSource::showroomId();
+        $showroomStocks = $showroomId ? WarehouseStock::where('warehouse_id',$showroomId)->where('product_id',$product->id)->pluck('quantity','product_variant_id') : collect();
+        $showroomReserved = $showroomId ? $this->activeReservationQuantities($reservationToken,$showroomId) : [];
 
         $bundleStock = app(PreinvoiceBundleStockService::class);
         $payload = [
@@ -255,7 +258,7 @@ class PreinvoiceApiController extends Controller
             'quantity' => $stocktakeBlocked ? 0 : ((bool) $product->is_bundle && $product->bundle_stock_mode === 'automatic'
                 ? $product->variants->sum(fn ($variant) => $bundleStock->free((int) $product->id, (int) $variant->id)) : $centralStock),
 
-            'varieties' => $product->variants->map(function ($v) use ($product, $bundleStock, $reservedByVariant, $currentPreinvoiceItemVariantIds, $stocktakeBlocked) {
+            'varieties' => $product->variants->map(function ($v) use ($product, $bundleStock, $reservedByVariant, $currentPreinvoiceItemVariantIds, $stocktakeBlocked, $showroomId, $showroomStocks, $showroomReserved) {
                 $isSellableVariant = ! $stocktakeBlocked && (bool) ($v->is_active ?? false) && (bool) ($v->sales_enabled ?? false);
                 $freeStock = $isSellableVariant ? $bundleStock->free((int) $product->id, (int) $v->id) : 0;
                 $totalReservedIncludingCurrent = max(0, (int) ($v->reserved ?? 0));
@@ -266,6 +269,9 @@ class PreinvoiceApiController extends Controller
 
                 return [
                     'id' => $v->id,
+                    'showroom_warehouse_id' => $showroomId,
+                    'showroom_free_stock' => $isSellableVariant ? max(0,(int)($showroomStocks[$v->id] ?? 0)) : 0,
+                    'showroom_reserved_for_form' => (int)($showroomReserved[$v->id] ?? 0),
                     'price' => (int) ($v->sell_price ?? 0),
 
                     // Backward-compatible fields used by existing JS.
@@ -323,6 +329,7 @@ class PreinvoiceApiController extends Controller
                 'distinct',
                 Rule::exists('product_variants', 'id')->where(fn ($query) => $query->where('is_active', true)->where('sales_enabled', true)),
             ],
+            'items.*.source_warehouse_id' => ['nullable','integer','exists:warehouses,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'is_in_person' => ['nullable', 'boolean'],
         ]);
@@ -396,7 +403,7 @@ class PreinvoiceApiController extends Controller
         ]);
     }
 
-    private function activeReservationQuantities(string $token): array
+    private function activeReservationQuantities(string $token, ?int $source = null): array
     {
         if ($token === '' || ! auth()->check()) {
             return [];
@@ -406,6 +413,7 @@ class PreinvoiceApiController extends Controller
 
         return PreinvoiceDraftReservation::query()
             ->where('token', $token)
+            ->where('source_warehouse_id',$source)
             ->where('user_id', auth()->id())
             ->whereNull('converted_at')
             ->whereNull('preinvoice_order_id')

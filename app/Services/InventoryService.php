@@ -13,7 +13,8 @@ class InventoryService
         int $quantityDelta,
         string $reference,
         string $note = '',
-        array $movementAttributes = []
+        array $movementAttributes = [],
+        ?int $sourceWarehouseId = null
     ): void {
         if ($quantityDelta === 0) {
             return;
@@ -29,13 +30,14 @@ class InventoryService
             abort(422, 'تغییر موجودی کالای دارای تنوع بدون تنوع معتبر مجاز نیست.');
         }
 
-        $warehouseId = WarehouseStockService::centralWarehouseId();
-        $before = (int) $variant->stock;
+        $warehouseId = $sourceWarehouseId ?: WarehouseStockService::centralWarehouseId();
+        if ($sourceWarehouseId && $quantityDelta < 0) SalesWarehouseSource::assertReservable($productId,$productVariantId,$sourceWarehouseId);
+        $before = $sourceWarehouseId ? WarehouseStockService::available($warehouseId,$productId,$productVariantId) : (int) $variant->stock;
 
         WarehouseStockService::change($warehouseId, $productId, $quantityDelta, $productVariantId);
 
         $variant->refresh();
-        $after = (int) $variant->stock;
+        $after = $sourceWarehouseId ? WarehouseStockService::available($warehouseId,$productId,$productVariantId) : (int) $variant->stock;
 
         $movementPayload = array_merge([
             'product_id' => $productId,

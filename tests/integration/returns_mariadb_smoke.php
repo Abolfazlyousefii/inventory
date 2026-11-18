@@ -48,9 +48,10 @@ if ($worker) {
             'receive'=>app(WarehouseInboundService::class)->receive(WarehouseInboundReceipt::findOrFail($input['receipt']),$input['rows'],$input['actor']),
             'financial'=>app(App\Services\FinancialAccountDocumentService::class)->create(Supplier::findOrFail($input['supplier']),$input['data'],$input['actor']),
             'financial-revise'=>app(App\Services\FinancialAccountDocumentService::class)->revise(App\Models\FinancialAccountDocument::findOrFail($input['document']),$input['data'],$input['actor'],$input['cancel']??false),
+            'showroom'=>app(App\Services\PreinvoiceDraftReservationService::class)->syncReservationRows($input['token'],$input['actor'],$input['data']),
             default=>throw new RuntimeException('Unknown worker operation'),
         };
-        echo json_encode(['state'=>'ok','id'=>$result?->id],JSON_THROW_ON_ERROR)."\n";
+        echo json_encode(['state'=>'ok','id'=>is_array($result)?null:$result?->id],JSON_THROW_ON_ERROR)."\n";
     } catch (ValidationException $e) { echo json_encode(['state'=>'rejected','fields'=>array_keys($e->errors())])."\n"; }
     exit;
 }
@@ -64,7 +65,7 @@ if (($argv[1]??'')==='--schema') {
         (require dirname(__DIR__).'/Support/LegacyMigrations/2026_02_10_000000_create_activity_logs_table.php')->up();
         (require dirname(__DIR__).'/Support/LegacyMigrations/2026_06_13_150700_widen_activity_logs_action_column.php')->up();
     }
-    foreach (['2026_11_11_180000_create_supplier_account_transactions_table.php','2026_11_14_150000_add_explicit_sales_return_flow.php','2026_11_14_163000_create_financial_account_documents_table.php','2026_11_14_180000_add_financial_document_revision_state.php'] as $file) {
+    foreach (['2026_11_11_180000_create_supplier_account_transactions_table.php','2026_11_14_150000_add_explicit_sales_return_flow.php','2026_11_14_163000_create_financial_account_documents_table.php','2026_11_14_180000_add_financial_document_revision_state.php','2026_11_14_190000_add_sales_source_warehouse.php','2026_11_14_191000_scope_sales_reservations_by_source.php'] as $file) {
         (require dirname(__DIR__,2).'/database/migrations/'.$file)->up();
     }
     echo "Disposable schema provisioned; no business rows copied.\n"; exit;
@@ -183,6 +184,18 @@ App\Models\PurchaseReturnRevision::creating(fn()=>throw new RuntimeException('QA
 try {$service->create($payload('B',1,(string)Str::uuid()),$actor->id);throw new LogicException('Rollback injection failed');}
 catch(RuntimeException $e){checkReturnQa($e->getMessage()==='QA injected audit failure','Unexpected failure');}
 checkReturnQa(WarehouseStockService::available($central,$product->id,$variant->id)===$before && DB::table('supplier_ledgers')->count()===$beforeLedgers,'Transaction rollback changed stock or finance');
-echo json_encode(['result'=>'PASS','engine'=>DB::selectOne('SELECT VERSION() AS version')->version,
+$showroom=Warehouse::firstOrCreate(['type'=>'showroom','name'=>'انبار شوروم'],['is_active'=>true]);
+$showProduct=Product::create(['category_id'=>$category->id,'name'=>'QA showroom sale','sku'=>'QA-SHOWROOM-SALE','stock'=>0,'reserved'=>0,'price'=>1000,'is_sellable'=>true]);
+$showVariant=ProductVariant::create(['product_id'=>$showProduct->id,'variant_name'=>'QA showroom','variant_code'=>'QA-SHOWSALE','stock'=>0,'reserved'=>0,'sell_price'=>1000,'is_active'=>true,'sales_enabled'=>true]);
+WarehouseStockService::set($central,$showProduct->id,$showVariant->id,0);
+WarehouseStockService::set($showroom->id,$showProduct->id,$showVariant->id,5);
+$salesData=[['product_id'=>$showProduct->id,'variant_id'=>$showVariant->id,'quantity'=>3,'source_warehouse_id'=>$showroom->id]];
+$showResults=raceReturns('showroom',[['actor'=>$actor->id,'token'=>(string)Str::uuid(),'data'=>$salesData],['actor'=>$secondActor->id,'token'=>(string)Str::uuid(),'data'=>$salesData]]);
+checkReturnQa(count(array_filter($showResults,fn($r)=>$r['state']==='ok'))===1,'Concurrent showroom sales oversold stock');
+checkReturnQa(WarehouseStockService::available($showroom->id,$showProduct->id,$showVariant->id)===2 && (int)$showVariant->fresh()->stock===0,'Showroom sale modified central stock');
+$held=App\Models\PreinvoiceDraftReservation::where('product_id',$showProduct->id)->whereNull('released_at')->sole();
+app(App\Services\PreinvoiceDraftReservationService::class)->releaseTokenReservations($held->token,$held->user_id,'manual_release');
+checkReturnQa(WarehouseStockService::available($showroom->id,$showProduct->id,$showVariant->id)===5 && (int)$showVariant->fresh()->reserved===0,'Showroom release corrupted stock or cache');
+echo json_encode(['result'=>'PASS','showroom_concurrency'=>'PASS','engine'=>DB::selectOne('SELECT VERSION() AS version')->version,
     'checks'=>['source_capacity_A50_adjustment30_B20','concurrent_source_capacity','concurrent_idempotency','unique_inbound_operation','concurrent_receive_once_two_users','customer_credit_once','reserved_preserved','concurrent_sales_return_creation','immutable_supplier_posting_and_reversal','unified_statement_SQL','transaction_rollback','concurrent_financial_document_once','financial_document_preserves_inventory_and_actor','concurrent_financial_edit_and_cancel_once'],
     'fixture_database'=>$database,'production_touched'=>false],JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR)."\n";

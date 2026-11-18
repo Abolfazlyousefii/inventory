@@ -139,7 +139,7 @@ class PreinvoiceDraftReservationService
 
             $existing = [];
             foreach ($existingRows as $row) {
-                $existing[$this->reservationKey((int) $row->product_id, (int) $row->variant_id)] = $row;
+                $existing[$this->reservationKey((int) $row->product_id, (int) $row->variant_id, $row->source_warehouse_id)] = $row;
             }
 
             // ── FIX: هنگام ویرایش پیش‌فاکتور، آیتم‌هایی که قبلاً ذخیره شدن و
@@ -149,7 +149,7 @@ class PreinvoiceDraftReservationService
             if (isset($order) && $this->hasCommittedCentralStock($order)) {
                 $order->loadMissing('items');
                 foreach ($order->items as $orderItem) {
-                    $key = $this->reservationKey((int) $orderItem->product_id, (int) $orderItem->variant_id);
+                    $key = $this->reservationKey((int) $orderItem->product_id, (int) $orderItem->variant_id, $orderItem->source_warehouse_id);
                     $committedQty[$key] = ($committedQty[$key] ?? 0) + (int) $orderItem->quantity;
                 }
             }
@@ -177,6 +177,8 @@ class PreinvoiceDraftReservationService
             foreach ($allKeys as $key) {
                 [$productId, $variantId] = array_map('intval', explode(':', $key));
                 $oldQty = (int) (($existing[$key] ?? null)?->quantity ?? 0);
+                $source = $desired[$key]['source_warehouse_id'] ?? ($existing[$key]->source_warehouse_id ?? null);
+                if ($oldQty>0 && isset($desired[$key]) && ($existing[$key]->source_warehouse_id ?? null) !== ($desired[$key]['source_warehouse_id'] ?? null)) throw ValidationException::withMessages(['items'=>'برای تغییر انبار، ابتدا ردیف کالا را از سبد حذف کنید.']);
                 $committed = (int) ($committedQty[$key] ?? 0);
                 $newQty = (int) ($desired[$key]['quantity'] ?? 0);
 
@@ -200,12 +202,12 @@ class PreinvoiceDraftReservationService
                 $delta = $newQty - $effectiveOld;
 
                 if ($delta > 0) {
-                    $this->reserveVariantDelta($productId, $variantId, $delta, $effectiveOld);
+                    $this->reserveVariantDelta($productId, $variantId, $delta, $effectiveOld, $source);
                 } elseif ($delta < 0) {
                     // فقط از رزروهای موقت آزاد کن، نه از committed
                     $releasable = min(abs($delta), $oldQty);
                     if ($releasable > 0) {
-                        $this->releaseVariantDelta($productId, $variantId, $releasable);
+                        $this->releaseVariantDelta($productId, $variantId, $releasable, $source);
                     }
                 }
 
@@ -214,6 +216,7 @@ class PreinvoiceDraftReservationService
                 if ($tempQty > 0) {
                     $reservationAttributes = [
                         'user_id' => $userId,
+                        'source_warehouse_id' => $source,
                         'quantity' => $tempQty,
                         'expires_at' => $expiresAt,
                         'last_seen_at' => now(),
@@ -235,6 +238,7 @@ class PreinvoiceDraftReservationService
                             'token' => $token,
                             'product_id' => $productId,
                             'variant_id' => $variantId,
+                            'source_warehouse_id' => $source,
                         ],
                         $reservationAttributes
                     );
@@ -266,7 +270,7 @@ class PreinvoiceDraftReservationService
             $released = [];
             foreach ($rows as $row) {
                 $quantity = (int) $row->quantity;
-                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $quantity);
+                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, $quantity, $row->source_warehouse_id);
                 $this->markReleasedOrDelete($row, $userId, $reason, $note);
                 ReservationSideEffects::touchProduct((int) $row->product_id);
                 $released[] = [
@@ -474,7 +478,7 @@ class PreinvoiceDraftReservationService
                     continue;
                 }
 
-                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity);
+                $this->releaseVariantDelta((int) $row->product_id, (int) $row->variant_id, (int) $row->quantity, $row->source_warehouse_id);
                 $this->markReleasedOrDelete($row, (int) ($row->user_id ?? 0), 'temporary_online_expired', 'رزرو موقت آنلاین منقضی شد.');
                 ReservationSideEffects::touchProduct((int) $row->product_id);
             }
@@ -516,7 +520,8 @@ class PreinvoiceDraftReservationService
                 continue;
             }
 
-            $key = $this->reservationKey($productId, $variantId);
+            $source = SalesWarehouseSource::normalize($row['source_warehouse_id'] ?? null);
+            $key = $this->reservationKey($productId, $variantId, $source);
             if (! isset($normalized[$key])) {
                 $normalized[$key] = [
                     'product_id' => $productId,
@@ -524,6 +529,9 @@ class PreinvoiceDraftReservationService
                     'quantity' => 0,
                 ];
             }
+            $source = SalesWarehouseSource::normalize($row['source_warehouse_id'] ?? null);
+            if (array_key_exists('source_warehouse_id',$normalized[$key]) && $normalized[$key]['source_warehouse_id'] !== $source) throw ValidationException::withMessages(['items'=>'هر تنوع فقط از یک انبار قابل انتخاب است.']);
+            $normalized[$key]['source_warehouse_id'] = $source;
             $normalized[$key]['quantity']   = $quantity;
         }
 
@@ -563,9 +571,10 @@ class PreinvoiceDraftReservationService
                 continue;
             }
 
-            $available = $this->centralAvailableQuantity($productId, $variantId);
+            $available = app(PreinvoiceBundleStockService::class)->free($productId, $variantId, $desired[$key]['source_warehouse_id'] ?? null);
             if ($delta > $available) {
-                $itemErrors[] = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
+                $source = $desired[$key]['source_warehouse_id'] ?? null;
+                $itemErrors[] = array_merge($this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held), $source ? ['source_warehouse_id' => $source] : []);
             }
         }
 
@@ -607,7 +616,7 @@ class PreinvoiceDraftReservationService
     {
         $maxByKey = [];
         foreach ($itemErrors as $error) {
-            $maxByKey[$this->reservationKey((int) $error['product_id'], (int) $error['variant_id'])] = (int) $error['max_allowed'];
+            $maxByKey[$this->reservationKey((int) $error['product_id'], (int) $error['variant_id'], $error['source_warehouse_id'] ?? null)] = (int) $error['max_allowed'];
         }
 
         $suggested = [];
@@ -616,6 +625,7 @@ class PreinvoiceDraftReservationService
             $suggested[] = [
                 'product_id' => (int) $row['product_id'],
                 'variant_id' => (int) $row['variant_id'],
+                'source_warehouse_id' => $row['source_warehouse_id'] ?? null,
                 'requested_quantity' => (int) $row['quantity'],
                 'quantity' => $quantity,
                 'remove' => $quantity <= 0,
@@ -625,7 +635,7 @@ class PreinvoiceDraftReservationService
         return $suggested;
     }
 
-    private function reserveVariantDelta(int $productId, int $variantId, int $delta, int $held = 0): void
+    private function reserveVariantDelta(int $productId, int $variantId, int $delta, int $held = 0, ?int $source = null): void
     {
         if ($delta <= 0) {
             return;
@@ -633,7 +643,7 @@ class PreinvoiceDraftReservationService
 
         $variant = ProductVariant::query()->with('product')->whereKey($variantId)->lockForUpdate()->firstOrFail();
         $bundleStock = app(PreinvoiceBundleStockService::class);
-        $available = $bundleStock->free($productId, $variantId);
+        $available = $bundleStock->free($productId, $variantId, $source);
         if ($delta > $available) {
             $itemError = $this->shortfallItemError($variant, $productId, $variantId, $available, $delta, $held);
             throw ValidationException::withMessages([
@@ -642,17 +652,17 @@ class PreinvoiceDraftReservationService
             ]);
         }
 
-        $bundleStock->reserve($productId, $variantId, $delta);
+        $bundleStock->reserve($productId, $variantId, $delta, $source);
 
     }
 
-    private function releaseVariantDelta(int $productId, int $variantId, int $delta): void
+    private function releaseVariantDelta(int $productId, int $variantId, int $delta, ?int $source = null): void
     {
         if ($delta <= 0) {
             return;
         }
 
-        $release = $this->inventoryRelease->releaseReservedQuantity($productId, $variantId, $delta);
+        $release = $this->inventoryRelease->releaseReservedQuantity($productId, $variantId, $delta, $source);
 
         if (! $release['released']) {
             throw ValidationException::withMessages([
@@ -663,9 +673,9 @@ class PreinvoiceDraftReservationService
         }
     }
 
-    private function reservationKey(int $productId, int $variantId): string
+    private function reservationKey(int $productId, int $variantId, ?int $source = null): string
     {
-        return $productId.':'.$variantId;
+        return SalesWarehouseSource::key($productId, $variantId, $source);
     }
 
     private function hasCommittedCentralStock(PreinvoiceOrder $order): bool

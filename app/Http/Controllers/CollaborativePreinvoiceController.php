@@ -35,8 +35,8 @@ class CollaborativePreinvoiceController extends Controller
         $order->load('items.product', 'items.variant');
         return ['uuid' => $order->uuid, 'status' => $order->status, 'total' => (int) $order->total_price,
                 'items' => $order->items->map(fn ($item) => [
-                    'id' => $item->id, 'variant_id' => $item->variant_id, 'product_id' => $item->product_id,
-                    'name' => ($item->product?->name ?? '').' / '.($item->variant?->variant_name ?? ''),
+                    'id' => $item->id, 'variant_id' => $item->variant_id, 'product_id' => $item->product_id, 'source_warehouse_id' => $item->source_warehouse_id,
+                    'name' => ($item->product?->name ?? '').' / '.($item->variant?->variant_name ?? '').' — '.\App\Services\SalesWarehouseSource::label($item->source_warehouse_id),
                     'quantity' => (int) $item->quantity, 'price' => (int) $item->price,
                     'line_discount_amount' => (int) $item->line_discount_amount,
                 ])->values()->all()];
@@ -165,10 +165,11 @@ class CollaborativePreinvoiceController extends Controller
                 if ($draftToken === '') {
                     $draftToken = (string) Str::uuid();
                     $order->update(['draft_token' => $draftToken]);
-                }$draftItems = $order->items()->get(['product_id', 'variant_id', 'quantity'])
+                }$draftItems = $order->items()->get(['product_id', 'variant_id', 'quantity', 'source_warehouse_id'])
                     ->map(fn ($row) => [
                         'product_id' => (int) $row->product_id,
                         'variant_id' => (int) $row->variant_id,
+                        'source_warehouse_id' => $row->source_warehouse_id,
                         'quantity' => (int) $row->quantity,
                     ])->all();$reservationResult = app(PreinvoiceDraftReservationService::class)->syncReservationRows($draftToken,
                     (int) $order->created_by,

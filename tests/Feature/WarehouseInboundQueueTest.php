@@ -26,9 +26,77 @@ use Tests\TestCase;
 
 class WarehouseInboundQueueTest extends TestCase
 {
+    public function test_undeducted_invoice_cancellation_never_queues_or_restores_stock(): void
+    {
+        [$invoice, $item, $central] = $this->invoiceFixture(1);
+        $invoice->forceFill(['stock_deduction_status'=>Invoice::STOCK_NOT_DEDUCTED])->save();
+        app(\App\Services\SalesHavalehService::class)->cancelAndRestore($invoice, 'لغو سفارش بدون کسر', $this->user->id);
+        $this->assertSame(Invoice::STATUS_NOT_SHIPPED,$invoice->fresh()->status);
+        $this->assertSame(0,WarehouseInboundReceipt::count());
+        $this->assertSame(0,StockMovement::count());
+        $this->assertStock($central,$item,0);
+        app(\App\Services\SalesHavalehService::class)->cancelAndRestore($invoice->fresh(), 'تلاش مجدد', $this->user->id);
+        $this->assertSame(0,WarehouseInboundReceipt::count());
+    }
+
+    public function test_old_pending_receipt_cannot_restore_an_explicitly_undeducted_invoice(): void
+    {
+        [$invoice,$item,$central]=$this->invoiceFixture(1);
+        $receipt=app(WarehouseInboundService::class)->queueInvoiceCancellation($invoice,$this->user->id);
+        $invoice->forceFill(['stock_deduction_status'=>Invoice::STOCK_NOT_DEDUCTED])->save();
+        try {
+            $this->receive($receipt,1,$central);
+            $this->fail('An old receipt must not manufacture stock for an undeducted invoice.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('invoice',$e->errors());
+        }
+        $this->assertStock($central,$item,0);
+        $this->assertSame(0,StockMovement::count());
+        $this->assertSame('pending',$receipt->fresh()->status);
+    }
+
+    public function test_undeducted_invoice_cannot_be_reopened_or_have_a_return_queued(): void
+    {
+        [$invoice]=$this->invoiceFixture(1);
+        $invoice->forceFill(['stock_deduction_status'=>Invoice::STOCK_NOT_DEDUCTED,'status'=>Invoice::STATUS_NOT_SHIPPED])->save();
+        foreach (['queue','undo'] as $action) {
+            try {
+                if ($action==='queue') app(WarehouseInboundService::class)->queueInvoiceCancellation($invoice,$this->user->id);
+                else app(\App\Services\SalesHavalehService::class)->undoCancelAndReserve($invoice,null,$this->user->id);
+                $this->fail('Undeducted document must be blocked.');
+            } catch (ValidationException $e) { $this->assertArrayHasKey('invoice',$e->errors()); }
+        }
+    }
     use RefreshDatabase;
 
     private User $user;
+
+    public function test_historical_metadata_migration_identifies_only_the_audited_exception_without_changing_stock(): void
+    {
+        $this->invoiceFixture(3);
+        if (!\Illuminate\Support\Facades\Schema::hasTable('site_stock_holds')) {
+            \Illuminate\Support\Facades\Schema::create('site_stock_holds',function ($t) {
+                $t->id(); $t->unsignedBigInteger('site_order_id'); $t->string('fingerprint'); $t->string('status');
+                $t->timestamp('expires_at')->nullable(); $t->timestamp('consumed_at')->nullable(); $t->timestamp('released_at')->nullable();
+            });
+        }
+        $invoice=new Invoice;
+        $invoice->forceFill(['id'=>2461,'uuid'=>'02211','external_order_id'=>89,'created_at'=>'2026-10-28 14:41:16','status'=>Invoice::STATUS_NOT_SHIPPED])->save();
+        \Illuminate\Support\Facades\DB::table('site_stock_holds')->insert([
+            'id'=>31,'site_order_id'=>89,'fingerprint'=>str_repeat('a',64),'status'=>'expired',
+            'expires_at'=>'2026-10-27 18:28:04','released_at'=>'2026-10-27 18:30:38',
+        ]);
+        $migration=require database_path('migrations/2026_11_14_200000_track_invoice_stock_deduction.php');
+        $before=WarehouseStock::all()->toJson();
+        $migration->up();
+        $this->assertSame('not_deducted',$invoice->fresh()->stock_deduction_status);
+        $this->assertNull(Invoice::where('id','!=',2461)->firstOrFail()->stock_deduction_status);
+        $this->assertSame($before,WarehouseStock::all()->toJson());
+        $this->assertSame(0,StockMovement::count());
+        $invoice->forceFill(['stock_deduction_status'=>'deducted'])->save();
+        $migration->up();
+        $this->assertSame('deducted',$invoice->fresh()->stock_deduction_status);
+    }
 
     protected function setUp(): void
     {

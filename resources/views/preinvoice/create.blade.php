@@ -2296,8 +2296,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			if (isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically ||
 				(!hasAnyFormData() && !confirmedAutosavePayload)) return;
 			if (autosaveConflict) {
-				updateLocalDraftStatus('پیشنویس سرور جدیدتر است؛ ذخیره خودکار تا بازیابی متوقف شد', false);
-				return;
+				const message = 'پیشنویس سرور جدیدتر است؛ ذخیره خودکار تا بازیابی متوقف شد';
+				updateLocalDraftStatus(message, false);
+				throw new Error(message);
 			}
 			const snapshot = collectAutosavePayload();
 			const signature = JSON.stringify(snapshot);
@@ -2386,10 +2387,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			autosaveDirty = true;
 			clearTimeout(autosaveTimer);
 			autosaveTimer = setTimeout(() => {
-				// NEW: treat the timer as an intentional save so snapshot-reduction
-				// guards don't reject a legitimate user edit (removing a row,
-				// reducing quantity, shortening a note, etc.).
-				try { confirmAutosaveChanges(); } catch (e) {}
+				// A timer is not explicit consent to reduce or delete saved content.
 				saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
 			}, delay);
 		}
@@ -2398,7 +2396,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			if (isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically) return;
 
 			if (IS_EDIT) {
-				try { confirmAutosaveChanges(); } catch (e) {}
 				scheduleDbAutosave(0);
 				return;
 			}
@@ -2424,7 +2421,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		function scheduleLocalDraftSave() {
 			if (isBootingPage || isHydratingLocalDraft || isSubmittingProgrammatically) return;
 			if (IS_EDIT) {
-				try { confirmAutosaveChanges(); } catch (e) {}
 				scheduleDbAutosave(300);
 				return;
 			}
@@ -2513,7 +2509,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			updateLocalDraftStatus('پیش‌نویس لود شد', true);
 
 			isHydratingLocalDraft = false;
-			confirmAutosaveChanges();
 			scheduleLocalDraftSave();
 		}
 
@@ -2676,7 +2671,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 				currentAutosaveVersion = remoteDraft.version;
 				collaborativeBase = draftToCollaborativePayload(remoteDraft);
 				autosaveConflict = false;
-				confirmAutosaveChanges();
 				autosaveDirty = !PreinvoiceMerge.equal(chosen, remote);
 				if (!resolveConflicts && autosaveDirty) scheduleDbAutosave();
 				updateLocalDraftStatus('تغییرات تب دیگر دریافت شد', true);
@@ -2769,8 +2763,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			startReservationHeartbeat();
 			setInterval(() => {
 				if (autosaveDirty) {
-					// NEW: same reason as above.
-					try { confirmAutosaveChanges(); } catch (e) {}
 					saveDbAutosaveNow().catch(error => updateLocalDraftStatus(error.message, false));
 				}
 			}, 30000);

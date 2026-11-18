@@ -7,6 +7,7 @@
   use Morilog\Jalali\Jalalian;
 
   $toJalali = fn($date) => $date ? Jalalian::fromDateTime($date)->format('Y/m/d H:i') : '—';
+  $warehouseSummary = fn($invoice) => 'مرکزی: '.number_format((int)$invoice->items->whereNull('source_warehouse_id')->sum('quantity')).' | شوروم: '.number_format((int)$invoice->items->whereNotNull('source_warehouse_id')->sum('quantity'));
   $statusBadgeClass = function (?string $status): string {
     return match ($status) {
       Invoice::STATUS_PENDING_COLLECTION => 'collection-status-pending',
@@ -157,6 +158,7 @@
                 <div class="collection-main-text" title="{{ $inv->customer_name }}">{{ $inv->customer_name ?: '—' }}</div>
                 <div class="collection-sub-text">{{ $inv->customer_mobile ?: '—' }}</div>
                 <div class="collection-sub-text">فروشنده: {{ $inv->preinvoiceOrder?->creator?->name ?? '—' }}</div>
+                @if($inv->items->contains(fn($item) => $item->source_warehouse_id !== null))<span class="badge bg-info-subtle text-info-emphasis">شامل کالای شوروم — {{ $warehouseSummary($inv) }}</span>@endif
               </td>
               <td>
                 <div class="collection-meta">
@@ -203,6 +205,7 @@
         <div class="collection-mobile-card" data-invoice-uuid="{{ $inv->uuid }}">
           <div class="d-flex justify-content-between align-items-start gap-2">
             <div class="collection-main-text">{{ $inv->uuid }}</div>
+            @if($inv->items->contains(fn($item) => $item->source_warehouse_id !== null))<span class="badge bg-info-subtle text-info-emphasis">شامل کالای شوروم — {{ $warehouseSummary($inv) }}</span>@endif
             <span class="collection-status-badge {{ $statusBadgeClass($inv->status) }}">{{ $statusLabels[$inv->status] ?? $inv->status }}</span>
           </div>
           <div class="collection-mobile-grid">
@@ -275,6 +278,7 @@
     <tr data-invoice-uuid="${escapeHtml(row.uuid)}">
       <td>
         <div class="collection-main-text" title="${escapeHtml(row.uuid)}">${escapeHtml(row.uuid)}</div>
+        ${row.has_showroom_items ? '<span class="badge bg-info-subtle text-info-emphasis">شامل کالای شوروم — '+escapeHtml(row.warehouse_summary || '')+'</span>' : ''}
         <div class="mt-1"><span class="collection-status-badge ${statusClass(row.status)}">${escapeHtml(row.status_label)}</span></div>
         <div class="collection-sub-text">ثبت: ${escapeHtml(row.created_at || '—')}</div>
       </td>
@@ -290,7 +294,7 @@
     </tr>`;
   const renderCollectionMobileCard = (row) => `
     <div class="collection-mobile-card" data-invoice-uuid="${escapeHtml(row.uuid)}">
-      <div class="d-flex justify-content-between align-items-start gap-2"><div class="collection-main-text">${escapeHtml(row.uuid)}</div><span class="collection-status-badge ${statusClass(row.status)}">${escapeHtml(row.status_label)}</span></div>
+      <div class="d-flex justify-content-between align-items-start gap-2"><div class="collection-main-text">${escapeHtml(row.uuid)} ${row.has_showroom_items ? '<span class="badge bg-info-subtle text-info-emphasis">شامل کالای شوروم — '+escapeHtml(row.warehouse_summary || '')+'</span>' : ''}</div><span class="collection-status-badge ${statusClass(row.status)}">${escapeHtml(row.status_label)}</span></div>
       <div class="collection-mobile-grid">
         <div class="collection-mobile-field"><div class="collection-mobile-label">مشتری</div><div class="collection-mobile-value">${escapeHtml(row.customer_name || '—')}</div></div>
         <div class="collection-mobile-field"><div class="collection-mobile-label">موبایل</div><div class="collection-mobile-value">${escapeHtml(row.customer_mobile || '—')}</div></div>

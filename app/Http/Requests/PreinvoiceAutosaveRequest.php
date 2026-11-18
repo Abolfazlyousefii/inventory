@@ -57,7 +57,8 @@ class PreinvoiceAutosaveRequest extends FormRequest
             'products' => ['present', 'array', 'list', 'max:2000'],
             'products.*' => ['array'],
             'products.*.id' => ['required', 'integer', 'exists:products,id'],
-            'products.*.variety_id' => ['required', 'integer', 'distinct'],
+            'products.*.variety_id' => ['required', 'integer'],
+            'products.*.source_warehouse_id' => ['nullable','integer','exists:warehouses,id'],
             'products.*.quantity' => ['required', 'integer', 'min:1', 'max:1000000'],
             'products.*.price' => ['required', 'integer', 'min:0', 'max:1000000000000'],
             'products.*.line_discount_amount' => ['nullable', 'integer', 'min:0'],
@@ -83,7 +84,12 @@ class PreinvoiceAutosaveRequest extends FormRequest
                 ->whereIn('id', array_column($products, 'variety_id'))
                 ->pluck('product_id', 'id');
 
+            $seen = [];
             foreach ($products as $index => $row) {
+                $source = \App\Services\SalesWarehouseSource::normalize($row['source_warehouse_id'] ?? null);
+                $key = \App\Services\SalesWarehouseSource::key((int)$row['id'],(int)$row['variety_id'],$source);
+                if (isset($seen[$key])) $validator->errors()->add("products.{$index}.variety_id", 'این تنوع از همین انبار قبلاً وارد شده است.');
+                $seen[$key] = true;
                 if ((int) $variants->get($row['variety_id']) !== (int) $row['id']) {
                     $validator->errors()->add("products.{$index}.variety_id", 'تنوع انتخابی برای این کالا معتبر نیست.');
                 }

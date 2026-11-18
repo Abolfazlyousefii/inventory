@@ -2316,7 +2316,9 @@ class VoucherController extends Controller
             }
 
             $qty = (int) $item['quantity'];
-            $stockBefore = (int) $product->stock;
+            $movementWarehouseId = $voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN
+                ? (int) ($item['destination_warehouse_id'] ?? $data['to_warehouse_id'])
+                : (int) $data['from_warehouse_id'];
 
             $invoiceItemPrice = null;
             if ($voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN && $relatedInvoice) {
@@ -2426,7 +2428,8 @@ class VoucherController extends Controller
             }
 
             $product->refresh();
-            $stockAfter = (int) $product->stock;
+            $stockAfter = WarehouseStockService::available($movementWarehouseId, (int) $product->id, (int) $variant->id);
+            $stockBefore = $stockAfter + ($movementType === 'out' ? $qty : -$qty);
 
             $transfer->items()->create([
                 'invoice_item_id' => $item['invoice_item_id'] ?? null,
@@ -2448,6 +2451,7 @@ class VoucherController extends Controller
                 'warehouse_id' => $voucherType === WarehouseTransfer::TYPE_CUSTOMER_RETURN ? (int) ($item['destination_warehouse_id'] ?? $data['to_warehouse_id']) : (int) $data['from_warehouse_id'],
                 'user_id' => auth()->id(),
                 'type' => $movementType,
+                'transaction_type' => 'warehouse_transfer_variant',
                 'reason' => $movementReason,
                 'quantity' => $qty,
                 'stock_before' => $stockBefore,
@@ -2457,6 +2461,19 @@ class VoucherController extends Controller
                 'reference_id' => $transfer->id,
                 'note' => $movementNote,
             ]);
+            if ($voucherType !== WarehouseTransfer::TYPE_CUSTOMER_RETURN) {
+                $destinationAfter = WarehouseStockService::available((int) $data['to_warehouse_id'], (int) $product->id, (int) $variant->id);
+                StockMovement::create([
+                    'product_id' => $product->id, 'product_variant_id' => $variant->id,
+                    'warehouse_id' => (int) $data['to_warehouse_id'], 'user_id' => auth()->id(),
+                    'type' => 'in', 'reason' => 'transfer', 'transaction_type' => 'warehouse_transfer_variant',
+                    'quantity' => $qty, 'stock_before' => $destinationAfter - $qty,
+                    'stock_after' => $destinationAfter,
+                    'reference' => $transfer->reference ?: ('TR-'.$transfer->id),
+                    'reference_type' => WarehouseTransfer::class, 'reference_id' => $transfer->id,
+                    'note' => $movementNote,
+                ]);
+            }
         }
 
         $transfer->update(['total_amount' => $sum]);
