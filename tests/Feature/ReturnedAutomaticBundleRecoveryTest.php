@@ -152,6 +152,24 @@ class ReturnedAutomaticBundleRecoveryTest extends TestCase
         }
     }
 
+    public function test_recovered_pack_reserves_exactly_once_through_normal_automatic_invoice_stock_path(): void
+    {
+        [$bundle, $a, $b, $warehouse, $source] = $this->returnedPack();
+        $service = app(ReturnedAutomaticBundleRecoveryService::class);
+        $hash = $service->preview($bundle->id, $source->id)['recipe_hash'];
+        $service->apply($bundle->id, $source->id, $hash, true, (int) $source->user_id);
+
+        $preinvoiceStock = app(\App\Services\PreinvoiceBundleStockService::class);
+        $this->assertSame(1, $preinvoiceStock->free((int) $bundle->product_id, (int) $bundle->id));
+        $preinvoiceStock->reserve((int) $bundle->product_id, (int) $bundle->id, 1);
+        $this->assertSame(0, $preinvoiceStock->free((int) $bundle->product_id, (int) $bundle->id));
+        $this->assertSame(1, WarehouseStockService::available($warehouse, $a->product_id, $a->id));
+        $this->assertSame(30, WarehouseStockService::available($warehouse, $b->product_id, $b->id));
+
+        $preinvoiceStock->release((int) $bundle->product_id, (int) $bundle->id, 1);
+        $this->assertSame(1, $preinvoiceStock->free((int) $bundle->product_id, (int) $bundle->id));
+    }
+
     public function test_artisan_preview_is_read_only_and_unsafe_apply_fails_closed(): void
     {
         [$bundle, $a, $b, $warehouse, $source] = $this->returnedPack();
