@@ -313,14 +313,4 @@ class Invoice extends Model
         return max(((int)$this->total) - (int)$this->paid_amount, 0);
     }
 
-    public function stockWasNotDeducted(): bool
-    {
-        if ($this->stock_deduction_status === 'not_deducted') {
-            return true;
-        }
-
-        $this->assertStockDeducted();
-
-        return false;
-    }
 }
