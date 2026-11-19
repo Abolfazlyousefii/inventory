@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use App\Models\WarehouseInboundReceiptItem;
+use App\Models\User;
 use App\Services\AutomaticBundleAvailabilityService;
 use App\Services\ReturnedAutomaticBundleRecoveryService;
 use App\Services\WarehouseStockService;
@@ -92,7 +93,9 @@ class ReturnedAutomaticBundleRecoveryTest extends TestCase
             ]);
         }
 
+        $operator = User::factory()->create();
         $source = StockMovement::create([
+            'user_id' => $operator->id,
             'product_id' => $bundle->product_id,
             'product_variant_id' => $bundle->id,
             'warehouse_id' => $warehouse,
@@ -126,7 +129,7 @@ class ReturnedAutomaticBundleRecoveryTest extends TestCase
         $service = app(ReturnedAutomaticBundleRecoveryService::class);
         $hash = $service->preview($bundle->id, $source->id)['recipe_hash'];
 
-        $service->apply($bundle->id, $source->id, $hash, true);
+        $service->apply($bundle->id, $source->id, $hash, true, (int) $source->user_id);
 
         $this->assertSame(0, WarehouseStockService::available($warehouse, $bundle->product_id, $bundle->id));
         $this->assertSame(1, WarehouseStockService::available($warehouse, $a->product_id, $a->id));
@@ -141,7 +144,7 @@ class ReturnedAutomaticBundleRecoveryTest extends TestCase
         $this->assertSame(1, StockMovement::where('reason', 'bundle_return_reclassified')->count());
 
         try {
-            $service->apply($bundle->id, $source->id, $hash, true);
+            $service->apply($bundle->id, $source->id, $hash, true, (int) $source->user_id);
             $this->fail('Repeated conversion must be rejected.');
         } catch (\InvalidArgumentException $e) {
             $this->assertSame(1, StockMovement::where('reason', 'bundle_return_reclassified')->count());
@@ -175,7 +178,7 @@ class ReturnedAutomaticBundleRecoveryTest extends TestCase
 
         foreach ([[$hash, false], [str_repeat('0', 64), true]] as [$providedHash, $checked]) {
             try {
-                $service->apply($bundle->id, $source->id, $providedHash, $checked);
+                $service->apply($bundle->id, $source->id, $providedHash, $checked, (int) $source->user_id);
                 $this->fail('Unsafe conversion must not be applied.');
             } catch (\InvalidArgumentException $e) {
                 $this->assertSame(1, WarehouseStockService::available($warehouse, $bundle->product_id, $bundle->id));
