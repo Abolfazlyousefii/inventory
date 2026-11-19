@@ -18,6 +18,7 @@ final class ReclassifyReturnedAutomaticBundle extends Command
         {source_movement_id : Original invoice_cancel_return stock movement}
         {--recipe-hash= : SHA-256 from preview after inspecting physical components}
         {--physically-verified : Warehouse operator confirms exact current recipe exists inside this returned pack}
+        {--operator-user-id= : Existing Inventory user ID accountable for the confirmed physical reconciliation}
         {--apply : Convert this one returned pack; omitted means read-only preview}';
 
     protected $description = 'Preview or safely reclassify one physically verified returned finished bundle into automatic allocations';
@@ -34,6 +35,7 @@ final class ReclassifyReturnedAutomaticBundle extends Command
                     $sourceMovementId,
                     (string) ($this->option('recipe-hash') ?? ''),
                     (bool) $this->option('physically-verified'),
+                    (int) ($this->option('operator-user-id') ?? 0),
                 )
                 : $service->preview($bundleVariantId, $sourceMovementId);
 
@@ -58,7 +60,7 @@ final class ReclassifyReturnedAutomaticBundle extends Command
                 $this->warn('READ-ONLY. Verify the REAL returned pack contains exactly the listed units of EVERY component.');
                 $this->warn('If it contains old 20-unit components or any mismatch, STOP: repack and audit surplus separately.');
                 $this->comment('Only after physical count, independent stock backup and explicit approval,'
-                    .' use --apply --physically-verified --recipe-hash=<the exact hash above>.');
+                    .' use --apply --physically-verified --operator-user-id=<audited user id> --recipe-hash=<the exact hash above>.');
             }
 
             return self::SUCCESS;
