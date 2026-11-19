@@ -101,6 +101,22 @@ class ProductBundleManagementViewTest extends TestCase
         $this->assertStringContainsString('const initial = '.Js::from($expected).';', $this->renderPanel(true, $old));
     }
 
+    public function test_bundle_editor_remains_visible_after_historic_assembly(): void
+    {
+        DB::table('bundle_assemblies')->insert([
+            'bundle_variant_id' => 10, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->assertStringContainsString('bundle-recipe-form-1', $this->renderPanel(true));
+    }
+
+    public function test_bundle_editor_remains_visible_while_finished_stock_exists(): void
+    {
+        DB::table('warehouse_stocks')->insert([
+            'warehouse_id' => 1, 'product_variant_id' => 10, 'quantity' => 1,
+        ]);
+        $this->assertStringContainsString('bundle-recipe-form-1', $this->renderPanel(true));
+    }
+
     public function test_explicitly_empty_submission_does_not_restore_saved_components(): void
     {
         $this->assertStringContainsString('const initial = '.Js::from([]).';', $this->renderPanel(true, []));

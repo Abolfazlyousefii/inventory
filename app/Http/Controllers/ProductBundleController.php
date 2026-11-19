@@ -138,27 +138,93 @@ class ProductBundleController extends Controller
 
     public function mode(Request $request, Product $product): RedirectResponse
     {
-        $data = $request->validate(['bundle_stock_mode' => ['required', 'in:automatic,physical']]);
+        $data = $request->validate([
+            'bundle_stock_mode' => ['required', 'in:automatic,physical'],
+            'confirm_physical_conversion' => ['nullable', 'accepted'],
+        ]);
         if (!$product->is_bundle || $product->variants()->count() !== 1) {
             throw ValidationException::withMessages(['bundle_stock_mode' => 'ابتدا یک بسته با یک تنوع تعریف کنید.']);
         }
         $variantId = (int) $product->variants()->value('id');
         if ($product->bundle_stock_mode === $data['bundle_stock_mode']) return back();
-        if (DB::table('bundle_component_allocations')->where('bundle_variant_id', $variantId)->where('remaining', '>', 0)->exists()
-            || BundleAssembly::query()->where('bundle_variant_id', $variantId)->exists()
-            || WarehouseStock::query()->where('product_variant_id', $variantId)->where('quantity', '>', 0)->exists()
-            || DB::table('invoice_items')->where('variant_id', $variantId)->exists()
-            || DB::connection('site')->table('order_items')->where('price_id', $variantId)->exists()) {
-            throw ValidationException::withMessages(['bundle_stock_mode' => 'حالت بسته‌ای که موجودی آماده یا سابقه فروش/مونتاژ دارد قابل تغییر نیست.']);
-        }
-        if (DB::connection('site')->table('products')->where('id', $product->id)->where('published', 1)->exists()) {
-            throw ValidationException::withMessages(['bundle_stock_mode' => 'ابتدا بسته را در سایت از حالت انتشار خارج کنید، سپس دوباره تلاش کنید.']);
-        }
-        DB::transaction(function () use ($product, $data) {
-            Product::query()->whereKey($product->id)->lockForUpdate()->update(['bundle_stock_mode' => $data['bundle_stock_mode']]);
-        });
+
+        DB::transaction(function () use ($product, $variantId, $data, $request): void {
+            $locked = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+            if ($locked->bundle_stock_mode === $data['bundle_stock_mode']) return;
+            if (DB::table('invoice_items')->where('variant_id', $variantId)->exists()
+                || DB::connection('site')->table('order_items')->where('price_id', $variantId)->exists()
+                || BundleAssembly::query()->where('bundle_variant_id', $variantId)->exists()) {
+                throw ValidationException::withMessages(['bundle_stock_mode' => 'برای تغییر نوع موجودی، سوابق فروش و مونتاژ این بسته ابتدا باید بررسی شود.']);
+            }
+            if (DB::connection('site')->table('products')->where('id', $locked->id)->where('published', 1)->exists()) {
+                throw ValidationException::withMessages(['bundle_stock_mode' => 'ابتدا بسته را در سایت از حالت انتشار خارج کنید، سپس دوباره تلاش کنید.']);
+            }
+
+            $toPhysical = $locked->bundle_stock_mode === 'automatic' && $data['bundle_stock_mode'] === 'physical';
+            if ($toPhysical) {
+                if (!$request->boolean('confirm_physical_conversion')) {
+                    throw ValidationException::withMessages(['bundle_stock_mode' => 'تأیید تطبیق بسته‌های آماده با قطعات اختصاص‌یافته الزامی است.']);
+                }
+                // A reservation made in automatic mode must be released in that same
+                // mode. Never switch its stock source while orders/holds are active.
+                if ((int) app(\App\Services\ReservationQueryService::class)
+                    ->quantitiesByVariant(variantIds: [$variantId])->get($variantId, 0) > 0) {
+                    throw ValidationException::withMessages(['bundle_stock_mode' => 'این بسته رزرو فعال دارد؛ ابتدا رزرو را تکمیل یا آزاد کنید.']);
+                }
+                if (\Illuminate\Support\Facades\Schema::hasTable('site_stock_holds')
+                    && DB::table('site_stock_holds')->whereIn('status', ['held', 'payment_confirmed'])
+                        ->whereRaw('JSON_CONTAINS_PATH(bundle_allocated_lines, \'one\', ?) = 1', ['$.' . '"' . $variantId . '"'])
+                        ->exists()) {
+                    throw ValidationException::withMessages(['bundle_stock_mode' => 'این بسته سفارش سایت در جریان دارد؛ ابتدا آن را تعیین تکلیف کنید.']);
+                }
+
+                $recipe = DB::table('product_bundle_components')->where('bundle_variant_id', $variantId)
+                    ->pluck('quantity', 'component_variant_id')->mapWithKeys(
+                        fn ($quantity, $id) => [(int) $id => (int) $quantity]
+                    )->all();
+                if ($recipe === []) {
+                    throw ValidationException::withMessages(['bundle_stock_mode' => 'دستور ساخت بسته تعریف نشده است.']);
+                }
+                $finished = (int) WarehouseStock::query()->where('product_variant_id', $variantId)
+                    ->orderBy('id')->lockForUpdate()->get()->sum('quantity');
+                if ($finished > 100000) {
+                    throw ValidationException::withMessages(['bundle_stock_mode' => 'تعداد بسته‌های آماده از حد قابل تبدیل بیشتر است.']);
+                }
+                $allocations = DB::table('bundle_component_allocations')
+                    ->where('bundle_variant_id', $variantId)
+                    ->orderBy('component_variant_id')->lockForUpdate()
+                    ->pluck('remaining', 'component_variant_id');
+                $needed = $finished > 0 ? \App\Support\BundleRecipe::requirements($recipe, $finished) : [];
+                // Finished stock may have been registered independently (no protected
+                // components), or assembled from protected components. Do not mix the
+                // two without reconciling them: partial protection is ambiguous.
+                $hasAllocations = $allocations->contains(fn ($remaining) => (int) $remaining > 0);
+                if ($hasAllocations) {
+                    foreach ($needed as $partId => $quantity) {
+                        if ($quantity > (int) ($allocations[$partId] ?? 0)) {
+                            throw ValidationException::withMessages(['bundle_stock_mode' =>
+                                'سهمیه قطعات برای پوشش بسته‌های آماده کافی نیست. ابتدا تعداد بسته‌ها و سهمیه قطعات را تطبیق دهید.']);
+                        }
+                    }
+                    // Confirmed finished packages consume protected components; return
+                    // only the unused component allocations to ordinary warehouse stock.
+                    if ($finished > 0) {
+                        app(\App\Services\BundleComponentAllocationService::class)
+                            ->reserve([$variantId => $needed]);
+                    }
+                    app(\App\Services\BundleComponentAllocationService::class)
+                        ->setAllocations($variantId, array_fill_keys(array_keys($recipe), 0));
+                }
+            } elseif (DB::table('bundle_component_allocations')->where('bundle_variant_id', $variantId)
+                    ->where('remaining', '>', 0)->exists()
+                || WarehouseStock::query()->where('product_variant_id', $variantId)->where('quantity', '>', 0)->exists()) {
+                throw ValidationException::withMessages(['bundle_stock_mode' =>
+                    'برای تبدیل به حالت خودکار، موجودی آماده و سهمیه قطعات باید صفر باشد.']);
+            }
+            $locked->update(['bundle_stock_mode' => $data['bundle_stock_mode']]);
+        }, 3);
         $this->syncBundleToSite((int) $product->id);
-        return back()->with('success', 'روش موجودی بسته تغییر کرد؛ اطلاعات سایت نیز برای همگام‌سازی ارسال شد.');
+        return back()->with('success', 'روش موجودی بسته تغییر کرد؛ موجودی واقعی بسته در فاکتور قابل استفاده است.');
     }
 
     /** Publication for automatic bundles is controlled in Inventory, not Site Admin. */

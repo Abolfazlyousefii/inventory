@@ -8,7 +8,6 @@
     $assemblyHistory = $bundleVariant
         ? \App\Models\BundleAssembly::where('bundle_variant_id', $bundleVariant->id)->latest()->limit(8)->get()
         : collect();
-    $recipeLocked = $bundleVariant && \App\Models\BundleAssembly::where('bundle_variant_id', $bundleVariant->id)->exists();
     $isAutomatic = (bool) $product->is_bundle && $product->bundle_stock_mode === 'automatic';
     $automaticAvailable = $isAutomatic && $bundleVariant ? app(\App\Services\AutomaticBundleAvailabilityService::class)->available((int) $bundleVariant->id) : 0;
     $isShared = $isAutomatic && ($product->bundle_quantity_mode ?? 'custom') === 'shared';
@@ -16,7 +15,8 @@
     $allocations = $bundleVariant && $isAutomatic ? \Illuminate\Support\Facades\DB::table('bundle_component_allocations')->where('bundle_variant_id', $bundleVariant->id)->pluck('remaining','component_variant_id') : collect();
     $componentCapacity = $components->isNotEmpty() ? $components->map(fn ($part) => intdiv(max(0, (int) ($allocations[$part->id] ?? 0)), max(1, (int) $part->pivot->quantity)))->min() : 0;
     $sitePublished = $product->is_bundle ? \Illuminate\Support\Facades\DB::connection('site')->table('products')->where('id', $product->id)->where('published', 1)->exists() : false;
-    $recipeLocked = $recipeLocked || ($isAutomatic && ($sitePublished || $allocations->sum() > 0));
+    $finishedStockExists = $bundleVariant && \App\Models\WarehouseStock::where('product_variant_id', $bundleVariant->id)->where('quantity', '>', 0)->exists();
+    $compositionNeedsStockRelease = $isAutomatic && ($sitePublished || $allocations->sum() > 0);
     $componentStock = $components->isNotEmpty() ? \Illuminate\Support\Facades\DB::table('warehouse_stocks')->where('warehouse_id', \App\Services\WarehouseStockService::centralWarehouseId())->whereIn('product_variant_id', $components->pluck('id'))->groupBy('product_variant_id')->selectRaw('product_variant_id, SUM(quantity) AS available')->pluck('available','product_variant_id') : collect();
     $selectedComponents = $components->map(fn ($component) => [
         'id' => (int) $component->id,
@@ -68,7 +68,7 @@
                     @if($product->bundle_site_auto_publish === null)
                         <div class="alert alert-info py-2 small">این بسته قدیمی هنوز انتشارش را از سایت می‌گیرد. با گزینه زیر کنترل انتشار را به انبار منتقل کنید.</div>
                     @elseif(!$product->bundle_site_auto_publish)
-                        <div class="alert alert-warning py-2 small">انتشار برای ویرایش متوقف است. بعد از آزادکردن سهمیه و ذخیره ترکیب جدید، دوباره از همین‌جا منتشر کنید.</div>
+                        <div class="alert alert-warning py-2 small">انتشار برای ویرایش متوقف است. پس از ذخیره ترکیب جدید و تعیین سهمیه قطعات تازه، دوباره از همین‌جا منتشر کنید.</div>
                     @endif
                     <form method="POST" action="{{ route('products.bundle.site-publication', $product) }}" class="d-flex flex-wrap gap-2 align-items-center">
                         @csrf
@@ -81,10 +81,10 @@
                         @endif
                     </form>
                     @if($errors->has('enabled'))<div class="alert alert-danger mt-2">{{ $errors->first('enabled') }}</div>@endif
-                    <div class="small text-muted mt-2">برای تغییر قطعات: ۱. توقف انتشار ۲. سهمیه بسته را صفر و ذخیره کنید ۳. قطعات را تغییر دهید ۴. موجودی اختصاصی را دوباره تنظیم کنید ۵. از همین‌جا منتشر کنید.</div>
+                    <div class="small text-muted mt-2">برای تغییر قطعات: ۱. توقف انتشار ۲. تغییر و ذخیره قطعات (سهمیه قطعات حذف‌شده خودکار آزاد می‌شود) ۳. تعیین سهمیه قطعات جدید ۴. انتشار مجدد.</div>
                 </section>
                 @if(($product->bundle_quantity_mode ?? 'custom') !== 'shared')
-                    <div class="alert alert-warning">این بسته با روش قدیمی موجودی جداگانه ساخته شده است. برای تبدیل ایمن به موجودی یکسان، ابتدا فروش/سفارش فعال را بررسی کنید، بسته را از انتشار خارج کنید و سهمیه قبلی را آزاد کنید. این فرم موجودی قبلی را خودکار تغییر نمی‌دهد.</div>
+                    <div class="alert alert-warning">این بسته با روش قدیمی موجودی جداگانه ساخته شده است. پیش از تغییر ترکیب، سفارش‌های فعال را بررسی و انتشار سایت را متوقف کنید. سهمیه قطعات حذف‌شده خودکار آزاد می‌شود؛ سهمیه قطعات جدید را پس از ذخیره تنظیم کنید.</div>
                 @else
                     <form method="POST" action="{{ route('products.bundle.policy', $product) }}" data-bundle-payload="allocations expected_allocations" class="border rounded p-3 mb-3">
                         @csrf
@@ -161,12 +161,18 @@
                 })();
                 </script>
                 @endif
-                <details class="mb-3"><summary class="small text-muted">حالت پیشرفته: تبدیل به بسته فیزیکی (در صورت نداشتن سابقه)</summary>
-                    <form method="POST" action="{{ route('products.bundle.mode', $product) }}" class="mt-2" onsubmit="return confirm('این کار روش تأمین موجودی را تغییر می‌دهد؛ ادامه می‌دهید؟')">@csrf<input type="hidden" name="bundle_stock_mode" value="physical"><button class="btn btn-sm btn-outline-secondary">انتخاب بسته فیزیکی</button></form>
+                <details class="mb-3"><summary class="small text-muted">تبدیل به بسته فیزیکی برای فروش از موجودی آماده</summary>
+                    <form method="POST" action="{{ route('products.bundle.mode', $product) }}" class="mt-2" onsubmit="return confirm('سهمیه قطعات معادل بسته‌های آماده مصرف و باقی‌مانده به موجودی آزاد بازمی‌گردد. از تطبیق واقعی قطعات مطمئن هستید؟')">
+                        @csrf<input type="hidden" name="bundle_stock_mode" value="physical">
+                        <p class="small text-muted">فقط وقتی موجودی فیزیکی واقعاً آماده است. اگر قطعات اختصاص‌یافته دارید، باید بسته‌های آماده از همان قطعات ساخته شده باشند؛ سهمیه مربوط مصرف می‌شود و باقی‌مانده آزاد خواهد شد. اگر سهمیه‌ای ندارید، موجودی بسته باید قبلاً مستقل و به‌درستی ثبت شده باشد. تغییر حالت با سفارش/رزرو فعال مجاز نیست.</p>
+                        <label class="small d-block mb-2"><input type="checkbox" name="confirm_physical_conversion" value="1" required> تأیید می‌کنم بسته‌های آماده واقعاً موجودند و موجودی قطعات آن‌ها به‌درستی ثبت شده است.</label>
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">تبدیل به بسته فیزیکی</button>
+                        @if($errors->has('bundle_stock_mode'))<div class="alert alert-danger mt-2">{{ $errors->first('bundle_stock_mode') }}</div>@endif
+                    </form>
                 </details>
             @else
                 <div class="border rounded p-3 mb-3">
-                    <strong>بسته آماده فیزیکی</strong><p class="text-muted small mb-2">این کالا موجودی مستقلِ مونتاژشده دارد و ترکیب آن پس از مونتاژ قفل می‌شود.</p>
+                    <strong>بسته آماده فیزیکی</strong><p class="text-muted small mb-2">این کالا موجودی مستقلِ مونتاژشده دارد. می‌توانید ترکیب بسته را حتی با موجودی مثبت تغییر دهید؛ ویرایش دستور ساخت موجودی فعلی را تغییر نمی‌دهد و بسته‌های آماده قبلی ممکن است همچنان ترکیب قدیمی را داشته باشند.</p>
                     <form method="POST" action="{{ route('products.bundle.mode', $product) }}">@csrf<input type="hidden" name="bundle_stock_mode" value="automatic"><button class="btn btn-sm btn-outline-secondary" type="submit">تبدیل به بسته خودکار (فقط بدون فروش، موجودی و مونتاژ)</button></form>
                     @if($errors->has('bundle_stock_mode'))<div class="alert alert-danger mt-2">{{ $errors->first('bundle_stock_mode') }}</div>@endif
                 </div>
@@ -189,10 +195,12 @@
                     <div class="fs-4 fw-bold">{{ number_format((int) $bundleVariant->stock) }} <small class="fs-6">بسته آماده</small></div>
                 @endif
             </div>
-            @if ($recipeLocked)
-                <div class="alert alert-secondary">ویرایش ترکیب فعلاً قفل است. برای بسته خودکار، از بخش «انتشار و همگام‌سازی در سایت» انتشار را موقتاً متوقف کنید، موجودی اختصاصی بالا را صفر کرده و ذخیره کنید؛ سپس قطعات را ویرایش کنید. بسته مونتاژشده یا دارای سابقه فروش، به محصول جدید نیاز دارد.</div>
+            @if ($compositionNeedsStockRelease)
+                <div class="alert alert-warning">برای تغییر نوع قطعات یا تعدادشان، ابتدا انتشار سایت را متوقف کنید. سهمیه قطعات باقی‌مانده حفظ و سهمیه قطعات حذف‌شده خودکار آزاد می‌شود؛ قطعات جدید باید سهمیه بگیرند.</div>
             @endif
-            @if (!$recipeLocked)
+            @if ($finishedStockExists && !$isAutomatic)
+                <div class="alert alert-warning" role="alert">موجودی بسته آماده مانع ویرایش ترکیب نیست. با این حال، بسته‌های آماده موجود ممکن است از ترکیب قبلی ساخته شده باشند. ثبت دستور ساخت جدید، موجودی یا محتویات فیزیکی بسته‌های قبلی را تغییر نمی‌دهد. پیش از فروش یا دمونتاژ، محتوای بسته‌های موجود را با دستور جدید تطبیق دهید.</div>
+            @endif
                 <form method="POST" action="{{ route('products.bundle.recipe', $product) }}" data-bundle-payload="components" class="mb-4" id="bundle-recipe-form-{{ $product->id }}">
                     @csrf
                     <input type="hidden" name="bundle_variant_id" value="{{ $bundleVariant->id }}">
@@ -205,7 +213,8 @@
                     <div id="bundle-editor-{{ $product->id }}"
                          data-search-url="{{ route('products.bundle.search') }}"
                          data-bundle-variant="{{ $bundleVariant->id }}"
-                         data-confirm-conversion="{{ $product->is_bundle ? '0' : '1' }}">
+                         data-confirm-conversion="{{ $product->is_bundle ? '0' : '1' }}"
+                         data-has-finished-stock="{{ $finishedStockExists && !$isAutomatic ? '1' : '0' }}">
                         <label for="bundle-component-search-{{ $product->id }}" class="form-label fw-semibold">افزودن قطعه به بسته</label>
                         <div class="position-relative mb-3">
                             <input id="bundle-component-search-{{ $product->id }}" type="search" class="form-control" placeholder="جستجو با نام کالا، کد یا SKU (حداقل ۲ حرف)" autocomplete="off" aria-controls="bundle-component-results-{{ $product->id }}" aria-expanded="false">
@@ -218,8 +227,8 @@
                         <div id="bundle-selected-items-{{ $product->id }}" class="mb-3" aria-live="polite"></div>
                         <div id="bundle-empty-{{ $product->id }}" class="text-muted small border rounded p-3 mb-3">هنوز هیچ قطعه‌ای اضافه نشده است. از جستجوی بالا استفاده کنید.</div>
                     </div>
-                    @if($errors->has('components') || $errors->has('components.*.variant_id') || $errors->has('components.*.quantity') || $errors->has('components.*.discount_value'))
-                        <div class="alert alert-danger">{{ $errors->first('components') ?: $errors->first('components.*.variant_id') ?: $errors->first('components.*.quantity') ?: $errors->first('components.*.discount_value') }}</div>
+                    @if($errors->has('bundle_variant_id') || $errors->has('components') || $errors->has('components.*.variant_id') || $errors->has('components.*.quantity') || $errors->has('components.*.discount_value'))
+                        <div class="alert alert-danger">{{ $errors->first('bundle_variant_id') ?: $errors->first('components') ?: $errors->first('components.*.variant_id') ?: $errors->first('components.*.quantity') ?: $errors->first('components.*.discount_value') }}</div>
                     @endif
                     <button class="btn btn-outline-primary" type="submit">ثبت دستور ساخت</button>
                 </form>
@@ -344,12 +353,18 @@
                     document.addEventListener('click', event => { if (!root.contains(event.target)) hide(); });
                     form.addEventListener('submit', event => {
                         if (selected.size === 0) { event.preventDefault(); window.alert('ابتدا حداقل یک قطعه انتخاب کنید.'); search.focus(); return; }
-                        if (root.dataset.confirmConversion === '1' && !window.confirm('این کالای فعلی به بسته فیزیکی تبدیل می‌شود. ادامه می‌دهید؟')) event.preventDefault();
+                        if (root.dataset.confirmConversion === '1' && !window.confirm('این کالای فعلی به بسته فیزیکی تبدیل می‌شود. ادامه می‌دهید؟')) { event.preventDefault(); return; }
+                        const initialRecipe = new Map(initial.map(item => [Number(item.id), Number(item.quantity)]));
+                        const compositionChanged = selected.size !== initialRecipe.size ||
+                            [...selected.values()].some(item => Number(item.quantity) !== initialRecipe.get(Number(item.id)));
+                        if (root.dataset.hasFinishedStock === '1' && compositionChanged &&
+                            !window.confirm('این بسته موجودی آماده دارد. ترکیب جدید ذخیره می‌شود اما موجودی فعلی و محتویات واقعی بسته‌های آماده تغییر نمی‌کند. مسئولیت تطبیق بسته‌های موجود با ترکیب جدید پیش از فروش یا دمونتاژ با شماست. ادامه می‌دهید؟')) {
+                            event.preventDefault();
+                        }
                     });
                     render();
                 })();
                 </script>
-            @endif
             @if ($components->isNotEmpty())
                 <h6>ترکیب فعلی</h6>
                 <ul>

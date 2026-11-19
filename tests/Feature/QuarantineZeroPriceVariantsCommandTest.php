@@ -2,61 +2,152 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Database\Schema\Blueprint;
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\ProductDeactivationDocument;
+use App\Models\ProductVariant;
+use App\Models\User;
+use App\Models\Warehouse;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class QuarantineZeroPriceVariantsCommandTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
-        config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
-        $this->schema();
+        Storage::fake('local');
+        config()->set('services.sales_server.sync_enabled', false);
     }
 
     public function test_zero_price_variant_only_disables_sales_and_keeps_price_stock_reserved(): void
     {
-        $this->seedVariant(10, 1, 0, 5, 2, true, true, 3, 4);
-        $beforeStock = DB::table('warehouse_stocks')->sum('quantity');
+        [$product, $variant] = $this->seedVariant(0, 5, 2, 3, 4);
+        $actor = User::factory()->create();
+        $beforeWarehouseStock = (int) DB::table('warehouse_stocks')->sum('quantity');
+        $beforeProductStock = (int) $product->fresh()->stock;
 
-        $this->artisan('inventory:quarantine-zero-price-variants --apply --output=testing/zero-a')->assertExitCode(0);
+        // The production command requires a responsible user and an audit reason.
+        $this->artisan('inventory:quarantine-zero-price-variants', [
+            '--apply' => true,
+            '--actor' => (string) $actor->id,
+            '--reason' => 'INV-05 test: sale price is missing',
+            '--output' => 'testing/zero-a',
+        ])->assertExitCode(0);
 
-        $variant = DB::table('product_variants')->where('id', 10)->first();
+        $variant->refresh();
         $this->assertSame(0, (int) $variant->sell_price);
         $this->assertSame(5, (int) $variant->stock);
         $this->assertSame(2, (int) $variant->reserved);
-        $this->assertSame(0, (int) $variant->sales_enabled);
-        $this->assertSame($beforeStock, (int) DB::table('warehouse_stocks')->sum('quantity'));
+        $this->assertFalse($variant->sales_enabled);
+        $this->assertTrue($variant->is_active);
+        $this->assertSame($beforeProductStock, (int) $product->fresh()->stock);
+        $this->assertSame($beforeWarehouseStock, (int) DB::table('warehouse_stocks')->sum('quantity'));
+
+        $document = ProductDeactivationDocument::query()
+            ->where('product_id', $product->id)->firstOrFail();
+        $this->assertSame((int) $actor->id, (int) $document->created_by);
+        $this->assertSame(ProductDeactivationDocument::ACTION_DEACTIVATE, $document->action_type);
+        $this->assertSame(ProductDeactivationDocument::SCOPE_VARIANTS, $document->scope_type);
+        $this->assertSame(1, (int) $document->items_count);
+        $this->assertSame((int) $variant->id, (int) $document->items()->firstOrFail()->variant_id);
+        $this->assertStringContainsString('INV-05', (string) $document->reason_text);
+        Storage::disk('local')->assertExists('testing/zero-a/summary.json');
     }
 
     public function test_dry_run_changes_nothing_and_second_apply_is_idempotent(): void
     {
-        $this->seedVariant(20, 2, 0, 8, 1, true, true, 1, 0);
+        [$product, $variant] = $this->seedVariant(0, 8, 1, 1, 0);
+        $actor = User::factory()->create();
+        $beforeWarehouseStock = (int) DB::table('warehouse_stocks')->sum('quantity');
+        $beforeProductStock = (int) $product->fresh()->stock;
 
-        $this->artisan('inventory:quarantine-zero-price-variants --output=testing/zero-b')->assertExitCode(0);
-        $this->assertSame(1, (int) DB::table('product_variants')->where('id', 20)->value('sales_enabled'));
+        $this->artisan('inventory:quarantine-zero-price-variants', [
+            '--output' => 'testing/zero-b',
+        ])->assertExitCode(0);
+        $this->assertTrue($variant->fresh()->sales_enabled);
+        $this->assertSame(0, ProductDeactivationDocument::query()->where('product_id', $product->id)->count());
+        $this->assertSame($beforeWarehouseStock, (int) DB::table('warehouse_stocks')->sum('quantity'));
+        Storage::disk('local')->assertExists('testing/zero-b/summary.json');
 
-        $this->artisan('inventory:quarantine-zero-price-variants --apply --output=testing/zero-b1')->assertExitCode(0);
-        $this->artisan('inventory:quarantine-zero-price-variants --apply --output=testing/zero-b2')->assertExitCode(0);
-        $this->assertSame(0, (int) DB::table('product_variants')->where('id', 20)->value('sales_enabled'));
+        foreach (['testing/zero-b1', 'testing/zero-b2'] as $output) {
+            $this->artisan('inventory:quarantine-zero-price-variants', [
+                '--apply' => true,
+                '--actor' => (string) $actor->id,
+                '--reason' => 'INV-05 test: zero price quarantine',
+                '--output' => $output,
+            ])->assertExitCode(0);
+        }
+
+        $this->assertFalse($variant->fresh()->sales_enabled);
+        $this->assertSame(1, ProductDeactivationDocument::query()->where('product_id', $product->id)->count());
+        $this->assertSame(8, (int) $variant->fresh()->stock);
+        $this->assertSame(1, (int) $variant->fresh()->reserved);
+        $this->assertSame(0, (int) $variant->fresh()->sell_price);
+        $this->assertSame($beforeProductStock, (int) $product->fresh()->stock);
+        $this->assertSame($beforeWarehouseStock, (int) DB::table('warehouse_stocks')->sum('quantity'));
     }
 
-    private function seedVariant(int $variantId, int $productId, int $price, int $stock, int $reserved, bool $active, bool $salesEnabled, int $central, int $branch): void
+    public function test_apply_without_actor_or_reason_fails_without_changing_sales_status(): void
     {
-        DB::table('products')->insertOrIgnore(['id' => $productId, 'name' => 'Product '.$productId]);
-        DB::table('product_variants')->insert(['id' => $variantId, 'product_id' => $productId, 'variant_name' => 'Variant '.$variantId, 'variant_code' => 'V'.$variantId, 'sell_price' => $price, 'stock' => $stock, 'reserved' => $reserved, 'is_active' => $active, 'sales_enabled' => $salesEnabled, 'updated_at' => now()]);
-        DB::table('warehouse_stocks')->insert(['warehouse_id' => 1, 'product_id' => $productId, 'product_variant_id' => $variantId, 'quantity' => $central]);
-        DB::table('warehouse_stocks')->insert(['warehouse_id' => 2, 'product_id' => $productId, 'product_variant_id' => $variantId, 'quantity' => $branch]);
+        [$product, $variant] = $this->seedVariant(0, 5, 2, 3, 0);
+        $beforeWarehouseStock = (int) DB::table('warehouse_stocks')->sum('quantity');
+
+        $this->artisan('inventory:quarantine-zero-price-variants', [
+            '--apply' => true,
+            '--output' => 'testing/zero-missing-authorization',
+        ])->assertExitCode(1);
+
+        $this->assertTrue($variant->fresh()->sales_enabled);
+        $this->assertSame(0, ProductDeactivationDocument::query()->where('product_id', $product->id)->count());
+        $this->assertSame($beforeWarehouseStock, (int) DB::table('warehouse_stocks')->sum('quantity'));
     }
 
-    private function schema(): void
+    /** @return array{Product, ProductVariant} */
+    private function seedVariant(int $price, int $stock, int $reserved, int $centralQty, int $otherQty): array
     {
-        Schema::create('products', fn (Blueprint $t) => [$t->id(), $t->string('name')->nullable()]);
-        Schema::create('product_variants', fn (Blueprint $t) => [$t->id(), $t->foreignId('product_id'), $t->string('variant_name')->nullable(), $t->string('variant_code')->nullable(), $t->bigInteger('sell_price')->default(0), $t->integer('stock')->default(0), $t->integer('reserved')->default(0), $t->boolean('is_active')->default(true), $t->boolean('sales_enabled')->default(true), $t->timestamp('updated_at')->nullable()]);
-        Schema::create('warehouses', fn (Blueprint $t) => [$t->id(), $t->string('type')]);
-        DB::table('warehouses')->insert([['id' => 1, 'type' => 'central'], ['id' => 2, 'type' => 'personnel']]);
-        Schema::create('warehouse_stocks', fn (Blueprint $t) => [$t->id(), $t->foreignId('warehouse_id'), $t->foreignId('product_id'), $t->foreignId('product_variant_id'), $t->integer('quantity')->default(0)]);
+        $category = Category::query()->create([
+            'name' => 'INV-05 quarantine '.uniqid(),
+            'code' => uniqid('Q-C-'),
+        ]);
+        $product = Product::query()->create([
+            'category_id' => $category->id,
+            'name' => 'INV-05 product',
+            'sku' => uniqid('Q-P-'),
+            'price' => 1000,
+            'stock' => $stock,
+            'reserved' => $reserved,
+            'is_sellable' => true,
+        ]);
+        $variant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'variant_name' => 'INV-05 variant',
+            'variant_code' => uniqid('Q-V-'),
+            'sell_price' => $price,
+            'stock' => $stock,
+            'reserved' => $reserved,
+            'is_active' => true,
+            'sales_enabled' => true,
+        ]);
+
+        $centralWarehouse = Warehouse::query()->where('type', 'central')->first()
+            ?? Warehouse::query()->create(['name' => 'Central', 'type' => 'central', 'is_active' => true]);
+        $otherWarehouse = Warehouse::query()->where('type', 'personnel')->first()
+            ?? Warehouse::query()->create(['name' => 'Personnel', 'type' => 'personnel', 'is_active' => true]);
+
+        foreach ([[$centralWarehouse->id, $centralQty], [$otherWarehouse->id, $otherQty]] as [$warehouseId, $quantity]) {
+            DB::table('warehouse_stocks')->insert([
+                'warehouse_id' => $warehouseId,
+                'product_id' => $product->id,
+                'product_variant_id' => $variant->id,
+                'quantity' => $quantity,
+            ]);
+        }
+
+        return [$product, $variant];
     }
 }
