@@ -438,10 +438,11 @@ class StocktakeController extends Controller
 
         // Display-only figures. Do not alter expected_physical, active_reserved
         // or actual_physical: final stock count calculations remain unchanged.
-        $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds(
-            array_column($payload['data']->all(), 'variant_id')
-        );
-        $payload['data'] = $payload['data']->map(static function (array $row) use ($queue): array {
+        $pageVariantIds = array_column($payload['data']->all(), 'variant_id');
+        $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds($pageVariantIds);
+        $bundleMemberships = app(\App\Services\StocktakeBundleMembershipService::class)
+            ->countsByComponent($pageVariantIds);
+        $payload['data'] = $payload['data']->map(static function (array $row) use ($queue, $bundleMemberships): array {
             $amount = $queue->get($row['variant_id']);
             $pending = (int) ($amount->pending_collection ?? 0);
             $received = (int) ($amount->warehouse_received ?? 0);
@@ -451,6 +452,7 @@ class StocktakeController extends Controller
                 'warehouse_received' => $received,
                 'collecting' => $collecting,
                 'queue_total' => $pending + $received + $collecting,
+                'bundle_memberships' => (int) $bundleMemberships->get((int) $row['variant_id'], 0),
             ];
         });
 
