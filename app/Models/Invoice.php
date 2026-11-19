@@ -257,6 +257,10 @@ class Invoice extends Model
      * Only an explicit non-deduction may skip the cancellation stock return.
      * Unknown status does not prove stock was never deducted.
      */
+    public function stockWasNotDeducted(): bool
+    {
+        return $this->stock_deduction_status === self::STOCK_NOT_DEDUCTED;
+    }
 
     /**
      * A site-originated invoice may restore stock only when its original
