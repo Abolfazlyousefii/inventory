@@ -149,6 +149,24 @@ class ReturnedAutomaticBundleRecoveryTest extends TestCase
         }
     }
 
+    public function test_artisan_preview_is_read_only_and_unsafe_apply_fails_closed(): void
+    {
+        [$bundle, $a, $b, $warehouse, $source] = $this->returnedPack();
+
+        $this->artisan('bundle:reclassify-returned', [
+            'bundle_variant_id' => $bundle->id,
+            'source_movement_id' => $source->id,
+        ])->assertExitCode(0);
+        $this->artisan('bundle:reclassify-returned', [
+            'bundle_variant_id' => $bundle->id,
+            'source_movement_id' => $source->id,
+            '--apply' => true,
+        ])->assertExitCode(1);
+
+        $this->assertSame(1, WarehouseStockService::available($warehouse, $bundle->product_id, $bundle->id));
+        $this->assertSame(0, DB::table('bundle_component_allocations')->count());
+    }
+
     public function test_never_converts_without_matching_recipe_hash_and_physical_confirmation(): void
     {
         [$bundle, $a, $b, $warehouse, $source] = $this->returnedPack();
