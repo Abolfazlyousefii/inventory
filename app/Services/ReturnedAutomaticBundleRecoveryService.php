@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
+use App\Models\User;
 use App\Models\WarehouseInboundReceiptItem;
 use App\Models\WarehouseStock;
 use App\Services\Sync\SiteStockChangeMarker;
@@ -31,7 +32,11 @@ final class ReturnedAutomaticBundleRecoveryService
         int $sourceMovementId,
         string $confirmedRecipeHash,
         bool $physicallyVerified,
+        int $operatorUserId,
     ): array {
+        if ($operatorUserId < 1 || ! User::query()->whereKey($operatorUserId)->exists()) {
+            throw new InvalidArgumentException('Supply a valid operator user ID for the audit trail.');
+        }
         if (! $physicallyVerified) {
             throw new InvalidArgumentException('A physical count of every component in the returned pack is required.');
         }
@@ -39,7 +44,7 @@ final class ReturnedAutomaticBundleRecoveryService
             throw new InvalidArgumentException('Supply the exact SHA-256 recipe hash displayed by the preview.');
         }
 
-        return DB::transaction(function () use ($bundleVariantId, $sourceMovementId, $confirmedRecipeHash): array {
+        return DB::transaction(function () use ($bundleVariantId, $sourceMovementId, $confirmedRecipeHash, $operatorUserId): array {
             $variant = ProductVariant::query()->findOrFail($bundleVariantId);
             // Same product-level lock as allocation editing and automatic checkout.
             Product::query()->whereKey($variant->product_id)->lockForUpdate()->firstOrFail();
@@ -93,6 +98,7 @@ final class ReturnedAutomaticBundleRecoveryService
                 'product_id' => $plan['product_id'],
                 'product_variant_id' => $bundleVariantId,
                 'warehouse_id' => $plan['warehouse_id'],
+                'user_id' => $operatorUserId,
                 'type' => StockMovement::TYPE_OUT,
                 'reason' => 'bundle_return_reclassified',
                 'transaction_type' => 'bundle_return_reclassification',
