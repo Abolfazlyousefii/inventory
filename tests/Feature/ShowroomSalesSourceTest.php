@@ -225,6 +225,12 @@ it('persists showroom through autosave submission finance conversion and both pr
         $data = app(SalesPrintDocumentService::class)->invoiceData($invoice->fresh('items'), $mode);
         expect(view('prints.invoice', ['printData' => $data])->render())->toContain('شوروم')->not->toContain('انبار مرکزی');
     }
+    $collection = app(\App\Services\WarehouseCollectionService::class);
+    expect($collection->receiveInvoice($invoice, $this->seller)->status)->toBe(Invoice::STATUS_WAREHOUSE_RECEIVED);
+    expect($collection->startCollection($invoice, $this->seller)->status)->toBe(Invoice::STATUS_COLLECTING);
+    expect($collection->completeWithoutChanges($invoice, $this->seller)->status)->toBe(Invoice::STATUS_READY_TO_SHIP);
+    expect(WarehouseStockService::available($this->showroom->id, $this->product->id, $this->variant->id))->toBe(3)
+        ->and(WarehouseStockService::available($this->central, $this->product->id, $this->variant->id))->toBe(0);
     $line = app(WarehouseInboundService::class)->invoiceItemLine($invoice->items()->first(), 1);
     expect($line['suggested_warehouse_id'])->toBe($this->showroom->id)
         ->and(WarehouseStockService::available($this->showroom->id, $this->product->id, $this->variant->id))->toBe(3)
@@ -234,6 +240,20 @@ it('persists showroom through autosave submission finance conversion and both pr
     expect($receipt->items()->first()->suggested_warehouse_id)->toBe($this->showroom->id);
     // Physical invoice cancellation keeps the existing inbound confirmation workflow.
     expect(WarehouseStockService::available($this->showroom->id, $this->product->id, $this->variant->id))->toBe(3);
+});
+
+it('blocks collection of a showroom invoice explicitly marked as not deducted without changing stock or status', function () {
+    $invoice = Invoice::create(['uuid' => (string) Str::uuid(), 'status' => Invoice::STATUS_WAREHOUSE_RECEIVED,
+        'subtotal' => 1000, 'total' => 1000]);
+    $invoice->items()->create(array_merge($this->line, ['quantity' => 1, 'price' => 1000]));
+    \Illuminate\Support\Facades\DB::table('invoices')->where('id', $invoice->id)
+        ->update(['stock_deduction_status' => 'not_deducted']);
+
+    expect(fn () => app(\App\Services\WarehouseCollectionService::class)->startCollection($invoice, $this->seller))
+        ->toThrow(ValidationException::class);
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_WAREHOUSE_RECEIVED)
+        ->and(WarehouseStockService::available($this->showroom->id, $this->product->id, $this->variant->id))->toBe(5)
+        ->and(WarehouseStockService::available($this->central, $this->product->id, $this->variant->id))->toBe(0);
 });
 
 it('makes showroom-only products discoverable with separate stock fields', function () {

@@ -60,7 +60,15 @@ final class UniformPurchasePriceService
             // Correct an older document's cost without replacing the current catalog cost.
             $updateBuyCatalog=$buyEdited && !$hasNewerPurchase;
             $buyChanges=$updateBuyCatalog && ($variants->contains(fn($v)=>(int)$v->buy_price!==$buy) || ($product->uniform_buy_price!==null && (int)$product->uniform_buy_price!==$buy));
-            $saleChanges=$saleEdited && $sale>0 && ($variants->contains(fn($v)=>(int)$v->sell_price!==$sale) || ($product->uniform_sale_price!==null && (int)$product->uniform_sale_price!==$sale));
+            // An unselected legacy sibling with a different price must not turn a
+            // quantity/cost-only purchase into an implicit sale-price edit.
+            // Only the current product price and the selected variants establish
+            // whether the operator is requesting a selling-price change.
+            $currentSalePrice = $product->uniform_sale_price !== null
+                ? (int) $product->uniform_sale_price
+                : (int) $product->price;
+            $saleChanges=$saleEdited && $sale>0 && ($currentSalePrice !== $sale
+                || $rows->contains(fn($row)=>(int) ($variants->get((int) $row['variant_id'])?->sell_price ?? 0) !== $sale));
             $modeChanges=!$editing && ProductCnyPricing::where('product_id',$id)->where('enabled',true)->exists();
             // A historical snapshot correction still requires explicit approval, even when it matches today's price.
             $approveSale=$saleEdited && ($saleChanges || $editing || $modeChanges);
@@ -86,7 +94,9 @@ final class UniformPurchasePriceService
             }
             $productValues=[];$variantValues=[];
             if($updateBuyCatalog){$productValues['uniform_buy_price']=$buy;$variantValues['buy_price']=$buy;}
-            if($saleEdited && $sale>0){$productValues['uniform_sale_price']=$sale;$productValues['price']=$sale;$variantValues['sell_price']=$sale;}
+            // Do not rewrite the live selling price (including unselected
+            // siblings) unless a selling-price change was actually authorized.
+            if($saleChanges || $modeChanges){$productValues['uniform_sale_price']=$sale;$productValues['price']=$sale;$variantValues['sell_price']=$sale;}
             if($productValues){
                 $before=$variants->map(fn($v)=>['id'=>(int)$v->id,'buy'=>(int)$v->buy_price,'sell'=>(int)$v->sell_price])->values()->all();
                 $product->forceFill($productValues)->save();

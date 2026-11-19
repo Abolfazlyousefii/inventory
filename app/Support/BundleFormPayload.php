@@ -19,7 +19,7 @@ final class BundleFormPayload
                 throw new \InvalidArgumentException;
             }
             foreach ($decoded as $rows) {
-                if (! is_array($rows) || count($rows) > BundleRecipe::MAX_COMPONENTS) throw new \InvalidArgumentException;
+                if (! is_array($rows)) throw new \InvalidArgumentException;
             }
         } catch (\JsonException|\InvalidArgumentException $exception) {
             throw ValidationException::withMessages(['components' => 'اطلاعات اقلام بسته کامل یا معتبر نیست. صفحه را بررسی و دوباره ارسال کنید.']);

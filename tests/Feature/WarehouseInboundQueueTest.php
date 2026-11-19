@@ -39,6 +39,37 @@ class WarehouseInboundQueueTest extends TestCase
         $this->assertSame(0,WarehouseInboundReceipt::count());
     }
 
+    public function test_unknown_site_deduction_cannot_cancel_or_credit_stock(): void
+    {
+        [$invoice, $item, $central] = $this->invoiceFixture(1);
+        $invoice->forceFill(['external_order_id' => 920005, 'stock_deduction_status' => null])->save();
+
+        try {
+            app(\App\Services\SalesHavalehService::class)->cancelAndRestore($invoice, 'لغو با وضعیت نامشخص', $this->user->id);
+            $this->fail('Unknown site stock deduction must be reconciled before cancellation.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('invoice', $exception->errors());
+        }
+
+        $this->assertSame(Invoice::STATUS_COLLECTING, $invoice->fresh()->status);
+        $this->assertSame(0, WarehouseInboundReceipt::count());
+        $this->assertSame(0, StockMovement::count());
+        $this->assertStock($central, $item, 0);
+    }
+
+    public function test_verified_site_invoice_cancellation_queues_stock_return_without_immediate_credit(): void
+    {
+        [$invoice, $item, $central] = $this->invoiceFixture(1);
+        $invoice->forceFill(['external_order_id' => 920006, 'stock_deduction_status' => Invoice::STOCK_DEDUCTED])->save();
+
+        app(\App\Services\SalesHavalehService::class)->cancelAndRestore($invoice, 'لغو فاکتور', $this->user->id);
+
+        $this->assertSame(Invoice::STATUS_NOT_SHIPPED, $invoice->fresh()->status);
+        $this->assertSame(1, WarehouseInboundReceipt::where('source_type', WarehouseInboundReceipt::SOURCE_INVOICE_CANCEL)->count());
+        $this->assertSame(0, StockMovement::count());
+        $this->assertStock($central, $item, 0);
+    }
+
     public function test_old_pending_receipt_cannot_restore_an_explicitly_undeducted_invoice(): void
     {
         [$invoice,$item,$central]=$this->invoiceFixture(1);

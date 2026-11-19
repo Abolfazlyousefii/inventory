@@ -34,3 +34,14 @@ it('preserves the existing behavior for non-site legacy invoices with null statu
     $invoice->assertStockDeducted();
     expect(true)->toBeTrue();
 });
+
+it('identifies only an explicit non-deduction as safe to skip a cancellation stock return', function (): void {
+    $invoice = new Invoice();
+    $invoice->forceFill(['stock_deduction_status' => Invoice::STOCK_NOT_DEDUCTED]);
+    expect($invoice->stockWasNotDeducted())->toBeTrue();
+
+    foreach ([Invoice::STOCK_DEDUCTED, null, 'unknown'] as $status) {
+        $invoice->forceFill(['stock_deduction_status' => $status]);
+        expect($invoice->stockWasNotDeducted())->toBeFalse();
+    }
+});

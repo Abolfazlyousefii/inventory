@@ -896,7 +896,13 @@ class SalesHavalehService
 
             $lockedItems = $invoice->items()->with(['product', 'variant'])->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedItems);
-            $queuedQuantity = $invoice->stockWasNotDeducted() ? 0
+            $stockWasNotDeducted = $invoice->stockWasNotDeducted();
+            if (! $stockWasNotDeducted) {
+                // Unknown site deductions must not create a compensating stock credit.
+                $invoice->assertStockDeducted();
+            }
+
+            $queuedQuantity = $stockWasNotDeducted ? 0
                 : (int) $invoice->items->sum(fn ($item) => max((int) $item->quantity, 0));
 
             $this->ledgerService->voidInvoiceDebit($invoice, $reason ?: 'لغو فاکتور');
@@ -916,10 +922,10 @@ class SalesHavalehService
             }
 
             $description = 'کنسلی فاکتور ' . $invoice->uuid
-                . ($invoice->stockWasNotDeducted() ? ' بدون برگشت موجودی؛ موجودی هنگام صدور کسر نشده بود.' : ' و ارسال ' . number_format($queuedQuantity) . ' عدد به صف دریافت انبار.')
+                . ($stockWasNotDeducted ? ' بدون برگشت موجودی؛ موجودی هنگام صدور کسر نشده بود.' : ' و ارسال ' . number_format($queuedQuantity) . ' عدد به صف دریافت انبار.')
                 . ' علت: ' . ($reason ?: 'ثبت نشده') . ($note ? ' | توضیحات: ' . $note : '');
             $this->historyService->log($invoice, 'cancelled', 'status', $oldStatus, SalesHavalehStatusService::NOT_SHIPPED, $description, $userId);
-            ActivityLogger::log('invoice_cancelled', $invoice->fresh(), $invoice->stockWasNotDeducted()
+            ActivityLogger::log('invoice_cancelled', $invoice->fresh(), $stockWasNotDeducted
                 ? 'فاکتور بدون کسر اولیهٔ موجودی لغو شد؛ رسید برگشت انبار ایجاد نشد.'
                 : 'فاکتور لغو شد و اقلام آن در انتظار تأیید دریافت انبار قرار گرفت.', [
                 'invoice_id' => $invoice->id,

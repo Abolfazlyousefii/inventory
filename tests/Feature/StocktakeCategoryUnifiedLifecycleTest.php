@@ -105,6 +105,34 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
             ->andReturn(collect([101 => 0, 102 => 0, 201 => 0]));
     }
 
+    public function test_legacy_batch_resume_preserves_saved_snapshots_and_never_changes_stock(): void
+    {
+        $service=app(StockCountDocumentService::class);
+        DB::table('products')->where('id',2)->update(['category_id'=>11]);
+        $first=$service->createProductDraft(['product_id'=>1,'document_date'=>'2026-11-16','actual_quantities'=>[101=>8,102=>0]],1);
+        $second=$service->createProductDraft(['product_id'=>2,'document_date'=>'2026-11-16','actual_quantities'=>[]],1);
+        $ids=[$first->id,$second->id];
+        $items=StockCountDocumentItem::whereIn('document_id',$ids)->whereNotNull('actual_quantity')->orderBy('product_variant_id')->get();
+        $id=DB::table('stocktake_requests')->insertGetId(['user_id'=>1,'operation'=>'drafts','request_id'=>(string)\Illuminate\Support\Str::uuid(),'payload_hash'=>str_repeat('a',64),'response'=>json_encode(['documents'=>[['document_id'=>$first->id],['document_id'=>$second->id]]]),'response_status'=>200]);
+        $stock=DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+        DB::table('warehouse_stocks')->where('product_variant_id',101)->update(['quantity'=>9]);
+        $changed=DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+        $doc=$service->consolidateLegacyDraftBatch($id,1);
+        $this->assertSame('category',$doc->type);
+        $this->assertSame('draft',$doc->status);
+        $this->assertSame(2,$doc->items()->count());
+        foreach($items as $original){$copied=$doc->items()->where('product_variant_id',$original->product_variant_id)->firstOrFail();
+            foreach($original->getAttributes() as $key=>$value){if(!in_array($key,['id','document_id']))$this->assertEquals($value,$copied->$key,$key);}}
+        $this->assertSame($changed,DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
+        $this->assertSame(0,StockMovement::count());
+        $this->assertSame(2,StockCountDocument::whereIn('id',$ids)->where('superseded_by_id',$doc->id)->count());
+        $this->assertSame($doc->id,$service->consolidateLegacyDraftBatch($id,1)->id);
+        $this->assertSame(3,StockCountDocument::count());
+        try{$service->finalize($doc,1,false,['expected_review_token'=>$service->reviewToken($doc)]);$this->fail('Original stock conflict must still block finalization');}
+        catch(StockCountFinalizeValidationException $e){$this->assertContains('stock_changed',array_column($e->conflicts(),'reason_code'));}
+        $this->assertSame($changed,DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
+    }
+
     private function saveCategory(array $actuals, array $extra = []): StockCountDocument
     {
         return app(StockCountDocumentService::class)->saveCategoryDraft(array_merge([

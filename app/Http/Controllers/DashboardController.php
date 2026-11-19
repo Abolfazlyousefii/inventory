@@ -37,6 +37,9 @@ class DashboardController extends Controller
             'todayDateLabel' => Jalalian::fromDateTime(now())->format('Y/m/d'),
             'workspaceCards' => $workspace->cards($user),
             'workspaceAttention' => $workspace->attention($user),
+            'sellerMonthSummary' => $user->is_seller
+                ? app(\App\Services\SellerMonthlySalesService::class)->summary($user)
+                : null,
         ]);
     }
 

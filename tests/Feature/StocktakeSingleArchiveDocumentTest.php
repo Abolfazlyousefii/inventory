@@ -183,5 +183,32 @@ final class StocktakeSingleArchiveDocumentTest extends TestCase
             ['page.warehouse.stocktake'],
             PageAccessCatalog::permissionsForRoute('stock-count-documents.legacy-archive.show')
         );
+        $this->assertSame(['page.warehouse.stocktake'], PageAccessCatalog::permissionsForRoute('stock-count-documents.legacy-archive.resume'));
+    }
+
+    public function test_saved_draft_batch_is_one_draft_entry_without_changing_finalized_history(): void
+    {
+        DB::table('stock_count_documents')->whereIn('id', [101,102])->update(['status'=>'draft']);
+        DB::table('stocktake_requests')->where('id',16)->update(['operation'=>'drafts']);
+        $before = DB::table('stock_count_documents')->orderBy('id')->get()->toJson();
+        $view = $this->archive()->getData();
+        $group = $view['documents']->first(fn ($r) => ($r->is_archive_group ?? false));
+        $this->assertSame('draft', $group->status);
+        $this->assertSame(3, $view['documents']->total());
+        $this->assertSame(1, $view['summary']['finalized']);
+        $this->assertSame(4, $view['summary']['increase']);
+        $this->assertSame(0, $view['summary']['decrease']);
+        $this->assertSame($before, DB::table('stock_count_documents')->orderBy('id')->get()->toJson());
+        $this->assertSame('draft', app(StocktakeLegacyArchiveController::class)->show(16)->getData()['group']->status);
+        $this->assertSame(1, $this->archive(['status'=>'finalized'])->getData()['documents']->total());
+    }
+
+    public function test_mixed_draft_and_finalized_batch_is_never_hidden_as_one_draft(): void
+    {
+        DB::table('stock_count_documents')->where('id',101)->update(['status'=>'draft']);
+        DB::table('stocktake_requests')->where('id',16)->update(['operation'=>'drafts']);
+        $view=$this->archive()->getData();
+        $this->assertSame(4,$view['documents']->total());
+        $this->assertFalse($view['documents']->contains(fn($r)=>$r->is_archive_group??false));
     }
 }

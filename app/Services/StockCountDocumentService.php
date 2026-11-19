@@ -31,6 +31,61 @@ class StockCountDocumentService
         return Warehouse::firstOrCreate(['type' => 'central', 'name' => 'انبار مرکزی'], ['is_active' => true]);
     }
 
+    /** Recover a saved legacy batch as one draft; never recapture or apply stock. */
+    public function consolidateLegacyDraftBatch(int $batchId, int $userId): StockCountDocument
+    {
+        return DB::transaction(function () use ($batchId, $userId) {
+            $request = DB::table('stocktake_requests')->where('id', $batchId)->lockForUpdate()->first();
+            abort_unless($request && $request->operation === 'drafts', 404);
+            $ids = \App\Http\Controllers\StocktakeBatchArchiveController::documentIds((string) $request->response);
+            abort_unless(count($ids) >= 2, 422, 'فهرست اسناد ذخیره‌شده معتبر نیست.');
+            $existing = StockCountDocument::whereIn('id', $ids)->get();
+            $targets = $existing->pluck('superseded_by_id')->unique();
+            if ($existing->count() === count($ids) && $targets->count() === 1 && $targets->first()) {
+                return StockCountDocument::findOrFail($targets->first());
+            }
+            $group = app(StocktakeLegacyArchiveService::class)->find($batchId);
+            abort_unless($group && $group->status === 'draft', 409, 'وضعیت اسناد تغییر کرده است؛ آرشیو را تازه کنید.');
+            // Match the category -> document lock order used by normal category saves.
+            $categoryIds = Category::selfAndDescendantIds($group->category_id);
+            Category::orderBy('id')->lockForUpdate()->get(['id']);
+            $documents = StockCountDocument::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+            abort_if($documents->contains(fn ($d) => $d->status !== 'draft' || $d->superseded_by_id || $d->finalized_at), 409);
+            foreach (StockCountDocument::where('type', 'category')->where('status', 'draft')
+                ->whereNull('superseded_by_id')->lockForUpdate()->get() as $draft) {
+                abort_if(array_intersect($categoryIds, Category::selfAndDescendantIds($draft->category_id)) !== [],
+                    409, 'پیش‌نویس دسته‌ای هم‌پوشان وجود دارد؛ ادغام خودکار انجام نشد.');
+            }
+            $items = StockCountDocumentItem::whereIn('document_id', $ids)->orderBy('id')->lockForUpdate()->get();
+            $counted = $items->whereNotNull('actual_quantity');
+            abort_if($counted->isEmpty() || $counted->count() > 50000
+                || $items->pluck('product_variant_id')->unique()->count() !== $items->count(), 422,
+                'شمارش ذخیره‌شده خالی یا دارای تنوع تکراری است؛ هیچ تغییری انجام نشد.');
+            Warehouse::whereKey($group->warehouse_id)->lockForUpdate()->firstOrFail();
+            $document = StockCountDocument::create([
+                'document_number' => $this->nextDocumentNumber(), 'type' => 'category',
+                'warehouse_id' => $group->warehouse_id, 'category_id' => $group->category_id,
+                'scope_name' => $group->scope_name, 'document_date' => $group->document_date,
+                'status' => 'draft', 'description' => 'ادامه شمارش دسته‌ای ذخیره‌شده شماره '.$batchId,
+                'created_by' => $group->created_by, 'updated_by' => $userId,
+            ]);
+            foreach ($counted->chunk(500) as $chunk) {
+                $rows = $chunk->map(function ($item) use ($document) {
+                    $row = $item->getAttributes();
+                    unset($row['id']);
+                    $row['document_id'] = $document->id;
+                    return $row;
+                })->all();
+                StockCountDocumentItem::insert($rows);
+            }
+            $this->refreshSummary($document);
+            StockCountDocument::whereIn('id', $ids)->update(['superseded_by_id' => $document->id]);
+            $this->addHistory($document->id, 'consolidated', ['source_document_ids' => $ids],
+                ['status' => 'draft', 'batch_id' => $batchId], 'یکپارچه‌سازی شمارش‌های ذخیره‌شده؛ بدون تغییر موجودی یا بازنشانی شمارش', $userId);
+            return $document->fresh();
+        }, 3);
+    }
+
     public function activeReserved(ProductVariant $variant): int
     {
         return (int) ($this->reservations->quantitiesByVariant(

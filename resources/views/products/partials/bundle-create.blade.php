@@ -232,22 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		}
 	}
 
-// Matches the current BundleRecipe backend validation.
-	const maxComponents = 100;
-
 	function selectItems(items, checked) {
-		const additions = new Set(
-			items
-				.map(i => Number(i.id))
-				.filter(id => !selected.has(id))
-		);
-
-		if (checked && selected.size + additions.size > maxComponents) {
-			alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);
-			syncSelection();
-			return;
-		}
-
 		for (const i of items) {
 			const id = Number(i.id);
 
@@ -272,12 +257,6 @@ document.addEventListener('DOMContentLoaded', () => {
 		const id = Number(i.id);
 
 		if (!selected.has(id)) {
-			if (selected.size >= maxComponents) {
-				alert(`هر بسته حداکثر ${money(maxComponents)} تنوع دارد.`);
-				syncSelection();
-				return;
-			}
-
 			selected.set(id, {
 				...i,
 				quantity: 1,

@@ -81,8 +81,11 @@ class WarehouseInboundQueueArchitectureTest extends TestCase
 
         $this->assertStringNotContainsString('$accepted > (int) $item->expected_quantity', $service);
         $this->assertStringContainsString('if ($accepted < 0)', $service);
-        $this->assertStringContainsString('WarehouseStockService::change(', $service);
-        $this->assertStringContainsString("'type' => StockMovement::TYPE_IN", $service);
+        $this->assertStringContainsString('new \App\Events\StockChangeRequested(', $service);
+        $this->assertStringContainsString('event($change)', $service);
+        $this->assertStringContainsString('delta: $accepted', $service);
+        $this->assertStringContainsString('transactionType: self::TRANSACTION_TYPE', $service);
+        $this->assertStringContainsString('$change->movement()->id', $service);
         $this->assertStringContainsString("STATUS_DISCREPANCY", $service);
         $this->assertStringContainsString('برای ثبت دریافت با مغایرت', $service);
         $this->assertStringContainsString('finalizeSalesReturnFromReceipt', $service);

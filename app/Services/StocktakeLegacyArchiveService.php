@@ -27,10 +27,10 @@ final class StocktakeLegacyArchiveService
         }
 
         $requests = DB::table('stocktake_requests')
-            ->where('operation', 'finalize')
+            ->whereIn('operation', ['finalize', 'drafts'])
             ->whereNotNull('response')
             ->orderByDesc('id')
-            ->get(['id', 'user_id', 'response', 'created_at']);
+            ->get(['id', 'user_id', 'operation', 'response', 'created_at']);
 
         $idLists = [];
         foreach ($requests as $request) {
@@ -65,6 +65,7 @@ final class StocktakeLegacyArchiveService
             }
 
             $first = $members->first();
+            $status = $request->operation === 'drafts' ? 'draft' : 'finalized';
             $categoryId = (int) ($first->product?->category_id ?? 0);
             $warehouseId = (int) $first->warehouse_id;
             $day = $first->document_date?->toDateString();
@@ -73,7 +74,7 @@ final class StocktakeLegacyArchiveService
             }
             $valid = $members->every(static fn ($document) =>
                 $document->type === 'product'
-                && $document->status === 'finalized'
+                && $document->status === $status
                 && $document->superseded_by_id === null
                 && $document->product !== null
                 && (int) $document->product->category_id === $categoryId
@@ -102,7 +103,7 @@ final class StocktakeLegacyArchiveService
                 'created_by' => $first->created_by,
                 'creator' => $first->creator,
                 'document_date' => $first->document_date,
-                'status' => 'finalized',
+                'status' => $status,
                 'items_count' => (int) $members->sum('items_count'),
                 'variants_count' => (int) $members->sum('variants_count'),
                 'counted_count' => (int) $members->sum('counted_count'),

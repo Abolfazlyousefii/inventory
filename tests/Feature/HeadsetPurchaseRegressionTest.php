@@ -165,7 +165,8 @@ it('2 — records the purchase on the Base with no black stock', function (): vo
     expect(PurchaseItem::query()->count())->toBe(1)
         ->and(PurchaseItem::query()->value('product_variant_id'))->toBe($base->id)
         ->and(headsetCentralQuantity($base))->toBe(5)
-        ->and(DB::table('warehouse_stocks')->where('product_variant_id', $black->id)->count())->toBe(0);
+        ->and(DB::table('warehouse_stocks')->where('product_variant_id', $black->id)->count())->toBe(0)
+        ->and((int) $black->fresh()->sell_price)->toBe(0);
 });
 
 it('2b — keeps stock and price together on the Base in the product summary', function (): void {
@@ -233,7 +234,12 @@ it('4 — a real multi-variant electrical product keeps purchasing normally', fu
     expect($variants)->toHaveCount(2)
         ->and($variants->pluck('model_list_id')->unique()->values()->all())->toBe([$model->id]);
 
-    headsetPostPurchase($variants->map(fn (ProductVariant $variant) => headsetRow($product, $variant, 3))->all())
+    // Keep the test focused on normal multi-variant purchasing rather than
+    // submitting a different catalog selling price without confirmation.
+    headsetPostPurchase($variants->map(fn (ProductVariant $variant) => headsetRow($product, $variant, 3, [
+        'sell_price' => 3_000_000,
+        'product_sell_price' => 3_000_000,
+    ]))->all())
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('purchases.index'));
 

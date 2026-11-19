@@ -84,7 +84,7 @@ class StocktakeController extends Controller
             $group = $groupByDocument[(int) $document->id] ?? null;
             if ($group) {
                 if (! isset($seenGroups[$group->batch_id])) {
-                    $descriptors->push(['kind'=>'group', 'group'=>$group, 'status'=>'finalized']);
+                    $descriptors->push(['kind'=>'group', 'group'=>$group, 'status'=>$group->status]);
                     $seenGroups[$group->batch_id] = true;
                 }
             } else {
@@ -110,8 +110,8 @@ class StocktakeController extends Controller
             'total' => $descriptors->count(),
             'finalized' => $descriptors->where('status', 'finalized')->count(),
             // These are the original physical stock changes; do not re-apply or double-count them.
-            'increase' => (int) (clone $query)->sum('total_increase'),
-            'decrease' => (int) (clone $query)->sum('total_decrease'),
+            'increase' => (int) (clone $query)->where('status', 'finalized')->sum('total_increase'),
+            'decrease' => (int) (clone $query)->where('status', 'finalized')->sum('total_decrease'),
         ];
         $warehouses = \App\Models\Warehouse::query()->orderBy('name')->get(['id','name']);
         return view('stocktake.index', compact('documents','summary','filters','warehouses'));
@@ -238,6 +238,13 @@ class StocktakeController extends Controller
                     }
                     $document = $this->service->updateProductDraft($document, $payload, (int) auth()->id());
                 } else {
+                    // A new request ID (another tab or restored browser state)
+                    // must not create a second active draft for the same product.
+                    if (StockCountDocument::query()->where('type', 'product')
+                        ->where('product_id', $product->id)->where('status', 'draft')
+                        ->whereNull('superseded_by_id')->exists()) {
+                        abort(409, 'برای این کالا پیش‌نویس ذخیره‌شده وجود دارد؛ از آرشیو، ادامه شمارش قبلی را باز کنید. هیچ سند تکراری ساخته نشد.');
+                    }
                     $document = $this->service->createProductDraft($payload, (int) auth()->id());
                 }
                 $result[] = [

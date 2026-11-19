@@ -613,6 +613,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Read-only grouping of legacy per-product documents finalized in one request.
     Route::get('/stock-count-documents/batches', [\App\Http\Controllers\StocktakeBatchArchiveController::class, 'index'])->name('stock-count-documents.batches');
     Route::get('/stock-count-documents/legacy-archive/{batchId}', [\App\Http\Controllers\StocktakeLegacyArchiveController::class, 'show'])->whereNumber('batchId')->name('stock-count-documents.legacy-archive.show');
+    Route::post('/stock-count-documents/legacy-archive/{batchId}/resume', [\App\Http\Controllers\StocktakeLegacyArchiveController::class, 'resume'])->whereNumber('batchId')->name('stock-count-documents.legacy-archive.resume');
     Route::get('/stock-count-documents/category-workspace', [StocktakeController::class, 'categoryWorkspace'])->name('stock-count-documents.category-workspace');
     Route::get('/stock-count-documents/category-variants', [StocktakeController::class, 'categoryVariants'])->name('stock-count-documents.category-variants');
     Route::post('/stock-count-documents/category-document', [\App\Http\Controllers\CategoryStocktakeController::class, 'store'])->name('stock-count-documents.category-document.store');
@@ -814,9 +815,6 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 require __DIR__ . '/auth.php';
-
-Route::get('test',function (){
-});
 
 Route::middleware(['auth'])->group(function () {
  Route::get('/finance/saeidian-cheques', [\App\Http\Controllers\SaeidianChequeController::class,'index'])->name('finance.saeidian-cheques.index');
