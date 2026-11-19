@@ -49,6 +49,7 @@
 .stocktake-category .sc-number{text-align:center;font-variant-numeric:tabular-nums}
 .stocktake-category .sc-variant{font-weight:750;color:#203c50}
 .stocktake-category .sc-variant small{display:block;color:#8292a2;font-weight:400;direction:ltr;text-align:right}
+.stocktake-category .sc-variant .sc-bundle-context{display:inline-flex;direction:rtl;text-align:right;margin-top:5px;padding:2px 7px;border-radius:999px;background:#eff6ff;color:#1e40af;font-weight:750;font-size:.7rem}
 .stocktake-category .sc-actual{display:block;width:100%;min-height:38px;border:1px solid #d0dce8;border-radius:8px;padding:6px 10px;text-align:center;font-weight:800;min-width:90px}
 .stocktake-category .sc-actual:focus{outline:2px solid #84bdb9;border-color:#287c7c}
 .stocktake-category .sc-badge{border-radius:999px;padding:3px 9px;background:#fff0d2;color:#87520c;font-weight:750}
