@@ -264,6 +264,7 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(1, (int) $categoryRows->get(101)['bundle_memberships']);
         $this->assertSame(0, (int) $categoryRows->get(102)['bundle_memberships']);
 
+        $this->withoutExceptionHandling();
         $productRows = collect($this->getJson('/stock-count-documents/products/1/variants?limit=100')
             ->assertOk()->json('data'))->keyBy('variant_id');
         $this->assertSame(3, (int) $productRows->get(101)['queue_total']);
