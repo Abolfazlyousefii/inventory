@@ -39,6 +39,19 @@ class SellerMonthlySalesDashboardTest extends TestCase
         }
     }
 
+    public function test_seller_dashboard_uses_current_css_version_for_monthly_sales_widget(): void
+    {
+        $seller = $this->seller();
+        $cssPath = public_path('css/dashboard-workspace.css');
+
+        $this->assertFileExists($cssPath);
+
+        $this->actingAs($seller)->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('seller-monthly-sales__metrics')
+            ->assertSee('css/dashboard-workspace.css?v='.filemtime($cssPath), false);
+    }
+
     public function test_non_seller_does_not_see_monthly_sales_widget(): void
     {
         $user = User::factory()->create(['is_seller' => false]);

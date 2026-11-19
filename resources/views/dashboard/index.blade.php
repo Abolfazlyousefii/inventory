@@ -1,7 +1,12 @@
 @extends('layouts.app')
 @section('title', 'میز کار من')
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/dashboard-workspace.css') }}?v=20261011">
+@php
+    // Keep static dashboard styles in sync with deployments (including seller widgets).
+    $dashboardCssFile = public_path('css/dashboard-workspace.css');
+    $dashboardCssVersion = is_file($dashboardCssFile) ? filemtime($dashboardCssFile) : '20261119';
+@endphp
+<link rel="stylesheet" href="{{ asset('css/dashboard-workspace.css') }}?v={{ $dashboardCssVersion }}">
 @endpush
 @section('content')
 <div class="workspace">
