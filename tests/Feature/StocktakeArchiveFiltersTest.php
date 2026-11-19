@@ -45,6 +45,23 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame(1, DB::table('stock_count_documents')->where('document_number', 'STC-SUPERSEDED')->value('superseded_by_id'));
     }
 
+    public function test_default_archive_prioritizes_finalized_documents_without_hiding_saved_drafts(): void
+    {
+        $before = DB::table('stock_count_documents')->orderBy('id')->get()->toJson();
+
+        $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', []))->getData();
+        $this->assertSame(18, $view['documents']->total());
+        $this->assertSame('STC-17', $view['documents']->first()->document_number);
+        $this->assertSame('finalized', $view['documents']->first()->status);
+        $this->assertSame(17, $view['summary']['finalized']);
+        $this->assertSame(1, $view['summary']['draft']);
+
+        $draftView = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', ['status' => 'draft']))->getData();
+        $this->assertSame(1, $draftView['documents']->total());
+        $this->assertSame('STC-18', $draftView['documents']->first()->document_number);
+        $this->assertSame($before, DB::table('stock_count_documents')->orderBy('id')->get()->toJson());
+    }
+
     public function test_filters_and_summaries_cover_all_matching_documents_before_pagination(): void
     {
         foreach ([
