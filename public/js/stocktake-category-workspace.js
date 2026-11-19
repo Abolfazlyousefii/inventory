@@ -221,6 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const description = make('td','sc-variant',row.name || 'تنوع بدون نام');
         description.dataset.label = 'تنوع کالا';
         description.append(make('small','',row.sku || ''));
+        if (Number(row.bundle_memberships) > 0) {
+            description.append(make('small','sc-bundle-context',
+                'عضو بسته ترکیبی: ' + fa(row.bundle_memberships) + ' بسته'));
+        }
         tr.append(description);
         const centralCell = make('td','sc-number',fa(row.system_available));
         centralCell.dataset.label = 'موجودی انبار مرکزی';
