@@ -159,6 +159,45 @@ class ProductBundleService
                     }
                     DB::table('bundle_component_allocations')->where('id', $row->id)->delete();
                 }
+
+                // A retained component can also release free stock when its
+                // quantity per bundle decreases. Previously these unused units
+                // stayed allocated, preventing ordinary sales and other bundles
+                // from using them until the allocations form was saved again.
+                // Only FREE (remaining) allocations are adjusted here. Active
+                // preinvoice / Site holds are guarded above, and no new stock is
+                // reserved automatically if a per-bundle quantity increases.
+                if ($bundle->product->bundle_stock_mode === 'automatic') {
+                    $retained = DB::table('bundle_component_allocations')
+                        ->where('bundle_variant_id', $bundleVariantId)
+                        ->whereIn('component_variant_id', array_keys($recipe))
+                        ->orderBy('component_variant_id')->lockForUpdate()->get();
+                    $retainedProductIds = ProductVariant::query()
+                        ->whereIn('id', $retained->pluck('component_variant_id'))
+                        ->pluck('product_id', 'id');
+                    foreach ($retained as $row) {
+                        $variantId = (int) $row->component_variant_id;
+                        $oldPerBundle = (int) ($currentRecipe[$variantId] ?? 0);
+                        $newPerBundle = (int) $recipe[$variantId];
+                        if ($oldPerBundle <= $newPerBundle || $oldPerBundle < 1) {
+                            continue;
+                        }
+                        $remaining = (int) $row->remaining;
+                        $allocatedPackages = intdiv($remaining, $oldPerBundle);
+                        $released = $allocatedPackages * ($oldPerBundle - $newPerBundle);
+                        if ($released <= 0) {
+                            continue;
+                        }
+                        $productId = $retainedProductIds->get($variantId);
+                        if (!$productId) {
+                            throw ValidationException::withMessages(['components' => 'تنوع قطعه یافت نشد.']);
+                        }
+                        WarehouseStockService::change(WarehouseStockService::centralWarehouseId(),
+                            (int) $productId, $released, $variantId);
+                        DB::table('bundle_component_allocations')->where('id', $row->id)
+                            ->update(['remaining' => $remaining - $released, 'updated_at' => now()]);
+                    }
+                }
                 DB::table('bundle_component_allocations')->where('bundle_variant_id', $bundleVariantId)->where('remaining', 0)->delete();
             }
             DB::table('product_bundle_components')->where('bundle_variant_id', $bundleVariantId)->delete();
