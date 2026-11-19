@@ -90,6 +90,16 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame('draft',$data['data'][0]['status']);
     }
 
+    public function test_archive_has_one_registration_entry_and_marks_saved_counts_separately(): void
+    {
+        $template = file_get_contents(resource_path('views/stocktake/index.blade.php'));
+
+        $this->assertStringContainsString("route('stock-count-documents.create')", $template);
+        $this->assertStringNotContainsString("route('stock-count-documents.category-workspace')", $template);
+        $this->assertStringContainsString(" 'draft' => 'پیش‌نویس‌ها'", $template);
+        $this->assertStringContainsString('$doc->counted_count ?? 0', $template);
+    }
+
     public function test_reversed_date_range_is_rejected(): void
     {
         $this->expectException(\Illuminate\Validation\ValidationException::class);
