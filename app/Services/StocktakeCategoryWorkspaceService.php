@@ -89,12 +89,13 @@ final class StocktakeCategoryWorkspaceService
 
         $reserved = app(ReservationQueryService::class)->quantitiesByVariant(variantIds: $ids);
         $bundleQuantities = app(BundleComponentStocktakeService::class)->quantitiesByComponent($ids);
+        $bundleMemberships = app(StocktakeBundleMembershipService::class)->countsByComponent($ids);
         $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds($ids);
         $savedItems = $document
             ? $document->items()->whereIn('product_variant_id', $ids)->get()->keyBy('product_variant_id')
             : collect();
 
-        $rows = $page->map(static function ($variant) use ($free, $reserved, $bundleQuantities, $queue, $savedItems) {
+        $rows = $page->map(static function ($variant) use ($free, $reserved, $bundleQuantities, $bundleMemberships, $queue, $savedItems) {
             $id = (int) $variant->variant_id;
             $saved = $savedItems->get($id);
             $available = $saved ? (int) $saved->system_available_at_start : (int) ($free->get($id) ?? 0);
@@ -115,6 +116,7 @@ final class StocktakeCategoryWorkspaceService
                 'bundle_free' => $bundleFree,
                 'bundle_reserved' => $bundleReserved,
                 'site_held' => $siteHeld,
+                'bundle_memberships' => (int) $bundleMemberships->get($id, 0),
                 'expected_physical' => $saved
                     ? (int) $saved->expected_physical_at_start
                     : Quantities::expectedPhysical($available, $held, $bundleFree, $bundleReserved, $siteHeld),
