@@ -92,6 +92,18 @@ class StocktakeController extends Controller
             }
         }
 
+        // Completed counts remain visible before unfinished drafts in the unfiltered
+        // archive. Preserve all records, the status filters, and newest-first order
+        // within each status. This changes presentation only, never stock or status.
+        $statusRank = ['finalized' => 0, 'draft' => 1, 'cancelled' => 2];
+        $sortId = static fn (array $entry): int => $entry['kind'] === 'group'
+            ? (int) $entry['group']->sort_id : (int) $entry['id'];
+        $descriptors = $descriptors->sort(static function (array $left, array $right) use ($statusRank, $sortId): int {
+            $byStatus = ($statusRank[$left['status']] ?? 3) <=> ($statusRank[$right['status']] ?? 3);
+
+            return $byStatus !== 0 ? $byStatus : $sortId($right) <=> $sortId($left);
+        })->values();
+
         $perPage = 15;
         $page = max(1, (int) $request->query('page', 1));
         $current = $descriptors->forPage($page, $perPage)->values();
@@ -109,6 +121,8 @@ class StocktakeController extends Controller
         $summary = [
             'total' => $descriptors->count(),
             'finalized' => $descriptors->where('status', 'finalized')->count(),
+            'draft' => $descriptors->where('status', 'draft')->count(),
+            'cancelled' => $descriptors->where('status', 'cancelled')->count(),
             // These are the original physical stock changes; do not re-apply or double-count them.
             'increase' => (int) (clone $query)->where('status', 'finalized')->sum('total_increase'),
             'decrease' => (int) (clone $query)->where('status', 'finalized')->sum('total_decrease'),
@@ -424,10 +438,11 @@ class StocktakeController extends Controller
 
         // Display-only figures. Do not alter expected_physical, active_reserved
         // or actual_physical: final stock count calculations remain unchanged.
-        $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds(
-            array_column($payload['data']->all(), 'variant_id')
-        );
-        $payload['data'] = $payload['data']->map(static function (array $row) use ($queue): array {
+        $pageVariantIds = array_column($payload['data']->all(), 'variant_id');
+        $queue = app(WarehouseStockFlowReportService::class)->collectionQueueByVariantIds($pageVariantIds);
+        $bundleMemberships = app(\App\Services\StocktakeBundleMembershipService::class)
+            ->countsByComponent($pageVariantIds);
+        $payload['data'] = $payload['data']->map(static function (array $row) use ($queue, $bundleMemberships): array {
             $amount = $queue->get($row['variant_id']);
             $pending = (int) ($amount->pending_collection ?? 0);
             $received = (int) ($amount->warehouse_received ?? 0);
@@ -437,6 +452,7 @@ class StocktakeController extends Controller
                 'warehouse_received' => $received,
                 'collecting' => $collecting,
                 'queue_total' => $pending + $received + $collecting,
+                'bundle_memberships' => (int) $bundleMemberships->get((int) $row['variant_id'], 0),
             ];
         });
 

@@ -45,6 +45,23 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame(1, DB::table('stock_count_documents')->where('document_number', 'STC-SUPERSEDED')->value('superseded_by_id'));
     }
 
+    public function test_default_archive_prioritizes_finalized_documents_without_hiding_saved_drafts(): void
+    {
+        $before = DB::table('stock_count_documents')->orderBy('id')->get()->toJson();
+
+        $view = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', []))->getData();
+        $this->assertSame(18, $view['documents']->total());
+        $this->assertSame('STC-17', $view['documents']->first()->document_number);
+        $this->assertSame('finalized', $view['documents']->first()->status);
+        $this->assertSame(17, $view['summary']['finalized']);
+        $this->assertSame(1, $view['summary']['draft']);
+
+        $draftView = app(StocktakeController::class)->index(Request::create('/stocktake', 'GET', ['status' => 'draft']))->getData();
+        $this->assertSame(1, $draftView['documents']->total());
+        $this->assertSame('STC-18', $draftView['documents']->first()->document_number);
+        $this->assertSame($before, DB::table('stock_count_documents')->orderBy('id')->get()->toJson());
+    }
+
     public function test_filters_and_summaries_cover_all_matching_documents_before_pagination(): void
     {
         foreach ([
@@ -71,6 +88,16 @@ class StocktakeArchiveFiltersTest extends TestCase
         $this->assertSame(1,$data['total']);
         $this->assertCount(1,$data['data']);
         $this->assertSame('draft',$data['data'][0]['status']);
+    }
+
+    public function test_archive_has_one_registration_entry_and_marks_saved_counts_separately(): void
+    {
+        $template = file_get_contents(resource_path('views/stocktake/index.blade.php'));
+
+        $this->assertStringContainsString("route('stock-count-documents.create')", $template);
+        $this->assertStringNotContainsString("route('stock-count-documents.category-workspace')", $template);
+        $this->assertStringContainsString(" 'draft' => 'پیش‌نویس‌ها'", $template);
+        $this->assertStringContainsString('$doc->counted_count ?? 0', $template);
     }
 
     public function test_reversed_date_range_is_rejected(): void

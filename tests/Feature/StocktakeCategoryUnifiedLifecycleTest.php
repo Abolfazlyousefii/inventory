@@ -235,6 +235,57 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame($beforeMovements, StockMovement::count());
     }
 
+    public function test_read_only_stocktake_apis_expose_collection_queue_and_bundle_membership_without_stock_writes(): void
+    {
+        $this->seedMobileLikeVariantBrowser();
+        $this->withoutMiddleware();
+
+        DB::table('products')->where('id', 2)->update([
+            'is_bundle' => 1,
+            'bundle_stock_mode' => 'automatic',
+        ]);
+        DB::table('product_bundle_components')->insert([
+            ['bundle_variant_id' => 201, 'component_variant_id' => 101, 'quantity' => 2],
+        ]);
+        DB::table('invoices')->insert([
+            'id' => 7, 'status' => \App\Models\Invoice::STATUS_PENDING_COLLECTION,
+        ]);
+        DB::table('invoice_items')->insert([
+            'invoice_id' => 7, 'variant_id' => 101, 'quantity' => 3,
+        ]);
+
+        $beforeStocks = DB::table('warehouse_stocks')->orderBy('id')->get()->toJson();
+        $beforeMovements = StockMovement::count();
+        $beforeDocuments = StockCountDocument::count();
+
+        $categoryRows = collect($this->getJson('/stock-count-documents/category-variants?category_id=11&limit=60')
+            ->assertOk()->json('rows'))->keyBy('variant_id');
+        $this->assertSame(3, (int) $categoryRows->get(101)['queue_total']);
+        $this->assertSame(1, (int) $categoryRows->get(101)['bundle_memberships']);
+        $this->assertSame(0, (int) $categoryRows->get(102)['bundle_memberships']);
+
+        $productRows = collect($this->getJson('/stock-count-documents/products/1/variants?limit=100')
+            ->assertOk()->json('data'))->keyBy('variant_id');
+        $this->assertSame(3, (int) $productRows->get(101)['queue_total']);
+        $this->assertSame(1, (int) $productRows->get(101)['bundle_memberships']);
+        $this->assertSame(0, (int) $productRows->get(102)['bundle_memberships']);
+
+        $this->assertSame($beforeStocks, DB::table('warehouse_stocks')->orderBy('id')->get()->toJson());
+        $this->assertSame($beforeMovements, StockMovement::count());
+        $this->assertSame($beforeDocuments, StockCountDocument::count());
+    }
+
+    public function test_stocktake_form_and_embedded_category_table_label_bundle_context_as_read_only(): void
+    {
+        $template = file_get_contents(resource_path('views/stocktake/form.blade.php'));
+        $script = file_get_contents(public_path('js/stocktake-category-workspace.js'));
+
+        $this->assertStringContainsString('در صف جمع‌آوری', $template);
+        $this->assertStringContainsString('عضو بسته ترکیبی', $template);
+        $this->assertStringContainsString('bundle_memberships', $script);
+        $this->assertStringContainsString('عضو بسته ترکیبی', $script);
+    }
+
     public function test_mobile_like_subcategory_api_live_search_and_paging_validation(): void
     {
         $this->seedMobileLikeVariantBrowser();
