@@ -145,6 +145,44 @@ final class StocktakeSingleArchiveDocumentTest extends TestCase
         $this->assertSame(2, DB::table('stock_count_document_items')->count());
     }
 
+    public function test_legacy_finalized_batch_spanning_child_categories_stays_one_read_only_entry(): void
+    {
+        DB::table('categories')->insert(['id' => 18, 'name' => 'ساعت ورزشی', 'parent_id' => 17]);
+        DB::table('products')->where('id', 12)->update(['category_id' => 18]);
+        $beforeDocuments = DB::table('stock_count_documents')->orderBy('id')->get()->toJson();
+        $beforeItems = DB::table('stock_count_document_items')->orderBy('id')->get()->toJson();
+
+        $view = $this->archive()->getData();
+        $this->assertSame(3, $view['documents']->total());
+        $this->assertSame(2, $view['summary']['finalized']);
+        $group = $view['documents']->first(fn ($entry) => ($entry->is_archive_group ?? false) === true);
+        $this->assertNotNull($group);
+        $this->assertSame(17, $group->category_id);
+        $this->assertSame('ساعت هوشمند', $group->scope_name);
+        $this->assertSame([101, 102], $group->child_document_ids);
+        $this->assertSame($beforeDocuments, DB::table('stock_count_documents')->orderBy('id')->get()->toJson());
+        $this->assertSame($beforeItems, DB::table('stock_count_document_items')->orderBy('id')->get()->toJson());
+    }
+
+    public function test_legacy_draft_batch_spanning_child_categories_remains_one_resumable_draft(): void
+    {
+        DB::table('categories')->insert(['id' => 18, 'name' => 'ساعت ورزشی', 'parent_id' => 17]);
+        DB::table('products')->where('id', 12)->update(['category_id' => 18]);
+        DB::table('stock_count_documents')->whereIn('id', [101, 102])->update(['status' => 'draft']);
+        DB::table('stocktake_requests')->where('id', 16)->update(['operation' => 'drafts']);
+        $before = DB::table('stock_count_documents')->orderBy('id')->get()->toJson();
+
+        $view = $this->archive(['status' => 'draft'])->getData();
+        $this->assertSame(2, $view['documents']->total());
+        $group = $view['documents']->first(fn ($entry) => ($entry->is_archive_group ?? false) === true);
+        $this->assertNotNull($group);
+        $this->assertSame('draft', $group->status);
+        $this->assertSame(17, $group->category_id);
+        $this->assertSame(16, $group->batch_id);
+        $this->assertSame(16, app(StocktakeLegacyArchiveController::class)->show(16)->getData()['group']->batch_id);
+        $this->assertSame($before, DB::table('stock_count_documents')->orderBy('id')->get()->toJson());
+    }
+
     public function test_invalid_or_ambiguous_batches_remain_individual_archive_documents(): void
     {
         DB::table('products')->where('id', 12)->update(['category_id' => 28]);

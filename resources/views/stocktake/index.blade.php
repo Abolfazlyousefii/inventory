@@ -8,9 +8,22 @@
     $statuses = ['draft'=>'پیش‌نویس','finalized'=>'اعمال‌شده','cancelled'=>'لغوشده'];
 @endphp
 <div class="stocktake-archive" dir="rtl">
-    <header class="sa-header"><div class="sa-heading"><span class="sa-icon" aria-hidden="true">▤</span><div><span class="sa-eyebrow">کنترل و تطبیق موجودی انبار</span><h1>آرشیو انبارگردانی</h1><p>سوابق شمارش و تغییرات موجودی کالاها</p></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-outline-primary" href="{{ route('warehouse.stock-flow.index') }}">موجودی در جریان / چاپ گزارش</a><a class="btn btn-outline-success" href="{{ route('stock-count-documents.category-workspace') }}">انبارگردانی دسته‌ای</a><a class="btn btn-primary" href="{{ route('stock-count-documents.create') }}">+ ثبت سند انبارگردانی محصولی</a></div></header>
+    <header class="sa-header"><div class="sa-heading"><span class="sa-icon" aria-hidden="true">▤</span><div><span class="sa-eyebrow">کنترل و تطبیق موجودی انبار</span><h1>آرشیو انبارگردانی</h1><p>سوابق شمارش و تغییرات موجودی کالاها</p></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-outline-primary" href="{{ route('warehouse.stock-flow.index') }}">موجودی در جریان / چاپ گزارش</a><a class="btn btn-primary" href="{{ route('stock-count-documents.create') }}">+ ثبت انبارگردانی</a></div></header>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
+    <nav class="d-flex align-items-center flex-wrap gap-2 mb-3" aria-label="فیلتر سریع وضعیت اسناد">
+        @foreach(['' => 'همه اسناد', 'finalized' => 'اعمال‌شده', 'draft' => 'پیش‌نویس‌ها', 'cancelled' => 'لغوشده'] as $statusValue => $statusLabel)
+            @php
+                $statusParams = request()->except('status', 'page');
+                if ($statusValue !== '') $statusParams['status'] = $statusValue;
+                $selectedStatus = ($filters['status'] ?? '') === $statusValue;
+            @endphp
+            <a href="{{ route('stocktake.index', $statusParams) }}"
+               class="btn btn-sm {{ $selectedStatus ? 'btn-primary' : 'btn-outline-primary' }}"
+               @if($selectedStatus) aria-current="page" @endif>{{ $statusLabel }}</a>
+        @endforeach
+        @if(empty($filters['status']))<span class="text-muted small">اسناد اعمال‌شده ابتدا نمایش داده می‌شوند؛ پیش‌نویس‌ها هنوز موجودی را تغییر نداده‌اند.</span>@endif
+    </nav>
     <div class="sa-stats">
         @foreach([['اسناد مطابق جست‌وجو',$summary['total'],'blue','▤'],['اسناد اعمال‌شده',$summary['finalized'],'purple','✓'],['جمع افزایش موجودی',$summary['increase'],'green','↗'],['جمع کاهش موجودی',$summary['decrease'],'red','↘']] as [$label,$value,$color,$icon])
         <div class="sa-stat {{ $color }}"><span class="sa-stat-icon" aria-hidden="true">{{ $icon }}</span><div><span>{{ $label }}</span><strong>{{ $number($value) }}</strong></div></div>
@@ -33,7 +46,7 @@
                 <td data-label="سند">@if($doc->is_archive_group ?? false)<a class="sa-code" href="{{ route('stock-count-documents.legacy-archive.show', $doc->batch_id) }}">ثبت دسته‌ای شماره {{ $fa($doc->batch_id) }}</a><span class="sa-subtitle">{{ $doc->status === 'draft' ? 'شمارش ذخیره‌شده؛ اعمال نشده' : 'سند تاریخی یکپارچه' }}</span>@else<a class="sa-code" href="{{ route('stock-count-documents.view',$doc) }}"><bdi>{{ $fa($doc->document_number) }}</bdi></a>@endif<time class="sa-subtitle" dir="ltr">{{ $fa(\App\Support\JalaliDate::date($doc->document_date)) }}</time></td>
                 <td data-label="محصول / محدوده"><strong class="sa-product">{{ $doc->type === 'category' ? ($doc->scope_name ?: $doc->category?->name ?: 'دسته') : ($doc->product?->name ?? '—') }}</strong><span class="sa-subtitle">@if($doc->is_archive_group ?? false) یک ثبت دسته‌ای ـ {{ $number(count($doc->child_document_ids)) }} سند اصلی در سوابق @else {{ ($doc->type ?? 'product') === 'category' ? 'انبارگردانی دسته‌ای' : 'انبارگردانی محصولی' }} @endif</span></td>
                 <td data-label="انبار / ثبت‌کننده"><span>{{ $doc->warehouse?->name ?? '—' }}</span><span class="sa-subtitle">{{ $doc->creator?->name ?? '—' }}</span></td>
-                <td data-label="شمارش"><strong>{{ $number($doc->variants_count ?: $doc->items_count) }} تنوع</strong><span class="sa-subtitle">{{ $number($doc->zeroed_count) }} صفرشده</span></td>
+                <td data-label="شمارش"><strong>{{ $number($doc->counted_count ?? 0) }} تنوع شمرده‌شده</strong><span class="sa-subtitle">{{ $number($doc->variants_count ?: $doc->items_count) }} تنوع در سند · {{ $number($doc->zeroed_count) }} صفرشمرده‌شده</span></td>
                 <td data-label="افزایش"><span class="sa-delta positive">{{ $doc->total_increase > 0 ? '+' : '' }}{{ $number($doc->total_increase) }}</span></td>
                 <td data-label="کاهش"><span class="sa-delta {{ $doc->total_decrease > 0 ? 'negative' : 'neutral' }}"><bdi>{{ $doc->total_decrease > 0 ? '−' : '' }}{{ $number($doc->total_decrease) }}</bdi></span></td>
                 <td data-label="وضعیت"><span class="sa-status {{ $doc->status }}">{{ $statuses[$doc->status] ?? $doc->status }}</span></td>

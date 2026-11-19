@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\Schema;
  *
  * Never edits document headers, document items, stock movements or warehouse stock.
  * A group is eligible only if every saved source document is still present,
- * finalized and belongs to exactly one product per document in one category,
- * warehouse and document date.
+ * in the recorded operation status, with distinct products sharing a known
+ * category ancestor, warehouse and document date. Different category trees
+ * remain separate; records and stock are never altered.
  */
 final class StocktakeLegacyArchiveService
 {
@@ -53,6 +54,7 @@ final class StocktakeLegacyArchiveService
             ->keyBy('id');
 
         $groups = collect();
+        $categories = Category::query()->get(['id', 'parent_id', 'name'])->keyBy('id');
         $claimedIds = [];
         foreach ($requests as $request) {
             $ids = $idLists[(int) $request->id] ?? null;
@@ -66,10 +68,10 @@ final class StocktakeLegacyArchiveService
 
             $first = $members->first();
             $status = $request->operation === 'drafts' ? 'draft' : 'finalized';
-            $categoryId = (int) ($first->product?->category_id ?? 0);
+            $categoryId = $this->commonCategoryId($members, $categories);
             $warehouseId = (int) $first->warehouse_id;
             $day = $first->document_date?->toDateString();
-            if ($categoryId < 1 || ! $day) {
+            if ($categoryId === null || ! $day) {
                 continue;
             }
             $valid = $members->every(static fn ($document) =>
@@ -77,14 +79,13 @@ final class StocktakeLegacyArchiveService
                 && $document->status === $status
                 && $document->superseded_by_id === null
                 && $document->product !== null
-                && (int) $document->product->category_id === $categoryId
                 && (int) $document->warehouse_id === $warehouseId
                 && $document->document_date?->toDateString() === $day
             );
             if (! $valid || $members->pluck('product_id')->unique()->count() !== count($ids)) {
                 continue; // Never hide potentially independent counting sessions.
             }
-            $category = Category::query()->find($categoryId);
+            $category = $categories->get($categoryId);
             if (! $category) {
                 continue;
             }
@@ -119,6 +120,51 @@ final class StocktakeLegacyArchiveService
         }
 
         return $groups;
+    }
+
+    /**
+     * Find the deepest category shared by every recorded product. A batch
+     * spanning siblings is displayed under their parent; unrelated roots or
+     * corrupt/missing category paths are never merged into a virtual group.
+     */
+    private function commonCategoryId(Collection $members, Collection $categories): ?int
+    {
+        $commonPath = null;
+        foreach ($members as $document) {
+            $categoryId = (int) ($document->product?->category_id ?? 0);
+            $path = [];
+            $visited = [];
+
+            while ($categoryId > 0) {
+                if (isset($visited[$categoryId]) || ! $categories->has($categoryId)) {
+                    return null;
+                }
+                $visited[$categoryId] = true;
+                $path[] = $categoryId;
+                $categoryId = (int) ($categories->get($categoryId)->parent_id ?? 0);
+            }
+            if ($path === []) {
+                return null;
+            }
+
+            $path = array_reverse($path);
+            if ($commonPath === null) {
+                $commonPath = $path;
+                continue;
+            }
+
+            $length = min(count($commonPath), count($path));
+            $shared = 0;
+            while ($shared < $length && $commonPath[$shared] === $path[$shared]) {
+                $shared++;
+            }
+            $commonPath = array_slice($commonPath, 0, $shared);
+            if ($commonPath === []) {
+                return null;
+            }
+        }
+
+        return $commonPath ? (int) end($commonPath) : null;
     }
 
     public function find(int $batchId): ?object
