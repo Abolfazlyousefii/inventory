@@ -264,8 +264,15 @@ final class StocktakeCategoryUnifiedLifecycleTest extends TestCase
         $this->assertSame(1, (int) $categoryRows->get(101)['bundle_memberships']);
         $this->assertSame(0, (int) $categoryRows->get(102)['bundle_memberships']);
 
-        $productRows = collect($this->getJson('/stock-count-documents/products/1/variants?limit=100')
-            ->assertOk()->json('data'))->keyBy('variant_id');
+        // withoutMiddleware() bypasses SubstituteBindings: the route would
+        // inject an unbound Product model with a null id in this isolated test.
+        // Pass the same resolved model that production route binding supplies.
+        $productResponse = app(\App\Http\Controllers\StocktakeController::class)->variants(
+            \Illuminate\Http\Request::create('/stock-count-documents/products/1/variants', 'GET', ['limit' => 100]),
+            Product::findOrFail(1),
+        );
+        $this->assertSame(200, $productResponse->getStatusCode());
+        $productRows = collect($productResponse->getData(true)['data'])->keyBy('variant_id');
         $this->assertSame(3, (int) $productRows->get(101)['queue_total']);
         $this->assertSame(1, (int) $productRows->get(101)['bundle_memberships']);
         $this->assertSame(0, (int) $productRows->get(102)['bundle_memberships']);
