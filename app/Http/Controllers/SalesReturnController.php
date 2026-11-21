@@ -60,7 +60,7 @@ class SalesReturnController extends Controller
     public function store(StoreSalesReturnRequest $request)
     {
         $data = $this->enrich($request);
-        $doc = $this->service->createDraft($data, auth()->id());
+        $doc = $this->service->createSimpleDraft($data, auth()->id());
         if ($request->input('action') === 'apply') {
             $doc = $this->service->apply($doc, auth()->id());
         }

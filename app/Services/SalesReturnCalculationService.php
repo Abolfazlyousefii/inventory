@@ -199,6 +199,38 @@ class SalesReturnCalculationService
         })->all();
     }
 
+    /** Split one invoice row across destinations without duplicating its refund entitlement. */
+    public function calculatePartitionedPreview(Invoice $invoice, array $rows, ?int $excludeDocumentId = null): array
+    {
+        $groups = collect($rows)->groupBy('invoice_item_id');
+        $totals = $groups->map(fn ($group, $id) => ['invoice_item_id' => (int) $id,
+            'return_quantity' => (int) $group->sum('return_quantity')])->values()->all();
+        $base = collect($this->calculateInternalPreview($invoice, $totals, $excludeDocumentId))
+            ->keyBy(fn ($row) => (int) $row['invoice_item']->id);
+        $seen = []; $offsets = []; $result = [];
+        foreach ($rows as $index => $input) {
+            $id = (int) ($input['invoice_item_id'] ?? 0);
+            $quantity = (int) ($input['return_quantity'] ?? 0);
+            $row = $base->get($id);
+            $key = $id.':'.(int) ($input['destination_warehouse_id'] ?? 0);
+            if (! $row || $quantity < 1 || isset($seen[$key])
+                || (int) $groups->get($id)->sum('return_quantity') > (int) $row['returnable_quantity']) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "items.$index.return_quantity" => 'قلم تکراری یا مجموع تعداد بیشتر از قابل برگشت است.',
+                ]);
+            }
+            $seen[$key] = true;
+            $offset = $offsets[$id] ?? 0;
+            $amount = $this->cumulativeRefundAmount($row['refund_amount'], $row['quantity'], $offset + $quantity)
+                - $this->cumulativeRefundAmount($row['refund_amount'], $row['quantity'], $offset);
+            $offsets[$id] = $offset + $quantity;
+            $result[] = array_replace($row, ['quantity' => $quantity, 'refund_amount' => $amount,
+                'refund_unit_price' => intdiv($amount, $quantity), 'input_index' => $index,
+                'return_item_id' => $input['return_item_id'] ?? null]);
+        }
+        return $result;
+    }
+
     private function invoiceItems(Invoice $invoice): Collection
     {
         if ($invoice->relationLoaded('items')) {

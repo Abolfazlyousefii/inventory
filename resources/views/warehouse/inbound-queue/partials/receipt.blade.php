@@ -18,14 +18,17 @@
     @csrf
     <input type="hidden" name="receipt_version" value="{{ \App\Support\InboundReviewVersion::token($receipt) }}">
     <div class="wiq-drawer-body">
+        @if($receipt->source_meta['controlled_return'] ?? false)
+        <div class="alert alert-info small">فقط اقلام مرکزی نمایش داده می‌شوند. اقلام مرجوعی همراه با تأیید این دریافت ثبت می‌شوند؛ رد کامل دریافت، کل برگشت را لغو می‌کند.</div>
+        @endif
         <div class="wiq-doc-card">
             <div><span>منبع</span><b>{{ $sourceLabel }}</b></div>
             <div><span>سند مبنا</span><b>{{ $receipt->source_number_snapshot ?: '—' }}</b></div>
             <div><span>مشتری</span><b>{{ $receipt->customer_name_snapshot ?: '—' }}</b></div>
             <div><span>ثبت‌کننده</span><b>{{ $receipt->requester?->name ?: '—' }}</b></div>
-            <div><span>مورد انتظار</span><b>{{ number_format($receipt->expected_quantity) }} عدد</b></div>
+            <div><span>مورد انتظار</span><b>{{ number_format($receipt->reviewItems()->sum('expected_quantity')) }} عدد</b></div>
             <div><span>وضعیت</span><b>{{ $statusLabel }}</b></div>
-            <div><span>مغایرت کل</span><b dir="ltr">{{ sprintf('%+d', $receipt->difference) }}</b></div>
+            <div><span>مغایرت کل</span><b dir="ltr">{{ sprintf('%+d', $receipt->reviewItems()->sum(fn($item) => $item->accepted_quantity - $item->expected_quantity)) }}</b></div>
             <div><span>تاریخ ایجاد</span><b>{{ $receipt->created_at ? Jalalian::fromDateTime($receipt->created_at)->format('Y/m/d H:i') : '—' }}</b></div>
             @if($receipt->reviewed_at)<div><span>بررسی‌کننده</span><b>{{ $receipt->reviewer?->name ?: '—' }}</b></div>@endif
         </div>
@@ -46,7 +49,7 @@
         </div>
 
         <div class="wiq-items">
-            @foreach($receipt->items as $index => $item)
+            @foreach($receipt->reviewItems() as $index => $item)
                 @php
                     $displayAccepted = $isPending ? $item->expected_quantity : $item->accepted_quantity;
                     $displayDifference = $displayAccepted - $item->expected_quantity;

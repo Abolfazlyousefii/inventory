@@ -92,7 +92,7 @@ class VoucherSalesReturnController extends Controller
     public function store(StoreSalesReturnRequest $request)
     {
         $data = $this->enrich($request);
-        $doc = $this->service->createDraft($data, auth()->id());
+        $doc = $this->service->createSimpleDraft($data, auth()->id());
         if ($request->input('action') === 'apply') {
             $doc = $this->service->apply($doc, auth()->id());
         }
@@ -126,7 +126,7 @@ class VoucherSalesReturnController extends Controller
 
     public function edit(SalesReturnDocument $document)
     {
-        if (! $document->isDraft() && ! $document->isPendingWarehouse()) {
+        if (($document->isSimpleWorkflow() && $document->isPendingWarehouse()) || (! $document->isDraft() && ! $document->isPendingWarehouse())) {
             abort(403);
         } $document->load('items.product', 'items.variant', 'customer', 'invoice');
 
@@ -140,6 +140,7 @@ class VoucherSalesReturnController extends Controller
 
     public function editApplied(SalesReturnDocument $document)
     {
+        abort_if($document->isSimpleWorkflow(), 403, 'سند نهایی جدید فقط با ابطال و ثبت مجدد اصلاح می‌شود.');
         abort_unless($document->isApplied(), 403);
         $warehouseMode = $this->appliedAccess($document);
         if (SalesReturnCorrection::where('document_id', $document->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->exists()) {

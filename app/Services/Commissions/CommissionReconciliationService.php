@@ -25,6 +25,9 @@ class CommissionReconciliationService
     {
         return DB::transaction(function () use ($return, $actorId) {
             $return = SalesReturnDocument::query()->with(['items.invoiceItem'])->lockForUpdate()->findOrFail($return->id);
+            if ($return->isSimpleWorkflow()) {
+                return 0;
+            }
             if (! $return->isInternal() || ! $return->commission_effect_type) {
                 $this->warning('return_item_unmatched', 'return:'.$return->id, $return, 'نوع اثر پورسانت یا اتصال فاکتور داخلی برای برگشت مشخص نیست.');
 

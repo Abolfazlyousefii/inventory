@@ -23,6 +23,9 @@ class CommissionReturnSyncOutboxService
      */
     public function stage(int $returnId, ?int $actorId = null): void
     {
+        if (SalesReturnDocument::find($returnId)?->isSimpleWorkflow()) {
+            return;
+        }
         if (! Schema::hasTable('commission_return_sync_outboxes')) {
             // Deployment fallback: do not make the source transaction depend on
             // commission code while the migration is rolling out.
