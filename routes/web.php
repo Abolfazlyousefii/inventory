@@ -827,4 +827,5 @@ require __DIR__ . '/auth.php';
 Route::middleware(['auth'])->group(function () {
  Route::get('/finance/saeidian-cheques', [\App\Http\Controllers\SaeidianChequeController::class,'index'])->name('finance.saeidian-cheques.index');
  Route::post('/finance/saeidian-cheques', [\App\Http\Controllers\SaeidianChequeController::class,'store'])->name('finance.saeidian-cheques.store');
+ Route::patch('/finance/saeidian-cheques/{entry}/status', [\App\Http\Controllers\SaeidianChequeController::class,'updateStatus'])->whereNumber('entry')->name('finance.saeidian-cheques.status');
 });

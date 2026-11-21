@@ -6,6 +6,19 @@ use Illuminate\Database\Eloquent\Model;
 
 class SalesReturnDocument extends Model
 {
+    public const FLOW_RETURN_ONLY = 'return_only';
+    public const FLOW_CONTROLLED = 'controlled_return';
+
+    public function isSimpleWorkflow(): bool
+    {
+        return in_array($this->return_flow, [self::FLOW_RETURN_ONLY, self::FLOW_CONTROLLED], true);
+    }
+
+    public function isReturnOnly(): bool
+    {
+        return $this->return_flow === self::FLOW_RETURN_ONLY;
+    }
+
     public const FLOW_PHYSICAL = 'physical';
     public const FLOW_FINANCIAL_ONLY = 'financial_only';
 
@@ -127,6 +140,7 @@ class SalesReturnDocument extends Model
     {
         return [
             'healthy_return' => 'برگشت سالم / بدون ایراد',
+            self::FLOW_RETURN_ONLY => 'برگشت فروش به مرجوعی',
             'warranty' => 'گارانتی',
             'damaged_product' => 'خرابی کالا',
             'product_mismatch' => 'مغایرت کالا',

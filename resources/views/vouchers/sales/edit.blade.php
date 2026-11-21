@@ -135,7 +135,7 @@
 				</div>
 				<div class="table-responsive">
 					<table class="table align-middle" id="invoiceItemsTable">
-						<thead class="position-sticky top-0 bg-white"><tr><th>ردیف</th><th>کالا</th><th>تنوع / مدل</th><th>کد / SKU</th><th>موجودی آزاد</th><th>تعداد قبلی</th><th>تعداد جدید</th><th>قیمت واحد</th><th>تخفیف ردیف</th><th>جمع ردیف</th><th>عملیات</th></tr></thead>
+						<thead class="position-sticky top-0 bg-white"><tr><th>ردیف</th><th>کالا</th><th>تنوع / مدل</th><th>کد / SKU</th><th>موجودی آزاد</th><th>تعداد قبلی</th><th>تعداد جدید</th><th>قیمت واحد</th><th>تخفیف واحد (ریال)</th><th>جمع ردیف</th><th>عملیات</th></tr></thead>
 						<tbody id="invoiceItemsBody">
 						@foreach($invoice->items as $it)
 							@php
@@ -288,7 +288,7 @@
 			window.onbeforeunload = changed ? () => 'تغییرات ذخیره‌نشده دارید.' : null;
 			recalcTotals();
 		}
-		function recalcTotals(){let total=0, edited=0;document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])').forEach((row)=>{const q=Number(row.querySelector('.js-item-quantity')?.value||0),p=RialInput.number(row.querySelector('.js-price')?.value||0),d=RialInput.number(row.querySelector('.js-discount')?.value||0);const line=Math.max(q*p-d,0);total+=line; if(row.querySelector('.js-line-total')) row.querySelector('.js-line-total').textContent=line.toLocaleString(); if(row.classList.contains('table-danger')||Array.from(row.querySelectorAll('.js-item-field')).some(f=>RialInput.raw(f.value)!==RialInput.raw(f.dataset.original||''))) edited++;}); const el=document.getElementById('changesSummary'); if(el) el.textContent=`ردیف‌های تغییرکرده: ${edited} | مبلغ جدید تقریبی: ${total.toLocaleString()} ریال`;}
+		function recalcTotals(){window.CollectionUnitDiscount?.syncAll();let total=0, edited=0;document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])').forEach((row)=>{const q=Number(row.querySelector('.js-item-quantity')?.value||0),p=RialInput.number(row.querySelector('.js-price')?.value||0),d=RialInput.number(row.querySelector('.js-discount')?.value||0);const line=Math.max(q*p-d,0);total+=line; if(row.querySelector('.js-line-total')) row.querySelector('.js-line-total').textContent=line.toLocaleString(); if(row.classList.contains('table-danger')||Array.from(row.querySelectorAll('.js-item-field')).some(f=>RialInput.raw(f.value)!==RialInput.raw(f.dataset.original||''))) edited++;}); const el=document.getElementById('changesSummary'); if(el) el.textContent=`ردیف‌های تغییرکرده: ${edited} | مبلغ جدید تقریبی: ${total.toLocaleString()} ریال`;}
 		function rowInput(row, suffix) { return row.querySelector(`input[name^="items["][name$="[${suffix}]"]`); }
 		function buildItemsPayload() {
 			return Array.from(document.querySelectorAll('#invoiceItemsBody tr:not([data-removed-history="1"])')).map((row) => {
@@ -382,4 +382,5 @@
 		document.getElementById('salesItemsForm')?.addEventListener('submit', (e)=>{ if(!confirm('پس از ثبت، فاکتور برای تأیید مجدد به واحد مالی ارسال می‌شود. ادامه می‌دهید؟')){e.preventDefault();return;} try{prepareJsonPayloadForSubmit();}catch(error){e.preventDefault(); alert(error.message || 'اطلاعات اقلام فاکتور ناقص یا نامعتبر است.'); return;} window.onbeforeunload=null; const btn=document.getElementById('submitCollectionBtn'); if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}});
 		bindRowButtons(); syncChangeReasonRequired();
 	</script>
+<script type="module" src="{{ asset('js/collection-unit-discount.js') }}?v=20261121a"></script>
 @endsection

@@ -126,10 +126,10 @@
                         <td><span class="wiq-source wiq-source-{{ $sourceClass }}"><i></i>{{ $sourceLabels[$receipt->source_type] ?? $receipt->source_type }}</span></td>
                         <td><b>{{ $receipt->source_number_snapshot ?: '—' }}</b><div class="wiq-muted">{{ $receipt->customer_name_snapshot ?: '—' }}</div></td>
                         <td>{{ $receipt->requester?->name ?: '—' }}</td>
-                        <td>{{ $receipt->items->map(fn($item) => $item->receivedWarehouse?->name ?: $item->suggestedWarehouse?->name)->filter()->unique()->join('، ') ?: '—' }}</td>
-                        <td>{{ number_format($receipt->items_count) }} قلم</td>
-                        <td><b>{{ number_format($receipt->expected_quantity) }}</b> / {{ $receipt->isPending() ? '—' : number_format($receipt->accepted_quantity) }}</td>
-                        <td><span dir="ltr">{{ $receipt->isPending() ? '—' : sprintf('%+d', $receipt->difference) }}</span></td>
+                        <td>{{ $receipt->reviewItems()->map(fn($item) => $item->receivedWarehouse?->name ?: $item->suggestedWarehouse?->name)->filter()->unique()->join('، ') ?: '—' }}</td>
+                        <td>{{ number_format($receipt->reviewItems()->count()) }} قلم</td>
+                        <td><b>{{ number_format($receipt->reviewItems()->sum('expected_quantity')) }}</b> / {{ $receipt->isPending() ? '—' : number_format($receipt->reviewItems()->sum('accepted_quantity')) }}</td>
+                        <td><span dir="ltr">{{ $receipt->isPending() ? '—' : sprintf('%+d', $receipt->reviewItems()->sum(fn($item) => $item->accepted_quantity - $item->expected_quantity)) }}</span></td>
                         <td>{{ $receipt->created_at ? Jalalian::fromDateTime($receipt->created_at)->format('Y/m/d H:i') : '—' }}<div class="wiq-muted">{{ $receipt->created_at?->diffForHumans() }}</div></td>
                         <td><span class="wiq-badge wiq-badge-{{ $statusClass }}">{{ $statusLabels[$receipt->status] ?? $receipt->status }}</span></td>
                         <td><button type="button" class="btn btn-sm {{ $receipt->isPending() ? 'btn-primary' : 'btn-outline-secondary' }}" data-wiq-open="{{ route('warehouse.inbound.show', $receipt) }}">{{ $receipt->isPending() ? 'بررسی و دریافت' : 'مشاهده' }}</button></td>

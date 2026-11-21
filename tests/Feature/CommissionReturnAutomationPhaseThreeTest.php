@@ -163,6 +163,9 @@ function p3Draft(
     $item = $invoice->items->firstOrFail();
 
     return app(SalesReturnService::class)->createDraft([
+        // Exercise historical commission reconciliation. New return-only
+        // documents deliberately have no commission effect.
+        'return_flow' => null,
         'source_type' => SalesReturnDocument::SOURCE_INTERNAL_INVOICE,
         'customer_id' => $invoice->customer_id,
         'invoice_id' => $invoice->id,

@@ -145,7 +145,7 @@ class SalesReturnQueryService
             // New physical returns must reconcile every destination; financial
             // returns expect no stock. NULL keeps the historical report contract.
             $expected = $positiveItems->filter(fn($item)=>! $document->isFinancialOnly()
-                && ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL || (int)$item->destination_warehouse_id===$central || $net->has($item->destination_warehouse_id.':'.$item->product_variant_id)))
+                && ($document->isSimpleWorkflow() || $document->return_flow === SalesReturnDocument::FLOW_PHYSICAL || (int)$item->destination_warehouse_id===$central || $net->has($item->destination_warehouse_id.':'.$item->product_variant_id)))
                 ->groupBy(fn($item) => $item->destination_warehouse_id.':'.$item->product_variant_id)->map(fn($rows) => (int)$rows->sum('return_quantity'));
             $stockComplete = $expected->every(fn($qty,$group) => (int)$net->get($group,0) === $qty) && $net->every(fn($qty,$group) => $qty === (int)$expected->get($group,0));
             $movementCount = $movements->count();

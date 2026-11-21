@@ -1,7 +1,8 @@
+@php($showNetUnitPrice = !$isWarehouseMode && ($printData['documentType'] ?? null) === 'invoice')
 <table class="items-table customer-items">
     <caption>
         {{ $isWarehouseMode ? ($isWarehouseInvoice ? 'نسخه انبار — کنترل جمع‌آوری · مبالغ به ریال' : 'نسخه انبار — کنترل جمع‌آوری') : 'تمام مبالغ به ریال' }}
-        @if($showProductPrices)<span class="print-pricing-formula">مبلغ نهایی ردیف = تعداد × قیمت واحد − تخفیف کل</span>@endif
+        @if($showProductPrices)<span class="print-pricing-formula">{{ $showNetUnitPrice ? 'قیمت تمام‌شده واحد = قیمت واحد − تخفیف واحد' : 'مبلغ نهایی ردیف = تعداد × قیمت واحد − تخفیف کل' }}</span>@endif
     </caption>
     @php($columnCount = $isWarehouseMode ? ($showProductPrices ? 9 : 5) : 7)
     @php($variantRowNumber = 0)
@@ -14,7 +15,7 @@
             @if($showProductPrices)
                 <th class="col-price">قیمت واحد</th>
                 <th class="col-discount-unit">تخفیف واحد</th>
-                <th class="col-discount-total">تخفیف کل</th>
+                <th class="col-discount-total">{{ $showNetUnitPrice ? 'قیمت تمام‌شده واحد' : 'تخفیف کل' }}</th>
                 <th class="col-total">مبلغ نهایی</th>
             @endif
             @if($isWarehouseMode)<th class="col-check">کنترل انبار</th>@endif
@@ -52,7 +53,7 @@
                         <td class="col-discount-unit">
                             @if($item['lineDiscount'] > 0)
                                 @if($item['unitDiscountApproximate'])
-                                    <span class="approximate-discount" title="تخفیف واحد تقریبی است؛ مبلغ دقیق در ستون تخفیف کل آمده است" aria-label="تخفیف واحد تقریبی">≈{{ $num($item['unitDiscount']) }}</span>
+                                    <span class="approximate-discount" title="تخفیف واحد تقریبی است؛ مبلغ نهایی ردیف دقیق است" aria-label="تخفیف واحد تقریبی">≈{{ $num($item['unitDiscount']) }}</span>
                                 @else
                                     {{ $num($item['unitDiscount']) }}
                                 @endif
@@ -60,7 +61,7 @@
                                 —
                             @endif
                         </td>
-                        <td class="col-discount-total">@if($item['lineDiscount'] > 0){{ $num($item['lineDiscount']) }}@else — @endif</td>
+                        <td class="col-discount-total">@if($showNetUnitPrice)@if($item['unitDiscountApproximate'])≈@endif{{ $num($item['unitPrice'] - $item['unitDiscount']) }}@elseif($item['lineDiscount'] > 0){{ $num($item['lineDiscount']) }}@else — @endif</td>
                         <td class="col-total">{{ $num($item['lineTotal']) }}</td>
                     @endif
                     @if($isWarehouseMode)
@@ -81,7 +82,7 @@
             @if($showProductPrices)
                 <td></td>
                 <td></td>
-                <td class="col-discount-total">{{ $num($printData['totals']['itemsDiscount']) }}</td>
+                <td class="col-discount-total">@unless($showNetUnitPrice){{ $num($printData['totals']['itemsDiscount']) }}@endunless</td>
                 <td class="col-total">{{ $num($totalLineAmount) }}</td>
             @endif
             @if($isWarehouseMode)<td></td>@endif

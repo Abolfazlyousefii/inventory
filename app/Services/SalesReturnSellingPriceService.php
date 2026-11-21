@@ -53,6 +53,9 @@ class SalesReturnSellingPriceService
     /** Called only inside the receipt transaction, for quantities actually accepted. */
     public function finalize(SalesReturnDocument $document, ?int $actorId): void
     {
+        if ($document->isSimpleWorkflow()) {
+            return;
+        }
         if (! $document->isSazehHesab()) {
             return;
         }

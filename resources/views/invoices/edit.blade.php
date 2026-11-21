@@ -127,7 +127,7 @@
 				<div class="card-body">
 					<div id="addItemNotice" class="alert alert-info d-none">کالا به جدول اضافه شد. برای اعمال نهایی، «ذخیره تغییرات فاکتور» را بزنید.</div>
 					@unless($canEditItemsWithCollectionFlow)<div class="alert alert-warning">فاکتور ارسال‌شده قابل تغییر اقلام نیست.</div>@endunless
-					<div class="table-responsive"><table class="soft-table" id="invoiceItemsTable"><thead><tr><th>محصول</th><th>تنوع / مدل</th><th>کد کالا</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف ردیف</th><th>جمع ردیف</th><th>عملیات حذف</th></tr></thead><tbody id="invoiceItemsBody">
+					<div class="table-responsive"><table class="soft-table" id="invoiceItemsTable"><thead><tr><th>محصول</th><th>تنوع / مدل</th><th>کد کالا</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف واحد (ریال)</th><th>جمع ردیف</th><th>عملیات حذف</th></tr></thead><tbody id="invoiceItemsBody">
 							@foreach($invoice->items as $it)
 								@php
 									$itemRevisions = $currentItemRevisionHistory->get($it->id, collect());
@@ -252,7 +252,7 @@ const confirmAddItemsBtn = document.getElementById('confirmAddItemsBtn');
 			const changed = Array.from(itemFields()).some((field) => RialInput.raw(field.value || '') !== RialInput.raw(field.dataset.original || ''));
 			if (reasonSelect) reasonSelect.required = Array.from(document.querySelectorAll('.js-item-price,.js-item-discount')).some((field) => RialInput.raw(field.value || '') !== RialInput.raw(field.dataset.original || ''));
 		}
-		function updateLineTotal(row) { if (!row) return; const q=Number(row.querySelector('.js-item-quantity')?.value||0); const p=RialInput.number(row.querySelector('.js-item-price')?.value||0); const d=RialInput.number(row.querySelector('.js-item-discount')?.value||0); const el=row.querySelector('.js-line-total'); if (el) el.textContent = Math.max((q*p)-d,0).toLocaleString() + ' ریال'; }
+		function updateLineTotal(row) { window.CollectionUnitDiscount?.syncAll(); if (!row) return; const q=Number(row.querySelector('.js-item-quantity')?.value||0); const p=RialInput.number(row.querySelector('.js-item-price')?.value||0); const d=RialInput.number(row.querySelector('.js-item-discount')?.value||0); const el=row.querySelector('.js-line-total'); if (el) el.textContent = Math.max((q*p)-d,0).toLocaleString() + ' ریال'; }
 		function bindRowButtons(scope = document) {
 			scope.querySelectorAll('.js-zero-item').forEach((button) => {
 				if (button.dataset.bound) return;
@@ -376,4 +376,5 @@ bindRowButtons(); syncChangeReasonRequired();
 	</script>
 
 <script>(function(){const methods=document.querySelectorAll('input[name="method"]');function selectedMethod(){return document.querySelector('input[name="method"]:checked')?.value || 'cash';}function toggle(){const cheque=selectedMethod()==='cheque';document.querySelectorAll('.cheque-field').forEach(el=>el.classList.toggle('d-none',!cheque));document.querySelectorAll('.cash-field').forEach(el=>el.classList.toggle('d-none',cheque));document.querySelectorAll('[name="cheque_number"],[name="due_date"],[name="received_date"]').forEach(el=>el.required=cheque);const paymentDate=document.querySelector('#invoiceEditPaymentForm [name="payment_date"]');if(paymentDate)paymentDate.required=!cheque;}methods.forEach(el=>el.addEventListener('change',toggle));toggle();document.querySelectorAll('#invoiceEditPaymentForm [name="amount"]').forEach(input=>input.addEventListener('input',()=>{const digits=input.value.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g,'');input.value=digits.replace(/\B(?=(\d{3})+(?!\d))/g,',')}));})();</script>
+<script type="module" src="{{ asset('js/collection-unit-discount.js') }}?v=20261121a"></script>
 @endsection

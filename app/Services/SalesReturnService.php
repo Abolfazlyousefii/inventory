@@ -36,6 +36,11 @@ class SalesReturnService
         private SalesReturnCommissionPolicy $commissionPolicy,
     ) {}
 
+    public function createSimpleDraft(array $data, ?int $actorId): SalesReturnDocument
+    {
+        return $this->createDraft(app(SimpleSalesReturnWorkflow::class)->normalize($data), $actorId);
+    }
+
     public function createDraft(array $data, ?int $actorId): SalesReturnDocument
     {
         return DB::transaction(function () use ($data, $actorId) {
@@ -104,6 +109,9 @@ class SalesReturnService
 
     public function updatePending(SalesReturnDocument $document, array $data, int $actorId): SalesReturnDocument
     {
+        if ($document->isSimpleWorkflow()) {
+            throw ValidationException::withMessages(['document' => 'برای تغییر سند در انتظار دریافت، ابتدا آن را لغو و سند صحیح را ثبت کنید.']);
+        }
         return DB::transaction(function () use ($document, $data, $actorId) {
             $doc = SalesReturnDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
             $doc->load('items');
@@ -183,11 +191,18 @@ class SalesReturnService
 
     private function persistDraft(SalesReturnDocument $doc, array $data, ?int $actorId): SalesReturnDocument
     {
+        if ($doc->exists && ! $doc->isSimpleWorkflow()
+            && in_array($data['return_flow'] ?? null, [SalesReturnDocument::FLOW_RETURN_ONLY, SalesReturnDocument::FLOW_CONTROLLED], true)) {
+            throw ValidationException::withMessages(['document' => 'گردش سند قدیمی قابل تبدیل به مدل جدید نیست.']);
+        }
+        if ($doc->isSimpleWorkflow() || (! $doc->exists && in_array($data['return_flow'] ?? null, [SalesReturnDocument::FLOW_RETURN_ONLY, SalesReturnDocument::FLOW_CONTROLLED], true))) {
+            $data = app(SimpleSalesReturnWorkflow::class)->normalize($data);
+        }
         $flow = array_key_exists('return_flow', $data)
             ? $data['return_flow']
             : ($doc->exists ? $doc->return_flow : SalesReturnDocument::FLOW_PHYSICAL);
         $reason = trim((string) ($data['financial_only_reason'] ?? $doc->financial_only_reason ?? ''));
-        if ($flow !== null && ! in_array($flow, [SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_FINANCIAL_ONLY], true)) {
+        if ($flow !== null && ! in_array($flow, [SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_FINANCIAL_ONLY, SalesReturnDocument::FLOW_RETURN_ONLY, SalesReturnDocument::FLOW_CONTROLLED], true)) {
             throw ValidationException::withMessages(['return_flow' => 'نوع برگشت معتبر نیست.']);
         }
         if ($flow === SalesReturnDocument::FLOW_FINANCIAL_ONLY && (mb_strlen($reason) < 3 || mb_strlen($reason) > 1000)) {
@@ -200,12 +215,12 @@ class SalesReturnService
         }
 
         $returnReason = $data['return_reason'] ?? $doc->return_reason;
-        $commissionEffect = $source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE
+        $commissionEffect = $doc->isSimpleWorkflow() ? null : ($source === SalesReturnDocument::SOURCE_INTERNAL_INVOICE
             ? $this->commissionPolicy->resolve(
                 $returnReason,
                 $data['commission_effect_type'] ?? $doc->commission_effect_type,
             )
-            : ($data['commission_effect_type'] ?? $doc->commission_effect_type);
+            : ($data['commission_effect_type'] ?? $doc->commission_effect_type));
 
         $doc->fill([
             'source_type' => $source,
@@ -287,7 +302,14 @@ class SalesReturnService
 
             Customer::query()->whereKey($doc->customer_id)->lockForUpdate()->firstOrFail();
             if ($doc->isInternal()) {
-                Invoice::query()->whereKey($doc->invoice_id)->lockForUpdate()->firstOrFail();
+                $sourceInvoice = Invoice::query()->whereKey($doc->invoice_id)->lockForUpdate()->firstOrFail();
+                if ($doc->isSimpleWorkflow()) {
+                    $sourceInvoice->assertNotCancelled();
+                    $sourceInvoice->assertStockDeducted();
+                    if ($sourceInvoice->status !== Invoice::STATUS_SHIPPED) {
+                        throw ValidationException::withMessages(['invoice_id' => 'فاکتور مرجع دیگر ارسال‌شده نیست؛ برگشت ثبت نشد.']);
+                    }
+                }
             }
 
             $doc->load('items');
@@ -310,6 +332,11 @@ class SalesReturnService
 
             $this->refreshTotals($doc);
             $doc = $doc->fresh(['items.product', 'items.variant']);
+
+            if ($doc->isReturnOnly()) {
+                $this->finalizeReturnOnly($doc, $actorId);
+                return $doc->fresh('items');
+            }
 
             // New physical returns include both central and return warehouses.
             // Historical NULL classifications retain their original contract.
@@ -342,6 +369,45 @@ class SalesReturnService
         }
     }
 
+    private function finalizeReturnOnly(SalesReturnDocument $doc, ?int $actorId): void
+    {
+        if ($doc->items->isEmpty()) {
+            throw ValidationException::withMessages(['items' => 'حداقل یک قلم برگشتی لازم است.']);
+        }
+        // apply() holds the document, customer and source invoice locks. Stock
+        // and the single customer credit commit together, including on retries.
+        foreach ($doc->items->sortBy('product_variant_id') as $item) {
+            $warehouse = Warehouse::whereKey($item->destination_warehouse_id)->where('type', 'return')
+                ->where('is_active', true)->lockForUpdate()->first();
+            if (! $warehouse || (int) $item->return_quantity < 1) {
+                throw ValidationException::withMessages(['items' => 'مقصد باید انبار مرجوعی فعال و تعداد مثبت باشد.']);
+            }
+            $before = WarehouseStockService::available($warehouse->id, $item->product_id, $item->product_variant_id);
+            WarehouseStockService::change($warehouse->id, $item->product_id, (int) $item->return_quantity, $item->product_variant_id);
+            \App\Models\StockMovement::create([
+                'product_id' => $item->product_id, 'product_variant_id' => $item->product_variant_id,
+                'warehouse_id' => $warehouse->id, 'user_id' => $actorId, 'type' => 'in',
+                'reason' => 'return', 'transaction_type' => 'sales_return',
+                'quantity' => $item->return_quantity, 'stock_before' => $before,
+                'stock_after' => $before + (int) $item->return_quantity,
+                'reference_type' => SalesReturnDocumentItem::class, 'reference_id' => $item->id,
+                'reference' => $doc->document_number, 'note' => 'ورود برگشت از فروش به انبار مرجوعی',
+            ]);
+        }
+        if ((int) $doc->total_refund_amount > 0) {
+            \App\Models\CustomerLedger::create([
+                'customer_id' => $doc->customer_id, 'reference_type' => SalesReturnDocument::class,
+                'reference_id' => $doc->id, 'type' => 'credit', 'amount' => $doc->total_refund_amount,
+                'note' => 'بستانکاری بابت برگشت از فروش شماره '.$doc->document_number,
+            ]);
+        }
+        $doc->update(['status' => SalesReturnDocument::STATUS_APPLIED, 'applied_at' => now(),
+            'applied_by' => $actorId, 'updated_by' => $actorId, 'commission_effect_type' => null]);
+        \App\Support\ActivityLogger::logForActor($actorId, 'sales_return.return_only_finalized', $doc,
+            'ثبت نهایی برگشت در انبار مرجوعی و حساب مشتری',
+            ['quantity' => $doc->total_quantity, 'credit' => $doc->total_refund_amount]);
+    }
+
     public function prepareInternalItems(SalesReturnDocument $doc, array $data): array
     {
         $invoice = Invoice::with('items.product', 'items.variant')->findOrFail((int) $data['invoice_id']);
@@ -351,11 +417,13 @@ class SalesReturnService
         } if ($invoice->status !== Invoice::STATUS_SHIPPED && empty($data['override_invoice_status'])) {
             throw ValidationException::withMessages(['invoice_id' => 'فقط فاکتور ارسال‌شده مجاز است.']);
         } $inputRows = collect($data['items'] ?? [])->keyBy(fn ($r) => (int) ($r['invoice_item_id'] ?? 0));
-        $rows = $this->calculator->calculateInternalPreview($invoice, $data['items'] ?? [], (int) $doc->id);
+        $rows = $doc->isSimpleWorkflow()
+            ? $this->calculator->calculatePartitionedPreview($invoice, $data['items'] ?? [], (int) $doc->id)
+            : $this->calculator->calculateInternalPreview($invoice, $data['items'] ?? [], (int) $doc->id);
         $out = [];
         foreach ($rows as $r) {
             $it = $r['invoice_item'];
-            $input = $inputRows->get((int) $it->id, []);
+            $input = $doc->isSimpleWorkflow() ? $data['items'][$r['input_index']] : $inputRows->get((int) $it->id, []);
             $wh = $this->rowDestinationWarehouse($data, $input);
             $cond = $this->rowCondition($input, $wh);
             $out[] = ['invoice_item_id' => $it->id, 'product_id' => $it->product_id, 'product_variant_id' => $it->variant_id, 'product_name_snapshot' => $it->product?->name, 'variant_name_snapshot' => $it->variant?->variant_name, 'sku_snapshot' => $it->variant?->variant_code, 'barcode_snapshot' => $it->variant?->variant_code, 'item_source' => SalesReturnDocumentItem::SOURCE_INVOICE_ITEM, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'sold_quantity_snapshot' => (int) $it->quantity, 'previously_returned_quantity_snapshot' => $r['previous_quantity'], 'return_quantity' => $r['quantity'], 'unit_price_snapshot' => (int) $it->price, 'line_discount_snapshot' => (int) ($it->line_discount_amount ?? 0), 'allocated_invoice_discount_snapshot' => $r['allocated_discount'], 'refund_unit_price' => $r['refund_unit_price'], 'refund_amount' => $r['refund_amount']];
@@ -379,6 +447,7 @@ class SalesReturnService
             $attrs = ['item_source' => $source, 'item_condition' => $cond, 'destination_warehouse_id' => $wh->id, 'return_quantity' => $qty, 'refund_unit_price' => $unit, 'refund_amount' => $qty * $unit];
             if ($source === SalesReturnDocumentItem::SOURCE_EXISTING_PRODUCT) {
                 $variant = ProductVariant::with('product')->findOrFail((int) $row['product_variant_id']);
+                if ($doc->isSimpleWorkflow()) $attrs['purchase_price'] = (int) ($variant->buy_price ?? 0);
                 $attrs += ['sell_price' => (isset($row['sell_price']) && (int) $row['sell_price'] > 0) ? (int) $row['sell_price'] : null, 'product_id' => $variant->product_id, 'product_variant_id' => $variant->id, 'product_name_snapshot' => $variant->product?->name, 'variant_name_snapshot' => $variant->variant_name, 'sku_snapshot' => $variant->variant_code, 'barcode_snapshot' => $variant->variant_code];
             } else {
                 $payload = $this->normalizer->normalize($row['new_product_payload'] ?? []);
@@ -507,6 +576,8 @@ class SalesReturnService
         InvoiceItem::query()->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
         $previewRows = $doc->items->map(fn ($item) => [
             'invoice_item_id' => $item->invoice_item_id,
+            'return_item_id' => $item->id,
+            'destination_warehouse_id' => $item->destination_warehouse_id,
             'return_quantity' => $item->return_quantity,
         ])->all();
         $invoice = Invoice::with('items')->findOrFail((int) $doc->invoice_id);
@@ -515,11 +586,11 @@ class SalesReturnService
             throw ValidationException::withMessages(['invoice_id' => 'فاکتور متعلق به مشتری سند نیست.']);
         }
 
-        $rows = $this->calculator->calculateInternalPreview($invoice, $previewRows, (int) $doc->id);
-        $byId = collect($rows)->keyBy(fn ($row) => (int) $row['invoice_item']->id);
+        $rows = $doc->isSimpleWorkflow() ? $this->calculator->calculatePartitionedPreview($invoice, $previewRows, (int) $doc->id) : $this->calculator->calculateInternalPreview($invoice, $previewRows, (int) $doc->id);
+        $byId = collect($rows)->keyBy(fn ($row) => $doc->isSimpleWorkflow() ? (int) $row['return_item_id'] : (int) $row['invoice_item']->id);
 
         foreach ($doc->items as $idx => $item) {
-            $row = $byId->get((int) $item->invoice_item_id);
+            $row = $byId->get($doc->isSimpleWorkflow() ? (int) $item->id : (int) $item->invoice_item_id);
             if (! $row || (int) $item->return_quantity > (int) $row['returnable_quantity']) {
                 throw ValidationException::withMessages([
                     'items.'.$idx.'.return_quantity' => 'تعداد قابل برگشت در زمان ثبت نهایی تغییر کرده است.',

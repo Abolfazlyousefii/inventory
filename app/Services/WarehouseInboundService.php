@@ -49,7 +49,7 @@ class WarehouseInboundService
 
         $centralWarehouseId = WarehouseStockService::centralWarehouseId();
 
-        if ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL) {
+        if (in_array($document->return_flow, [SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_CONTROLLED], true)) {
             $destinations = $document->items->where('return_quantity', '>', 0)->pluck('destination_warehouse_id')->unique();
             $valid = Warehouse::whereIn('id', $destinations)->where('is_active', true)->whereIn('type', ['central', 'return'])->count();
             if ($destinations->isEmpty() || $valid !== $destinations->count()) {
@@ -60,7 +60,7 @@ class WarehouseInboundService
         $lines = $document->items
             ->filter(fn(SalesReturnDocumentItem $item) => ! $document->isFinancialOnly()
                 && (int) $item->return_quantity > 0
-                && ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL
+                && (in_array($document->return_flow, [SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_CONTROLLED], true)
                     || (int) $item->destination_warehouse_id === (int) $centralWarehouseId))
             ->map(function (SalesReturnDocumentItem $item) {
                 return [
@@ -108,6 +108,7 @@ class WarehouseInboundService
                 'customer_name' => $document->invoice?->customer_name,
                 'invoice_id' => $document->invoice_id,
                 'return_reason' => $document->return_reason,
+                'controlled_return' => $document->return_flow === SalesReturnDocument::FLOW_CONTROLLED,
             ]
         );
     }
@@ -291,6 +292,12 @@ class WarehouseInboundService
                 \App\Models\Customer::whereKey($source->customer_id)->lockForUpdate()->firstOrFail();
                 if ($source->isInternal()) {
                     $sourceInvoice = Invoice::whereKey($source->invoice_id)->lockForUpdate()->firstOrFail();
+                    if ($source->isSimpleWorkflow()) {
+                        $sourceInvoice->assertNotCancelled();
+                        if ($sourceInvoice->status !== Invoice::STATUS_SHIPPED) {
+                            throw ValidationException::withMessages(['receipt' => 'فاکتور مرجع دیگر ارسال‌شده نیست؛ دریافت انجام نشد.']);
+                        }
+                    }
                 }
             } elseif (in_array($receipt->source_type, [
                 WarehouseInboundReceipt::SOURCE_INVOICE_CANCEL,
@@ -312,6 +319,19 @@ class WarehouseInboundService
             }
 
             $items = $locked->items()->with(['product', 'variant', 'suggestedWarehouse'])->lockForUpdate()->get();
+            if ($locked->source_meta['controlled_return'] ?? false) {
+                $held = $items->filter(fn ($item) => $item->suggestedWarehouse?->type === 'return');
+                $heldIds = $held->pluck('id')->all();
+                if (collect($submittedItems)->contains(fn ($row) => in_array((int) ($row['id'] ?? 0), $heldIds, true))) {
+                    throw ValidationException::withMessages(['items' => 'اقلام مرجوعی همراه سند از سمت سرور تعیین تکلیف می‌شوند.']);
+                }
+                $hasAcceptedCentral = collect($submittedItems)->contains(fn ($row) => (int) ($row['accepted_quantity'] ?? 0) > 0);
+                foreach ($held as $item) {
+                    $submittedItems[] = ['id' => $item->id, 'accepted_quantity' => $hasAcceptedCentral ? $item->expected_quantity : 0,
+                        'received_warehouse_id' => $item->suggested_warehouse_id,
+                        'note' => $hasAcceptedCentral ? null : 'لغو همراه با رد کل دریافت مرکزی'];
+                }
+            }
             $submitted = collect($submittedItems)->keyBy(fn(array $row) => (int) ($row['id'] ?? 0));
 
             if (count($submittedItems) !== $submitted->count() || $submitted->count() !== $items->count() || $items->contains(fn($item) => ! $submitted->has((int) $item->id))) {
@@ -362,9 +382,9 @@ class WarehouseInboundService
                 $normalized[(int) $item->id] = [
                     'accepted_quantity' => $accepted,
                     'received_warehouse_id' => $warehouseId,
-                    'condition' => $warehouse->type === 'return'
-                        ? SalesReturnDocumentItem::CONDITION_DAMAGED
-                        : SalesReturnDocumentItem::CONDITION_HEALTHY,
+                    'condition' => ($locked->source_meta['controlled_return'] ?? false)
+                        ? ($warehouse->type === 'central' ? SalesReturnDocumentItem::CONDITION_HEALTHY : ($item->condition ?? SalesReturnDocumentItem::CONDITION_HEALTHY))
+                        : ($warehouse->type === 'return' ? SalesReturnDocumentItem::CONDITION_DAMAGED : SalesReturnDocumentItem::CONDITION_HEALTHY),
                     'note' => $itemNote,
                 ];
             }
@@ -623,6 +643,8 @@ class WarehouseInboundService
             if ($document->isInternal() && $accepted > 0) {
                 $acceptedRows[] = [
                     'invoice_item_id' => $sourceItem->invoice_item_id,
+                    'return_item_id' => $sourceItem->id,
+                    'destination_warehouse_id' => $sourceItem->destination_warehouse_id,
                     'return_quantity' => $accepted,
                 ];
             }
@@ -633,11 +655,11 @@ class WarehouseInboundService
             $invoice = Invoice::query()->whereKey($document->invoice_id)->lockForUpdate()->firstOrFail();
             $lockedInvoiceItems = $invoice->items()->with(['product', 'variant'])->orderBy('id')->lockForUpdate()->get();
             $invoice->setRelation('items', $lockedInvoiceItems);
-            $previewByInvoiceItem = collect($this->salesReturnCalculator->calculateInternalPreview(
+            $previewByInvoiceItem = collect($this->salesReturnCalculator->{($document->isSimpleWorkflow() ? 'calculatePartitionedPreview' : 'calculateInternalPreview')}(
                 $invoice,
                 $acceptedRows,
                 (int) $document->id
-            ))->keyBy(fn(array $row) => (int) $row['invoice_item']->id);
+            ))->keyBy(fn(array $row) => (int) ($document->isSimpleWorkflow() ? $row['return_item_id'] : $row['invoice_item']->id));
         }
 
         foreach ($receiptItems as $receiptItem) {
@@ -651,7 +673,7 @@ class WarehouseInboundService
             ];
 
             if ($document->isInternal()) {
-                $preview = $accepted > 0 ? $previewByInvoiceItem->get((int) $sourceItem->invoice_item_id) : null;
+                $preview = $accepted > 0 ? $previewByInvoiceItem->get((int) ($document->isSimpleWorkflow() ? $sourceItem->id : $sourceItem->invoice_item_id)) : null;
                 $updates += [
                     'previously_returned_quantity_snapshot' => (int) ($preview['previous_quantity'] ?? $sourceItem->previously_returned_quantity_snapshot),
                     'allocated_invoice_discount_snapshot' => (int) ($preview['allocated_discount'] ?? $sourceItem->allocated_invoice_discount_snapshot),
@@ -795,8 +817,11 @@ class WarehouseInboundService
                 throw ValidationException::withMessages(['items' => 'ارتباط قلم رسید با کالا و تنوع سند برگشت معتبر نیست؛ دریافت انجام نشد.']);
             }
             $seen[$sourceItem->id] = true;
+            if ($document->isSimpleWorkflow() && (int) $normalized[(int) $receiptItem->id]['accepted_quantity'] > (int) $sourceItem->return_quantity) {
+                throw ValidationException::withMessages(['items' => 'تعداد دریافت بیشتر از تعداد درخواست برگشت مجاز نیست.']);
+            }
         }
-        if ($document->return_flow === SalesReturnDocument::FLOW_PHYSICAL
+        if (in_array($document->return_flow, [SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_CONTROLLED], true)
             && $documentItems->where('return_quantity', '>', 0)->contains(fn ($item) => ! isset($seen[$item->id]))) {
             throw ValidationException::withMessages(['items' => 'رسید تمام اقلام برگشت فیزیکی را پوشش نمی‌دهد؛ ابتدا صف بررسی شود.']);
         }
@@ -804,6 +829,17 @@ class WarehouseInboundService
         if ($document->isInternal()) {
             $invoice = Invoice::query()->whereKey($document->invoice_id)->lockForUpdate()->firstOrFail();
             $invoiceItems = $invoice->items()->lockForUpdate()->get()->keyBy('id');
+            if ($document->isSimpleWorkflow()) {
+                $invoice->setRelation('items', $invoiceItems->values());
+                $rows = [];
+                foreach ($receiptItems as $receiptItem) {
+                    $sourceItem = $documentItems->get((int) $receiptItem->source_item_id);
+                    $accepted = (int) $normalized[(int) $receiptItem->id]['accepted_quantity'];
+                    if ($accepted > 0) $rows[] = ['invoice_item_id' => $sourceItem->invoice_item_id, 'return_item_id' => $sourceItem->id, 'destination_warehouse_id' => $sourceItem->destination_warehouse_id, 'return_quantity' => $accepted];
+                }
+                if ($rows) $this->salesReturnCalculator->calculatePartitionedPreview($invoice, $rows, (int) $document->id);
+                return;
+            }
             $previous = $this->salesReturnCalculator->previouslyReturnedQuantities(
                 $invoiceItems->keys()->all(),
                 (int) $document->id

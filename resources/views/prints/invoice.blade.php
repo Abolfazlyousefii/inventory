@@ -229,6 +229,14 @@
             tfoot { display:table-footer-group; }
             .summary-section, .company-box, .customer-balance-box, .customer-payment-box, .signature-section, .invoice-header { page-break-inside:avoid; break-inside:avoid; }
         }
+        /* Persian headings wrap independently from the left-aligned numeric cells. */
+        .items-table thead th {
+            white-space:normal; direction:rtl; unicode-bidi:normal;
+            text-align:center; line-height:1.65; vertical-align:middle;
+            overflow-wrap:normal; padding:7px 5px;
+        }
+        .customer-mode .items-table .col-discount-total { width:24mm; }
+        .customer-mode .items-table thead .col-discount-total { font-size:10px; }
     </style>
 </head>
 <body class="{{ $printData['mode'] === 'customer' ? 'customer-mode' : 'warehouse-mode' }}{{ $printData['mode'] !== 'customer' && ($printData['documentType'] ?? null) === 'invoice' ? ' warehouse-priced' : '' }}">

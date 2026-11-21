@@ -25,7 +25,7 @@ class StoreSalesReturnRequest extends FormRequest
     {
         return [
             'submission_token' => [in_array($this->route()?->getName(), ['vouchers.return-from-sale.store','sales-returns.store'], true) ? 'required' : 'nullable', 'uuid'],
-            'return_flow' => ['nullable', Rule::in([SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_FINANCIAL_ONLY])],
+            'return_flow' => ['nullable', Rule::in([SalesReturnDocument::FLOW_PHYSICAL, SalesReturnDocument::FLOW_FINANCIAL_ONLY, SalesReturnDocument::FLOW_RETURN_ONLY, SalesReturnDocument::FLOW_CONTROLLED])],
             'financial_only_reason' => ['required_if:return_flow,financial_only', 'nullable', 'string', 'min:3', 'max:1000'],
             'commission_effect_type' => ['nullable', Rule::in(array_keys(SalesReturnDocument::commissionEffectLabels()))],
             'items_payload' => ['nullable', 'string', 'max:8388608'],
@@ -91,6 +91,12 @@ class StoreSalesReturnRequest extends FormRequest
                 'items' => app(SalesReturnItemsPayloadDecoder::class)
                     ->decode((string) $this->input('items_payload')),
             ]);
+        }
+
+        $document = $this->route('document');
+        if (in_array($this->route()?->getName(), ['vouchers.return-from-sale.store', 'sales-returns.store'], true)
+            || $document?->isSimpleWorkflow()) {
+            $this->merge(app(\App\Services\SimpleSalesReturnWorkflow::class)->normalize($this->all()));
         }
 
         $externalInvoiceDate = $this->input('external_invoice_date');
@@ -166,17 +172,19 @@ class StoreSalesReturnRequest extends FormRequest
 
                         continue;
                     }
-                    if (isset($ids[$id])) {
+                    $rowKey = in_array($this->input('return_flow'), [SalesReturnDocument::FLOW_RETURN_ONLY, SalesReturnDocument::FLOW_CONTROLLED], true) ? $id.':'.($row['destination_warehouse_id'] ?? 0) : $id;
+                    if (isset($ids[$rowKey])) {
                         $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم فاکتور تکراری است.');
                     }
-                    $ids[$id] = true;
+                    $ids[$rowKey] = true;
                     if (! InvoiceItem::where('invoice_id', $invoice->id)->whereKey($id)->exists()) {
                         $validator->errors()->add("items.$idx.invoice_item_id", 'آیتم متعلق به این فاکتور نیست.');
                     }
                 }
                 $routeDocument = $this->route('document');
                 $excludeDocumentId = ($routeDocument?->isApplied() || $routeDocument?->isPendingWarehouse()) ? (int) $routeDocument->id : null;
-                $preview = app(SalesReturnCalculationService::class)->calculateInternalPreview(
+                $previewMethod = in_array($this->input('return_flow'), [SalesReturnDocument::FLOW_RETURN_ONLY, SalesReturnDocument::FLOW_CONTROLLED], true) ? 'calculatePartitionedPreview' : 'calculateInternalPreview';
+                $preview = app(SalesReturnCalculationService::class)->$previewMethod(
                     $invoice,
                     $items->all(),
                     $excludeDocumentId

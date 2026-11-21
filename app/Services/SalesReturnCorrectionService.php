@@ -117,6 +117,9 @@ class SalesReturnCorrectionService
                 return $locked;
             }
             $doc = $this->lockDocument($locked->id);
+            if ($doc->isSimpleWorkflow() && ! $void) {
+                $this->fail('document', 'برای اصلاح سند نهایی، ابتدا با دسترسی مجاز ابطال و سپس سند صحیح ثبت کنید.');
+            }
             $this->assertVersion($doc, (string) ($data['document_version'] ?? ''));
             $this->assertReason($reason);
             if (SalesReturnCorrection::where('document_id', $doc->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->exists()) {
@@ -167,6 +170,7 @@ class SalesReturnCorrectionService
     {
         return DB::transaction(function () use ($document, $data, $actor, $reason) {
             $doc = $this->lockDocument($document->id);
+            if ($doc->isSimpleWorkflow()) $this->fail('document', 'سند نهایی جدید فقط با ابطال و ثبت مجدد اصلاح می‌شود.');
             $this->assertVersion($doc, (string) ($data['document_version'] ?? ''));
             if (SalesReturnCorrection::where('document_id', $doc->id)->whereIn('status', ['pending_warehouse', 'pending_finance'])->exists()) {
                 $this->fail('correction', 'این سند یک درخواست اصلاح در انتظار بررسی دارد. ابتدا همان درخواست تعیین تکلیف شود.');

@@ -35,6 +35,14 @@ class WarehouseInboundReceipt extends Model
         return $this->hasMany(WarehouseInboundReceiptItem::class, 'receipt_id')->orderBy('id');
     }
 
+    public function reviewItems(): \Illuminate\Support\Collection
+    {
+        if (! ($this->source_meta['controlled_return'] ?? false)) {
+            return $this->items;
+        }
+        return $this->items->filter(fn ($item) => $item->suggestedWarehouse?->type === 'central')->values();
+    }
+
     public function requester()
     {
         return $this->belongsTo(User::class, 'requested_by');
