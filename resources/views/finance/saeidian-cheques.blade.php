@@ -69,26 +69,63 @@ html:has(dialog[open]) {overflow:hidden}
 .scq #chequeDateDialog jdp-overlay{display:none!important}
 .scq-day:focus-visible{outline:2px solid #29738e;outline-offset:2px}
 
+
+/* Management overview: scoped to this report. */
+.scq{--scq-line:var(--bs-border-color,#dce5ed);--scq-surface:var(--bs-body-bg,#fff);--scq-soft:var(--bs-tertiary-bg,#f3f6fa);--scq-text:var(--bs-body-color,#18384d)}
+.scq-layout{max-width:none;grid-template-columns:250px minmax(0,1fr);align-items:start;margin-top:16px;gap:18px}
+.scq-panel{border-color:var(--scq-line);background:var(--scq-surface)}
+.scq-summary{padding:18px!important}.scq-summary h5{font-size:16px;margin:0}.scq-summary .scq-head{gap:5px}
+.scq-stat{padding:14px 0;border-bottom:1px solid var(--scq-line)}.scq-stat span,.scq-stat small,.scq-shortfall small{display:block;font-size:12px}.scq-stat strong,.scq-shortfall strong{display:block;font-size:21px;margin-top:7px;font-variant-numeric:tabular-nums}.scq-stat small{margin-top:5px;color:var(--bs-secondary-color,#62788a)}
+.scq-shortfall{margin-top:14px;background:var(--bs-danger-bg-subtle,#fff0f1);color:var(--bs-danger-text-emphasis,#98283b);padding:13px;border-radius:9px;font-size:12px}
+.scq-grid{gap:0;border-top:1px solid var(--scq-line);border-right:1px solid var(--scq-line);overflow:hidden;border-radius:8px}.scq-week{border-radius:0;padding:10px 2px;background:var(--scq-soft);color:var(--scq-text);border-bottom:1px solid var(--scq-line)}
+.scq-day{height:auto;min-height:112px;border:0;border-bottom:1px solid var(--scq-line);border-left:1px solid var(--scq-line);border-radius:0;padding:7px 5px;gap:3px;color:var(--scq-text);background:var(--scq-surface)}.scq-day[aria-hidden=true]{background:var(--scq-soft)}.scq-day-number{font-size:14px;padding:2px 3px;font-weight:700}.scq-pill{font-size:11px;display:flex;justify-content:space-between;gap:4px;padding:4px 5px;border-radius:5px;white-space:normal}.scq-in{background:var(--bs-success-bg-subtle,#e8f5ed);color:var(--bs-success-text-emphasis,#12674f)}.scq-out{background:var(--bs-danger-bg-subtle,#fff0f1);color:var(--bs-danger-text-emphasis,#a03049)}.scq-promise{background:#f0e9fa;color:#69429f}.scq-bounced{background:var(--bs-secondary-bg,#edf0f3);color:var(--bs-secondary-color,#647584)}.scq-coverage{font-size:11px;padding:3px;border-radius:4px;text-align:center}.scq-unfunded{color:var(--bs-danger-text-emphasis,#98283b)}.scq-funded{color:var(--bs-success-text-emphasis,#12674f)}
+.scq-entry{padding:15px 0;border-bottom:1px solid var(--scq-line)}.scq-entry .scq-head{margin-bottom:5px;font-size:14px}.scq-entry-meta{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:12px}.scq-entry-meta .scq-pill{display:inline-flex}.scq-status-form{padding:8px 0}.scq-form-grid select{width:100%;padding:10px;margin-top:6px;background:var(--scq-surface);color:inherit;border:1px solid var(--scq-line);border-radius:7px}.scq #dayDetails{width:min(720px,95vw)}
+[data-bs-theme="dark"] .scq-promise{background:#382e50;color:#d3b9ff}
+@media(max-width:1100px){.scq-layout{grid-template-columns:215px minmax(0,1fr)}.scq-stat strong,.scq-shortfall strong{font-size:18px}.scq-layout>.scq-panel{padding:14px}}
+@media(max-width:800px){.scq-layout{grid-template-columns:1fr}.scq-summary{display:grid;grid-template-columns:1fr 1fr;gap:0 15px}.scq-summary>.scq-head,.scq-summary>.scq-shortfall,.scq-summary>.scq-note{grid-column:1/-1}.scq-day{min-height:105px}.scq-calendar-panel{padding:10px!important}}
+@media(max-width:450px){.scq-day{padding:4px 2px}.scq-pill{font-size:11px;display:block;text-align:center;padding:3px 1px}.scq-pill b{display:block}.scq-note{font-size:12px}}
+
+
+/* Compact pastel presentation; financial calculations are unchanged. */
+.scq-layout{grid-template-columns:265px minmax(0,1fr);gap:16px;margin-top:12px}
+.scq-layout>.scq-panel{padding:16px;border-radius:18px;box-shadow:0 4px 20px #23465e05}
+.scq>.scq-head{margin-bottom:8px}.scq>.scq-head h3{font-size:23px;margin-bottom:4px}.scq>.scq-head p{margin-bottom:0}
+.scq .scq-actions .btn{border-radius:11px;font-size:13px;padding:9px 13px;transition:transform .18s ease,box-shadow .18s ease}
+.scq .scq-actions .btn:hover{transform:translateY(-2px);box-shadow:0 5px 12px #23465e12}
+.scq-summary{padding:16px!important}.scq-summary>.scq-head{margin-bottom:10px}
+.scq-stat{padding:11px 13px;margin:8px 0;border:0;border-radius:12px;background:#f5f7fb}
+.scq-stat strong,.scq-shortfall strong{font-size:19px;margin-top:4px;line-height:1.5}
+.scq-stat-issued{background:#fff1f1;color:#a84960}.scq-stat-promise{background:#f4effd;color:#7954ab}.scq-stat-deposit{background:#edf8f4;color:#27816a}
+.scq-stat small{font-size:10px;margin-top:2px}.scq-shortfall{margin-top:9px;padding:11px 13px;background:#fff5e7;color:#9a6521;border:1px solid #f6e7cc;border-radius:12px}.scq-shortfall small{font-size:10px}
+.scq-summary-help{font-size:11px;color:#768896;margin-top:12px;cursor:pointer}.scq-summary-help p{font-size:11px;margin:6px 0 0;line-height:1.8}
+.scq-nav{margin-bottom:0}.scq-nav h5{margin:0;font-size:17px}.scq-nav .btn{border:0;background:#edf4fc;color:#4275a1;border-radius:9px;padding:7px 12px}
+.scq-calendar-panel>.scq-note{font-size:11px;margin-top:6px!important}
+.scq-grid{gap:5px;border:0;margin-top:10px;overflow:visible;border-radius:0;align-items:stretch}
+.scq-week{padding:7px 2px;border:0;border-radius:8px;font-size:11px;background:#f0f5f8;color:#688394}
+.scq-week:nth-child(7){background:#fff0f2;color:#b56579}
+.scq-day{height:auto;min-height:64px;padding:5px 6px;gap:2px;border:1px solid #e9eef3;border-radius:10px;background:#fcfdff;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+.scq-day[aria-hidden=true]{background:transparent;border-color:transparent;min-height:64px}
+.scq-day:nth-child(7n){background:#fffafb}.scq-day-number{font-size:12px;padding:1px 2px;line-height:1.4}
+.scq-day:hover:not([aria-hidden]){background:#f0f7fc;border-color:#b5cedf;transform:translateY(-2px);box-shadow:0 4px 10px #2148600c;outline:0}
+.scq-day.selected{background:#eaf4fb;border-color:#8db7d1;outline:0;box-shadow:0 0 0 2px #dbeaf5}
+.scq-pill{font-size:10px;padding:2px 4px;line-height:1.5;border-radius:5px;margin:1px 0}.scq-coverage{font-size:9px;line-height:1.5;padding:2px}
+.scq-in{background:#e6f5ed;color:#337b62}.scq-out{background:#fbeaed;color:#ae5268}.scq-promise{background:#f0eafa;color:#7c58ad}.scq-bounced{background:#eff1f5;color:#7c8797}
+.scq-calendar-panel>.btn{font-size:11px;border-color:#e1e9ef;border-radius:8px;padding:6px 10px}
+@keyframes scq-soft-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.scq-layout{animation:scq-soft-in .28s ease-out}.scq dialog[open]{animation:scq-soft-in .22s ease-out}.scq dialog::backdrop{background:#18334666;backdrop-filter:blur(3px)}
+[data-bs-theme="dark"] .scq-stat-issued{background:#3c2c36;color:#edb0be}[data-bs-theme="dark"] .scq-stat-promise{background:#332e47;color:#ccb6ee}[data-bs-theme="dark"] .scq-stat-deposit{background:#243e38;color:#a0d8c4}[data-bs-theme="dark"] .scq-shortfall{background:#40382b;color:#e2c38d;border-color:#554833}[data-bs-theme="dark"] .scq-day{background:#202e3b;border-color:#344352}[data-bs-theme="dark"] .scq-week,[data-bs-theme="dark"] .scq-nav .btn{background:#2b3b4a;color:#bad0e0}[data-bs-theme="dark"] .scq-day:hover:not([aria-hidden]),[data-bs-theme="dark"] .scq-day.selected{background:#30495a}
+@media(max-width:1100px){.scq-layout{grid-template-columns:230px minmax(0,1fr)}.scq-layout>.scq-panel{padding:12px}.scq-stat strong,.scq-shortfall strong{font-size:17px}}
+@media(max-width:800px){.scq-layout{grid-template-columns:1fr}.scq-summary{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}.scq-summary>.scq-head,.scq-summary-help{grid-column:1/-1}.scq-summary>.scq-shortfall{grid-column:auto}.scq-stat,.scq-shortfall{margin:0}.scq-day{min-height:60px}.scq-summary .scq-stat small{display:none}}
+@media(max-width:450px){.scq-grid{gap:3px}.scq-day{padding:4px 2px;min-height:58px}.scq-pill{font-size:9px;display:block;padding:2px;text-align:center}.scq-pill b{display:block}.scq-week{font-size:9px}.scq>.scq-head h3{font-size:20px}}
+@media(prefers-reduced-motion:reduce){.scq-layout,.scq dialog[open]{animation:none}.scq-day,.scq .scq-actions .btn{transition:none}.scq-day:hover:not([aria-hidden]),.scq .scq-actions .btn:hover{transform:none}.scq dialog::backdrop{backdrop-filter:none}}
+
 </style>
 <div class="scq" dir="rtl">
-<div class="scq-head"><div><h3>تقویم چک‌های سعیدیان</h3><p class="scq-note">چک‌های صادره و تأمین وجه از چک‌های مشتری • مبالغ به ریال</p></div><div class="scq-actions"><button class="btn btn-primary" data-open="issuedDialog">＋ ثبت چک صادره</button><button class="btn btn-outline-success" data-open="depositDialog">خواباندن چک مشتری</button></div></div>
+<div class="scq-head"><div><h3>تقویم چک‌های سعیدیان</h3><p class="scq-note">تعهدات و تأمین وجه • چک‌های مشتری براساس سررسید • مبالغ به ریال</p></div><div class="scq-actions"><button class="btn btn-primary" data-open="issuedDialog">＋ ثبت چک صادره</button><button class="btn btn-outline-success" data-open="depositDialog">خواباندن چک مشتری</button><button class="btn scq-promise" data-open="promiseDialog">＋ ثبت تعهد</button></div></div>
 @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="alert alert-danger">@foreach($errors->all() as $error)<div>{{ $error }}</div>@endforeach</div>@endif
 <div id="calendarFeedback" class="scq-feedback" role="status" aria-live="polite"></div>
-<div class="scq-layout" id="chequeCalendar"><section class="scq-panel"><div class="scq-nav"><a class="btn btn-outline-primary" href="?month={{ $previous }}">ماه قبل</a><h5>{{ $fa($start->format('F Y')) }}</h5><a class="btn btn-outline-primary" href="?month={{ $next }}">ماه بعد</a></div>
-<div class="scq-grid">@foreach(['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'] as $weekday)<div class="scq-week">{{ $weekday }}</div>@endforeach
-@for($blank=0;$blank<$offset;$blank++)<div class="scq-day" aria-hidden="true"></div>@endfor
-@for($day=1;$day<=$days;$day++)
-@php $j=\Morilog\Jalali\Jalalian::fromFormat('Y/m/d',$month.'/'.str_pad($day,2,'0',STR_PAD_LEFT));$date=$j->toCarbon()->toDateString();$rows=$monthly->filter(fn($e)=>$e->effective_date->toDateString()===$date);$balance=$coverage->balance($entries,$date); @endphp
-<button type="button" class="scq-day" data-day="{{ $date }}" data-date-label="{{ $fa($j->format('Y/m/d')) }}" data-shortfall="{{ $money($balance['shortfall']) }}" aria-label="جزئیات {{ $fa($j->format('Y/m/d')) }}">{{ $fa($day) }}
-@if($rows->where('kind','issued')->count())<span class="scq-pill scq-out">{{ $fa($rows->where('kind','issued')->count()) }} چک صادره</span>@endif
-@if($rows->where('kind','deposit')->count())<span class="scq-pill scq-in">{{ $fa($rows->where('kind','deposit')->count()) }} خوابانده‌شده</span>@endif
-</button>
-@endfor</div><p class="scq-note mt-3">صادره بر اساس سررسید؛ تأمین وجه بر اساس تاریخ خواباندن. هر روز را برای مشاهده جزئیات انتخاب کنید.</p></section>
-</div>
-<section class="scq-panel scq-detail" id="dayDetails" hidden><div class="scq-head"><h5 id="dayTitle">جزئیات این ماه</h5><button type="button" class="btn btn-outline-secondary" id="showMonth">نمایش همه ماه</button></div><p class="scq-note" id="dayCoverage">مانده ابتدای ماه: {{ $money($opening['balance']) }}؛ محاسبات تجمعی از شروع ثبت در این بخش است و شامل مانده واقعی بانک نیست.</p><div class="table-responsive"><table style="width:100%"><thead><tr><th>تاریخ</th><th>نوع</th><th>طرف حساب</th><th>شماره چک</th><th>مبلغ</th><th>توضیح</th></tr></thead><tbody>
-@forelse($monthly as $e)<tr data-entry-day="{{ $e->effective_date->toDateString() }}"><td>{{ $fa(\Morilog\Jalali\Jalalian::fromDateTime($e->effective_date)->format('Y/m/d')) }}</td><td><span class="scq-pill {{ $e->kind==='issued'?'scq-out':'scq-in' }}">{{ $e->kind==='issued'?'صادره سعیدیان':'خوابانده در حساب' }}</span></td><td>{{ $e->party }}</td><td>{{ $fa($e->cheque_number ?: '—') }}</td><td>{{ $money($e->amount) }}</td><td>{{ $e->notes ?: '—' }}</td></tr>@empty<tr><td colspan="6">در این ماه چکی ثبت نشده است.</td></tr>@endforelse
-</tbody></table></div></section>
+@include('finance.partials.saeidian-calendar')
 <dialog id="depositDialog" aria-labelledby="depositTitle">
     <header class="scq-modal-head"><div><p class="scq-step-note" id="depositStep">۱ از ۲ · انتخاب چک</p><h5 id="depositTitle">خواباندن چک مشتری</h5></div><button type="button" class="btn btn-outline-secondary" data-close="depositDialog">بستن</button></header>
     <section id="depositSelect">
@@ -101,14 +138,14 @@ html:has(dialog[open]) {overflow:hidden}
         </div>
         <footer class="scq-modal-foot"><span class="scq-note">یک چک انتخاب کنید.</span><button type="button" class="btn btn-primary" id="depositNext" disabled>ادامه</button></footer>
     </section>
-    <form id="depositConfirm" hidden method="post" action="{{ route('finance.saeidian-cheques.store') }}">@csrf<input type="hidden" name="kind" value="deposit"><input type="hidden" name="cheque_id" id="depositChequeId" value="{{ old('cheque_id') }}">
+    <form id="depositConfirm" hidden method="post" action="{{ route('finance.saeidian-cheques.store') }}">@csrf<input type="hidden" name="submission_token" value="{{ old('submission_token',(string)\Illuminate\Support\Str::uuid()) }}"><input type="hidden" name="kind" value="deposit"><input type="hidden" name="cheque_id" id="depositChequeId" value="{{ old('cheque_id') }}">
         <div class="scq-modal-body"><div class="scq-selected" id="selectedChequeCaption">چک انتخاب‌شده</div><label>تاریخ خواباندن (شمسی)<input name="effective_date" data-cheque-date readonly value="{{ old('kind')==='deposit' ? old('effective_date') : \Morilog\Jalali\Jalalian::now()->format('Y/m/d') }}" required dir="ltr"></label><label>توضیحات (اختیاری)<textarea name="notes" maxlength="2000" rows="2">{{ old('kind')==='deposit' ? old('notes') : '' }}</textarea></label><label><input type="checkbox" name="deposited_confirmation" value="1" class="scq-radio" required> در حساب سعیدیان خوابانده شده است</label></div>
         <footer class="scq-modal-foot"><button type="button" class="btn btn-outline-secondary" id="depositBack">تغییر چک</button><button class="btn btn-success">ثبت خواباندن</button></footer>
     </form>
 </dialog>
 <dialog id="issuedDialog" aria-labelledby="issuedTitle">
 <header class="scq-modal-head"><div><p class="scq-step-note">چک پرداختی سعیدیان</p><h5 id="issuedTitle">ثبت چک صادره</h5></div><button type="button" class="btn btn-outline-secondary" id="closeIssued">بستن</button></header>
-<form method="post" action="{{ route('finance.saeidian-cheques.store') }}">@csrf<input type="hidden" name="kind" value="issued">
+<form method="post" action="{{ route('finance.saeidian-cheques.store') }}">@csrf<input type="hidden" name="submission_token" value="{{ old('submission_token',(string)\Illuminate\Support\Str::uuid()) }}"><input type="hidden" name="kind" value="issued">
 <div class="scq-modal-body"><div class="scq-form-grid">
 <label class="scq-full">گیرنده<input name="party" required maxlength="255" autocomplete="off" placeholder="نام شخص یا شرکت" value="{{ old('party') }}"></label>
 <label>شماره چک<input name="cheque_number" required maxlength="255" dir="ltr" value="{{ old('cheque_number') }}"></label>
@@ -118,10 +155,20 @@ html:has(dialog[open]) {overflow:hidden}
 </div><p class="scq-note mb-0">ثبت در برنامهٔ تأمین وجه؛ بدون تغییر گردش حساب اشخاص.</p></div>
 <footer class="scq-modal-foot"><button type="button" class="btn btn-outline-secondary" data-close="issuedDialog">انصراف</button><button class="btn btn-primary">ثبت چک صادره</button></footer>
 </form></dialog>
+<dialog id="promiseDialog" aria-labelledby="promiseTitle">
+<header class="scq-modal-head"><div><p class="scq-step-note">برنامه پرداخت؛ بدون ثبت هزینه حسابداری</p><h5 id="promiseTitle">ثبت تعهد پرداخت</h5></div><button type="button" class="btn btn-outline-secondary" data-close="promiseDialog">بستن</button></header>
+<form method="post" action="{{ route('finance.saeidian-cheques.store') }}">@csrf<input type="hidden" name="submission_token" value="{{ old('submission_token',(string)\Illuminate\Support\Str::uuid()) }}"><input type="hidden" name="kind" value="promise">
+<div class="scq-modal-body"><div class="scq-form-grid">
+<label class="scq-full">طرف حساب / عنوان تعهد<input name="party" required maxlength="255" placeholder="مثلاً حقوق کارکنان آذر" value="{{ old('kind')==='promise'?old('party'):'' }}"></label>
+<label>دسته تعهد<select name="category" required><option value="other">سایر</option><option value="salary" @selected(old('category')==='salary')>حقوق</option><option value="insurance" @selected(old('category')==='insurance')>بیمه</option></select></label>
+<label>مبلغ (ریال)<input name="amount" type="text" inputmode="numeric" data-cheque-money required dir="ltr" value="{{ old('kind')==='promise'?old('amount'):'' }}"></label>
+<label class="scq-full">موعد پرداخت (شمسی)<input name="effective_date" data-cheque-date readonly required dir="ltr" placeholder="انتخاب از تقویم" value="{{ old('kind')==='promise'?old('effective_date'):'' }}"></label>
+<label class="scq-full">توضیحات اختیاری<textarea name="notes" rows="2" maxlength="2000">{{ old('kind')==='promise'?old('notes'):'' }}</textarea></label>
+</div></div><footer class="scq-modal-foot"><button type="button" class="btn btn-outline-secondary" data-close="promiseDialog">انصراف</button><button class="btn btn-primary">ثبت تعهد</button></footer></form></dialog>
 <dialog id="chequeDateDialog" aria-labelledby="chequeDateTitle"><header class="scq-modal-head"><h5 id="chequeDateTitle">انتخاب تاریخ شمسی</h5><button type="button" class="btn btn-outline-secondary" data-close="chequeDateDialog">بستن تقویم</button></header><input id="chequeDatePicker" data-jdp-only-date readonly aria-label="تاریخ انتخاب‌شده" dir="ltr"></dialog>
 </div>
 <script>
-document.querySelectorAll('[data-open]').forEach(button=>button.addEventListener('click',()=>document.getElementById(button.dataset.open).showModal()));document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>document.getElementById(button.dataset.close).close()));document.getElementById('closeIssued').addEventListener('click',()=>document.getElementById('issuedDialog').close());
+document.querySelector('.scq').addEventListener('click',e=>{const open=e.target.closest('[data-open]'),close=e.target.closest('[data-close]');if(open)document.getElementById(open.dataset.open).showModal();if(close)document.getElementById(close.dataset.close).close();});document.getElementById('closeIssued').addEventListener('click',()=>document.getElementById('issuedDialog').close());
 
 const normalizeChequeDigits=value=>String(value).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 document.querySelectorAll('[data-cheque-money]').forEach(input=>{
@@ -166,8 +213,8 @@ chequeRoot.addEventListener('click',event=>{
     const monthLink=event.target.closest('.scq-nav a');
     if(monthLink&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&event.button===0){event.preventDefault();loadChequeMonth(monthLink.href);return;}
     const day=event.target.closest('[data-day]');
-    if(day){document.getElementById('dayDetails').hidden=false;document.querySelectorAll('[data-entry-day]').forEach(row=>row.hidden=row.dataset.entryDay!==day.dataset.day);document.querySelectorAll('[data-day]').forEach(button=>button.classList.toggle('selected',button===day));document.getElementById('dayTitle').textContent='جزئیات '+day.dataset.dateLabel;document.getElementById('dayCoverage').textContent='کسری تجمعی تا این روز: '+day.dataset.shortfall;}
-    if(event.target.closest('#showMonth')){document.querySelectorAll('[data-entry-day]').forEach(row=>row.hidden=false);document.getElementById('dayTitle').textContent='جزئیات این ماه';document.getElementById('dayCoverage').textContent='محاسبه بر اساس سوابق ثبت‌شده در این بخش است.';document.querySelectorAll('[data-day]').forEach(button=>button.classList.remove('selected'));}
+    if(day){document.getElementById('dayDetails').showModal();document.querySelectorAll('[data-entry-day]').forEach(row=>row.hidden=row.dataset.entryDay!==day.dataset.day);document.querySelectorAll('[data-day]').forEach(button=>button.classList.toggle('selected',button===day));document.getElementById('dayTitle').textContent='جزئیات '+day.dataset.dateLabel;document.getElementById('dayCoverage').textContent='کسری تجمعی برنامه‌ریزی‌شده تا این روز: '+day.dataset.shortfall+'؛ بدون موجودی بانک.';document.getElementById('emptyDay').hidden=Array.from(document.querySelectorAll('[data-entry-day]')).some(row=>!row.hidden);}
+    if(event.target.closest('#showMonth')){document.getElementById('dayDetails').showModal();document.getElementById('emptyDay').hidden=true;document.querySelectorAll('[data-entry-day]').forEach(row=>row.hidden=false);document.getElementById('dayTitle').textContent='جزئیات این ماه';document.getElementById('dayCoverage').textContent='محاسبه بر اساس سوابق ثبت‌شده در این بخش است.';document.querySelectorAll('[data-day]').forEach(button=>button.classList.remove('selected'));}
 });
 window.addEventListener('popstate',()=>loadChequeMonth(location.href,false));
 
@@ -185,6 +232,8 @@ if(oldSelection){oldSelection.checked=true;depositNext.disabled=false;document.g
 
 @if(request('dialog')==='deposit' || old('kind')==='deposit')
 document.getElementById('depositDialog').showModal();
+@elseif(old('kind')==='promise')
+document.getElementById('promiseDialog').showModal();
 @elseif(old('kind')==='issued')
 document.getElementById('issuedDialog').showModal();
 @endif

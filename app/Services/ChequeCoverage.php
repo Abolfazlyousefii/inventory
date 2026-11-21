@@ -8,9 +8,9 @@ class ChequeCoverage
 {
     public function balance(Collection $entries, string $through): array
     {
-        $rows = $entries->filter(fn ($r) => $r->effective_date->format('Y-m-d') <= $through);
-        $incoming = (int) $rows->where('kind', 'deposit')->sum('amount');
-        $outgoing = (int) $rows->where('kind', 'issued')->sum('amount');
+        $rows = $entries->filter(fn ($r) => $r->calendarDate() <= $through);
+        $incoming = (int) $rows->where('kind', 'deposit')->reject(fn($e)=>$e->isBounced())->sum('amount');
+        $outgoing = (int) $rows->whereIn('kind', ['issued','promise'])->sum('amount');
 
         return ['incoming' => $incoming, 'outgoing' => $outgoing, 'balance' => $incoming - $outgoing, 'shortfall' => max(0, $outgoing - $incoming)];
     }

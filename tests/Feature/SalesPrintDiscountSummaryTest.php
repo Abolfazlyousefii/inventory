@@ -219,7 +219,7 @@ class SalesPrintDiscountSummaryTest extends TestCase
             $this->assertStringContainsString('تخفیف کل', $html);
             $this->assertStringNotContainsString('تخفیف ردیف', $html);
             $this->assertStringContainsString('مبلغ نهایی ردیف', $html);
-            $this->assertStringContainsString('تعداد × قیمت واحد − تخفیف کل', $html);
+            $this->assertStringContainsString($mode === 'customer' ? 'قیمت تمام‌شده واحد = قیمت واحد − تخفیف واحد' : 'تعداد × قیمت واحد − تخفیف کل', $html);
             $this->assertStringContainsString('تقریبی', $html);
             $dom = new \DOMDocument();
             @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
@@ -229,10 +229,10 @@ class SalesPrintDiscountSummaryTest extends TestCase
             $first = $rows->item(0);
             $second = $rows->item(1);
             $this->assertStringContainsString('۲٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-unit")])', $first));
-            $this->assertStringContainsString('۸٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-total")])', $first));
+            $this->assertStringContainsString($mode === 'customer' ? '۹۸٬۰۰۰' : '۸٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-total")])', $first));
             $this->assertStringContainsString('۳۹۲٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-total")])', $first));
             $this->assertStringContainsString('۱٬۶۶۷', $xpath->evaluate('string(.//td[contains(@class, "col-discount-unit")])', $second));
-            $this->assertStringContainsString('۵٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-total")])', $second));
+            $this->assertStringContainsString($mode === 'customer' ? '۹۸٬۳۳۳' : '۵٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-discount-total")])', $second));
             $this->assertStringContainsString('۲۹۵٬۰۰۰', $xpath->evaluate('string(.//td[contains(@class, "col-total")])', $second));
             $this->assertStringContainsString('۱۳٬۰۰۰', $html);
         }
