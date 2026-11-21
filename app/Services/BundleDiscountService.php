@@ -96,7 +96,7 @@ final class BundleDiscountService
         $quantities = array_column($components, 'quantity', 'variant_id');
         $regular = $this->regularPrice($ids, $quantities, $requireSellable);
         $variantPrices = DB::table('product_variants')->whereIn('id', $ids)
-            ->get(['id', 'sell_price'])->keyBy('id');
+            ->get()->keyBy('id');
         $componentSavings = 0;
         foreach ($components as $component) {
             $id = (int) $component['variant_id'];

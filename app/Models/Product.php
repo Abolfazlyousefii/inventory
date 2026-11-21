@@ -17,6 +17,7 @@ class Product extends Model
         'is_bundle',
         'bundle_stock_mode',
         'bundle_site_auto_publish',
+        'bundle_archived_at',
         'bundle_quantity_mode',
         'bundle_discount_type',
         'bundle_discount_value',
@@ -64,6 +65,7 @@ class Product extends Model
     protected $casts = [
         'is_bundle' => 'boolean',
         'bundle_site_auto_publish' => 'boolean',
+        'bundle_archived_at' => 'datetime',
         'bundle_shared_remaining' => 'integer',
         'bundle_discount_value' => 'integer',
         'stock'      => 'integer',

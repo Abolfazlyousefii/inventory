@@ -38,14 +38,66 @@ $statuses=['pending'=>'در انتظار دریافت','received'=>'دریافت
     @foreach($overview['issues'] as $issue)
         <div class="alert alert-warning" role="alert"><strong>مغایرت مشخص در دریافت انبار:</strong> {{ $n($issue->accepted_quantity) }} عدد بابت {{ $issue->related_reference }} از رسید <a href="{{ $issue->source_url }}">{{ $issue->reference }}</a> اضافه شده، درحالی‌که موجودی فاکتور هنگام صدور کسر نشده بود. این سابقه نیازمند سند اصلاحی است؛ گزارش موجودی را تغییر نمی‌دهد.</div>
     @endforeach
+    @if($bundleLedger)
+    <section class="psl-overview" aria-label="موجودی بسته خودکار">
+        <div class="psl-overview-heading"><div>
+            <h2>موجودی بسته خودکار (محاسبه‌شده از قطعات اختصاصی)</h2>
+            <p>این بسته در انبار به‌صورت محصول آماده نگهداری نمی‌شود؛ موجودی آن از سهمیهٔ محافظت‌شدهٔ قطعات محاسبه می‌شود.</p>
+        </div></div>
+        <div class="psl-overview-grid">
+            <article class="psl-overview-card"><h3>بسته کامل از سهمیهٔ آزاد</h3><strong>{{ $n($bundleLedger['protected_packs']) }} <small>بسته</small></strong><p>ظرفیت قطعات آزاد پس از کسر رزروهای مصرف‌شده؛ مستقل از فعال‌بودن فروش</p></article>
+            <article class="psl-overview-card"><h3>موجودی قابل فروش در ERP</h3><strong>{{ $n($bundleLedger['available_for_new_orders']) }} <small>بسته</small></strong><p>همان محاسبهٔ موجودی سبد در جست‌وجوی فروش/فاکتور؛ انتشار در سایت مستقل است</p></article>
+            <article class="psl-overview-card"><h3>قطعات در سهمیهٔ آزاد</h3><strong>{{ $n($bundleLedger['protected_units']) }} <small>قطعه</small></strong><p>جمع واحدهای اختصاص‌یافته به این بسته؛ تعداد بسته نیست</p></article>
+        </div>
+        <p class="psl-overview-note">صفر بودن «موجودی فیزیکی انبارها» در پایین صفحه برای این نوع بسته طبیعی است. فعال‌سازی یا توقف فروش موجودی را اضافه یا کم نمی‌کند؛ تغییر سهمیه و رزروها جدا ثبت می‌شوند. این مقادیر را با موجودی عادی قطعات جمع نکنید.</p>
+    </section>
+    <section class="psl-book" aria-label="تاریخچه مدیریت و سهمیه بسته">
+        <div class="psl-book-title"><div><strong>تاریخچهٔ مدیریت و سهمیهٔ بسته</strong><span>توقف/ادامهٔ فروش، آزادسازی قطعات و تغییر سهمیه از سوابق حسابرسی؛ بدون ثبت گردش فیزیکی ساختگی</span></div><span>{{ $n($bundleLedger['events']->total()) }} رویداد</span></div>
+        <table>
+            <thead><tr><th>زمان</th><th>عملیات</th><th>اثر بر موجودی عادی قطعات</th><th>ثبت و جزئیات</th></tr></thead>
+            <tbody>
+            @forelse($bundleLedger['events'] as $event)
+                <tr class="psl-row" data-bundle-event-id="{{ $event->event_id }}">
+                    <td class="psl-date" data-label="زمان"><span>{{ $fa(\App\Support\JalaliDate::date(\Carbon\Carbon::parse($event->created_at))) }}</span><small>{{ $fa(\Carbon\Carbon::parse($event->created_at)->format('H:i')) }}</small></td>
+                    <td class="psl-event" data-label="عملیات"><strong>{{ $event->label }}</strong></td>
+                    <td class="psl-change" data-label="اثر بر موجودی عادی">
+                        @if($event->returned_units)<span class="psl-amount is-in">+{{ $n($event->returned_units) }} <small>قطعه بازگشت</small></span>@endif
+                        @if($event->allocated_units)<span class="psl-amount is-out">−{{ $n($event->allocated_units) }} <small>قطعه اختصاص یافت</small></span>@endif
+                        @if(!$event->returned_units && !$event->allocated_units)<span class="psl-document-caption">بدون جابه‌جایی قطعات</span>@endif
+                    </td>
+                    <td class="psl-source" data-label="ثبت و جزئیات">
+                        <span class="psl-source-label">{{ $event->actor_name ?: 'سیستم / دستور مدیریتی' }}</span>
+                        <details class="psl-row-details"><summary>جزئیات رویداد</summary><div>
+                            <p>{{ $event->reason }}</p>
+                            @foreach($event->changes as $change)
+                                <p>
+                                @if($change['product_id'])<a href="{{ route('products.stock-ledger', ['product' => $change['product_id'], 'variant_id' => $change['variant_id']]) }}">{{ $change['name'] }}</a>@else{{ $change['name'] }}@endif:
+                                {{ $change['ordinary_delta'] > 0 ? 'بازگشت' : 'اختصاص' }} {{ $n(abs($change['ordinary_delta'])) }} قطعه
+                                </p>
+                            @endforeach
+                            @if($event->omitted_changes)<p>{{ $n($event->omitted_changes) }} قطعهٔ دیگر در حسابرسی ثبت شده است؛ فهرست برای سبک‌ماندن صفحه کوتاه شده است.</p>@endif
+                            <small>شناسهٔ رویداد: {{ $event->event_id }}</small>
+                        </div></details>
+                    </td>
+                </tr>
+            @empty
+                <tr><td colspan="4" class="psl-empty">هنوز رویداد مدیریتی حسابرسی‌شده‌ای برای این بسته ثبت نشده است.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+        @if($bundleLedger['events']->hasPages())<footer>{{ $bundleLedger['events']->links() }}</footer>@endif
+        <p class="psl-overview-note">این بخش سوابق حسابرسی ثبت‌شده را نشان می‌دهد؛ سهمیه‌ها و سفارش‌های قدیمی که پیش از ثبت این رویدادها ایجاد شده‌اند از این فهرست قابل بازسازی نیستند. اسناد فروش در بخش «فروش کالا» پایین صفحه باقی می‌مانند.</p>
+    </section>
+    @endif
     <section class="psl-warehouse-overview" aria-label="موجودی آزاد به تفکیک انبار">
-        <h2>موجودی آزاد فعلی</h2>
+        <h2>{{ $bundleLedger ? 'موجودی فیزیکی ثبت‌شده در انبارها' : 'موجودی آزاد فعلی' }}</h2>
         <div class="psl-balances">
         @foreach($overview['balances'] as $balance)
             <div class="psl-balance {{ $balance->quantity ? 'has-stock' : '' }}"><span>{{ $balance->name }}</span><strong>{{ $n($balance->quantity) }} <small>عدد</small></strong></div>
         @endforeach
         </div>
-        <p>رزرو فعلی مرکزی: {{ $n($summary->reserved) }} عدد · موجودی آزاد، پس از کسر رزرو است؛ دوباره از آن کم نکنید.</p>
+        @if($bundleLedger)<p>این عددها فقط موجودی فیزیکی بستهٔ آماده را نشان می‌دهند و سهمیهٔ قطعات سبد خودکار را شامل نمی‌شوند.</p>
+        @else<p>رزرو فعلی مرکزی: {{ $n($summary->reserved) }} عدد · موجودی آزاد، پس از کسر رزرو است؛ دوباره از آن کم نکنید.</p>@endif
     </section>
     <section class="psl-overview" aria-label="خلاصه گردش کالا">
         <div class="psl-overview-heading"><div><h2>خلاصهٔ گردش کالا</h2><p>برای دیدن اسناد هر بخش، «مشاهده جزئیات» را بزنید.</p></div>

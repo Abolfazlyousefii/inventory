@@ -46,7 +46,7 @@ class ProductSearchService
             ->leftJoinSub($variantAgg, 'variant_summary', fn ($join) => $join->on('variant_summary.product_id', '=', 'products.id'))
             ->select([
                 'products.id','products.name','products.short_barcode','products.code','products.sku','products.barcode',
-                'products.image_path','products.category_id','products.stock','products.reserved','products.price','products.is_sellable','products.is_bundle','products.bundle_stock_mode','products.updated_at',
+                'products.image_path','products.category_id','products.stock','products.reserved','products.price','products.is_sellable','products.is_bundle','products.bundle_stock_mode','products.bundle_archived_at','products.updated_at',
                 'categories.name as category_name',
             ])
             ->selectRaw('COALESCE(variant_summary.variants_count,0) as variants_count')
@@ -86,6 +86,8 @@ class ProductSearchService
 
     private function applyFilters(Builder $query, Request $request): void
     {
+        if ($request->query('archive') === 'archived') $query->whereNotNull('products.bundle_archived_at');
+        elseif ($request->query('archive') !== 'all') $query->whereNull('products.bundle_archived_at');
         $categoryId = (int) ($request->query('subcategory_id') ?: $request->query('category_id'));
         if ($categoryId > 0) $query->whereIn('products.category_id', Category::selfAndDescendantIds($categoryId));
         $q = self::normalize((string) $request->query('q', ''));
@@ -142,7 +144,7 @@ class ProductSearchService
             'id'=>(int)$product->id,'name'=>(string)$product->name,'short_code'=>$product->short_barcode ?: $product->code,
             'category'=>$product->category_name ?: 'بدون دسته‌بندی','category_path'=>$product->category_name ?: 'بدون دسته‌بندی',
             'variants_count'=>(int)$product->variants_count,'total_stock'=>$quantity,'reserved'=>(int)$product->reserved_total,
-            'min_price'=>(int)$product->min_price,'max_price'=>(int)$product->max_price,'sales_enabled'=>(bool)$product->is_sellable,'is_bundle'=>(bool)$product->is_bundle,'is_automatic_bundle'=>$isAutomatic, 'bundle_contents'=>$product->is_bundle ? $bundleContents : [],
+            'min_price'=>(int)$product->min_price,'max_price'=>(int)$product->max_price,'sales_enabled'=>(bool)$product->is_sellable,'is_bundle'=>(bool)$product->is_bundle,'is_automatic_bundle'=>$isAutomatic, 'is_archived'=>$product->bundle_archived_at !== null, 'bundle_contents'=>$product->is_bundle ? $bundleContents : [],
             'image_url'=>$product->image_path ? route('products.image', $product->id) : null,
             'updated_at'=>optional($product->updated_at)->toISOString(),
             'routes'=>['edit'=>route('products.edit', ['product'=>$product->id]),'stock'=>route('products.warehouse-stock',$product->id),'sales_ledger'=>route('products.sales-ledger',$product->id),'purchase_ledger'=>route('products.purchase-ledger',$product->id),'deactivate'=>route('product-deactivation-documents.create',['product_id'=>$product->id])],

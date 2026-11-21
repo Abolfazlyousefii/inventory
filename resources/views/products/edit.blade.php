@@ -420,21 +420,30 @@
 <div class="card shadow-sm">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">ویرایش کالا</h5>
+            <h5 class="mb-0">{{ $product->is_bundle ? 'ویرایش بسته ترکیبی' : 'ویرایش کالا' }}</h5>
             <a class="btn btn-outline-secondary" href="{{ $returnTo }}">بازگشت</a>
         </div>
 
         @if ($errors->any())
-            <div class="alert alert-danger">
-                <div class="fw-bold mb-2">لطفاً خطاهای زیر را بررسی کن:</div>
+            <div class="alert alert-danger {{ $product->is_bundle ? 'bundle-edit-errors' : '' }}" role="alert">
+                <div class="fw-bold mb-2">{{ $product->is_bundle ? 'موارد زیر نیاز به اصلاح دارند:' : 'لطفاً خطاهای زیر را بررسی کن:' }}</div>
                 <ul class="mb-0 ps-3">
-                    @foreach ($errors->all() as $error)
-                        <li>{{ $error }}</li>
+                    @foreach ($errors->messages() as $field => $messages)
+                        @foreach ($messages as $error)
+                            <li>
+                                @if($product->is_bundle)
+                                    <button type="button" class="bundle-error-link" data-bundle-error-field="{{ $field }}">{{ $error }} <span aria-hidden="true">←</span></button>
+                                @else
+                                    {{ $error }}
+                                @endif
+                            </li>
+                        @endforeach
                     @endforeach
                 </ul>
             </div>
         @endif
 
+        @if(!$product->is_bundle)
         <div class="alert alert-info">
             در این بخش فقط <b>تعریف کالا و تنوع‌ها</b> انجام می‌شود.
             <br>
@@ -444,7 +453,17 @@
         @if($product->uniform_sale_price !== null)
             <div class="alert alert-info">قیمت فروش مرجع این کالا {{ \App\Support\Currency::formatRial($product->uniform_sale_price) }} است و همهٔ تنوع‌ها از آن پیروی می‌کنند. برای اصلاح قیمت فروش از بخش «تغییر قیمت کالا» استفاده کنید؛ ویرایش قیمت خرید مستقل است.</div>
         @endif
-        <form method="POST" action="{{ route('products.update', $product) }}" id="productEditForm" class="row g-3" enctype="multipart/form-data">
+        @endif
+
+        @if($product->is_bundle)
+            @include('products.partials.bundle-management', ['product' => $product])
+            <details id="bundleBaseDetails" class="bundle-base-details" @if($errors->has('name') || $errors->has('category_id') || $errors->has('image') || $errors->has('variant_site_ids')) open @endif>
+                <summary>
+                    <span class="bundle-base-details-title">نام، تصویر و اطلاعات پایه</span>
+                    <small>ویرایش مشخصات عمومی بسته</small>
+                </summary>
+        @endif
+        <form method="POST" action="{{ route('products.update', $product) }}" id="productEditForm" class="row g-3 {{ $product->is_bundle ? 'bundle-base-form' : '' }}" enctype="multipart/form-data">
             @csrf
             @method('PUT')
 
@@ -795,7 +814,11 @@
                 </div>
             </div>
         </form>
-        @include('products.partials.bundle-management', ['product' => $product])
+        @if($product->is_bundle)
+            </details>
+        @else
+            @include('products.partials.bundle-management', ['product' => $product])
+        @endif
     </div>
 </div>
 

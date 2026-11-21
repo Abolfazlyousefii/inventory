@@ -60,7 +60,19 @@ final class BundleComponentAllocationService
                 $delta = $next - $current;
                 if ($delta !== 0) {
                     // Allocate: subtract warehouse available units. Release: restore them.
-                    WarehouseStockService::change($warehouse, (int) $products[$id], -$delta, $id);
+                    try {
+                        WarehouseStockService::change($warehouse, (int) $products[$id], -$delta, $id);
+                    } catch (ValidationException $exception) {
+                        if ($delta > 0) {
+                            $free = WarehouseStockService::available($warehouse, (int) $products[$id], $id);
+                            if ($free < $delta) {
+                                $part = ProductVariant::query()->with('product')->find($id);
+                                $name = ($part?->product?->name ?? 'کالا') . ' / ' . ($part?->variant_name ?: $part?->variant_code ?: $id);
+                                throw ValidationException::withMessages(['allocations' => "کسری موجودی {$name}: نیاز {$delta}، آزاد {$free}، کسری " . ($delta - $free)]);
+                            }
+                        }
+                        throw $exception;
+                    }
                 }
                 DB::table('bundle_component_allocations')->updateOrInsert(
                     ['bundle_variant_id' => $bundleVariantId, 'component_variant_id' => $id],

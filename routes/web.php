@@ -214,6 +214,14 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         ->whereNumber('product')->name('products.bundle.site-publication');
     Route::post('/products/{product}/bundle/pricing', [\App\Http\Controllers\ProductBundleController::class, 'pricing'])
         ->whereNumber('product')->name('products.bundle.pricing');
+    Route::get('/products/{product}/bundle/release-preview', [\App\Http\Controllers\ProductBundleController::class, 'releasePreview'])
+        ->whereNumber('product')->name('products.bundle.release-preview');
+    Route::post('/products/{product}/bundle/release', [\App\Http\Controllers\ProductBundleController::class, 'release'])
+        ->whereNumber('product')->name('products.bundle.release');
+    Route::post('/products/{product}/bundle/sale', [\App\Http\Controllers\ProductBundleController::class, 'sale'])
+        ->whereNumber('product')->name('products.bundle.sale');
+    Route::post('/products/{product}/bundle/archive', [\App\Http\Controllers\ProductBundleController::class, 'archive'])
+        ->whereNumber('product')->name('products.bundle.archive');
     Route::post('/products/{product}/bundle/policy', [\App\Http\Controllers\ProductBundleController::class, 'policy'])
         ->whereNumber('product')->name('products.bundle.policy');
     Route::post('/products/{product}/bundle/assemble', [\App\Http\Controllers\ProductBundleController::class, 'assemble'])

@@ -352,7 +352,7 @@
             </div>
         @endif
 
-        <div class="alert alert-info">
+        <div class="alert alert-info" id="productCreateRegularHint">
             در این بخش <b>تعریف کالا و تنوع‌ها</b> و همچنین <b>ایجاد بسته ترکیبی</b> انجام می‌شود.
             <br>
             <b>موجودی، قیمت خرید و قیمت فروش</b> بعداً در بخش <b>خرید کالا</b> ثبت می‌شوند.
@@ -366,8 +366,8 @@
 
             @include('products.partials.bundle-create')
 
-            {{-- اطلاعات پایه --}}
-            <div class="col-12">
+            {{-- The existing fields move into bundle step 1 when Bundle is selected. --}}
+            <div class="col-12" id="productBaseInfoCard">
                 <div class="card-soft">
                     <div class="section-head">
                         <div>
@@ -461,7 +461,7 @@
                                 </div>
                             </div>
 
-                            <div class="col-md-6">
+                            <div class="col-md-6 bundle-regular-only">
                                 <div class="preview-box">
                                     <div class="muted mb-1">الگوی کد تنوع ۱۱ رقمی</div>
                                     <div class="preview-code mono" id="variantPatternPreview">CC{{ $previewSeq4 }}MMMDD</div>
@@ -615,8 +615,8 @@
                 </div>
             </div>
 
-            {{-- ثبت --}}
-            <div class="col-12">
+            {{-- The same save action moves into the bundle confirmation step. --}}
+            <div class="col-12" id="productCreateActions">
                 <div class="sticky-actions d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div class="muted">
                         برای بسته ترکیبی، قیمت فروش و ترکیب قطعات همین‌جا ثبت می‌شود؛ موجودی آماده بعداً مونتاژ می‌شود.

@@ -1,7 +1,10 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\{Product, StockMovement, Invoice, Purchase};
+use App\Models\{Product, ProductVariant, StockMovement, Invoice, Purchase};
+use App\Services\AutomaticBundleAvailabilityService;
+use App\Support\AutomaticBundlePlan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class ProductStockLedgerController extends Controller
@@ -77,7 +80,81 @@ class ProductStockLedgerController extends Controller
         }
         foreach($movements as $row) if(!($row instanceof StockMovement)) $sources[$row->id]=['label'=>$row->reference,'url'=>$row->source_url];
         foreach($movements as $row) if($row->source_url) $sources[$row->id]=['label'=>$row->source_label ?? $row->reference,'url'=>$row->source_url];
-        $warehouses=\Illuminate\Support\Facades\DB::table('warehouses')->orderBy('id')->get(['id','name']);
-        return view('products.stock-ledger',compact('product','selectedVariant','movements','summary','sources','filters','warehouses','overview'));
+        $warehouses=DB::table('warehouses')->orderBy('id')->get(['id','name']);
+        // Automatic bundles hold protected components, not finished warehouse units.
+        // Keep their audit events separate from physical stock movements to avoid
+        // presenting a pause/resume or component allocation as newly created stock.
+        $bundleLedger = $product->is_bundle && $product->bundle_stock_mode === 'automatic'
+            ? $this->automaticBundleLedger($product, $selectedVariant) : null;
+        return view('products.stock-ledger',compact('product','selectedVariant','movements','summary','sources','filters','warehouses','overview','bundleLedger'));
+    }
+
+    private function automaticBundleLedger(Product $product, ?ProductVariant $selectedVariant): array
+    {
+        $ids = $selectedVariant ? collect([(int) $selectedVariant->id]) : $product->variants()->pluck('id');
+        $recipes = DB::table('product_bundle_components')->whereIn('bundle_variant_id', $ids)
+            ->get(['bundle_variant_id', 'component_variant_id', 'quantity'])->groupBy('bundle_variant_id');
+        $allocations = DB::table('bundle_component_allocations')->whereIn('bundle_variant_id', $ids)
+            ->get(['bundle_variant_id', 'component_variant_id', 'remaining'])->groupBy('bundle_variant_id');
+        $protectedPacks = 0;
+        $availableForNewOrders = 0;
+        foreach ($ids as $id) {
+            $recipe = ($recipes->get($id) ?? collect())->pluck('quantity', 'component_variant_id')
+                ->mapWithKeys(fn ($quantity, $partId) => [(int) $partId => (int) $quantity])->all();
+            $remaining = ($allocations->get($id) ?? collect())->pluck('remaining', 'component_variant_id')
+                ->mapWithKeys(fn ($quantity, $partId) => [(int) $partId => (int) $quantity])->all();
+            $protectedPacks += AutomaticBundlePlan::available($recipe, $remaining);
+            $availableForNewOrders += app(AutomaticBundleAvailabilityService::class)->available((int) $id);
+        }
+        $events = DB::table('bundle_management_events as e')
+            ->leftJoin('users as u', 'u.id', '=', 'e.actor_id')
+            ->whereIn('e.bundle_variant_id', $ids)
+            ->orderByDesc('e.created_at')->orderByDesc('e.id')
+            ->paginate(15, ['e.id','e.event_id','e.action','e.reason','e.details','e.created_at', 'u.name as actor_name'], 'bundle_events_page')
+            ->withQueryString();
+        // One lookup for all variants referenced by the visible audit page.
+        $decoded = $events->getCollection()->mapWithKeys(fn ($event) => [$event->id => json_decode($event->details, true) ?: []]);
+        $partIds = $decoded->flatMap(function ($detail) {
+            return collect($detail['rows'] ?? [])->take(25)->map(fn ($row) => (int) ($row['variant_id'] ?? $row[0] ?? 0));
+        })->filter()->unique()->values();
+        $parts = DB::table('product_variants as v')->join('products as p', 'p.id', '=', 'v.product_id')
+            ->whereIn('v.id', $partIds)->get(['v.id','v.product_id','v.variant_name','v.variant_code','p.name as product_name'])->keyBy('id');
+        $labels = [
+            'allocation_adjust' => 'تغییر سهمیه قطعات بسته', 'release' => 'آزادسازی قطعات بسته',
+            'pause' => 'توقف فروش بسته', 'resume' => 'ادامه فروش بسته',
+            'archive' => 'بایگانی بسته', 'restore' => 'بازگردانی از بایگانی',
+        ];
+        $events->getCollection()->transform(function ($event) use ($decoded, $parts, $labels) {
+            $event->label = $labels[$event->action] ?? $event->action;
+            $event->changes = [];
+            $event->returned_units = 0;
+            $event->allocated_units = 0;
+            $event->omitted_changes = 0;
+            foreach (($decoded[$event->id]['rows'] ?? []) as $row) {
+                $id = (int) ($row['variant_id'] ?? $row[0] ?? 0);
+                $delta = $event->action === 'release'
+                    ? (int) ($row[5] ?? 0)
+                    : ($event->action === 'allocation_adjust' ? (int) ($row['ordinary_stock_delta'] ?? 0) : 0);
+                if ($id < 1 || $delta === 0) continue;
+                $event->returned_units += max(0, $delta);
+                $event->allocated_units += max(0, -$delta);
+                if (count($event->changes) >= 25) {
+                    $event->omitted_changes++;
+                    continue;
+                }
+                $part = $parts->get($id);
+                $event->changes[] = [
+                    'name' => $part ? $part->product_name.' / '.($part->variant_name ?: $part->variant_code ?: $id) : 'تنوع #'.$id,
+                    'product_id' => $part?->product_id, 'variant_id' => $id, 'ordinary_delta' => $delta,
+                ];
+            }
+            return $event;
+        });
+        return [
+            'protected_packs' => $protectedPacks,
+            'available_for_new_orders' => $availableForNewOrders,
+            'protected_units' => $allocations->flatten(1)->sum(fn ($row) => (int) $row->remaining),
+            'events' => $events,
+        ];
     }
 }

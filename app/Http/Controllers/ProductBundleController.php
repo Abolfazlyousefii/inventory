@@ -25,22 +25,23 @@ class ProductBundleController extends Controller
             'q' => ['required', 'string', 'min:2', 'max:100'],
             'exclude_variant_id' => ['nullable', 'integer', 'min:1'],
             'complete_products' => ['sometimes', 'boolean'],
+            'stock_filter' => ['nullable', 'in:all,available'],
         ]);
         $term = trim($data['q']);
         $like = '%'.addcslashes($term, '%_\\').'%';
         $warehouseId = WarehouseStockService::centralWarehouseId();
         $eligible = ProductVariant::query()
             ->with('product:id,name,code,sku,is_bundle')
-            ->where('is_active', true)
+            ->where('is_active', true)->where('sales_enabled', true)
             ->whereHas('product', fn ($query) => $query->where('is_bundle', false)->where('is_sellable', true))
             ->when($data['exclude_variant_id'] ?? null, fn ($query, $id) => $query->where('id', '!=', $id))
-            ->whereIn('id', function ($query) use ($warehouseId) {
+            ->when(($data['stock_filter'] ?? 'all') === 'available', fn ($query) => $query->whereIn('id', function ($query) use ($warehouseId) {
                 $query->select('product_variant_id')
                     ->from('warehouse_stocks')
                     ->where('warehouse_id', $warehouseId)
                     ->groupBy('product_variant_id')
                     ->havingRaw('SUM(quantity) > 0');
-            });
+            }));
         $matching = (clone $eligible)->where(function ($query) use ($like) {
                 $query->where('variant_name', 'like', $like)
                     ->orWhere('variant_code', 'like', $like)
@@ -94,24 +95,12 @@ class ProductBundleController extends Controller
             'components.*.discount_value' => ['nullable', 'integer', 'min:0', 'max:999999999999'],
         ]);
         $this->ensureVariantBelongsToProduct($product, (int) $payload['bundle_variant_id']);
-        // Changing units per pack changes the original total: validate the saved discount first.
-        if ($product->is_bundle && $product->bundle_stock_mode === 'automatic'
-            && $product->bundle_discount_type !== null && $product->bundle_discount_value !== null) {
-            $discount = app(\App\Services\BundleDiscountService::class);
-            $discount->quoteForComponents($payload['components'], (string) $product->bundle_discount_type, (int) $product->bundle_discount_value);
-        }
+        // Recipe edits and saved prices are independent. The operator must explicitly
+        // save the new server-calculated price before the bundle can be republished.
         $service->defineRecipe((int) $payload['bundle_variant_id'], $payload['components']);
-        if ($product->is_bundle && $product->bundle_stock_mode === 'automatic'
-            && $product->bundle_discount_type !== null && $product->bundle_discount_value !== null) {
-            $quote = app(\App\Services\BundleDiscountService::class)->quoteForBundle(
-                (int) $payload['bundle_variant_id'], (string) $product->bundle_discount_type, (int) $product->bundle_discount_value
-            );
-            $product->forceFill(['price' => $quote['final']])->save();
-            ProductVariant::query()->whereKey((int) $payload['bundle_variant_id'])->update(['sell_price' => $quote['final']]);
-        }
         $this->syncBundleToSite($product->id);
 
-        return back()->with('success', $product->bundle_stock_mode === 'automatic' ? 'ترکیب بسته خودکار ذخیره شد؛ موجودی قابل فروش بر اساس سهمیه اختصاصی قطعات محاسبه می‌شود.' : 'ترکیب بسته ذخیره شد؛ اکنون می‌توانید بسته آماده مونتاژ کنید.');
+        return back()->with('success', $product->bundle_stock_mode === 'automatic' ? 'دستور ساخت ذخیره شد؛ اکنون قیمت پیشنهادی جدید را در کارت قیمت ذخیره و سپس سهمیه/انتشار را بررسی کنید.' : 'ترکیب بسته ذخیره شد؛ اکنون می‌توانید بسته آماده مونتاژ کنید.');
     }
 
     public function assemble(Request $request, Product $product, ProductBundleService $service): RedirectResponse
@@ -242,6 +231,10 @@ class ProductBundleController extends Controller
                 || (int) $product->variants()->value('sell_price') <= 0) {
                 throw ValidationException::withMessages(['enabled' => 'برای انتشار ابتدا ترکیب و قیمت معتبر بسته را ذخیره کنید.']);
             }
+            if (!$product->is_sellable || $product->bundle_archived_at !== null) {
+                throw ValidationException::withMessages(['enabled' => 'فروش این سبد متوقف یا بایگانی شده است.']);
+            }
+            $this->assertSavedBundlePrice($product, $variantId);
         } else {
             // Hide on the Site before enabling recipe edits; never expose unprotected stock.
             DB::connection('site')->table('products')->where('id', $product->id)->update([
@@ -291,6 +284,7 @@ class ProductBundleController extends Controller
                 'bundle_discount_type' => $data['bundle_discount_type'],
                 'bundle_discount_value' => (int) $data['bundle_discount_value'],
                 'price' => $quote['final'],
+                'uniform_sale_price' => $quote['final'],
             ])->save();
             $variant->forceFill(['sell_price' => $quote['final']])->save();
         }, 3);
@@ -309,6 +303,7 @@ class ProductBundleController extends Controller
             'allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
             'expected_allocations' => ['required', 'array'],
             'expected_allocations.*' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'reason' => ['nullable', 'string', 'min:10', 'max:500'],
         ]);
         if (!$product->is_bundle || $product->bundle_stock_mode !== 'automatic' || $product->variants()->count() !== 1) {
             throw ValidationException::withMessages(['bundle_quantity_mode' => 'این گزینه فقط برای بسته خودکار است.']);
@@ -342,12 +337,6 @@ class ProductBundleController extends Controller
                     throw ValidationException::withMessages(['allocations' => 'موجودی این بسته تغییر کرده است. صفحه را تازه کنید و دوباره ثبت کنید.']);
                 }
             }
-            if (\Illuminate\Support\Facades\Schema::hasTable('site_stock_holds') && DB::table('site_stock_holds')
-                ->whereIn('status', ['held','payment_confirmed'])
-                ->whereRaw('JSON_CONTAINS_PATH(bundle_allocated_lines, \'one\', ?) = 1', ['$.' . '"' . $bundleVariantId . '"'])
-                ->exists()) {
-                throw ValidationException::withMessages(['allocations' => 'این بسته سفارش رزروشده در جریان دارد؛ پس از تکمیل/آزادشدن سفارش، سهمیه را تغییر دهید.']);
-            }
             $desired = [];
             foreach ($recipe as $variantId => $perBundle) {
                 if ($shared) {
@@ -367,12 +356,180 @@ class ProductBundleController extends Controller
                 && !\App\Support\PermissionCatalog::userHasPermission($request->user(), 'inventory.adjust')) {
                 throw ValidationException::withMessages(['allocations' => 'برای تغییر سهم موجودی انبار، دسترسی اصلاح موجودی لازم است.']);
             }
-            app(\App\Services\BundleComponentAllocationService::class)
-                ->setAllocations($bundleVariantId, $desired);
+            $changed = [];
+            foreach ($desired as $id => $next) {
+                $before = (int) ($current[$id] ?? 0);
+                if ($next !== $before) {
+                    $changed[] = ['variant_id' => $id, 'before' => $before, 'after' => $next,
+                        'ordinary_stock_delta' => $before - $next];
+                }
+            }
+            if ($changed) {
+                // This same guard also covers legacy holds identified by hold_lines.
+                try {
+                    app(\App\Services\UnusedBundleAllocationReleaseService::class)->assertSafeToRelease($bundleVariantId);
+                } catch (\InvalidArgumentException $exception) {
+                    throw ValidationException::withMessages(['allocations' => 'سفارش/رزرو فعال یا بسته فیزیکی تطبیق‌نیافته وجود دارد؛ ابتدا آن را تعیین تکلیف کنید.']);
+                }
+                app(\App\Services\BundleComponentAllocationService::class)->setAllocations($bundleVariantId, $desired);
+                DB::table('bundle_management_events')->insert([
+                    'event_id' => (string) \Illuminate\Support\Str::uuid(),
+                    'bundle_variant_id' => $bundleVariantId, 'actor_id' => (int) $request->user()->id,
+                    'action' => 'allocation_adjust',
+                    'reason' => (trim($data['reason'] ?? '') ?: 'تغییر تعداد بسته در پنل مدیریت موجودی'),
+                    'details' => json_encode(['warehouse_id' => WarehouseStockService::centralWarehouseId(),
+                        'rows' => $changed], JSON_THROW_ON_ERROR), 'created_at' => now(),
+                ]);
+            }
             $locked->update(['bundle_quantity_mode' => $data['bundle_quantity_mode'], 'bundle_shared_remaining' => null]);
         }, 3);
         $this->syncBundleToSite($product->id);
-        return back()->with('success', 'موجودی قطعات به بسته اختصاص یافت و از فروش آزاد جدا شد. موجودی سایت با همگام‌سازی بعدی به‌روز می‌شود.');
+        return back()->with('success', 'سهمیه بسته ذخیره شد. قطعات آزادشده به موجودی عادی همان تنوع بازگشتند و قطعات افزوده‌شده از موجودی عادی کسر شدند. موجودی سایت همگام می‌شود.');
+    }
+
+    /** Preview only; never changes stock or triggers a Site update. */
+    public function releasePreview(Request $request, Product $product, \App\Services\UnusedBundleAllocationReleaseService $service): JsonResponse
+    {
+        $data = $request->validate(['keep' => ['required', 'integer', 'min:0', 'max:1000000']]);
+        $this->assertManagementAccess($request, $product, 'inventory.adjust');
+        try {
+            $plan = $service->preview((int) $product->variants()->sole()->id, (int) $data['keep']);
+            if ($plan['released_total'] > 0) $service->assertSafeToRelease((int) $product->variants()->sole()->id);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['keep' => $exception->getMessage()]);
+        }
+        $ids = array_column($plan['rows'], 0);
+        $names = ProductVariant::query()->with('product')->whereIn('id', $ids)->get()->mapWithKeys(fn ($part) => [
+            (int) $part->id => ($part->product?->name ?? '') .' — '.($part->variant_name ?: $part->variety_name ?: $part->variant_code),
+        ]);
+        $plan['rows'] = array_map(fn ($row) => ['id' => $row[0], 'name' => (string) ($names[$row[0]] ?? $row[0]),
+            'per_bundle' => $row[1], 'stock' => $row[2], 'remaining' => $row[3],
+            'keep' => $row[4], 'release' => $row[5]], $plan['rows']);
+        unset($plan['desired']);
+        return response()->json($plan);
+    }
+
+    public function release(Request $request, Product $product, \App\Services\UnusedBundleAllocationReleaseService $service): RedirectResponse
+    {
+        $data = $request->validate([
+            'keep' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'preview_token' => ['required', 'string', 'size:64'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+        $this->assertManagementAccess($request, $product, 'inventory.adjust');
+        try {
+            $plan = $service->apply((int) $product->variants()->sole()->id, (int) $data['keep'],
+                $data['preview_token'], (int) $request->user()->id, $data['reason']);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['keep' => $exception->getMessage()]);
+        }
+        if ($plan['released_total'] > 0) $this->syncBundleToSite((int) $product->id);
+        return back()->with('success', 'آزادسازی ثبت شد: '.number_format($plan['released_total']).' قطعه. شناسه رویداد: '.($plan['event_id'] ?? 'بدون تغییر'));
+    }
+
+    /** Pausing is not cancellation: existing orders, holds and stock are preserved. */
+    public function sale(Request $request, Product $product): RedirectResponse
+    {
+        $data = $request->validate(['enabled' => ['required', 'boolean'], 'reason' => ['required', 'string', 'min:10', 'max:500']]);
+        $this->assertManagementAccess($request, $product, 'products.change_status', false);
+        $enable = (bool) $data['enabled'];
+        if (!$enable) {
+            // Fail closed at the Site before modifying Inventory: a sync failure may not leave an orderable bundle.
+            DB::connection('site')->table('products')->where('id', $product->id)->update(['published' => 0, 'publish_date' => null]);
+        }
+        DB::transaction(function () use ($product, $request, $data, $enable): void {
+            $locked = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+            if ($enable) {
+                if ($locked->bundle_archived_at !== null) throw ValidationException::withMessages(['enabled' => 'ابتدا سبد را از بایگانی برگردانید.']);
+                $variant = $locked->variants()->sole();
+                $issues = app(ProductBundleService::class)->resumeReadinessIssues($locked, $variant);
+                if ($issues) {
+                    throw ValidationException::withMessages(['enabled' => $issues[0]['message']]);
+                }
+            }
+            $locked->forceFill(['is_sellable' => $enable, 'bundle_site_auto_publish' => $enable])->save();
+            $this->auditManagementAction($locked, (int) $request->user()->id, $enable ? 'resume' : 'pause', $data['reason']);
+        }, 3);
+        $synced = $this->syncBundleToSite((int) $product->id);
+        return back()->with($synced ? 'success' : 'warning', $synced ? ($enable ? 'فروش سبد فعال شد.' : 'فروش سبد متوقف شد؛ رزروهای قبلی محفوظ هستند.')
+            : 'وضعیت در انبار ثبت شد اما سایت همگام نشد؛ پیش از سفارش جدید وضعیت سایت را بررسی کنید.');
+    }
+
+    /** Archive is a reversible catalog state, not a delete or inventory transfer. */
+    public function archive(Request $request, Product $product, \App\Services\UnusedBundleAllocationReleaseService $service): RedirectResponse
+    {
+        $data = $request->validate(['restore' => ['required', 'boolean'], 'reason' => ['required', 'string', 'min:10', 'max:500']]);
+        $this->assertManagementAccess($request, $product, 'products.edit', false);
+        $restore = (bool) $data['restore'];
+        if (!$restore) {
+            // Reject an ineligible archive without changing Site publication. The
+            // same checks are repeated after taking the product lock below.
+            if ($product->is_sellable || $product->bundle_site_auto_publish) {
+                throw ValidationException::withMessages(['restore' => 'برای بایگانی ابتدا فروش و انتشار را متوقف کنید.']);
+            }
+            try {
+                $service->assertSafeToRelease((int) $product->variants()->sole()->id);
+            } catch (\InvalidArgumentException $exception) {
+                throw ValidationException::withMessages(['restore' => $exception->getMessage()]);
+            }
+            if (DB::table('bundle_component_allocations')->where('bundle_variant_id', $product->variants()->value('id'))
+                ->where('remaining', '>', 0)->exists()) {
+                throw ValidationException::withMessages(['restore' => 'ابتدا سهمیه آزاد قطعات را تعیین تکلیف کنید.']);
+            }
+            DB::connection('site')->table('products')->where('id', $product->id)->update(['published' => 0, 'publish_date' => null]);
+        }
+        try {
+            DB::transaction(function () use ($product, $service, $request, $data, $restore): void {
+                $locked = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+                $variant = $locked->variants()->sole();
+                if (!$restore) {
+                    if ($locked->is_sellable || $locked->bundle_site_auto_publish) {
+                        throw ValidationException::withMessages(['restore' => 'برای بایگانی ابتدا فروش و انتشار را متوقف کنید.']);
+                    }
+                    $service->assertSafeToRelease((int) $variant->id);
+                    if (DB::table('bundle_component_allocations')->where('bundle_variant_id', $variant->id)->where('remaining', '>', 0)->exists()) {
+                        throw ValidationException::withMessages(['restore' => 'ابتدا سهمیه آزاد قطعات را تعیین تکلیف کنید.']);
+                    }
+                }
+                $locked->forceFill(['bundle_archived_at' => $restore ? null : now(), 'is_sellable' => false,
+                    'bundle_site_auto_publish' => false])->save();
+                $this->auditManagementAction($locked, (int) $request->user()->id, $restore ? 'restore' : 'archive', $data['reason']);
+            }, 3);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['restore' => $exception->getMessage()]);
+        }
+        $this->syncBundleToSite((int) $product->id);
+        return back()->with('success', $restore ? 'سبد بازگردانده شد؛ فروش همچنان متوقف است.' : 'سبد بایگانی شد؛ هیچ موجودی یا سابقه‌ای حذف نشد.');
+    }
+
+    private function assertSavedBundlePrice(Product $product, int $variantId): void
+    {
+        if ($product->bundle_discount_type === null || $product->bundle_discount_value === null) return;
+        $quote = app(\App\Services\BundleDiscountService::class)->quoteForBundle(
+            $variantId, (string) $product->bundle_discount_type, (int) $product->bundle_discount_value
+        );
+        if ((int) ProductVariant::query()->whereKey($variantId)->value('sell_price') !== $quote['final']) {
+            throw ValidationException::withMessages(['enabled' => 'قیمت ذخیره‌شده با دستور ساخت جدید یکسان نیست؛ ابتدا قیمت را دوباره ذخیره کنید.']);
+        }
+    }
+
+    private function assertManagementAccess(Request $request, Product $product, string $permission, bool $automaticOnly = true): void
+    {
+        if (!$product->is_bundle || ($automaticOnly && $product->bundle_stock_mode !== 'automatic') || $product->variants()->count() !== 1) abort(404);
+        abort_unless(\App\Support\PermissionCatalog::userHasPermission($request->user(), $permission), 403);
+    }
+
+    private function auditManagementAction(Product $product, int $actorId, string $action, string $reason): void
+    {
+        DB::table('bundle_management_events')->insert([
+            'event_id' => (string) \Illuminate\Support\Str::uuid(),
+            'bundle_variant_id' => (int) $product->variants()->value('id'), 'actor_id' => $actorId,
+            'action' => $action, 'reason' => $reason,
+            'details' => json_encode(['sellable' => (bool) $product->is_sellable,
+                'site_auto_publish' => (bool) $product->bundle_site_auto_publish,
+                'archived_at' => $product->bundle_archived_at?->toIso8601String()], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+        ]);
     }
 
     private function validateMovement(Request $request): array

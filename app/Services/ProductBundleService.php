@@ -19,6 +19,70 @@ use InvalidArgumentException;
 class ProductBundleService
 {
     /**
+     * Explain why a stopped bundle cannot resume selling. Read-only: stock and
+     * historical reservations are never modified by this check.
+     * @return list<array{step:string,message:string}>
+     */
+    public function resumeReadinessIssues(Product $product, ProductVariant $variant): array
+    {
+        if ($product->bundle_archived_at !== null) {
+            return [['step' => 'actions', 'message' => 'سبد بایگانی شده است؛ ابتدا از بایگانی بازگردانید.']];
+        }
+
+        $issues = [];
+        $recipe = DB::table('product_bundle_components')->where('bundle_variant_id', $variant->id)
+            ->pluck('quantity', 'component_variant_id')->all();
+        if (!$recipe) {
+            $issues[] = ['step' => 'recipe', 'message' => 'دستور ساخت قطعه‌ای ندارد؛ ابتدا قطعات را ثبت کنید.'];
+        }
+        if (!$variant->is_active || !$variant->sales_enabled) {
+            $issues[] = ['step' => 'variant', 'message' => 'تنوع فروش بسته غیرفعال است؛ وضعیت فعال و مجاز برای فروش را در اطلاعات کالا بررسی کنید.'];
+        }
+        if ((int) $variant->sell_price < 1) {
+            $issues[] = ['step' => 'price', 'message' => 'قیمت فروش ذخیره‌شده صفر یا نامعتبر است؛ قیمت بسته را ذخیره کنید.'];
+        }
+
+        if ($product->bundle_stock_mode === 'automatic') {
+            $freePacks = $recipe ? app(BundleComponentAllocationService::class)->available((int) $variant->id, $recipe) : 0;
+            if ($recipe && $freePacks < 1) {
+                $issues[] = ['step' => 'stock', 'message' => 'سهمیه آزاد قطعات برای یک بسته کامل کافی نیست؛ در بخش موجودی حداقل یک بسته اختصاص دهید.'];
+            }
+            if (WarehouseStock::query()->where('product_variant_id', $variant->id)->where('quantity', '>', 0)->exists()) {
+                $issues[] = ['step' => 'stock', 'message' => 'بسته آماده فیزیکی و سهمیه خودکار همزمان ثبت شده‌اند؛ موجودی را با مسئول انبار تطبیق دهید.'];
+            }
+        } elseif (!WarehouseStock::query()->where('product_variant_id', $variant->id)->where('quantity', '>', 0)->exists()) {
+            $issues[] = ['step' => 'stock', 'message' => 'بسته آماده‌ای موجود نیست؛ ابتدا موجودی بسته فیزیکی را مطابق فرایند مونتاژ ثبت کنید.'];
+        }
+
+        if ($recipe) {
+            $disabled = DB::table('product_bundle_components as c')
+                ->join('product_variants as v', 'v.id', '=', 'c.component_variant_id')
+                ->join('products as p', 'p.id', '=', 'v.product_id')
+                ->where('c.bundle_variant_id', $variant->id)
+                ->where(fn ($q) => $q->where('v.is_active', 0)->orWhere('v.sales_enabled', 0)->orWhere('p.is_sellable', 0))
+                ->first(['p.name as product_name', 'v.variant_name']);
+            if ($disabled) {
+                $issues[] = ['step' => 'recipe', 'message' => 'قطعه «'.$disabled->product_name.' / '.$disabled->variant_name.'» برای فروش فعال نیست؛ قطعه را اصلاح یا جایگزین کنید.'];
+            }
+            if ($product->bundle_stock_mode === 'automatic'
+                && $product->bundle_discount_type !== null && $product->bundle_discount_value !== null) {
+                try {
+                    $price = app(BundleDiscountService::class)->quoteForBundle(
+                        (int) $variant->id, (string) $product->bundle_discount_type,
+                        (int) $product->bundle_discount_value
+                    )['final'];
+                    if ((int) $variant->sell_price !== $price) {
+                        $issues[] = ['step' => 'price', 'message' => 'قیمت ذخیره‌شده با محاسبه فعلی قطعات یکسان نیست؛ قیمت را دوباره ذخیره کنید.'];
+                    }
+                } catch (ValidationException $exception) {
+                    $issues[] = ['step' => 'price', 'message' => 'قیمت و تخفیف فعلی قطعات قابل محاسبه نیست؛ ابتدا قیمت و تخفیف‌ها را اصلاح کنید.'];
+                }
+            }
+        }
+
+        return $issues;
+    }
+    /**
      * Create/change a recipe without rewriting finished-bundle inventory.
      * Existing finished units may have been assembled using an earlier recipe;
      * operators must reconcile their actual contents when changing composition.
@@ -34,7 +98,8 @@ class ProductBundleService
 
         DB::transaction(function () use ($bundleVariantId, $recipe, $components): void {
             $bundle = ProductVariant::query()->with('product')->lockForUpdate()->findOrFail($bundleVariantId);
-            if (!$bundle->is_active || !$bundle->product?->is_sellable) {
+            if (!$bundle->is_active || (!$bundle->product?->is_sellable && !$bundle->product?->is_bundle)
+                || $bundle->product?->bundle_archived_at !== null) {
                 throw ValidationException::withMessages(['bundle_variant_id' => 'The finished product must be active and sellable.']);
             }
             if ($bundle->product->variants()->count() !== 1) {
@@ -71,28 +136,32 @@ class ProductBundleService
             if (!$compositionChanged && !$discountsChanged && $bundle->product->is_bundle) {
                 return;
             }
+            // Do not silently republish a changed recipe with a stale saved price.
+            // Creating the first recipe is still allowed to use automatic publication.
+            if ($currentRows->isNotEmpty() && $bundle->product->is_bundle
+                && $bundle->product->bundle_stock_mode === 'automatic') {
+                if (DB::connection('site')->table('products')->where('id', $bundle->product_id)
+                    ->where('published', 1)->exists()) {
+                    throw ValidationException::withMessages(['components' => 'برای ویرایش دستور ساخت یا تخفیف قطعات ابتدا انتشار سایت را متوقف کنید.']);
+                }
+                Product::query()->whereKey($bundle->product_id)->update(['bundle_site_auto_publish' => false]);
+            }
 
             if ($compositionChanged) {
                 if ($bundle->product->is_bundle && $bundle->product->bundle_stock_mode === 'automatic') {
                     // Serialize recipe changes with allocation edits and bundle checkout.
                     Product::query()->whereKey($bundle->product_id)->lockForUpdate()->firstOrFail();
-                    // Reservations retain their original component requirements until fulfilled.
-                    if ((int) app(ReservationQueryService::class)
-                        ->quantitiesByVariant(variantIds: [$bundleVariantId])->get($bundleVariantId, 0) > 0) {
-                        throw ValidationException::withMessages(['components' => 'این بسته پیش‌فاکتور رزرو شده فعال دارد؛ پس از تکمیل یا آزادسازی آن ترکیب را تغییر دهید.']);
+                    // Both current and legacy Site holds must keep their original recipe.
+                    try {
+                        app(UnusedBundleAllocationReleaseService::class)->assertNoActiveReservations($bundleVariantId);
+                    } catch (InvalidArgumentException $exception) {
+                        throw ValidationException::withMessages(['components' => 'سفارش یا رزرو فعال این بسته باید پیش از تغییر ترکیب تعیین تکلیف شود.']);
                     }
                 }
                 if ($bundle->product->is_bundle && $bundle->product->bundle_stock_mode === 'automatic'
                     && Schema::connection('site')->hasColumn('products', 'published')
                     && DB::connection('site')->table('products')->where('id', $bundle->product_id)->where('published', 1)->exists()) {
                     throw ValidationException::withMessages(['components' => 'برای تغییر ترکیب بسته خودکار ابتدا آن را از انتشار سایت خارج کنید. سفارش‌های در جریان را نیز بررسی کنید.']);
-                }
-                if ($bundle->product->is_bundle && $bundle->product->bundle_stock_mode === 'automatic'
-                    && Schema::hasTable('site_stock_holds')
-                    && DB::table('site_stock_holds')->whereIn('status', ['held', 'payment_confirmed'])
-                        ->whereRaw('JSON_CONTAINS_PATH(bundle_allocated_lines, \'one\', ?) = 1', ['$.' . '"' . $bundleVariantId . '"'])
-                        ->exists()) {
-                    throw ValidationException::withMessages(['components' => 'این بسته سفارش رزرو شده در جریان دارد. ترکیب بسته فعلاً قابل تغییر نیست.']);
                 }
                 // Positive finished stock does not lock the catalog recipe. This edit
                 // must NOT consume component stock or change the already-made units:
