@@ -82,6 +82,9 @@
             @canPermission('stock_in.edit')
                 <a class="btn btn-sm btn-primary rounded-3 fw-bold" href="{{ route('purchases.edit', $purchase) }}">ویرایش سند</a>
             @endcanPermission
+            @if($purchase->supplier && !$purchase->supplier->isInventoryAdjustmentSource() && auth()->user() && \App\Support\PageAccessCatalog::userCanRoute(auth()->user(), 'purchase-returns.create'))
+                <a class="btn btn-sm btn-outline-primary rounded-3" href="{{ route('purchase-returns.create', ['supplier_id' => $purchase->supplier_id, 'purchase_id' => $purchase->id]) }}">برگشت از این خرید</a>
+            @endif
             <a class="btn btn-sm btn-outline-secondary rounded-3" href="{{ route('purchases.index') }}">بازگشت</a>
         </div>
     </div>

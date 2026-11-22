@@ -86,13 +86,17 @@ class PurchaseReturnService
         },3);
     }
 
-    public function delete(PurchaseReturn $document, int $version, int $userId, ?string $reason): void
+    public function delete(PurchaseReturn $document, int $version, int $userId, string $reason): void
     {
+        $reason = trim($reason);
+        if ($reason === '' || mb_strlen($reason) > 1000) {
+            throw ValidationException::withMessages(['reason' => 'دلیل ابطال معتبر و حداکثر ۱۰۰۰ نویسه لازم است.']);
+        }
         DB::transaction(function () use ($document,$version,$userId,$reason) {
             Purchase::whereKey($document->purchase_id)->lockForUpdate()->firstOrFail();
             $doc=$this->lockedDocument($document,$version);$before=$this->snapshot($doc);
             $old=$doc->items()->get()->keyBy('purchase_item_id')->map->toArray()->all();
-            $this->applyLines($doc,[],$old,$userId,'حذف برگشت از خرید');
+            $this->applyLines($doc,[],$old,$userId,'ابطال برگشت از خرید');
             $doc->update(['deleted_by'=>$userId,'delete_reason'=>$reason,'updated_by'=>$userId,'version'=>$doc->version+1]);
             $doc->delete();
             $revision = $doc->revisions()->create(['action'=>'deleted','user_id'=>$userId,'before'=>$before,'after'=>$this->snapshot($doc),'note'=>$reason]);

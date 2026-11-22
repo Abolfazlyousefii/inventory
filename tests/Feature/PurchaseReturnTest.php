@@ -412,4 +412,129 @@ class PurchaseReturnTest extends TestCase
         $this->invalid(fn()=> $this->service()->update($doc,$this->payload(1,['purchase_id'=>2,'supplier_id'=>2,'version'=>1]),1));
         $this->assertSame(4,$this->quantity());$this->assertSame(1,$doc->fresh()->version);
     }
+
+    public function test_archive_filters_include_cancelled_documents_and_selected_warehouse(): void
+    {
+        $this->secondaryWarehouse();
+        $cancelled = $this->service()->create($this->payload(1), 1);
+        $active = $this->service()->create($this->payload(2, [
+            'supplier_id' => 2,
+            'purchase_id' => 2,
+            'warehouse_id' => 2,
+            'items' => [['purchase_item_id' => 2, 'quantity' => 2]],
+        ]), 1);
+        $this->service()->delete($cancelled, 1, 1, 'ابطال آزمایشی');
+
+        $controller = app(\App\Http\Controllers\PurchaseReturnController::class);
+        $archive = fn (array $filters) => $controller->index(
+            \Illuminate\Http\Request::create('/purchase-returns', 'GET', $filters)
+        )->getData()['documents'];
+        $this->assertSame([$active->id], $archive([])->pluck('id')->all());
+        $this->assertSame([$cancelled->id], $archive(['status' => 'cancelled'])->pluck('id')->all());
+        $this->assertSame(2, $archive(['status' => 'all'])->total());
+        $this->assertSame([$active->id], $archive(['status' => 'all', 'warehouse_id' => 2])->pluck('id')->all());
+        $this->assertSame([$active->id], $archive(['supplier_id' => 2])->pluck('id')->all());
+        $this->assertSame([$cancelled->id], $archive(['status' => 'all', 'q' => '۰۰۰۰۱'])->pluck('id')->all());
+        $this->assertSame([$active->id], $archive(['q' => '2'])->pluck('id')->all());
+        $this->assertSame(0, $archive(['status' => 'all', 'to_fa' => '1405/07/18'])->total());
+        $this->assertSame(2, $archive(['status' => 'all', 'from_fa' => '۱۴۰۵/۰۷/۱۹'])->total());
+        $this->assertSame(2, $archive(['show_deleted' => '1'])->total());
+        $this->invalid(fn () => $archive(['status' => 'bogus']));
+        $this->invalid(fn () => $archive(['from_fa' => '1405/13/99']));
+        $this->invalid(fn () => $archive(['from_fa' => '1405/07/20', 'to_fa' => '1405/07/19']));
+        $this->assertSame(6, $this->quantity());
+    }
+
+    public function test_purchase_search_is_paginated_scoped_and_requires_valid_supplier(): void
+    {
+        for ($id = 3; $id <= 25; $id++) {
+            DB::table('purchases')->insert(['id' => $id, 'supplier_id' => 1, 'warehouse_id' => 1, 'total_amount' => 1000]);
+        }
+        $controller = app(\App\Http\Controllers\PurchaseReturnController::class);
+        $query = fn (array $params) => $controller->purchases(
+            \Illuminate\Http\Request::create('/purchase-returns/purchases/search', 'GET', $params)
+        )->getData(true);
+        $page1 = $query(['supplier_id' => 1]);
+        $this->assertCount(20, $page1['results']);
+        $this->assertTrue($page1['pagination']['more']);
+        $page2 = $query(['supplier_id' => 1, 'page' => 2]);
+        $this->assertCount(4, $page2['results']);
+        $this->assertFalse($page2['pagination']['more']);
+        $this->assertSame([2], array_column($query(['supplier_id' => 2])['results'], 'id'));
+        $this->assertSame([25], array_column($query(['supplier_id' => 1, 'q' => '۲۵'])['results'], 'id'));
+        $this->invalid(fn () => $query(['supplier_id' => 999]));
+        $this->assertSame(['page.warehouse.purchases'], \App\Support\PageAccessCatalog::permissionsForRoute('purchase-returns.purchases'));
+    }
+
+    public function test_cancellation_requires_reason_and_does_not_change_stock_or_finances_on_invalid_request(): void
+    {
+        $doc = $this->service()->create($this->payload(2), 1);
+        $controller = app(\App\Http\Controllers\PurchaseReturnController::class);
+        foreach (['', '   ', str_repeat('الف', 1001)] as $reason) {
+            $request = \Illuminate\Http\Request::create('/purchase-returns/'.$doc->id, 'DELETE', [
+                'version' => 1, 'reason' => $reason,
+            ]);
+            $request->setUserResolver(fn () => (object) ['id' => 1]);
+            $this->invalid(fn () => $controller->destroy($request, $doc));
+        }
+        $this->invalid(fn () => $this->service()->delete($doc, 1, 1, '  '));
+        $this->assertSame(4, $this->quantity());
+        $this->assertDatabaseCount('supplier_ledgers', 1);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertNull($doc->fresh()->deleted_at);
+        $this->assertSame(1, $doc->fresh()->version);
+
+        $request = \Illuminate\Http\Request::create('/purchase-returns/'.$doc->id, 'DELETE', [
+            'version' => 1, 'reason' => 'اصلاح ثبت',
+        ]);
+        $request->setUserResolver(fn () => (object) ['id' => 1]);
+        $this->assertSame(302, $controller->destroy($request, $doc)->getStatusCode());
+        $this->assertSame(6, $this->quantity());
+        $this->assertDatabaseCount('supplier_ledgers', 2);
+        $this->assertDatabaseHas('purchase_returns', ['id' => $doc->id, 'deleted_by' => 1, 'delete_reason' => 'اصلاح ثبت', 'version' => 2]);
+        $this->assertDatabaseHas('purchase_return_revisions', ['purchase_return_id' => $doc->id, 'action' => 'deleted', 'note' => 'اصلاح ثبت', 'user_id' => 1]);
+        $this->invalid(fn () => $this->service()->delete($doc, 1, 1, 'تکراری'));
+        $this->assertSame(6, $this->quantity());
+        $this->assertDatabaseCount('supplier_ledgers', 2);
+    }
+
+    public function test_cancellation_audit_failure_rolls_back_every_side_effect(): void
+    {
+        $doc = $this->service()->create($this->payload(2), 1);
+        \App\Models\PurchaseReturnRevision::creating(function ($revision) {
+            if ($revision->action === 'deleted') throw new \RuntimeException('audit unavailable');
+        });
+        try {
+            $this->service()->delete($doc, 1, 1, 'تست برگشت اتمیک');
+            $this->fail('Expected audit failure');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('audit unavailable', $error->getMessage());
+        } finally {
+            \App\Models\PurchaseReturnRevision::flushEventListeners();
+        }
+        $this->assertSame(4, $this->quantity());
+        $this->assertNull($doc->fresh()->deleted_at);
+        $this->assertSame(1, $doc->fresh()->version);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertDatabaseCount('supplier_ledgers', 1);
+        $this->assertDatabaseCount('purchase_return_revisions', 1);
+    }
+
+    public function test_persian_quantities_and_shared_cancellation_dialog_are_supported(): void
+    {
+        $request = \Illuminate\Http\Request::create('/purchase-returns', 'POST', $this->payload(2, [
+            'items' => [['purchase_item_id' => 1, 'quantity' => '۲']],
+        ]) + ['warehouse_id' => 1, 'returned_at_fa' => '۱۴۰۵/۰۷/۱۹']);
+        $request->setUserResolver(fn () => (object) ['id' => 1]);
+        app(\App\Http\Controllers\PurchaseReturnController::class)->store($request);
+        $this->assertSame(2, (int) PurchaseReturn::firstOrFail()->total_quantity);
+        $this->assertSame(4, $this->quantity());
+
+        $html = view('purchase-returns._cancel-modal')->render();
+        $this->assertStringContainsString('name="reason"', $html);
+        $this->assertStringContainsString('required', $html);
+        $this->assertStringContainsString('name="version"', $html);
+        $this->assertStringContainsString('اثر مالی برگشت', $html);
+        $this->assertStringContainsString('data-pr-cancel-warehouse-warning', $html);
+    }
 }

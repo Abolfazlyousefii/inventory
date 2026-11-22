@@ -380,6 +380,7 @@ class PageAccessCatalog
         'warehouses.personnel.show' => ['warehouses'],
         'purchase-returns.index' => ['warehouse.purchases'],
         'purchase-returns.create' => ['warehouse.purchases'],
+        'purchase-returns.purchases' => ['warehouse.purchases'],
         'purchase-returns.store' => ['warehouse.purchases'],
         'purchase-returns.show' => ['warehouse.purchases'],
         'purchase-returns.print' => ['warehouse.purchases'],

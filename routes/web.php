@@ -572,6 +572,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::get('/', [\App\Http\Controllers\PurchaseReturnController::class, 'index'])->name('index');
         Route::get('/create', [\App\Http\Controllers\PurchaseReturnController::class, 'create'])->name('create');
         Route::post('/', [\App\Http\Controllers\PurchaseReturnController::class, 'store'])->name('store');
+        Route::get('/purchases/search', [\App\Http\Controllers\PurchaseReturnController::class, 'purchases'])->name('purchases');
         Route::get('/{purchaseReturn}', [\App\Http\Controllers\PurchaseReturnController::class, 'show'])->withTrashed()->name('show');
         Route::get('/{purchaseReturn}/print', [\App\Http\Controllers\PurchaseReturnController::class, 'print'])->withTrashed()->name('print');
         Route::get('/{purchaseReturn}/edit', [\App\Http\Controllers\PurchaseReturnController::class, 'edit'])->name('edit');
