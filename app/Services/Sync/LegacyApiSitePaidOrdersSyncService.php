@@ -95,6 +95,7 @@ class LegacyApiSitePaidOrdersSyncService {
         }
 
         return [
+            'currency'       => 'IRR', // Amounts below are already converted from toman to rial.
             'crm_order_id'     => (int) $order['id'],
             'occurred_at'      => $order['created_at'] ?? null,
             'user'             => [

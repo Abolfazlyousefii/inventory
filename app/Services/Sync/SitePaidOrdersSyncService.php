@@ -200,6 +200,7 @@ class SitePaidOrdersSyncService
         if ($name === '') $name = trim((string) ($order->user?->first_name.' '.$order->user?->last_name));
 
         return [
+            'currency' => 'IRR', // Amounts above are already converted from toman to rial.
             'crm_order_id' => (int) $order->id,
             'occurred_at' => $order->created_at,
             'user' => [
