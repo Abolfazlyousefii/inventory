@@ -172,6 +172,14 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
+    Route::prefix('products/yuan')->name('products.yuan.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\YuanDashboardController::class, 'index'])->name('index');
+        Route::get('/data', [\App\Http\Controllers\YuanDashboardController::class, 'data'])->name('data');
+        Route::get('/{product}/history', [\App\Http\Controllers\YuanDashboardController::class, 'history'])->whereNumber('product')->name('history');
+        Route::post('/rate', [\App\Http\Controllers\YuanDashboardController::class, 'fetchRate'])->middleware('permission:products.price_changes.apply')->name('rate');
+        Route::post('/preview', [\App\Http\Controllers\YuanDashboardController::class, 'preview'])->middleware('permission:products.price_changes.apply')->name('preview');
+        Route::post('/apply', [\App\Http\Controllers\YuanDashboardController::class, 'apply'])->middleware('permission:products.price_changes.apply')->name('apply');
+    });
     Route::post('/products/selected-export', ProductSelectionExportController::class)
         ->middleware('route.permission:products.export')->name('products.selected-export');
     Route::post('/products/selected-stock-print', [\App\Http\Controllers\ProductSelectedStockExportController::class, 'printPreview'])

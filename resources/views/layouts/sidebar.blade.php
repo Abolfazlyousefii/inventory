@@ -117,6 +117,9 @@
                             <a class="sidebar-sublink {{ $is('purchases.*') }}" href="{{ route('purchases.index') }}">خرید کالا</a>
                         @endcanPermission
                         @canPermission('products.price_changes.view')
+                            <a class="sidebar-sublink {{ $is('products.yuan.*') }}" href="{{ route('products.yuan.index') }}">مدیریت قیمت یوان</a>
+                        @endcanPermission
+                        @canPermission('products.price_changes.view')
                             <a class="sidebar-sublink {{ $is('products.price-changes.*') ?: $pathActive('products/price-changes', 'products/price-changes/*') }}" href="{{ route('products.price-changes.index') }}">تغییر قیمت کالا</a>
                         @endcanPermission
                         @canPermission('products.export')

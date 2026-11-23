@@ -823,11 +823,10 @@ $productsPayload = $products->map(function ($p) {
                                 <input id="cny-buy-${product.id}" type="text" inputmode="decimal" class="form-control" data-cny-buy autocomplete="off" placeholder="مثلاً ۵ یا ۵٫۲۵" maxlength="16">
                             </div>
                             <div>
-                                <label class="form-label d-block" for="cny-margin-${product.id}">درصد حاشیه سود مثبت <small>بیشتر از صفر تا ۹۹٪</small></label>
+                                <label class="form-label d-block" for="cny-margin-${product.id}">درصد حاشیه سود  <small> از 1 تا 99٪</small></label>
                                 <input id="cny-margin-${product.id}" type="text" inputmode="decimal" class="form-control" data-cny-margin autocomplete="off" placeholder="مثلاً ۲۰ یا ۱۲٫۵" maxlength="12">
                             </div>
                         </div>
-                        <div class="small text-muted mt-2">فقط درصد سود مثبت (حداقل ۰٫۰۱٪) مجاز است؛ صفر و درصد منفی پذیرفته نمی‌شود. ذخیرهٔ ۲٪ نوسان نرخ مانند قبل اعمال می‌شود.</div>
                         ${IS_EDIT_PURCHASE ? '<div class="small text-muted mt-2">ویرایش مبنای یوانی فقط قیمت‌های همین سند را با نرخ ثبت‌شدهٔ آن اصلاح می‌کند؛ قیمت روز کالا و سیاست به‌روزرسانی خودکار تغییر نمی‌کند.</div>' : ''}
                         <div class="cny-product-quote" data-cny-quote aria-live="polite">مبلغ یوانی را وارد کنید.</div>
                     </div>
