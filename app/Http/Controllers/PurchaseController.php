@@ -653,6 +653,7 @@ class PurchaseController extends Controller
             'purchase_origin' => ['nullable','in:domestic,china'],
             'cny_rate_id' => ['nullable','integer'],
             'items.*.buy_cny' => ['nullable','string','max:32'],
+            'items.*.cny_margin' => ['nullable','string','max:12'],
             'submission_token' => ['required', 'uuid'],
             'sale_price_change_confirmed' => ['nullable', 'boolean'],
             'sale_price_change_reason' => ['nullable', 'string', 'max:500'],
@@ -1257,6 +1258,7 @@ class PurchaseController extends Controller
                 'buy_price' => $buyPrice, 'sell_price' => $sellPrice, 'line_subtotal' => $lineSubtotal,
                 'discount_type' => $itemDiscountType, 'discount_value' => $itemDiscountValue,
                 'discount_amount' => $itemDiscountAmount, 'line_total' => $lineTotal,
+                'buy_cny_units' => $newItem['buy_cny_units'] ?? null, 'cny_policy' => $newItem['cny_policy'] ?? null,
             ];
 
             $oldItem ? $oldItem->update($payload) : $purchase->items()->create($payload);
@@ -1362,7 +1364,7 @@ class PurchaseController extends Controller
         array $requestData
     ): void {
         if (!empty($requestData['_product_prices_applied'])) return;
-        if (($requestData['purchase_origin']??'domestic')==='china' && $oldItem===null) return;
+        if (($requestData['purchase_origin']??'domestic')==='china') return; // Yuan edits correct the historical snapshot, not today's catalog price.
         $decision = app(PurchaseCatalogPriceDecision::class);
         $currentSellPrice = (int) $variant->sell_price;
         $salePriceEdited = $decision->isExplicitChange(

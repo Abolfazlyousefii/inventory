@@ -1,23 +1,31 @@
-const { test } = require('node:test');
+const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const blade = fs.readFileSync(path.resolve(__dirname, '../../resources/views/purchases/create.blade.php'), 'utf8');
+const vm = require('node:vm');
+const context = {window: {}};
+vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../public/js/cny-pricing.js'), 'utf8'), context);
+const {quote} = context.window.AriyaCny;
 
-// Tests the integer-safe formula in the Blade preview (no public JS file was
-// shipped in the user's ZIP, so its original asset is left alone).
-const blade = fs.readFileSync(path.resolve(__dirname,
-    '../../resources/views/purchases/create.blade.php'), 'utf8');
+test('the CNY preview takes the selected margin and uses the same calculator as the backend', () => {
+    assert.match(blade, /window\.AriyaCny\.quote\(input\.value, Number\(cnyRate\.rate_rial\), margin\.value\)/);
+    assert.match(blade, /data-cny-margin/);
+    assert.match(blade, /cny_margin: window\.AriyaCny\.latin/);
+    assert.match(blade, /cny_margin:card\.querySelector/);
+    assert.match(blade, /margin\.required = input\.required/);
+    assert.doesNotMatch(blade, /const numerator = BigInt\(quote\.units\)/);
+    assert.equal(quote('5', 400000, '20').sale, 2550000);
+    assert.throws(() => quote('5', 400000, '-20'));
+    assert.throws(() => quote('5', 400000, '0'));
+    assert.match(blade, /درصد حاشیه سود مثبت/);
+    assert.doesNotMatch(blade, /مثبت یا منفی|عدد منفی قیمت را کاهش/);
+});
 
-test('the CNY purchase preview computes the same ceil formula as the server', () => {
-    const formula = blade.match(/const numerator = BigInt\(quote\.units\)[^\n]*\n\s*const denominator =[^\n]*\n\s*quote\.sale =[^\n]*/);
-    assert.ok(formula, 'Blade must compute the selling price with bigint and ceil');
-    const sale = (units, rate) => {
-        const quote = { units };
-        const cnyRate = { rate_rial: rate };
-        eval(formula[0]); // a tested excerpt of the trusted local Blade source
-        return quote.sale;
-    };
-    assert.equal(sale(50000, 400000), 2920000);
-    assert.equal(sale(50000, 390000), 2850000);
-    assert.equal(sale(25125, 400000), 1470000);
+test('editing a yuan purchase lets the operator change both values and refreshes recorded prices on input only', () => {
+    assert.doesNotMatch(blade, /input\.readOnly\s*=\s*IS_EDIT_PURCHASE/);
+    assert.doesNotMatch(blade, /margin\.readOnly\s*=\s*IS_EDIT_PURCHASE/);
+    assert.match(blade, /refreshCnyCard\(card, !IS_EDIT_PURCHASE \|\| target\.matches\('\[data-cny-buy\],\[data-cny-margin\]'\)\)/);
+    assert.match(blade, /function refreshCnyCard\(card,\s*writePrices\s*=\s*!IS_EDIT_PURCHASE\)/);
+    assert.match(blade, /if \(writePrices\)/);
 });

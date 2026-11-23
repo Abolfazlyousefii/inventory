@@ -20,4 +20,22 @@ foreach ([
         throw new RuntimeException('Selling price must be a positive multiple of 10,000 IRR');
     }
 }
+foreach ([
+    ['0.01', 2050000],
+    ['20', 2550000],
+    ['۱۲٫۵', 2340000],
+] as [$margin, $saleExpected]) {
+    $out = $calc->calculate('5', 400000, $margin);
+    if ($out['sell_rial'] !== $saleExpected || $calc->marginFromPolicy($out['policy']) === null) {
+        throw new RuntimeException("Unexpected custom yuan margin: {$margin}");
+    }
+}
+foreach (['', '0', '-0', '-0.01', '-20', '100', '-100', '99.01', 'abc', '20.123'] as $invalidMargin) {
+    try { $calc->calculate('5', 400000, $invalidMargin); }
+    catch (InvalidArgumentException) { continue; }
+    throw new RuntimeException("Invalid yuan margin was accepted: {$invalidMargin}");
+}
+foreach (['margin0-buffer2-ceil1000-v2', 'margin-20-buffer2-ceil1000-v2'] as $invalidPolicy) {
+    if ($calc->marginFromPolicy($invalidPolicy) !== null) throw new RuntimeException('Nonpositive CNY policy was accepted');
+}
 echo "Exact CNY integer ceiling tests passed\n";

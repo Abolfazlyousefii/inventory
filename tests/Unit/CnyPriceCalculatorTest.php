@@ -56,3 +56,19 @@ it('always ceilings the final selling price to the next 1000 toman, keeping purc
     expect((new CnyPriceCalculator)->calculate('5',390000)['sell_rial'])->toBe(2850000);
     expect((new CnyPriceCalculator)->calculate('2.5125',400000)['sell_rial'])->toBe(1470000);
 });
+
+it('calculates a user-supplied margin and carries it in the existing policy string', function () {
+    $calculator = new CnyPriceCalculator;
+    foreach (['0.01'=>2050000, '20'=>2550000, '۱۲٫۵'=>2340000] as $percent=>$sale) {
+        $quote = $calculator->calculate('5', 400000, $percent);
+        expect($quote['sell_rial'])->toBe($sale)
+            ->and($calculator->marginFromPolicy($quote['policy']))->not->toBeNull();
+    }
+    expect($calculator->marginFromPolicy('margin30-buffer2-round1000-v1'))->toBe('30');
+    expect($calculator->marginFromPolicy('unknown'))->toBeNull()
+        ->and($calculator->marginFromPolicy('margin0-buffer2-ceil1000-v2'))->toBeNull()
+        ->and($calculator->marginFromPolicy('margin-20-buffer2-ceil1000-v2'))->toBeNull();
+    foreach (['', '0', '-0', '-0.01', '-20', '100', '99.01', 'abc'] as $invalid) {
+        expect(fn() => $calculator->calculate('5', 400000, $invalid))->toThrow(InvalidArgumentException::class);
+    }
+});

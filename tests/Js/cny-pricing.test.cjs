@@ -16,3 +16,10 @@ test('refuses invalid inputs instead of retaining a previous price',()=>{
     for(const value of ['','0','-1','5abc','5.12345','100000.0001'])assert.throws(()=>quote(value,400000));
     assert.throws(()=>quote('5',0));
 });
+
+test('accepts only positive user-selected profit margins and rejects zero or negative margins',()=>{
+    assert.equal(quote('5',400000,'0.01').sale,2050000);
+    assert.equal(quote('5',400000,'20').sale,2550000);
+    assert.equal(quote('5',400000,'۱۲٫۵').sale,2340000);
+    for(const margin of ['', '0', '-0', '-0.01', '-20', '100', '-100', '99.01', 'abc', '20.123']) assert.throws(()=>quote('5',400000,margin));
+});

@@ -18,7 +18,7 @@ beforeEach(function(){
     $this->rate=CnyExchangeRate::create(['provider'=>'sample','rate_rial'=>400000,'quoted_at'=>now()]);
     $this->payload=['submission_token'=>(string)Str::uuid(),'supplier_id'=>(string)$this->supplier->id,'purchase_origin'=>'china','cny_rate_id'=>$this->rate->id,
         'sale_price_change_confirmed'=>1,'sale_price_change_reason'=>'تأیید مبنای یوانی و قیمت‌گذاری خودکار',
-        'items'=>[['product_id'=>$this->product->id,'variant_id'=>$this->variants[0]->id,'quantity'=>2,'buy_cny'=>'۵','buy_price'=>1,'sell_price'=>1,'expected_current_sell_price'=>1000000]]];
+        'items'=>[['product_id'=>$this->product->id,'variant_id'=>$this->variants[0]->id,'quantity'=>2,'buy_cny'=>'۵','cny_margin'=>'30','buy_price'=>1,'sell_price'=>1,'expected_current_sell_price'=>1000000]]];
     $this->payload['items'][0]['product_price_version']=app(\App\Services\UniformPurchasePriceService::class)->version($this->product);
 });
 
@@ -181,4 +181,108 @@ it('reprices only opted-in yuan products and preserves domestic and paused catal
         ->and(DB::table('purchase_items')->get()->toJson())->toBe($historical)
         ->and(DB::table('supplier_ledgers')->get()->toJson())->toBe($supplier)
         ->and(DB::table('warehouse_stocks')->get()->toJson())->toBe($stock);
+});
+
+it('uses the entered percentage for the purchase, the stored policy, and subsequent currency repricing', function () {
+    $this->payload['items'][0]['cny_margin'] = '20';
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasNoErrors();
+    $item = Purchase::latest('id')->first()->items()->sole();
+    $policy = ProductCnyPricing::where('product_id', $this->product->id)->sole();
+    expect($item->buy_price)->toBe(2000000)->and($item->sell_price)->toBe(2550000)
+        ->and($item->cny_policy)->toBe('margin20-buffer2-ceil1000-v2')
+        ->and($policy->policy)->toBe('margin20-buffer2-ceil1000-v2');
+    CnyExchangeRate::create(['provider'=>'sample','rate_rial'=>410000,'quoted_at'=>now()]);
+    expect(app(CnyPricingService::class)->reprice())->toBe(1)
+        ->and($this->product->fresh()->price)->toBe(2620000)
+        ->and($policy->fresh()->policy)->toBe('margin20-buffer2-ceil1000-v2')
+        ->and($item->fresh()->sell_price)->toBe(2550000);
+});
+
+it('rejects missing, zero, negative, and invalid yuan profit margins without saving a purchase', function () {
+    foreach (['', '0', '-0', '-0.01', '-20', '100', '99.01', 'invalid', '20.123'] as $percent) {
+        $this->payload['submission_token'] = (string) Str::uuid();
+        $this->payload['items'][0]['cny_margin'] = $percent;
+        $this->post(route('purchases.store'), $this->payload)->assertSessionHasErrors('cny_pricing');
+        expect(Purchase::count())->toBe(0)->and(ProductCnyPricing::count())->toBe(0);
+    }
+});
+
+it('rejects different margins on variants of the same product', function () {
+    $second = $this->payload['items'][0];
+    $second['variant_id'] = $this->variants[1]->id;
+    $second['cny_margin'] = '15';
+    $this->payload['items'][] = $second;
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasErrors('cny_pricing');
+    expect(Purchase::count())->toBe(0);
+});
+
+it('edits yuan base and positive margin using the original rate without overwriting the live catalog', function () {
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasNoErrors();
+    $purchase = Purchase::latest('id')->first();
+    $originalItem = $purchase->items()->sole();
+    CnyExchangeRate::create(['provider' => 'sample', 'rate_rial' => 410000, 'quoted_at' => now()]);
+    app(CnyPricingService::class)->reprice();
+    $livePrice = $this->product->fresh()->price;
+    $activePolicy = ProductCnyPricing::where('product_id', $this->product->id)->sole()->policy;
+
+    $edited = $this->payload;
+    $edited['submission_token'] = (string) Str::uuid();
+    $edited['items'][0]['id'] = $originalItem->id;
+    $edited['items'][0]['buy_cny'] = '8';
+    $edited['items'][0]['cny_margin'] = '20';
+    $this->put(route('purchases.update', $purchase), $edited)->assertSessionHasNoErrors();
+
+    $updated = $originalItem->fresh();
+    expect((int) $updated->buy_cny_units)->toBe(80000)
+        ->and($updated->cny_policy)->toBe('margin20-buffer2-ceil1000-v2')
+        ->and((int) $updated->buy_price)->toBe(3200000)
+        ->and((int) $updated->sell_price)->toBe(4080000)
+        ->and((int) $purchase->fresh()->total_amount)->toBe(6400000)
+        ->and((int) $purchase->fresh()->cny_rate_id)->toBe($this->rate->id)
+        ->and((int) $this->product->fresh()->price)->toBe((int) $livePrice)
+        ->and(ProductCnyPricing::where('product_id', $this->product->id)->sole()->policy)->toBe($activePolicy);
+    $this->get(route('purchases.edit', $purchase))->assertOk()->assertSee('8.0000')->assertSee('20');
+});
+
+it('rejects invalid margin edits without modifying the stored yuan purchase', function () {
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasNoErrors();
+    $purchase = Purchase::latest('id')->first();
+    $item = $purchase->items()->sole();
+    foreach (['0', '-10', '100', '', null] as $invalid) {
+        $edited = $this->payload;
+        $edited['submission_token'] = (string) Str::uuid();
+        $edited['items'][0]['id'] = $item->id;
+        $edited['items'][0]['cny_margin'] = $invalid;
+        $this->put(route('purchases.update', $purchase), $edited)->assertSessionHasErrors('cny_pricing');
+        expect($item->fresh()->cny_policy)->toBe('margin30-buffer2-ceil1000-v2')
+            ->and((int) $item->fresh()->buy_cny_units)->toBe(50000);
+    }
+});
+
+it('rejects an explicitly cleared yuan amount without restoring the old amount', function () {
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasNoErrors();
+    $purchase = Purchase::latest('id')->first();
+    $item = $purchase->items()->sole();
+    foreach (['', null] as $invalid) {
+        $edited = $this->payload;
+        $edited['submission_token'] = (string) Str::uuid();
+        $edited['items'][0]['id'] = $item->id;
+        $edited['items'][0]['buy_cny'] = $invalid;
+        $this->put(route('purchases.update', $purchase), $edited)->assertSessionHasErrors('cny_pricing');
+        expect((int) $item->fresh()->buy_cny_units)->toBe(50000);
+    }
+});
+
+it('requires approval before a yuan edit changes the recorded selling price', function () {
+    $this->post(route('purchases.store'), $this->payload)->assertSessionHasNoErrors();
+    $purchase = Purchase::latest('id')->first();
+    $item = $purchase->items()->sole();
+    $edited = $this->payload;
+    $edited['submission_token'] = (string) Str::uuid();
+    $edited['items'][0]['id'] = $item->id;
+    $edited['items'][0]['cny_margin'] = '20';
+    $edited['sale_price_change_confirmed'] = 0;
+    $this->put(route('purchases.update', $purchase), $edited)->assertSessionHasErrors('cny_pricing');
+    expect($item->fresh()->cny_policy)->toBe('margin30-buffer2-ceil1000-v2')
+        ->and((int) $item->fresh()->sell_price)->toBe(2920000);
 });
