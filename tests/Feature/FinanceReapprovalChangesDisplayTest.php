@@ -68,8 +68,13 @@ it('shows recorded additions removals and before-after money values instead of c
         'updated_at' => now()->addMinute(),
     ]);
 
-    $this->get(route('preinvoice.draft.index', ['tab' => 'reapprovals']))
-        ->assertOk()
+    $response = $this->get(route('preinvoice.draft.index', ['tab' => 'reapprovals']));
+    $response->assertOk()
+        ->assertDontSee('invoiceReturn' . $invoice->id)
+        ->assertDontSee('return-to-sales')
+        ->assertSee('invoiceChanges' . $invoice->id)
+        ->assertSee(route('finance.invoices.reapprove', $invoice->uuid), false)
+        ->assertSee(route('invoices.print', $invoice->uuid), false)
         ->assertSee('کالای حذف‌شده')
         ->assertSee('کالای افزوده‌شده')
         ->assertSee('کالای اصلاح‌شده')
@@ -83,6 +88,10 @@ it('shows recorded additions removals and before-after money values instead of c
         ->assertSee('20,000')
         ->assertSee('18,000')
         ->assertDontSee('snapshot قبل از تغییر برای مقایسه دقیق وجود ندارد');
+
+    // Desktop table and mobile cards must both retain reapproval and printing.
+    expect(substr_count($response->getContent(), route('finance.invoices.reapprove', $invoice->uuid)))->toBe(2)
+        ->and(substr_count($response->getContent(), route('invoices.print', $invoice->uuid)))->toBe(2);
 
     $this->get(route('preinvoice.draft.index', ['tab' => 'expired']))
         ->assertOk();

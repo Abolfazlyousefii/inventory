@@ -225,7 +225,6 @@ class PageAccessCatalog
         'vouchers.sales.status' => ['warehouse.issues'],
         'vouchers.sales.print' => ['warehouse.issues'],
         'finance.invoices.reapprove' => ['sales.preinvoice_finance_review'],
-        'finance.invoices.return-to-sales' => ['sales.preinvoice_finance_review'],
         'finance.cheques.registered' => ['finance.payments'],
         'finance.reports.index' => ['finance.accounts'],
         'finance.reports.payment-calculator.index' => ['finance.accounts'],
@@ -596,7 +595,6 @@ class PageAccessCatalog
             'invoices.show',
             'invoices.print',
             'finance.invoices.reapprove',
-            'finance.invoices.return-to-sales',
         ],
 
         // Sellers may follow their own converted preinvoice to its read-only invoice/havaleh.

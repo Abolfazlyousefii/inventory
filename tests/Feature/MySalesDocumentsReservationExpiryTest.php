@@ -79,6 +79,57 @@ function mySalesExpiryOrder(User $seller, string $status, ?\Carbon\CarbonInterfa
     return compact('order', 'product', 'variant', 'item');
 }
 
+it('renders a returned preinvoice for manual resubmission without invalid decimal-rial defaults', function () {
+    $seller = User::factory()->create();
+    ['order' => $order] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RETURNED_TO_SALES);
+    $order->update(['invoice_discount_type' => 'amount', 'invoice_discount_value' => '0.00']);
+
+    $this->actingAs($seller)->get(route('preinvoice.draft.edit', $order->uuid))
+        ->assertOk()
+        ->assertSee('orderStatus: "returned_to_sales"', false)
+        ->assertSee('value="0" placeholder="مقدار"', false)
+        ->assertDontSee('value="0.00" placeholder="مقدار"', false);
+
+    expect($order->fresh()->status)->toBe(PreinvoiceOrder::STATUS_RETURNED_TO_SALES);
+});
+
+it('seller_can_resubmit_a_returned_preinvoice_to_finance_using_the_existing_update_route', function () {
+    $seller = User::factory()->create();
+    ['order' => $order, 'product' => $product, 'variant' => $variant, 'item' => $item] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RETURNED_TO_SALES);
+    $row = [
+        'id' => $product->id,
+        'variety_id' => $variant->id,
+        'quantity' => 2,
+        'price' => 100000,
+        'item_id' => $item->id,
+    ];
+
+    $this->actingAs($seller)->from(route('preinvoice.draft.edit', $order->uuid))
+        ->put(route('preinvoice.draft.update', $order->uuid), [
+            'intent' => 'submit',
+            'customer_name' => 'مشتری تست',
+            'customer_mobile' => '09120000000',
+            'products_payload' => json_encode([$row], JSON_THROW_ON_ERROR),
+            'products_payload_count' => 1,
+            'products_payload_version' => 1,
+            'products_payload_complete' => 1,
+            'products_payload_total_quantity' => 2,
+            'products_payload_gross_total' => 200000,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $order->refresh();
+    expect($order->status)->toBe(PreinvoiceOrder::STATUS_PENDING_FINANCE)
+        ->and($order->stock_frozen_until)->not->toBeNull()
+        ->and($order->stock_released_at)->toBeNull()
+        ->and(PreinvoiceDraftReservation::query()
+            ->where('preinvoice_order_id', $order->id)
+            ->where('reservation_scope', 'official')
+            ->whereNull('released_at')
+            ->count())->toBe(1);
+});
+
 it('expired_preinvoice_is_visible_in_active_tab', function () {
     $seller = User::factory()->create();
     ['order' => $order] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, null, now()->subMinute());
@@ -200,21 +251,39 @@ it('seller_can_recheck_and_resubmit_expired_preinvoice', function () {
 it('expired_preinvoice_resubmit_fails_atomically_when_stock_is_insufficient', function () {
     $seller = User::factory()->create();
     ['order' => $order, 'product' => $product, 'variant' => $variant, 'item' => $item] = mySalesExpiryOrder($seller, PreinvoiceOrder::STATUS_RESERVATION_EXPIRED, null, now()->subMinute());
+
+    // Central warehouse stock is the authority for reservations. Changing only
+    // the product/variant stock projections would leave 10 units reservable.
+    WarehouseStock::query()
+        ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+        ->where('product_id', $product->id)
+        ->where('product_variant_id', $variant->id)
+        ->update(['quantity' => 1]);
     $variant->forceFill(['stock' => 1, 'reserved' => 0])->save();
     $product->forceFill(['stock' => 1, 'reserved' => 0])->save();
 
-    $this->actingAs($seller)->from(route('preinvoice.draft.edit', $order->uuid))->put(route('preinvoice.draft.update', $order->uuid), [
-        'intent' => 'submit',
-        'customer_name' => 'مشتری تست',
-        'customer_mobile' => '09120000000',
-        'products' => [[
-            'id' => $product->id,
-            'variety_id' => $variant->id,
-            'quantity' => 2,
-            'price' => 100000,
-            'item_id' => $item->id,
-        ]],
-    ])->assertSessionHasErrors();
+    $row = [
+        'id' => $product->id,
+        'variety_id' => $variant->id,
+        'quantity' => 2,
+        'price' => 100000,
+        'item_id' => $item->id,
+    ];
+
+    $this->actingAs($seller)->from(route('preinvoice.draft.edit', $order->uuid))
+        ->put(route('preinvoice.draft.update', $order->uuid), [
+            'intent' => 'submit',
+            'customer_name' => 'مشتری تست',
+            'customer_mobile' => '09120000000',
+            'products_payload' => json_encode([$row], JSON_THROW_ON_ERROR),
+            'products_payload_count' => 1,
+            'products_payload_version' => 1,
+            'products_payload_complete' => 1,
+            'products_payload_total_quantity' => 2,
+            'products_payload_gross_total' => 200000,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('products');
 
     $order->refresh();
     $variant->refresh();
@@ -222,6 +291,11 @@ it('expired_preinvoice_resubmit_fails_atomically_when_stock_is_insufficient', fu
     expect($order->status)->toBe(PreinvoiceOrder::STATUS_RESERVATION_EXPIRED)
         ->and($order->stock_released_at)->not->toBeNull()
         ->and(PreinvoiceDraftReservation::query()->where('preinvoice_order_id', $order->id)->where('reservation_scope', 'official')->whereNull('released_at')->count())->toBe(0)
+        ->and((int) WarehouseStock::query()
+            ->where('warehouse_id', WarehouseStockService::centralWarehouseId())
+            ->where('product_id', $product->id)
+            ->where('product_variant_id', $variant->id)
+            ->value('quantity'))->toBe(1)
         ->and((int) $variant->reserved)->toBe(0)
         ->and((int) $product->reserved)->toBe(0);
 });

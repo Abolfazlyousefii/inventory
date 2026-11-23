@@ -735,7 +735,6 @@ class PermissionCatalog
             'vouchers.sales.products.by-category' => 'warehouse.collection.view',
             'vouchers.sales.products.variants' => 'warehouse.collection.view',
             'finance.invoices.reapprove' => 'invoices.change_status',
-            'finance.invoices.return-to-sales' => 'invoices.change_status',
             'vouchers.return-from-sale.categories.index' => 'sales_returns.create',
             'vouchers.return-from-sale.categories.products' => 'sales_returns.create',
             'vouchers.return-from-sale.legacy.print' => 'sales_returns.print',

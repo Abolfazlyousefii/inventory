@@ -347,7 +347,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::post('/vouchers/sales/{uuid}/status', [InvoiceController::class, 'updateStatus'])->name('vouchers.sales.status');
     Route::get('/vouchers/sales/{uuid}/print', [InvoiceController::class, 'print'])->name('vouchers.sales.print');
     Route::post('/finance/invoices/{uuid}/reapprove', [InvoiceController::class, 'financeReapproveInvoice'])->name('finance.invoices.reapprove');
-    Route::post('/finance/invoices/{uuid}/return-to-sales', [InvoiceController::class, 'financeReturnInvoiceToSales'])->name('finance.invoices.return-to-sales');
     Route::get('/finance/registered-cheques', fn () => redirect()->route('finance.reports.receipts'))->name('finance.cheques.registered');
 
     Route::prefix('finance/reports')

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../../resources/views/preinvoice/create.blade.php'), 'utf8');
 
-function editor(fetch) {
+function editor(fetch, options = {}) {
     const values = {
         customer_id: '1', customer_name: 'Customer', customer_mobile: '09120000000',
         payment_terms_note: '', orderDiscountType: 'amount', orderDiscountValue: '0',
@@ -24,7 +24,7 @@ function editor(fetch) {
             querySelector: () => ({content: 'csrf'})
         },
         API: {autosave: '/preinvoice/autosave'},
-        IS_EDIT: false, isBootingPage: false, isHydratingLocalDraft: false, isSubmittingProgrammatically: false,
+        IS_EDIT: !!options.isEdit, ENABLE_SERVER_AUTOSAVE: !options.isEdit || options.status === 'draft', isBootingPage: false, isHydratingLocalDraft: false, isSubmittingProgrammatically: false,
         currentAutosaveUuid: '12345', currentAutosaveVersion: 'version-1',
         autosaveQueue: Promise.resolve(), confirmedAutosavePayload: null, autosaveConflict: false,
         autosaveTimer: null, localDraftSaveTimer: null, autosaveDirty: false,
@@ -206,4 +206,31 @@ test('edit-field autosave scheduling never counts as explicit confirmation', () 
     assert.equal(context.confirmedAutosavePayload, null);
     context.saveLocalDraftNow();
     assert.equal(context.confirmedAutosavePayload, null);
+});
+
+
+test('returned seller preinvoices use normal form submission and never call draft-only autosave', async () => {
+    let requests = 0;
+    const context = editor(async () => { requests++; throw new Error('Returned document must not autosave'); },
+        {isEdit: true, status: 'returned_to_sales'});
+    context.scheduleDbAutosave(0);
+    await context.saveDbAutosaveNow();
+    assert.equal(requests, 0);
+    assert.equal(context.autosaveDirty, false);
+    assert.equal(context.autosaveConflict, false);
+    // The existing submitGuard continues to the official PUT form submission.
+    assert.match(source, /await saveDbAutosaveNow\(\);[\s\S]*?document\.getElementById\('orderForm'\)\.submit\(\)/);
+});
+
+test('manual edits to ordinary drafts still use the protected versioned autosave', async () => {
+    let requests = 0;
+    const context = editor(async () => { requests++; return reply({ok: true, uuid: '12345', version: 'version-2'}); },
+        {isEdit: true, status: 'draft'});
+    await context.saveDbAutosaveNow();
+    assert.equal(requests, 1);
+});
+
+test('edit boot data contains document status so returned orders can skip draft autosave', () => {
+    assert.match(source, /orderStatus:\s*@json\(\$order->status\s*\?\?\s*null\)/);
+    assert.match(source, /const ENABLE_SERVER_AUTOSAVE\s*=\s*!IS_EDIT\s*\|\|\s*window\.PREINVOICE_BOOT\.orderStatus\s*===\s*'draft'/);
 });

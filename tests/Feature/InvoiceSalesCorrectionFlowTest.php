@@ -10,6 +10,7 @@ use App\Models\PreinvoiceOrder;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ShippingMethod;
+use App\Models\SalesHavalehHistory;
 use App\Models\WarehouseStock;
 use App\Services\WarehouseStockService;
 use App\Models\User;
@@ -292,20 +293,64 @@ it('calculates row and percentage discounts before returning the invoice to fina
         ->and($f['invoice']->fresh()->status)->toBe(Invoice::STATUS_PENDING_FINANCE_REAPPROVAL);
 });
 
-it('completes the real finance return and seller resubmission round trip', function () {
+it('rejects direct posts to the retired invoice return URL without changing financial data', function () {
     $this->withoutMiddleware(RoutePermissionMiddleware::class);
     $f = sellerCorrectionFixture();
-    $f['invoice']->update(['status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL]);
-    $this->actingAs($f['seller'])->post(route('finance.invoices.return-to-sales', $f['invoice']->uuid), [
+    $f['invoice']->update([
+        'status' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+        'status_changed_at' => now()->subMinute(),
+        'collection_note' => 'Previously recorded finance note',
+    ]);
+    $before = $f['invoice']->fresh();
+    $historyCount = DB::table('sales_havaleh_histories')->where('invoice_id', $before->id)->count();
+    $notificationCount = DB::table('notifications')->where('notifiable_type', Invoice::class)->where('notifiable_id', $before->id)->count();
+    $ledgerCount = DB::table('customer_ledgers')->where('reference_type', Invoice::class)->where('reference_id', $before->id)->count();
+    $revisionCount = DB::table('invoice_collection_revisions')->where('invoice_id', $before->id)->count();
+    $stockBefore = (int) $f['variant']->fresh()->stock;
+
+    // The URI is intentionally literal: the named route must no longer exist.
+    $this->actingAs($f['seller'])->post('/finance/invoices/' . $before->uuid . '/return-to-sales', [
         'reason' => 'مغایرت قیمت',
         'note' => 'قیمت را بررسی کنید',
-    ])->assertRedirect();
-    expect($f['invoice']->fresh()->status)->toBe(Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION);
+    ])->assertNotFound();
+
+    $after = $f['invoice']->fresh();
+    expect($after->status)->toBe(Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
+        ->and($after->getRawOriginal('status_changed_at'))->toBe($before->getRawOriginal('status_changed_at'))
+        ->and($after->status_changed_by)->toBe($before->status_changed_by)
+        ->and($after->collection_note)->toBe($before->collection_note)
+        ->and($after->total)->toBe($before->total)
+        ->and(DB::table('sales_havaleh_histories')->where('invoice_id', $before->id)->count())->toBe($historyCount)
+        ->and(DB::table('notifications')->where('notifiable_type', Invoice::class)->where('notifiable_id', $before->id)->count())->toBe($notificationCount)
+        ->and(DB::table('customer_ledgers')->where('reference_type', Invoice::class)->where('reference_id', $before->id)->count())->toBe($ledgerCount)
+        ->and(DB::table('invoice_collection_revisions')->where('invoice_id', $before->id)->count())->toBe($revisionCount)
+        ->and((int) $f['variant']->fresh()->stock)->toBe($stockBefore);
+});
+
+it('preserves the seller resubmission and audit trail of an already returned invoice', function () {
+    $this->withoutMiddleware(RoutePermissionMiddleware::class);
+    $f = sellerCorrectionFixture();
+    $history = SalesHavalehHistory::query()->create([
+        'invoice_id' => $f['invoice']->id,
+        'action_type' => 'finance_returned_to_sales',
+        'field_name' => 'status',
+        'old_value' => Invoice::STATUS_PENDING_FINANCE_REAPPROVAL,
+        'new_value' => Invoice::STATUS_RETURNED_TO_SALES_AFTER_COLLECTION,
+        'description' => 'Historical invoice return for correction',
+        'done_by' => $f['seller']->id,
+        'done_at' => now()->subDay(),
+    ]);
+
+    $this->actingAs($f['seller'])->getJson(route('vouchers.sales.history', $f['invoice']->uuid))
+        ->assertOk()
+        ->assertJsonFragment(['description' => 'Historical invoice return for correction']);
     $this->get(route('preinvoice.my.index', ['tab' => 'needs-correction']))
         ->assertOk()->assertSee('اصلاح فاکتور و ارسال مجدد');
     $this->post(route('preinvoice.my.invoice-correction.submit', $f['invoice']->uuid), correctionPayload($f))
         ->assertRedirect();
-    expect($f['invoice']->fresh()->status)->toBe(Invoice::STATUS_PENDING_FINANCE_REAPPROVAL);
+
+    expect($f['invoice']->fresh()->status)->toBe(Invoice::STATUS_PENDING_FINANCE_REAPPROVAL)
+        ->and(DB::table('sales_havaleh_histories')->where('id', $history->id)->where('action_type', 'finance_returned_to_sales')->exists())->toBeTrue();
     $this->get(route('preinvoice.draft.index', ['tab' => 'reapprovals']))
         ->assertOk()->assertSee($f['invoice']->uuid);
 });

@@ -9,6 +9,7 @@ use App\Support\PageAccessCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -26,7 +27,8 @@ it('does not grant financial invoice reapproval through payment entry access', f
     $user = User::factory()->create();
     $user->permissions()->attach(DB::table('permissions')->where('key', 'page.finance.payments')->value('id'));
     expect(PageAccessCatalog::userCanRoute($user, 'finance.invoices.reapprove'))->toBeFalse()
-        ->and(PageAccessCatalog::userCanRoute($user, 'finance.invoices.return-to-sales'))->toBeFalse();
+        ->and(Route::has('finance.invoices.return-to-sales'))->toBeFalse()
+        ->and(Route::has('finance.invoices.reapprove'))->toBeTrue();
 });
 
 it('removes old global preinvoice listing access from ordinary sellers', function () {

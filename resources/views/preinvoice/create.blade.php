@@ -51,6 +51,12 @@ $isEdit = (bool) ($isEdit ?? false);
 $oldCustomerTitle = trim((string) old('customer_name', $order->customer_name ?? ''));
 $oldCustomerMobile = trim((string) old('customer_mobile', $order->customer_mobile ?? ''));
 $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '');
+$oldInvoiceDiscountType = old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount'));
+$oldInvoiceDiscountValue = old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0));
+// An Eloquent decimal cast can render whole-rial values as "0.00". Keep fractional percentages intact.
+$displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
+    ? preg_replace('/\.0+$/', '', (string) $oldInvoiceDiscountValue)
+    : $oldInvoiceDiscountValue;
 	@endphp
 
 	<style>
@@ -1521,10 +1527,10 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 						<label class="label-sm">تخفیف کلی</label>
 						<div class="discount-control">
 							<select id="orderDiscountType" class="form-select form-select-sm">
-								<option value="amount" @selected(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')) === 'amount')>ریال</option>
-								<option value="percent" @selected(old('invoice_discount_type', $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')) === 'percent')>درصد</option>
+								<option value="amount" @selected($oldInvoiceDiscountType === 'amount')>ریال</option>
+								<option value="percent" @selected($oldInvoiceDiscountType === 'percent')>درصد</option>
 							</select>
-							<input data-rial data-rial-kind-source="#orderDiscountType" type="text" id="orderDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="{{ old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) }}" placeholder="مقدار">
+							<input data-rial data-rial-kind-source="#orderDiscountType" type="text" id="orderDiscountValue" class="form-control form-control-sm" min="0" step="0.01" inputmode="decimal" value="{{ $displayInvoiceDiscountValue }}" placeholder="مقدار">
 						</div>
 						<div class="discount-line" id="orderDiscountPreview">تخفیف کلی: 0 ریال</div>
 					</div>
@@ -1627,14 +1633,6 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
 	@php
 		$oldDiscountAmount = old('discount_amount', ($order->invoice_discount_amount ?? $order->discount_amount ?? 0));
-    $oldInvoiceDiscountType = old(
-        'invoice_discount_type',
-        $order->invoice_discount_type ?? data_get($order?->discount_breakdown, 'order_discount_type', 'amount')
-    );
-    $oldInvoiceDiscountValue = old(
-        'invoice_discount_value',
-        $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)
-    );
     $oldDiscountBreakdown = old('discount_breakdown', $order->discount_breakdown ?? null);
 	@endphp
 
@@ -1669,7 +1667,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 			oldDiscountBreakdown: @json($oldDiscountBreakdown),
 			isEdit: @json($isEdit),
 			orderUuid: @json($order->uuid ?? null),
-			editAutosaveVersion: @json($editAutosaveVersion ?? null)
+			editAutosaveVersion: @json($editAutosaveVersion ?? null),
+			orderStatus: @json($order->status ?? null)
 		};
 
 		const API = window.PREINVOICE_BOOT.api;
@@ -1684,6 +1683,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		const IS_EDIT = !!window.PREINVOICE_BOOT.isEdit;
 		const EDIT_ORDER_UUID = window.PREINVOICE_BOOT.orderUuid || null;
 		const EDIT_AUTOSAVE_VERSION = window.PREINVOICE_BOOT.editAutosaveVersion || null;
+		const ENABLE_SERVER_AUTOSAVE = !IS_EDIT || window.PREINVOICE_BOOT.orderStatus === 'draft';
 		const SUBMIT_SUCCEEDED = @json(session()->pull('preinvoice_submit_succeeded', false));
 
 		const productCache = new Map();
@@ -2312,6 +2312,9 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function saveDbAutosaveNow() {
+			// Returned/expired documents must retain their status until an explicit form submit.
+			// The server autosave endpoint only accepts ordinary drafts.
+			if (!ENABLE_SERVER_AUTOSAVE) return Promise.resolve();
 			const pending = autosaveQueue.then(persistDbAutosave);
 			autosaveQueue = pending.catch(() => {});
 			return pending;
@@ -2408,7 +2411,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function scheduleDbAutosave(delay = 1500) {
-			if (isSubmittingProgrammatically) return;
+			if (!ENABLE_SERVER_AUTOSAVE || isSubmittingProgrammatically) return;
 			autosaveDirty = true;
 			clearTimeout(autosaveTimer);
 			autosaveTimer = setTimeout(() => {
@@ -2737,7 +2740,7 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 		}
 
 		function flushEditDraftAutosaveOnExit() {
-			if (!IS_EDIT || isSubmittingProgrammatically || isBootingPage || autosaveConflict || !autosaveDirty || autosaveInFlight) return;
+			if (!ENABLE_SERVER_AUTOSAVE || !IS_EDIT || isSubmittingProgrammatically || isBootingPage || autosaveConflict || !autosaveDirty || autosaveInFlight) return;
 			if (!currentAutosaveUuid || !currentAutosaveVersion) return;
 
 			let snapshot;
@@ -3873,6 +3876,8 @@ $oldPaymentTermsNote = old('payment_terms_note', $order->payment_terms_note ?? '
 
 			if (!IS_EDIT && !OLD_CUSTOMER_ID && !INIT_ROWS.length && localDraftExists()) {
 				showLocalDraftBanner();
+			} else if (!ENABLE_SERVER_AUTOSAVE) {
+				updateLocalDraftStatus('ذخیره خودکار برای این سند فعال نیست؛ از «ذخیره پیش‌نویس» یا «ارسال به مالی» استفاده کنید.', false);
 			} else {
 				scheduleLocalDraftSave();
 			}

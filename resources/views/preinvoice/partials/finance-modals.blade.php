@@ -6,6 +6,5 @@
 @elseif(($activeTab ?? '') === 'reapprovals')
   @foreach($financeReapprovalInvoices as $invoice)
     @include('preinvoice.partials.finance-reapproval-changes', ['invoice' => $invoice, 'changes' => $financeReapprovalChanges[$invoice->id]])
-    <div class="modal fade" id="invoiceReturn{{ $invoice->id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content" method="POST" action="{{ route('finance.invoices.return-to-sales',$invoice->uuid) }}" data-guard-submit>@csrf<div class="modal-header"><h6 class="modal-title">ارجاع فاکتور برای اصلاح</h6><button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="form-label">علت</label><select class="form-select" name="reason" required data-other-toggle="invoiceOther{{ $invoice->id }}">@foreach($invoiceReturnReasons as $r)<option value="{{ $r }}">{{ $r }}</option>@endforeach</select><label class="form-label mt-3">توضیحات</label><textarea id="invoiceOther{{ $invoice->id }}" class="form-control" name="note" rows="3"></textarea></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button><button class="btn btn-warning">ارجاع برای اصلاح</button></div></form></div></div>
   @endforeach
 @endif
