@@ -526,7 +526,7 @@ class PageAccessCatalog
         'account-statements.documents.payments.show' => ['finance.accounts'],
         'account-statements.show' => ['finance.accounts'],
         'activity-logs.index' => ['activity_logs'],
-        'users.index' => ['users'],
+        'users.index' => ['users', 'roles'],
         'users.sync' => ['users'],
         'admin.bug-investigator.index' => ['activity_logs'],
         'admin.bug-investigator.create' => ['activity_logs'],
@@ -535,6 +535,7 @@ class PageAccessCatalog
         'admin.bug-investigator.show' => ['activity_logs'],
         'admin.permissions.index' => ['roles'],
         'admin.permissions.update' => ['roles'],
+        'admin.personnel.organization.update' => ['roles'],
         'admin.invoice-payment-settings.edit' => ['settings'],
         'admin.invoice-payment-settings.update' => ['settings'],
         'admin.roles.index' => ['roles'],
@@ -658,7 +659,7 @@ class PageAccessCatalog
             'assets' => ['انبارداری', 'امین اموال', ['assets']],
             'sales.preinvoices' => ['بازرگانی و فروش', 'ثبت و مدیریت پیش‌فاکتورها', ['preinvoices']],
             'commercial.commissions' => ['بازرگانی و فروش', 'پورسانت فروشندگان', []],
-            'commercial.invoice_reassignments' => ['بازرگانی و فروش', 'انتقال فروشنده فاکتور', []],
+            'commercial.invoice_reassignments' => ['بازرگانی و فروش', 'انتقال فاکتور مشتری', []],
             'sales.preinvoice_warehouse_review' => ['بازرگانی و فروش', 'بررسی انبار پیش‌فاکتور', ['preinvoices.warehouse']],
             'sales.preinvoice_finance_review' => ['مالی', 'تأیید مالی پیش‌فاکتور', ['preinvoices.finance']],
             'sales.invoices' => ['بازرگانی و فروش', 'فاکتورهای فروش', ['invoices', 'notes']],
@@ -671,8 +672,8 @@ class PageAccessCatalog
             'finance.seller_sales_documents' => ['مالی', 'گزارش پورسانت فروشندگان', ['seller_sales_documents']],
             'reports' => ['گزارش‌ها', 'گزارش‌های مدیریتی', ['reports']],
             'tickets' => ['مدیریت سیستم', 'تیکت‌ها', ['tickets']],
-            'users' => ['مدیریت سیستم', 'کاربران', ['users']],
-            'roles' => ['مدیریت سیستم', 'نقش‌ها و دسترسی صفحات', ['roles', 'permissions']],
+            'users' => ['پرسنل و همکاری', 'پرسنل و ساختار سازمانی', ['users']],
+            'roles' => ['پرسنل و همکاری', 'نقش و دسترسی کاربران', ['roles', 'permissions']],
             'settings' => ['مدیریت سیستم', 'تنظیمات سیستم', ['settings']],
             'activity_logs' => ['مدیریت سیستم', 'لاگ فعالیت‌ها', ['logs']],
             'integrations.inventory' => ['یکپارچه‌سازی‌ها', 'همگام‌سازی موجودی', ['inventory_webhooks']],
@@ -760,10 +761,22 @@ class PageAccessCatalog
     {
         return [
             'access.unassigned', 'session.csrf-token',
+            'commercial.customers.index', 'commercial.customers.show', 'commercial.customers.document', 'commercial.customers.document.full', 'commercial.customers.transfers', 'commercial.customers.transfer',
+            'commercial.followups.index','commercial.customers.interactions.store','commercial.customers.followups.update',
+            'commercial.sale-approvals.lookup', 'commercial.sale-approvals.request', 'commercial.sale-approvals.verify',
+            'commercial.transfers.index','commercial.transfers.search','commercial.transfers.store','commercial.transfers.show','commercial.transfers.update','commercial.transfers.register','commercial.transfers.cancel','commercial.transfers.destroy',
             'locations.provinces.index', 'locations.provinces.cities',
             'profile.edit', 'profile.update', 'profile.destroy',
             'verification.notice', 'verification.verify', 'verification.send',
             'password.confirm', 'password.update', 'logout',
+            // These HR routes enforce independent operation permissions and frozen request-level
+            // assignments in PersonnelAccess/PersonnelWorkflowController, rather than page-wide grants.
+            'personnel.leaves.index','personnel.leaves.create','personnel.leaves.store',
+            'personnel.leaves.show','personnel.leaves.decision',
+            'personnel.leaves.export','personnel.leaves.print',
+            'personnel.reports.index','personnel.reports.create','personnel.reports.store',
+            'personnel.reports.show','personnel.reports.edit','personnel.reports.update','personnel.reports.feedback',
+            'personnel.attachments.download',
         ];
     }
 

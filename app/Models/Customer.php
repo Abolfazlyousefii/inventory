@@ -55,6 +55,8 @@ class Customer extends Authenticatable {
         ];
     }
 
+    public function assignment(): HasOne { return $this->hasOne(CustomerAssignment::class); }
+
     public function phones(): HasMany {
         return $this->hasMany(CustomerPhone::class)
             ->orderByDesc('is_primary')

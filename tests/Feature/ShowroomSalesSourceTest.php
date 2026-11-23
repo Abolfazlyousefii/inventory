@@ -83,7 +83,7 @@ beforeEach(function () {
             });
         }
     }
-    $this->seller = User::factory()->create();
+    $this->seller = User::factory()->create(['is_active' => true, 'can_access_erp' => true, 'is_seller' => true]);
     $this->actingAs($this->seller);
     $category = Category::withoutEvents(fn () => Category::create(['name' => 'QA showroom']));
     $this->product = Product::withoutEvents(fn () => Product::create(['name' => 'QA showroom item', 'sku' => 'QA-SHOW', 'category_id' => $category->id, 'stock' => 0, 'reserved' => 0, 'price' => 1000, 'is_sellable' => true]));
@@ -141,6 +141,8 @@ it('submits the same variant from two warehouses without merging stocks or invoi
     $this->withoutVite();
     $this->withoutMiddleware(RoutePermissionMiddleware::class);
     $this->seller->assignRole(Role::findOrCreate('Owner', 'web'));
+    $customer = \App\Models\Customer::factory()->create();
+    $customer->assignment()->create(['seller_id' => $this->seller->id]);
     WarehouseStockService::set($this->central,$this->product->id,$this->variant->id,8);
     $rows = [
         ['id'=>$this->product->id,'variety_id'=>$this->variant->id,'quantity'=>3,'price'=>1000,'source_warehouse_id'=>null],
@@ -149,8 +151,8 @@ it('submits the same variant from two warehouses without merging stocks or invoi
     app(PreinvoiceDraftReservationService::class)->syncReservationRows($this->token,$this->seller->id,
         collect($rows)->map(fn($r)=>['product_id'=>$r['id'],'variant_id'=>$r['variety_id'],'quantity'=>$r['quantity'],'source_warehouse_id'=>$r['source_warehouse_id']])->all());
     expect(PreinvoiceDraftReservation::count())->toBe(2);
-    $this->postJson(route('preinvoice.autosave'),['reservation_token'=>$this->token,'customer_name'=>'مشتری تست','customer_mobile'=>'09120000000','products'=>$rows])->assertOk();
-    $this->post(route('preinvoice.draft.save'),largePayloadPost($rows,['reservation_token'=>$this->token]))->assertSessionHasNoErrors();
+    $this->postJson(route('preinvoice.autosave'),['customer_id'=>$customer->id,'reservation_token'=>$this->token,'customer_name'=>'مشتری تست','customer_mobile'=>'09120000000','products'=>$rows])->assertOk();
+    $this->post(route('preinvoice.draft.save'),largePayloadPost($rows,['customer_id'=>$customer->id,'reservation_token'=>$this->token]))->assertSessionHasNoErrors();
     $order = PreinvoiceOrder::where('status',PreinvoiceOrder::STATUS_PENDING_FINANCE)->firstOrFail();
     expect($order->items()->count())->toBe(2);
     $this->post(route('preinvoice.draft.finalize',$order->uuid),['finance_version'=>FinanceDocumentVersion::token($order->fresh('items'))])->assertSessionHasNoErrors();
@@ -205,9 +207,11 @@ it('persists showroom through autosave submission finance conversion and both pr
     $this->withoutVite();
     $this->withoutMiddleware(RoutePermissionMiddleware::class);
     $this->seller->assignRole(Role::findOrCreate('Owner', 'web'));
+    $customer = \App\Models\Customer::factory()->create();
+    $customer->assignment()->create(['seller_id' => $this->seller->id]);
     $rows = [['id' => $this->product->id, 'variety_id' => $this->variant->id, 'quantity' => 2, 'price' => 1000, 'source_warehouse_id' => $this->showroom->id]];
-    $payload = largePayloadPost($rows, ['reservation_token' => $this->token]);
-    $saved = $this->postJson(route('preinvoice.autosave'), ['reservation_token' => $this->token, 'customer_name' => 'مشتری تست', 'customer_mobile' => '09120000000', 'products' => $rows])->assertOk()->json();
+    $payload = largePayloadPost($rows, ['customer_id' => $customer->id, 'reservation_token' => $this->token]);
+    $saved = $this->postJson(route('preinvoice.autosave'), ['customer_id' => $customer->id, 'reservation_token' => $this->token, 'customer_name' => 'مشتری تست', 'customer_mobile' => '09120000000', 'products' => $rows])->assertOk()->json();
     $draft = PreinvoiceOrder::where('uuid', $saved['uuid'])->firstOrFail();
     expect($draft->items()->first()->source_warehouse_id)->toBe($this->showroom->id);
     $this->post(route('preinvoice.draft.save'), $payload)->assertSessionHasNoErrors();

@@ -1,0 +1,11 @@
+@forelse($rows as $row)
+@php
+ $kind=match($type){'invoices'=>'invoice','preinvoices'=>'preinvoice',default=>'return'};
+ $label=match($type){'invoices'=>'فاکتور','preinvoices'=>'پیش‌فاکتور',default=>'برگشت'};
+ $status=match($type){'invoices'=>\App\Models\Invoice::statusLabels()[$row->status]??'وضعیت ثبت‌شده','preinvoices'=>\App\Models\PreinvoiceOrder::statusLabels()[$row->status]??'وضعیت ثبت‌شده',default=>['draft'=>'پیش‌نویس','pending_warehouse'=>'در انتظار انبار','applied'=>'ثبت نهایی','cancelled'=>'لغوشده'][$row->status]??'در بررسی'};
+ $amount=match($type){'invoices'=>$row->total,'preinvoices'=>$row->total_price,default=>$row->total_refund_amount};
+ $cancelled=$type==='invoices'?in_array($row->status,\App\Models\Invoice::cancelledStatuses(),true):str_contains($row->status??'','cancel');
+ $done=match($type){'invoices'=>$row->status===\App\Models\Invoice::STATUS_SHIPPED,'preinvoices'=>$row->status===\App\Models\PreinvoiceOrder::STATUS_CONVERTED_TO_INVOICE,default=>$row->status===\App\Models\SalesReturnDocument::STATUS_APPLIED};
+@endphp
+<div class="ce-document-row"><a class="list-row" data-ce-doc href="{{ route('commercial.customers.document',[$customer,$kind,$row->id]) }}"><div class="row-icon" style="--c:{{ $type==='returns'?'#ba83a4':'#5685cc' }};--c-bg:{{ $type==='returns'?'#fcf0f8':'#edf4ff' }}">@include('commercial.customer-workspace.icon',['name'=>'invoice'])</div><div class="row-details"><strong>{{ $label }} {{ $row->uuid??$row->document_number }}</strong><small>{{ \App\Services\Personnel\PersonnelDates::display($row->document_date??$row->applied_at??$row->created_at) }}</small></div><div class="row-end"><strong>{{ number_format($amount) }} <small>ریال</small></strong><small><span class="mini-badge {{ $cancelled?'cancelled':($done?'positive':'pending') }}">{{ $status }}</span></small></div></a><nav class="ce-document-actions"><a target="_blank" rel="noopener" href="{{ route('commercial.customers.document.full',[$customer,$kind,$row->id,'view']) }}">&#1605;&#1588;&#1575;&#1607;&#1583;&#1607; &#1705;&#1575;&#1605;&#1604;</a><a target="_blank" rel="noopener" href="{{ route('commercial.customers.document.full',[$customer,$kind,$row->id,'print']) }}">&#1670;&#1575;&#1662;</a></nav></div>
+@empty<div class="empty ce-small-empty">سابقه‌ای در این بخش ثبت نشده است.</div>@endforelse

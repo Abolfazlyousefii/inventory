@@ -17,7 +17,24 @@ class UserController extends Controller
             return $dataTable->ajax();
         }
 
-        return view('users.index');
+        $filters = $request->validate(['q' => ['nullable', 'string', 'max:100'], 'show_inactive' => ['nullable', 'boolean'], 'status' => ['nullable', 'in:active,inactive'], 'manager' => ['nullable', 'integer', 'exists:users,id'], 'unassigned' => ['nullable', 'boolean']]);
+        $showInactive = $request->boolean('show_inactive') || ($filters['status'] ?? null) === 'inactive';
+        $query = User::query()
+            ->when(filled($filters['q'] ?? null), fn ($query) => $query->where(function ($query) use ($filters) {
+                foreach (['name', 'phone', 'username', 'personnel_code', 'department'] as $field) $query->orWhere($field, 'like', '%'.$filters['q'].'%');
+            }))
+            ->when(!$showInactive || ($filters['status'] ?? null) === 'active', fn ($q) => $q->where('is_active', true)->where('can_access_erp', true))
+            ->when(($filters['status'] ?? null) === 'inactive', fn ($q) => $q->where(fn ($q) => $q->where('is_active', false)->orWhere('can_access_erp', false)))
+            ->when($filters['manager'] ?? null, fn ($q, $id) => $q->where('manager_id', $id))
+            ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('manager_id'))
+            ->orderBy('name');
+        $matches=$query->pluck('id');
+        $users=User::with(['manager:id,name','roles'])->withCount('directReports')->orderBy('name')->get();
+        $rows=app(\App\Services\Personnel\PersonnelTree::class)->rows($users,$matches,$showInactive);
+        $managers=$users->where('direct_reports_count','>',0)->filter(fn ($user) => $showInactive || ($user->is_active && $user->can_access_erp));
+        $canManage=\App\Support\PageAccessCatalog::userCan($request->user(),'page.roles');
+        $filtered=$request->filled('q') || $request->filled('status') || $request->filled('manager') || $request->boolean('unassigned');
+        return view($request->ajax() ? 'users.partials.tree' : 'users.directory',compact('users','managers','rows','canManage','filtered'));
     }
 
 

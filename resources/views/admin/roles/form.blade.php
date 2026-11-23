@@ -34,6 +34,25 @@
                     </div>
                 @endforeach
             </div>
+            <div class="border rounded-3 p-3 mt-4" data-personnel-action-permissions>
+                <h2 class="h6">مرخصی و بررسی گزارش کار</h2>
+                <p class="small text-muted">ثبت فقط برای خود فرد است؛ بررسی فقط به درخواست‌های ارجاع‌شده طبق ساختار سازمانی محدود می‌شود. عنوان مدیریتی به‌تنهایی دسترسی ایجاد نمی‌کند.</p>
+                <div class="row g-2">
+                    @foreach($personnelActionPermissions as $permission)
+                        <label class="col-md-6 d-flex gap-2 small">
+                            <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-key="{{ $permission->key }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))>
+                            <span>{{ $permission->name }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            </div>
+            <div class="border rounded-3 p-3 mt-4">
+                <h2 class="h6">عملیات مشتریان</h2>
+                <p class="small text-muted">انتقال مسئول مشتری از انتقال فاکتور مستقل است. مجوز فروش به همه مشتریان، محدودیت مشتریان تخصیص‌یافته را برمی‌دارد.</p>
+                @foreach($customerActionPermissions as $permission)
+                    <label class="d-flex gap-2 small mb-2"><input type="checkbox" name="permissions[]" value="{{ $permission->id }}" data-permission-key="{{ $permission->key }}" data-page-permission @checked(in_array($permission->id, old('permissions', $selectedPermissionIds), true))><span>{{ $permission->name }}</span></label>
+                @endforeach
+            </div>
             <div class="border rounded-3 p-3 mt-4" data-commission-action-permissions>
                 <h2 class="h6">عملیات حساس پورسانت</h2>
                 <p class="small text-muted">این مجوزها فقط عملیات مدیریتی را فعال می‌کنند و به‌تنهایی اجازه ورود به صفحه پورسانت نمی‌دهند.</p>

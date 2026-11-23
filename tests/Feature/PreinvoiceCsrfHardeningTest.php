@@ -2,7 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Session\TokenMismatchException;
-use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use App\Http\Middleware\ProtectSalesCsrf as ValidateCsrfToken;
 use Illuminate\Http\Request;
 
 beforeEach(function () {
@@ -119,10 +119,12 @@ it('keeps every preinvoice write route behind csrf middleware', function () {
 
     foreach ($names as $name) {
         expect(app('router')->getRoutes()->getByName($name)->gatherMiddleware())
-            ->toContain('web');
+            ->toContain('web')->toContain(ValidateCsrfToken::class);
     }
 
-    expect(file_get_contents(base_path('bootstrap/app.php')))
-        ->not->toContain('validateCsrfTokens(except:')
-        ->not->toContain('VerifyCsrfToken::$except');
+    foreach (app('router')->getRoutes() as $route) {
+        if (str_starts_with($route->uri(), 'preinvoice/') && array_intersect($route->methods(), ['POST','PUT','PATCH','DELETE'])) {
+            expect($route->gatherMiddleware(), $route->getName())->toContain(ValidateCsrfToken::class);
+        }
+    }
 });

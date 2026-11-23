@@ -1,0 +1,1 @@
+<label class="pw-role-choice" data-role-choice><input type="checkbox" name="roles[]" value="{{ $role['name'] }}" @checked($role['selected']) @disabled(!$canAssignRoles)><span>{{ $role['label'] }}<small>{{ $role['permissions_count'] }} دسترسی</small></span></label>

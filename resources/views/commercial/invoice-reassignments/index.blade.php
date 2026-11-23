@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'انتقال فروشنده فاکتور')
+@section('title', 'انتقال فاکتور مشتری')
 
 @php
     $pageCssPath = public_path('css/commercial-invoice-reassignments.css');
@@ -20,7 +20,7 @@
     <div class="invoice-reassignment-header">
         <div>
             <span class="invoice-reassignment-eyebrow">بازرگانی و فروش</span>
-            <h1>انتقال فروشنده فاکتور</h1>
+            <h1>انتقال فاکتور مشتری</h1>
             <p>انتقال مالک فروش با آزادسازی خودکار فاکتور از اسناد پورسانت فروشنده قبلی و حفظ کامل تاریخچه.</p>
         </div>
         <div class="invoice-reassignment-header__badge">دسترسی مستقل حسابداری</div>

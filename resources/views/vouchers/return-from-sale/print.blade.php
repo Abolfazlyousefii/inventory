@@ -5,7 +5,7 @@
 @page{size:A4 portrait;margin:14mm}body{font-family:Tahoma,Arial,sans-serif;direction:rtl;text-align:right;color:#111827;font-size:12px}.actions{margin-bottom:12px}.btn{border:1px solid #d1d5db;padding:6px 10px;background:#f9fafb;text-decoration:none;color:#111827;border-radius:4px}h1{font-size:22px;margin:0 0 14px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}.box{border:1px solid #d1d5db;padding:8px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #d1d5db;padding:7px 6px}th{background:#eef5fb}.signatures{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:30px}.sig{border-top:1px solid #111827;text-align:center;padding-top:8px}@media print{.actions{display:none}}
 </style></head>
 <body>
-<div class="actions"><button class="btn" onclick="window.print()">چاپ</button> <a class="btn" href="{{ route('vouchers.return-from-sale.show',$document) }}">بازگشت</a></div>
+<div class="actions"><button class="btn" onclick="window.print()">چاپ</button> <a class="btn" href="{{ $backUrl ?? route('vouchers.return-from-sale.show',$document) }}">بازگشت</a></div>
 <h1>سند برگشت از فروش</h1>
 @php($destinations = $document->items->pluck('destinationWarehouse.name')->filter()->unique())
 <div class="grid">

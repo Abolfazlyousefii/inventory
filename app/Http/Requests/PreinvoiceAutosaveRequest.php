@@ -30,6 +30,7 @@ class PreinvoiceAutosaveRequest extends FormRequest
             'base_version' => ['required_with:draft_uuid', 'nullable', 'string', 'size:64'],
             'edit_existing_draft' => ['sometimes', 'boolean'],
             'reservation_token' => ['required', 'uuid'],
+            'sale_authorization_context' => ['nullable', 'uuid'],
             'action' => ['sometimes', 'in:autosave,confirm_changes'],
             'confirmation_token' => ['nullable', 'string', 'size:64'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],

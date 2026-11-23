@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Services\Permissions\PermissionManagementService;
 use App\Support\PermissionCatalog;
 use App\Support\PageAccessCatalog;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Spatie\Permission\Models\Role;
@@ -91,7 +90,7 @@ class UserPermissionController extends Controller
         $directCount = collect($effective)->whereIn('source', ['direct', 'both'])->count();
         $selectedRoleCount = count($selectedRoleNames);
 
-        return view('admin.permissions.index', compact(
+        return view($request->boolean('panel') ? 'users.partials.editor' : 'admin.permissions.index', compact(
             'users',
             'selectedUser',
             'requestedUserMissing',
@@ -109,7 +108,7 @@ class UserPermissionController extends Controller
         ));
     }
 
-    public function update(UpdateUserPermissionsRequest $request, User $user): RedirectResponse
+    public function update(UpdateUserPermissionsRequest $request, User $user)
     {
         abort_unless($request->integer('user_id') === $user->id, 422, 'شناسه کاربر ناهماهنگ است.');
 
@@ -123,7 +122,12 @@ class UserPermissionController extends Controller
             ? array_values($data['roles'] ?? [])
             : $user->roles()->where('guard_name', PermissionCatalog::guardName())->pluck('name')->all();
 
-        $changed = $this->service->update(
+        $changed = \Illuminate\Support\Facades\DB::transaction(function () use ($request,$user,$data,$roles,$actor,$changePermissions,$changeRoles) {
+            $locked=User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+            if ($request->expectsJson() && !hash_equals(\App\Services\Personnel\PersonnelAccessSnapshot::version($locked),$data['access_version'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['access_version'=>'نقش یا دسترسی این فرد تغییر کرده است؛ پنجره را ببندید و دوباره باز کنید.']);
+            }
+            return $this->service->update(
             $user,
             array_values($data['direct_permissions'] ?? []),
             $roles,
@@ -131,11 +135,14 @@ class UserPermissionController extends Controller
             $changePermissions,
             $changeRoles,
             $request->ip(),
-        );
+            );
+        });
 
         $message = $changed
             ? 'نقش ها و دسترسی ها با موفقیت ذخیره شد.'
             : 'تغییری برای ذخیره وجود نداشت.';
+
+        if ($request->expectsJson()) return response()->json(['ok'=>true,'message'=>$message]);
 
         $redirect = to_route('admin.permissions.index', ['user_id' => $user->id])->with('success', $message);
         if ($request->catalogVersionChanged()) {

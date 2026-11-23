@@ -236,7 +236,12 @@ it('keeps a large discounted draft intact through reservation autosave recovery 
         ])->all(),
     ])->assertOk();
 
+    auth()->user()->update(['is_active'=>true,'can_access_erp'=>true]);
+    // Customer selection now requires an explicit seller assignment.
+    $customer = \App\Models\Customer::factory()->create();
+    $customer->assignment()->create(['seller_id' => auth()->id()]);
     $autosavePayload = [
+        'customer_id' => $customer->id,
         'reservation_token' => $token,
         'customer_name' => 'Production UAT customer',
         'customer_mobile' => '09121112233',
@@ -281,6 +286,7 @@ it('keeps a large discounted draft intact through reservation autosave recovery 
         'autosave_uuid' => $draft->uuid,
         'customer_name' => $autosavePayload['customer_name'],
         'customer_mobile' => $autosavePayload['customer_mobile'],
+        'customer_id' => $customer->id,
         'customer_address' => $autosavePayload['customer_address'],
         'payment_terms_note' => $autosavePayload['payment_terms_note'],
         'discount_breakdown' => json_encode($discountBreakdown, JSON_THROW_ON_ERROR),

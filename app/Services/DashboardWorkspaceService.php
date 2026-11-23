@@ -33,7 +33,7 @@ class DashboardWorkspaceService
             ['vouchers.index', 'حواله‌های انبار', 'انبارداری', 'blue', 'warehouse', false],
             ['asset.hub', 'امین اموال', 'انبارداری', 'indigo', 'products', false],
             ['vouchers.return-from-sale.index', 'برگشت از فروش', 'فروش', 'rose', 'sales', false],
-            ['commercial.invoice-reassignments.index', 'انتقال فروشنده فاکتور', 'فروش', 'violet', 'people', false],
+            ['commercial.invoice-reassignments.index', 'انتقال فاکتور مشتری', 'فروش', 'violet', 'people', false],
             ['categories.index', 'دسته‌بندی کالاها', 'پیکربندی', 'blue', 'products', false],
             ['model-lists.index', 'مدل لیست کالا', 'پیکربندی', 'mint', 'document', false],
             ['shipping-methods.index', 'روش‌های ارسال', 'پیکربندی', 'teal', 'shipping', false],

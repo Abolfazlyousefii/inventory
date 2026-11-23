@@ -13,13 +13,14 @@
     <script src="{{ asset('js/permissions.js') }}?v={{ is_file($permissionsJsPath) ? filemtime($permissionsJsPath) : 1 }}" defer></script>
 @endpush
 
-@section('title', 'مدیریت نقش‌ها و دسترسی‌ها')
+@section('title', 'مدیریت پرسنل، نقش و دسترسی')
 
 @section('content')
 <div class="access-page">
     <div class="access-hero">
-        <h1>🔐 مرکز مدیریت نقش و دسترسی</h1>
-        <p>نقش‌های کاربر و دسترسی‌های مستقیم را در یک صفحه مدیریت کنید.</p>
+        <h1>مدیریت پرسنل، نقش و دسترسی</h1>
+        <p>مشخصات سازمانی، مدیر مستقیم، نقش‌ها و دسترسی‌ها در یک صفحه.</p>
+        @if(\App\Support\PageAccessCatalog::userCan(auth()->user(), 'page.users'))<a href="{{ route('users.index') }}">فهرست پرسنل و ساختار سازمانی ←</a>@endif
     </div>
 
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
@@ -42,6 +43,7 @@
     </div>
 
     @if($selectedUser)
+        @include('admin.permissions.partials.organization')
         <form method="POST" id="permissionForm" action="{{ route('admin.permissions.update', $selectedUser) }}">
             @csrf
             @method('PUT')

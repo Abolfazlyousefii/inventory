@@ -103,6 +103,29 @@ Route::get('/session/csrf-token', function () {
     ]);
 })->middleware('auth')->name('session.csrf-token');
 
+Route::middleware(['auth', \App\Http\Middleware\ProtectPersonnelCsrf::class])->prefix('commercial')->name('commercial.')->group(function () {
+    Route::get('/followups', [\App\Http\Controllers\CustomerFollowupController::class,'index'])->name('followups.index');
+    Route::post('/my-customers/{customer}/interactions', [\App\Http\Controllers\CustomerFollowupController::class,'store'])->whereNumber('customer')->middleware('throttle:30,1')->name('customers.interactions.store');
+    Route::patch('/my-customers/{customer}/followups/{followup}', [\App\Http\Controllers\CustomerFollowupController::class,'update'])->whereNumber(['customer','followup'])->middleware('throttle:30,1')->name('customers.followups.update');
+ Route::prefix('sale-approvals')->name('sale-approvals.')->controller(\App\Http\Controllers\CustomerSaleApprovalController::class)->group(function () {
+  Route::post('/lookup', 'lookup')->middleware('throttle:30,1,sale-lookup')->name('lookup');
+  Route::post('/request', 'issue')->middleware('throttle:10,1,sale-request')->name('request');
+  Route::post('/{approval}/verify', 'verify')->whereUuid('approval')->middleware('throttle:15,1,sale-verify')->name('verify');
+ });
+ Route::prefix('transfers')->name('transfers.')->controller(\App\Http\Controllers\CommercialTransferController::class)->group(function(){
+  Route::get('/','index')->name('index');Route::get('/search','search')->name('search');Route::post('/','store')->name('store');
+  Route::get('/{document}','show')->whereNumber('document')->name('show');Route::put('/{document}','update')->whereNumber('document')->name('update');
+  Route::post('/{document}/register','register')->whereNumber('document')->name('register');Route::post('/{document}/cancel','cancel')->whereNumber('document')->name('cancel');Route::delete('/{document}','destroy')->whereNumber('document')->name('destroy');
+ });
+
+ Route::get('/my-customers', [\App\Http\Controllers\CommercialCustomerWorkspaceController::class,'index'])->name('customers.index');
+ Route::get('/my-customers/{customer}', [\App\Http\Controllers\CommercialCustomerWorkspaceController::class,'show'])->whereNumber('customer')->name('customers.show');
+ Route::get('/my-customers/{customer}/documents/{kind}/{document}', [\App\Http\Controllers\CommercialCustomerWorkspaceController::class,'document'])->whereNumber(['customer','document'])->whereIn('kind',['invoice','preinvoice','return'])->name('customers.document');
+ Route::get('/my-customers/{customer}/documents/{kind}/{document}/{action}', [\App\Http\Controllers\CommercialCustomerWorkspaceController::class,'fullDocument'])->whereNumber(['customer','document'])->whereIn('kind',['invoice','preinvoice','return'])->whereIn('action',['view','print'])->name('customers.document.full');
+ Route::get('/customer-transfers', [\App\Http\Controllers\CommercialCustomerController::class,'transfers'])->name('customers.transfers');
+ Route::post('/customer-transfers/{customer}', [\App\Http\Controllers\CommercialCustomerController::class,'transfer'])->whereNumber('customer')->name('customers.transfer');
+});
+
 Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::prefix('commercial/invoice-reassignments')->name('commercial.invoice-reassignments.')->group(function () {
@@ -643,6 +666,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     Route::get('/stock-count-documents-system-quantity', [StocktakeController::class, 'systemQuantity'])->name('stock-count-documents.system-quantity');
 
 
+    Route::middleware(\App\Http\Middleware\ProtectSalesCsrf::class)->group(function () {
     Route::get('/preinvoice/live/{uuid}', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'show'])->name('preinvoice.collaborative');
     Route::get('/preinvoice/live/{uuid}/state', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'state'])->name('preinvoice.collaborative.state');
     Route::get('/preinvoice/live/{uuid}/search', [\App\Http\Controllers\CollaborativePreinvoiceController::class, 'search'])->name('preinvoice.collaborative.search');
@@ -702,6 +726,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
         Route::post('/customers', [CustomerApiController::class, 'store'])->name('api.customers.store');
         Route::get('/customers/{customer}', [CustomerApiController::class, 'show'])->name('api.customers.show');
     });
+
+    }); // Scoped sales CSRF protection, independent of legacy module exceptions.
 
     // Customers
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
@@ -773,6 +799,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::get('/admin/permissions', [UserPermissionController::class, 'index'])->name('admin.permissions.index');
     Route::put('/admin/permissions/{user}', [UserPermissionController::class, 'update'])->name('admin.permissions.update');
+    Route::put('/admin/permissions/{user}/organization', [\App\Http\Controllers\Admin\PersonnelOrganizationController::class, 'update'])->name('admin.personnel.organization.update');
     Route::resource('/admin/roles', RoleController::class)->except(['show'])->names('admin.roles');
 });
 // Only holders of the existing settings.edit permission can view/change bank details.
@@ -823,6 +850,29 @@ Route::get('/finance/cheques', [ChequeController::class, 'index'])
     ->name('finance.cheques.index');
 
 require __DIR__ . '/auth.php';
+
+Route::middleware(['auth',\App\Http\Middleware\ProtectPersonnelCsrf::class])->prefix('personnel')->name('personnel.')->group(function () {
+    foreach (['leaves'=>'leave','reports'=>'report'] as $path=>$kind) {
+        Route::prefix($path)->name($path.'.')->group(function () use ($kind) {
+            $controller=\App\Http\Controllers\PersonnelWorkflowController::class;
+            Route::get('/',[$controller,'index'])->defaults('kind',$kind)->name('index');
+            Route::get('/create',[$controller,'create'])->defaults('kind',$kind)->name('create');
+            if($kind==='leave'){
+                Route::get('/export',[$controller,'export'])->defaults('kind',$kind)->name('export');
+                Route::get('/print',[$controller,'printLeaves'])->defaults('kind',$kind)->name('print');
+            }
+            Route::post('/',[$controller,'store'])->defaults('kind',$kind)->name('store');
+            Route::get('/{entry}',[$controller,'show'])->whereNumber('entry')->defaults('kind',$kind)->name('show');
+            if($kind==='leave')Route::post('/{entry}/decision',[$controller,'decision'])->whereNumber('entry')->defaults('kind',$kind)->name('decision');
+            else {
+                Route::get('/{entry}/edit',[$controller,'edit'])->whereNumber('entry')->defaults('kind',$kind)->name('edit');
+                Route::put('/{entry}',[$controller,'update'])->whereNumber('entry')->defaults('kind',$kind)->name('update');
+                Route::post('/{entry}/feedback',[$controller,'feedback'])->whereNumber('entry')->defaults('kind',$kind)->name('feedback');
+            }
+        });
+    }
+    Route::get('/attachments/{attachment}',[\App\Http\Controllers\PersonnelWorkflowController::class,'download'])->whereNumber('attachment')->name('attachments.download');
+});
 
 Route::middleware(['auth'])->group(function () {
  Route::get('/finance/saeidian-cheques', [\App\Http\Controllers\SaeidianChequeController::class,'index'])->name('finance.saeidian-cheques.index');

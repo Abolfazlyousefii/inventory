@@ -1,5 +1,8 @@
 <?php
 
+\Illuminate\Support\Facades\Schedule::call(fn()=>\Illuminate\Support\Facades\Artisan::call('commercial:followups-remind'))
+    ->name('customer-followups-remind')->everyMinute()->withoutOverlapping(5);
+
 use App\Services\Commissions\CommissionInvoiceSyncOutboxService;
 use App\Services\Commissions\CommissionReturnSyncOutboxService;
 use App\Services\PreinvoiceDraftExpiryService;

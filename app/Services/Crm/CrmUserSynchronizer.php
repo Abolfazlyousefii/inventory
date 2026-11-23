@@ -48,6 +48,8 @@ final readonly class CrmUserSynchronizer
             $before = $user->exists ? $user->only(['is_active', 'manager_id', 'phone', 'name']) : [];
 
             $email = $this->availableEmail($data, $user);
+            $localOrganization = $user->organization_managed_locally
+                ? $user->only(['department', 'position', 'personnel_code', 'branch', 'manager_crm_user_id']) : [];
             $user->fill([
                 'external_crm_id' => ctype_digit($data->crmUserId) ? (int) $data->crmUserId : null,
                 'crm_user_id' => $data->crmUserId,
@@ -71,6 +73,7 @@ final readonly class CrmUserSynchronizer
                 'branch' => $data->branch,
                 'manager_crm_user_id' => $data->managerCrmUserId,
             ]);
+            $user->fill($localOrganization);
 
             if ($data->passwordHash !== null) {
                 $user->password = $data->passwordHash;
@@ -147,6 +150,7 @@ final readonly class CrmUserSynchronizer
 
     private function reconcileManager(User $user): bool
     {
+        if ($user->organization_managed_locally) return false;
         $managerId = null;
         if ($user->manager_crm_user_id) {
             $managerId = User::query()
