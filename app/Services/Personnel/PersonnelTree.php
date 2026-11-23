@@ -32,24 +32,22 @@ class PersonnelTree
         foreach ($roots as $root) $walk($root,0,null);
         // A legacy cycle has no root. Surface all its members for correction instead of losing them.
         foreach ($users as $user) if (isset($included[$user->id]) && !isset($visited[$user->id])) $walk($user,0,null,true);
-        if (!$includeInactive) {
-            // Presentation only: bridge hidden ancestors without changing stored reporting lines.
-            $original=collect($rows)->keyBy(fn ($row) => $row['user']->id);
-            $visible=[];
-            foreach ($rows as $row) {
-                if (!$row['user']->is_active || !$row['user']->can_access_erp) continue;
-                $parent=$row['parent'];$seen=[];
-                while ($parent && !isset($visible[$parent]) && isset($original[$parent]) && !isset($seen[$parent])) {
-                    $seen[$parent]=true;$parent=$original[$parent]['parent'];
-                }
-                $row['parent']=isset($visible[$parent]) ? $parent : null;
-                $row['depth']=$row['parent'] ? $visible[$row['parent']]['depth']+1 : 0;
-                $row['has_children']=false;
-                if ($row['parent']) $visible[$row['parent']]['has_children']=true;
-                $visible[$row['user']->id]=$row;
+        // Presentation only: bridge hidden ancestors without changing stored reporting lines.
+        $original=collect($rows)->keyBy(fn ($row) => $row['user']->id);
+        $visible=[];
+        foreach ($rows as $row) {
+            if ($row['user']->show_in_organization_chart === false) continue;
+            if (!$includeInactive && (!$row['user']->is_active || !$row['user']->can_access_erp)) continue;
+            $parent=$row['parent'];$seen=[];
+            while ($parent && !isset($visible[$parent]) && isset($original[$parent]) && !isset($seen[$parent])) {
+                $seen[$parent]=true;$parent=$original[$parent]['parent'];
             }
-            return array_values($visible);
+            $row['parent']=isset($visible[$parent]) ? $parent : null;
+            $row['depth']=$row['parent'] ? $visible[$row['parent']]['depth']+1 : 0;
+            $row['has_children']=false;
+            if ($row['parent']) $visible[$row['parent']]['has_children']=true;
+            $visible[$row['user']->id]=$row;
         }
-        return $rows;
+        return array_values($visible);
     }
 }

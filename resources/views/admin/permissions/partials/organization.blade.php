@@ -7,12 +7,17 @@
         @csrf @method('PUT')
         <input type="hidden" name="organization_version" value="{{ \App\Services\Personnel\OrganizationManagement::version($selectedUser) }}">
         <div class="row g-3">
+            <div class="col-12">
+                <input type="hidden" name="show_in_organization_chart" value="0" @disabled(!$canEditPermissions)>
+                <label class="pw-chart-membership"><input type="checkbox" name="show_in_organization_chart" value="1" @checked(old('show_in_organization_chart',$selectedUser->show_in_organization_chart)) @disabled(!$canEditPermissions)> نمایش در چارت سازمانی</label>
+                <small class="d-block text-muted mt-1">با برداشتن تیک، حساب به «حساب‌های مدیریتی» منتقل می‌شود. نقش، دسترسی و مسیر تأیید درخواست‌ها تغییر نمی‌کند.</small>
+            </div>
             <div class="col-md-6"><label for="staffLevel" class="form-label">جایگاه سازمانی</label><select id="staffLevel" class="form-select" name="organization_level" @disabled(!$canEditPermissions)><option value="">تعیین نشده</option>@foreach(\App\Services\Personnel\OrganizationHierarchy::LEVELS as $level=>$label)<option value="{{ $level }}" @selected(old('organization_level',$selectedUser->organization_level)===$level)>{{ $label }}</option>@endforeach</select></div>
             <div class="col-md-6"><label for="staffManager" class="form-label">مدیر مستقیم</label>
                 <select id="staffManager" name="manager_id" class="form-select" @disabled(!$canEditPermissions)>
-                    <option value="">بدون مدیر — نیازمند تعیین مسئول</option>
+                    <option value="">بدون مدیر — رأس سازمان یا حساب مستقل</option>
                     @foreach($users as $manager)
-                        @if($manager->id !== $selectedUser->id && (($manager->is_active && $manager->can_access_erp) || $manager->id === $selectedUser->manager_id))
+                        @if($manager->id !== $selectedUser->id && (($manager->is_active && $manager->can_access_erp && $manager->show_in_organization_chart) || $manager->id === $selectedUser->manager_id))
                             <option value="{{ $manager->id }}" @selected((string)old('manager_id', $selectedUser->manager_id)===(string)$manager->id)>{{ $manager->name }}{{ !$manager->is_active || !$manager->can_access_erp ? ' — غیرفعال' : '' }}</option>
                         @endif
                     @endforeach

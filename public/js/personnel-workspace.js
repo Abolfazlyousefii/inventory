@@ -15,14 +15,21 @@
         rows.forEach(row=>{let parent=row.dataset.parent,hide=false;const visited=new Set();while(parent && byId.has(parent) && !visited.has(parent)){visited.add(parent);if(collapsed.has(parent)){hide=true;break;}parent=byId.get(parent).dataset.parent;}row.hidden=hide;});
         root.querySelectorAll('[data-toggle-node]').forEach(button=>{const open=!collapsed.has(button.dataset.toggleNode);button.setAttribute('aria-expanded',String(open));button.textContent=open?'−':'+';});
     }
-    function initTree(){
-        collapsed.clear();if(root.querySelector('#staffTree').dataset.filtered!=='1')root.querySelectorAll('[data-toggle-node]').forEach(button=>collapsed.add(button.dataset.toggleNode));applyTree();
+    function initTree(){collapsed.clear();applyTree();}
+    function syncDirectory(){
+        const tree=root.querySelector('#staffTree'),accounts=tree.dataset.directoryTab==='accounts';
+        filters.elements.directory_tab.value=tree.dataset.directoryTab;
+        root.querySelectorAll('button[data-directory-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.directoryTab===tree.dataset.directoryTab)));
+        root.querySelectorAll('[data-organization-filter],[data-organization-tools]').forEach(element=>element.hidden=accounts);
+        root.querySelector('[data-staff-count]').textContent=tree.dataset.count+(accounts?' حساب':' نفر در ساختار');
+        root.querySelector('[data-chart-count]').textContent=tree.dataset.chartCount;
+        root.querySelector('[data-account-count]').textContent=tree.dataset.accountCount;
     }
     async function loadTree(preserve=false){
         treeRequest?.abort();const request=treeRequest=new AbortController();
         const url=new URL(filters.action);new FormData(filters).forEach((value,key)=>{if(value!=='')url.searchParams.set(key,value);});
         root.querySelector('#staffTree').setAttribute('aria-busy','true');feedback.textContent='';
-        try{const response=await fetch(url,{headers,signal:request.signal});if(!response.ok||response.redirected)throw new Error('دریافت فهرست انجام نشد؛ دوباره تلاش کنید یا صفحه را تازه کنید.');const text=await response.text();if(request.signal.aborted)return;const doc=new DOMParser().parseFromString(text,'text/html'),tree=doc.querySelector('#staffTree');if(!tree)throw new Error('پاسخ فهرست معتبر نیست.');root.querySelector('#staffTree').replaceWith(tree);history.replaceState(null,'',url);root.querySelector('[data-staff-count]').textContent=tree.dataset.count+' نفر در ساختار';preserve?applyTree():initTree();}
+        try{const response=await fetch(url,{headers,signal:request.signal});if(!response.ok||response.redirected)throw new Error('دریافت فهرست انجام نشد؛ دوباره تلاش کنید یا صفحه را تازه کنید.');const text=await response.text();if(request.signal.aborted)return;const doc=new DOMParser().parseFromString(text,'text/html'),tree=doc.querySelector('#staffTree');if(!tree)throw new Error('پاسخ فهرست معتبر نیست.');root.querySelector('#staffTree').replaceWith(tree);history.replaceState(null,'',url);syncDirectory();preserve?applyTree():initTree();}
         catch(error){if(error.name!=='AbortError')feedback.textContent=error.message;}
         finally{if(treeRequest===request)root.querySelector('#staffTree').removeAttribute('aria-busy');}
     }
@@ -37,6 +44,8 @@
     filters.addEventListener('input',event=>{if(event.target.name==='q'){clearTimeout(timer);timer=setTimeout(loadTree,280);}});
     filters.addEventListener('change',event=>{if(event.target.name!=='q'){clearTimeout(timer);loadTree();}});
     root.addEventListener('click',event=>{
+        const directoryTab=event.target.closest('button[data-directory-tab]');
+        if(directoryTab){filters.elements.directory_tab.value=directoryTab.dataset.directoryTab;filters.elements.manager.value='';filters.elements.unassigned.checked=false;clearTimeout(timer);loadTree();}
         const toggle=event.target.closest('[data-toggle-node]');if(toggle){const id=toggle.dataset.toggleNode;collapsed.has(id)?collapsed.delete(id):collapsed.add(id);applyTree();}
         if(event.target.closest('[data-expand-all]')){collapsed.clear();applyTree();}
         if(event.target.closest('[data-collapse-all]')){root.querySelectorAll('[data-toggle-node]').forEach(button=>collapsed.add(button.dataset.toggleNode));applyTree();}
@@ -52,6 +61,7 @@
         }
     });
     dialog.addEventListener('cancel',event=>{event.preventDefault();closeEditor();});
+    dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const rect=dialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)closeEditor();});
     host.addEventListener('input',event=>{
         const permissionSearch=event.target.matches('[data-permission-search]'),roleSearch=event.target.matches('[data-role-search]');
         if(!permissionSearch&&!roleSearch)return;const term=event.target.value.trim().toLocaleLowerCase();
@@ -74,5 +84,5 @@
         finally{busy=false;buttons.forEach(button=>button.disabled=false);}
     });
     window.addEventListener('beforeunload',event=>{if(dialog.open&&dirty()){event.preventDefault();event.returnValue='';}});
-    initTree();
+    syncDirectory();initTree();
 })();

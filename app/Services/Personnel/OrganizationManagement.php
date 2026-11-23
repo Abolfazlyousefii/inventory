@@ -9,14 +9,14 @@ use Illuminate\Validation\ValidationException;
 
 class OrganizationManagement
 {
-    private const FIELDS = ['manager_id', 'department', 'position', 'personnel_code', 'branch', 'organization_level', 'organization_managed_locally'];
+    private const FIELDS = ['manager_id', 'department', 'position', 'personnel_code', 'branch', 'organization_level', 'organization_managed_locally', 'show_in_organization_chart'];
 
     public static function version(User $user): string
     {
         $values = [];
         foreach (self::FIELDS as $field) {
             $values[$field] = match ($field) {
-                'organization_managed_locally' => (bool) $user->$field,
+                'organization_managed_locally', 'show_in_organization_chart' => (bool) $user->$field,
                 'manager_id' => $user->$field === null ? null : (int) $user->$field,
                 default => $user->$field,
             };
@@ -40,6 +40,9 @@ class OrganizationManagement
                 if (! $manager || (! $manager->is_active || ! $manager->can_access_erp) && $managerId !== (int) $user->manager_id) {
                     throw ValidationException::withMessages(['manager_id' => 'مدیر انتخاب‌شده باید کاربر فعال سامانه باشد.']);
                 }
+                if (! $manager->show_in_organization_chart && $managerId !== (int) $user->manager_id) {
+                    throw ValidationException::withMessages(['manager_id' => 'برای مدیر مستقیم، یک عضو چارت سازمانی انتخاب کنید.']);
+                }
                 $seen = [$user->id => true];
                 for ($id = $managerId; $id !== null;) {
                     if (isset($seen[$id])) {
@@ -50,7 +53,7 @@ class OrganizationManagement
                 }
             }
             $before = $user->only(self::FIELDS);
-            $user->fill(collect($data)->only(['department', 'position', 'personnel_code', 'branch', 'organization_level'])->all());
+            $user->fill(collect($data)->only(['department', 'position', 'personnel_code', 'branch', 'organization_level', 'show_in_organization_chart'])->all());
             $user->manager_id = $managerId;
             $user->organization_managed_locally = true;
             if (! $user->isDirty()) return;

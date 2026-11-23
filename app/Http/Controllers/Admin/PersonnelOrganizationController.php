@@ -21,6 +21,7 @@ class PersonnelOrganizationController extends Controller
             'branch' => ['nullable', 'string', 'max:100'],
             'organization_level' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(\App\Services\Personnel\OrganizationHierarchy::LEVELS))],
             'organization_version' => ['required', 'string', 'size:64'],
+            'show_in_organization_chart' => ['sometimes', 'required', 'boolean'],
         ]);
         $organization->update($user, $request->user(), $data);
         if ($request->expectsJson()) return response()->json(['ok'=>true,'message'=>'مشخصات سازمانی ذخیره شد.']);

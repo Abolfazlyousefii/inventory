@@ -57,6 +57,9 @@ class PersonnelWorkflowTest extends TestCase
         $this->actingAs($staff)->postJson('/personnel/leaves', $data)->assertCreated();
         $entry = PersonnelEntry::firstOrFail();
         $this->assertSame([$substitute->id, $supervisor->id, $internal->id, $executive->id], $entry->steps()->pluck('approver_id')->all());
+        // Chart membership is presentation-only, including for a pending approver.
+        $supervisor->update(['show_in_organization_chart' => false]);
+        $this->assertSame([$substitute->id, $supervisor->id, $internal->id, $executive->id], $entry->steps()->pluck('approver_id')->all());
         $this->postJson('/personnel/leaves', $data)->assertOk();
         $this->assertSame(1, PersonnelEntry::count());
         $url = '/personnel/leaves/'.$entry->id.'/decision';
