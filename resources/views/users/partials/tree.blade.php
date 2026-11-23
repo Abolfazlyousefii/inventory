@@ -8,7 +8,7 @@
                 <strong>{{ $person->name }}</strong>
                 <small>{{ $person->is_crm_managed ? 'حساب منتقل‌شده از CRM' : 'حساب سامانه' }} · کد {{ $person->id }}</small>
                 <div class="pw-account-state"><span class="pw-state {{ $person->is_active && $person->can_access_erp ? 'pw-active':'' }}">{{ $person->is_active && $person->can_access_erp ? 'فعال':'غیرفعال' }}</span><small>خارج از چارت سازمانی</small></div>
-                @if($canManage)<button type="button" class="pw-button pw-edit" data-edit-staff="{{ $person->id }}" data-editor-url="{{ route('admin.permissions.index',['panel'=>1,'user_id'=>$person->id]) }}" data-person-name="{{ $person->name }}">مدیریت حساب و دسترسی ↗</button>@endif
+                @include('users.partials.actions')
             </article>
         @empty<div class="pw-empty">حسابی با این مشخصات پیدا نشد.</div>@endforelse
         </div>

@@ -50,7 +50,7 @@
         if(event.target.closest('[data-expand-all]')){collapsed.clear();applyTree();}
         if(event.target.closest('[data-collapse-all]')){root.querySelectorAll('[data-toggle-node]').forEach(button=>collapsed.add(button.dataset.toggleNode));applyTree();}
         if(event.target.closest('[data-reset-filters]')){filters.querySelector('[name=q]').value='';filters.querySelectorAll('select').forEach(select=>select.value='');filters.querySelectorAll('input[type=checkbox]').forEach(input=>input.checked=false);clearTimeout(timer);loadTree();}
-        const edit=event.target.closest('[data-edit-staff]');if(edit){root.querySelector('#staffDialogTitle').textContent=edit.dataset.personName;dialog.showModal();loadEditor(edit.dataset.editorUrl);}
+        const edit=event.target.closest('[data-edit-staff]');if(edit){root.querySelector('#staffDialogTitle').textContent=edit.dataset.personName;dialog.showModal();loadEditor(edit.dataset.editorUrl,edit.dataset.editorTab||'profile');}
         if(event.target.closest('[data-close-editor]'))closeEditor();
         const tab=event.target.closest('[data-staff-tab]');if(tab){
             const next=tab.dataset.staffTab;
