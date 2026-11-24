@@ -13,6 +13,7 @@ class CustomerApiController extends Controller
 {
     public function search(Request $request)
     {
+        $request->validate(['q' => 'nullable|string|max:255']);
         $q = trim((string)$request->query('q',''));
         if ($q === '') {
             return response()->json(['data' => ['customers' => []]]);
@@ -36,9 +37,17 @@ class CustomerApiController extends Controller
         $normalizedNameLike = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $normalizedName).'%';
         $nameExpressions = ['first_name', 'last_name', 'name', $fullNameExpression];
 
-        $items = Customer::query()
+        $ownership = app(\App\Services\CustomerOwnership::class);
+        $code = $this->normalizeDigits($q);
+        $exact = preg_match('/^\d{1,12}$/D', $code)
+            ? (Customer::where('is_active', true)->where('crm_customer_id', $code)->first()
+                ?? Customer::where('is_active', true)->find((int) $code))
+            : null;
+        $items = $ownership->visible(Customer::query(), $request->user())
+            ->where('is_active', true)
             ->withBalance()
-            ->where(function($qq) use ($terms, $fullNameExpression, $normalizedNameLike, $nameExpressions){
+            ->where(function($qq) use ($terms, $fullNameExpression, $normalizedNameLike, $nameExpressions, $exact){
+                if ($exact) $qq->orWhere('customers.id', $exact->id);
                 foreach ($terms as $term) {
                     $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
                     $compactLike = '%' . str_replace(['%', '_'], ['\%', '\_'], preg_replace('/[\s\-()]+/u', '', $term)) . '%';
@@ -57,11 +66,14 @@ class CustomerApiController extends Controller
                     $qq->orWhereRaw("REPLACE(REPLACE({$expression}, 'ي', 'ی'), 'ك', 'ک') LIKE ?", [$normalizedNameLike]);
                 }
             })
+            ->orderByRaw('CASE WHEN customers.id = ? THEN 0 ELSE 1 END', [$exact?->id ?? 0])
             ->orderByDesc('id')
             ->limit(20)
             ->get()
             ->map(fn($c)=>[
                 'id' => $c->id,
+                'code' => $c->crm_customer_id ?: $c->id,
+                'requires_approval' => false,
                 'name' => $c->display_name,
                 'first_name' => $c->first_name,
                 'last_name' => $c->last_name,
@@ -83,7 +95,20 @@ class CustomerApiController extends Controller
             ])
             ->values();
 
-        return response()->json(['data' => ['customers' => $items]]);
+        // Exact-code discovery exposes no contact or financial data before consent.
+        if ($exact && !$items->contains('id', $exact->id)
+            && $request->user()->is_active && $request->user()->can_access_erp
+            && \App\Support\PageAccessCatalog::userCanRoute($request->user(), 'preinvoice.create')) {
+            $assignment = $exact->assignment()->with('seller:id,name,is_active,can_access_erp')->first();
+            $items->prepend([
+                'id' => $exact->id, 'code' => $exact->crm_customer_id ?: $exact->id,
+                'name' => $exact->display_name, 'owner_name' => $assignment?->seller?->name,
+                'requires_approval' => true,
+                'can_request' => (bool) ($assignment?->seller?->is_active && $assignment?->seller?->can_access_erp),
+            ]);
+            $items = $items->take(20)->values();
+        }
+        return response()->json(['data' => ['customers' => $items]])->header('Cache-Control', 'private, no-store');
     }
 
     private function normalizeDigits(string $value): string
@@ -134,6 +159,9 @@ class CustomerApiController extends Controller
 
     public function show(Customer $customer)
     {
+        $scope = request()->validate(['sale_authorization_context' => 'nullable|uuid', 'draft_uuid' => 'nullable|string|max:100']);
+        $order = !empty($scope['draft_uuid']) ? \App\Models\PreinvoiceOrder::where('uuid', $scope['draft_uuid'])->where('created_by', request()->user()->id)->first() : null;
+        app(\App\Services\CustomerSaleAuthorization::class)->assertCanSell($customer, request()->user(), $scope['sale_authorization_context'] ?? null, $order, read: true);
         $customer->loadSum([
             'ledgers as debit_sum' => fn ($q) => $q->effectiveForBalance()->where('type', 'debit'),
         ], 'amount')->loadSum([
@@ -192,16 +220,24 @@ class CustomerApiController extends Controller
             throw ValidationException::withMessages(['city_id' => 'شهر انتخاب‌شده با استان انتخاب‌شده همخوانی ندارد.']);
         }
 
-        $customer = Customer::create([
-            'first_name' => $data['customer_name'] ?? $data['first_name'] ?? '',
-            'last_name' => $data['last_name'] ?? null,
-            'mobile' => $data['mobile'],
-            'address' => $data['address'] ?? null,
-            'postal_code' => $data['postal_code'] ?? null,
-            'extra_description' => $data['extra_description'] ?? null,
-            'province_id' => $provinceId,
-            'city_id' => $cityId,
-        ]);
+        $customer = DB::transaction(function () use ($data, $provinceId, $cityId, $request) {
+            $customer = Customer::create([
+                'first_name' => $data['customer_name'] ?? $data['first_name'] ?? '',
+                'last_name' => $data['last_name'] ?? null,
+                'mobile' => $data['mobile'],
+                'address' => $data['address'] ?? null,
+                'postal_code' => $data['postal_code'] ?? null,
+                'extra_description' => $data['extra_description'] ?? null,
+                'province_id' => $provinceId,
+                'city_id' => $cityId,
+            ]);
+
+            if (! app(\App\Services\CustomerOwnership::class)->canSellAny($request->user())) {
+                $customer->assignment()->create(['seller_id' => $request->user()->id, 'version' => 1]);
+                \App\Support\ActivityLogger::logForActor($request->user()->id, 'customer_seller_assigned', $customer, 'تخصیص مشتری جدید به ثبت‌کننده.', ['new_seller_id' => $request->user()->id]);
+            }
+            return $customer;
+        });
 
         return response()->json([
             'data' => [

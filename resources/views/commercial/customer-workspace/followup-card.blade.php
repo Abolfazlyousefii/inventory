@@ -1,0 +1,8 @@
+<article class="cf-task cf-task-{{ $task->status }} {{ $task->status==='open' && $task->due_at->isPast()?'cf-overdue':'' }}">
+<div class="cf-task-title"><strong>{{ $task->title }}</strong><span class="cf-badge">{{ \App\Models\CustomerFollowup::statuses()[$task->status] }}@if($task->status==='open' && $task->due_at->isPast()) · عقب‌افتاده@endif</span></div>
+@if(!($compact??false))<a class="cf-customer" href="{{ route('commercial.customers.show',[$task->customer_id,'tab'=>'activity']) }}">{{ $task->customer->display_name }} · کد {{ $task->customer->crm_customer_id?:$task->customer_id }} ←</a>@endif
+<div class="cf-task-meta"><time>{{ \App\Support\JalaliDate::dateTime($task->due_at) }}</time><span>مسئول: {{ $task->assignee?->name }}</span></div>
+@if($task->status==='open' && !($history??false))
+<details class="cf-task-actions"><summary>تعیین وضعیت</summary><form data-cf-form action="{{ route('commercial.customers.followups.update',[$task->customer_id,$task->id]) }}" method="post">@csrf<input type="hidden" name="_method" value="PATCH"><input type="hidden" name="version" value="{{ $task->version }}"><label>نتیجهٔ پیگیری<input name="result" maxlength="1500" placeholder="توضیح کوتاه؛ برای لغو الزامی است"></label><div class="cf-action-row"><button class="cf-success" name="status" value="done" type="submit">انجام شد</button><button class="cf-cancel" name="status" value="cancelled" type="submit">لغو پیگیری</button></div><p data-cf-message class="cf-message" role="status"></p></form></details>
+@elseif($task->status!=='open')<div class="cf-result">{{ $task->result?:'پیگیری انجام شد.' }}<small>{{ $task->closer?->name }} · {{ \App\Support\JalaliDate::dateTime($task->closed_at) }}</small></div>@endif
+</article>

@@ -37,6 +37,13 @@ class PermissionCatalog
     public static function groups(): array
     {
         return [
+            'مرخصی و گزارش کار' => [
+                'personnel.leaves.use'=>'ثبت و مشاهده مرخصی‌های خود و پذیرش جایگزینی',
+                'personnel.leaves.review'=>'بررسی مرخصی‌های ارجاع‌شده در ساختار سازمانی',
+                'personnel.reports.use'=>'ثبت و مشاهده گزارش‌های کار خود',
+                'personnel.reports.review'=>'مشاهده و بازخورد گزارش کار زیرمجموعه ارجاع‌شده',
+                'personnel.reports.submit_multiple'=>'ارسال بیش از یک گزارش کار در روز',
+            ],
             'پورسانت فروشندگان' => [
                 'commissions.manage_rates' => 'مدیریت نرخ‌های پورسانت',
                 'commissions.manage_campaigns' => 'مدیریت کمپین‌های پورسانت',
@@ -225,6 +232,8 @@ class PermissionCatalog
                 'finance.reports.view' => 'مشاهده گزارش مالی',
             ],
             'مشتریان' => [
+                'commercial.customers.transfer' => 'انتقال مسئول مشتری بدون انتقال فاکتور',
+                'commercial.customers.sell_any' => 'ثبت فروش برای مشتریان همه فروشندگان',
                 'customers.view' => 'مشاهده مشتریان',
                 'customers.create' => 'ایجاد مشتری',
                 'customers.edit' => 'ویرایش مشتری',
@@ -354,7 +363,7 @@ class PermissionCatalog
             ],
             'بازرگانی و فروش' => [
                 ['permission' => 'preinvoices.create', 'label' => 'ثبت پیش‌فاکتور'],
-                ['permission' => 'preinvoices.own.view', 'label' => 'پیش‌فاکتورهای من'],
+                ['permission' => 'preinvoices.own.view', 'label' => 'فاکتورها و پیش‌فاکتورهای من'],
                 ['permission' => 'customers.view', 'label' => 'اشخاص و طرف‌حساب‌ها'],
             ],
             'مالی' => [
@@ -364,13 +373,15 @@ class PermissionCatalog
                 ['permission' => 'cheques.view', 'label' => 'چک‌های ثبت‌شده'],
                 ['permission' => 'finance.reports.view', 'label' => 'گزارش مالی'],
             ],
+            'پرسنل و همکاری' => [
+                ['permission' => 'users.view', 'label' => 'پرسنل و ساختار سازمانی'],
+                ['permission' => 'permissions.view', 'label' => 'نقش و دسترسی کاربران'],
+                ['permission' => 'roles.view', 'label' => 'تعریف نقش‌ها'],
+            ],
             'پیکربندی' => [
                 ['permission' => 'categories.view', 'label' => 'دسته‌بندی کالاها'],
                 ['permission' => 'model_lists.view', 'label' => 'مدل لیست کالا'],
                 ['permission' => 'shipping_methods.view', 'label' => 'روش‌های ارسال بار'],
-                ['permission' => 'users.view', 'label' => 'کاربران و پرسنل'],
-                ['permission' => 'permissions.view', 'label' => 'مدیریت دسترسی کاربران'],
-                ['permission' => 'roles.view', 'label' => 'مدیریت نقش‌ها'],
                 ['permission' => 'logs.view', 'label' => 'لاگ فعالیت کاربران'],
                 ['permission' => 'inventory_webhooks.view', 'label' => 'مدیریت API موجودی/قیمت'],
             ],
@@ -410,6 +421,7 @@ class PermissionCatalog
             'inventory.adjust', 'stock_in.delete', 'settings.restore',
             'users.change_password', 'permissions.edit', 'permissions.sync',
             'warehouse.collection.adjust_price', 'inventory.reservation.legacy_cleanup',
+            'commercial.customers.transfer', 'commercial.customers.sell_any',
         ];
         $dependencies = [
             'products.show' => ['products.view'],

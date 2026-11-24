@@ -28,6 +28,17 @@ function crmPage(array $users, bool $more = false, ?int $cursor = null): array {
     return ['data' => $users, 'next_cursor' => $cursor, 'has_more' => $more, 'meta' => ['schema_version' => 1]];
 }
 
+it('preserves organization locally managed in INV across sync and manager reconciliation', function () {
+    $manager = User::factory()->create(['is_active'=>true,'can_access_erp'=>true]);
+    $user = User::factory()->create(['crm_user_id'=>'10','organization_managed_locally'=>true,'manager_id'=>$manager->id,'department'=>'INV department','position'=>'INV role','personnel_code'=>'INV-1','branch'=>'INV branch']);
+    Http::fake(['*'=>Http::response(crmPage([crmUser(['department'=>'CRM department','position'=>'CRM role','personnel_code'=>'CRM-1','branch'=>'CRM branch','manager_id'=>null])]))]);
+    app(CrmUserService::class)->syncUsers(full:true);
+    app(\App\Services\Crm\CrmUserSynchronizer::class)->reconcileManagers();
+    $user->refresh();
+    expect($user->manager_id)->toBe($manager->id)->and($user->department)->toBe('INV department')
+        ->and($user->position)->toBe('INV role')->and($user->personnel_code)->toBe('INV-1')->and($user->branch)->toBe('INV branch');
+});
+
 it('uses bearer auth canonical endpoint and follows cursor pages from zero', function () {
     Http::fake(function ($request) {
         expect($request->url())->toStartWith('https://crm.example.test/api/integrations/erp/users')

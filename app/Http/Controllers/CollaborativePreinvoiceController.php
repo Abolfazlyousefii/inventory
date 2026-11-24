@@ -98,6 +98,10 @@ class CollaborativePreinvoiceController extends Controller
             }
             $finance = $this->authorizeOrder($order);
             if ($finance) app(PreinvoiceReservationService::class)->assertFinanceApprovable($order, auth()->user(), true);
+            if (!$finance && $order->customer_id) {
+                $customer = \App\Models\Customer::lockForUpdate()->findOrFail($order->customer_id);
+                app(\App\Services\CustomerSaleAuthorization::class)->assertCanSell($customer, auth()->user(), null, $order);
+            }
             $items = $order->items()->lockForUpdate()->get();
             $before = $items->map->getAttributes()->all();
             $discountState = app(PreinvoiceDiscountHydrator::class)->hydrateForEditing($order);

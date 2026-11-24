@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'سفارش‌های من')
+@section('title', 'فاکتورها و پیش‌فاکتورهای من')
 @section('content_class', 'app-content-wide')
 @section('meta')
 	<link rel="stylesheet" href="{{ asset('css/pages/my-preinvoice.css') }}?v=20261011">
@@ -41,7 +41,7 @@
 	<div class="my-sales-page">
 		<header class="my-sales-page__header">
 			<div class="my-sales-page__heading">
-				<h1>سفارش‌های من</h1>
+				<h1>فاکتورها و پیش‌فاکتورهای من</h1>
 				<p>پیگیری سفارش‌ها و ادامهٔ پیش‌نویس‌ها</p>
 			</div>
 			<a href="{{ route('preinvoice.create') }}" class="my-sales-page__create btn btn-primary">+ سفارش جدید</a>

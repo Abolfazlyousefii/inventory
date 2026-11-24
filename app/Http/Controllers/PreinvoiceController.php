@@ -845,7 +845,7 @@ class PreinvoiceController extends Controller
                 'discount_amount', 'discount_breakdown', 'invoice_discount_type', 'invoice_discount_value',
             ]) : [];
 
-            $customer = $this->resolveCustomer($validated);
+            $customer = $this->resolveCustomer($validated, $order);
             $shippingId = $this->validatedShippingId($validated);
             $attrs = [
                 'created_by' => auth()->id(),
@@ -891,6 +891,8 @@ class PreinvoiceController extends Controller
             } else {
                 $order->update($attrs + ['total_price' => $candidateTotal]);
             }
+
+            app(\App\Services\CustomerSaleAuthorization::class)->bind($order, auth()->user(), $validated['sale_authorization_context'] ?? null);
 
             $reservationResult = $this->draftReservationService->syncReservationRows(
                 $draftToken, (int) auth()->id(),
@@ -1256,6 +1258,7 @@ class PreinvoiceController extends Controller
                 $order = PreinvoiceOrder::create($orderAttrs + ['uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class)]);
             }
 
+            app(\App\Services\CustomerSaleAuthorization::class)->bind($order, auth()->user(), $validated['sale_authorization_context'] ?? null);
             $this->syncItems($order, $validated['products']);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
@@ -1340,6 +1343,7 @@ class PreinvoiceController extends Controller
                 $order = PreinvoiceOrder::create($orderAttrs + ['uuid' => DocumentCodeGenerator::generateUnique5DigitCode(PreinvoiceOrder::class)]);
             }
 
+            app(\App\Services\CustomerSaleAuthorization::class)->bind($order, auth()->user(), $validated['sale_authorization_context'] ?? null);
             $this->syncItems($order, $validated['products']);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
             $order->update([
@@ -1449,7 +1453,7 @@ class PreinvoiceController extends Controller
                 $this->assertDraftItemsSellableForSubmission($validated['products']);
             }
 
-            $customer = $this->resolveCustomer($validated);
+            $customer = $this->resolveCustomer($validated, $order);
             $shippingId = array_key_exists('shipping_id', $validated)
                 ? $this->validatedShippingId($validated)
                 : (! empty($order->shipping_id) ? (int) $order->shipping_id : null);
@@ -1485,6 +1489,7 @@ class PreinvoiceController extends Controller
                 'total_price' => 0,
             ]);
 
+            app(\App\Services\CustomerSaleAuthorization::class)->bind($order, auth()->user(), $validated['sale_authorization_context'] ?? null);
             $this->syncItems($order, $validated['products'], true);
             $this->preinvoiceDiscountService->applyToOrder($order->fresh('items'), $validated);
 
@@ -1558,6 +1563,7 @@ class PreinvoiceController extends Controller
                     ]);
                 }}
 
+            app(\App\Services\CustomerSaleAuthorization::class)->bind($order, auth()->user(), $validated['sale_authorization_context'] ?? null);
             if ($isSubmit) {
                 $this->notificationService->notifyRoleAfterCommit(
                     'finance',
@@ -1700,6 +1706,7 @@ class PreinvoiceController extends Controller
 
         $validated = $request->validate([
             'reservation_token' => 'nullable|uuid',
+            'sale_authorization_context' => 'nullable|uuid',
             'autosave_uuid' => 'nullable|string',
             'customer_id' => 'nullable|integer|exists:customers,id',
             'customer_name' => 'required|string|max:255',
@@ -2319,12 +2326,18 @@ class PreinvoiceController extends Controller
         $dispatch();
     }
 
-    private function resolveCustomer(array $validated): ?Customer
+    private function resolveCustomer(array $validated, ?PreinvoiceOrder $order = null): ?Customer
     {
         $cid = (int) ($validated['customer_id'] ?? 0);
-        if ($cid <= 0) return null;
-
-        return Customer::query()->find($cid);
+        if ($cid <= 0) return null; // Empty autosave snapshots remain drafts.
+        $customer = Customer::query()->lockForUpdate()->find($cid);
+        // The customer row is also locked by transfers: ownership cannot change mid-save.
+        if (!$order) {
+            $uuid = $validated['draft_uuid'] ?? $validated['autosave_uuid'] ?? null;
+            if ($uuid) $order = PreinvoiceOrder::where('uuid', $uuid)->where('created_by', auth()->id())->first();
+        }
+        app(\App\Services\CustomerSaleAuthorization::class)->assertCanSell($customer, auth()->user(), $validated['sale_authorization_context'] ?? null, $order);
+        return $customer;
     }
 
     private function editableAutosaveOrder(?string $uuid): ?PreinvoiceOrder

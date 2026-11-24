@@ -1438,11 +1438,12 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						<div class="d-flex justify-content-between align-items-center mb-2">
 							<div>
 								<h2 class="section-title">مشتری</h2>
-								<div class="hint">جستجو با نام یا موبایل</div>
+								<div class="hint">نام و موبایل مشتریان خودتان؛ کد دقیق برای همهٔ مشتریان</div>
 							</div>
 							<a href="{{ $customersPageUrl }}" class="btn btn-sm btn-outline-success rounded-3">افزودن</a>
 						</div>
 						<select id="customer_search_select" class="form-select"></select>
+						@include('preinvoice.partials.customer-sale-approval')
 					</div>
 					<div class="col-lg-7">
 						<div id="customerSummaryBox" class="customer-box h-100 {{ old('customer_id') || $oldCustomerTitle ? 'is-selected' : '' }}">
@@ -1462,6 +1463,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 					</div>
 				</div>
 			</div>
+
 
 
 			<div class="soft-card-lg product-focus mb-3">
@@ -2248,6 +2250,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				autosave_version: currentAutosaveVersion,
 				saved_at: new Date().toISOString(),
 				reservation_token: ensureReservationToken(),
+                sale_authorization_context: document.getElementById('sale_authorization_context')?.value || null,
 				customer: {
 					id: document.getElementById('customer_id')?.value || '',
 					name: document.getElementById('customer_name')?.value || '',
@@ -2293,6 +2296,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 		function collectAutosavePayload() {
 			return {
 				reservation_token: ensureReservationToken(),
+                sale_authorization_context: document.getElementById('sale_authorization_context')?.value || null,
 				edit_existing_draft: IS_EDIT ? 1 : 0,
 				customer_id: document.getElementById('customer_id')?.value || null,
 				customer_name: document.getElementById('customer_name')?.value || '',
@@ -2463,6 +2467,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 		}
 
 		function clearVisibleFormOnly() {
+			customerSelectionVersion++;
+			document.dispatchEvent(new CustomEvent('customer-sale-selection-cleared'));
 			document.getElementById('customer_id').value = '';
 			document.getElementById('customer_name').value = '';
 			document.getElementById('customer_mobile').value = '';
@@ -2496,6 +2502,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			document.getElementById('autosave_uuid').value = currentAutosaveUuid || '';
 
 			clearVisibleFormOnly();
+            if (draft.sale_authorization_context) document.getElementById('sale_authorization_context').value = draft.sale_authorization_context;
 
 			document.getElementById('customer_id').value = draft.customer?.id || '';
 			document.getElementById('customer_name').value = draft.customer?.name || '';
@@ -2920,7 +2927,10 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			scheduleLocalDraftSave();
 		}
 
+		let customerSelectionVersion = 0;
 		function clearCustomer() {
+			customerSelectionVersion++;
+			document.dispatchEvent(new CustomEvent('customer-sale-selection-cleared'));
 			document.getElementById('customer_id').value = '';
 			document.getElementById('customer_name').value = '';
 			document.getElementById('customer_mobile').value = '';
@@ -2940,13 +2950,25 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			$(selectEl).trigger('change');
 		}
 
+        function customerReadUrl(id) {
+            const params = new URLSearchParams({sale_authorization_context:document.getElementById('sale_authorization_context')?.value || ''});
+            const draft = currentAutosaveUuid || EDIT_ORDER_UUID;
+            if (draft) params.set('draft_uuid', draft);
+            return API.customer + '/' + encodeURIComponent(id) + '?' + params;
+        }
+        document.addEventListener('customer-sale-approved', function (e) {
+            applyCustomerToForm(e.detail);
+            preloadCustomerOption(document.getElementById('customer_search_select'), e.detail);
+            confirmAutosaveChanges();
+            scheduleLocalDraftSave();
+        });
 		function initCustomerSearch() {
 			const selectEl = document.getElementById('customer_search_select');
 			if (!window.jQuery || !window.jQuery.fn?.select2) return;
 			$(selectEl).select2({
 				width: '100%',
 				dir: 'rtl',
-				placeholder: 'نام یا شماره موبایل مشتری...',
+				placeholder: 'نام، موبایل یا کد دقیق مشتری…',
 				allowClear: true,
 				minimumInputLength: 1,
 				ajax: {
@@ -2960,42 +2982,52 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						const items = resp?.data?.customers || [];
 						return {
 							results: items.map(c => ({
-								id: c.id,
-								text: customerFullName(c) + ' - ' + (c.mobile || '')
+								...c,
+								text: customerFullName(c) + (c.code ? ' · کد ' + c.code : '') + (c.requires_approval ? ' · نیازمند تأیید همکار' : (c.mobile ? ' · ' + c.mobile : ''))
 							}))
 						};
 					}
 				}
 			});
 			$(selectEl).on('select2:select', async function(e) {
-				const id = e?.params?.data?.id;
+				const choice = e?.params?.data;
+				const id = choice?.id;
 				if (!id) return;
+				clearCustomer();
+				const version = customerSelectionVersion;
+				selectEl.add(new Option(choice.text, id, true, true));
+				$(selectEl).trigger('change');
+				if (choice.requires_approval) {
+					document.dispatchEvent(new CustomEvent('customer-sale-approval-required', {detail: choice}));
+					return;
+				}
 				try {
-					const res = await fetch(API.customer + '/' + encodeURIComponent(id), {
+					const res = await fetch(customerReadUrl(id), {
 						headers: {
 							'Accept': 'application/json'
 						}
 					});
 					const json = await res.json();
 					const customer = json?.data?.customer || null;
-					if (customer) applyCustomerToForm(customer);
+					if (res.ok && customer && version === customerSelectionVersion) applyCustomerToForm(customer);
 				} catch (error) {}
 			});
 			$(selectEl).on('select2:clear', clearCustomer);
 		}
 
 		async function loadOldCustomer() {
+			const version = customerSelectionVersion;
 			const cid = document.getElementById('customer_id').value || OLD_CUSTOMER_ID || '';
 			if (!cid) return;
 			try {
-				const res = await fetch(API.customer + '/' + encodeURIComponent(cid), {
+				const res = await fetch(customerReadUrl(cid), {
 					headers: {
 						'Accept': 'application/json'
 					}
 				});
 				const json = await res.json();
 				const customer = json?.data?.customer || null;
-				if (customer) {
+				if (res.ok && customer && version === customerSelectionVersion) {
 					applyCustomerToForm(customer);
 					preloadCustomerOption(document.getElementById('customer_search_select'), customer);
 				}

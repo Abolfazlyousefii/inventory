@@ -16,6 +16,7 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
     use HasRoles;
+    protected $attributes = ['show_in_organization_chart' => true];
     /**
      * The attributes that are mass assignable.
      *
@@ -46,6 +47,9 @@ class User extends Authenticatable
         'password',
         'manager_id',
         'manager_crm_user_id',
+        'organization_managed_locally',
+        'organization_level',
+        'show_in_organization_chart',
     ];
 
     /**
@@ -72,6 +76,8 @@ class User extends Authenticatable
             'can_access_erp' => 'boolean',
             'is_seller' => 'boolean',
             'is_crm_managed' => 'boolean',
+            'organization_managed_locally' => 'boolean',
+            'show_in_organization_chart' => 'boolean',
             'synced_at' => 'datetime',
             'crm_created_at' => 'datetime',
             'crm_updated_at' => 'datetime',
@@ -83,6 +89,11 @@ class User extends Authenticatable
     public function manager(): BelongsTo
     {
         return $this->belongsTo(self::class, 'manager_id');
+    }
+
+    public function directReports(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(self::class, 'manager_id');
     }
 
     public function commissionTargets()

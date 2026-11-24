@@ -16,15 +16,17 @@
         || $isPath('vouchers', 'vouchers/*', 'sales-returns', 'sales-returns/*', 'warehouse/shipping', 'warehouse/shipping/*', 'warehouse/inbound-queue', 'warehouse/inbound-queue/*', 'warehouse-reservations', 'warehouse-reservations/*', 'warehouse/asset-trustee', 'warehouse/asset-trustee/*', 'stocktake', 'stocktake/*')
     );
 
-    $salesActive = $isSalesReturnRoute || $isRoute('sales-returns.*', 'preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.invoice-reassignments.*');
+    $salesActive = $isSalesReturnRoute || $isRoute('sales-returns.*', 'preinvoice.create', 'preinvoice.my.*', 'customers.*', 'persons.*', 'commercial.invoice-reassignments.*', 'commercial.customers.*', 'commercial.transfers.*', 'commercial.followups.*');
     $financeActive = $isRoute('preinvoice.draft.*', 'account-statements.*', 'invoices.*', 'finance.cheques.*', 'finance.reports.*');
-    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'users.*', 'admin.permissions.*', 'admin.roles.*', 'activity-logs.*', 'inventory-webhooks.*', 'admin.invoice-payment-settings.*');
+    $personnelActive = $isRoute('users.*', 'admin.permissions.*', 'admin.roles.*', 'admin.personnel.*', 'personnel.*');
+    $configActive = $isRoute('categories.*', 'model-lists.*', 'shipping-methods.*', 'activity-logs.*', 'inventory-webhooks.*', 'admin.invoice-payment-settings.*');
 
     $initialOpenSection = match (true) {
         $productsActive => 'products',
         $warehouseActive => 'warehouse',
         $salesActive => 'sales',
         $financeActive => 'finance',
+        $personnelActive => 'personnel',
         $configActive => 'config',
         default => null,
     };
@@ -179,7 +181,7 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view','page.sales.returns','page.commercial.invoice_reassignments'])
+        @canAnyPermission(['preinvoices.create','preinvoices.own.view','customers.view','page.sales.returns','page.commercial.invoice_reassignments','commercial.customers.transfer'])
             <div class="sidebar-accordion-item {{ $salesActive ? 'is-open' : '' }}" data-accordion-section="sales">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $salesActive ? 'is-active' : '' }}"
@@ -200,17 +202,18 @@
                             <a class="sidebar-sublink {{ $is('preinvoice.create') }}" href="{{ route('preinvoice.create') }}">ثبت پیش‌فاکتور</a>
                         @endcanPermission
                         @canPermission('preinvoices.own.view')
-                            <a class="sidebar-sublink {{ $is('preinvoice.my.*') }}" href="{{ route('preinvoice.my.index') }}">پیش‌فاکتورهای من</a>
+                            <a class="sidebar-sublink {{ $is('preinvoice.my.*') }}" href="{{ route('preinvoice.my.index') }}">فاکتورها و پیش‌فاکتورهای من</a>
                         @endcanPermission
+                        @canAnyPermission(['preinvoices.create','preinvoices.own.view','commercial.customers.transfer'])
+                            <a class="sidebar-sublink {{ $is('commercial.customers.index') }}" href="{{ route('commercial.customers.index') }}">مشتریان من</a>
+                            <a class="sidebar-sublink {{ $is('commercial.followups.*') }}" href="{{ route('commercial.followups.index') }}">پیگیری‌های من</a>
+                        @endcanAnyPermission
                         @canPermission('customers.view')
                             <a class="sidebar-sublink {{ $is('customers.*', 'persons.*') }}" href="{{ route('persons.index') }}">اشخاص و طرف‌حساب‌ها</a>
                         @endcanPermission
-                        @canPermission('page.sales.returns')
-                            <a class="sidebar-sublink {{ $is('vouchers.return-from-sale.*', 'sales-returns.*') }}" href="{{ route('vouchers.return-from-sale.index') }}">برگشت از فروش</a>
-                        @endcanPermission
-                        @canPermission('page.commercial.invoice_reassignments')
-                            <a class="sidebar-sublink {{ $is('commercial.invoice-reassignments.*') }}" href="{{ route('commercial.invoice-reassignments.index') }}">انتقال فروشنده فاکتور</a>
-                        @endcanPermission
+                        @canAnyPermission(['page.commercial.invoice_reassignments','commercial.customers.transfer'])
+                            <a class="sidebar-sublink {{ $is('commercial.transfers.*', 'commercial.invoice-reassignments.*', 'commercial.customers.transfers') }}" href="{{ route('commercial.transfers.index') }}">اسناد انتقال مشتری و فاکتور</a>
+                        @endcanAnyPermission
                     </div>
                 </div>
             </div>
@@ -250,7 +253,21 @@
             </div>
         @endcanAnyPermission
 
-        @canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','users.view','permissions.view','roles.view','logs.view','inventory_webhooks.view','settings.edit'])
+        @canAnyPermission(['users.view','permissions.view','roles.view','personnel.leaves.use','personnel.leaves.review','personnel.reports.use','personnel.reports.review'])
+            <div class="sidebar-accordion-item {{ $personnelActive ? 'is-open' : '' }}" data-accordion-section="personnel">
+                <button type="button" class="sidebar-section-title sidebar-accordion-trigger {{ $personnelActive ? 'is-active' : '' }}" data-accordion-trigger aria-expanded="{{ $personnelActive ? 'true' : 'false' }}" title="پرسنل و همکاری">
+                    <span class="sidebar-section-main"><svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span class="sidebar-label">پرسنل و همکاری</span></span>
+                    <svg class="sidebar-accordion-trigger-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+                <div class="sidebar-accordion-panel" data-accordion-panel><div class="sidebar-submenu">
+                    @canAnyPermission(['users.view','permissions.view','roles.view'])<a class="sidebar-sublink {{ $is('users.*','admin.permissions.*','admin.roles.*','admin.personnel.*') }}" href="{{ route('users.index') }}">مدیریت پرسنل</a>@endcanAnyPermission
+                    @canAnyPermission(['personnel.leaves.use','personnel.leaves.review'])<a class="sidebar-sublink {{ $is('personnel.leaves.*') }}" href="{{ route('personnel.leaves.index') }}">مرخصی‌ها</a>@endcanAnyPermission
+                    @canAnyPermission(['personnel.reports.use','personnel.reports.review'])<a class="sidebar-sublink {{ $is('personnel.reports.*') }}" href="{{ route('personnel.reports.index') }}">گزارش‌های کار</a>@endcanAnyPermission
+                </div></div>
+            </div>
+        @endcanAnyPermission
+
+        @canAnyPermission(['categories.view','model_lists.view','shipping_methods.view','logs.view','inventory_webhooks.view','settings.edit'])
             <div class="sidebar-accordion-item {{ $configActive ? 'is-open' : '' }}" data-accordion-section="config">
                 <button type="button"
                         class="sidebar-section-title sidebar-accordion-trigger {{ $configActive ? 'is-active' : '' }}"
@@ -275,15 +292,6 @@
                         @endcanPermission
                         @canPermission('shipping_methods.view')
                             <a class="sidebar-sublink {{ $is('shipping-methods.*') }}" href="{{ route('shipping-methods.index') }}">روش‌های ارسال بار</a>
-                        @endcanPermission
-                        @canPermission('users.view')
-                            <a class="sidebar-sublink {{ $is('users.*') }}" href="{{ route('users.index') }}">کاربران و پرسنل</a>
-                        @endcanPermission
-                        @canPermission('permissions.view')
-                            <a class="sidebar-sublink {{ $is('admin.permissions.*') }}" href="{{ route('admin.permissions.index') }}">مدیریت دسترسی کاربران</a>
-                        @endcanPermission
-                        @canPermission('roles.view')
-                            <a class="sidebar-sublink {{ $is('admin.roles.*') }}" href="{{ route('admin.roles.index') }}">مدیریت نقش‌ها</a>
                         @endcanPermission
                         @canPermission('logs.view')
                             <a class="sidebar-sublink {{ $is('activity-logs.*') }}" href="{{ route('activity-logs.index') }}">لاگ فعالیت کاربران</a>

@@ -25,7 +25,7 @@ class RoleController extends Controller
 
     public function create(): View
     {
-        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'commissionActionPermissions' => $this->commissionActionPermissions(), 'assetActionPermissions' => $this->assetActionPermissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
+        return view('admin.roles.form', ['role' => new Role, 'permissions' => $this->permissions(), 'commissionActionPermissions' => $this->commissionActionPermissions(), 'assetActionPermissions' => $this->assetActionPermissions(), 'personnelActionPermissions' => $this->personnelActionPermissions(), 'customerActionPermissions' => $this->customerActionPermissions(), 'selectedPermissionIds' => [], 'protectedRoleNames' => PermissionCatalog::protectedSystemRoles()]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -45,6 +45,7 @@ class RoleController extends Controller
             'permissions' => $this->permissions(),
             'commissionActionPermissions' => $this->commissionActionPermissions(),
             'assetActionPermissions' => $this->assetActionPermissions(),
+            'personnelActionPermissions' => $this->personnelActionPermissions(), 'customerActionPermissions' => $this->customerActionPermissions(),
             'selectedPermissionIds' => $role->permissions()->pluck('permissions.id')->all(),
             'protectedRoleNames' => PermissionCatalog::protectedSystemRoles(),
         ]);
@@ -108,6 +109,21 @@ class RoleController extends Controller
         ];
     }
 
+    private function customerActionPermissions()
+    {
+        return AccessPermission::query()->whereIn('key', ['commercial.customers.transfer', 'commercial.customers.sell_any'])->orderBy('key')->get();
+    }
+
+    private function personnelActionPermissions()
+    {
+        return AccessPermission::query()->whereIn('key', $this->personnelActionPermissionKeys())->orderBy('key')->get();
+    }
+
+    private function personnelActionPermissionKeys(): array
+    {
+        return ['personnel.leaves.use','personnel.leaves.review','personnel.reports.use','personnel.reports.review','personnel.reports.submit_multiple'];
+    }
+
     private function validated(Request $request, ?Role $role = null): array
     {
         return $request->validate([
@@ -146,6 +162,8 @@ class RoleController extends Controller
             ->pluck('permission')
             ->merge(['commissions.manage_rates', 'commissions.manage_campaigns', 'commissions.manage_periods', 'commissions.manage_targets', 'commissions.recalculate', 'commissions.view_seller_details'])
             ->merge($this->assetActionPermissionKeys())
+            ->merge($this->personnelActionPermissionKeys())
+            ->merge(['commercial.customers.transfer', 'commercial.customers.sell_any'])
             ->unique()
             ->values()
             ->all();

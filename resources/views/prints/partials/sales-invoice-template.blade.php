@@ -17,8 +17,10 @@
 <div class="no-print">
     <a class="btn" href="{{ $printData['backUrl'] }}">بازگشت</a>
     <div>
+        @unless($printData['customerWorkspace'] ?? false)
         <a class="btn" href="?mode=customer">نسخه مشتری</a>
         <a class="btn" href="?mode=warehouse">نسخه انبار</a>
+        @endunless
         <button class="btn btn-primary" onclick="window.print()">چاپ</button>
     </div>
 </div>

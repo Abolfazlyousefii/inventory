@@ -67,6 +67,7 @@ class UpdateUserPermissionsRequest extends FormRequest
         $changePermissions = $canEditPermissions && $this->boolean('direct_permissions_changed');
 
         return [
+            'access_version' => [Rule::requiredIf($this->expectsJson()), 'nullable', 'string', 'size:64'],
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'permission_catalog_version' => ['nullable', 'string', 'max:128'],
             'roles_submitted' => ['sometimes', 'accepted'],

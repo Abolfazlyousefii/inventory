@@ -24,8 +24,11 @@ class CommercialInvoiceReassignmentController extends Controller
         private readonly SalesDocumentSellerReassignmentService $sellerReassignmentService,
     ) {}
 
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        if (! $request->boolean('history')) {
+            return redirect()->route('commercial.transfers.index', ['kind' => 'invoice']);
+        }
         $history = SellerReassignmentAudit::query()
             ->with([
                 'invoice:id,uuid,total,customer_name',
@@ -39,7 +42,7 @@ class CommercialInvoiceReassignmentController extends Controller
             ->paginate(20, ['*'], 'history_page')
             ->withQueryString();
 
-        return view('commercial.invoice-reassignments.index', [
+        return view('commercial.transfers.history', [
             'sellers' => $this->sellers(),
             'history' => $history,
         ]);
