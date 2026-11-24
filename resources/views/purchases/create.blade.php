@@ -20,7 +20,6 @@
 				? $purchase->items->map(fn ($it) => [
 					'id' => $it->id,
                     'buy_cny' => $it->buy_cny_units ? app(\App\Services\CnyPriceCalculator::class)->amount((int)$it->buy_cny_units) : '',
-                    'cny_margin' => app(\App\Services\CnyPriceCalculator::class)->marginFromPolicy($it->cny_policy) ?? '',
 					'product_id' => $it->product_id,
 					'category_id' => $it->product?->category_id,
 					'variant_id' => $it->product_variant_id,
@@ -817,18 +816,8 @@ $productsPayload = $products->map(function ($p) {
 
                 <div class="p-3">
                     <div class="cny-product-panel mb-3" data-cny-panel hidden>
-                        <div class="d-flex gap-3 flex-wrap">
-                            <div>
-                                <label class="form-label d-block" for="cny-buy-${product.id}">قیمت خرید کل کالا <small>یوان · یکسان برای تمام تنوع‌ها</small></label>
-                                <input id="cny-buy-${product.id}" type="text" inputmode="decimal" class="form-control" data-cny-buy autocomplete="off" placeholder="مثلاً ۵ یا ۵٫۲۵" maxlength="16">
-                            </div>
-                            <div>
-                                <label class="form-label d-block" for="cny-margin-${product.id}">درصد حاشیه سود مثبت <small>بیشتر از صفر تا ۹۹٪</small></label>
-                                <input id="cny-margin-${product.id}" type="text" inputmode="decimal" class="form-control" data-cny-margin autocomplete="off" placeholder="مثلاً ۲۰ یا ۱۲٫۵" maxlength="12">
-                            </div>
-                        </div>
-                        <div class="small text-muted mt-2">فقط درصد سود مثبت (حداقل ۰٫۰۱٪) مجاز است؛ صفر و درصد منفی پذیرفته نمی‌شود. ذخیرهٔ ۲٪ نوسان نرخ مانند قبل اعمال می‌شود.</div>
-                        ${IS_EDIT_PURCHASE ? '<div class="small text-muted mt-2">ویرایش مبنای یوانی فقط قیمت‌های همین سند را با نرخ ثبت‌شدهٔ آن اصلاح می‌کند؛ قیمت روز کالا و سیاست به‌روزرسانی خودکار تغییر نمی‌کند.</div>' : ''}
+                        <label class="form-label" for="cny-buy-${product.id}">قیمت خرید کل کالا <small>یوان · یکسان برای تمام تنوع‌ها</small></label>
+                        <input id="cny-buy-${product.id}" type="text" inputmode="decimal" class="form-control" data-cny-buy autocomplete="off" placeholder="مثلاً ۵ یا ۵٫۲۵" maxlength="16">
                         <div class="cny-product-quote" data-cny-quote aria-live="polite">مبلغ یوانی را وارد کنید.</div>
                     </div>
                     <div class="price-panel mb-3" data-domestic-price-panel>
@@ -925,7 +914,6 @@ $productsPayload = $products->map(function ($p) {
 				if (initialRows.length) {
 					const first = initialRows[0];
                     card.querySelector('[data-cny-buy]').value = first.buy_cny || '';
-                    card.querySelector('[data-cny-margin]').value = first.cny_margin ?? '';
                     for (const field of ['buy','sell']) {
                         const prices=[...new Set(initialRows.map(row=>String(row[field+'_price']??'')))];
                         card.dataset[field+'Mixed']=IS_EDIT_PURCHASE && prices.length>1?'1':'0';
@@ -972,37 +960,40 @@ $productsPayload = $products->map(function ($p) {
 			}
 
             const domesticPrices = new WeakMap();
-            function refreshCnyCard(card, writePrices = !IS_EDIT_PURCHASE) {
-                const enabled = isCny(), input = card.querySelector('[data-cny-buy]'), margin = card.querySelector('[data-cny-margin]');
+            function refreshCnyCard(card) {
+                const enabled = isCny(), input = card.querySelector('[data-cny-buy]');
                 card.querySelector('[data-cny-panel]').hidden = !enabled;
                 card.querySelector('[data-domestic-price-panel]').hidden = enabled;
+                input.readOnly = IS_EDIT_PURCHASE;
                 input.required = enabled && [...card.querySelectorAll('[data-qty]')].some(el => Number(el.value) > 0);
-                margin.required = input.required;
                 if (!enabled) {
                     if (card.classList.contains('is-cny')) {
                         domesticPrices.get(card)?.forEach(([el,value]) => { if (el.isConnected) el.value=value; });
                         card.querySelectorAll('[data-buy],[data-sell]').forEach(el => el.readOnly=false);
                     }
-                    card.classList.remove('is-cny'); card.querySelectorAll('[data-current-sale-price]').forEach(el=>el.textContent=currentSalePriceMessage(el.dataset.salePrice)); input.setCustomValidity(''); margin.setCustomValidity(''); return;
+                    card.classList.remove('is-cny'); card.querySelectorAll('[data-current-sale-price]').forEach(el=>el.textContent=currentSalePriceMessage(el.dataset.salePrice)); input.setCustomValidity(''); return;
                 }
                 if (!card.classList.contains('is-cny')) domesticPrices.set(card,[...card.querySelectorAll('[data-buy],[data-sell],[data-product-buy],[data-product-sell]')].map(el=>[el,el.value]));
                 card.classList.add('is-cny');card.querySelectorAll('[data-buy],[data-sell]').forEach(el => el.readOnly=true);
                 card.querySelectorAll('[data-current-sale-price]').forEach(el=>el.textContent='قیمت فروش فعلی: '+(Number(el.dataset.salePrice)/10).toLocaleString('fa-IR')+' تومان');
                 try {
                     if (!cnyRate) throw Error('نرخ معتبر در دسترس نیست؛ نرخ را به‌روز کنید.');
-                    const quote = window.AriyaCny.quote(input.value, Number(cnyRate.rate_rial), margin.value);
-                    if (writePrices) {
+                    const quote = window.AriyaCny.quote(input.value, Number(cnyRate.rate_rial));
+                    if (!IS_EDIT_PURCHASE) {
+                        // Match PHP's integer-safe ceil-to-1000-toman sale policy.
+                        const numerator = BigInt(quote.units) * BigInt(cnyRate.rate_rial) * 102n;
+                        const denominator = 10000n * 70n * 10000n;
+                        quote.sale = Number(((numerator + denominator - 1n) / denominator) * 10000n);
                         card.querySelector('[data-product-buy]').value=formatNumericInput(quote.buy);
                         card.querySelector('[data-product-sell]').value=formatNumericInput(quote.sale);
                         card.querySelectorAll('[data-buy]').forEach(el=>el.value=formatNumericInput(quote.buy));
                         card.querySelectorAll('[data-sell]').forEach(el=>el.value=formatNumericInput(quote.sale));
                     }
                     const price = value => (Number(value)/10).toLocaleString('fa-IR',{maximumFractionDigits:1})+' تومان';
-                    card.querySelector('[data-cny-quote]').innerHTML=`<div><small>قیمت خرید</small><strong>${price(quote.buy)}</strong></div><div><small>قیمت فروش یوانی با درصد انتخابی و احتیاط</small><strong>${Number(quote.saleCny).toLocaleString('fa-IR',{maximumFractionDigits:6})} یوان</strong></div><div class="cny-sale-result"><small>قیمت فروش نهایی</small><strong>${price(quote.sale)}</strong></div>`;
-                    input.setCustomValidity(''); margin.setCustomValidity('');
+                    card.querySelector('[data-cny-quote]').innerHTML=`<div><small>قیمت خرید</small><strong>${price(quote.buy)}</strong></div><div><small>قیمت فروش یوانی با احتیاط و سود</small><strong>${Number(quote.saleCny).toLocaleString('fa-IR',{maximumFractionDigits:6})} یوان</strong></div><div class="cny-sale-result"><small>قیمت فروش نهایی</small><strong>${price(quote.sale)}</strong></div>`;
+                    input.setCustomValidity('');
                 } catch(error) {
-                    input.setCustomValidity(input.required && !error.message.includes('درصد سود') ? error.message : '');
-                    margin.setCustomValidity(margin.required && error.message.includes('درصد سود') ? error.message : '');
+                    input.setCustomValidity(input.required ? error.message : '');
                     card.querySelector('[data-cny-quote]').textContent=error.message;
                     if (!IS_EDIT_PURCHASE) card.querySelectorAll('[data-buy],[data-sell],[data-product-buy],[data-product-sell]').forEach(el=>el.value='');
                 }
@@ -1094,7 +1085,7 @@ $productsPayload = $products->map(function ($p) {
 							client_key: `product-${productId}-variant-${row.dataset.variantId}`,
 							product_id: productId,
                             product_price_version: draftPriceVersions.get(String(productId)) || product?.prices?.version || '',
-                            ...(isCny() ? {buy_cny: window.AriyaCny.latin(card.querySelector('[data-cny-buy]').value), cny_margin: window.AriyaCny.latin(card.querySelector('[data-cny-margin]').value)} : {}),
+                            ...(isCny() ? {buy_cny: window.AriyaCny.latin(card.querySelector('[data-cny-buy]').value)} : {}),
 							variant_id: row.dataset.variantId,
 							quantity: qty,
                             discount_type: row.dataset.lineDiscountType || null,
@@ -1154,7 +1145,7 @@ $productsPayload = $products->map(function ($p) {
 						change.originalPrice === null ? 'new' : change.originalPrice,
 						change.livePrice,
 						change.proposedPrice,
-                        isCny() ? String(change.item.buy_cny)+':'+String(change.item.cny_margin)+':'+cnyRate?.id : 'domestic',
+                        isCny() ? String(change.item.buy_cny)+':'+cnyRate?.id : 'domestic',
 					].join(':'))
 					.sort()
 					.join('|');
@@ -1170,7 +1161,7 @@ $productsPayload = $products->map(function ($p) {
 					const productLabel = escapeHtml(change.productName)
 						+ '<div class="small text-muted">' + group.length.toLocaleString('fa-IR') + ' تنوع دارای تغییر قیمت</div>';
 					const originalLabel = priceLabel(group.map(row=>row.originalPrice));
-					const catalogEffect = isCny() && IS_EDIT_PURCHASE ? '<span class="badge text-bg-success">فقط اصلاح سابقهٔ سند؛ قیمت روز کالا ثابت می‌ماند</span>' : isCny() && !IS_EDIT_PURCHASE ? '<span class="badge text-bg-primary">تأیید قیمت و فعال‌کردن به‌روزرسانی خودکار یوانی</span>' : group.some(row=>row.changesCatalog)
+					const catalogEffect = isCny() && !IS_EDIT_PURCHASE ? '<span class="badge text-bg-primary">تأیید قیمت و فعال‌کردن به‌روزرسانی خودکار یوانی</span>' : group.some(row=>row.changesCatalog)
 						? '<span class="badge text-bg-warning">درخواست تغییر قیمت جاری کالا</span>'
 						: '<span class="badge text-bg-success">فقط سابقه سند اصلاح می‌شود</span>';
 
@@ -1261,7 +1252,7 @@ $productsPayload = $products->map(function ($p) {
 				const card = target.closest('[data-product-card]');
 				if (!card) return;
 
-                if (isCny() && target.matches('[data-cny-buy],[data-cny-margin],[data-qty]')) { refreshCnyCard(card, !IS_EDIT_PURCHASE || target.matches('[data-cny-buy],[data-cny-margin]')); recalc(); return; }
+                if (isCny() && target.matches('[data-cny-buy],[data-qty]')) { refreshCnyCard(card); recalc(); return; }
 				if (target.classList.contains('formatted-number')) {
 					formatInputElement(target);
 				}
@@ -1436,7 +1427,7 @@ $productsPayload = $products->map(function ($p) {
                 for(const name of ['supplier_id','note','purchase_origin','invoice_discount_type','invoice_discount_value'])fields[name]=purchaseForm.elements.namedItem(name)?.value||'';
                 return {version:1,fields,cards:[...productCardsEl.querySelectorAll('[data-product-card]')].map(card=>{
                     const product=productById(card.dataset.productId);
-                    return {product_id:product.id,price_version:draftPriceVersions.get(String(product.id))||product.prices?.version||'',buy:card.querySelector('[data-product-buy]').value,sell:card.querySelector('[data-product-sell]').value,buy_cny:card.querySelector('[data-cny-buy]').value,cny_margin:card.querySelector('[data-cny-margin]').value,
+                    return {product_id:product.id,price_version:draftPriceVersions.get(String(product.id))||product.prices?.version||'',buy:card.querySelector('[data-product-buy]').value,sell:card.querySelector('[data-product-sell]').value,buy_cny:card.querySelector('[data-cny-buy]').value,
                         catalog:{variants:product.variants,prices:product.prices},
                         items:[...card.querySelectorAll('[data-variant-row]')].map(row=>({product_id:product.id,variant_id:Number(row.dataset.variantId),quantity:row.querySelector('[data-qty]').value,buy_price:numericPayloadValue(row.querySelector('[data-buy]').value),sell_price:numericPayloadValue(row.querySelector('[data-sell]').value),discount_type:row.dataset.lineDiscountType||null,discount_value:Number(row.dataset.lineDiscountValue||0),price_overridden:rowPriceOverridden(row)}))};
                 })};
@@ -1459,7 +1450,6 @@ $productsPayload = $products->map(function ($p) {
                     card.querySelector('[data-product-buy]').value=saved.buy??'';
                     card.querySelector('[data-product-sell]').value=saved.sell??'';
                     card.querySelector('[data-cny-buy]').value=saved.buy_cny??'';
-                    card.querySelector('[data-cny-margin]').value=saved.cny_margin??'';
                     draftPriceVersions.set(String(saved.product_id),saved.price_version||'');
                     refreshCnyCard(card);
                 }
@@ -1503,6 +1493,18 @@ $productsPayload = $products->map(function ($p) {
 			initPurchaseSupplierSearch();
 			renderProductOptions();
 			hydrateInitialItems().then(()=>{
+                // From the Yuan dashboard, focus only the requested product after async hydration.
+                if (IS_EDIT_PURCHASE && !purchaseForm.querySelector('.is-invalid')) {
+                    const focusId = new URLSearchParams(window.location.search).get('product_id');
+                    if (focusId && /^\d+$/.test(focusId)) {
+                        const card = productCardsEl.querySelector(`[data-product-card][data-product-id="${focusId}"]`);
+                        if (card) {
+                            card.classList.add('border-primary');
+                            card.scrollIntoView({block:'center'});
+                            card.querySelector('[data-variant-row][data-purchase-item-id] [data-qty]')?.focus({preventScroll:true});
+                        }
+                    }
+                }
                 if(!IS_EDIT_PURCHASE && window.PurchaseDraftAutosave)window.PurchaseDraftAutosave.start({
                     ...DRAFT_CONFIG,form:purchaseForm,cardsElement:productCardsEl,
                     token:()=>purchaseForm.elements.namedItem('submission_token').value,
