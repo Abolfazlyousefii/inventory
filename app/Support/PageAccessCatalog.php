@@ -534,6 +534,8 @@ class PageAccessCatalog
         'activity-logs.index' => ['activity_logs'],
         'users.index' => ['users', 'roles'],
         'users.sync' => ['users'],
+        'admin.personnel.accounts.store' => ['roles'],
+        'admin.personnel.accounts.status' => ['roles'],
         'admin.bug-investigator.index' => ['activity_logs'],
         'admin.bug-investigator.create' => ['activity_logs'],
         'admin.bug-investigator.store' => ['activity_logs'],

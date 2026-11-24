@@ -4,7 +4,7 @@
 @push('scripts')<script defer src="{{ asset('js/personnel-workspace.js') }}?v={{ filemtime(public_path('js/personnel-workspace.js')) }}"></script>@endpush
 @section('content')
 <div class="pw" data-personnel-workspace>
-<header class="pw-heading"><div><span class="pw-eyebrow">پرسنل و همکاری / مدیریت پرسنل</span><h1>تیم ما، در یک نگاه</h1><p>افراد، جایگاه سازمانی و دسترسی‌ها؛ کنار هم و مرتب</p></div><span class="pw-count" data-staff-count>{{ $directoryTab === 'accounts' ? $accounts->count().' حساب' : count($rows).' نفر در ساختار' }}</span></header>
+<header class="pw-heading"><div><span class="pw-eyebrow">پرسنل و همکاری / مدیریت پرسنل</span><h1>تیم ما، در یک نگاه</h1><p>افراد، جایگاه سازمانی و دسترسی‌ها؛ کنار هم و مرتب</p></div>@if($canManage)<button type="button" class="pw-button" data-create-staff>＋ حساب جدید</button>@endif<span class="pw-count" data-staff-count>{{ $directoryTab === 'accounts' ? $accounts->count().' حساب' : count($rows).' نفر در ساختار' }}</span></header>
 <nav class="pw-directory-tabs" aria-label="نوع حساب">
 <button type="button" data-directory-tab="organization" aria-pressed="{{ $directoryTab === 'organization' ? 'true' : 'false' }}">چارت سازمانی <span data-chart-count>{{ $chartCount }}</span></button>
 <button type="button" data-directory-tab="accounts" aria-pressed="{{ $directoryTab === 'accounts' ? 'true' : 'false' }}">حساب‌های مدیریتی <span data-account-count>{{ $accountCount }}</span></button>
@@ -22,5 +22,6 @@
 @include('users.partials.tree')
 <p class="pw-directory-note" data-organization-tools @if($directoryTab === 'accounts') hidden @endif>مدیر مستقیم هر فرد با خط مشخص شده است. حساب‌های مدیریتی خارج از چارت‌اند؛ مسیر تأیید مرخصی و گزارش کار حفظ می‌شود.</p>
 <dialog id="staffDialog" aria-labelledby="staffDialogTitle"><header class="pw-dialog-head"><h2 id="staffDialogTitle">ویرایش پرسنل</h2><button type="button" data-close-editor aria-label="بستن ویرایش پرسنل">×</button></header><div id="staffEditorHost"></div></dialog>
+@if($canManage)@include('users.partials.create-account')@endif
 </div>
 @endsection

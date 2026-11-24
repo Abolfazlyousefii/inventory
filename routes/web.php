@@ -795,6 +795,8 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Users (External CRM)
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
+    Route::post('/admin/personnel/accounts', [\App\Http\Controllers\Admin\PersonnelAccountController::class, 'store'])->middleware(\App\Http\Middleware\ProtectPersonnelCsrf::class)->name('admin.personnel.accounts.store');
+    Route::put('/admin/personnel/accounts/{user}/status', [\App\Http\Controllers\Admin\PersonnelAccountController::class, 'status'])->middleware(\App\Http\Middleware\ProtectPersonnelCsrf::class)->name('admin.personnel.accounts.status');
     Route::post('/users/sync', [UserController::class, 'sync'])->name('users.sync');
 
     Route::prefix('admin/bug-investigator')->name('admin.bug-investigator.')->group(function () {

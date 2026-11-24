@@ -1,8 +1,18 @@
 @if($selectedUser)
 <div data-staff-editor>
-    <nav class="pw-tabs" aria-label="بخش‌های ویرایش پرسنل"><button type="button" data-staff-tab="profile" aria-pressed="true">مشخصات</button><button type="button" data-staff-tab="roles" aria-pressed="false">نقش‌ها</button><button type="button" data-staff-tab="permissions" aria-pressed="false">دسترسی‌ها</button></nav>
+    <nav class="pw-tabs" aria-label="بخش‌های ویرایش پرسنل"><button type="button" data-staff-tab="profile" aria-pressed="true">مشخصات</button><button type="button" data-staff-tab="roles" aria-pressed="false">نقش‌ها</button><button type="button" data-staff-tab="permissions" aria-pressed="false">دسترسی‌ها</button><button type="button" data-staff-tab="account" aria-pressed="false">وضعیت حساب</button></nav>
     <div class="pw-editor-feedback" role="status" aria-live="polite"></div>
     <section data-staff-section="profile" class="pw-editor-section">@include('admin.permissions.partials.organization')</section>
+    <section data-staff-section="account" class="pw-editor-section" hidden>
+        <form method="post" action="{{ route('admin.personnel.accounts.status',$selectedUser) }}" data-account-editor>
+            @csrf @method('PUT')
+            <input type="hidden" name="account_version" value="{{ \App\Services\Personnel\PersonnelAccounts::version($selectedUser) }}">
+            <div class="pw-account-card"><strong>دسترسی ورود به نرم‌افزار</strong><p>وضعیت حساب مستقل از نمایش در چارت است. غیرفعال‌کردن، سوابق، مشتریان، نقش‌ها و درخواست‌های قبلی را حذف نمی‌کند.</p>
+            <label class="pw-field">وضعیت حساب<select name="is_active" @disabled(!$canEditPermissions)><option value="1" @selected($selectedUser->is_active && $selectedUser->can_access_erp)>فعال — ورود مجاز</option><option value="0" @selected(!$selectedUser->is_active || !$selectedUser->can_access_erp)>غیرفعال — ورود بسته</option></select></label>
+            <small>نام حساب: {{ $selectedUser->name }} · موبایل: {{ $selectedUser->phone }}</small></div>
+            @if($canEditPermissions)<footer class="pw-editor-footer"><span>نقش‌ها و عضویت در چارت حفظ می‌شوند.</span><button class="pw-button" type="submit">ذخیره وضعیت حساب</button></footer>@endif
+        </form>
+    </section>
     <form method="post" action="{{ route('admin.permissions.update',$selectedUser) }}" data-access-editor>
         @csrf @method('PUT')
         <input type="hidden" name="user_id" value="{{ $selectedUser->id }}">
