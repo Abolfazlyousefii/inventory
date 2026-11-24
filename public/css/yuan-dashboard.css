@@ -13,6 +13,7 @@ body.yuan-full-width .app-content{max-width:none!important;width:100%;padding:18
 .yuan-btn-primary{background:var(--app-primary);color:#fff;border-color:var(--app-primary)}.yuan-btn-primary:hover{background:var(--app-primary-hover);color:#fff}
 .yuan-btn-soft{color:var(--app-accent);background:var(--app-info-soft);border-color:var(--app-border)}
 .yuan-btn-small{font-size:11px;min-height:34px;padding:6px 12px}
+.yuan-edit-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;white-space:nowrap}.yuan-edit-link:hover{text-decoration:none}
 .yuan-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:15px}
 .yuan-stat,.yuan-panel{background:var(--app-surface);border:1px solid var(--app-border);border-radius:14px;box-shadow:var(--app-shadow-sm)}
 .yuan-stat{padding:18px 20px;min-width:0}.yuan-stat span,.yuan-stat strong,.yuan-stat small{display:block}

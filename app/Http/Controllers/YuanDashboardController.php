@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\{CnyExchangeRate,Product,ProductCnyPricing};
 use App\Services\{CnyPriceCalculator,CnyPricingService};
 use App\Services\ExchangeRates\{NavasanRateFetcher,NobitexRateFetcher};
+use App\Support\PermissionCatalog;
 use Illuminate\Http\{JsonResponse,Request};
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -47,9 +48,21 @@ final class YuanDashboardController extends Controller
         elseif ($sort === 'price') $query->join('products as ordered_products','ordered_products.id','=','product_cny_pricings.product_id')
             ->select('product_cny_pricings.*')->orderByDesc('ordered_products.price')->orderBy('product_cny_pricings.id');
         else $query->orderByDesc('product_cny_pricings.updated_at')->orderByDesc('product_cny_pricings.id');
+        $canEditPurchases = PermissionCatalog::userHasPermission($request->user(), 'stock_in.edit');
+        if ($canEditPurchases) {
+            // Use the newest Yuan purchase containing this product; never link to an unrelated or domestic document.
+            $query->addSelect(['edit_purchase_id' => DB::table('purchase_items')
+                ->select('purchase_items.purchase_id')
+                ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+                ->whereColumn('purchase_items.product_id', 'product_cny_pricings.product_id')
+                ->whereNotNull('purchase_items.buy_cny_units')
+                ->where('purchase_items.buy_cny_units', '>', 0)
+                ->where('purchases.purchase_origin', 'china')
+                ->orderByDesc('purchases.purchased_at')->orderByDesc('purchases.id')->limit(1)]);
+        }
         $page = $query->paginate(50);
         $rate = $this->pricing->previewRate();
-        $rows = $page->getCollection()->filter(fn ($policy) => $policy->product !== null)->map(function ($policy) use ($rate) {
+        $rows = $page->getCollection()->filter(fn ($policy) => $policy->product !== null)->map(function ($policy) use ($rate, $canEditPurchases) {
             $product = $policy->product;
             $applied = $policy->appliedRate;
             $quoted = $applied ? $this->calculator->calculate($this->calculator->amount($policy->buy_cny_units), (int)$applied->rate_rial) : null;
@@ -68,6 +81,8 @@ final class YuanDashboardController extends Controller
                     ? round(100 * ((int)$product->price - $quoted['buy_rial']) / max(1,(int)$product->price),1) : null,
                 'proposed_toman' => $proposal ? intdiv($proposal['sell_rial'],10) : null,
                 'enabled' => (bool)$policy->enabled, 'updated_at' => $policy->updated_at?->toIso8601String(),
+                'purchase_edit_url' => $canEditPurchases && $policy->edit_purchase_id
+                    ? route('purchases.edit', ['purchase' => $policy->edit_purchase_id, 'product_id' => $product->id]) : null,
             ];
         })->values();
         return response()->json(['rows' => $rows, 'total' => $page->total(), 'page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'rate' => $rate]);

@@ -2,7 +2,7 @@
 @section('title', 'مدیریت قیمت یوان')
 @section('page-title', 'مدیریت قیمت یوان')
 @push('styles')
-<link rel="stylesheet" href="{{ asset('css/yuan-dashboard.css') }}?v=1">
+<link rel="stylesheet" href="{{ asset('css/yuan-dashboard.css') }}?v=2">
 @endpush
 @section('content')
 <section class="yuan-dash" id="yuanDashboard"
@@ -37,7 +37,7 @@
                 <label><span class="visually-hidden">ترتیب</span><select id="yuanSort"><option value="latest">آخرین تغییر</option><option value="name">نام کالا</option><option value="price">قیمت فروش</option></select></label>
             </div>
             <div class="yuan-table-window" id="yuanWindow" tabindex="0" aria-label="فهرست کالاها؛ برای توقف حرکت نشانگر را روی جدول قرار دهید">
-                <table class="yuan-table"><thead><tr><th>نام کالا</th><th>خرید (¥)</th><th>هزینه خرید (تومان)</th><th>قیمت فروش (تومان)</th><th>سود ناخالص</th><th>وضعیت</th></tr></thead><tbody id="yuanRows"><tr><td colspan="6" class="yuan-empty">در حال دریافت اطلاعات…</td></tr></tbody></table>
+                <table class="yuan-table"><thead><tr><th>نام کالا</th><th>خرید (¥)</th><th>هزینه خرید (تومان)</th><th>قیمت فروش (تومان)</th><th>سود ناخالص</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="yuanRows"><tr><td colspan="7" class="yuan-empty">در حال دریافت اطلاعات…</td></tr></tbody></table>
             </div>
             <footer class="yuan-foot"><span id="yuanMotionLabel">مرور خودکار</span><div class="yuan-foot-actions"><button type="button" class="yuan-btn yuan-btn-small" id="yuanNext">ردیف بعد ←</button><button type="button" class="yuan-btn yuan-btn-small" id="yuanPause" aria-pressed="false">Ⅱ توقف مرور</button></div></footer>
         </section>
@@ -68,5 +68,5 @@
 </section>
 @endsection
 @push('scripts')
-<script src="{{ asset('js/yuan-dashboard.js') }}?v=1" defer></script>
+<script src="{{ asset('js/yuan-dashboard.js') }}?v=2" defer></script>
 @endpush

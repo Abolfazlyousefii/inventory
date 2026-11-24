@@ -23,7 +23,7 @@ async function load(page=1,reset=false,append=false){
  if(state.loading && !reset)return;
  const request=++state.request;state.loading=true;
  const params=new URLSearchParams({...readFilters(),page:String(page)});
- if(reset){state.offset=0;$('yuanRows').replaceChildren(text('tr',''));$('yuanRows').firstChild.replaceChildren(text('td','در حال دریافت اطلاعات…','yuan-empty'));$('yuanRows').firstChild.firstChild.colSpan=6;}
+ if(reset){state.offset=0;$('yuanRows').replaceChildren(text('tr',''));$('yuanRows').firstChild.replaceChildren(text('td','در حال دریافت اطلاعات…','yuan-empty'));$('yuanRows').firstChild.firstChild.colSpan=7;}
  try{
   const result=await json(root.dataset.listUrl+'?'+params);
   if(request!==state.request)return;
@@ -44,12 +44,21 @@ function makeRow(item){
  for(const value of [item.buy_cny,item.cost_toman==null?'—':short(item.cost_toman),short(item.sale_toman)])tr.append(text('td',value));
  const profit=text('td',item.profit_percent==null?'—':(item.profit_percent>0?'+':'')+short(item.profit_percent)+'٪','yuan-profit');profit.classList.toggle('negative',item.profit_percent!=null && item.profit_percent<0);tr.append(profit);
  const status=document.createElement('td');status.append(text('span',item.enabled?'فعال':'متوقف','yuan-pill'+(item.enabled?'':' is-paused')));tr.append(status);
- tr.addEventListener('click',()=>select(item));tr.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item);}});
+ const actions=document.createElement('td');
+ if(item.purchase_edit_url){
+  const link=text('a','ویرایش خرید','yuan-btn yuan-btn-small yuan-edit-link');
+  link.href=item.purchase_edit_url;link.setAttribute('aria-label','ویرایش خرید مربوط به '+item.name);
+  link.addEventListener('click',event=>event.stopPropagation());
+  actions.append(link);
+ }else actions.append(text('span','—','yuan-muted'));
+ tr.append(actions);
+ tr.addEventListener('click',event=>{if(!event.target.closest('a'))select(item);});
+ tr.addEventListener('keydown',event=>{if(event.target.closest('a'))return;if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item);}});
  return tr;
 }
 function render(){
  const tbody=$('yuanRows');tbody.replaceChildren();
- if(!state.items.length){const tr=document.createElement('tr');const td=text('td','کالایی با این فیلتر پیدا نشد.','yuan-empty');td.colSpan=6;tr.append(td);tbody.append(tr);return;}
+ if(!state.items.length){const tr=document.createElement('tr');const td=text('td','کالایی با این فیلتر پیدا نشد.','yuan-empty');td.colSpan=7;tr.append(td);tbody.append(tr);return;}
  tbody.append(...state.items.map(makeRow));
  $('yuanWindow').scrollTop=0;
  updateMotionLabel();
