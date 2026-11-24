@@ -45,6 +45,7 @@ class CustomerApiController extends Controller
             : null;
         $items = $ownership->visible(Customer::query(), $request->user())
             ->where('is_active', true)
+            ->with('assignment.seller:id,name')
             ->withBalance()
             ->where(function($qq) use ($terms, $fullNameExpression, $normalizedNameLike, $nameExpressions, $exact){
                 if ($exact) $qq->orWhere('customers.id', $exact->id);
@@ -74,6 +75,7 @@ class CustomerApiController extends Controller
                 'id' => $c->id,
                 'code' => $c->crm_customer_id ?: $c->id,
                 'requires_approval' => false,
+                'owner_name' => $c->assignment?->seller?->name,
                 'name' => $c->display_name,
                 'first_name' => $c->first_name,
                 'last_name' => $c->last_name,
@@ -172,6 +174,7 @@ class CustomerApiController extends Controller
             'data' => [
                 'customer' => [
                     'id' => $customer->id,
+                    'owner_name' => $customer->assignment()->with('seller:id,name')->first()?->seller?->name,
                     'name' => $customer->display_name,
                     'first_name' => $customer->first_name,
                     'last_name' => $customer->last_name,

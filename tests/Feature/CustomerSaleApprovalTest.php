@@ -69,6 +69,22 @@ class CustomerSaleApprovalTest extends TestCase
         $this->getJson('/preinvoice/api/customers?q=70099')->assertOk()->assertJsonCount(0, 'data.customers');
     }
 
+    public function test_own_customer_responsible_seller_is_returned_and_unassigned_customer_needs_transfer(): void
+    {
+        $actor = $this->seller();
+        $own = Customer::factory()->create(['crm_customer_id' => '4321']);
+        $own->assignment()->create(['seller_id' => $actor->id]);
+        $this->actingAs($actor)->getJson('/preinvoice/api/customers?q=4321')->assertOk()
+            ->assertJsonPath('data.customers.0.owner_name', $actor->name);
+        $this->getJson('/preinvoice/api/customers/'.$own->id)->assertOk()
+            ->assertJsonPath('data.customer.owner_name', $actor->name);
+        $unassigned = Customer::factory()->create(['crm_customer_id' => '4322']);
+        $this->getJson('/preinvoice/api/customers?q=4322')->assertOk()
+            ->assertJsonPath('data.customers.0.can_request', false);
+        $this->getJson('/preinvoice/api/customers/'.$unassigned->id)->assertUnprocessable();
+        $this->postJson('/commercial/sale-approvals/request', ['customer_id' => $unassigned->id, 'context' => (string) Str::uuid()])->assertUnprocessable();
+    }
+
     public function test_exact_discovery_is_minimal_and_unverified_customer_cannot_be_saved(): void
     {
         $s = $this->scenario();

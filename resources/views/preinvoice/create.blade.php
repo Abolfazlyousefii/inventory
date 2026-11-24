@@ -1454,6 +1454,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 											{{ $oldCustomerTitle }} @if($oldCustomerMobile) - {{ $oldCustomerMobile }} @endif
 										@else هنوز مشتری انتخاب نشده است @endif
 									</div>
+									<div class="hint mt-1" id="customer_owner_hint"></div>
 									<div class="hint mt-1" id="customer_balance_hint"></div>
 									<div class="hint mt-1" id="customer_reservation_hint">سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.</div>
 								</div>
@@ -2475,6 +2476,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			const paymentTermsEl = document.getElementById('payment_terms_note');
 			if (paymentTermsEl) paymentTermsEl.value = '';
 			document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
+			document.getElementById('customer_owner_hint').textContent = '';
 			document.getElementById('customer_balance_hint').textContent = '';
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 			document.getElementById('customerSummaryBox').classList.remove('is-selected');
@@ -2920,6 +2922,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			document.getElementById('customer_name').value = name;
 			document.getElementById('customer_mobile').value = mobile;
 			document.getElementById('selectedCustomerTitle').textContent = name + (mobile ? ' - ' + mobile : '');
+			document.getElementById('customer_owner_hint').textContent = 'مسئول مشتری: ' + (normalize(c.owner_name) || 'تعیین نشده؛ نیازمند تخصیص مشتری');
 			document.getElementById('customer_balance_hint').textContent = 'مانده حساب: ' + formatMoney(c.balance || 0);
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو: ' + reservationTierLabel(c) + ' | مدت رزرو پس از ثبت نهایی: ' + reservationDurationShort(c);
 			document.getElementById('customerSummaryBox').classList.add('is-selected');
@@ -2935,6 +2938,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			document.getElementById('customer_name').value = '';
 			document.getElementById('customer_mobile').value = '';
 			document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
+			document.getElementById('customer_owner_hint').textContent = '';
 			document.getElementById('customer_balance_hint').textContent = '';
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 			document.getElementById('customerSummaryBox').classList.remove('is-selected');
