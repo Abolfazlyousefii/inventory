@@ -81,14 +81,12 @@
         $pageTitle = $appName;
     }
 @endphp
-<body class="app-body @if(request()->routeIs('products.yuan.*')) yuan-full-width @endif"
+<body class="app-body"
       data-notifications-count-url="{{ route('notifications.unread-count') }}"
       data-notifications-latest-url="{{ route('notifications.latest') }}"
       data-notifications-read-all-url="{{ route('notifications.read-all') }}">
 <div class="app-layout">
-    @unless(request()->routeIs('products.yuan.*'))
-        @include('layouts.sidebar')
-    @endunless
+    @include('layouts.sidebar')
 
     <div class="app-main-shell">
         <header class="app-topbar">
