@@ -80,6 +80,8 @@ class PageAccessCatalog
         'commercial.commissions.settlements.payments.store' => ['commercial.commissions'],
         'commercial.commissions.settlements.payments.void' => ['commercial.commissions'],
         'products.index' => ['products'],
+        'products.yuan.unlock' => ['products.price_changes'],
+        'products.yuan.unlock.submit' => ['products.price_changes'],
         'products.yuan.index' => ['products.price_changes'],
         'products.yuan.data' => ['products.price_changes'],
         'products.yuan.history' => ['products.price_changes'],

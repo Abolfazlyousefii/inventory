@@ -4,7 +4,7 @@ return [
     // Both sources are public, unauthenticated and used READ-ONLY.
     'enabled' => env('NOBITEX_ENABLED', false),
     'schedule_enabled' => env('NOBITEX_FETCH_SCHEDULE_ENABLED', false),
-    'url' => 'https://apiv2.nobitex.ir/v3/orderbook/USDTIRT',
+    'url' => 'https://apiv2.nobitex.ir/v3/orderbook/all',
     'market' => 'USDTIRT',
     'fx_url' => 'https://api.frankfurter.dev/v2/rate/usd/cny',
     // The reference's DATE is the source timestamp. 120h accommodates weekends;

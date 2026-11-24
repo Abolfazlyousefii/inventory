@@ -16,7 +16,7 @@ use Throwable;
 final class NobitexRateFetcher
 {
     private const PROVIDER = 'nobitex_usdt_proxy';
-    private const URL = 'https://apiv2.nobitex.ir/v3/orderbook/USDTIRT';
+    private const URL = 'https://apiv2.nobitex.ir/v3/orderbook/all';
     private const FX_URL = 'https://api.frankfurter.dev/v2/rate/usd/cny';
 
     /** @return array{status:string,rate:CnyExchangeRate} */
@@ -55,7 +55,7 @@ final class NobitexRateFetcher
             }
             $body = $this->getJson(self::URL, 'market');
             try {
-                $quote = $parser->parse($body, $fx['ratio'], $fx['verified_at'],
+                $quote = $parser->parse($parser->usdtIrtFromAll($body), $fx['ratio'], $fx['verified_at'],
                     now()->timestamp,
                     (int) config('nobitex.max_quote_age_minutes') * 60,
                     (int) config('nobitex.max_fx_age_hours') * 3600,
@@ -90,7 +90,9 @@ final class NobitexRateFetcher
         }
         if (!$response->successful()) {
             $code = $response->status() === 429 ? 'rate_limited' : 'http_failure';
-            Log::warning('CNY_RATE_FETCH_FAILED', ['source' => $source, 'code' => $code]);
+            Log::warning('CNY_RATE_FETCH_FAILED', [
+                'source' => $source, 'code' => $code, 'http_status' => $response->status(),
+            ]);
             throw new RuntimeException('cny_'.$source.'_'.$code);
         }
         $json = $response->json();

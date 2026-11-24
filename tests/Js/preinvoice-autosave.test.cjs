@@ -6,12 +6,25 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../../resources/views/preinvoice/create.blade.php'), 'utf8');
 
+function loadEditorFunctions(context, names) {
+    for (const name of names) {
+        const found = new RegExp(`^([\t ]+)(?:async )?function ${name}\\(`, 'm').exec(source);
+        assert.ok(found, `Missing editor function ${name}`);
+        const bodyStart = found.index + found[0].length;
+        const remaining = source.slice(bodyStart);
+        const end = remaining.search(new RegExp(`\\n${found[1]}(?:async )?function `));
+        assert.notEqual(end, -1, `Missing end of editor function ${name}`);
+        vm.runInContext(source.slice(found.index, bodyStart + end), context);
+    }
+}
+
 function editor(fetch, options = {}) {
     const values = {
         customer_id: '1', customer_name: 'Customer', customer_mobile: '09120000000',
         payment_terms_note: '', orderDiscountType: 'amount', orderDiscountValue: '0',
         discount: '0', discount_breakdown: '{}', autosave_uuid: ''
     };
+    if (!options.isEdit) { delete values.orderDiscountType; delete values.orderDiscountValue; }
     const nodes = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, {value}]));
     let pendingTimer;
     const context = vm.createContext({
@@ -38,22 +51,15 @@ function editor(fetch, options = {}) {
         CsrfMismatchError: Error, SessionChangedError: Error,
         getLocalDraft: () => null, updateLocalDraftStatus: () => {},
         syncDraftReservation: async () => {}, confirm: () => true, alert: () => {},
+        showLocalDraftBanner: () => {},
         renderGroupSummary: () => {}, updateTotal: () => {}, scheduleLocalDraftSave: () => {},
         scheduleDbAutosave: () => {}, clearVisibleFormOnly: () => {}, setReservationMode: () => {},
         getProductDetails: async () => null, getProductVarieties: () => [],
         productTitle: () => '', productCode: () => '', updateSubmitState: () => {}
     });
-    for (const name of ['fetchJson', 'collectProductsForAutosave', 'collectAutosavePayload',
+    loadEditorFunctions(context, ['fetchJson', 'collectProductsForAutosave', 'collectAutosavePayload',
         'confirmAutosaveChanges', 'saveDbAutosaveNow', 'persistDbAutosave', 'scheduleDbAutosave',
-        'saveLocalDraftNow', 'scheduleLocalDraftSave', 'deleteGroup', 'applyDbAutosaveDraft']) {
-        const found = new RegExp(`^([\t ]+)(?:async )?function ${name}\\(`, 'm').exec(source);
-        assert.ok(found, `Missing editor function ${name}`);
-        const bodyStart = found.index + found[0].length;
-        const remaining = source.slice(bodyStart);
-        const end = remaining.search(new RegExp(`\\n${found[1]}(?:async )?function `));
-        assert.notEqual(end, -1, `Missing end of editor function ${name}`);
-        vm.runInContext(source.slice(found.index, bodyStart + end), context);
-    }
+        'saveLocalDraftNow', 'scheduleLocalDraftSave', 'deleteGroup', 'requiresDiscountEditor', 'applyDbAutosaveDraft']);
     context.nodes = nodes;
     context.runScheduledTimer = () => { assert.ok(pendingTimer, "Expected pending timer"); pendingTimer(); };
     return context;
@@ -164,8 +170,8 @@ test('deleting the final item is saved even when all customer fields are empty',
     assert.equal(requests[0].action, 'confirm_changes');
 });
 
-test('recovery preserves quantities, zero prices, discounts and the server version', async () => {
-    const context = editor(async () => { throw new Error('Unexpected network write'); });
+test('edit recovery preserves quantities, zero prices, discounts and the server version', async () => {
+    const context = editor(async () => { throw new Error('Unexpected network write'); }, {isEdit: true, status: 'draft'});
     await context.applyDbAutosaveDraft({
         uuid: 'recovered', version: 'recovered-version',
         customer: {name: 'Saved customer', mobile: '09120000000'},
@@ -233,4 +239,49 @@ test('manual edits to ordinary drafts still use the protected versioned autosave
 test('edit boot data contains document status so returned orders can skip draft autosave', () => {
     assert.match(source, /orderStatus:\s*@json\(\$order->status\s*\?\?\s*null\)/);
     assert.match(source, /const ENABLE_SERVER_AUTOSAVE\s*=\s*!IS_EDIT\s*\|\|\s*window\.PREINVOICE_BOOT\.orderStatus\s*===\s*'draft'/);
+});
+
+
+test('create recovery preserves a discounted server draft rather than silently removing its discounts', async () => {
+    const context = editor(async () => { throw new Error('Unexpected network write'); });
+    let bannerShown = false;
+    context.showLocalDraftBanner = () => { bannerShown = true; };
+    await context.applyDbAutosaveDraft({uuid: 'discounted', version: 'new-version',
+        discount: {type: 'percent', value: 10}, items: []});
+    assert.equal(bannerShown, true);
+    assert.equal(context.currentAutosaveUuid, '12345');
+    assert.equal(context.currentAutosaveVersion, 'version-1');
+    assert.equal(context.groupedSelections[1].items[0].quantity, 2);
+    assert.equal(context.requiresDiscountEditor({discount_breakdown: {groups: [{discount_value: 25}]}}), true);
+    assert.equal(context.requiresDiscountEditor({items: [{line_discount_amount: 25}]}), true);
+});
+
+test('create recovery without discounts works without discount input elements', async () => {
+    const context = editor(async () => { throw new Error('Unexpected network write'); });
+    await context.applyDbAutosaveDraft({uuid: 'recovered', version: 'new-version',
+        discount: {type: 'percent', value: 0}, items: [{product_id: 1, variant_id: 11, quantity: 3, price: 100}]});
+    assert.equal(context.currentAutosaveUuid, 'recovered');
+    assert.equal(context.groupedSelections[1].items[0].quantity, 3);
+    assert.equal(context.collectAutosavePayload().invoice_discount_value, 0);
+});
+
+test('create totals and picker summary do not use discount math or discount controls', () => {
+    const context = editor(async () => { throw new Error('Unexpected network write'); });
+    Object.assign(context.nodes, Object.fromEntries(['total_price', 'modalTotalAmount', 'modalSelectedRows', 'modalTotalQty', 'saveGroupSelectionBtn'].map(id => [id, {}])));
+    Object.assign(context, {formatMoney: String, formatNum: String,
+        modalQuantities: new Map([[11, 3]]), pickerSourceRows: () => [{id: 11}], pickerKey: v => v.id,
+        variantPrice: () => 100, activeProduct: {}, scheduleLocalDraftSave: () => {},
+        calcDiscount: () => { throw new Error('Create must not calculate discounts'); }});
+    // Load the actual functions from the shared Blade template, with no discount DOM nodes.
+    loadEditorFunctions(context, ['groupRawSubtotal', 'groupDiscountTotal', 'groupFinalAmount', 'buildDiscountBreakdown', 'updateTotal', 'updateModalSummary']);
+    context.groupedSelections[1].discount_value = 50;
+    context.updateTotal();
+    context.updateModalSummary();
+    assert.equal(context.nodes.total_price.value, '400');
+    assert.equal(context.nodes.modalTotalAmount.textContent, '300');
+    assert.equal(context.nodes.discount.value, '0');
+    const breakdown = JSON.parse(context.nodes.discount_breakdown.value);
+    assert.deepEqual(breakdown.groups, []);
+    assert.equal(breakdown.order_discount_value, 0);
+    assert.equal(breakdown.total_discount_amount, 0);
 });

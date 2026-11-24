@@ -13,6 +13,18 @@ use InvalidArgumentException;
  */
 final class NobitexQuoteParser
 {
+    /** Extract only USDTIRT from the official /v3/orderbook/all envelope. */
+    public function usdtIrtFromAll(array $response): array
+    {
+        $market = $response['USDTIRT'] ?? null;
+        if (!is_array($market)) {
+            throw new InvalidArgumentException('nobitex_orderbook_market_missing');
+        }
+        // The envelope status is authoritative, even if a market has its own status.
+        $market['status'] = $response['status'] ?? null;
+        return $market;
+    }
+
     /** @return array{rate_rial:int,timestamp:int} */
     public function parse(array $body, string $cnyPerUsdt, string $verifiedAt, int $now,
         int $maxAgeSeconds, int $maxFxAgeSeconds, int $maxSpreadPercent): array

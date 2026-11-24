@@ -15,7 +15,7 @@ const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
 const headers = {'Accept':'application/json','Content-Type':'application/json','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'};
 async function json(url,options={}) {
  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers,...options});
- if (!response.ok || response.redirected) {let body={};try{body=await response.json();}catch{} throw new Error(body.message||'دریافت اطلاعات ناموفق بود.');}
+ if (!response.ok || response.redirected) {let body={};try{body=await response.json();}catch{} if(response.status===403 && body.code==='yuan_locked' && body.unlock_url){window.location.assign(body.unlock_url);throw new Error('دسترسی پنل یوان منقضی شده است.');} throw new Error(body.message||'دریافت اطلاعات ناموفق بود.');}
  return response.json();
 }
 const readFilters=()=>({q:$('yuanSearch').value.trim(),status:$('yuanStatus').value,sort:$('yuanSort').value});

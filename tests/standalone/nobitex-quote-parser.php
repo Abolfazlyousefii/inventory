@@ -35,6 +35,21 @@ rejectsNobitex(fn () => $parser->parse($payload, '7.1', gmdate('c', $now - 90000
 rejectsNobitex(fn () => $parser->parse($payload, '0', gmdate('c', $now - 300), $now, 900, 86400, 4));
 rejectsNobitex(fn () => $parser->parse($payload, '7.1', '', $now, 900, 86400, 4));
 rejectsNobitex(fn () => $parser->parse($payload, '7.1', gmdate('c', $now + 60), $now, 900, 86400, 4));
+// Nobitex /v3/orderbook/all wraps the selected market below USDTIRT.
+$all = ['status' => 'ok', 'USDTIRT' => array_diff_key($payload, ['status' => true])];
+$selected = $parser->usdtIrtFromAll($all);
+if ($selected != $payload) {
+    throw new RuntimeException('USDTIRT market was not extracted correctly');
+}
+if ($parser->parse($selected, '7.1', gmdate('c', $now - 300), $now, 900, 86400, 4)
+    !== ['rate_rial' => 400000, 'timestamp' => $now - 120]) {
+    throw new RuntimeException('USDTIRT extraction changed the conversion');
+}
+rejectsNobitex(fn () => $parser->usdtIrtFromAll(['status' => 'ok', 'BTCIRT' => $payload]));
+$spoofed = ['status' => 'failed', 'USDTIRT' => $payload];
+rejectsNobitex(fn () => $parser->parse($parser->usdtIrtFromAll($spoofed), '7.1',
+    gmdate('c', $now - 300), $now, 900, 86400, 4));
+
 // Frankfurter's USD/CNY response is a daily reference rate, not a USDT quote.
 $fx = ['date' => '2026-11-13', 'base' => 'USD', 'quote' => 'CNY', 'rate' => 7.1];
 $checkAt = strtotime('2026-11-14T12:00:00Z');

@@ -1,6 +1,8 @@
 @extends('layouts.app')
 
+@if($isEdit ?? false)
 @push('styles')<script src="{{ asset('js/sales-discount-math.js') }}?v=1"></script>@endpush
+@endif
 
 @section('content')
     @include('preinvoice.partials.count-freeze-notice', ['order' => $order ?? null])
@@ -424,7 +426,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 
 		.final-grid {
 			display: grid;
-			grid-template-columns: 1.1fr .85fr .85fr 1fr auto;
+			grid-template-columns: {{ $isEdit ? '1.1fr .85fr .85fr 1fr auto' : '1fr auto' }};
 			gap: 10px;
 			align-items: end;
 		}
@@ -1524,8 +1526,9 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			</div>
 
 			<div class="soft-card final-card">
-				<input type="hidden" name="discount_amount" id="discount" value="{{ old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) }}">
+				<input type="hidden" name="discount_amount" id="discount" value="{{ $isEdit ? old('invoice_discount_value', $order->invoice_discount_value ?? data_get($order?->discount_breakdown, 'order_discount_value', 0)) : 0 }}">
 				<div class="final-grid">
+					@if($isEdit)
 					<div>
 						<label class="label-sm">تخفیف کلی</label>
 						<div class="discount-control">
@@ -1541,6 +1544,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						<label class="label-sm">مجموع تخفیف</label>
 						<input type="text" id="totalDiscountView" class="form-control form-control-sm bg-light" readonly value="0 ریال">
 					</div>
+					@endif
 					<div>
 						<label class="label-sm">جمع کل</label>
 						<input type="text" name="total_price" id="total_price" class="form-control form-control-sm total-view" readonly value="0">
@@ -1593,6 +1597,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				</div>
 
 				<div class="variant-modal__footer-extra">
+					@if($isEdit)
 					<div class="modal-discount-box">
 						<label class="label-sm">تخفیف محصول</label>
 						<div class="discount-control">
@@ -1605,6 +1610,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						<div class="discount-line">تخفیف: <strong id="modalGroupDiscountPreview">0 ریال</strong></div>
 					</div>
 
+					@endif
 					<div class="modal-summary-bar mt-2">
 						<div class="summary-stat">
 							<div class="s-label">ردیف انتخاب‌شده</div>
@@ -1614,10 +1620,12 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 							<div class="s-label">جمع تعداد</div>
 							<div class="s-val" id="modalTotalQty">0</div>
 						</div>
+						@if($isEdit)
 						<div class="summary-stat">
 							<div class="s-label">مبلغ قبل تخفیف</div>
 							<div class="s-val" id="modalRawAmount">0 ریال</div>
 						</div>
+							@endif
 						<div class="summary-stat">
 							<div class="s-label">جمع نهایی</div>
 							<div class="s-val" id="modalTotalAmount" style="color:var(--accent-dark)">0 ریال</div>
@@ -2173,7 +2181,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 		}
 
 		function groupDiscountTotal(group) {
-			return calcDiscount(groupRawSubtotal(group), group.discount_type || 'amount', group.discount_value || 0);
+			return IS_EDIT ? calcDiscount(groupRawSubtotal(group), group.discount_type || 'amount', group.discount_value || 0) : 0;
 		}
 
 		function groupFinalAmount(group) {
@@ -2187,7 +2195,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				normalize(document.getElementById('customer_mobile')?.value) ||
 				normalize(document.getElementById('payment_terms_note')?.value) ||
 				Object.keys(groupedSelections || {}).length ||
-				toInt(document.getElementById('orderDiscountValue')?.value || 0) > 0
+				(IS_EDIT && toInt(document.getElementById('orderDiscountValue')?.value || 0) > 0)
 			);
 		}
 
@@ -2262,8 +2270,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				},
 				payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
 				discount: {
-					type: document.getElementById('orderDiscountType')?.value || 'amount',
-					value: document.getElementById('orderDiscountValue')?.value || 0
+					type: IS_EDIT ? (document.getElementById('orderDiscountType')?.value || 'amount') : 'amount',
+					value: IS_EDIT ? (document.getElementById('orderDiscountValue')?.value || 0) : 0
 				},
 				groupedSelections: groupedSelections || {}
 			};
@@ -2304,8 +2312,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				customer_mobile: document.getElementById('customer_mobile')?.value || '',
 				payment_terms_note: document.getElementById('payment_terms_note')?.value || '',
 				discount_amount: toInt(document.getElementById('discount')?.value || 0),
-				invoice_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
-				invoice_discount_value: RialInput.number(document.getElementById('orderDiscountValue')?.value || 0),
+				invoice_discount_type: IS_EDIT ? (document.getElementById('orderDiscountType')?.value || 'amount') : 'amount',
+				invoice_discount_value: IS_EDIT ? RialInput.number(document.getElementById('orderDiscountValue')?.value || 0) : 0,
 				discount_breakdown: document.getElementById('discount_breakdown')?.value || '',
 				products: collectProductsForAutosave()
 			};
@@ -2483,8 +2491,10 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			if (window.jQuery) $('#customer_search_select').val(null).trigger('change');
 
 
-			document.getElementById('orderDiscountType').value = 'amount';
-			document.getElementById('orderDiscountValue').value = 0;
+			if (IS_EDIT) {
+				document.getElementById('orderDiscountType').value = 'amount';
+				document.getElementById('orderDiscountValue').value = 0;
+			}
 			groupedSelections = {};
 			selectedMotherProduct = null;
 			document.getElementById('motherCodeInput').value = '';
@@ -2492,8 +2502,22 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			setMotherSearchHintVisible(true);
 		}
 
+		function requiresDiscountEditor(draft) {
+			if (IS_EDIT) return false;
+			const breakdown = draft.discount_breakdown || {};
+			const groups = [...(breakdown.groups || []), ...Object.values(draft.groupedSelections || {})];
+			const items = [...(draft.items || []), ...groups.flatMap(group => group.items || [])];
+			if (![draft.discount?.value, breakdown.order_discount_value, breakdown.invoice_discount_value,
+				breakdown.total_discount_amount, breakdown.total_discount, breakdown.invoice_discount_amount, breakdown.product_discount_amount,
+				...groups.flatMap(group => [group.discount_value, group.discount_amount]),
+				...items.map(item => item.line_discount_amount)].some(value => RialInput.number(value || 0) > 0)) return false;
+			showLocalDraftBanner();
+			updateLocalDraftStatus('این پیش‌نویس دارای تخفیف است؛ برای حفظ تخفیف‌ها آن را از فهرست پیش‌نویس‌های من ویرایش کنید.', false);
+			return true;
+		}
+
 		async function applyLocalDraft(draft) {
-			if (!draft) return;
+			if (!draft || requiresDiscountEditor(draft)) return;
 			await autosaveQueue;
 			isHydratingLocalDraft = true;
 			collaborativeBase = null;
@@ -2526,8 +2550,10 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			}
 			const paymentTermsEl = document.getElementById('payment_terms_note');
 			if (paymentTermsEl) paymentTermsEl.value = draft.payment_terms_note || '';
-			document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
-			document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
+			if (IS_EDIT) {
+				document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
+				document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
+			}
 			groupedSelections = draft.groupedSelections || {};
 
 			if (draft.reservation_token) {
@@ -2550,7 +2576,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 		}
 
 		async function applyDbAutosaveDraft(draft, synchronized = false) {
-			if (!draft) return;
+			if (!draft || requiresDiscountEditor(draft)) return;
 			if (!synchronized) await autosaveQueue;
 			isHydratingLocalDraft = true;
 			collaborativeBase = null;
@@ -2569,8 +2595,10 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			document.getElementById('customer_name').value = draft.customer?.name || '';
 			document.getElementById('customer_mobile').value = draft.customer?.mobile || '';
 			document.getElementById('payment_terms_note').value = draft.payment_terms_note || '';
-			document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
-			document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
+			if (IS_EDIT) {
+				document.getElementById('orderDiscountType').value = draft.discount?.type || 'amount';
+				document.getElementById('orderDiscountValue').value = draft.discount?.value || 0;
+			}
 			groupedSelections = {};
 			const clampedItems = [];
 			for (const row of (draft.items || [])) {
@@ -2585,8 +2613,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 					const discount = (draft.discount_breakdown?.groups || []).find(group => Number(group.product_id) === productId);
 					groupedSelections[productId] = {
 						product: { id: productId, title: productTitle(product) || row.product?.title || ('محصول #' + productId), code: productCode(product) || row.product?.sku || '', bundle_contents: Array.isArray(product?.bundle_contents) ? product.bundle_contents : [] },
-						discount_type: discount?.discount_type || 'amount',
-						discount_value: Number(discount?.discount_value || 0),
+						discount_type: IS_EDIT ? (discount?.discount_type || 'amount') : 'amount',
+						discount_value: IS_EDIT ? Number(discount?.discount_value || 0) : 0,
 						items: []
 					};
 				}
@@ -2650,8 +2678,10 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 					const input = document.getElementById(key); if (input) input.value = payload[key] || '';
 				}
 				document.getElementById('selectedCustomerTitle').textContent = [payload.customer_name, payload.customer_mobile].filter(Boolean).join(' - ');
-				document.getElementById('orderDiscountType').value = payload.invoice_discount_type;
-				document.getElementById('orderDiscountValue').value = payload.invoice_discount_value;
+				if (IS_EDIT) {
+					document.getElementById('orderDiscountType').value = payload.invoice_discount_type;
+					document.getElementById('orderDiscountValue').value = payload.invoice_discount_value;
+				}
 				const previous = groupedSelections;
 				groupedSelections = {};
 				for (const row of payload.products) {
@@ -2683,6 +2713,10 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 					return;
 				}
 				if (remoteDraft.version === currentAutosaveVersion) return;
+				if (requiresDiscountEditor(remoteDraft)) {
+					autosaveConflict = true;
+					return;
+				}
 				const local = collectAutosavePayload();
 				const localSignature = JSON.stringify(local);
 				if (!collaborativeBase) {
@@ -2693,8 +2727,9 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				const remote = draftToCollaborativePayload(remoteDraft);
 				const base = structuredClone(collaborativeBase);
 				for (const value of [base, local, remote]) {
-					const breakdown = typeof value.discount_breakdown === 'string' ? JSON.parse(value.discount_breakdown || '{}') : value.discount_breakdown;
-					value.product_discounts = Object.fromEntries((breakdown?.groups || []).map(g => [String(g.product_id), {type: g.discount_type || 'amount', value: Number(g.discount_value || 0)}]));
+					value.product_discounts = {};
+					value.invoice_discount_type = 'amount';
+					value.invoice_discount_value = 0;
 					delete value.discount_amount; delete value.discount_breakdown;
 				}
 				const conflicts = [];
@@ -3122,10 +3157,12 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				const oldItems = groupedSelections[activeProductId]?.items || [];
 				oldItems.forEach(item => modalQuantities.set(pickerKey({id: item.variant_id,
 					source_warehouse_id: item.source_warehouse_id}), Number(item.quantity || 0)));
-				modalGroupDiscountType = groupedSelections[activeProductId]?.discount_type || 'amount';
-				modalGroupDiscountValue = Number(groupedSelections[activeProductId]?.discount_value || 0);
-				document.getElementById('modalGroupDiscountType').value = modalGroupDiscountType;
-				document.getElementById('modalGroupDiscountValue').value = discountValueForInput(modalGroupDiscountType, modalGroupDiscountValue);
+				if (IS_EDIT) {
+					modalGroupDiscountType = groupedSelections[activeProductId]?.discount_type || 'amount';
+					modalGroupDiscountValue = Number(groupedSelections[activeProductId]?.discount_value || 0);
+					document.getElementById('modalGroupDiscountType').value = modalGroupDiscountType;
+					document.getElementById('modalGroupDiscountValue').value = discountValueForInput(modalGroupDiscountType, modalGroupDiscountValue);
+				}
 				document.getElementById('pickerModalTitle').textContent = productTitle(product);
 				document.getElementById('pickerModalSubTitle').textContent = 'کد: ' + (productCode(product) || '—') + ' | ' + formatNum(activeModalItems.length) + ' تنوع';
                 document.getElementById('pickerBundleContents').innerHTML = bundlePillsHtml(product.bundle_contents);
@@ -3286,15 +3323,17 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 					totalAmount += qty * price;
 				}
 			});
-			modalGroupDiscountType = document.getElementById('modalGroupDiscountType')?.value || 'amount';
-			modalGroupDiscountValue = normalizeDiscountInput(modalGroupDiscountType, document.getElementById('modalGroupDiscountValue')?.value || 0);
-			const discount = calcDiscount(totalAmount, modalGroupDiscountType, modalGroupDiscountValue);
+			let discount = 0;
+			if (IS_EDIT) {
+				modalGroupDiscountType = document.getElementById('modalGroupDiscountType').value;
+				modalGroupDiscountValue = normalizeDiscountInput(modalGroupDiscountType, document.getElementById('modalGroupDiscountValue').value);
+				discount = calcDiscount(totalAmount, modalGroupDiscountType, modalGroupDiscountValue);
+				document.getElementById('modalRawAmount').textContent = formatMoney(totalAmount);
+				document.getElementById('modalGroupDiscountPreview').textContent = formatMoney(discount);
+			}
 			document.getElementById('modalSelectedRows').textContent = formatNum(selectedRows);
 			document.getElementById('modalTotalQty').textContent = formatNum(totalQty);
-			document.getElementById('modalRawAmount').textContent = formatMoney(totalAmount);
 			document.getElementById('modalTotalAmount').textContent = formatMoney(Math.max(0, totalAmount - discount));
-			const preview = document.getElementById('modalGroupDiscountPreview');
-			if (preview) preview.textContent = formatMoney(discount);
 			const saveBtn = document.getElementById('saveGroupSelectionBtn');
 			if (saveBtn) {
 				saveBtn.disabled = selectedRows === 0;
@@ -3332,8 +3371,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			}
 			if (isSavingGroupSelection) return;
 			isSavingGroupSelection = true;
-			const discountType = document.getElementById('modalGroupDiscountType')?.value || 'amount';
-			const discountValue = normalizeDiscountInput(discountType, document.getElementById('modalGroupDiscountValue')?.value || 0);
+			const discountType = IS_EDIT ? document.getElementById('modalGroupDiscountType').value : 'amount';
+			const discountValue = IS_EDIT ? normalizeDiscountInput(discountType, document.getElementById('modalGroupDiscountValue').value) : 0;
 			const previousSelections = JSON.parse(JSON.stringify(groupedSelections || {}));
 			groupedSelections[activeProductId] = {
 				product: {
@@ -3460,7 +3499,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
                     <button type="button" class="btn btn-sm btn-outline-primary rounded-3" onclick="openGroupPicker(${productId})">ویرایش</button>
                     <button type="button" class="btn btn-sm btn-outline-danger rounded-3" onclick="deleteGroup(${productId})">حذف</button>
                 </div>
-                <div class="mb-2 hint">خام: ${formatMoney(subtotal)}${discount > 0 ? ' | تخفیف: ' + formatMoney(discount) : ''}</div>
+                <div class="mb-2 hint">${IS_EDIT ? 'خام' : 'مبلغ'}: ${formatMoney(subtotal)}${discount > 0 ? ' | تخفیف: ' + formatMoney(discount) : ''}</div>
                 <div class="details-grid">${details}</div>
             </div>
         </div>`);
@@ -3479,7 +3518,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 		}
 
 		function buildDiscountBreakdown(subtotal, groupDiscounts, orderDiscount, totalDiscount) {
-			const groups = Object.values(groupedSelections).map(group => ({
+			// Preserve the server's discount contract; new preinvoices always send zero discounts.
+			const groups = IS_EDIT ? Object.values(groupedSelections).map(group => ({
 				product_id: Number(group.product.id),
 				product_title: group.product.title,
 				discount_type: group.discount_type || 'amount',
@@ -3487,12 +3527,12 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 				discount_amount: groupDiscountTotal(group),
 				raw_subtotal: groupRawSubtotal(group),
 				final_amount: groupFinalAmount(group)
-			}));
+			})) : [];
 			return {
 				subtotal,
 				group_discount_amount: groupDiscounts,
-				order_discount_type: document.getElementById('orderDiscountType')?.value || 'amount',
-				order_discount_value: RialInput.number(document.getElementById('orderDiscountValue')?.value || 0),
+				order_discount_type: IS_EDIT ? (document.getElementById('orderDiscountType')?.value || 'amount') : 'amount',
+				order_discount_value: IS_EDIT ? RialInput.number(document.getElementById('orderDiscountValue')?.value || 0) : 0,
 				order_discount_amount: orderDiscount,
 				total_discount_amount: totalDiscount,
 				groups
@@ -3508,12 +3548,11 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			});
 			const afterGroupDiscount = Math.max(0, subtotal - groupDiscounts);
 			const orderType = document.getElementById('orderDiscountType')?.value || 'amount';
-			const orderValue = normalizeDiscountInput(orderType, document.getElementById('orderDiscountValue')?.value || 0);
-			const orderDiscount = calcDiscount(afterGroupDiscount, orderType, orderValue);
+			const orderDiscount = IS_EDIT ? calcDiscount(afterGroupDiscount, orderType, normalizeDiscountInput(orderType, document.getElementById('orderDiscountValue').value)) : 0;
 			const totalDiscount = Math.min(subtotal, groupDiscounts + orderDiscount);
 			const total = Math.max(0, subtotal - totalDiscount);
 			document.getElementById('discount').value = String(totalDiscount);
-			document.getElementById('totalDiscountView').value = formatMoney(totalDiscount);
+			if (IS_EDIT) document.getElementById('totalDiscountView').value = formatMoney(totalDiscount);
 			document.getElementById('total_price').value = formatMoney(total);
 			const preview = document.getElementById('orderDiscountPreview');
 			if (preview) preview.textContent = 'تخفیف کلی: ' + formatMoney(orderDiscount);
@@ -3548,8 +3587,8 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						code: productCode(product) || rows[0]?.product_code || '',
 						bundle_contents: Array.isArray(product?.bundle_contents) ? product.bundle_contents : []
 					},
-					discount_type: (OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_type || 'amount',
-					discount_value: Number((OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_value || 0),
+					discount_type: IS_EDIT ? ((OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_type || 'amount') : 'amount',
+					discount_value: IS_EDIT ? Number((OLD_DISCOUNT_BREAKDOWN.groups || []).find(g => Number(g.product_id) === Number(productId))?.discount_value || 0) : 0,
 					items: rows.map(row => {
 						const vid = Number(row.variety_id || row.variant_id || 0);
 						const v = varieties.find(item => variantId(item) === vid);
@@ -3563,7 +3602,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 							design: v ? variantDesign(v) : '—',
 							variant: v ? variantName(v) : (row.variant_name || '—'),
 							label: v ? buildVariantTitle(v) : (row.variant_name || 'تنوع پیش‌فرض'),
-							line_discount_amount: Number(row.line_discount_amount || 0)
+							line_discount_amount: IS_EDIT ? Number(row.line_discount_amount || 0) : 0
 						};
 					}).filter(item => item.variant_id && item.quantity > 0)
 				};
