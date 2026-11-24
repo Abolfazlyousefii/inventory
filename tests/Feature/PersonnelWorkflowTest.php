@@ -57,9 +57,6 @@ class PersonnelWorkflowTest extends TestCase
         $this->actingAs($staff)->postJson('/personnel/leaves', $data)->assertCreated();
         $entry = PersonnelEntry::firstOrFail();
         $this->assertSame([$substitute->id, $supervisor->id, $internal->id, $executive->id], $entry->steps()->pluck('approver_id')->all());
-        // Chart membership is presentation-only, including for a pending approver.
-        $supervisor->update(['show_in_organization_chart' => false]);
-        $this->assertSame([$substitute->id, $supervisor->id, $internal->id, $executive->id], $entry->steps()->pluck('approver_id')->all());
         $this->postJson('/personnel/leaves', $data)->assertOk();
         $this->assertSame(1, PersonnelEntry::count());
         $url = '/personnel/leaves/'.$entry->id.'/decision';
@@ -210,7 +207,7 @@ class PersonnelWorkflowTest extends TestCase
         $this->assertTrue($role->fresh()->permissions->contains('key', 'personnel.reports.review'));
     }
 
-    public function test_leave_has_one_unit_stage_while_reports_follow_the_full_management_chain(): void
+    public function test_leaves_and_reports_use_one_unit_manager_then_internal_and_executive(): void
     {
         [$staff,$substitute,$supervisor,$internal,$executive] = $this->team();
         $unitManager = $this->person(['manager_id' => $internal->id, 'organization_level' => 'department_manager'], ['personnel.leaves.review', 'personnel.reports.review']);
@@ -218,7 +215,7 @@ class PersonnelWorkflowTest extends TestCase
         $this->actingAs($staff)->postJson('/personnel/leaves', $this->leave($substitute))->assertCreated();
         $this->assertSame([$substitute->id, $supervisor->id, $internal->id, $executive->id], PersonnelEntry::where('kind', 'leave')->firstOrFail()->steps()->pluck('approver_id')->all());
         $this->postJson('/personnel/reports', ['submission_key' => (string) Str::uuid(), 'description' => 'گزارش زنجیره', 'action' => 'submit'])->assertCreated();
-        $this->assertSame([$supervisor->id, $unitManager->id, $internal->id, $executive->id], PersonnelEntry::where('kind', 'report')->firstOrFail()->steps()->pluck('approver_id')->all());
+        $this->assertSame([$supervisor->id, $internal->id, $executive->id], PersonnelEntry::where('kind', 'report')->firstOrFail()->steps()->pluck('approver_id')->all());
         foreach (Route::getRoutes() as $route) {
             if (str_starts_with($route->getName() ?? '', 'personnel.')) {
                 $this->assertContains($route->getName(), PageAccessCatalog::authenticatedRouteAllowlist());

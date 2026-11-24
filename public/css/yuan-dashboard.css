@@ -1,4 +1,7 @@
 /* Page-specific layout; tokens and typography come from the existing admin theme. */
+body.yuan-full-width .app-sidebar,body.yuan-full-width .app-sidebar-backdrop,body.yuan-full-width #appSidebar,body.yuan-full-width .app-desktop-sidebar-toggle,body.yuan-full-width .app-menu-btn{display:none!important}
+body.yuan-full-width .app-main-shell{margin-inline:0!important;width:100%!important;max-width:none!important}
+body.yuan-full-width .app-content{max-width:none!important;width:100%;padding:18px clamp(12px,2vw,30px)}
 .yuan-dash{font-family:Vazirmatn,sans-serif;color:var(--app-text);max-width:1850px;margin:auto;direction:rtl}
 .yuan-dash *{box-sizing:border-box}
 .yuan-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:20px;flex-wrap:wrap}

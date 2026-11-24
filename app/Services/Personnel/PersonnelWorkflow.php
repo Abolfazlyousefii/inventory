@@ -70,7 +70,7 @@ class PersonnelWorkflow
     public function snapshot(PersonnelEntry $entry, User $author): void
     {
         try {
-            $chain = $this->hierarchy->managerChain($author);
+            $chain = $this->hierarchy->workflowChain($author);
         } catch (\DomainException $e) {
             $this->invalid('organization', $e->getMessage());
         }
@@ -78,50 +78,21 @@ class PersonnelWorkflow
         if ($entry->kind === 'leave' && ! empty($entry->payload['substitute_user_id'])) {
             $route[] = ['substitute', User::find($entry->payload['substitute_user_id'])];
         }
-        $unitAdded = false;
-        $internalAdded = $author->organization_level === 'internal_manager';
         foreach ($chain as $manager) {
-            // CRM's active organization flow: one unit stage, then internal and executive.
-            if ($entry->kind === 'leave') {
-                $level = $manager->organization_level;
-                if (! in_array($level, ['internal_manager', 'executive_manager'], true)) {
-                    if ($unitAdded || in_array($author->organization_level, ['supervisor', 'department_manager', 'internal_manager'], true)) {
-                        continue;
-                    }
-                    $unitAdded = true;
-                }
-                if ($level === 'internal_manager') {
-                    $internalAdded = true;
-                }
-            }
-            if (! PersonnelAccess::active($manager)) {
-                $this->invalid('organization', 'یکی از مدیران مسیر غیرفعال است؛ ابتدا ساختار پرسنل اصلاح شود.');
-            }
             $route[] = [$manager->organization_level ?: 'manager', $manager];
-            if ($entry->kind === 'leave' && $manager->organization_level === 'executive_manager') {
-                break;
-            }
         }
-        if (! $route) {
-            $this->invalid('organization', 'مدیر مسئول برای شما تعیین نشده است؛ ابتدا ساختار سازمانی تکمیل شود.');
-        }
-        if ($entry->kind === 'leave' && ! collect($route)->contains(fn ($item) => $item[0] === 'executive_manager')) {
-            $this->invalid('organization', 'مدیر اجرایی مستقل در مسیر تأیید مرخصی تعیین نشده است.');
-        }
-        if ($entry->kind === 'leave' && ! $internalAdded) {
-            $this->invalid('organization', 'مدیر داخلی در مسیر تأیید مرخصی تعیین نشده است.');
-        }
+        $offset = (int) $entry->allSteps()->max('sequence');
         $seen = [];
         foreach ($route as $index => [$stage,$manager]) {
-            if (! $manager || $manager->id === $author->id || isset($seen[$manager->id])) {
+            if (! $manager || ! $manager->show_in_organization_chart || $manager->id === $author->id || isset($seen[$manager->id])) {
                 $this->invalid('organization', 'مسیر تأیید تکراری یا شامل خود درخواست‌کننده است.');
             }
             $seen[$manager->id] = true;
             $allowed = $stage === 'substitute' ? $this->access->canUse($manager, 'leave') : $this->access->canReview($manager, $entry->kind);
             if (! $allowed) {
-                $this->invalid('organization', 'دسترسی بررسی برای یکی از مسئولان مسیر تعیین نشده است؛ مدیر سامانه باید آن را تنظیم کند.');
+                $this->invalid('organization', 'دسترسی لازم برای «'.$manager->name.'» در مرحله «'.$stage.'» تعیین نشده است؛ مدیر سامانه باید آن را تنظیم کند.');
             }
-            $entry->steps()->create(['sequence' => $index + 1, 'stage' => $stage, 'approver_id' => $manager->id, 'approver_name' => $manager->name, 'status' => $entry->kind === 'report' ? 'watching' : ($index === 0 ? 'pending' : 'waiting')]);
+            $entry->steps()->create(['sequence' => $offset + $index + 1, 'stage' => $stage, 'approver_id' => $manager->id, 'approver_name' => $manager->name, 'status' => $entry->kind === 'report' ? 'watching' : ($index === 0 ? 'pending' : 'waiting')]);
         }
     }
 

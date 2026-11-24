@@ -1438,7 +1438,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						<div class="d-flex justify-content-between align-items-center mb-2">
 							<div>
 								<h2 class="section-title">مشتری</h2>
-								<div class="hint">نام و موبایل مشتریان خودتان؛ کد دقیق برای همهٔ مشتریان</div>
+								<div class="hint">جستجو با نام، موبایل یا کد مشتری؛ مشتری همکار نیازمند کد تأیید مسئول اوست.</div>
 							</div>
 							<a href="{{ $customersPageUrl }}" class="btn btn-sm btn-outline-success rounded-3">افزودن</a>
 						</div>
@@ -1454,6 +1454,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 											{{ $oldCustomerTitle }} @if($oldCustomerMobile) - {{ $oldCustomerMobile }} @endif
 										@else هنوز مشتری انتخاب نشده است @endif
 									</div>
+									<div class="hint mt-1" id="customer_owner_hint"></div>
 									<div class="hint mt-1" id="customer_balance_hint"></div>
 									<div class="hint mt-1" id="customer_reservation_hint">سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.</div>
 								</div>
@@ -2475,6 +2476,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			const paymentTermsEl = document.getElementById('payment_terms_note');
 			if (paymentTermsEl) paymentTermsEl.value = '';
 			document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
+			document.getElementById('customer_owner_hint').textContent = '';
 			document.getElementById('customer_balance_hint').textContent = '';
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 			document.getElementById('customerSummaryBox').classList.remove('is-selected');
@@ -2920,6 +2922,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			document.getElementById('customer_name').value = name;
 			document.getElementById('customer_mobile').value = mobile;
 			document.getElementById('selectedCustomerTitle').textContent = name + (mobile ? ' - ' + mobile : '');
+			document.getElementById('customer_owner_hint').textContent = 'مسئول مشتری: ' + (normalize(c.owner_name) || 'تعیین نشده؛ نیازمند تخصیص مشتری');
 			document.getElementById('customer_balance_hint').textContent = 'مانده حساب: ' + formatMoney(c.balance || 0);
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو: ' + reservationTierLabel(c) + ' | مدت رزرو پس از ثبت نهایی: ' + reservationDurationShort(c);
 			document.getElementById('customerSummaryBox').classList.add('is-selected');
@@ -2935,6 +2938,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			document.getElementById('customer_name').value = '';
 			document.getElementById('customer_mobile').value = '';
 			document.getElementById('selectedCustomerTitle').textContent = 'هنوز مشتری انتخاب نشده است';
+			document.getElementById('customer_owner_hint').textContent = '';
 			document.getElementById('customer_balance_hint').textContent = '';
 			document.getElementById('customer_reservation_hint').textContent = 'سطح رزرو پس از انتخاب مشتری نمایش داده می‌شود.';
 			document.getElementById('customerSummaryBox').classList.remove('is-selected');
@@ -2968,7 +2972,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 			$(selectEl).select2({
 				width: '100%',
 				dir: 'rtl',
-				placeholder: 'نام، موبایل یا کد دقیق مشتری…',
+				placeholder: 'نام، موبایل یا کد مشتری…',
 				allowClear: true,
 				minimumInputLength: 1,
 				ajax: {
@@ -2983,7 +2987,7 @@ $displayInvoiceDiscountValue = $oldInvoiceDiscountType === 'amount'
 						return {
 							results: items.map(c => ({
 								...c,
-								text: customerFullName(c) + (c.code ? ' · کد ' + c.code : '') + (c.requires_approval ? ' · نیازمند تأیید همکار' : (c.mobile ? ' · ' + c.mobile : ''))
+								text: customerFullName(c) + (c.code ? ' · کد ' + c.code : '') + (c.mobile ? ' · ' + c.mobile : '') + (c.requires_approval ? ' · ' + (c.owner_name ? 'مسئول: ' + c.owner_name : 'نیازمند تخصیص') : '')
 							}))
 						};
 					}

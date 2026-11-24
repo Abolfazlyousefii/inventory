@@ -45,7 +45,7 @@ class CustomerSaleApprovalController extends Controller
         $request->validate(['code' => 'required|string|max:6']);
         $code = ProductFinderSearchNormalizer::normalize((string) $request->input('code'));
         $request->merge(['code' => $code]);
-        $data = $request->validate(['context' => 'required|uuid', 'code' => ['required', 'regex:/^\d{6}$/']]);
+        $data = $request->validate(['context' => 'required|uuid', 'code' => ['required', 'regex:/^\d{4}$/']]);
         $this->authorization->verify($approval, $request->user(), $data['context'], $data['code']);
         return response()->json(['ok' => true, 'message' => 'مجوز ثبت همین سند تأیید شد؛ مشتری منتقل نمی‌شود.'])->header('Cache-Control', 'private, no-store');
     }

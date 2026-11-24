@@ -23,12 +23,18 @@
     async function post(url, body) {
         const response = await fetch(url, {method:'POST', credentials:'same-origin', headers:{'Accept':'application/json','Content-Type':'application/json','X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content},body:JSON.stringify(body)});
         const json = await response.json().catch(()=>({}));
+        if (response.status >= 500) throw new Error('درخواست تکمیل نشد؛ در صورت دریافت پیامک، تا ثبت درخواست جدید از کد قبلی استفاده نکنید. دوباره تلاش کنید.');
         if (!response.ok) throw new Error(Object.values(json.errors || {}).flat()[0] || json.message || 'عملیات انجام نشد؛ دوباره تلاش کنید.');
         return json;
     }
     root.addEventListener('click', async e => {
         const button = e.target.closest('button');
         if (!button || busy || !selected) return;
+        if (button.matches('[data-sale-verify]') && !/^\d{4}$/.test(digits(find('#saleApprovalCode').value))) {
+            message('کد تأیید چهاررقمی را وارد کنید.', true);
+            find('#saleApprovalCode').focus();
+            return;
+        }
         const version = generation, customer = selected, token = context();
         busy = true;
         root.querySelectorAll('button,input').forEach(el=>el.disabled=true);
@@ -52,7 +58,7 @@
             }
         } catch (error) { if (version === generation) message(error.message, true); }
         finally {
-            if (version === generation) { busy = false; root.querySelectorAll('button,input').forEach(el=>el.disabled=false); }
+            if (version === generation) { busy = false; root.querySelectorAll('button,input').forEach(el=>el.disabled=false); if (!panel.hidden) find('#saleApprovalCode').focus(); }
         }
     });
     find('#saleApprovalCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();find('[data-sale-verify]').click();}});
