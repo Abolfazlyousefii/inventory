@@ -29,6 +29,13 @@ function nobitexOrderbook(?int $seconds = null, int $bid = 2800000, int $ask = 2
 }
 
 
+function nobitexAllOrderbook(array $orderbook): array
+{
+    $status = $orderbook['status'] ?? null;
+    unset($orderbook['status']);
+    return ['status' => $status, 'USDTIRT' => $orderbook];
+}
+
 function frankfurterCnyRate(?string $date = null, float $rate = 7.1): array
 {
     return ['date' => $date ?? now('UTC')->format('Y-m-d'),
@@ -39,7 +46,7 @@ function stubCnyFeeds(array $orderbook, ?array $reference = null, int $marketSta
 {
     Http::fake([
         'api.frankfurter.dev/*' => Http::response($reference ?? frankfurterCnyRate(), $fxStatus),
-        'apiv2.nobitex.ir/*' => Http::response($orderbook, $marketStatus),
+        'apiv2.nobitex.ir/*' => Http::response(nobitexAllOrderbook($orderbook), $marketStatus),
     ]);
 }
 
@@ -58,7 +65,7 @@ it('imports a properly timestamped proxy rate without changing purchases or pric
     Http::assertSentCount(2);
     Http::assertSent(fn ($request) => $request->url() === 'https://api.frankfurter.dev/v2/rate/usd/cny'
         && $request->method() === 'GET' && !$request->hasHeader('Authorization'));
-    Http::assertSent(fn ($request) => $request->url() === 'https://apiv2.nobitex.ir/v3/orderbook/USDTIRT'
+    Http::assertSent(fn ($request) => $request->url() === 'https://apiv2.nobitex.ir/v3/orderbook/all'
         && $request->method() === 'GET' && !$request->hasHeader('Authorization')
         && !$request->hasHeader('Nobitex-Key'));
 });
@@ -100,8 +107,8 @@ it('rejects large jumps while retaining the prior accepted rate', function () {
     Http::fake([
         'api.frankfurter.dev/*' => Http::response(frankfurterCnyRate()),
         'apiv2.nobitex.ir/*' => Http::sequence()
-            ->push(nobitexOrderbook($time))
-            ->push(nobitexOrderbook($time + 120, 4200000, 4280000)),
+            ->push(nobitexAllOrderbook(nobitexOrderbook($time)))
+            ->push(nobitexAllOrderbook(nobitexOrderbook($time + 120, 4200000, 4280000))),
     ]);
     $fetcher = app(NobitexRateFetcher::class);
     $fetcher->fetch();
@@ -122,6 +129,26 @@ it('does not accept Navasan as a fallback when Nobitex has not fetched anything'
     CnyExchangeRate::create(['provider' => 'navasan', 'symbol' => 'cny', 'rate_rial' => 400000,
         'quoted_at' => now()]);
     expect(fn () => app(CnyPricingService::class)->currentRate())->toThrow(\Illuminate\Validation\ValidationException::class);
+});
+
+it('rejects missing USDTIRT or failed aggregate status without saving a rate', function ($body) {
+    Http::fake([
+        'api.frankfurter.dev/*' => Http::response(frankfurterCnyRate()),
+        'apiv2.nobitex.ir/*' => Http::response($body, 200),
+    ]);
+    expect(fn () => app(NobitexRateFetcher::class)->fetch())->toThrow(RuntimeException::class)
+        ->and(CnyExchangeRate::count())->toBe(0);
+})->with([
+    [['status' => 'ok', 'BTCIRT' => ['bids' => [], 'asks' => []]]],
+    [['status' => 'failed', 'USDTIRT' => nobitexOrderbook()]],
+    [['status' => 'ok', 'USDTIRT' => ['status' => 'ok', 'bids' => [], 'asks' => []]]],
+]);
+
+it('fails closed on HTTP 403 without touching prior quotes', function () {
+    stubCnyFeeds(nobitexOrderbook(), null, 403);
+    expect(fn () => app(NobitexRateFetcher::class)->fetch())
+        ->toThrow(RuntimeException::class, 'cny_market_http_failure')
+        ->and(CnyExchangeRate::count())->toBe(0);
 });
 
 it('keeps rate history unchanged on HTTP 429', function () {
@@ -149,7 +176,7 @@ it('does not overwrite prior valid quotes if the FX API fails', function () {
         'api.frankfurter.dev/*' => Http::sequence()
             ->push(frankfurterCnyRate(), 200)
             ->push(['error' => 'rate_limited'], 429),
-        'apiv2.nobitex.ir/*' => Http::response(nobitexOrderbook(), 200),
+        'apiv2.nobitex.ir/*' => Http::response(nobitexAllOrderbook(nobitexOrderbook()), 200),
     ]);
 
     $fetcher = app(NobitexRateFetcher::class);
