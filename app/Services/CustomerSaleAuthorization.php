@@ -62,7 +62,7 @@ class CustomerSaleAuthorization
                 'owner_id' => $owner->id, 'assignment_version' => $assignment->version, 'recipient_hash' => $this->recipientHash($owner),
                 'code_hash' => Hash::make($code), 'attempts' => 0, 'code_expires_at' => now()->addMinutes(5), 'verified_at' => null, 'approval_expires_at' => null,
             ]);
-            ActivityLogger::logForActor($actor->id, 'customer_sale_approval_requested', $approval, 'درخواست مجوز ثبت یک سند برای مشتری همکار.', ['customer_id' => $customer->id, 'owner_id' => $owner->id]);
+            ActivityLogger::logForActor($actor->id, 'customer_sale_approval_requested', $customer, 'درخواست مجوز ثبت یک سند برای مشتری همکار.', ['approval_id' => $approval->id, 'customer_id' => $customer->id, 'owner_id' => $owner->id]);
             return $approval;
         });
     }
@@ -79,7 +79,7 @@ class CustomerSaleAuthorization
             $approval->increment('attempts');
             if (!Hash::check($code, $approval->code_hash)) return null;
             $approval->update(['verified_at' => now(), 'approval_expires_at' => now()->addMinutes(15)]);
-            ActivityLogger::logForActor($actor->id, 'customer_sale_approval_verified', $approval, 'کد مسئول مشتری برای ثبت یک سند تأیید شد.', ['owner_id' => $approval->owner_id, 'customer_id' => $customer->id]);
+            ActivityLogger::logForActor($actor->id, 'customer_sale_approval_verified', $customer, 'کد مسئول مشتری برای ثبت یک سند تأیید شد.', ['approval_id' => $approval->id, 'owner_id' => $approval->owner_id, 'customer_id' => $customer->id]);
             return $approval;
         });
         if (!$result) throw ValidationException::withMessages(['code' => 'کد نامعتبر، منقضی یا قبلاً استفاده شده است؛ حداکثر ۵ تلاش مجاز است.']);
@@ -120,7 +120,7 @@ class CustomerSaleAuthorization
             // Approval changes neither customer ownership nor the commission policy:
             // the requesting employee is the seller of this newly authorized document.
             $approval->update(['preinvoice_order_id' => $order->id, 'bound_at' => now()]);
-            ActivityLogger::logForActor($actor->id, 'customer_sale_approval_bound', $approval, 'مجوز همکار به یک پیش‌فاکتور متصل شد؛ مالکیت مشتری تغییر نکرد.', ['preinvoice_order_id' => $order->id, 'seller_id' => $order->seller_id, 'owner_id' => $approval->owner_id]);
+            ActivityLogger::logForActor($actor->id, 'customer_sale_approval_bound', $order->customer()->firstOrFail(), 'مجوز همکار به یک پیش‌فاکتور متصل شد؛ مالکیت مشتری تغییر نکرد.', ['approval_id' => $approval->id, 'preinvoice_order_id' => $order->id, 'seller_id' => $order->seller_id, 'owner_id' => $approval->owner_id]);
         }
         if ($order->status === PreinvoiceOrder::STATUS_PENDING_FINANCE && !$approval->submitted_at) $approval->update(['submitted_at' => now()]);
     }

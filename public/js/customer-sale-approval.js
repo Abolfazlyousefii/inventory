@@ -23,6 +23,7 @@
     async function post(url, body) {
         const response = await fetch(url, {method:'POST', credentials:'same-origin', headers:{'Accept':'application/json','Content-Type':'application/json','X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content},body:JSON.stringify(body)});
         const json = await response.json().catch(()=>({}));
+        if (response.status >= 500) throw new Error('درخواست تکمیل نشد؛ در صورت دریافت پیامک، تا ثبت درخواست جدید از کد قبلی استفاده نکنید. دوباره تلاش کنید.');
         if (!response.ok) throw new Error(Object.values(json.errors || {}).flat()[0] || json.message || 'عملیات انجام نشد؛ دوباره تلاش کنید.');
         return json;
     }

@@ -138,7 +138,13 @@ class CustomerSaleApprovalTest extends TestCase
         $payload['reservation_token'] = (string) Str::uuid();
         $this->postJson(route('preinvoice.autosave'), $payload)->assertUnprocessable();
         $this->assertDatabaseCount('preinvoice_orders', 1);
-        $this->assertDatabaseHas('activity_logs', ['action' => 'customer_sale_approval_bound']);
+        foreach (['requested', 'verified', 'bound'] as $event) {
+            $log = \App\Models\ActivityLog::where('action', 'customer_sale_approval_'.$event)->firstOrFail();
+            $this->assertSame(Customer::class, $log->subject_type);
+            $this->assertSame($s['customer']->id, (int) $log->subject_id);
+            $this->assertSame($id, $log->properties['approval_id']);
+            $this->assertSame($s['customer']->id, $log->subject->id);
+        }
     }
 
     public function test_deleted_draft_does_not_release_approval_and_bound_document_can_be_reopened(): void
