@@ -26,6 +26,13 @@ class CustomerSaleApprovalMessenger
             $this->sms->sendPattern($phone, $pattern, [$requester->name, (string) $number, $code]);
             return;
         }
+        // Reuse the configured code-only service pattern when no sale-specific
+        // template exists. This code is still scoped to one sales document.
+        $codePattern = (string) config('services.melipayamak.body_id', '');
+        if ($codePattern !== '') {
+            $this->sms->sendPattern($phone, $codePattern, [$code]);
+            return;
+        }
         $this->sms->send($phone, "آریا گستر؛ درخواست ثبت یک پیش‌فاکتور توسط {$requester->name} برای مشتری {$number}. فقط در صورت موافقت، کد {$code} را به همکار بدهید. اعتبار ۵ دقیقه. این کد برای ورود نیست.");
     }
 }

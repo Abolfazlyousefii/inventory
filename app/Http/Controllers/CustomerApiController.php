@@ -38,14 +38,15 @@ class CustomerApiController extends Controller
         $nameExpressions = ['first_name', 'last_name', 'name', $fullNameExpression];
 
         $ownership = app(\App\Services\CustomerOwnership::class);
+        $canSellAny = $ownership->canSellAny($request->user());
         $code = $this->normalizeDigits($q);
         $exact = preg_match('/^\d{1,12}$/D', $code)
             ? (Customer::where('is_active', true)->where('crm_customer_id', $code)->first()
                 ?? Customer::where('is_active', true)->find((int) $code))
             : null;
-        $items = $ownership->visible(Customer::query(), $request->user())
+        $items = Customer::query()
             ->where('is_active', true)
-            ->with('assignment.seller:id,name')
+            ->with('assignment.seller:id,name,is_active,can_access_erp')
             ->withBalance()
             ->where(function($qq) use ($terms, $fullNameExpression, $normalizedNameLike, $nameExpressions, $exact){
                 if ($exact) $qq->orWhere('customers.id', $exact->id);
@@ -71,7 +72,17 @@ class CustomerApiController extends Controller
             ->orderByDesc('id')
             ->limit(20)
             ->get()
-            ->map(fn($c)=>[
+            ->map(function ($c) use ($canSellAny, $request) {
+                if (!$canSellAny && $c->assignment?->seller_id !== $request->user()->id) {
+                    return [
+                        'id' => $c->id, 'code' => $c->crm_customer_id ?: $c->id,
+                        'name' => $c->display_name, 'mobile' => $c->mobile,
+                        'owner_name' => $c->assignment?->seller?->name,
+                        'requires_approval' => true,
+                        'can_request' => (bool) ($c->assignment?->seller?->is_active && $c->assignment?->seller?->can_access_erp),
+                    ];
+                }
+                return [
                 'id' => $c->id,
                 'code' => $c->crm_customer_id ?: $c->id,
                 'requires_approval' => false,
@@ -94,22 +105,10 @@ class CustomerApiController extends Controller
                 'reservation_tier' => $c->reservation_tier,
                 'reservation_tier_label' => $this->reservationTierLabel($c->reservation_tier),
                 'reservation_duration_label' => $this->reservationDurationLabel($c->reservation_tier),
-            ])
+                ];
+            })
             ->values();
 
-        // Exact-code discovery exposes no contact or financial data before consent.
-        if ($exact && !$items->contains('id', $exact->id)
-            && $request->user()->is_active && $request->user()->can_access_erp
-            && \App\Support\PageAccessCatalog::userCanRoute($request->user(), 'preinvoice.create')) {
-            $assignment = $exact->assignment()->with('seller:id,name,is_active,can_access_erp')->first();
-            $items->prepend([
-                'id' => $exact->id, 'code' => $exact->crm_customer_id ?: $exact->id,
-                'name' => $exact->display_name, 'owner_name' => $assignment?->seller?->name,
-                'requires_approval' => true,
-                'can_request' => (bool) ($assignment?->seller?->is_active && $assignment?->seller?->can_access_erp),
-            ]);
-            $items = $items->take(20)->values();
-        }
         return response()->json(['data' => ['customers' => $items]])->header('Cache-Control', 'private, no-store');
     }
 

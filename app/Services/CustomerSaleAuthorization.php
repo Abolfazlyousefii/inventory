@@ -55,7 +55,7 @@ class CustomerSaleAuthorization
                 abort_if(RateLimiter::tooManyAttempts($key, $max), 429, 'تعداد درخواست کد بیش از حد مجاز است؛ بعداً تلاش کنید.');
                 RateLimiter::hit($key, 3600);
             }
-            $code = (string) random_int(100000, 999999);
+            $code = (string) random_int(1000, 9999);
             try { $this->messenger->send($owner, $actor, $customer, $code); }
             catch (\Throwable) { abort(503, 'ارسال کد انجام نشد؛ مجوزی صادر نشده است. دوباره تلاش کنید.'); }
             $approval = CustomerSaleApproval::updateOrCreate(['requester_id' => $actor->id, 'context_token' => $context, 'customer_id' => $customer->id], [

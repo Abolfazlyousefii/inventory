@@ -36,6 +36,7 @@ class CustomerSaleApprovalTest extends TestCase
         $code = null;
         $this->mock(CustomerSaleApprovalMessenger::class)->shouldReceive('send')->once()->withArgs(function ($owner, $requester, $customer, $sent) use ($s, &$code) {
             $this->assertSame($s['owner']->id, $owner->id);
+            $this->assertMatchesRegularExpression('/^[1-9][0-9]{3}$/', $sent);
             $code = $sent;
             return true;
         });
@@ -44,19 +45,19 @@ class CustomerSaleApprovalTest extends TestCase
         return [$response->json('id'), $code];
     }
 
-    public function test_main_search_discovers_other_owners_only_by_exact_code_without_private_fields(): void
+    public function test_main_search_discovers_other_owners_by_name_phone_and_code_without_financial_fields(): void
     {
         $s = $this->scenario();
         $s['customer']->update(['first_name' => 'ForeignUniqueName', 'last_name' => null]);
         $this->actingAs($s['requester']);
-        foreach (['ForeignUniqueName', $s['customer']->mobile, '7009'] as $term) {
-            $this->getJson('/preinvoice/api/customers?q='.urlencode($term))->assertOk()->assertJsonCount(0, 'data.customers');
+        foreach (['ForeignUniqueName', $s['customer']->mobile] as $term) {
+            $this->getJson('/preinvoice/api/customers?q='.urlencode($term))->assertOk()->assertJsonPath('data.customers.0.id', $s['customer']->id)->assertJsonPath('data.customers.0.requires_approval', true);
         }
         $response = $this->getJson('/preinvoice/api/customers?q=70099')->assertOk()
             ->assertJsonPath('data.customers.0.id', $s['customer']->id)
             ->assertJsonPath('data.customers.0.requires_approval', true)
             ->assertJsonPath('data.customers.0.can_request', true);
-        foreach (['mobile', 'address', 'balance', 'debt', 'credit'] as $field) {
+        foreach (['address', 'balance', 'debt', 'credit'] as $field) {
             $this->assertArrayNotHasKey($field, $response->json('data.customers.0'));
         }
         $this->getJson('/preinvoice/api/customers?q='.urlencode('۷۰۰۹۹'))->assertOk()->assertJsonPath('data.customers.0.id', $s['customer']->id);
@@ -67,6 +68,16 @@ class CustomerSaleApprovalTest extends TestCase
         $this->getJson('/preinvoice/api/customers?q=80099')->assertOk()->assertJsonPath('data.customers.0.id', $own->id)->assertJsonPath('data.customers.0.mobile', $own->mobile);
         $s['customer']->update(['is_active' => false]);
         $this->getJson('/preinvoice/api/customers?q=70099')->assertOk()->assertJsonCount(0, 'data.customers');
+    }
+
+    public function test_sale_sms_uses_existing_code_pattern_when_custom_pattern_and_sender_are_missing(): void
+    {
+        $s = $this->scenario();
+        config(['sms.default' => 'melipayamak', 'sales-approval.sms_pattern' => '', 'services.melipayamak.body_id' => '12345', 'services.melipayamak.from' => '']);
+        $sms = $this->mock(\App\Services\Sms\SmsManager::class);
+        $sms->shouldReceive('sendPattern')->once()->with($s['owner']->phone, '12345', ['1234']);
+        $sms->shouldNotReceive('send');
+        app(CustomerSaleApprovalMessenger::class)->send($s['owner'], $s['requester'], $s['customer'], '1234');
     }
 
     public function test_own_customer_responsible_seller_is_returned_and_unassigned_customer_needs_transfer(): void
@@ -160,7 +171,7 @@ class CustomerSaleApprovalTest extends TestCase
         $this->postJson('/commercial/sale-approvals/'.$id.'/verify', ['context' => (string) Str::uuid(), 'code' => $code])->assertNotFound();
         $this->actingAs($this->seller())->postJson('/commercial/sale-approvals/'.$id.'/verify', ['context' => $s['context'], 'code' => $code])->assertNotFound();
         $this->actingAs($s['requester']);
-        for ($i = 0; $i < 5; $i++) $this->postJson('/commercial/sale-approvals/'.$id.'/verify', ['context' => $s['context'], 'code' => '000000'])->assertUnprocessable();
+        for ($i = 0; $i < 5; $i++) $this->postJson('/commercial/sale-approvals/'.$id.'/verify', ['context' => $s['context'], 'code' => '0000'])->assertUnprocessable();
         $this->assertSame(5, CustomerSaleApproval::find($id)->attempts);
         $this->postJson('/commercial/sale-approvals/'.$id.'/verify', ['context' => $s['context'], 'code' => $code])->assertUnprocessable();
     }

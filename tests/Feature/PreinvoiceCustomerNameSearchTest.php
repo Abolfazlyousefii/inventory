@@ -3,43 +3,27 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\CustomerApiController;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class PreinvoiceCustomerNameSearchTest extends TestCase
 {
+    use \Illuminate\Foundation\Testing\RefreshDatabase;
+
+    private \App\Models\User $actor;
+
     protected function setUp(): void
     {
         parent::setUp();
-        Schema::create('customers', function (Blueprint $t) {
-            $t->id();
-            foreach (['name', 'first_name', 'last_name', 'mobile', 'address', 'postal_code', 'extra_description', 'reservation_tier'] as $f) {
-                $t->string($f)->nullable();
-            }$t->integer('opening_balance')->default(0);
-            $t->integer('province_id')->nullable();
-            $t->integer('city_id')->nullable();
-            $t->softDeletes();
-        });
-        Schema::create('customer_ledgers', function (Blueprint $t) {
-            $t->id();
-            $t->integer('customer_id');
-            $t->string('type');
-            $t->integer('amount');
-            $t->string('reference_type')->nullable();
-            $t->integer('reference_id')->nullable();
-        });
-        Schema::create('invoices', function (Blueprint $t) {
-            $t->id();
-            $t->string('status');
-        });
+        $this->actor = \App\Models\User::factory()->create(['is_active' => true, 'can_access_erp' => true]);
     }
 
     private function search(string $q): array
     {
-        return app(CustomerApiController::class)->search(Request::create('/preinvoice/api/customers', 'GET', ['q' => $q]))->getData(true)['data']['customers'];
+        $request = Request::create('/preinvoice/api/customers', 'GET', ['q' => $q]);
+        $request->setUserResolver(fn () => $this->actor);
+        return app(CustomerApiController::class)->search($request)->getData(true)['data']['customers'];
     }
 
     public function test_persian_and_arabic_letters_match_both_stored_spellings(): void
@@ -70,7 +54,7 @@ class PreinvoiceCustomerNameSearchTest extends TestCase
     public function test_search_is_read_only_and_limit_stays_twenty(): void
     {
         for ($i = 1; $i <= 25; $i++) {
-            DB::table('customers')->insert(['name' => 'علي نمونه '.$i]);
+            DB::table('customers')->insert(['name' => 'علي نمونه '.$i, 'mobile' => '0912'.str_pad((string) $i, 7, '0', STR_PAD_LEFT)]);
         }DB::enableQueryLog();
         DB::flushQueryLog();
         $this->assertCount(20, $this->search('علی'));
