@@ -68,8 +68,10 @@ class CommercialTransferService
             return null;
         }
 
-        return User::query()->activeErpUsers()->find($id)
-            ?? throw ValidationException::withMessages(['from_id' => 'همکار مبدأ غیرفعال یا فاقد دسترسی نرم‌افزار است؛ همکار فعالی انتخاب کنید.']);
+        // Former employees remain valid sources for transferring their records.
+        // Destination eligibility is enforced independently by seller().
+        return User::query()->find($id)
+            ?? throw ValidationException::withMessages(['from_id' => 'همکار مبدأ پیدا نشد.']);
     }
 
     private function event(CommercialTransferDocument $doc, User $actor, string $action, ?string $reason = null): void

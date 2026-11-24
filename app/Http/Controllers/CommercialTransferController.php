@@ -39,8 +39,9 @@ class CommercialTransferController extends Controller
         }
         $documents = $base->withCount('items')->latest('number')->paginate(10)->withQueryString();
         $sellers = User::query()->activeErpUsers()->orderBy('name')->get(['id', 'name', 'is_active', 'can_access_erp']);
+        $sourceSellers = User::query()->orderBy('name')->get(['id', 'name', 'is_active', 'can_access_erp']);
 
-        return response()->view($request->ajax() ? 'commercial.transfers.list' : 'commercial.transfers.index', compact('documents', 'summary', 'sellers', 'kinds'))->header('Cache-Control', 'private, no-store');
+        return response()->view($request->ajax() ? 'commercial.transfers.list' : 'commercial.transfers.index', compact('documents', 'summary', 'sellers', 'sourceSellers', 'kinds'))->header('Cache-Control', 'private, no-store');
     }
 
     public function search(Request $request)

@@ -21,18 +21,29 @@ class CommercialTransferDocumentTest extends TestCase
 {
     use RefreshDatabase, \Tests\Concerns\CreatesSellerCommissionDocuments;
 
-    public function test_transfer_pickers_only_offer_active_erp_users_and_reject_inactive_source(): void
+    public function test_inactive_and_no_erp_sources_are_listed_but_destinations_stay_active(): void
     {
         [$actor,$a,$b,$c,$payload] = $this->setupTransfer();
-        $inactive = $this->user();
-        $inactive->update(['name' => 'INACTIVE_PICKER_SENTINEL', 'is_active' => false]);
+        $a->update(['name' => 'INACTIVE_PICKER_SENTINEL', 'is_active' => false, 'can_access_erp' => false]);
         $noErp = $this->user();
         $noErp->update(['name' => 'NO_ERP_PICKER_SENTINEL', 'can_access_erp' => false]);
-        $this->get('/commercial/transfers')->assertOk()->assertDontSee('INACTIVE_PICKER_SENTINEL')->assertDontSee('NO_ERP_PICKER_SENTINEL');
-        $a->update(['is_active' => false]);
-        $this->getJson('/commercial/transfers/search?kind=customer&from_id='.$a->id)->assertUnprocessable()->assertJsonValidationErrors('from_id');
-        $this->postJson('/commercial/transfers', $payload)->assertUnprocessable()->assertJsonValidationErrors('from_id');
-        $this->assertDatabaseCount('commercial_transfer_documents', 0);
+        $page = $this->get('/commercial/transfers')->assertOk();
+        preg_match('/<select name="from_id"[^>]*>(.*?)<\/select>/s', $page->getContent(), $source);
+        preg_match('/<select name="to_id"[^>]*>(.*?)<\/select>/s', $page->getContent(), $destination);
+        $this->assertStringContainsString('INACTIVE_PICKER_SENTINEL', $source[1]);
+        $this->assertStringContainsString('NO_ERP_PICKER_SENTINEL', $source[1]);
+        $this->assertStringNotContainsString('INACTIVE_PICKER_SENTINEL', $destination[1]);
+        $this->assertStringNotContainsString('NO_ERP_PICKER_SENTINEL', $destination[1]);
+        $this->getJson('/commercial/transfers/search?kind=customer&from_id='.$a->id)->assertOk()->assertJsonPath('data.0.id', $c->id);
+        foreach ([$a->id, $noErp->id] as $invalidDestination) {
+            $invalid = $payload;
+            $invalid['to_id'] = $invalidDestination;
+            $this->postJson('/commercial/transfers', $invalid)->assertUnprocessable()->assertJsonValidationErrors('to_id');
+        }
+        $this->postJson('/commercial/transfers', $payload)->assertCreated();
+        $this->assertSame($b->id, $c->assignment()->first()->seller_id);
+        $this->assertFalse($a->fresh()->is_active);
+        $this->assertFalse($a->fresh()->can_access_erp);
     }
 
     public function test_empty_customer_search_explains_missing_assignments_without_guessing_from_invoices(): void
@@ -48,16 +59,17 @@ class CommercialTransferDocumentTest extends TestCase
         $this->getJson('/commercial/transfers/search?kind=customer&from_id='.$seller->id.'&q=notfound-sentinel')->assertOk()->assertJsonPath('empty_reason', 'search_no_matches');
     }
 
-    public function test_source_deactivated_after_draft_cannot_be_used_to_register_but_history_remains_visible(): void
+    public function test_source_deactivated_after_draft_can_transfer_without_reactivating_account(): void
     {
         [$actor,$a,$b,$c,$payload] = $this->setupTransfer();
         $payload['action'] = 'draft';
         $doc = $this->postJson('/commercial/transfers', $payload)->assertCreated()->json();
         $a->update(['is_active' => false]);
-        $this->postJson('/commercial/transfers/'.$doc['id'].'/register', ['version' => 1])->assertUnprocessable()->assertJsonValidationErrors('from_id');
+        $this->postJson('/commercial/transfers/'.$doc['id'].'/register', ['version' => 1])->assertOk();
         $this->get('/commercial/transfers/'.$doc['id'])->assertOk()->assertSee($a->name);
-        $this->assertSame($a->id, $c->assignment()->first()->seller_id);
-        $this->assertDatabaseHas('commercial_transfer_documents', ['id' => $doc['id'], 'status' => 'draft']);
+        $this->assertSame($b->id, $c->assignment()->first()->seller_id);
+        $this->assertFalse($a->fresh()->is_active);
+        $this->assertDatabaseHas('commercial_transfer_documents', ['id' => $doc['id'], 'status' => 'registered']);
     }
 
     public function test_new_invoice_document_preserves_commission_history_and_blocks_cancel_after_new_claim(): void
