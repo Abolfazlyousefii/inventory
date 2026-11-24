@@ -21,6 +21,11 @@ class PersonnelEntry extends Model
 
     public function steps()
     {
+        return $this->allSteps()->whereNull('personnel_steps.superseded_at')->whereNotIn('personnel_steps.stage',['migration_observer','rehearsal_viewer'])->whereHas('approver',fn($q)=>$q->where('show_in_organization_chart',true));
+    }
+
+    public function allSteps()
+    {
         return $this->hasMany(PersonnelStep::class)->orderBy('sequence');
     }
 

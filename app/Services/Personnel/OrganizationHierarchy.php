@@ -30,6 +30,31 @@ class OrganizationHierarchy
         try{return $this->managerChain($person)->contains('id',$manager->id);}catch(DomainException){return false;}
     }
 
+    /** One unit manager, then internal and executive; supervisors skip their unit stage. */
+    public function workflowChain(User $person): Collection
+    {
+        $route=collect();
+        $unitAdded=in_array($person->organization_level,['supervisor','department_manager','internal_manager'],true);
+        $internalAdded=$person->organization_level==='internal_manager';
+        foreach($this->managerChain($person) as $manager){
+            if(!$manager->show_in_organization_chart)continue;
+            $level=$manager->organization_level;
+            if($level==='ceo')continue;
+            if($level==='internal_manager'){
+                if($internalAdded)continue;
+                $internalAdded=true;
+            }elseif($level!=='executive_manager'){
+                if($unitAdded)continue;
+                $unitAdded=true;
+            }
+            if(!$manager->is_active||!$manager->can_access_erp)throw new DomainException('مدیر مسئول این شاخه غیرفعال است؛ ساختار پرسنل باید اصلاح شود.');
+            $route->push($manager);
+            if($level==='executive_manager')break;
+        }
+        if(!$internalAdded||!$route->contains('organization_level','executive_manager'))throw new DomainException('مسیر این فرد به مدیر داخلی و مدیر اجرایی متصل نیست؛ مدیر مستقیم را در مدیریت پرسنل اصلاح کنید.');
+        return $route;
+    }
+
     public function canReview(User $manager,User $person,string $permission): bool
     {
         return $manager->hasPermission($permission) && $this->isInTeam($manager,$person);
