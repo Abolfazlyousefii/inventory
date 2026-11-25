@@ -115,8 +115,12 @@ class PersonnelWorkflow
 
     public function notify(PersonnelEntry $entry, array $recipients): void
     {
+        $eventId = $entry->events()->reorder()->max('id');
         foreach (array_unique($recipients) as $id) {
-            app(NotificationService::class)->notifyUserAfterCommit($id, 'personnel.workflow', 'به‌روزرسانی درخواست پرسنلی', 'برای مشاهده جزئیات به پرسنل و همکاری مراجعه کنید.', route('personnel.'.($entry->kind === 'leave' ? 'leaves' : 'reports').'.show', $entry->id));
+            app(NotificationService::class)->notifyUserAfterCommit($id, 'personnel.workflow', 'به‌روزرسانی درخواست پرسنلی', 'برای مشاهده جزئیات به پرسنل و همکاری مراجعه کنید.', route('personnel.'.($entry->kind === 'leave' ? 'leaves' : 'reports').'.show', $entry->id), [
+                'notifiable_type' => PersonnelEntry::class, 'notifiable_id' => $entry->id,
+                'unique_key' => 'personnel-event:'.$entry->id.':'.$eventId,
+            ]);
         }
     }
 
@@ -125,6 +129,7 @@ class PersonnelWorkflow
         return DB::transaction(function () use ($entry, $actor, $action, $version, $reason) {
             $entry = PersonnelEntry::whereKey($entry->id)->lockForUpdate()->firstOrFail();
             abort_if($entry->version !== $version, 409, 'اطلاعات تغییر کرده است؛ جزئیات را دوباره باز کنید.');
+            $recipients = [$entry->user_id];
             if ($action === 'cancel') {
                 abort_unless($entry->user_id === $actor->id && $this->access->canUse($actor, 'leave') && $entry->status === 'pending', 403);
                 $entry->steps()->whereIn('status', ['pending', 'waiting'])->update(['status' => 'cancelled']);
@@ -145,7 +150,7 @@ class PersonnelWorkflow
                     $next = $entry->steps()->where('status', 'waiting')->first();
                     if ($next) {
                         $next->update(['status' => 'pending']);
-                        $this->notify($entry, [$next->approver_id]);
+                        $recipients[] = $next->approver_id;
                     } else {
                         $entry->status = 'approved';
                     }
@@ -154,7 +159,7 @@ class PersonnelWorkflow
             $entry->version++;
             $entry->save();
             $this->event($entry,$actor,$action,$reason);
-            $this->notify($entry,[$entry->user_id]);
+            $this->notify($entry, $recipients);
 
             return $entry;
         });

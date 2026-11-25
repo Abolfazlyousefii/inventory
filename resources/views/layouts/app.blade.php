@@ -55,7 +55,7 @@
     <link rel="stylesheet" href="{{ asset('css/Vazirmatn.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin-theme.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/app-shell.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/app-shell.css') }}?v=20261125-notif7">
     <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v=20261011">
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
@@ -82,9 +82,9 @@
     }
 @endphp
 <body class="app-body"
-      data-notifications-count-url="{{ route('notifications.unread-count') }}"
-      data-notifications-latest-url="{{ route('notifications.latest') }}"
-      data-notifications-read-all-url="{{ route('notifications.read-all') }}">
+      data-notifications-count-url="{{ route('notifications.unread-count', [], false) }}"
+      data-notifications-latest-url="{{ route('notifications.latest', [], false) }}"
+      data-notifications-read-all-url="{{ route('notifications.read-all', [], false) }}">
 <div class="app-layout">
     @include('layouts.sidebar')
 
@@ -189,38 +189,6 @@
             </div>
         </header>
 
-        <section id="notifPanel"
-                 class="notif-panel"
-                 aria-hidden="true"
-                 aria-labelledby="notifPanelTitle">
-            <div class="notif-panel__head">
-                <div>
-                    <h3 id="notifPanelTitle">
-                        اعلان‌ها
-                        <span id="notifUnreadText" class="badge bg-primary-subtle">۰ خوانده‌نشده</span>
-                    </h3>
-                    <p>آخرین وضعیت پیش‌فاکتورها و فاکتورهای شما</p>
-                </div>
-                <button type="button"
-                        class="app-icon-btn notif-panel__close"
-                        id="notifCloseBtn"
-                        aria-label="بستن اعلان‌ها">
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="notif-panel__tools">
-                <button type="button" class="notif-tool-btn" id="notifReadAllBtn">خواندن همه</button>
-            </div>
-            <div id="notifList" class="notif-list">
-                <div class="notif-empty"><span class="notif-empty__dot"></span>در حال دریافت اعلان‌ها...</div>
-            </div>
-            <div class="notif-panel__foot">
-                <a href="{{ route('notifications.index') }}">مشاهده همه اعلان‌ها</a>
-            </div>
-        </section>
-
         <main class="app-content @yield('content_class')">
             @include('inventory-count-freeze.banner')
             @if(session('success'))
@@ -257,7 +225,43 @@
     </div>
 </div>
 
-<script src="{{ asset('js/app-shell.js') }}?v=20261027a"></script>
+<div id="notificationBackdrop" class="notification-backdrop" aria-hidden="true" hidden></div>
+<section id="notifPanel" class="notif-panel" role="dialog" aria-modal="true" aria-hidden="true"
+         aria-labelledby="notifPanelTitle" data-notification-surface data-filter="unread" data-per-page="6" data-page="1">
+    <div class="notif-panel__head">
+        <div class="notif-panel__heading">
+            <span class="notif-panel__symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <div><h3 id="notifPanelTitle">اعلان‌ها</h3>
+            <p id="notifUnreadText" data-notification-count aria-live="polite">در حال دریافت…</p></div>
+        </div>
+        <button type="button" class="app-icon-btn notif-panel__close" id="notifCloseBtn" aria-label="بستن اعلان‌ها">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
+    </div>
+    <div class="notif-panel__tools">
+        <form action="{{ route('notifications.read-all', [], false) }}" method="POST" data-notification-read-all>
+            @csrf
+            <button type="submit" class="notif-tool-btn notif-tool-btn--primary" id="notifReadAllBtn" disabled><span aria-hidden="true">✓</span> خواندن همه</button>
+        </form>
+    </div>
+    <div class="notif-feedback" data-notification-error hidden><span data-notification-error-text role="alert"></span> <button type="button" class="notif-tool-btn" data-notification-retry>تلاش مجدد</button></div>
+    <div id="notifList" class="notif-list" data-notification-list aria-busy="true">
+        <div class="notif-empty notif-empty--loading" role="status"><span class="notif-empty__icon" aria-hidden="true">…</span><span>در حال دریافت اعلان‌ها…</span></div>
+    </div>
+    <nav class="notif-pagination" aria-label="صفحه‌بندی اعلان‌ها" data-notification-pagination hidden>
+        <button type="button" class="notif-tool-btn" data-notification-step="-1"><span class="notif-page-arrow" aria-hidden="true"></span> قبلی</button>
+        <span data-notification-page-label aria-live="polite"></span>
+        <button type="button" class="notif-tool-btn" data-notification-step="1">بعدی <span class="notif-page-arrow" aria-hidden="true"></span></button>
+    </nav>
+    <div class="notif-panel__foot">
+        <a href="{{ route('notifications.index', [], false) }}">مشاهده صندوق اعلان‌ها <span aria-hidden="true">←</span></a>
+    </div>
+</section>
+
+
+<script src="{{ asset('js/app-shell.js') }}?v=20261125-notif5"></script>
 @stack('scripts')
 </body>
 </html>

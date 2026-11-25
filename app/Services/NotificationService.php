@@ -45,22 +45,37 @@ class NotificationService
 
     private function storeForRoles(string|array $roles, array $payload): ?SystemNotification
     {
-        $created = null;
-        foreach ((array) $roles as $role) {
-            $role = trim((string) $role);
-            if ($role === '') {
-                continue;
-            }
-            $rolePayload = $payload;
-            if (! empty($payload['unique_key']) && count((array) $roles) > 1) {
-                $rolePayload['unique_key'] = $payload['unique_key'] . ':' . $role;
-            }
-            $created = $this->store(['user_id' => null, 'role' => $role], $rolePayload);
+        $roles = array_values(array_unique(array_filter(array_map(fn ($role) => strtolower(trim((string) $role)), (array) $roles))));
+        if ($roles === []) {
+            Log::warning('Notification role target is empty.', ['payload' => $payload]);
+            return null;
         }
-        if (! $created) {
-            Log::warning('Notification role target is empty.', ['roles' => $roles, 'payload' => $payload]);
-        }
-        return $created;
+
+        return DB::transaction(function () use ($roles, $payload) {
+            $legacy = null;
+            $remaining = [];
+            $key = $payload['unique_key'] ?? null;
+            foreach ($roles as $role) {
+                // Keep existing role rows (and their historical read timestamps) intact.
+                $existing = filled($key) ? $this->legacyNotification(['user_id' => null, 'role' => $role], (string) $key) : null;
+                if ($existing) {
+                    $legacy = $existing;
+                } else {
+                    $remaining[] = $role;
+                }
+            }
+            if ($remaining === []) {
+                return $legacy;
+            }
+
+            // A role event is a single row even when a user belongs to multiple target roles.
+            $notification = $this->store(['user_id' => null, 'role' => $remaining[0]], $payload, 'role-event');
+            DB::table('notification_role_targets')->insertOrIgnore(array_map(fn ($role) => [
+                'notification_id' => $notification->id, 'role' => $role,
+            ], $remaining));
+
+            return $notification;
+        });
     }
 
     private function legacyPayload(string $type, ?string $title, ?string $message, ?string $link, array $meta): array
@@ -87,7 +102,7 @@ class NotificationService
         });
     }
 
-    private function store(array $target, array $payload): SystemNotification
+    private function store(array $target, array $payload, ?string $recipientScope = null): SystemNotification
     {
         $data = $payload['data'] ?? [];
         $link = $payload['url'] ?? $payload['link'] ?? null;
@@ -106,11 +121,34 @@ class NotificationService
             'unique_key' => $payload['unique_key'] ?? null,
         ]);
 
-        if (! empty($record['unique_key'])) {
-            return SystemNotification::updateOrCreate(['unique_key' => $record['unique_key']], $record);
+        if (filled($record['unique_key'])) {
+            $eventKey = (string) $record['unique_key'];
+            $recipient = $recipientScope ?? 'user:'.$target['user_id'];
+            if ($recipientScope === null && ($legacy = $this->legacyNotification($target, $eventKey))) {
+                return $legacy;
+            }
+
+            // The existing unique index makes retries and concurrent inserts idempotent.
+            $record['unique_key'] = 'notification:v2:'.hash('sha256', json_encode([$recipient, $eventKey], JSON_THROW_ON_ERROR));
+            return SystemNotification::firstOrCreate(['unique_key' => $record['unique_key']], $record);
         }
 
+        $record['unique_key'] = null;
         return SystemNotification::create($record);
+    }
+
+    private function legacyNotification(array $target, string $eventKey): ?SystemNotification
+    {
+        $query = SystemNotification::query()->where('user_id', $target['user_id']);
+        if ($target['role'] === null) {
+            return $query->whereNull('role')->where('unique_key', $eventKey)->first();
+        }
+
+        return $query->whereRaw('LOWER(role) = ?', [$target['role']])
+            ->where(function ($query) use ($target, $eventKey) {
+                $query->where('unique_key', $eventKey)
+                    ->orWhereRaw('LOWER(unique_key) = ?', [strtolower($eventKey.':'.$target['role'])]);
+            })->first();
     }
 
     private function priorityFromLevel(?string $level): string

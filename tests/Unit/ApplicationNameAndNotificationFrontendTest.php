@@ -89,7 +89,7 @@ class ApplicationNameAndNotificationFrontendTest extends TestCase
         $this->assertStringContainsString('<title>ورود | '.self::APP_NAME.'</title>', $login);
     }
 
-    public function test_notification_frontend_has_badge_only_polling_and_no_automatic_toasts(): void
+    public function test_notification_frontend_shares_counts_and_polls_without_automatic_toasts(): void
     {
         $layout = file_get_contents(resource_path('views/layouts/app.blade.php'));
         $script = file_get_contents(public_path('js/app-shell.js'));
@@ -107,14 +107,14 @@ class ApplicationNameAndNotificationFrontendTest extends TestCase
             $this->assertStringNotContainsString($removedFeature, $layout.$script.$styles);
         }
 
-        $this->assertStringContainsString('async function refreshNotificationCount()', $script);
-        $this->assertStringContainsString('async function loadNotificationList()', $script);
-        $this->assertStringContainsString('if (!countUrl || state.countRequest)', $script);
-        $this->assertStringContainsString('state.listController?.abort()', $script);
-        $this->assertStringContainsString('sequence !== state.listSequence', $script);
-        $this->assertStringContainsString("count > 99 ? '+99'", $script);
+        $this->assertStringContainsString('async function refresh()', $script);
+        $this->assertStringContainsString('state.controller?.abort()', $script);
+        $this->assertStringContainsString('sequence === state.sequence', $script);
+        $this->assertStringContainsString('badge.textContent = faNumber(count)', $script);
         $this->assertStringContainsString('document.hidden ? 60000 : 30000', $script);
-        $this->assertStringContainsString('refreshNotificationCount().finally(schedule)', $script);
+        $this->assertStringContainsString('refresh().finally(schedule)', $script);
+        $this->assertStringContainsString('data-notification-count', $layout);
+        $this->assertStringContainsString('data-notification-read-all', $layout);
         $this->assertStringNotContainsString('Promise.all', $script);
         $this->assertStringContainsString("aria-label=\"اعلان‌ها\"", $layout);
         $this->assertStringContainsString('aria-hidden="true"', $layout);

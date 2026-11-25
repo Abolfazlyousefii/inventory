@@ -195,7 +195,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
-    Route::prefix('yuan')->name('products.yuan.')->group(function () {
+    Route::prefix('products/yuan')->name('products.yuan.')->group(function () {
         Route::get('/unlock', [\App\Http\Controllers\YuanDashboardUnlockController::class, 'show'])
             ->name('unlock');
 
@@ -540,12 +540,15 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     Route::get('/vouchers/return/customers/{customer}/invoices', [VoucherController::class, 'customerInvoices'])->name('vouchers.return.customer.invoices');
 
-    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
-    Route::get('/notifications/latest', [NotificationController::class, 'latest'])->name('notifications.latest');
-    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
-    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
-    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
-    Route::get('/notifications/{notification}/open', [NotificationController::class, 'open'])->name('notifications.open');
+    // The global bell is available to every authenticated ERP user; recipient checks live in the controller.
+    Route::withoutMiddleware('route.permission')->group(function () {
+        Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+        Route::get('/notifications/latest', [NotificationController::class, 'latest'])->name('notifications.latest');
+        Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+        Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->middleware(\App\Http\Middleware\ProtectNotificationCsrf::class)->name('notifications.read');
+        Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->middleware(\App\Http\Middleware\ProtectNotificationCsrf::class)->name('notifications.read-all');
+        Route::post('/notifications/{notification}/open', [NotificationController::class, 'open'])->middleware(\App\Http\Middleware\ProtectNotificationCsrf::class)->name('notifications.open');
+    });
 
     Route::get('/vouchers/{voucher}', [VoucherController::class, 'show'])->name('vouchers.show');
     Route::get('/vouchers/{voucher}/edit', [VoucherController::class, 'edit'])->name('vouchers.edit');
@@ -820,8 +823,6 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
 
     // Users (External CRM)
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
-    Route::post('/admin/personnel/accounts', [\App\Http\Controllers\Admin\PersonnelAccountController::class, 'store'])->middleware(\App\Http\Middleware\ProtectPersonnelCsrf::class)->name('admin.personnel.accounts.store');
-    Route::put('/admin/personnel/accounts/{user}/status', [\App\Http\Controllers\Admin\PersonnelAccountController::class, 'status'])->middleware(\App\Http\Middleware\ProtectPersonnelCsrf::class)->name('admin.personnel.accounts.status');
     Route::post('/users/sync', [UserController::class, 'sync'])->name('users.sync');
 
     Route::prefix('admin/bug-investigator')->name('admin.bug-investigator.')->group(function () {
