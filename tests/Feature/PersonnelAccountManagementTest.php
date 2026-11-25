@@ -101,4 +101,21 @@ class PersonnelAccountManagementTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_name_can_be_edited_without_changing_login_roles_or_manager_and_is_audited(): void
+    {
+        $actor=$this->admin();$manager=User::factory()->create();
+        $target=User::factory()->create(['name'=>'Old name','manager_id'=>$manager->id]);
+        $before=$target->refresh()->only(['phone','password','is_active','can_access_erp']);
+        $version=\App\Services\Personnel\OrganizationManagement::version($target);
+        $url='/admin/permissions/'.$target->id.'/organization';
+        $this->actingAs($actor)->putJson($url,['name'=>'نام اصلاح شده','manager_id'=>$manager->id,'organization_version'=>$version])->assertOk();
+        $this->assertSame('نام اصلاح شده',$target->fresh()->name);
+        $this->assertSame($before,$target->fresh()->only(array_keys($before)));
+        $this->assertSame($manager->id,$target->fresh()->manager_id);
+        $log=\App\Models\ActivityLog::where('action','personnel.organization_updated')->latest('id')->firstOrFail();
+        $this->assertSame('Old name',$log->properties['before']['name']);
+        $this->putJson($url,['name'=>'Stale edit','manager_id'=>$manager->id,'organization_version'=>$version])->assertUnprocessable();
+        $this->putJson($url,['name'=>'   ','organization_version'=>\App\Services\Personnel\OrganizationManagement::version($target->fresh())])->assertUnprocessable()->assertJsonValidationErrors('name');
+    }
+
 }

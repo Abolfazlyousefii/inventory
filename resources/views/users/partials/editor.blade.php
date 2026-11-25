@@ -1,5 +1,5 @@
 @if($selectedUser)
-<div data-staff-editor>
+<div data-staff-editor data-staff-name="{{ $selectedUser->name }}">
     <nav class="pw-tabs" aria-label="بخش‌های ویرایش پرسنل"><button type="button" data-staff-tab="profile" aria-pressed="true">مشخصات</button><button type="button" data-staff-tab="roles" aria-pressed="false">نقش‌ها</button><button type="button" data-staff-tab="permissions" aria-pressed="false">دسترسی‌ها</button><button type="button" data-staff-tab="account" aria-pressed="false">وضعیت حساب</button></nav>
     <div class="pw-editor-feedback" role="status" aria-live="polite"></div>
     <section data-staff-section="profile" class="pw-editor-section">@include('admin.permissions.partials.organization')</section>

@@ -14,6 +14,7 @@ class PersonnelOrganizationController extends Controller
     {
         abort_unless(PageAccessCatalog::userCan($request->user(), 'page.roles'), 403);
         $data = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
             'manager_id' => ['nullable', 'integer', 'exists:users,id'],
             'department' => ['nullable', 'string', 'max:100'],
             'position' => ['nullable', 'string', 'max:100'],

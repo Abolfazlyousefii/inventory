@@ -9,7 +9,7 @@ use Illuminate\Validation\ValidationException;
 
 class OrganizationManagement
 {
-    private const FIELDS = ['manager_id', 'department', 'position', 'personnel_code', 'branch', 'organization_level', 'organization_managed_locally', 'show_in_organization_chart'];
+    private const FIELDS = ['name', 'manager_id', 'department', 'position', 'personnel_code', 'branch', 'organization_level', 'organization_managed_locally', 'show_in_organization_chart'];
 
     public static function version(User $user): string
     {
@@ -53,7 +53,7 @@ class OrganizationManagement
                 }
             }
             $before = $user->only(self::FIELDS);
-            $user->fill(collect($data)->only(['department', 'position', 'personnel_code', 'branch', 'organization_level', 'show_in_organization_chart'])->all());
+            $user->fill(collect($data)->only(['name', 'department', 'position', 'personnel_code', 'branch', 'organization_level', 'show_in_organization_chart'])->all());
             $user->manager_id = $managerId;
             $user->organization_managed_locally = true;
             if (! $user->isDirty()) return;
