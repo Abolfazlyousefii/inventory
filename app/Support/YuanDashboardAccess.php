@@ -10,7 +10,7 @@ final class YuanDashboardAccess
 {
     public const COOKIE_NAME = 'yuan_dashboard_access';
 
-    private const COOKIE_PATH = '/products/yuan';
+    private const COOKIE_PATH = '/yuan';
 
     private const SIGNING_CONTEXT = 'yuan-dashboard-v1';
 
