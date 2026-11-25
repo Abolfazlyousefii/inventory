@@ -79,7 +79,7 @@ class PersonnelOrganizationTest extends TestCase
         $manager=User::factory()->create();
         User::factory()->create(['name'=>'نیروی همین مدیر','manager_id'=>$manager->id]);
         User::factory()->create(['name'=>'نیروی مدیر دیگر']);
-        $this->get('/users?manager='.$manager->id)->assertOk()->assertSee('نیروی همین مدیر')->assertDontSee('نیروی مدیر دیگر');
+        $this->get('/users?manager='.$manager->id,['X-Requested-With'=>'XMLHttpRequest'])->assertOk()->assertSee('نیروی همین مدیر')->assertDontSee('نیروی مدیر دیگر');
     }
 
     public function test_chart_accounts_are_separate_without_changing_reporting_lines_or_hiding_their_staff(): void
@@ -88,8 +88,8 @@ class PersonnelOrganizationTest extends TestCase
         $system=User::factory()->create(['name'=>'حساب خارج چارت','show_in_organization_chart'=>false]);
         $executive=User::factory()->create(['name'=>'مدیر اجرایی آزمایشی','manager_id'=>$system->id,'organization_level'=>'executive_manager']);
         $staff=User::factory()->create(['name'=>'عضو تیم آزمایشی','manager_id'=>$executive->id]);
-        $this->actingAs($admin)->get('/users')->assertOk()->assertSee('مدیر اجرایی آزمایشی')->assertSee('عضو تیم آزمایشی')->assertDontSee('حساب خارج چارت');
-        $this->get('/users?directory_tab=accounts')->assertOk()->assertSee('حساب خارج چارت')->assertDontSee('عضو تیم آزمایشی');
+        $this->actingAs($admin)->get('/users',['X-Requested-With'=>'XMLHttpRequest'])->assertOk()->assertSee('مدیر اجرایی آزمایشی')->assertSee('عضو تیم آزمایشی')->assertDontSee('حساب خارج چارت');
+        $this->get('/users?directory_tab=accounts',['X-Requested-With'=>'XMLHttpRequest'])->assertOk()->assertSee('حساب خارج چارت')->assertDontSee('عضو تیم آزمایشی');
         $this->assertSame($system->id,$executive->fresh()->manager_id);
         $this->assertSame($executive->id,$staff->fresh()->manager_id);
         $rows=app(\App\Services\Personnel\PersonnelTree::class)->rows(User::with('roles')->get(),collect([$staff->id]),false);

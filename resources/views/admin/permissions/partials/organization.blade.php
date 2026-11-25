@@ -7,6 +7,7 @@
         @csrf @method('PUT')
         <input type="hidden" name="organization_version" value="{{ \App\Services\Personnel\OrganizationManagement::version($selectedUser) }}">
         <div class="row g-3">
+            <div class="col-12"><label for="staffName" class="form-label">نام و نام خانوادگی</label><input id="staffName" class="form-control" name="name" required maxlength="255" value="{{ old('name', $selectedUser->name) }}" @disabled(!$canEditPermissions)></div>
             <div class="col-12">
                 <input type="hidden" name="show_in_organization_chart" value="0" @disabled(!$canEditPermissions)>
                 <label class="pw-chart-membership"><input type="checkbox" name="show_in_organization_chart" value="1" @checked(old('show_in_organization_chart',$selectedUser->show_in_organization_chart)) @disabled(!$canEditPermissions)> نمایش در چارت سازمانی</label>

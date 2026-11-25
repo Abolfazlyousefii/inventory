@@ -5,11 +5,12 @@
     const filters=root.querySelector('#staffFilters'),dialog=root.querySelector('#staffDialog'),host=root.querySelector('#staffEditorHost'),feedback=root.querySelector('#staffFeedback');
     let treeRequest,editorRequest,timer,busy=false,editorUrl='',activeTab='profile';
     const collapsed=new Set();
-    let initialProfile='',initialRoles='',initialPermissions='';
+    let initialProfile='',initialRoles='',initialPermissions='',initialAccount='';
+    const accountValue=()=>JSON.stringify([...new FormData(host.querySelector('[data-account-editor]'))].filter(([key])=>!['_token','_method','account_version'].includes(key)));
     const headers={'X-Requested-With':'XMLHttpRequest'};
     const values=(name)=>JSON.stringify([...host.querySelectorAll(`input[name="${name}[]"]:checked`)].map(x=>x.value).sort());
     const profileValue=()=>JSON.stringify([...new FormData(host.querySelector('section[data-staff-section="profile"] form'))].filter(([key])=>!['_token','_method','organization_version'].includes(key)));
-    const dirty=()=>!!host.querySelector('[data-staff-editor]') && (profileValue()!==initialProfile || values('roles')!==initialRoles || values('direct_permissions')!==initialPermissions);
+    const dirty=()=>!!host.querySelector('[data-staff-editor]') && (profileValue()!==initialProfile || values('roles')!==initialRoles || values('direct_permissions')!==initialPermissions || accountValue()!==initialAccount);
     function applyTree(){
         const rows=[...root.querySelectorAll('[data-staff-node]')],byId=new Map(rows.map(row=>[row.dataset.staffNode,row]));
         rows.forEach(row=>{let parent=row.dataset.parent,hide=false;const visited=new Set();while(parent && byId.has(parent) && !visited.has(parent)){visited.add(parent);if(collapsed.has(parent)){hide=true;break;}parent=byId.get(parent).dataset.parent;}row.hidden=hide;});
@@ -33,10 +34,10 @@
         catch(error){if(error.name!=='AbortError')feedback.textContent=error.message;}
         finally{if(treeRequest===request)root.querySelector('#staffTree').removeAttribute('aria-busy');}
     }
-    function selectTab(tab){activeTab=tab;host.querySelectorAll('[data-staff-section]').forEach(section=>section.hidden=section.dataset.staffSection!==tab);host.querySelectorAll('[data-staff-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.staffTab===tab)));host.querySelector('[data-access-footer]').hidden=tab==='profile';}
+    function selectTab(tab){activeTab=tab;host.querySelectorAll('[data-staff-section]').forEach(section=>section.hidden=section.dataset.staffSection!==tab);host.querySelectorAll('[data-staff-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.staffTab===tab)));host.querySelector('[data-access-footer]').hidden=tab==='profile'||tab==='account';}
     async function loadEditor(url,tab='profile'){
         editorRequest?.abort();const request=editorRequest=new AbortController();editorUrl=url;host.textContent='در حال دریافت اطلاعات…';
-        try{const response=await fetch(url,{headers,signal:request.signal});if(!response.ok||response.redirected)throw new Error('دریافت اطلاعات انجام نشد یا دسترسی شما تغییر کرده است.');const html=await response.text();if(request.signal.aborted)return;host.innerHTML=html;if(!host.querySelector('[data-staff-editor]'))return;initialProfile=profileValue();initialRoles=values('roles');initialPermissions=values('direct_permissions');selectTab(tab);}
+        try{const response=await fetch(url,{headers,signal:request.signal});if(!response.ok||response.redirected)throw new Error('دریافت اطلاعات انجام نشد یا دسترسی شما تغییر کرده است.');const html=await response.text();if(request.signal.aborted)return;host.innerHTML=html;if(!host.querySelector('[data-staff-editor]'))return;root.querySelector('#staffDialogTitle').textContent=host.querySelector('[data-staff-editor]').dataset.staffName;initialProfile=profileValue();initialRoles=values('roles');initialPermissions=values('direct_permissions');initialAccount=accountValue();selectTab(tab);}
         catch(error){if(error.name!=='AbortError')host.textContent=error.message;}
     }
     function closeEditor(){if(busy)return;if(dirty()&&!confirm('تغییرات ذخیره نشده کنار گذاشته شود؟'))return;editorRequest?.abort();dialog.close();host.textContent='';}
@@ -54,7 +55,8 @@
         if(event.target.closest('[data-close-editor]'))closeEditor();
         const tab=event.target.closest('[data-staff-tab]');if(tab){
             const next=tab.dataset.staffTab;
-            const crossingForm=(activeTab==='profile')!==(next==='profile');
+            const group=tab=>['roles','permissions'].includes(tab)?'access':tab;
+            const crossingForm=group(activeTab)!==group(next);
             if(crossingForm && dirty()){
                 if(confirm('تغییرات این بخش هنوز ذخیره نشده است. برای رفتن به بخش دیگر کنار گذاشته شود؟'))loadEditor(editorUrl,next);
             }else selectTab(next);
@@ -84,5 +86,32 @@
         finally{busy=false;buttons.forEach(button=>button.disabled=false);}
     });
     window.addEventListener('beforeunload',event=>{if(dialog.open&&dirty()){event.preventDefault();event.returnValue='';}});
+    const createDialog=root.querySelector('#staffCreateDialog'),createForm=root.querySelector('#staffCreateForm');
+    if(createDialog && createForm){
+        let createInitial='';
+        const createValue=()=>JSON.stringify([...new FormData(createForm)]);
+        const closeCreate=()=>{if(busy)return;if(createValue()!==createInitial&&!confirm('اطلاعات حساب جدید کنار گذاشته شود؟'))return;createDialog.close();createForm.reset();};
+        root.addEventListener('click',event=>{
+            if(event.target.closest('[data-create-staff]')){createForm.reset();createForm.querySelector('[data-create-feedback]').textContent='';createInitial=createValue();createDialog.showModal();createForm.elements.name.focus();}
+            if(event.target.closest('[data-close-create]'))closeCreate();
+        });
+        createDialog.addEventListener('cancel',event=>{event.preventDefault();closeCreate();});
+        createForm.addEventListener('submit',async event=>{
+            event.preventDefault();if(busy)return;busy=true;
+            const button=createForm.querySelector('button[type="submit"]'),notice=createForm.querySelector('[data-create-feedback]');button.disabled=true;notice.textContent='در حال ساخت حساب…';
+            try{
+                const response=await fetch(createForm.action,{method:'POST',headers:{...headers,Accept:'application/json'},body:new FormData(createForm)});
+                const data=await response.json();
+                if(!response.ok)throw new Error(response.status>=500?'ساخت حساب انجام نشد؛ دوباره تلاش کنید.':Object.values(data.errors||{}).flat().join('\n')||data.message||'ساخت حساب انجام نشد.');
+                if(data.ok!==true||!data.editor_url)throw new Error('پاسخ ساخت حساب معتبر نیست.');
+                createDialog.close();createForm.reset();createInitial=createValue();
+                root.querySelector('#staffDialogTitle').textContent='نقش و دسترسی حساب جدید';dialog.showModal();
+                await loadEditor(data.editor_url,'roles');await loadTree(true);
+                const message=host.querySelector('.pw-editor-feedback');if(message)message.textContent=data.message;
+            }catch(error){notice.textContent=error.message||'ارتباط برقرار نشد؛ نتیجه را در فهرست بررسی کنید.';}
+            finally{busy=false;button.disabled=false;}
+        });
+        window.addEventListener('beforeunload',event=>{if(createDialog.open&&createValue()!==createInitial){event.preventDefault();event.returnValue='';}});
+    }
     syncDirectory();initTree();
 })();
