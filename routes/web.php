@@ -195,7 +195,7 @@ Route::middleware(['auth', 'route.permission'])->group(function () {
     // Products + categories
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/products/data', [ProductController::class, 'data'])->name('products.data');
-    Route::prefix('products/yuan')->name('products.yuan.')->group(function () {
+    Route::prefix('yuan')->name('products.yuan.')->group(function () {
         Route::get('/unlock', [\App\Http\Controllers\YuanDashboardUnlockController::class, 'show'])
             ->name('unlock');
 

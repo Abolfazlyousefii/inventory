@@ -1,39 +1,22 @@
-
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="csrf-token" content="{{ csrf_token() }}">
-	<meta name="robots" content="noindex,nofollow,noarchive">
-
-	<title>مدیریت قیمت یوان</title>
-
-	<link rel="stylesheet" href="{{ asset('css/Vazirmatn.css') }}">
-	<link rel="stylesheet" href="{{ asset('css/admin-theme.css') }}">
-	<link rel="stylesheet" href="{{ asset('css/app-shell.css') }}">
-	<link rel="stylesheet" href="{{ asset('css/app-theme.css') }}">
-	<link rel="stylesheet" href="{{ asset('css/yuan-dashboard.css') }}">
-
-	<script src="{{ asset('js/app-theme.js') }}"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="robots" content="noindex,nofollow,noarchive">
+    <title>مدیریت قیمت یوان</title>
+    <script src="{{ asset('js/app-theme.js') }}?v=20261025d"></script>
+    <link rel="stylesheet" href="{{ asset('lib/bootstrap.rtl.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/Vazirmatn.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/admin-theme.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/admin.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/app-shell.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/yuan-dashboard.css') }}?v=2">
+    <link id="app-theme-tokens" rel="stylesheet" href="{{ asset('css/app-theme.css') }}?v=20261025d">
 </head>
-<body class="app-body">
+<body class="app-body yuan-full-width">
 <main class="app-content app-content-wide">
-
-	{{-- Keep your existing yuan-dash section here --}}
-
-</main>
-
-<script src="{{ asset('js/yuan-dashboard.js') }}" defer></script>
-</body>
-</html>
-
-@section('title', 'مدیریت قیمت یوان')
-@section('page-title', 'مدیریت قیمت یوان')
-@push('styles')
-<link rel="stylesheet" href="{{ asset('css/yuan-dashboard.css') }}?v=2">
-@endpush
-@section('content')
 <section class="yuan-dash" id="yuanDashboard"
          data-list-url="{{ route('products.yuan.data') }}"
          data-history-url="{{ route('products.yuan.history', ['product' => '__ID__']) }}"
@@ -95,7 +78,7 @@
     </dialog>
     <div id="yuanNotice" class="yuan-notice" role="status" aria-live="polite" hidden></div>
 </section>
-@endsection
-@push('scripts')
+</main>
 <script src="{{ asset('js/yuan-dashboard.js') }}?v=2" defer></script>
-@endpush
+</body>
+</html>

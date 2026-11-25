@@ -30,12 +30,12 @@ class YuanDashboardUnlockTest extends TestCase
     {
         config(['yuan_dashboard.access_key' => 'example-long-secret-for-tests', 'yuan_dashboard.cookie_hours' => 12]);
         $access = app(YuanDashboardAccess::class);
-        $request = Request::create('/products/yuan');
+        $request = Request::create('/yuan');
         $request->setUserResolver(fn () => new class {
             public function getAuthIdentifier(): int { return 101; }
         });
         $cookie = $access->issueCookie($request);
-        $this->assertSame('/products/yuan', $cookie->getPath());
+        $this->assertSame('/yuan', $cookie->getPath());
         $this->assertTrue($cookie->isHttpOnly());
         $this->assertSame('strict', $cookie->getSameSite());
         $request->cookies->set(YuanDashboardAccess::COOKIE_NAME, $cookie->getValue());
@@ -59,8 +59,8 @@ class YuanDashboardUnlockTest extends TestCase
     {
         config(['yuan_dashboard.access_key' => 'example-long-secret-for-tests']);
         $guard = app(EnsureYuanDashboardAccess::class);
-        foreach (['/products/yuan/data', '/products/yuan/apply'] as $path) {
-            $request = Request::create($path, $path === '/products/yuan/apply' ? 'POST' : 'GET', server: [
+        foreach (['/yuan/data', '/yuan/apply'] as $path) {
+            $request = Request::create($path, $path === '/yuan/apply' ? 'POST' : 'GET', server: [
                 'HTTP_ACCEPT' => 'application/json',
             ]);
             $response = $guard->handle($request, fn () => response()->json(['secret' => true]));
